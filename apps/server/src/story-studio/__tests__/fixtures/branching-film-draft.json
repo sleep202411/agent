@@ -1,0 +1,3981 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Which track should play first?",
+            "zh-CN": "先播放哪一轨？",
+            "zh-HK": "先播放哪一軌？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Grandpa's marked opening song",
+                "zh-CN": "外公标记的开园曲",
+                "zh-HK": "外公標記的開園曲"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C1:A",
+              "nextNodeId": "clip:S01A",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "The unlabelled B-side",
+                "zh-CN": "没有标签的 B 面",
+                "zh-HK": "沒有標籤的 B 面"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C1:B",
+              "nextNodeId": "clip:S01B",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C1"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S00",
+        "clipKey": "S00"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "The broadcast calls your childhood name. Who do you answer?",
+            "zh-CN": "广播叫出乳名，回应谁？",
+            "zh-HK": "廣播叫出乳名，回應誰？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Answer Grandpa",
+                "zh-CN": "回应外公",
+                "zh-HK": "回應外公"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C2:A",
+              "nextNodeId": "clip:S02A",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Tell Maya the truth first",
+                "zh-CN": "先告诉 Maya 真相",
+                "zh-HK": "先告訴 Maya 真相"
+              },
+              "effects": [
+                {
+                  "key": "bond",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C2:B",
+              "nextNodeId": "clip:S02B",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C2"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S01A",
+        "clipKey": "S01A"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "The broadcast calls your childhood name. Who do you answer?",
+            "zh-CN": "广播叫出乳名，回应谁？",
+            "zh-HK": "廣播叫出乳名，回應誰？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Answer Grandpa",
+                "zh-CN": "回应外公",
+                "zh-HK": "回應外公"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C2:A",
+              "nextNodeId": "clip:S02A",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Tell Maya the truth first",
+                "zh-CN": "先告诉 Maya 真相",
+                "zh-HK": "先告訴 Maya 真相"
+              },
+              "effects": [
+                {
+                  "key": "bond",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C2:B",
+              "nextNodeId": "clip:S02B",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C2"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S01B",
+        "clipKey": "S01B"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "The ride is flooding. What do you save first?",
+            "zh-CN": "船道进水，先抢什么？",
+            "zh-HK": "船道進水，先搶救甚麼？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Grab Maya",
+                "zh-CN": "拉住 Maya",
+                "zh-HK": "拉住 Maya"
+              },
+              "effects": [
+                {
+                  "key": "bond",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C3:A",
+              "nextNodeId": "clip:S03A",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Recover the master tape",
+                "zh-CN": "抢回母带",
+                "zh-HK": "搶回母帶"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C3:B",
+              "nextNodeId": "clip:S03B",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C3"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S02A",
+        "clipKey": "S02A"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "The ride is flooding. What do you save first?",
+            "zh-CN": "船道进水，先抢什么？",
+            "zh-HK": "船道進水，先搶救甚麼？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Grab Maya",
+                "zh-CN": "拉住 Maya",
+                "zh-HK": "拉住 Maya"
+              },
+              "effects": [
+                {
+                  "key": "bond",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C3:A",
+              "nextNodeId": "clip:S03A",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Recover the master tape",
+                "zh-CN": "抢回母带",
+                "zh-HK": "搶回母帶"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C3:B",
+              "nextNodeId": "clip:S03B",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C3"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S02B",
+        "clipKey": "S02B"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Who should answer for the accident?",
+            "zh-CN": "谁该为事故负责？",
+            "zh-HK": "誰該為事故負責？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Admit Grandpa hid the fault",
+                "zh-CN": "承认外公隐瞒故障",
+                "zh-HK": "承認外公隱瞞故障"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                },
+                {
+                  "key": "c4Choice",
+                  "kind": "set_variable",
+                  "value": "A"
+                }
+              ],
+              "choiceId": "C4:A",
+              "nextNodeId": "router:S04",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Say no one had a choice",
+                "zh-CN": "说当年没人有选择",
+                "zh-HK": "說當年沒有人有選擇"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                },
+                {
+                  "key": "c4Choice",
+                  "kind": "set_variable",
+                  "value": "B"
+                }
+              ],
+              "choiceId": "C4:B",
+              "nextNodeId": "router:S04",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C4"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S03A",
+        "clipKey": "S03A"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Who should answer for the accident?",
+            "zh-CN": "谁该为事故负责？",
+            "zh-HK": "誰該為事故負責？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Admit Grandpa hid the fault",
+                "zh-CN": "承认外公隐瞒故障",
+                "zh-HK": "承認外公隱瞞故障"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                },
+                {
+                  "key": "c4Choice",
+                  "kind": "set_variable",
+                  "value": "A"
+                }
+              ],
+              "choiceId": "C4:A",
+              "nextNodeId": "router:S04",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Say no one had a choice",
+                "zh-CN": "说当年没人有选择",
+                "zh-HK": "說當年沒有人有選擇"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                },
+                {
+                  "key": "c4Choice",
+                  "kind": "set_variable",
+                  "value": "B"
+                }
+              ],
+              "choiceId": "C4:B",
+              "nextNodeId": "router:S04",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C4"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S03B",
+        "clipKey": "S03B"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:A",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:B",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C5"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S04A",
+        "clipKey": "S04A"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:A",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:B",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C5"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S04B",
+        "clipKey": "S04B"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Only one track can survive. Whose voice stays?",
+            "zh-CN": "只够保留一条声轨，留下谁？",
+            "zh-HK": "只夠保留一條聲軌，留下誰？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Keep Salmah's original voice",
+                "zh-CN": "留下 Salmah 的原声",
+                "zh-HK": "留下 Salmah 的原聲"
+              },
+              "effects": [
+                {
+                  "key": "truth",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:A",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Keep Grandpa's opening song",
+                "zh-CN": "留下外公的开园曲",
+                "zh-HK": "留下外公的開園曲"
+              },
+              "effects": [
+                {
+                  "key": "echo",
+                  "kind": "increment_variable",
+                  "amount": 1
+                }
+              ],
+              "choiceId": "C5:B",
+              "nextNodeId": "router:S05",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C5"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S04C",
+        "clipKey": "S04C"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "release"
+                }
+              ],
+              "choiceId": "C6:A",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "leave"
+                }
+              ],
+              "choiceId": "C6:B",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C6"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S05A",
+        "clipKey": "S05A"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "release"
+                }
+              ],
+              "choiceId": "C6:A",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "leave"
+                }
+              ],
+              "choiceId": "C6:B",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C6"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S05B",
+        "clipKey": "S05B"
+      },
+      {
+        "exit": {
+          "kind": "choice",
+          "prompt": {
+            "en-US": "Before the sixth gong, how do you end the playback?",
+            "zh-CN": "第六声锣前，怎么结束回放？",
+            "zh-HK": "第六聲鑼前，怎樣結束回放？"
+          },
+          "choices": [
+            {
+              "label": {
+                "en-US": "Release the complete tape",
+                "zh-CN": "公开完整母带",
+                "zh-HK": "公開完整母帶"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "release"
+                }
+              ],
+              "choiceId": "C6:A",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            },
+            {
+              "label": {
+                "en-US": "Eject it and leave with Maya",
+                "zh-CN": "拔带，带 Maya 离开",
+                "zh-HK": "拔帶，帶 Maya 離開"
+              },
+              "effects": [
+                {
+                  "key": "finalAction",
+                  "kind": "set_variable",
+                  "value": "leave"
+                }
+              ],
+              "choiceId": "C6:B",
+              "nextNodeId": "router:S06",
+              "afterSelect": {
+                "kind": "immediate"
+              }
+            }
+          ],
+          "trigger": {
+            "kind": "media-ended"
+          },
+          "decisionId": "C6"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S05C",
+        "clipKey": "S05C"
+      },
+      {
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E01"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S06A",
+        "clipKey": "S06A"
+      },
+      {
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E02"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S06B",
+        "clipKey": "S06B"
+      },
+      {
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E03"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S06C",
+        "clipKey": "S06C"
+      },
+      {
+        "exit": {
+          "kind": "checkpoint",
+          "nextNodeId": "clip:E04"
+        },
+        "kind": "clip",
+        "nodeId": "clip:S06D",
+        "clipKey": "S06D"
+      },
+      {
+        "exit": {
+          "kind": "ending",
+          "endingId": "E01"
+        },
+        "kind": "clip",
+        "nodeId": "clip:E01",
+        "clipKey": "E01"
+      },
+      {
+        "exit": {
+          "kind": "ending",
+          "endingId": "E02"
+        },
+        "kind": "clip",
+        "nodeId": "clip:E02",
+        "clipKey": "E02"
+      },
+      {
+        "exit": {
+          "kind": "ending",
+          "endingId": "E03"
+        },
+        "kind": "clip",
+        "nodeId": "clip:E03",
+        "clipKey": "E03"
+      },
+      {
+        "exit": {
+          "kind": "ending",
+          "endingId": "E04"
+        },
+        "kind": "clip",
+        "nodeId": "clip:E04",
+        "clipKey": "E04"
+      },
+      {
+        "exit": {
+          "kind": "auto",
+          "routes": [
+            {
+              "when": {
+                "key": "bond",
+                "kind": "variable",
+                "value": 2,
+                "operator": "at_least"
+              },
+              "priority": 1,
+              "nextNodeId": "clip:S04A"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "bond",
+                    "kind": "variable",
+                    "value": 2,
+                    "operator": "less_than"
+                  },
+                  {
+                    "key": "c4Choice",
+                    "kind": "variable",
+                    "value": "A",
+                    "operator": "equals"
+                  }
+                ]
+              },
+              "priority": 2,
+              "nextNodeId": "clip:S04B"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "bond",
+                    "kind": "variable",
+                    "value": 2,
+                    "operator": "less_than"
+                  },
+                  {
+                    "key": "c4Choice",
+                    "kind": "variable",
+                    "value": "B",
+                    "operator": "equals"
+                  }
+                ]
+              },
+              "priority": 3,
+              "nextNodeId": "clip:S04C"
+            }
+          ]
+        },
+        "kind": "router",
+        "nodeId": "router:S04"
+      },
+      {
+        "exit": {
+          "kind": "auto",
+          "routes": [
+            {
+              "when": {
+                "key": "truth",
+                "kind": "variable",
+                "value": 3,
+                "operator": "at_least"
+              },
+              "priority": 1,
+              "nextNodeId": "clip:S05A"
+            },
+            {
+              "when": {
+                "key": "echo",
+                "kind": "variable",
+                "value": 3,
+                "operator": "at_least"
+              },
+              "priority": 2,
+              "nextNodeId": "clip:S05B"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "truth",
+                    "kind": "variable",
+                    "value": 3,
+                    "operator": "less_than"
+                  },
+                  {
+                    "key": "echo",
+                    "kind": "variable",
+                    "value": 3,
+                    "operator": "less_than"
+                  }
+                ]
+              },
+              "priority": 3,
+              "nextNodeId": "clip:S05C"
+            }
+          ]
+        },
+        "kind": "router",
+        "nodeId": "router:S05"
+      },
+      {
+        "exit": {
+          "kind": "auto",
+          "routes": [
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "finalAction",
+                    "kind": "variable",
+                    "value": "release",
+                    "operator": "equals"
+                  },
+                  {
+                    "key": "truth",
+                    "kind": "variable",
+                    "value": 3,
+                    "operator": "at_least"
+                  }
+                ]
+              },
+              "priority": 1,
+              "nextNodeId": "clip:S06A"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "finalAction",
+                    "kind": "variable",
+                    "value": "release",
+                    "operator": "equals"
+                  },
+                  {
+                    "key": "truth",
+                    "kind": "variable",
+                    "value": 3,
+                    "operator": "less_than"
+                  }
+                ]
+              },
+              "priority": 2,
+              "nextNodeId": "clip:S06B"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "finalAction",
+                    "kind": "variable",
+                    "value": "leave",
+                    "operator": "equals"
+                  },
+                  {
+                    "key": "bond",
+                    "kind": "variable",
+                    "value": 2,
+                    "operator": "at_least"
+                  }
+                ]
+              },
+              "priority": 3,
+              "nextNodeId": "clip:S06C"
+            },
+            {
+              "when": {
+                "kind": "all",
+                "conditions": [
+                  {
+                    "key": "finalAction",
+                    "kind": "variable",
+                    "value": "leave",
+                    "operator": "equals"
+                  },
+                  {
+                    "key": "bond",
+                    "kind": "variable",
+                    "value": 2,
+                    "operator": "less_than"
+                  }
+                ]
+              },
+              "priority": 4,
+              "nextNodeId": "clip:S06D"
+            }
+          ]
+        },
+        "kind": "router",
+        "nodeId": "router:S06"
+      }
+    ],
+    "entryNodeId": "clip:S00"
+  },
+  "storyBible": {
+    "props": ["核心道具板"],
+    "endings": [
+      {
+        "id": "E01",
+        "kind": "truth",
+        "title": {
+          "en-US": "The Name Returned",
+          "zh-CN": "名字归还",
+          "zh-HK": "名字歸還"
+        },
+        "summary": {
+          "en-US": "At the morning entrance, the oral-history exhibit credits “Salmah Binte Yusof and the original voices of the 1994 night-shift staff”; Lim Guo Sheng is listed as an interviewee, not a hero. Cheng and Maya listen together to the end.",
+          "zh-CN": "清晨入口。口述史展的音频页面标题为“Salmah Binte Yusof 与 1994 夜班员工原声记录”；林国声列为受访者而非英雄。陈澄和 Maya 并肩听完。",
+          "zh-HK": "清晨入口。口述史展的音頻頁面標題為「Salmah Binte Yusof 與 1994 夜班員工原聲記錄」；林國聲列為受訪者而非英雄。陳澄和 Maya 並肩聽完。"
+        }
+      },
+      {
+        "id": "E02",
+        "kind": "echo",
+        "title": {
+          "en-US": "The Last Opening",
+          "zh-CN": "最后开园",
+          "zh-HK": "最後開園"
+        },
+        "summary": {
+          "en-US": "The exhibit plays the restored, magnificent opening song while visitors smile for photos. In a corner of the original waveform, a short female voice is marked “irreparable noise”. Cheng stands alone behind the crowd.",
+          "zh-CN": "展览播放修复后的华丽开园曲，观众微笑拍照。屏幕角落的原始波形里，一小段女声被标红为“不可修复噪声”。陈澄独自站在人群后。",
+          "zh-HK": "展覽播放修復後的華麗開園曲，觀眾微笑拍照。屏幕角落的原始波形裡，一小段女聲被標紅為「不可修復噪聲」。陳澄獨自站在人群後。"
+        }
+      },
+      {
+        "id": "E03",
+        "kind": "bond",
+        "title": {
+          "en-US": "Leaving Together",
+          "zh-CN": "两人出园",
+          "zh-HK": "兩人出園"
+        },
+        "summary": {
+          "en-US": "The two sit in a morning MRT station with the uncut tape sealed in a clear evidence bag. Maya switches off the DV camera while Cheng writes both names on the bag.",
+          "zh-CN": "两人坐在清晨地铁站，未剪母带封在透明证物袋中。Maya 关掉 DV，陈澄在袋上写下两个人名。",
+          "zh-HK": "兩人坐在清晨地鐵站，未剪母帶封在透明證物袋中。Maya 關掉 DV，陳澄在袋上寫下兩個人的名字。"
+        }
+      },
+      {
+        "id": "E04",
+        "kind": "failure",
+        "title": {
+          "en-US": "The Seventh Gong",
+          "zh-CN": "第七声锣",
+          "zh-HK": "第七聲鑼"
+        },
+        "summary": {
+          "en-US": "Time jumps back to the S00 camera position. The entrance is empty as Cheng presses play alone; on the DV screen, Maya has become the afterimage of a 1994 visitor. The seventh gong falls.",
+          "zh-CN": "时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
+          "zh-HK": "時間跳回 S00 的機位。入口空無一人，陳澄獨自按下播放；DV 屏幕裡 Maya 成了 1994 年的遊客殘影。第七聲鑼落下。"
+        }
+      }
+    ],
+    "logline": "闭园后的测试园区里，一盘失真的旧磁带唤醒早已消失的巨龙入口；少女必须在六声开园锣结束前，决定应当保存一段不光彩的真实，还是留下一个更动听的传说。",
+    "synopsis": "S00｜龙口重现：手持 DV 的红色 REC 点亮。空无一人的入口，陈澄按下卡带机。第一声锣。钠灯闪灭，巨龙入口在台阶尽头“显影”，嘴里垂下一张湿门票。\nS01A｜开园曲：陈澄按 A。褪色的庆典音乐炸响，龙眼亮起。两人被游客残影推入龙口；玻璃里的年轻林国声向她伸手。第二声锣。\nS01B｜B 面原声：反转卡带。黑暗中先响电火花，再响女人急促的声音；船道灯逐盏亮起，玻璃里的林国声猛地拍窗。第二声锣。\nS02A｜回应外公：陈澄对着喇叭喊“外公”。游客残影齐刷刷回头，复述“外公”。林国声指向船道深处；地面开始漫水。第三声锣。\nS02B｜告诉 Maya：陈澄把一只耳机塞给 Maya。Maya 听见录音，脸色沉下；她举起 DV，屏幕显示一扇现实中不存在的检修门。水从门缝涌入。第三声锣。\nS03A｜拉住 Maya：栈道塌陷，陈澄丢开卡带机、抓住 Maya。机器在水面旋转，游客残影却把它托回；Maya 回到平台时右掌留下轻微擦伤。控制室玻璃显现事故日志。第四声锣。\nS03B｜抢回母带：陈澄扑向卡带机，Maya 独自抓住栏杆，右掌轻微擦伤；浅水同时溅湿卡带机。她的 DV 落地，镜头拍到日志：“G.S. Lim — fault report withheld”。第四声锣。\nS04A｜并肩：无论刚才如何回答，Maya 都把 DV 与卡带机接在一起，两人共同监听。龙腹两边分别亮起 Salmah 与林国声的声纹。第五声锣。\nS04B｜认错：陈澄读出日志，林国声的玻璃倒影出现裂纹；裂缝中露出 Salmah 的工牌。第五声锣。\nS04C｜辩护：陈澄合上日志，玻璃里的林国声恢复完整，Salmah 的工牌却开始褪色。第五声锣。\nS05A｜原声占优：Salmah 的声轨灌满船道，游客残影沿她的指令撤离；巨龙从腹内裂开一道通往现实的门。第六声锣将落未落。\nS05B｜开园曲占优：庆典灯光全亮，游客残影鼓掌；林国声站在控制台前，Salmah 的声音只剩磁噪。龙口在身后缓慢合拢。第六声锣将落未落。\nS05C｜混轨：开园曲与疏散指令互相覆盖，所有雕塑同时捂耳；控制台出现两个推子：“LEGEND / RECORD”。第六声锣将落未落。\nS06A｜公开：名字归还：陈澄把 DV 接上控制台，完整波形投到龙腹。她按下上传；第六声锣落下，林国声主动推下音乐推子。\nS06B｜公开：最后开园：陈澄按下上传，但波形里 Salmah 的声音太弱；系统自动标记“噪声已清除”。第六声锣落下，游客残影爆发掌声。\nS06C｜离开：两人出园：陈澄拔出卡带，抓住 Maya 冲向检修门。两人一起拉下总闸；第六声锣闷在半声，龙口退回普通台阶。\nS06D｜离开：第七声锣：陈澄拔带转身，却发现 Maya 被隔在玻璃另一侧。她伸手时第六声锣完整落下，卡带机自行开始倒转。\nE01｜名字归还：清晨入口。口述史展的音频页面标题为“Salmah Binte Yusof 与 1994 夜班员工原声记录”；林国声列为受访者而非英雄。陈澄和 Maya 并肩听完。\nE02｜最后开园：展览播放修复后的华丽开园曲，观众微笑拍照。屏幕角落的原始波形里，一小段女声被标红为“不可修复噪声”。陈澄独自站在人群后。\nE03｜两人出园：两人坐在清晨地铁站，未剪母带封在透明证物袋中。Maya 关掉 DV，陈澄在袋上写下两个人名。\nE04｜第七声锣：时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
+    "locations": [
+      "现实入口母版",
+      "龙口回声母版",
+      "龙腹船道／控制室母版",
+      "展览与清晨母版"
+    ],
+    "worldview": "1994 年最后一场闭园广播母带在园内播放时，已拆除的 Dragon World 与当下重叠 120 秒。\n每完成一次选择，远处响一声开园锣；第六声后，龙口吞下被舍弃的版本。\n雕塑只能复述磁带中的旧台词或玩家刚说过的话，不能说新话。\n林国声是母带、广播系统与陈澄记忆共同拼出的回声人格，不知道 1994 年之后的事。\n保全完整母带必须同时公开林国声的失误；替他洗清则会剪掉 Salmah 救人的证据。\n最坏后果是记忆被改写、关系破裂或角色困在循环中，不使用写实死亡惩罚。",
+    "characters": [
+      {
+        "id": "cheng",
+        "name": {
+          "zh-CN": "陈澄"
+        },
+        "role": "player_protagonist",
+        "summary": "数字化外公遗留母带，把最后开园曲交给口述史展。\n从替外公证明无错，走向决定真实应由谁承担、如何被听见。",
+        "playable": true,
+        "continuityRules": [
+          "深灰短袖衬衫、旧牛仔裤、红色有线耳机挂在颈间、银色便携卡带机。",
+          "不尖叫失控；恐惧通过屏息、吞咽和握紧机器表现。"
+        ]
+      },
+      {
+        "id": "maya",
+        "name": {
+          "zh-CN": "Maya Rahman"
+        },
+        "role": "companion_and_reality_anchor",
+        "summary": "拍下毕业短片并确保两人安全离园。\n已经听过未剪母带，知道林国声漏报设备故障。",
+        "playable": false,
+        "continuityRules": [
+          "橄榄绿防雨外套、黑色相机背带、小型手持 DV。",
+          "不是只会劝退的工具人；会主动救人，也会为保存证据冒险。"
+        ]
+      },
+      {
+        "id": "lin",
+        "name": {
+          "zh-CN": "林国声"
+        },
+        "role": "echo_personality",
+        "summary": "让外孙女记住自己让乐园活过，而不是差点害了人。\n好听的故事，才有人肯记。",
+        "playable": false,
+        "continuityRules": [
+          "只通过控制室玻璃反影、CRT 或远处剪影出现，永不拍清正脸。"
+        ]
+      },
+      {
+        "id": "salmah",
+        "name": {
+          "zh-CN": "Salmah Binte Yusof"
+        },
+        "role": "absent_truth_witness",
+        "summary": "通过原始录音和事故日志取回被剪掉的名字。\n国声，音乐可以停，人要先出去。",
+        "playable": false,
+        "continuityRules": [
+          "不以鬼魂实体出现，只通过母带原声、工牌和检修日志存在。"
+        ]
+      }
+    ],
+    "storyRules": [
+      "1994 年最后一场闭园广播母带在园内播放时，已拆除的 Dragon World 与当下重叠 120 秒。",
+      "每完成一次选择，远处响一声开园锣；第六声后，龙口吞下被舍弃的版本。",
+      "雕塑只能复述磁带中的旧台词或玩家刚说过的话，不能说新话。",
+      "林国声是母带、广播系统与陈澄记忆共同拼出的回声人格，不知道 1994 年之后的事。",
+      "保全完整母带必须同时公开林国声的失误；替他洗清则会剪掉 Salmah 救人的证据。",
+      "最坏后果是记忆被改写、关系破裂或角色困在循环中，不使用写实死亡惩罚。"
+    ],
+    "stateVariables": [
+      {
+        "key": "truth",
+        "type": "number",
+        "minimum": 0,
+        "initialValue": 0
+      },
+      {
+        "key": "bond",
+        "type": "number",
+        "minimum": 0,
+        "initialValue": 0
+      },
+      {
+        "key": "echo",
+        "type": "number",
+        "minimum": 0,
+        "initialValue": 0
+      },
+      {
+        "key": "c4Choice",
+        "type": "string",
+        "initialValue": "unset",
+        "allowedValues": ["unset", "A", "B"]
+      },
+      {
+        "key": "finalAction",
+        "type": "string",
+        "initialValue": "unset",
+        "allowedValues": ["unset", "release", "leave"]
+      }
+    ]
+  },
+  "clipPrompts": [
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— Begin in a restrained handheld-DV-like wide view matching [Image 1], with horizon and entrance axis level. Maya is half a step behind frame-left holding the DV with both hands; Cheng is one step ahead, centre-right, holding the silver player at lower-chest height. Both women keep their mouths closed. A tiny red recording-light reflection appears on the player's brushed metal, never as readable UI. Cheng's eyes drop to the reflection first; only her pupils move, while her head and shoulders remain still. End with the player, both women and the empty entrance simultaneously visible.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— Make an almost imperceptible slow push from wide two-shot toward Cheng. Her right thumb hovers over the physical PLAY control for half a second; she takes one shallow breath, then presses it with visible button travel and rebound. The earphone cable responds with a small gravity-driven sway. She does not speak. Her gaze stays on the mechanism for one beat after the press, then shifts toward the distant entrance before her chin follows by only a few degrees. Maya notices Cheng's change in breathing but keeps filming. End with both faces still readable and the entrance soft but present in depth.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— A single distant present-day lamp fails first, creating the cause. After a brief safe dip in exposure, aged orange-green bulbs illuminate sequentially in deep space and reveal the giant painted-concrete dragon entrance on exactly the same architectural axis. Do not morph stone or move the dragon. Cheng's pupils widen and her fingers tighten around the player; her shoulders do not jump. Maya's eyes find the light, then her head turns, then the DV follows with a delayed, controlled adjustment. During 5.5–7.0s Maya naturally forms her short line on one breath, voice to be added in post; Cheng stays closed-mouth and listens. End with the dragon fully legible as architecture and neither woman having changed position.",
+          "emotion": "",
+          "startMs": 4500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— Hold the spatial relationship and let the camera drift only a few centimetres closer. One wet vintage admission ticket releases from the architectural mouth, flutters unevenly under gravity, strikes one stair edge and lands in the real foreground; it must not float, glow or show generated writing. Cheng tracks the ticket with her eyes from high background to low foreground before lowering her chin. Her lower lip parts slightly, then closes; a small swallow is visible in her throat. Maya keeps the DV aimed at the ticket and dragon, with no dialogue. End with the ticket stationary, wet side catching one practical highlight.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— An off-screen old broadcast begins in post. Cheng hears it before she moves: her breathing stops for roughly half a second, her brow tension softens with recognition while her grip remains tight. Her gaze moves from the ticket to the dragon, then down to the player as if verifying the source. During 10.8–11.8s she forms her short reply quietly with minimal jaw movement; the first syllable is guarded and the last carries involuntary familiarity. Maya looks from Cheng to the speaker direction but remains closed-mouth. End with Cheng's eyes on the player and unresolved recognition on her face.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— Continue the same shot with a controlled, shallow move toward the cassette A/B controls while keeping both women layered in the upper frame. Cheng rotates the player only enough to expose both physical options; wrists and cable move with believable weight. Her thumb stops between the controls and does not choose. Maya lowers the DV by only a few centimetres to see Cheng directly. No one speaks.",
+          "emotion": "",
+          "startMs": 12000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "— Lock into a completely stable close two-shot suitable for the C1 overlay. Cheng holds the player without pressing anything, gaze suspended between the two controls; Maya watches Cheng, not the camera. Breathing remains subtle, mouths remain closed, the ticket stays fixed on the stair and the dragon bulbs hold steady. Introduce no new gesture, eye target, light event or prop movement. Preserve clear lower-centre UI space and finish on a continuity-safe frame.",
+          "emotion": "",
+          "startMs": 13000,
+          "dialogue": "",
+          "endState": "陈澄居中偏右、Maya 居左后方；两人闭口；陈澄双手持卡带机且拇指停在 A/B 控制之间；湿门票静止在前景台阶；龙口保持混凝土建筑；橙绿旧灯稳定；人物服装和皮肤无新增湿度；下中部无关键脸、手或道具，连续稳定至少 2 秒。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "龙口重现",
+      "clipKey": "S00",
+      "description": "手持 DV 的红色 REC 点亮。空无一人的入口，陈澄按下卡带机。第一声锣。钠灯闪灭，巨龙入口在台阶尽头“显影”，嘴里垂下一张湿门票。",
+      "graphNodeId": "clip:S00",
+      "emotionalArc": "日常警觉 → 对录音机异常的怀疑 → 看见已消失建筑后的否认 → 被门票证明现实后的恐惧 → 听见外公声音后的私人动摇 → 压住情绪等待选择。",
+      "continuityNotes": [
+        "无上游视频；生成后登记审核首帧、审核末帧与 checksum。",
+        "前 8 秒内必须看懂“不存在的旧龙口重新出现”；末帧必须能自然承载 C1。",
+        "Maya：Cheng，那个入口……地图上没有。",
+        "林国声广播：阿澄，迟到了。选一面，乐园要开门。",
+        "陈澄：他从没叫我阿澄。"
+      ],
+      "masterDirection": "Create one continuous 15-second live-action shot with no cut. Begin from the exact empty present-day entrance architecture, camera axis, wet stair geometry and sodium-vapour lighting in [Image 1]. [Image 2] supplies only the lost giant dragon entrance's scale, painted concrete material and aged orange-green practical bulbs; never copy its people or turn the structure into a living creature. Keep Cheng's identity, age, hair, dark-grey shirt, old jeans and red wired earphones exactly consistent with [Image 3], and Maya's identity, olive rain jacket, black camera strap and handheld DV exactly consistent with [Image 4]; do not copy either reference pose. [Image 5] locks the silver cassette player's dimensions, button positions, earphone cable and weathering. Maya films from half a step behind Cheng. Cheng holds the cassette player at lower-chest height with both hands, shoulders contained rather than raised. Reveal the missing dragon entrance only after a distant practical lamp fails and the old bulbs illuminate the same architectural axis. A single wet vintage admission ticket then falls under gravity from the architectural mouth and lands on the real stair with believable paper weight. Cheng remains controlled and frightened: eye movement precedes head movement, her breathing becomes shallow, her thumb pressure increases and her jaw tightens, but she never screams or makes a large retreat. End on a stable close two-shot with both identities intact, the cassette A/B controls readable as shapes but not generated text, the dragon still architectural, and empty lower-centre space reserved for the C1 choice overlay.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "omni_reference"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Image 1]=REF-01 现实入口`；`[Image 2]=REF-02 龙口回声`；`[Image 3]=REF-03 陈澄`；`[Image 4]=REF-04 Maya`；`[Image 5]=REF-07 道具板`。",
+          "role": "omni_reference",
+          "referenceId": "REF-01"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Image 1]=REF-01 现实入口`；`[Image 2]=REF-02 龙口回声`；`[Image 3]=REF-03 陈澄`；`[Image 4]=REF-04 Maya`；`[Image 5]=REF-07 道具板`。",
+          "role": "omni_reference",
+          "referenceId": "REF-02"
+        },
+        {
+          "id": "reference:3",
+          "note": "`[Image 1]=REF-01 现实入口`；`[Image 2]=REF-02 龙口回声`；`[Image 3]=REF-03 陈澄`；`[Image 4]=REF-04 Maya`；`[Image 5]=REF-07 道具板`。",
+          "role": "omni_reference",
+          "referenceId": "REF-03"
+        },
+        {
+          "id": "reference:4",
+          "note": "`[Image 1]=REF-01 现实入口`；`[Image 2]=REF-02 龙口回声`；`[Image 3]=REF-03 陈澄`；`[Image 4]=REF-04 Maya`；`[Image 5]=REF-07 道具板`。",
+          "role": "omni_reference",
+          "referenceId": "REF-04"
+        },
+        {
+          "id": "reference:5",
+          "note": "`[Image 1]=REF-01 现实入口`；`[Image 2]=REF-02 龙口回声`；`[Image 3]=REF-03 陈澄`；`[Image 4]=REF-04 Maya`；`[Image 5]=REF-07 道具板`。",
+          "role": "omni_reference",
+          "referenceId": "REF-07"
+        }
+      ],
+      "negativeConstraints": [
+        "龙眨眼",
+        "龙口变成肉",
+        "门票出现可读文字",
+        "角色尖叫",
+        "镜头切换。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 1500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "exact continuation; Cheng's thumb presses the marked cassette control.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "warm aged bulbs illuminate sequentially from the dragon eyes toward the mouth; both women react to unheard opening music.",
+          "emotion": "",
+          "startMs": 1500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "translucent visitors pass around them without clear faces, creating forward pressure as the camera retreats smoothly into the dragon passage.",
+          "emotion": "",
+          "startMs": 4000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "camera slides beside control-room glass; Lin's indistinct reflection raises one hand, never resolving into a clear face.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12300,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng reacts to off-screen Lin; Maya naturally forms her English question during 10.4–11.8s.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng looks between Maya and the speaker.",
+          "emotion": "",
+          "startMs": 12300,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable two-shot hold, no new lip movement, for C2.",
+          "emotion": "",
+          "startMs": 13000,
+          "dialogue": "",
+          "endState": "C1A 的反馈必须在 1.5 秒内可见；诱惑感大于攻击感。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "开园曲",
+      "clipKey": "S01A",
+      "description": "陈澄按 A。褪色的庆典音乐炸响，龙眼亮起。两人被游客残影推入龙口；玻璃里的年轻林国声向她伸手。第二声锣。",
+      "graphNodeId": "clip:S01A",
+      "emotionalArc": "C1A 的反馈必须在 1.5 秒内可见；诱惑感大于攻击感。",
+      "continuityNotes": [
+        "REF-02、REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核 JF-01，不随本任务提交。",
+        "C1A 的反馈必须在 1.5 秒内可见；诱惑感大于攻击感。",
+        "林国声：对，就是这首。别听后面的杂音。",
+        "Maya：He knew you would come?",
+        "广播：阿澄，回答外公。"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng selects the marked opening-march side of the cassette. Aged orange-green practical bulbs switch on in a physical sequence and translucent 1994 visitor traces stream around the two women, gently forcing them toward the dragon mouth. In the control-room glass, show only an indistinct young male technician reflection extending one hand toward Cheng, never a clear face. The celebration feels seductive but wrong. Preserve both women and props exactly, then arrive precisely at [End Frame] without a cut.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=S00 审核末帧`；`[End Frame]=JF-01`。",
+          "role": "first_frame",
+          "referenceId": "S00-LAST"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=S00 审核末帧`；`[End Frame]=JF-01`。",
+          "role": "last_frame",
+          "referenceId": "JF-01"
+        }
+      ],
+      "negativeConstraints": [
+        "清晰的林国声正脸",
+        "欢乐现代游客",
+        "舞蹈",
+        "彩色霓虹",
+        "人物被残影穿透。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 1700,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "exact continuation; Cheng removes, flips and reseats the cassette with believable hand anatomy.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 3000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "practical lights cut to near-black; both women freeze at an off-screen spark, no visible electric attack.",
+          "emotion": "",
+          "startMs": 1700,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 6000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "old passage lamps wake one by one into deep perspective as the camera slowly advances.",
+          "emotion": "",
+          "startMs": 3000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 8500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection strikes the glass once and silently forms his command during 7.0–8.0s; his face remains unreadable.",
+          "emotion": "",
+          "startMs": 6000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 11800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya turns from the glass to Cheng and naturally forms her question during 9.5–11.0s.",
+          "emotion": "",
+          "startMs": 8500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng grips the cassette, caught between them.",
+          "emotion": "",
+          "startMs": 11800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable hold with no new motion for C2.",
+          "emotion": "",
+          "startMs": 13000,
+          "dialogue": "",
+          "endState": "B 面的危险证据应通过人物反应成立，不能依赖生成音频。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "B 面原声",
+      "clipKey": "S01B",
+      "description": "反转卡带。黑暗中先响电火花，再响女人急促的声音；船道灯逐盏亮起，玻璃里的林国声猛地拍窗。第二声锣。",
+      "graphNodeId": "clip:S01B",
+      "emotionalArc": "B 面的危险证据应通过人物反应成立，不能依赖生成音频。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核 JF-01，不随本任务提交。",
+        "B 面的危险证据应通过人物反应成立，不能依赖生成音频。",
+        "Salmah 录音：国声，扩音器短路，停音乐！",
+        "林国声：阿澄，把它翻回去。",
+        "Maya：You knew there was another track?"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng flips the physical cassette to its unlabelled B side. The entrance falls dark for a brief safe beat, then a damp old boat passage emerges through rows of failing practical lights. An off-screen electrical spark motivates both women's reactions but causes no injury. Lin's indistinct reflection suddenly strikes the inside of the control-room glass once, never resolving into a clear face. Maya studies Cheng with a betrayed, questioning expression. Arrive precisely at [End Frame] without a cut.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=S00 审核末帧`；`[End Frame]=JF-01`。",
+          "role": "first_frame",
+          "referenceId": "S00-LAST"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=S00 审核末帧`；`[End Frame]=JF-01`。",
+          "role": "last_frame",
+          "referenceId": "JF-01"
+        }
+      ],
+      "negativeConstraints": [
+        "电击人物",
+        "爆炸",
+        "清晰鬼脸",
+        "磁带自行悬浮",
+        "频繁闪光。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "continue from [Start Frame]; Cheng faces the old speaker and naturally forms “外公，是你吗” during 0.7–2.0s.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "surrounding translucent visitors turn their heads once toward her; no faces resolve.",
+          "emotion": "",
+          "startMs": 2200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection points down the passage while Cheng listens to his off-screen reply without moving her lips.",
+          "emotion": "",
+          "startMs": 4500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "shallow real water crosses the floor and reaches both pairs of shoes; Maya notices and pulls Cheng back.",
+          "emotion": "",
+          "startMs": 7000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya's boot slips near the railing as Cheng's wet cassette grip loosens; both risks are equally visible.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable dilemma frame, no new action, for C3.",
+          "emotion": "",
+          "startMs": 12800,
+          "dialogue": "",
+          "endState": "末帧同时清楚呈现 Maya 与母带两项风险。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "回应外公",
+      "clipKey": "S02A",
+      "description": "陈澄对着喇叭喊“外公”。游客残影齐刷刷回头，复述“外公”。林国声指向船道深处；地面开始漫水。第三声锣。",
+      "graphNodeId": "clip:S02A",
+      "emotionalArc": "末帧同时清楚呈现 Maya 与母带两项风险。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "末帧同时清楚呈现 Maya 与母带两项风险。",
+        "陈澄：外公，是你吗？",
+        "林国声：把带子送来，我替你剪干净。",
+        "Maya：陈澄，水是真的！"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng deliberately answers the off-screen grandfather while Maya remains wary. Faceless translucent visitor traces stop and rotate their heads toward Cheng in one restrained synchronized movement, then remain still. Lin's indistinct reflection points deeper into the passage. Real shallow water begins crossing the floor and reaches their shoes. Cheng is emotionally drawn toward the voice; Maya recognizes the physical danger first. Arrive precisely at the shared wet-threshold dilemma in [End Frame] without completing either outcome.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-01`；`[End Frame]=JF-02`。",
+          "role": "first_frame",
+          "referenceId": "JF-01"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-01`；`[End Frame]=JF-02`。",
+          "role": "last_frame",
+          "referenceId": "JF-02"
+        }
+      ],
+      "negativeConstraints": [
+        "群体鬼脸",
+        "脖子旋转恐怖特效",
+        "深水突现",
+        "完成救人或抢带动作。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng gently places one red earbud into Maya's ear and naturally forms her confession during 0.8–2.3s.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close two-shot as Maya listens, then naturally forms her admission during 3.4–4.9s.",
+          "emotion": "",
+          "startMs": 2500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng recoils and naturally forms her brief question during 5.8–6.7s.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya raises the DV; camera racks focus to its screen, where a maintenance door exists although the real wall behind it is solid.",
+          "emotion": "",
+          "startMs": 7000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "water pushes from the screen-aligned seam into the real floor; Maya slips as Cheng's cassette grip becomes unstable.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable dilemma frame for C3, no new lip movement.",
+          "emotion": "",
+          "startMs": 12800,
+          "dialogue": "",
+          "endState": "必须一眼看懂“检修门只在 DV 里存在”。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "告诉 Maya",
+      "clipKey": "S02B",
+      "description": "陈澄把一只耳机塞给 Maya。Maya 听见录音，脸色沉下；她举起 DV，屏幕显示一扇现实中不存在的检修门。水从门缝涌入。第三声锣。",
+      "graphNodeId": "clip:S02B",
+      "emotionalArc": "必须一眼看懂“检修门只在 DV 里存在”。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "必须一眼看懂“检修门只在 DV 里存在”。",
+        "陈澄：我外公可能删过这盘带。",
+        "Maya：我听过。Salmah 救了人——我怕你不肯来。",
+        "陈澄：你早就知道？"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng chooses Maya over the broadcast, placing one red wired earbud into Maya's ear. Keep the action intimate, tense and physically precise. Maya hears the hidden recording, then raises the same small handheld DV camera. Only inside its screen, an old maintenance door appears in the solid passage wall; outside the screen the wall remains closed. Water begins forcing through the screen-aligned doorway into reality. Arrive precisely at the shared wet-threshold dilemma in [End Frame] without a cut.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-01`；`[End Frame]=JF-02`。",
+          "role": "first_frame",
+          "referenceId": "JF-01"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-01`；`[End Frame]=JF-02`。",
+          "role": "last_frame",
+          "referenceId": "JF-02"
+        }
+      ],
+      "negativeConstraints": [
+        "耳机穿模",
+        "DV 屏幕生成文字",
+        "真实墙体先行开门",
+        "Maya 过度哭泣。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "walkway shifts and Maya drops one level, still safely holding the railing.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng releases the cassette and catches Maya's forearm with anatomically correct two-hand contact.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 6800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya forms her urgent line during the rescue; Cheng pulls her to stable footing.",
+          "emotion": "",
+          "startMs": 4800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 9000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "cassette player lands in shallow water, spins once, and translucent hands return it to the walkway without lifting it magically.",
+          "emotion": "",
+          "startMs": 6800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 11200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng takes the wet player and naturally forms “活人先出去” during 9.8–11.0s.",
+          "emotion": "",
+          "startMs": 9000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "condensation clears from control-room glass to reveal the physical incident log behind it, with no generated readable details beyond the locked prop reference.",
+          "emotion": "",
+          "startMs": 11200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable two-person reading composition for C4.",
+          "emotion": "",
+          "startMs": 13000,
+          "dialogue": "",
+          "endState": "选择反馈在前 3 秒完成；湿卡带连续性建立清楚。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "拉住 Maya",
+      "clipKey": "S03A",
+      "description": "栈道塌陷，陈澄丢开卡带机、抓住 Maya。机器在水面旋转，游客残影却把它托回；Maya 回到平台时右掌留下轻微擦伤。控制室玻璃显现事故日志。第四声锣。",
+      "graphNodeId": "clip:S03A",
+      "emotionalArc": "选择反馈在前 3 秒完成；湿卡带连续性建立清楚。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "选择反馈在前 3 秒完成；湿卡带连续性建立清楚。",
+        "Maya：你放手，先拿带子！",
+        "陈澄：活人先出去。",
+        "Salmah 录音：国声，音乐可以停，人要先出去。"
+      ],
+      "masterDirection": "Continue the exact dilemma from [Start Frame]. A narrow walkway section gives way. Cheng decisively releases the cassette to catch Maya with both hands. The cassette player lands in shallow water, never fully submerges, and is gently returned within reach by several translucent visitor hands without visible bodies. On the control-room glass, a physical 1994 incident log becomes visible through condensation. Preserve water droplets on the cassette. During the recovery Maya gains only the same subtle right-palm abrasion shown in [End Frame]. Arrive precisely at [End Frame] without a cut.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-02`；`[End Frame]=JF-03`。",
+          "role": "first_frame",
+          "referenceId": "JF-02"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-02`；`[End Frame]=JF-03`。",
+          "role": "last_frame",
+          "referenceId": "JF-03"
+        }
+      ],
+      "negativeConstraints": [
+        "Maya 坠入深渊",
+        "手臂变形",
+        "卡带漂浮",
+        "生成新日志文字。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng dives toward and secures the cassette while Maya slips away from her reach.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya catches the railing herself; her right palm gains one small realistic abrasion, no blood emphasis.",
+          "emotion": "",
+          "startMs": 2800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "DV camera falls to the floor and settles intact in a low angle facing the incident log.",
+          "emotion": "",
+          "startMs": 5200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 9500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "rack focus from the cassette to the locked log prop; never invent additional writing.",
+          "emotion": "",
+          "startMs": 7000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 11800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's indistinct reflection forms his confession during 9.8–11.4s.",
+          "emotion": "",
+          "startMs": 9500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng looks at Maya's injured hand, then at the log.",
+          "emotion": "",
+          "startMs": 11800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable layered hold for C4.",
+          "emotion": "",
+          "startMs": 13000,
+          "dialogue": "",
+          "endState": "不能把抢带拍成英雄动作；必须看见 Maya 自救与轻伤代价。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "抢回母带",
+      "clipKey": "S03B",
+      "description": "陈澄扑向卡带机，Maya 独自抓住栏杆，右掌轻微擦伤；浅水同时溅湿卡带机。她的 DV 落地，镜头拍到日志：“G.S. Lim — fault report withheld”。第四声锣。",
+      "graphNodeId": "clip:S03B",
+      "emotionalArc": "不能把抢带拍成英雄动作；必须看见 Maya 自救与轻伤代价。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "不能把抢带拍成英雄动作；必须看见 Maya 自救与轻伤代价。",
+        "Maya：I’m fine. Read the log.",
+        "林国声：我只想保住那一晚的演出。",
+        "陈澄：你知道会短路。"
+      ],
+      "masterDirection": "Continue the exact dilemma from [Start Frame]. Cheng lunges for the cassette instead of Maya. Maya catches the railing herself and remains alive but scrapes her right palm. Her DV falls onto the wet floor without breaking, creating a low-angle view of the locked physical incident log. A shallow splash leaves the cassette with the same water droplets shown in [End Frame]. Lin's reflection appears above the log and admits his motive with restrained shame. Cheng looks from the cassette to Maya and understands the cost of her choice. Arrive precisely at [End Frame] without a cut.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-02`；`[End Frame]=JF-03`。",
+          "role": "first_frame",
+          "referenceId": "JF-02"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-02`；`[End Frame]=JF-03`。",
+          "role": "last_frame",
+          "referenceId": "JF-03"
+        }
+      ],
+      "negativeConstraints": [
+        "严重流血",
+        "DV 碎裂",
+        "日志文字漂移",
+        "林国声清晰露脸。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya moves beside Cheng and naturally forms her line during 0.7–2.2s.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close-up of believable DV-to-cassette cable connection; preserve wet cassette state if inherited.",
+          "emotion": "",
+          "startMs": 2500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 8000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "camera arcs behind both women as faint reflected waveform-like bands illuminate opposite passage walls, fully physical and non-holographic.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection forms his line while Cheng listens; no lip movement for Salmah's off-screen response.",
+          "emotion": "",
+          "startMs": 8000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "both women exchange one confirming look and place separate hands near the two track controls.",
+          "emotion": "",
+          "startMs": 10500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable shared-hands composition for C5.",
+          "emotion": "",
+          "startMs": 12800,
+          "dialogue": "",
+          "endState": "构图必须表现“共同决定”，不是 Maya 辅助陈澄操作。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "并肩",
+      "clipKey": "S04A",
+      "description": "无论刚才如何回答，Maya 都把 DV 与卡带机接在一起，两人共同监听。龙腹两边分别亮起 Salmah 与林国声的声纹。第五声锣。",
+      "graphNodeId": "clip:S04A",
+      "emotionalArc": "构图必须表现“共同决定”，不是 Maya 辅助陈澄操作。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "构图必须表现“共同决定”，不是 Maya 辅助陈澄操作。",
+        "Maya：别替他们判。让他们把话说完。",
+        "林国声：完整放出，我就永远是那个懦夫。",
+        "Salmah 录音：我的名字，不是杂音。"
+      ],
+      "masterDirection": "Continue from [Start Frame]. This is the high-bond branch. Cheng and Maya deliberately stand shoulder to shoulder. Maya connects her DV to the wet cassette player using a believable short cable. Two abstract analogue waveforms made only of practical reflected light travel along opposite sides of the boat passage, one associated with Lin's reflection and one with Salmah's unseen recording; do not render text or holographic UI. Both women listen rather than judge. Bring Salmah's physical badge beside the two controls and arrive precisely at [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "first_frame",
+          "referenceId": "JF-03"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "last_frame",
+          "referenceId": "JF-04"
+        }
+      ],
+      "negativeConstraints": [
+        "全息 UI",
+        "发光文字",
+        "Salmah 实体鬼魂",
+        "争抢式表演。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 3200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "medium close-up as Cheng naturally forms her responsibility statement while looking at the log.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "a single stress crack travels across Lin's reflected region of the glass, restrained and physically plausible.",
+          "emotion": "",
+          "startMs": 3200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "rack focus through the crack to reveal Salmah's exact staff badge; Cheng retrieves it.",
+          "emotion": "",
+          "startMs": 5500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection forms his wounded question, never becoming monstrous.",
+          "emotion": "",
+          "startMs": 7800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms her answer and places the badge beside the cassette.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable badge-and-two-track composition for C5.",
+          "emotion": "",
+          "startMs": 12500,
+          "dialogue": "",
+          "endState": "承认责任要克制而明确；Salmah 的名字成为物理焦点。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "认错",
+      "clipKey": "S04B",
+      "description": "陈澄读出日志，林国声的玻璃倒影出现裂纹；裂缝中露出 Salmah 的工牌。第五声锣。",
+      "graphNodeId": "clip:S04B",
+      "emotionalArc": "承认责任要克制而明确；Salmah 的名字成为物理焦点。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "承认责任要克制而明确；Salmah 的名字成为物理焦点。",
+        "陈澄：林国声隐瞒故障。救人的不是他。",
+        "林国声：连你也只肯记我最坏的一分钟？",
+        "陈澄：那一分钟属于 Salmah。"
+      ],
+      "masterDirection": "Continue from [Start Frame]. Cheng reads the already locked incident log and openly assigns responsibility to Lin. As she speaks, one natural stress crack travels through the control-room glass reflection only; the real architecture remains safe. Behind the cracked reflection, reveal Salmah's locked physical staff badge caught in the frame. Lin's indistinct reflection responds with hurt rather than rage. Cheng stays firm and places the badge beside the cassette's two track controls, arriving precisely at [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "first_frame",
+          "referenceId": "JF-03"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "last_frame",
+          "referenceId": "JF-04"
+        }
+      ],
+      "negativeConstraints": [
+        "玻璃爆炸",
+        "厉鬼化",
+        "工牌文字重写",
+        "陈澄愤怒吼叫。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng slowly closes the log and naturally forms her defence during 0.6–2.5s.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection stabilizes while the physical badge falls into ordinary shadow, with no magical dissolve.",
+          "emotion": "",
+          "startMs": 2800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya steps into the foreground and naturally forms her challenge during 5.8–7.3s.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection silently forms his appeal and indicates the opening-march control.",
+          "emotion": "",
+          "startMs": 7800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng's hand approaches that control, then hesitates between both.",
+          "emotion": "",
+          "startMs": 10500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable hovering-hand composition for C5.",
+          "emotion": "",
+          "startMs": 12800,
+          "dialogue": "",
+          "endState": "辩护的诱惑应是温柔和秩序，而非明显邪恶。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "辩护",
+      "clipKey": "S04C",
+      "description": "陈澄合上日志，玻璃里的林国声恢复完整，Salmah 的工牌却开始褪色。第五声锣。",
+      "graphNodeId": "clip:S04C",
+      "emotionalArc": "辩护的诱惑应是温柔和秩序，而非明显邪恶。",
+      "continuityNotes": [
+        "同 09；不随本任务提交。",
+        "辩护的诱惑应是温柔和秩序，而非明显邪恶。",
+        "陈澄：那晚每个人都被流程困住了。",
+        "Maya：Salmah broke the rule. She chose.",
+        "林国声：阿澄，留住音乐，就留住我。"
+      ],
+      "masterDirection": "Continue from [Start Frame]. Cheng closes the physical incident log and verbally softens Lin's responsibility. Lin's reflection becomes steadier and more flattering in the glass while Salmah's exact staff badge loses only its reflected light and recedes into shadow; the badge itself is not damaged or erased. Maya steps between Cheng and the reflection and challenges the excuse. Lin guides Cheng's hand toward the opening-march track. Cheng then returns the badge beside both controls and arrives precisely at [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "first_frame",
+          "referenceId": "JF-03"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-03`；`[End Frame]=JF-04`。",
+          "role": "last_frame",
+          "referenceId": "JF-04"
+        }
+      ],
+      "negativeConstraints": [
+        "工牌消失",
+        "林国声变年轻英俊特写",
+        "Maya 推搡陈澄",
+        "选项被提前按下。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng presses Salmah's physical track control; immediate practical indicator response.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "evacuation lights pulse sequentially and visitor traces turn to follow, no panic or running crowd.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "an existing service seam opens into a realistic present-day exit; Maya sees it first.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection forms his warning while receding one step.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya forms her short English line as Cheng studies upload cable versus eject control.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable decision close-up for C6.",
+          "emotion": "",
+          "startMs": 12500,
+          "dialogue": "",
+          "endState": "真相路径提供出口，但不把选择做成无代价胜利。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "原声占优",
+      "clipKey": "S05A",
+      "description": "Salmah 的声轨灌满船道，游客残影沿她的指令撤离；巨龙从腹内裂开一道通往现实的门。第六声锣将落未落。",
+      "graphNodeId": "clip:S05A",
+      "emotionalArc": "真相路径提供出口，但不把选择做成无代价胜利。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；只用于制作并审核两张 Join Frame，不随本任务提交。",
+        "真相路径提供出口，但不把选择做成无代价胜利。",
+        "Salmah 录音：总闸已断。跟着应急灯走。",
+        "林国声：公开它，你记得的外公就没了。",
+        "Maya：Your choice. Not his."
+      ],
+      "masterDirection": "Continue from [Start Frame]. The truth-dominant branch. Cheng preserves Salmah's raw track. Reflected practical light pulses down the passage in evacuation order and translucent visitor traces calmly follow it toward the maintenance exit. The architectural dragon belly separates along an existing service seam, revealing a realistic present-day doorway rather than magical white light. Lin's reflection retreats but remains human and vulnerable. Maya stays beside Cheng. Return to the shared three-person control-desk composition and arrive precisely at [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-04"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "last_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "天堂白光",
+        "胜利欢呼",
+        "Salmah 现身",
+        "林国声消散死亡。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng presses the opening-march track; practical bulbs answer immediately.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "camera makes one smooth half-arc through the revived faded celebration space while visitor traces applaud without faces.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection forms his line at the control desk.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya forms her English objection as the opposite reflected waveform weakens into non-readable analogue noise.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng notices the architectural entrance closing and naturally forms her brief question.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable upload-versus-eject composition for C6.",
+          "emotion": "",
+          "startMs": 12500,
+          "dialogue": "",
+          "endState": "美丽必须真实诱人，同时明确 Salmah 的声音正在被覆盖。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "开园曲占优",
+      "clipKey": "S05B",
+      "description": "庆典灯光全亮，游客残影鼓掌；林国声站在控制台前，Salmah 的声音只剩磁噪。龙口在身后缓慢合拢。第六声锣将落未落。",
+      "graphNodeId": "clip:S05B",
+      "emotionalArc": "美丽必须真实诱人，同时明确 Salmah 的声音正在被覆盖。",
+      "continuityNotes": [
+        "同 11；不随本任务提交。",
+        "美丽必须真实诱人，同时明确 Salmah 的声音正在被覆盖。",
+        "林国声：你看，他们只记得快乐。",
+        "Maya：Because the other voice was cut.",
+        "陈澄：如果现在停，还来得及吗？"
+      ],
+      "masterDirection": "Continue from [Start Frame]. The echo-dominant branch. Cheng preserves the opening march. Every aged practical celebration bulb switches on, making the decayed passage briefly beautiful. Faceless visitor traces applaud in synchronized but restrained movements. Lin's reflection stands confidently at the old control desk while the visual trace associated with Salmah diminishes into ordinary tape noise texture. Behind Cheng and Maya, the architectural dragon entrance begins closing slowly. Return to the shared three-person control-desk composition and arrive precisely at [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-04"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "last_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "现代派对",
+        "彩纸礼花",
+        "群演清晰脸",
+        "龙口突然咬合。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 3000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "alternating aged light patterns travel along opposite walls while Cheng and Maya listen.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "two nearby concrete statues make one restrained synchronized ear-covering movement, retaining rigid painted texture.",
+          "emotion": "",
+          "startMs": 3000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 8000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "camera tilts to the exact two-fader console from the locked reference; no invented labels.",
+          "emotion": "",
+          "startMs": 5500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya forms her line while Cheng watches both faders.",
+          "emotion": "",
+          "startMs": 8000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection indicates one fader; Cheng hears Salmah off-screen from the other direction without any corresponding lips.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable upload-versus-eject composition for C6.",
+          "emotion": "",
+          "startMs": 12500,
+          "dialogue": "",
+          "endState": "平衡状态表现为冲突未解，不是两条声轨和谐融合。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "混轨",
+      "clipKey": "S05C",
+      "description": "开园曲与疏散指令互相覆盖，所有雕塑同时捂耳；控制台出现两个推子：“LEGEND / RECORD”。第六声锣将落未落。",
+      "graphNodeId": "clip:S05C",
+      "emotionalArc": "平衡状态表现为冲突未解，不是两条声轨和谐融合。",
+      "continuityNotes": [
+        "同 11；不随本任务提交。",
+        "平衡状态表现为冲突未解，不是两条声轨和谐融合。",
+        "Maya：两个版本都在抢最后一轨。",
+        "林国声：推上音乐，我们回到开园那天。",
+        "Salmah 录音：推下总闸，带活人走。"
+      ],
+      "masterDirection": "Continue from [Start Frame]. The balanced branch. Two competing analogue tracks cause alternating practical-light patterns along the passage. Nearby moral-diorama statues perform one small synchronized gesture of covering their sculpted ears while remaining visibly painted concrete, never becoming flesh. Reveal a real old mixing console with two physical faders labelled only through the locked prop artwork: LEGEND and RECORD. Frame Cheng, Maya and Lin's reflection as a tense triangle, then arrive precisely at the shared upload-versus-eject composition in [End Frame].",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-04"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=JF-04`；`[End Frame]=JF-05`。",
+          "role": "last_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "雕塑变真人",
+        "发光音波",
+        "界面弹窗",
+        "自动替玩家推动推子。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng plugs the DV cable into the console and presses the locked transfer key.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "a complete analogue waveform is projected as light across the wall; no text or progress bar.",
+          "emotion": "",
+          "startMs": 2500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 8000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms her full statement with controlled emotion.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection absorbs the decision, then physically lowers the music fader himself.",
+          "emotion": "",
+          "startMs": 8000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin forms his quiet final line; the maintenance lock releases in the background.",
+          "emotion": "",
+          "startMs": 10800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "camera settles behind the two women facing the realistic exit, no triumphant pose.",
+          "emotion": "",
+          "startMs": 12800,
+          "dialogue": "",
+          "endState": "林国声主动推下音乐是本段不可删的核心动作。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "公开：名字归还",
+      "clipKey": "S06A",
+      "description": "陈澄把 DV 接上控制台，完整波形投到龙腹。她按下上传；第六声锣落下，林国声主动推下音乐推子。",
+      "graphNodeId": "clip:S06A",
+      "emotionalArc": "林国声主动推下音乐是本段不可删的核心动作。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-06、REF-07；已固化在 JF-05，不随本任务提交。",
+        "林国声主动推下音乐是本段不可删的核心动作。",
+        "陈澄：不剪。你的错、她的名字，都留下。",
+        "林国声：……那就别把她放在片尾。",
+        "Salmah 录音：检修门开了。"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng chooses to release the complete tape. She connects Maya's DV cable to the old console and presses one physical transfer key. A full analogue waveform appears only as projected light across the curved interior wall, without readable UI. Cheng states that both Lin's fault and Salmah's name remain. Lin's reflection listens, then voluntarily lowers the physical music fader himself. The maintenance door unlocks. End with Lin's reflection diminished but peaceful and both women facing the exit.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "上传网站 UI",
+        "百分比",
+        "庆祝特效",
+        "林国声灰飞烟灭。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2300,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng connects DV and presses transfer.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "two analogue waveforms project on the wall; a physical noise-reduction unit activates and suppresses the smaller track.",
+          "emotion": "",
+          "startMs": 2300,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya points and naturally forms her urgent English line.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 9800,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "visitor traces applaud while Lin's reflection grows visually dominant through ordinary glass exposure, not supernatural enlargement.",
+          "emotion": "",
+          "startMs": 7200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12300,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin forms his familiar line; Cheng watches the flattened secondary waveform.",
+          "emotion": "",
+          "startMs": 9800,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "slow settle on Cheng's conflicted reflection, with no further action.",
+          "emotion": "",
+          "startMs": 12300,
+          "dialogue": "",
+          "endState": "必须看出这是此前选择造成的不可逆删节。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "公开：最后开园",
+      "clipKey": "S06B",
+      "description": "陈澄按下上传，但波形里 Salmah 的声音太弱；系统自动标记“噪声已清除”。第六声锣落下，游客残影爆发掌声。",
+      "graphNodeId": "clip:S06B",
+      "emotionalArc": "必须看出这是此前选择造成的不可逆删节。",
+      "continuityNotes": [
+        "同 14；不随本任务提交。",
+        "必须看出这是此前选择造成的不可逆删节。",
+        "Maya：Stop—the clean-up erased her.",
+        "林国声：好听的故事，才有人肯记。",
+        "陈澄：我公开的到底是谁的版本？"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng chooses public release before enough raw truth has been preserved. She connects the DV and starts transfer. The projected analogue waveform appears complete, then an automatic physical noise-reduction unit suppresses the smaller secondary waveform until it is nearly flat; show this without readable interface text. Maya urgently points to the disappearing waveform. Visitor traces applaud as Lin's reflection becomes the dominant image. Cheng realizes the public version is another edit. End on her face reflected beside the now-flat secondary track.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "可读“降噪完成”文字",
+        "系统故障火花",
+        "成功庆祝",
+        "把后果拍成随机 bug。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng ejects and secures the cassette, then reaches for Maya rather than looking back.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms her line as they begin moving together.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "one continuous tracking move follows both women through the maintenance exit; cassette and DV remain visible.",
+          "emotion": "",
+          "startMs": 4000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 9500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "they reach the electrical cabinet and jointly grip the master switch with believable hand placement.",
+          "emotion": "",
+          "startMs": 7000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 11000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "both pull the switch down; all 1994 practical bulbs lose power in depth order.",
+          "emotion": "",
+          "startMs": 9500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "match-position transition reveals the ordinary present-day entrance architecture, with no dragon.",
+          "emotion": "",
+          "startMs": 11000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "stable wide shot of both women safely outside holding both pieces of evidence.",
+          "emotion": "",
+          "startMs": 13200,
+          "dialogue": "",
+          "endState": "两人共同拉闸与两件证据被带出必须同时成立。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "离开：两人出园",
+      "clipKey": "S06C",
+      "description": "陈澄拔出卡带，抓住 Maya 冲向检修门。两人一起拉下总闸；第六声锣闷在半声，龙口退回普通台阶。",
+      "graphNodeId": "clip:S06C",
+      "emotionalArc": "两人共同拉闸与两件证据被带出必须同时成立。",
+      "continuityNotes": [
+        "REF-03、REF-04、REF-05、REF-07；已固化在 JF-05，不随本任务提交。",
+        "两人共同拉闸与两件证据被带出必须同时成立。",
+        "陈澄：今晚不替任何人定稿。",
+        "Maya：Then we leave—with the raw tape.",
+        "林国声：阿澄，别让我只剩杂音。"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng chooses not to publish. She ejects the physical cassette, immediately takes Maya's hand, and both run toward the realistic maintenance exit while carrying the cassette player and DV. At the final electrical cabinet, each woman uses one hand to pull down the heavy master switch together. The faded 1994 layer loses practical power and the giant dragon architecture recedes into the ordinary present-day stair without melting. Preserve all props leaving with them. End in the quiet real entrance after the echo is gone.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "慢动作英雄跑",
+        "爆炸",
+        "龙融化",
+        "遗失卡带或 DV",
+        "单人拉闸。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng ejects the cassette and secures it close to her body before looking for Maya.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 4500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "reveal Maya behind an existing glass plane through a controlled lateral camera move; maintain correct reflections and eyelines.",
+          "emotion": "",
+          "startMs": 2000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "both women place matching palms against opposite sides; Maya forms her English line during 5.0–6.5s.",
+          "emotion": "",
+          "startMs": 4500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 9200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close-up of the cassette reels physically rewinding inside the player, no floating controls.",
+          "emotion": "",
+          "startMs": 7000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 11500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection appears behind Maya and forms his closing line.",
+          "emotion": "",
+          "startMs": 9200,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 13200,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally calls Maya and strikes the glass once.",
+          "emotion": "",
+          "startMs": 11500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya gradually takes on the translucency and period exposure of a visitor trace while remaining identifiable.",
+          "emotion": "",
+          "startMs": 13200,
+          "dialogue": "",
+          "endState": "空间关系必须清楚；悲剧来自陈澄先保护带子而非随机困人。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "离开：第七声锣",
+      "clipKey": "S06D",
+      "description": "陈澄拔带转身，却发现 Maya 被隔在玻璃另一侧。她伸手时第六声锣完整落下，卡带机自行开始倒转。",
+      "graphNodeId": "clip:S06D",
+      "emotionalArc": "空间关系必须清楚；悲剧来自陈澄先保护带子而非随机困人。",
+      "continuityNotes": [
+        "同 16，并含 REF-06；已固化在 JF-05，不随本任务提交。",
+        "空间关系必须清楚；悲剧来自陈澄先保护带子而非随机困人。",
+        "Maya（隔着玻璃）：You kept the tape. Did you keep me?",
+        "林国声：闭园了。明晚再选一次。",
+        "陈澄：Maya！"
+      ],
+      "masterDirection": "Continue exactly from [Start Frame]. Cheng ejects and protects the cassette before turning toward Maya. A previously invisible control-room glass plane is now between them, spatially consistent with the passage. Maya presses one hand to her side; Cheng mirrors it from the opposite side but cannot reach her. Maya's DV remains with Maya inside the echo space. The cassette player's reels begin physically rewinding by themselves in Cheng's hands. Lin's reflection appears behind Maya and calmly declares closing time. End with Cheng striking the glass once and Maya receding into a 1994 visitor trace.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=JF-05`。",
+          "role": "first_frame",
+          "referenceId": "JF-05"
+        }
+      ],
+      "negativeConstraints": [
+        "玻璃凭空弹出",
+        "Maya 死亡或受伤",
+        "穿玻璃",
+        "DV 出现在陈澄手里。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 3000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "dawn establishing move from quiet entrance into the small unbranded exhibit.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 6000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "reveal Cheng and Maya together at the audio station; any text region is a locked blank replacement plate.",
+          "emotion": "",
+          "startMs": 3000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 9000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close on Cheng listening to off-screen archived audio, no lip movement.",
+          "emotion": "",
+          "startMs": 6000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 11500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms her short voice-over line only if filmed on-camera; preferred version keeps it off-screen with closed lips.",
+          "emotion": "",
+          "startMs": 9000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "settle on both women's shared reflection in the audio screen, warm dawn growing subtly.",
+          "emotion": "",
+          "startMs": 11500,
+          "dialogue": "",
+          "endState": "不是“外公被取消”，而是 Salmah 被归还到共同记录。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "名字归还",
+      "clipKey": "E01",
+      "description": "清晨入口。口述史展的音频页面标题为“Salmah Binte Yusof 与 1994 夜班员工原声记录”；林国声列为受访者而非英雄。陈澄和 Maya 并肩听完。",
+      "graphNodeId": "clip:E01",
+      "emotionalArc": "不是“外公被取消”，而是 Salmah 被归还到共同记录。",
+      "continuityNotes": [
+        "S06A 的审核结论与服装／湿度连续性记录；不声明精确首帧，使用叙事硬切进入清晨。",
+        "不是“外公被取消”，而是 Salmah 被归还到共同记录。",
+        "陈澄旁白：我没有替外公洗白。我把他放回了真实的人群里。"
+      ],
+      "masterDirection": "Create a quiet dawn epilogue in the unbranded oral-history exhibit from [Image 1]. Cheng and Maya stand shoulder to shoulder at a simple audio station. Use only locked, precomposed graphic plates for any name or waveform area; do not generate text. The exhibit visually gives Salmah equal or primary placement and presents Lin as a witness rather than a hero. Cheng listens with grief and relief, then glances toward Maya. End on both women reflected together in the dark audio screen as warm dawn reaches the room.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "omni_reference"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Image 1]=REF-08 清晨入口/展览`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-08"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Image 1]=REF-08 清晨入口/展览`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-03"
+        },
+        {
+          "id": "reference:3",
+          "note": "`[Image 1]=REF-08 清晨入口/展览`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-04"
+        },
+        {
+          "id": "reference:4",
+          "note": "`[Image 1]=REF-08 清晨入口/展览`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-07"
+        }
+      ],
+      "negativeConstraints": [
+        "真实机构 logo",
+        "模型生成姓名",
+        "领奖式笑容",
+        "墓园意象。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 3000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "smooth move across smiling visitors photographing the bright faded-orange-green exhibit.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "rack focus to Cheng standing motionless behind them, separated by reflections.",
+          "emotion": "",
+          "startMs": 3000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 8000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close on the locked waveform plate where the small secondary track is masked; no readable generated labels.",
+          "emotion": "",
+          "startMs": 5500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Lin's reflection aligns with the bright glass while off-screen opening audio is implied by visitor reactions.",
+          "emotion": "",
+          "startMs": 8000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms Salmah's name very quietly.",
+          "emotion": "",
+          "startMs": 10500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "crowd clears frame, leaving Cheng alone beside the masked waveform.",
+          "emotion": "",
+          "startMs": 12000,
+          "dialogue": "",
+          "endState": "公众获得了好听版本，代价只由陈澄和观众看见。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "最后开园",
+      "clipKey": "E02",
+      "description": "展览播放修复后的华丽开园曲，观众微笑拍照。屏幕角落的原始波形里，一小段女声被标红为“不可修复噪声”。陈澄独自站在人群后。",
+      "graphNodeId": "clip:E02",
+      "emotionalArc": "公众获得了好听版本，代价只由陈澄和观众看见。",
+      "continuityNotes": [
+        "S06B 的审核结论；不声明精确首帧，使用叙事硬切进入展览。",
+        "公众获得了好听版本，代价只由陈澄和观众看见。",
+        "林国声旁白：欢迎来到 Dragon World。",
+        "陈澄低声：Salmah……对不起。"
+      ],
+      "masterDirection": "Create the same unbranded oral-history exhibit but busier and visually seductive. Ordinary visitors smile and photograph a restored Dragon World presentation while Cheng stands alone behind them. On a locked precomposed waveform plate, one small secondary track is visibly crossed out by a graphic mask; do not generate any text. Lin's reflection briefly aligns with the bright exhibit glass while Cheng remains in the darker present-day layer. End on Cheng alone after the crowd moves past.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "omni_reference"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Image 1]=REF-08 展览`；`[Image 2]=REF-03`；`[Image 3]=REF-07`；`[Image 4]=REF-06`。",
+          "role": "omni_reference",
+          "referenceId": "REF-08"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Image 1]=REF-08 展览`；`[Image 2]=REF-03`；`[Image 3]=REF-07`；`[Image 4]=REF-06`。",
+          "role": "omni_reference",
+          "referenceId": "REF-03"
+        },
+        {
+          "id": "reference:3",
+          "note": "`[Image 1]=REF-08 展览`；`[Image 2]=REF-03`；`[Image 3]=REF-07`；`[Image 4]=REF-06`。",
+          "role": "omni_reference",
+          "referenceId": "REF-07"
+        },
+        {
+          "id": "reference:4",
+          "note": "`[Image 1]=REF-08 展览`；`[Image 2]=REF-03`；`[Image 3]=REF-07`；`[Image 4]=REF-06`。",
+          "role": "omni_reference",
+          "referenceId": "REF-06"
+        }
+      ],
+      "negativeConstraints": [
+        "可读伪文字",
+        "邪恶笑脸",
+        "超自然袭击",
+        "陈澄嚎哭。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "static wide establishing shot of the nearly empty platform; both women and all evidence visible.",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "close-up as Cheng places the cassette in the transparent bag and marks the locked blank label plate.",
+          "emotion": "",
+          "startMs": 2500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Maya turns and naturally forms her English line.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng naturally forms her answer and slides the bag between them.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "approaching train light sweeps across their faces; neither flinches.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "both place one hand on the evidence bag in a stable shared frame.",
+          "emotion": "",
+          "startMs": 12000,
+          "dialogue": "",
+          "endState": "结局是“共同暂存证据”，不是销毁或隐瞒。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "两人出园",
+      "clipKey": "E03",
+      "description": "两人坐在清晨地铁站，未剪母带封在透明证物袋中。Maya 关掉 DV，陈澄在袋上写下两个人名。",
+      "graphNodeId": "clip:E03",
+      "emotionalArc": "结局是“共同暂存证据”，不是销毁或隐瞒。",
+      "continuityNotes": [
+        "S06C 的审核结论；不声明精确首帧，使用叙事硬切进入清晨地铁站。",
+        "结局是“共同暂存证据”，不是销毁或隐瞒。",
+        "Maya：Not publishing is also a choice.",
+        "陈澄：是。等我们能让所有人都被听见。"
+      ],
+      "masterDirection": "Create a quiet early-morning Singapore metro-platform epilogue. Cheng and Maya sit side by side, exhausted but safe, with the exact cassette sealed in the transparent evidence bag and Maya's DV switched off beside her. Cheng uses a real marker to write only on a locked precomposed label area; do not generate letterforms. Maya speaks gently, then Cheng answers. A passing train casts moving light across them without obscuring faces. End with both women holding the evidence bag together.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "omni_reference"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Image 1]=REF-08 地铁站`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-08"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Image 1]=REF-08 地铁站`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-03"
+        },
+        {
+          "id": "reference:3",
+          "note": "`[Image 1]=REF-08 地铁站`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-04"
+        },
+        {
+          "id": "reference:4",
+          "note": "`[Image 1]=REF-08 地铁站`；`[Image 2]=REF-03`；`[Image 3]=REF-04`；`[Image 4]=REF-07`。",
+          "role": "omni_reference",
+          "referenceId": "REF-07"
+        }
+      ],
+      "negativeConstraints": [
+        "模型生成手写姓名",
+        "繁忙高峰人群",
+        "品牌地铁 logo",
+        "浪漫情侣语汇。"
+      ]
+    },
+    {
+      "beats": [
+        {
+          "id": "beat:1",
+          "audio": "",
+          "endMs": 2500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "exact opening-frame recreation with Cheng alone; camera and architecture match [Start Frame].",
+          "emotion": "",
+          "startMs": 0,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:2",
+          "audio": "",
+          "endMs": 5000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "Cheng presses play and watches the DV screen rather than the distant entrance.",
+          "emotion": "",
+          "startMs": 2500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:3",
+          "audio": "",
+          "endMs": 7500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "rack focus into the DV screen, where Maya appears as a translucent visitor trace and naturally forms her repeated opening line.",
+          "emotion": "",
+          "startMs": 5000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:4",
+          "audio": "",
+          "endMs": 10000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "focus returns to Cheng as she reacts to off-screen Lin; behind her, aged bulbs begin revealing the dragon architecture.",
+          "emotion": "",
+          "startMs": 7500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:5",
+          "audio": "",
+          "endMs": 12500,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "slow push to Cheng's realization while the dragon mouth reaches the same scale as the opening.",
+          "emotion": "",
+          "startMs": 10000,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:6",
+          "audio": "",
+          "endMs": 14600,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "arrive exactly at [End Frame], hold without new movement.",
+          "emotion": "",
+          "startMs": 12500,
+          "dialogue": "",
+          "endState": "",
+          "continuity": "",
+          "performance": ""
+        },
+        {
+          "id": "beat:7",
+          "audio": "",
+          "endMs": 15000,
+          "action": "Execute the authored physical action with believable weight.",
+          "camera": "Maintain the authored camera axis and continuous shot.",
+          "visual": "hard cut to pure black for the seventh gong in post-production.",
+          "emotion": "",
+          "startMs": 14600,
+          "dialogue": "",
+          "endState": "观众必须在 5 秒内意识到“开场重演但 Maya 已变成回声”。",
+          "continuity": "",
+          "performance": ""
+        }
+      ],
+      "title": "第七声锣",
+      "clipKey": "E04",
+      "description": "时间跳回 S00 的机位。入口空无一人，陈澄独自按下播放；DV 屏幕里 Maya 成了 1994 年的游客残影。 第七声锣落下。",
+      "graphNodeId": "clip:E04",
+      "emotionalArc": "观众必须在 5 秒内意识到“开场重演但 Maya 已变成回声”。",
+      "continuityNotes": [
+        "REF-01、REF-02、REF-03、REF-04 只用于制作并审核 `[End Frame]`，不随本任务提交。",
+        "观众必须在 5 秒内意识到“开场重演但 Maya 已变成回声”。",
+        "Maya 广播：Cheng，那个入口……地图上没有。",
+        "林国声：阿澄，迟到了。再选一次。"
+      ],
+      "masterDirection": "Recreate the opening composition from the exact [Start Frame] with pixel-comparable lens height, entrance axis and sodium lighting, but Cheng is now alone in physical reality. Maya appears only inside the DV screen as a recognizable translucent 1994 visitor trace wearing her locked olive-green rain jacket. Cheng presses play and realizes the opening is repeating. The lost architectural dragon entrance begins to reappear behind her while she cannot see it. Move continuously toward the exact supplied [End Frame], then cut to pure black only at the final instant.",
+      "targetDurationMs": 15000,
+      "generationControl": {
+        "mode": "frame_lock",
+        "frameMode": "first_last_frame"
+      },
+      "referenceRoleNotes": [
+        {
+          "id": "reference:1",
+          "note": "`[Start Frame]=S00 审核首帧`；`[End Frame]=E04 锁定黑场前构图`。",
+          "role": "first_frame",
+          "referenceId": "S00-FIRST"
+        },
+        {
+          "id": "reference:2",
+          "note": "`[Start Frame]=S00 审核首帧`；`[End Frame]=E04 锁定黑场前构图`。",
+          "role": "last_frame",
+          "referenceId": "E04-PREBLACK-END"
+        }
+      ],
+      "negativeConstraints": [
+        "Maya 实体出现在现实",
+        "不同入口机位",
+        "柔和淡出",
+        "生成可见声波。"
+      ]
+    }
+  ],
+  "trailerPrompt": null,
+  "productionNotes": [
+    "纪念一个人，是替他修饰过去，还是允许真实连同羞耻一起被记住？"
+  ]
+}

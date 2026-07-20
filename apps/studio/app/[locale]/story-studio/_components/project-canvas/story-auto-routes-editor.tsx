@@ -32,7 +32,7 @@ export interface AutoRoutePatch {
 
 interface StoryAutoRoutesEditorProps {
   content: InteractiveFilmDraftContent;
-  node: StoryGraphNode;
+  node: Extract<StoryGraphNode, { kind: "router" }>;
   canEdit: boolean;
   onAdd: (targetNodeId: string) => void;
   onUpdate: (routeIndex: number, patch: AutoRoutePatch) => void;
@@ -51,8 +51,6 @@ export function StoryAutoRoutesEditor({
   const [newTargetNodeId, setNewTargetNodeId] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<number | null>(null);
   const targetNodes = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
-  if (node.exit.kind !== "auto") return null;
-
   const addRoute = () => {
     if (!newTargetNodeId) return;
     onAdd(newTargetNodeId);
@@ -65,7 +63,7 @@ export function StoryAutoRoutesEditor({
         <div>
           <h3 className="text-xs font-semibold text-white/78">{t("routes.title")}</h3>
           <p className="mt-1 text-[10px] leading-4 text-white/34">
-            {t(node.kind === "router" ? "routes.routerDescription" : "routes.description")}
+            {t("routes.routerDescription")}
           </p>
         </div>
         <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[9px] font-semibold tabular-nums text-white/42">

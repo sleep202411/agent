@@ -135,6 +135,9 @@ export const ListIpsQuerySchema = z.object({
   tagCodes: TaxonomyCodeListFromQuerySchema(20),
   // ISO-3166 alpha-2 codes or the 'GLOBAL' sentinel (scalar Ip.region filter).
   regions: RegionListFromQuerySchema,
+  // Case-insensitive contains over public localization title/subtitle/summary/
+  // description/slug, copyright owner, and genre/tag labels (or codes).
+  q: z.string().trim().min(1).max(120).optional(),
   locale: LocaleQuerySchema,
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -882,6 +885,20 @@ export const GrantCreatorIpAclSchema = z
   })
   .strict();
 export type GrantCreatorIpAclInput = z.infer<typeof GrantCreatorIpAclSchema>;
+
+export const TransferIpOwnerSchema = z
+  .object({
+    /** Java user id of the incoming owner (must be an existing editor). */
+    toUserId: IpContributorUserIdSchema,
+    /**
+     * Drop the outgoing owner's access. Default (false) keeps them on as
+     * an editor via an edit ACL grant.
+     */
+    removeOldOwner: z.boolean().optional(),
+    expectedVersion: z.number().int().min(0).optional(),
+  })
+  .strict();
+export type TransferIpOwnerInput = z.infer<typeof TransferIpOwnerSchema>;
 
 export const CreateCreatorIpContributorSchema = z
   .object({

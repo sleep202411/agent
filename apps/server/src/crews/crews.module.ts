@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AdminAuthModule } from '../admin-auth';
 import { AuthModule } from '../auth';
 import { NotificationModule } from '../notification';
 import { UsersModule } from '../users/users.module';
 import { ApplicationsController } from './applications.controller';
 import { ApplicationsService } from './applications.service';
 import { CrewRoleService } from './crew-role.service';
+import { CrewsAdminController } from './crews-admin.controller';
 import { CrewsController } from './crews.controller';
 import { CrewsService } from './crews.service';
 import { MembersController } from './members.controller';
@@ -25,9 +27,10 @@ import { PositionsService } from './positions.service';
  * EpisodesModule.)
  */
 @Module({
-  imports: [AuthModule, NotificationModule, UsersModule],
+  imports: [AuthModule, NotificationModule, UsersModule, AdminAuthModule],
   controllers: [
     CrewsController,
+    CrewsAdminController,
     PositionsController,
     PositionsDiscoveryController,
     ApplicationsController,

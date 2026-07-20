@@ -1,14 +1,24 @@
-import { ConflictException, GoneException } from '@nestjs/common';
+import {
+  ConflictException,
+  GoneException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   MediaAssetModerationStatus,
   MediaAssetVariantStatus,
+  Prisma,
+  StoryFilmContinuityDecision,
+  StoryFilmDependencyKind,
 } from '@prisma/client';
 import {
   STORY_CHECKPOINT_CONTINUE_ACTION_ID,
   STORY_CHECKPOINT_RENDERER_ID,
 } from '@repo/shared/interactive-film-runtime';
+import { EXPERIENCE_RUNTIME_SCHEMA_VERSION } from '@repo/shared/experience-runtime';
+import { canonicalJsonHash } from './canonical-json';
 import {
   FilmSpecSchema,
   type FilmCondition,
@@ -23,11 +33,13 @@ import {
 import { StoryFilmBuildController } from './story-film-build.controller';
 import {
   storyBuildAssetDeliveryPath,
+  storyFilmBuildContinuityDiagnostics,
+  storyFilmBuildInputManifest,
   storyBuildModerationDiagnostics,
   storyBuildRequestFingerprint,
   StoryFilmBuildService,
 } from './story-film-build.service';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
@@ -42,7 +54,7 @@ function uuid(index: number, group = '1000'): string {
 }
 
 function fixture() {
-  const bundle = buildHuBaoVillaImportBundle();
+  const bundle = buildInteractiveFilmTestBundle();
   const clips: StoryFilmBuildClipInput[] = bundle.clipSpecs.map(
     (spec, index) => ({
       id: uuid(index + 1, '2000'),
@@ -52,7 +64,7 @@ function fixture() {
       specHash: `${(index + 1).toString(16).padStart(64, '0')}`,
       productionInputHash: `${(index + 101).toString(16).padStart(64, '0')}`,
       spec,
-      takeId: uuid(index + 1, '3000'),
+      sourceGenerationId: uuid(index + 1, '3000'),
       asset: {
         assetId: uuid(index + 1, '4000'),
         variantId: uuid(index + 1, '5000'),
@@ -198,7 +210,7 @@ describe('Story film Build compiler', () => {
     }
   });
 
-  it('reports frozen Master Variant durations instead of authored targets', () => {
+  it('reports frozen current-video Variant durations instead of authored targets', () => {
     const { bundle, clips } = fixture();
     const first = clips[0];
     if (!first?.asset || !first.spec) {
@@ -265,7 +277,7 @@ describe('Story film Build compiler', () => {
     if (!successorId) throw new Error('Fixture successor missing.');
     entry.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId: successorId, priority: 0 }],
+      nextNodeId: successorId,
     };
 
     const filmSpec = FilmSpecSchema.parse({
@@ -300,7 +312,7 @@ describe('Story film Build compiler', () => {
     const nextNodeId = checkpoint.exit.nextNodeId;
     checkpoint.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId, priority: 0 }],
+      nextNodeId,
     };
 
     const result = compileFixture({ draft });
@@ -377,17 +389,17 @@ describe('Story film Build compiler', () => {
     );
   });
 
-  it('fails an incomplete Master snapshot instead of fabricating media', () => {
+  it('fails an incomplete current-video snapshot instead of fabricating media', () => {
     const { clips } = fixture();
     clips[0] = {
       ...clips[0],
-      takeId: null,
+      sourceGenerationId: null,
       asset: null,
       eligibilityDiagnostics: [
         {
           severity: 'error',
-          code: 'STORY_BUILD_MASTER_MISSING',
-          message: 'Master missing.',
+          code: 'STORY_BUILD_CURRENT_VIDEO_MISSING',
+          message: 'Current video missing.',
           entityType: 'clip',
           entityId: clips[0].id,
         },
@@ -398,7 +410,7 @@ describe('Story film Build compiler', () => {
     expect(result.runtime).toBeNull();
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'STORY_BUILD_MASTER_MISSING' }),
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_MISSING' }),
       ]),
     );
     expect(result.diagnostics).not.toEqual(
@@ -461,9 +473,9 @@ describe('Story film Build compiler', () => {
     const { bundle } = fixture();
     const draft = structuredClone(bundle.draftContent);
     const auto = draft.graph.nodes.find(
-      (node) => node.exit.kind === 'auto' && node.exit.routes.length > 0,
+      (node) => node.kind === 'router' && node.exit.routes.length > 0,
     );
-    if (!auto || auto.exit.kind !== 'auto') {
+    if (!auto || auto.kind !== 'router') {
       throw new Error('Fixture auto node missing.');
     }
     auto.exit.routes.push({ ...auto.exit.routes[0], priority: 999 });
@@ -536,7 +548,7 @@ describe('Story film Build compiler', () => {
     });
     const terminal = nodes.at(-1);
     if (!terminal) throw new Error('Adversarial terminal missing.');
-    terminal.exit = { kind: 'auto', routes: [] };
+    terminal.exit = { kind: 'auto', nextNodeId: null };
     draft.graph = { entryNodeId: nodes[0]?.nodeId ?? null, nodes };
     const filmSpec = FilmSpecSchema.parse({
       ...bundle.filmSpec,
@@ -644,7 +656,10 @@ describe('StoryFilmBuildController', () => {
   it('forwards revision, CAS, workspace, and Idempotency-Key to Build creation', async () => {
     const build = { id: BUILD_ID, status: 'failed' };
     const service = { createBuild: jest.fn().mockResolvedValue(build) };
-    const controller = new StoryFilmBuildController(service as never);
+    const controller = new StoryFilmBuildController(
+      service as never,
+      {} as never,
+    );
     const body = {
       revisionId: REVISION_ID,
       expectedProductionRevision: 3,
@@ -670,7 +685,7 @@ describe('StoryFilmBuildController', () => {
     );
   });
 
-  it('redirects an authenticated Build asset request without requiring a workspace header', async () => {
+  it('redirects an immutable production Build asset without requiring viewer auth', async () => {
     const service = {
       issueBuildAssetReadUrl: jest.fn().mockResolvedValue({
         url: 'https://signed.example.test/video.mp4?expires=300',
@@ -681,11 +696,14 @@ describe('StoryFilmBuildController', () => {
       setHeader: jest.fn(),
       redirect: jest.fn().mockReturnValue('redirected'),
     };
-    const controller = new StoryFilmBuildController(service as never);
+    const controller = new StoryFilmBuildController(
+      service as never,
+      {} as never,
+    );
 
     await expect(
       controller.redirectToBuildAsset(
-        USER as never,
+        undefined,
         {
           projectId: PROJECT_ID,
           buildId: BUILD_ID,
@@ -696,7 +714,7 @@ describe('StoryFilmBuildController', () => {
       ),
     ).resolves.toBe('redirected');
     expect(service.issueBuildAssetReadUrl).toHaveBeenCalledWith(
-      USER,
+      undefined,
       PROJECT_ID,
       BUILD_ID,
       ASSET_ID,
@@ -709,6 +727,73 @@ describe('StoryFilmBuildController', () => {
     expect(response.redirect).toHaveBeenCalledWith(
       302,
       'https://signed.example.test/video.mp4?expires=300',
+    );
+  });
+
+  it('publishes an exact Build using only the guard-normalized viewer cookie', async () => {
+    const release = {
+      gameId: 'branching-film',
+      contentVersion: `build:${BUILD_ID}`,
+      status: 'published',
+      manifestUrl: 'https://media.example.test/branching-film/manifest.json',
+    };
+    const releases = { publishBuild: jest.fn().mockResolvedValue(release) };
+    const controller = new StoryFilmBuildController(
+      {} as never,
+      releases as never,
+    );
+    const body = { status: 'published' as const, setCurrent: true };
+
+    await expect(
+      controller.publishBuild(
+        USER as never,
+        WORKSPACE_ID,
+        'satoken=test-session',
+        { projectId: PROJECT_ID, buildId: BUILD_ID },
+        body,
+      ),
+    ).resolves.toEqual({ code: 200, data: release });
+    expect(releases.publishBuild).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+      body,
+      'satoken=test-session',
+    );
+  });
+
+  it('returns Java-authoritative current release identity', async () => {
+    const current = {
+      projectId: PROJECT_ID,
+      gameId: PROJECT_ID,
+      published: true,
+      currentVersion: `build:${BUILD_ID}`,
+      manifestUrl: 'https://media.example.test/manifest.json',
+      currentBuild: {
+        id: BUILD_ID,
+        sourceRevisionId: REVISION_ID,
+        sourceDraftRevision: 8,
+        sourceProductionRevision: 3,
+      },
+      checkedAt: '2026-07-16T12:00:00.000Z',
+    };
+    const releases = {
+      getCurrentRelease: jest.fn().mockResolvedValue(current),
+    };
+    const controller = new StoryFilmBuildController(
+      {} as never,
+      releases as never,
+    );
+    await expect(
+      controller.getCurrentRelease(USER as never, WORKSPACE_ID, {
+        projectId: PROJECT_ID,
+      }),
+    ).resolves.toEqual({ code: 200, data: current });
+    expect(releases.getCurrentRelease).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
     );
   });
 });
@@ -764,13 +849,776 @@ describe('StoryFilmBuildService idempotency', () => {
       ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('serializes different submission keys onto one exact reusable Build', async () => {
+    const harness = semanticIdempotencyHarness();
+    const input = semanticBuildInput('production');
+
+    const [first, second] = await Promise.all([
+      harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'tab-a-key',
+      ),
+      harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'tab-b-key',
+      ),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    expect(first.status).toBe('ready');
+    expect(second.status).toBe('ready');
+    expect(harness.createBuildRow).toHaveBeenCalledTimes(1);
+    expect(harness.incrementBuildNumber).toHaveBeenCalledTimes(1);
+    const semanticLocks = harness.lockKeys.filter((key) =>
+      key.startsWith(`story-film-build-input:${PROJECT_ID}:`),
+    );
+    expect(semanticLocks).toHaveLength(2);
+    expect(new Set(semanticLocks).size).toBe(1);
+    expect(harness.transactions).toHaveBeenCalledTimes(2);
+    expect(harness.transactions.mock.calls).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([
+          expect.any(Function),
+          { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+        ]),
+      ]),
+    );
+  });
+
+  it('creates a fresh immutable Build after definitive publication rejection', async () => {
+    const harness = semanticIdempotencyHarness();
+    const input = semanticBuildInput('production');
+    const rejected = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      input,
+      'rejected-build-key',
+    );
+    const stored = harness.rows.find((row) => row.id === rejected.id);
+    if (!stored) throw new Error('Expected the first Build to be stored.');
+    stored.experiencePublication = semanticPublication('rejected');
+
+    const sameKeyReplay = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      input,
+      'rejected-build-key',
+    );
+    const fresh = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      input,
+      'fresh-after-rejection-key',
+    );
+
+    expect(sameKeyReplay.id).toBe(rejected.id);
+    expect(fresh.id).not.toBe(rejected.id);
+    expect(harness.createBuildRow).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['pending', 'uncertain', 'confirmed'] as const)(
+    'continues semantic reuse while publication is %s',
+    async (publicationStatus) => {
+      const harness = semanticIdempotencyHarness();
+      const input = semanticBuildInput('production');
+      const first = await harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'first-key',
+      );
+      const stored = harness.rows.find((row) => row.id === first.id);
+      if (!stored) throw new Error('Expected the first Build to be stored.');
+      stored.experiencePublication = semanticPublication(publicationStatus);
+      const replay = await harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        `second-${publicationStatus}-key`,
+      );
+      expect(replay.id).toBe(first.id);
+      expect(harness.createBuildRow).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['failed', 'cancelled'] as const)(
+    'replays a %s Build for the same transport key but lets a new key rebuild it',
+    async (terminalStatus) => {
+      const harness = semanticIdempotencyHarness({
+        createdStatus: terminalStatus,
+      });
+      const input = semanticBuildInput('production');
+
+      const first = await harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'terminal-key',
+      );
+      const transportReplay = await harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'terminal-key',
+      );
+      const rebuilt = await harness.service.createBuild(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        input,
+        'fresh-key',
+      );
+
+      expect(transportReplay.id).toBe(first.id);
+      expect(rebuilt.id).not.toBe(first.id);
+      expect(harness.createBuildRow).toHaveBeenCalledTimes(2);
+      expect(harness.incrementBuildNumber).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('versions semantic identity by compiler contract and runtime schema', async () => {
+    const harness = semanticIdempotencyHarness();
+    const input = semanticBuildInput('production');
+
+    const first = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      input,
+      'current-compiler-key',
+    );
+    const firstRow = harness.rows[0];
+    expect(firstRow).toBeDefined();
+    if (!firstRow) throw new Error('Expected the first Build row.');
+    const inputManifestHash = String(firstRow.inputManifestHash);
+    expect(firstRow.inputHash).toBe(
+      canonicalJsonHash({
+        compilerSemanticVersion: 1,
+        runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+        request: input,
+        revisionContentHash: 'a'.repeat(64),
+        filmSpecHash: 'b'.repeat(64),
+        productionRevision: 3,
+        inputManifestHash,
+      }),
+    );
+
+    firstRow.runtimeSchemaVersion = EXPERIENCE_RUNTIME_SCHEMA_VERSION - 1;
+    const rebuilt = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      input,
+      'next-runtime-key',
+    );
+
+    expect(rebuilt.id).not.toBe(first.id);
+    expect(harness.createBuildRow).toHaveBeenCalledTimes(2);
+    const lastLookup = harness.semanticLookup.mock.calls.at(-1)?.[0];
+    expect(lastLookup?.where.runtimeSchemaVersion).toBe(
+      EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+    );
+    expect(lastLookup?.where.status).toEqual({
+      in: ['queued', 'validating', 'compiling', 'ready'],
+    });
+  });
+
+  it('creates distinct Builds when the immutable semantic input differs', async () => {
+    const harness = semanticIdempotencyHarness();
+
+    const first = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      semanticBuildInput('preview'),
+      'preview-key',
+    );
+    const second = await harness.service.createBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      semanticBuildInput('production'),
+      'production-key',
+    );
+
+    expect(first.id).not.toBe(second.id);
+    expect(harness.createBuildRow).toHaveBeenCalledTimes(2);
+    expect(harness.incrementBuildNumber).toHaveBeenCalledTimes(2);
+    const semanticLocks = harness.lockKeys.filter((key) =>
+      key.startsWith(`story-film-build-input:${PROJECT_ID}:`),
+    );
+    expect(semanticLocks).toHaveLength(2);
+    expect(new Set(semanticLocks).size).toBe(2);
+  });
+
+  function semanticBuildInput(profile: 'preview' | 'production') {
+    return {
+      revisionId: REVISION_ID,
+      expectedProductionRevision: 3,
+      profile,
+      scope: { kind: 'full' as const },
+    };
+  }
+
+  function semanticPublication(
+    status: 'pending' | 'uncertain' | 'confirmed' | 'rejected',
+  ) {
+    const now = new Date('2026-07-16T12:00:00.000Z');
+    return {
+      status,
+      gameId: PROJECT_ID,
+      contentVersion: `build:${BUILD_ID}`,
+      manifestUrl:
+        status === 'confirmed' ? 'https://media.test/manifest.json' : null,
+      publishedAt: status === 'confirmed' ? now : null,
+      mediaAuthorizedAt: now,
+      mediaAuthorizationRevokedAt: status === 'rejected' ? now : null,
+      authorityIsCurrent: status === 'confirmed' ? true : null,
+      authorityGameExists: status === 'confirmed' ? true : null,
+      authorityCurrentVersion:
+        status === 'confirmed' ? `build:${BUILD_ID}` : null,
+      authorityCheckedAt: status === 'confirmed' ? now : null,
+      lastErrorCode: status === 'rejected' ? 'REJECTED' : null,
+      lastErrorDetail: status === 'rejected' ? 'Rejected in test.' : null,
+    };
+  }
+
+  function semanticIdempotencyHarness(
+    options: {
+      createdStatus?: 'ready' | 'failed' | 'cancelled';
+    } = {},
+  ) {
+    const rows: Array<Record<string, unknown>> = [];
+    const lockKeys: string[] = [];
+    const lockTails = new Map<string, Promise<void>>();
+    let nextBuildNumber = 1;
+
+    const findBySubmission = jest.fn(
+      ({ where }: { where: { submissionKey: string } }) =>
+        rows.find((row) => row.submissionKey === where.submissionKey) ?? null,
+    );
+    const createdStatus = options.createdStatus ?? 'ready';
+    const createBuildRow = jest.fn(
+      ({ data }: { data: Record<string, unknown> }) => {
+        const now = new Date('2026-07-16T12:00:00.000Z');
+        const row: Record<string, unknown> = {
+          ...data,
+          id: uuid(rows.length + 1, '9000'),
+          status: createdStatus,
+          version: 1,
+          runtimeJson: createdStatus === 'ready' ? {} : null,
+          runtimeHash: createdStatus === 'ready' ? 'd'.repeat(64) : null,
+          diagnostics: [],
+          pathReport: {},
+          errorCode:
+            createdStatus === 'failed' ? 'STORY_BUILD_VALIDATION_FAILED' : null,
+          errorDetail:
+            createdStatus === 'failed' ? 'Test terminal failure.' : null,
+          startedAt: now,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          project: { workspaceId: WORKSPACE_ID },
+          experiencePublication: null,
+          assets: [],
+        };
+        rows.push(row);
+        return row;
+      },
+    );
+    const incrementBuildNumber = jest.fn(() => {
+      nextBuildNumber += 1;
+    });
+
+    const acquireLock = async (key: string): Promise<() => void> => {
+      const previous = lockTails.get(key) ?? Promise.resolve();
+      let releaseCurrent!: () => void;
+      const current = new Promise<void>((resolve) => {
+        releaseCurrent = () => resolve();
+      });
+      lockTails.set(
+        key,
+        previous.then(() => current),
+      );
+      await previous;
+      return releaseCurrent;
+    };
+
+    const semanticLookup = jest.fn(
+      ({ where }: { where: Record<string, unknown> }) => {
+        const scope = (where.scope as { equals?: unknown }).equals;
+        const allowedStatuses = (where.status as { in?: unknown[] } | undefined)
+          ?.in;
+        const excludesRejectedPublication = Boolean(where.NOT);
+        return (
+          rows.find(
+            (row) =>
+              row.storyProjectId === where.storyProjectId &&
+              row.sourceRevisionId === where.sourceRevisionId &&
+              row.requestFingerprint === where.requestFingerprint &&
+              row.kind === where.kind &&
+              JSON.stringify(row.scope) === JSON.stringify(scope) &&
+              row.sourceProductionRevision === where.sourceProductionRevision &&
+              (!allowedStatuses || allowedStatuses.includes(row.status)) &&
+              (!excludesRejectedPublication ||
+                (row.experiencePublication as { status?: unknown } | null)
+                  ?.status !== 'rejected') &&
+              row.inputHash === where.inputHash &&
+              row.inputManifestHash === where.inputManifestHash &&
+              row.runtimeSchemaVersion === where.runtimeSchemaVersion,
+          ) ?? null
+        );
+      },
+    );
+
+    const transactions = jest.fn(
+      async (operation: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const releases: Array<() => void> = [];
+        const tx = {
+          $executeRaw: jest.fn(
+            async (_sql: TemplateStringsArray, lockKey: string) => {
+              lockKeys.push(lockKey);
+              releases.push(await acquireLock(lockKey));
+              return 1;
+            },
+          ),
+          storyBuild: {
+            findUnique: findBySubmission,
+            findFirst: semanticLookup,
+            create: createBuildRow,
+          },
+          storyProject: {
+            findUnique: jest.fn(() => ({
+              id: PROJECT_ID,
+              title: 'Semantic Build',
+              summary: null,
+              defaultLocale: 'en-US',
+            })),
+            findFirst: jest.fn(() => ({ nextBuildNumber })),
+            update: incrementBuildNumber,
+          },
+          storyRevision: {
+            findFirst: jest.fn(() => ({
+              id: REVISION_ID,
+              number: 2,
+              content: {},
+              contentHash: 'a'.repeat(64),
+            })),
+          },
+          storyFilmSpec: {
+            findFirst: jest.fn(() => ({
+              specJson: {},
+              specHash: 'b'.repeat(64),
+              productionRevision: 3,
+            })),
+          },
+          storyFilmClip: { findMany: jest.fn(() => []) },
+          storyFilmClipDependency: { findMany: jest.fn(() => []) },
+        };
+        try {
+          return await operation(tx);
+        } finally {
+          releases.reverse().forEach((release) => release());
+        }
+      },
+    );
+    const prisma = {
+      storyBuild: { findUnique: findBySubmission },
+      $transaction: transactions,
+    };
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue({
+        project: { workspaceId: WORKSPACE_ID },
+      }),
+    };
+    return {
+      service: new StoryFilmBuildService(
+        prisma as never,
+        permissions as never,
+        {} as never,
+      ),
+      createBuildRow,
+      incrementBuildNumber,
+      lockKeys,
+      rows,
+      semanticLookup,
+      transactions,
+    };
+  }
+});
+
+describe('StoryFilmBuildService direct current-video compilation', () => {
+  const CHECKSUM = 'a'.repeat(64);
+  const SPEC_HASH = 'b'.repeat(64);
+  const GENERATION_ID = uuid(1, '7000');
+
+  function currentVideoClip() {
+    const { bundle } = fixture();
+    const spec = bundle.clipSpecs[0];
+    if (!spec) throw new Error('Fixture Clip specification missing.');
+    return {
+      id: uuid(2, '7000'),
+      storyProjectId: PROJECT_ID,
+      revisionId: REVISION_ID,
+      key: spec.key,
+      graphNodeId: spec.graphNodeId,
+      title: spec.title,
+      generationMode: spec.generationControl.mode,
+      frameMode:
+        spec.generationControl.mode === 'frame_lock'
+          ? spec.generationControl.frameMode
+          : null,
+      targetDurationMs: spec.outputContract.durationMs,
+      specJson: spec,
+      specHash: SPEC_HASH,
+      productionInputManifest: null,
+      productionInputHash: null,
+      version: 0,
+      rank: spec.rank,
+      currentVideoAssetId: ASSET_ID,
+      currentVideoVariantId: VARIANT_ID,
+      currentVideoSourceAttemptId: null,
+      currentVideoSpecHash: SPEC_HASH,
+      currentVideoInputHash: null,
+      currentVideoChecksumSha256: CHECKSUM,
+      currentVideoTechnicalChecks: [
+        { key: 'kind', status: 'passed', message: null },
+        { key: 'dimensions', status: 'passed', message: null },
+        { key: 'duration', status: 'passed', message: null },
+        { key: 'checksum', status: 'passed', message: null },
+      ],
+      currentVideoRevision: 4,
+      currentVideoSetByUserId: USER.userId,
+      currentVideoSetAt: new Date('2026-07-15T12:00:00.000Z'),
+      latestGenerationAttemptId: null,
+      createdByUserId: USER.userId,
+      updatedByUserId: USER.userId,
+      archivedAt: null,
+      createdAt: new Date('2026-07-15T11:00:00.000Z'),
+      updatedAt: new Date('2026-07-15T12:00:00.000Z'),
+      currentVideoAsset: {
+        id: ASSET_ID,
+        workspaceId: WORKSPACE_ID,
+        kind: 'video',
+        storageProvider: 'aliyun_oss',
+        bucket: 'story-media',
+        region: 'oss-cn-hangzhou',
+        objectKey: 'clips/current-video.mp4',
+        externalUrl: null,
+        contentType: 'video/mp4',
+        sizeBytes: 1_024n,
+        width: spec.outputContract.width,
+        height: spec.outputContract.height,
+        durationSeconds: spec.outputContract.durationMs / 1_000,
+        checksumSha256: CHECKSUM,
+        visibility: 'private',
+        status: 'ready',
+        source: 'generated',
+        moderationStatus: 'approved',
+        moderationReason: null,
+        moderatedByAdminId: null,
+        moderatedAt: null,
+        metadata: {},
+        createdByUserId: USER.userId,
+        createdAt: new Date('2026-07-15T11:55:00.000Z'),
+        updatedAt: new Date('2026-07-15T11:55:00.000Z'),
+        deletedAt: null,
+        placements: [],
+      },
+      currentVideoVariant: {
+        id: VARIANT_ID,
+        assetId: ASSET_ID,
+        variantKey: 'original',
+        kind: 'original',
+        status: 'ready',
+        contentType: 'video/mp4',
+        sizeBytes: 1_024n,
+        width: spec.outputContract.width,
+        height: spec.outputContract.height,
+        durationSeconds: spec.outputContract.durationMs / 1_000,
+        checksumSha256: CHECKSUM,
+        metadata: {},
+        createdAt: new Date('2026-07-15T11:55:00.000Z'),
+        updatedAt: new Date('2026-07-15T11:55:00.000Z'),
+        deletedAt: null,
+        placements: [],
+      },
+    };
+  }
+
+  function prepareClip(row: ReturnType<typeof currentVideoClip>) {
+    const service = new StoryFilmBuildService(
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return (
+      service as unknown as {
+        prepareClip(
+          build: {
+            id: string;
+            storyProjectId: string;
+            project: { workspaceId: string };
+          },
+          clip: ReturnType<typeof currentVideoClip>,
+        ): StoryFilmBuildClipInput;
+      }
+    ).prepareClip(
+      {
+        id: BUILD_ID,
+        storyProjectId: PROJECT_ID,
+        project: { workspaceId: WORKSPACE_ID },
+      },
+      row,
+    );
+  }
+
+  it('builds a selected library asset without generation provenance or production input hashes', () => {
+    const row = currentVideoClip();
+    // Asset-level metadata and the selected Variant can describe different
+    // bytes. Current-video identity is always the selected Variant checksum,
+    // never an asset-level fallback.
+    row.currentVideoAsset.checksumSha256 = '0'.repeat(64);
+    const prepared = prepareClip(row);
+
+    expect(prepared.eligibilityDiagnostics).toEqual([]);
+    expect(prepared.sourceGenerationId).toBeNull();
+    expect(prepared.productionInputHash).toBeNull();
+    expect(prepared.asset).toMatchObject({
+      assetId: ASSET_ID,
+      variantId: VARIANT_ID,
+      checksumSha256: CHECKSUM,
+    });
+  });
+
+  it.each([
+    ['spec hash', { currentVideoSpecHash: 'c'.repeat(64) }],
+    [
+      'input hash',
+      {
+        productionInputHash: 'd'.repeat(64),
+        currentVideoInputHash: null,
+      },
+    ],
+  ])('rejects an outdated GENERATED current video by %s', (_label, changes) => {
+    // The generation-contract freshness gate applies to generated currents
+    // only; manual binds (sourceAttemptId null) are exempt.
+    const row = Object.assign(currentVideoClip(), changes, {
+      currentVideoSourceAttemptId: GENERATION_ID,
+    });
+    expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_OUTDATED' }),
+      ]),
+    );
+  });
+
+  it.each([
+    ['spec hash', { currentVideoSpecHash: 'c'.repeat(64) }],
+    [
+      'input hash',
+      { productionInputHash: 'd'.repeat(64), currentVideoInputHash: null },
+    ],
+  ])('exempts a MANUAL current video from %s freshness', (_label, changes) => {
+    const row = Object.assign(currentVideoClip(), changes, {
+      currentVideoSourceAttemptId: null,
+    });
+    expect(prepareClip(row).eligibilityDiagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_CURRENT_VIDEO_OUTDATED' }),
+      ]),
+    );
+  });
+
+  it('rejects pending, failed, empty, or malformed technical checks', () => {
+    const rows = [
+      [{ key: 'duration', status: 'pending', message: null }],
+      [{ key: 'duration', status: 'failed', message: 'Too long.' }],
+      [{ key: 'duration', status: 'passed', message: null }],
+      [],
+      [{ status: 'passed' }],
+    ];
+
+    rows.forEach((currentVideoTechnicalChecks) => {
+      const row = currentVideoClip();
+      row.currentVideoTechnicalChecks = currentVideoTechnicalChecks;
+      expect(prepareClip(row).eligibilityDiagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'STORY_BUILD_CURRENT_VIDEO_TECHNICAL_CHECKS_FAILED',
+          }),
+        ]),
+      );
+    });
+  });
+
+  it('strictly rejects a foreign Workspace while allowing external storage', () => {
+    const row = currentVideoClip();
+    row.currentVideoAsset.workspaceId = uuid(3, '7000');
+    row.currentVideoAsset.storageProvider = 'external_url';
+    row.currentVideoAsset.bucket = null;
+    row.currentVideoAsset.objectKey = null;
+    row.currentVideoAsset.externalUrl =
+      'https://cdn.example.test/current-video.mp4';
+
+    const diagnostics = prepareClip(row).eligibilityDiagnostics;
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_ASSET_SCOPE_INVALID' }),
+      ]),
+    );
+    // external_url media is deliverable as-is — no signable-storage gate.
+    expect(diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_BUILD_ASSET_NOT_SIGNABLE' }),
+      ]),
+    );
+  });
+
+  it('freezes currentVideoRevision and direct media identity in manifest v2', () => {
+    const row = currentVideoClip();
+    row.currentVideoSourceAttemptId = GENERATION_ID;
+    const manifest = storyFilmBuildInputManifest(
+      {
+        revisionId: REVISION_ID,
+        expectedProductionRevision: 3,
+        profile: 'production',
+        scope: { kind: 'full' },
+      },
+      {
+        project: {
+          id: PROJECT_ID,
+          title: 'Build manifest test',
+          summary: null,
+          defaultLocale: 'en-US',
+        },
+        revision: {
+          id: REVISION_ID,
+          number: 2,
+          content: {},
+          contentHash: 'e'.repeat(64),
+        },
+        filmSpec: {
+          specJson: {},
+          specHash: 'f'.repeat(64),
+          productionRevision: 3,
+        },
+        clips: [row],
+        dependencies: [],
+      } as never,
+    );
+
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      clips: [
+        {
+          currentVideo: {
+            revision: 4,
+            assetId: ASSET_ID,
+            variantId: VARIANT_ID,
+            sourceGenerationAttemptId: GENERATION_ID,
+            checksumSha256: CHECKSUM,
+            asset: { id: ASSET_ID },
+            variant: { id: VARIANT_ID },
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(manifest)).not.toMatch(/take|master/i);
+  });
+
+  it('matches continuity by both direct assets, variants, and checksums', () => {
+    const upstream = prepareClip(currentVideoClip());
+    const downstreamRow = currentVideoClip();
+    downstreamRow.id = uuid(4, '7000');
+    downstreamRow.currentVideoAssetId = uuid(5, '7000');
+    downstreamRow.currentVideoVariantId = uuid(6, '7000');
+    downstreamRow.currentVideoChecksumSha256 = '9'.repeat(64);
+    downstreamRow.currentVideoAsset.id = downstreamRow.currentVideoAssetId;
+    downstreamRow.currentVideoAsset.checksumSha256 =
+      downstreamRow.currentVideoChecksumSha256;
+    downstreamRow.currentVideoVariant.id = downstreamRow.currentVideoVariantId;
+    downstreamRow.currentVideoVariant.assetId =
+      downstreamRow.currentVideoAssetId;
+    downstreamRow.currentVideoVariant.checksumSha256 =
+      downstreamRow.currentVideoChecksumSha256;
+    const downstream = prepareClip(downstreamRow);
+    const dependency = {
+      id: uuid(7, '7000'),
+      kind: StoryFilmDependencyKind.continuity,
+      predecessorClipId: upstream.id,
+      successorClipId: downstream.id,
+      continuityChecks: [
+        {
+          id: uuid(8, '7000'),
+          upstreamAssetId: upstream.asset?.assetId,
+          upstreamVariantId: upstream.asset?.variantId,
+          upstreamChecksumSha256: upstream.asset?.checksumSha256,
+          downstreamAssetId: downstream.asset?.assetId,
+          downstreamVariantId: downstream.asset?.variantId,
+          downstreamChecksumSha256: downstream.asset?.checksumSha256,
+          decision: StoryFilmContinuityDecision.pass,
+        },
+      ],
+    };
+
+    expect(
+      storyFilmBuildContinuityDiagnostics(
+        [dependency] as never,
+        [upstream, downstream],
+        new Set([upstream.id, downstream.id]),
+      ),
+    ).toEqual([]);
+
+    dependency.continuityChecks[0].downstreamChecksumSha256 = '8'.repeat(64);
+    expect(
+      storyFilmBuildContinuityDiagnostics(
+        [dependency] as never,
+        [upstream, downstream],
+        new Set([upstream.id, downstream.id]),
+      ),
+    ).toEqual([
+      expect.objectContaining({ code: 'STORY_BUILD_CONTINUITY_CHECK_MISSING' }),
+    ]);
+  });
 });
 
 describe('StoryFilmBuildService media delivery policy', () => {
   const CHECKSUM = 'a'.repeat(64);
+  const PUBLICATION = {
+    status: 'confirmed' as const,
+    gameId: 'branching-film',
+    contentVersion: `build:${BUILD_ID}`,
+    manifestUrl:
+      'https://media.example.test/interactive-film/branching-film/manifest.json',
+    publishedAt: new Date('2026-07-13T12:02:00.000Z'),
+    mediaAuthorizedAt: new Date('2026-07-13T12:01:00.000Z'),
+    mediaAuthorizationRevokedAt: null,
+    authorityIsCurrent: true,
+    authorityGameExists: true,
+    authorityCurrentVersion: `build:${BUILD_ID}`,
+    authorityCheckedAt: new Date('2026-07-13T12:03:00.000Z'),
+    lastErrorCode: null,
+    lastErrorDetail: null,
+  };
 
   function readyBuildRow(
     moderationStatus: MediaAssetModerationStatus = MediaAssetModerationStatus.approved,
+    experiencePublication: typeof PUBLICATION | null = null,
   ) {
     return {
       id: BUILD_ID,
@@ -821,6 +1669,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
       createdAt: new Date('2026-07-13T12:00:00.000Z'),
       updatedAt: new Date('2026-07-13T12:01:00.000Z'),
       project: { workspaceId: WORKSPACE_ID },
+      experiencePublication,
       assets: [
         {
           id: uuid(7, '6000'),
@@ -858,6 +1707,40 @@ describe('StoryFilmBuildService media delivery policy', () => {
     };
   }
 
+  function readyV2BuildRow() {
+    const row = readyBuildRow();
+    return {
+      ...row,
+      runtimeSchemaVersion: 2,
+      runtimeJson: {
+        manifestType: 'fizzdragon.experience',
+        schemaVersion: 2,
+        assets: [
+          {
+            assetId: 'video:S01',
+            kind: 'video',
+            variants: [
+              {
+                variantId: VARIANT_ID,
+                uri: storyBuildAssetDeliveryPath(
+                  PROJECT_ID,
+                  BUILD_ID,
+                  ASSET_ID,
+                  VARIANT_ID,
+                ),
+              },
+            ],
+          },
+          {
+            assetId: 'theme:core.film-dark:1',
+            kind: 'data',
+            uri: '/experience-runtime/themes/core.film-dark.v1.json',
+          },
+        ],
+      },
+    };
+  }
+
   it('applies approval-required moderation to shared Build compilation', () => {
     expect(
       storyBuildModerationDiagnostics(
@@ -867,7 +1750,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         },
         { status: MediaAssetVariantStatus.ready },
         true,
-        'Master output',
+        'Current video',
       ),
     ).toEqual([
       expect.objectContaining({
@@ -883,9 +1766,93 @@ describe('StoryFilmBuildService media delivery policy', () => {
         },
         { status: MediaAssetVariantStatus.ready },
         false,
-        'Master output',
+        'Current video',
       ),
     ).toEqual([]);
+  });
+
+  it('keeps a frozen runtime available when only the asset-level checksum differs', async () => {
+    const row = readyBuildRow();
+    row.assets[0].asset.checksumSha256 = '0'.repeat(64);
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeJson).not.toBeNull();
+    expect(detail.publication).toBeNull();
+    expect(detail.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_ASSET_INTEGRITY_CHANGED',
+        }),
+      ]),
+    );
+  });
+
+  it('projects the durable publication receipt in Build detail and history', async () => {
+    const row = readyBuildRow(MediaAssetModerationStatus.approved, PUBLICATION);
+    const prisma = {
+      storyBuild: {
+        findFirst: jest.fn().mockResolvedValue(row),
+        findMany: jest.fn().mockResolvedValue([row]),
+      },
+    };
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue({
+        project: { workspaceId: WORKSPACE_ID },
+      }),
+    };
+    const service = new StoryFilmBuildService(
+      prisma as never,
+      permissions as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+    const history = await service.listBuilds(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      { limit: 20 },
+    );
+    const expected = {
+      status: PUBLICATION.status,
+      gameId: PUBLICATION.gameId,
+      contentVersion: PUBLICATION.contentVersion,
+      manifestUrl: PUBLICATION.manifestUrl,
+      publishedAt: PUBLICATION.publishedAt.toISOString(),
+      mediaAuthorizedAt: PUBLICATION.mediaAuthorizedAt.toISOString(),
+      mediaAuthorizationRevokedAt: null,
+      authorityIsCurrent: true,
+      authorityGameExists: true,
+      authorityCurrentVersion: PUBLICATION.authorityCurrentVersion,
+      authorityCheckedAt: PUBLICATION.authorityCheckedAt.toISOString(),
+      lastErrorCode: null,
+      lastErrorDetail: null,
+    };
+
+    expect(detail.publication).toEqual(expected);
+    expect(history.items[0]?.publication).toEqual(expected);
   });
 
   it('suppresses a ready runtime and annotates list/get when current moderation no longer permits playback', async () => {
@@ -951,7 +1918,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
   it('withholds legacy runtimes that contain permanent object URLs', async () => {
     const row = readyBuildRow();
     row.runtimeJson.media[0].variants.landscape.src =
-      'https://cdn.example.test/permanent-master.mp4';
+      'https://cdn.example.test/permanent-current-video.mp4';
     const prisma = {
       storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
     };
@@ -983,18 +1950,91 @@ describe('StoryFilmBuildService media delivery policy', () => {
     );
   });
 
-  it('authorizes Build membership and signs the exact frozen variant on every delivery request', async () => {
+  it('exposes v2 runtimes whose frozen visual assets use authenticated Build delivery', async () => {
+    const row = readyV2BuildRow();
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeSchemaVersion).toBe(2);
+    expect(detail.runtimeJson).toEqual(row.runtimeJson);
+    expect(detail.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+        }),
+      ]),
+    );
+  });
+
+  it('withholds v2 runtimes when a visual asset bypasses authenticated Build delivery', async () => {
+    const row = readyV2BuildRow();
+    row.runtimeJson.assets[0].variants[0].uri =
+      'https://cdn.example.test/permanent-current-video.mp4';
+    const service = new StoryFilmBuildService(
+      {
+        storyBuild: { findFirst: jest.fn().mockResolvedValue(row) },
+      } as never,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: WORKSPACE_ID },
+        }),
+      } as never,
+      {} as never,
+    );
+
+    const detail = await service.getBuild(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      BUILD_ID,
+    );
+
+    expect(detail.runtimeJson).toBeNull();
+    expect(detail.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+        }),
+      ]),
+    );
+  });
+
+  it('signs a published full production Build anonymously', async () => {
     const row = readyBuildRow();
     const frozen = {
       ...row.assets[0],
-      build: { status: 'ready' },
+      build: {
+        status: 'ready',
+        kind: 'production',
+        scope: { kind: 'full' },
+        experiencePublication: {
+          mediaAuthorizedAt: new Date(),
+          mediaAuthorizationRevokedAt: null,
+        },
+      },
       asset: {
         ...row.assets[0].asset,
         visibility: 'private',
         storageProvider: 'aliyun_oss',
         bucket: 'story-media',
         region: 'oss-cn-hangzhou',
-        objectKey: 'builds/master.mp4',
+        objectKey: 'builds/current-video.mp4',
         externalUrl: null,
         contentType: 'video/mp4',
         placements: [],
@@ -1016,7 +2056,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
     };
     const storage = {
       createReadUrl: jest.fn().mockResolvedValue({
-        url: 'https://signed.example.test/master.mp4?expires=300',
+        url: 'https://signed.example.test/current-video.mp4?expires=300',
         expiresAt: '2026-07-13T12:05:00.000Z',
       }),
     };
@@ -1028,21 +2068,17 @@ describe('StoryFilmBuildService media delivery policy', () => {
 
     await expect(
       service.issueBuildAssetReadUrl(
-        USER as never,
+        undefined,
         PROJECT_ID,
         BUILD_ID,
         ASSET_ID,
         VARIANT_ID,
       ),
     ).resolves.toEqual({
-      url: 'https://signed.example.test/master.mp4?expires=300',
+      url: 'https://signed.example.test/current-video.mp4?expires=300',
       expiresAt: '2026-07-13T12:05:00.000Z',
     });
-    expect(permissions.requireProject).toHaveBeenCalledWith(
-      USER.userId,
-      PROJECT_ID,
-      'story.read',
-    );
+    expect(permissions.requireProject).not.toHaveBeenCalled();
     expect(prisma.storyBuildAsset.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -1057,7 +2093,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
       expect.objectContaining({
         storageProvider: 'aliyun_oss',
         bucket: 'story-media',
-        objectKey: 'builds/master.mp4',
+        objectKey: 'builds/current-video.mp4',
       }),
       expect.objectContaining({
         cacheControl: 'private, no-store',
@@ -1066,11 +2102,19 @@ describe('StoryFilmBuildService media delivery policy', () => {
     );
   });
 
-  it('rejects external Build media because it cannot provide expiring signed access', async () => {
+  it('delivers external Build media by its own URL without signing', async () => {
     const row = readyBuildRow();
     const frozen = {
       ...row.assets[0],
-      build: { status: 'ready' },
+      build: {
+        status: 'ready',
+        kind: 'production',
+        scope: { kind: 'full' },
+        experiencePublication: {
+          mediaAuthorizedAt: new Date(),
+          mediaAuthorizationRevokedAt: null,
+        },
+      },
       asset: {
         ...row.assets[0].asset,
         visibility: 'public',
@@ -1078,7 +2122,7 @@ describe('StoryFilmBuildService media delivery policy', () => {
         bucket: null,
         region: null,
         objectKey: null,
-        externalUrl: 'https://cdn.example.test/permanent-master.mp4',
+        externalUrl: 'https://cdn.example.test/permanent-current-video.mp4',
         contentType: 'video/mp4',
         placements: [],
       },
@@ -1104,6 +2148,149 @@ describe('StoryFilmBuildService media delivery policy', () => {
       storage as never,
     );
 
+    const delivery = await service.issueBuildAssetReadUrl(
+      undefined,
+      PROJECT_ID,
+      BUILD_ID,
+      ASSET_ID,
+      VARIANT_ID,
+    );
+    expect(delivery.url).toBe(
+      'https://cdn.example.test/permanent-current-video.mp4',
+    );
+    expect(typeof delivery.expiresAt).toBe('string');
+    expect(storage.createReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('requires live auth after a definitive publication revokes media access', async () => {
+    const row = readyBuildRow();
+    const frozen = {
+      ...row.assets[0],
+      build: {
+        status: 'ready',
+        kind: 'production',
+        scope: { kind: 'full' },
+        experiencePublication: {
+          mediaAuthorizedAt: new Date('2026-07-13T12:00:00.000Z'),
+          mediaAuthorizationRevokedAt: new Date('2026-07-13T12:01:00.000Z'),
+        },
+      },
+      asset: { ...row.assets[0].asset, placements: [] },
+      variant: { ...row.assets[0].variant, placements: [] },
+    };
+    const service = new StoryFilmBuildService(
+      {
+        storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
+      } as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('requires authentication before delivering an unpublished Build', async () => {
+    const row = readyBuildRow();
+    const frozen = {
+      ...row.assets[0],
+      build: {
+        status: 'ready',
+        kind: 'preview',
+        scope: { kind: 'full' },
+        experiencePublication: null,
+      },
+      asset: {
+        ...row.assets[0].asset,
+        storageProvider: 'azure_blob',
+        bucket: 'story-media',
+        region: null,
+        objectKey: 'builds/current-video.mp4',
+        externalUrl: null,
+        contentType: 'video/mp4',
+        placements: [],
+      },
+      variant: {
+        ...row.assets[0].variant,
+        variantKey: 'original',
+        contentType: 'video/mp4',
+        placements: [],
+      },
+    };
+    const prisma = {
+      storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
+    };
+    const storage = { createReadUrl: jest.fn() };
+    const service = new StoryFilmBuildService(
+      prisma as never,
+      {} as never,
+      storage as never,
+    );
+
+    await expect(
+      service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(storage.createReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('delivers an unpublished Build only after a live story.read check', async () => {
+    const row = readyBuildRow();
+    const frozen = {
+      ...row.assets[0],
+      build: {
+        status: 'ready',
+        kind: 'preview',
+        scope: { kind: 'full' },
+        experiencePublication: null,
+      },
+      asset: {
+        ...row.assets[0].asset,
+        storageProvider: 'azure_blob',
+        bucket: 'story-media',
+        region: null,
+        objectKey: 'builds/current-video.mp4',
+        externalUrl: null,
+        contentType: 'video/mp4',
+        placements: [],
+      },
+      variant: {
+        ...row.assets[0].variant,
+        variantKey: 'original',
+        contentType: 'video/mp4',
+        placements: [],
+      },
+    };
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue({
+        project: { workspaceId: WORKSPACE_ID },
+      }),
+    };
+    const storage = {
+      createReadUrl: jest.fn().mockResolvedValue({
+        url: 'https://signed.example.test/private-preview.mp4?expires=300',
+        expiresAt: '2026-07-13T12:05:00.000Z',
+      }),
+    };
+    const service = new StoryFilmBuildService(
+      {
+        storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
+      } as never,
+      permissions as never,
+      storage as never,
+    );
+
     await expect(
       service.issueBuildAssetReadUrl(
         USER as never,
@@ -1112,7 +2299,69 @@ describe('StoryFilmBuildService media delivery policy', () => {
         ASSET_ID,
         VARIANT_ID,
       ),
-    ).rejects.toBeInstanceOf(GoneException);
+    ).resolves.toMatchObject({
+      url: 'https://signed.example.test/private-preview.mp4?expires=300',
+    });
+    expect(permissions.requireProject).toHaveBeenCalledWith(
+      USER.userId,
+      PROJECT_ID,
+      'story.read',
+    );
+  });
+
+  it('cannot mint another private Build URL after story.read is revoked', async () => {
+    const row = readyBuildRow();
+    const frozen = {
+      ...row.assets[0],
+      build: {
+        status: 'ready',
+        kind: 'production',
+        scope: { kind: 'full' },
+        experiencePublication: null,
+      },
+      asset: {
+        ...row.assets[0].asset,
+        storageProvider: 'aliyun_oss',
+        bucket: 'story-media',
+        region: 'oss-cn-hangzhou',
+        objectKey: 'builds/current-video.mp4',
+        externalUrl: null,
+        contentType: 'video/mp4',
+        placements: [],
+      },
+      variant: {
+        ...row.assets[0].variant,
+        variantKey: 'original',
+        contentType: 'video/mp4',
+        placements: [],
+      },
+    };
+    const permissions = {
+      requireProject: jest.fn().mockRejectedValue(
+        new NotFoundException({
+          code: 'STORY_PROJECT_NOT_FOUND',
+          message: 'Story project not found.',
+        }),
+      ),
+    };
+    const storage = { createReadUrl: jest.fn() };
+    const service = new StoryFilmBuildService(
+      {
+        storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
+      } as never,
+      permissions as never,
+      storage as never,
+    );
+
+    await expect(
+      service.issueBuildAssetReadUrl(
+        USER as never,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(storage.createReadUrl).not.toHaveBeenCalled();
   });
 });

@@ -4,10 +4,7 @@ import type {
   InteractiveFilmDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
-import {
-  buildStoryCanvasModel,
-  normalizeStoryClipPromptDrafts,
-} from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 describe("buildStoryCanvasModel", () => {
   it("projects the story bible root even when the executable graph is empty", () => {
@@ -19,6 +16,7 @@ describe("buildStoryCanvasModel", () => {
       {
         id: "__story_root__",
         type: "storyCanvas",
+        dragHandle: ".canvas-node-drag-handle",
         position: { x: 0, y: 0 },
         data: { kind: "root", title: "Story World" },
       },
@@ -37,20 +35,13 @@ describe("buildStoryCanvasModel", () => {
     });
   });
 
-  it("normalizes a legacy payload with no trailerPrompt to an explicit null", () => {
-    const legacy = draft();
-    delete (legacy as Partial<InteractiveFilmDraftContent>).trailerPrompt;
-
-    expect(normalizeStoryClipPromptDrafts(legacy)).toHaveProperty("trailerPrompt", null);
-  });
-
   it("projects a linear auto route into deterministic BFS layers", () => {
     const content = draft({
       entryNodeId: "opening",
       nodes: [
         clip("opening", "clip-opening", {
           kind: "auto",
-          routes: [{ nextNodeId: "arrival", priority: 0 }],
+          nextNodeId: "arrival",
         }),
         clip("arrival", "clip-arrival", { kind: "ending", endingId: "truth" }),
       ],
@@ -107,27 +98,27 @@ describe("buildStoryCanvasModel", () => {
       {
         source: "opening",
         target: "arrival",
-        sourceHandle: "auto:0",
+        sourceHandle: "completion",
         targetHandle: "in",
-        data: { kind: "auto", priority: 0 },
+        data: { kind: "continuation" },
       },
       {
         source: "arrival",
         target: "__ending__:truth",
-        sourceHandle: "ending",
+        sourceHandle: "completion",
         targetHandle: "ending-in",
         data: { kind: "ending", endingId: "truth" },
       },
     ]);
-    expect(first.nodes.find((node) => node.id === "opening")?.data.autoRoutes).toEqual([
-      { routeIndex: 0, targetNodeId: "arrival", priority: 0, hasCondition: false },
-    ]);
+    expect(first.nodes.find((node) => node.id === "opening")?.data).toMatchObject({
+      continuationTargetNodeId: "arrival",
+    });
   });
 
   it("projects mutable director authoring onto its clip card without mutation", () => {
     const prompt = clipPrompt("opening", "OPENING");
     const content = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", routes: [] })],
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
       clipPrompts: [prompt],
     });
 
@@ -137,13 +128,13 @@ describe("buildStoryCanvasModel", () => {
     expect(content.clipPrompts).toEqual([prompt]);
   });
 
-  it("normalizes a legacy payload with no clipPrompts before projection", () => {
-    const legacy = draft({
-      nodes: [clip("opening", "OPENING", { kind: "auto", routes: [] })],
+  it("creates the director prompt shell for a newly added graph clip", () => {
+    const content = draft({
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
+      clipPrompts: [],
     });
-    delete (legacy as Partial<InteractiveFilmDraftContent>).clipPrompts;
 
-    const model = buildStoryCanvasModel(legacy, "en-US");
+    const model = buildStoryCanvasModel(content, "en-US");
 
     expect(model.nodes.find((node) => node.id === "opening")?.data.directorPrompt).toMatchObject({
       graphNodeId: "opening",
@@ -232,7 +223,7 @@ describe("buildStoryCanvasModel", () => {
         expect.objectContaining({
           source: "decision",
           target: "__decision__:decision",
-          sourceHandle: "choice-trigger",
+          sourceHandle: "completion",
           targetHandle: "decision-in",
           data: { kind: "decision", decisionId: "gate", sourceNodeId: "decision" },
         }),
@@ -281,7 +272,7 @@ describe("buildStoryCanvasModel", () => {
         expect.objectContaining({
           source: "scene",
           target: "epilogue",
-          sourceHandle: "checkpoint",
+          sourceHandle: "completion",
           targetHandle: "in",
           data: { kind: "checkpoint" },
         }),

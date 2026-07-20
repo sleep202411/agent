@@ -1,0 +1,59 @@
+openapi: 3.1.0
+info:
+  title: FizzDragon Interactive Experience Release API
+  version: 1.0.0
+  description: |
+    Agreed Java publication and discovery API. Every path is relative to a
+    deployment-owned `{prefix}`. Java persists `manifest` as opaque JSON in
+    object storage/CDN and returns its URL; Java does not parse or normalize
+    Runtime Manifest v2.
+x-path-prefix-owned-by-host: true
+paths:
+  /releases:
+    post:
+      operationId: publishExperienceRelease
+      summary: Create or idempotently return one immutable game release
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./release-request.schema.json
+      responses:
+        "200":
+          description: Release accepted or the identical version returned idempotently
+          content:
+            application/json:
+              schema:
+                $ref: ./release-response.schema.json
+  /games:
+    get:
+      operationId: listExperienceGames
+      summary: List games and their current published versions
+      responses:
+        "200":
+          description: Current game catalog
+          content:
+            application/json:
+              schema:
+                $ref: ./game-list-response.schema.json
+  /games/{gameId}:
+    get:
+      operationId: getExperienceGame
+      summary: Resolve one game to its current immutable manifest URL
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:/-]*$
+      responses:
+        "200":
+          description: Game discovery metadata and current manifest URL
+          content:
+            application/json:
+              schema:
+                $ref: ./game-detail-response.schema.json

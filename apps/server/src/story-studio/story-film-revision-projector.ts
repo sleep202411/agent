@@ -4,6 +4,7 @@ import {
   FilmSpecSchema,
   FilmTrailerSpecSchema,
   findInteractiveFilmRuntimeLocaleCoverageIssues,
+  ProductionReadyStoryTrailerPromptSchema,
   type FilmClipSpec,
   type FilmSpec,
   type FilmTrailerSpec,
@@ -26,6 +27,45 @@ export interface StoryFilmDraftClipProjectionInput {
   draft: InteractiveFilmDraftContent;
   frameProfile: StoryFrameProfile;
   graphNodeId: string;
+  /**
+   * Video-first clips: a creator may bind an existing video to a shot that
+   * has no authored director prompt. When set, a missing **or empty shell**
+   * prompt (the default created with every new clip node) projects a
+   * deterministic default spec instead of throwing. Generation paths MUST
+   * leave this unset — a placeholder prompt must never reach a provider.
+   */
+  allowVideoFirst?: boolean;
+}
+
+const VIDEO_FIRST_DEFAULT_DURATION_MS = 15_000;
+const VIDEO_FIRST_PROMPT_TEXT =
+  'Video-first clip: playback uses the manually bound video; no authored direction.';
+
+/**
+ * True when the draft still carries only the empty authoring shell from
+ * {@link createDefaultStoryClipPromptDraft} (or equivalent blanks). New clip
+ * nodes always get that shell — so video-first must treat it like "no prompt",
+ * not attempt FilmClipSpec projection of empty strings.
+ */
+export function isUnauthoredClipPrompt(
+  prompt: StoryClipPromptDraft | null | undefined,
+): boolean {
+  if (!prompt) return true;
+  if (prompt.masterDirection.trim() || prompt.emotionalArc.trim()) {
+    return false;
+  }
+  return !prompt.beats.some(
+    (beat) =>
+      beat.visual.trim() ||
+      beat.camera.trim() ||
+      beat.action.trim() ||
+      beat.performance.trim() ||
+      beat.emotion.trim() ||
+      beat.dialogue.trim() ||
+      beat.audio.trim() ||
+      beat.endState.trim() ||
+      beat.continuity.trim(),
+  );
 }
 
 /**
@@ -52,21 +92,64 @@ export function projectStoryFilmDraftClip(
   const prompt = input.draft.clipPrompts.find(
     (candidate) => candidate.graphNodeId === node.nodeId,
   );
-  if (!prompt) {
-    throw new Error(`Draft clip ${input.graphNodeId} has no director prompt.`);
-  }
   const openingNodeIds = collectOpeningClipNodeIds(input.draft);
   const rank = clipNodes.findIndex(
     (candidate) => candidate.nodeId === node.nodeId,
   );
+  const kind = openingNodeIds.has(node.nodeId)
+    ? 'opening'
+    : node.exit.kind === 'ending'
+      ? 'ending'
+      : 'scene';
+  const useVideoFirst =
+    input.allowVideoFirst === true && isUnauthoredClipPrompt(prompt);
+  if (useVideoFirst) {
+    // Deterministic constants keep the synthesized spec hash stable across
+    // relocks. The wide duration tolerance mirrors the manual-bind rule:
+    // the video IS the content, the contract does not constrain it.
+    return FilmClipSpecSchema.parse({
+      key: node.clipKey,
+      graphNodeId: node.nodeId,
+      kind,
+      title: node.clipKey,
+      description: '',
+      rank,
+      targetDurationMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+      generationControl: { mode: 'omni_reference' },
+      prompt: {
+        masterPrompt: VIDEO_FIRST_PROMPT_TEXT,
+        negativeConstraints: [],
+        timeline: [
+          {
+            startMs: 0,
+            endMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+            visual: VIDEO_FIRST_PROMPT_TEXT,
+            camera: 'unspecified',
+            action: 'unspecified',
+          },
+        ],
+      },
+      dialogueWindows: [],
+      outputContract: {
+        ...frame,
+        durationMs: VIDEO_FIRST_DEFAULT_DURATION_MS,
+        durationToleranceMs: 30_000,
+        framesPerSecond: {
+          numerator: DEFAULT_FRAMES_PER_SECOND,
+          denominator: 1,
+        },
+        audio: 'embedded',
+      },
+      continuityNotes: [],
+    });
+  }
+  if (!prompt) {
+    throw new Error(`Draft clip ${input.graphNodeId} has no director prompt.`);
+  }
   return FilmClipSpecSchema.parse({
     key: node.clipKey,
     graphNodeId: node.nodeId,
-    kind: openingNodeIds.has(node.nodeId)
-      ? 'opening'
-      : node.exit.kind === 'ending'
-        ? 'ending'
-        : 'scene',
+    kind,
     title: prompt.title,
     description: prompt.description,
     rank,
@@ -115,6 +198,8 @@ export function projectStoryFilmRevision(input: {
   frameProfile: StoryFrameProfile;
   defaultLocale: string;
   defaultCanonicalModelId: string;
+  /** Full-story playtests exclude the separately produced project trailer. */
+  includeTrailer?: boolean;
 }): StoryFilmRevisionProjection {
   const frame = STORY_FRAME_PROFILE_CONTRACTS[input.frameProfile];
   const clipNodes = input.draft.graph.nodes.filter(
@@ -125,6 +210,7 @@ export function projectStoryFilmRevision(input: {
       draft: input.draft,
       frameProfile: input.frameProfile,
       graphNodeId: node.nodeId,
+      allowVideoFirst: true,
     }),
   );
 
@@ -155,18 +241,26 @@ export function projectStoryFilmRevision(input: {
       node.exit.kind === 'choice' ? [node.exit.decisionId] : [],
     ),
   ).size;
-  const trailerSpec = input.draft.trailerPrompt
+  const trailerPromptResult =
+    input.includeTrailer !== false && input.draft.trailerPrompt
+      ? ProductionReadyStoryTrailerPromptSchema.safeParse(
+          input.draft.trailerPrompt,
+        )
+      : null;
+  const trailerPrompt =
+    trailerPromptResult?.success === true ? trailerPromptResult.data : null;
+  const trailerSpec = trailerPrompt
     ? FilmTrailerSpecSchema.parse({
         schemaVersion: 1,
-        title: input.draft.trailerPrompt.title,
-        description: input.draft.trailerPrompt.description,
-        targetDurationMs: input.draft.trailerPrompt.targetDurationMs,
-        generationControl: input.draft.trailerPrompt.generationControl,
-        referenceRoleNotes: input.draft.trailerPrompt.referenceRoleNotes,
+        title: trailerPrompt.title,
+        description: trailerPrompt.description,
+        targetDurationMs: trailerPrompt.targetDurationMs,
+        generationControl: trailerPrompt.generationControl,
+        referenceRoleNotes: trailerPrompt.referenceRoleNotes,
         prompt: {
-          masterPrompt: compileStoryTrailerPrompt(input.draft.trailerPrompt),
-          negativeConstraints: input.draft.trailerPrompt.negativeConstraints,
-          timeline: input.draft.trailerPrompt.beats.map((beat) => ({
+          masterPrompt: compileStoryTrailerPrompt(trailerPrompt),
+          negativeConstraints: trailerPrompt.negativeConstraints,
+          timeline: trailerPrompt.beats.map((beat) => ({
             startMs: beat.startMs,
             endMs: beat.endMs,
             visual: beat.visual,
@@ -184,7 +278,7 @@ export function projectStoryFilmRevision(input: {
         },
         outputContract: {
           ...frame,
-          durationMs: input.draft.trailerPrompt.targetDurationMs,
+          durationMs: trailerPrompt.targetDurationMs,
           durationToleranceMs: 0,
           framesPerSecond: {
             numerator: DEFAULT_FRAMES_PER_SECOND,
@@ -192,7 +286,7 @@ export function projectStoryFilmRevision(input: {
           },
           audio: 'embedded',
         },
-        continuityNotes: input.draft.trailerPrompt.continuityNotes,
+        continuityNotes: trailerPrompt.continuityNotes,
       })
     : null;
 
@@ -225,7 +319,6 @@ export function projectStoryFilmRevision(input: {
       generation: {
         defaultCanonicalModelId: input.defaultCanonicalModelId,
       },
-      reviewPolicy: 'explicit_approval',
     }),
     clipSpecs,
     trailerSpec,
@@ -303,9 +396,13 @@ function calculatePlaybackDurationContract(
         maxContinuousMs: ownDurationMs,
       };
     } else if (node.exit.kind === 'auto') {
-      const successors = node.exit.routes.map((route) =>
-        visit(route.nextNodeId),
-      );
+      const successorNodeIds =
+        node.kind === 'clip'
+          ? node.exit.nextNodeId
+            ? [node.exit.nextNodeId]
+            : []
+          : node.exit.routes.map((route) => route.nextNodeId);
+      const successors = successorNodeIds.map(visit);
       result = successors.reduce(
         (current, successor) => ({
           minTotalMs: Math.min(

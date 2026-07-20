@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 
 export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION =
-  'interactive-film-draft-v1' as const;
+  'interactive-film-draft-v2' as const;
 export const INTERACTIVE_FILM_RUNTIME_SCHEMA_VERSION = 1 as const;
 
 export const StoryUuidSchema = z.string().uuid();
@@ -232,20 +232,25 @@ export const StoryGraphChoiceSchema = z
   })
   .strict();
 
-const StoryAutoExitSchema = z
+const StoryAutoRouteSchema = z
+  .object({
+    nextNodeId: StoryStableIdSchema,
+    when: FilmConditionSchema.optional(),
+    priority: z.number().int().min(0).max(10_000).default(0),
+  })
+  .strict();
+
+const StoryClipAutoExitSchema = z
   .object({
     kind: z.literal('auto'),
-    routes: z
-      .array(
-        z
-          .object({
-            nextNodeId: StoryStableIdSchema,
-            when: FilmConditionSchema.optional(),
-            priority: z.number().int().min(0).max(10_000).default(0),
-          })
-          .strict(),
-      )
-      .max(20),
+    nextNodeId: StoryStableIdSchema.nullable(),
+  })
+  .strict();
+
+const StoryRouterAutoExitSchema = z
+  .object({
+    kind: z.literal('auto'),
+    routes: z.array(StoryAutoRouteSchema).max(20),
   })
   .strict();
 
@@ -253,10 +258,7 @@ const StoryChoiceExitSchema = z
   .object({
     kind: z.literal('choice'),
     decisionId: StoryStableIdSchema,
-    // Early interactive-film drafts stored the decision prompt only in the
-    // story bible. Keep the mutable graph boundary able to read those rows;
-    // locking still validates the projected production structure.
-    prompt: DraftLocalizedTextSchema.default({}),
+    prompt: DraftLocalizedTextSchema,
     trigger: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('media-ended') }).strict(),
       z
@@ -297,7 +299,7 @@ const StoryClipGraphNodeSchema = z
     nodeId: StoryStableIdSchema,
     clipKey: FilmClipKeySchema,
     exit: z.discriminatedUnion('kind', [
-      StoryAutoExitSchema,
+      StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
       StoryCheckpointExitSchema,
       StoryEndingExitSchema,
@@ -314,7 +316,7 @@ const StoryRouterGraphNodeSchema = z
   .object({
     kind: z.literal('router'),
     nodeId: StoryStableIdSchema,
-    exit: StoryAutoExitSchema,
+    exit: StoryRouterAutoExitSchema,
   })
   .strict();
 
@@ -436,6 +438,29 @@ export type StoryTrailerPromptDraft = z.infer<
   typeof StoryTrailerPromptDraftSchema
 >;
 
+/**
+ * Eligibility boundary for creating immutable trailer-production records.
+ *
+ * `StoryTrailerPromptDraftSchema` intentionally accepts an unfinished
+ * authoring draft. A project trailer is optional promotional media, so its
+ * authoring state must not participate in full-gameplay Revision readiness.
+ * Only a prompt that passes this schema may be projected into a
+ * `FilmTrailerSpec` and enter trailer production.
+ */
+export const ProductionReadyStoryTrailerPromptSchema =
+  StoryTrailerPromptDraftSchema.superRefine((prompt, context) => {
+    validateProductionReadyVideoPrompt(
+      prompt,
+      context,
+      [],
+      'trailer',
+      'Required before trailer production.',
+    );
+  });
+export type ProductionReadyStoryTrailerPrompt = z.infer<
+  typeof ProductionReadyStoryTrailerPromptSchema
+>;
+
 const InteractiveFilmDraftContentBaseSchema = z
   .object({
     storyBible: z
@@ -452,12 +477,9 @@ const InteractiveFilmDraftContentBaseSchema = z
       })
       .strict(),
     graph: InteractiveFilmStoryGraphSchema,
-    clipPrompts: z.array(StoryClipPromptDraftSchema).max(500).default([]),
-    // v1 draft evolution follows the existing normalisation convention used
-    // by clipPrompts: old stored heads parse to the explicit absence of a
-    // trailer without inventing a production record.
-    trailerPrompt: StoryTrailerPromptDraftSchema.nullable().default(null),
-    productionNotes: z.array(z.string().max(2_000)).max(200).default([]),
+    clipPrompts: z.array(StoryClipPromptDraftSchema).max(500),
+    trailerPrompt: StoryTrailerPromptDraftSchema.nullable(),
+    productionNotes: z.array(z.string().max(2_000)).max(200),
   })
   .strict();
 type InteractiveFilmDraftContentBase = z.infer<
@@ -852,8 +874,36 @@ function scalarMatchesVariableType(
 }
 
 /**
+ * Full-story playtest gate. A playable draft must satisfy the same story,
+ * branch, localized runtime-copy, and clip-production contracts as a locked
+ * Revision. The optional project trailer is deliberately outside this
+ * boundary: it is a separately produced marketing asset and is not part of
+ * the full interactive-film Runtime Manifest.
+ */
+export function createPlayableInteractiveFilmDraftContentSchema(
+  defaultLocale?: string,
+) {
+  const normalizedDefaultLocale = defaultLocale
+    ? StoryLocaleSchema.parse(defaultLocale)
+    : undefined;
+  return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
+    validateInteractiveFilmGameplayReadiness(
+      draft,
+      context,
+      normalizedDefaultLocale,
+    );
+  });
+}
+
+export const PlayableInteractiveFilmDraftContentSchema =
+  createPlayableInteractiveFilmDraftContentSchema();
+
+/**
  * Revision-lock gate. PUT /draft intentionally uses the permissive mutable
  * schema above; POST /revisions/lock parses the stored head through this one.
+ * This is the immutable full-gameplay boundary: story graph, runtime copy and
+ * every film clip must be production-ready. The optional trailer has its own
+ * independent production-readiness schema above.
  */
 export function createLockableInteractiveFilmDraftContentSchema(
   defaultLocale?: string,
@@ -862,14 +912,151 @@ export function createLockableInteractiveFilmDraftContentSchema(
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
   return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
-    validateLockableDraft(draft, context, normalizedDefaultLocale);
+    validateInteractiveFilmGameplayReadiness(
+      draft,
+      context,
+      normalizedDefaultLocale,
+    );
   });
 }
 
 export const LockableInteractiveFilmDraftContentSchema =
   createLockableInteractiveFilmDraftContentSchema();
 
-function validateLockableDraft(
+function isBlankClipPromptForReadiness(prompt: {
+  masterDirection: string;
+  emotionalArc: string;
+  beats: ReadonlyArray<{
+    visual: string;
+    camera: string;
+    action: string;
+    performance: string;
+    emotion: string;
+    dialogue: string;
+    audio: string;
+    endState: string;
+    continuity: string;
+  }>;
+}): boolean {
+  // Must agree with the projector's isUnauthoredClipPrompt: a prompt is blank
+  // only when NO field carries authored content, so lock and projection never
+  // disagree (lock skipping a prompt the projector would then reject).
+  if (prompt.masterDirection.trim() || prompt.emotionalArc.trim()) return false;
+  return !prompt.beats.some(
+    (beat) =>
+      beat.visual.trim() ||
+      beat.camera.trim() ||
+      beat.action.trim() ||
+      beat.performance.trim() ||
+      beat.emotion.trim() ||
+      beat.dialogue.trim() ||
+      beat.audio.trim() ||
+      beat.endState.trim() ||
+      beat.continuity.trim(),
+  );
+}
+
+function validateProductionReadyVideoPrompt(
+  prompt: StoryClipPromptDraft | StoryTrailerPromptDraft,
+  context: z.RefinementCtx,
+  promptPath: PropertyKey[],
+  subject: 'clip' | 'trailer',
+  requiredMessage: string,
+): void {
+  const requireText = (value: string, path: PropertyKey[]) => {
+    if (!value.trim()) {
+      context.addIssue({ code: 'custom', path, message: requiredMessage });
+    }
+  };
+  requireText(prompt.title, [...promptPath, 'title']);
+  requireText(prompt.masterDirection, [...promptPath, 'masterDirection']);
+  requireText(prompt.emotionalArc, [...promptPath, 'emotionalArc']);
+  prompt.referenceRoleNotes.forEach((note, noteIndex) => {
+    requireText(note.referenceId, [
+      ...promptPath,
+      'referenceRoleNotes',
+      noteIndex,
+      'referenceId',
+    ]);
+    requireText(note.note, [
+      ...promptPath,
+      'referenceRoleNotes',
+      noteIndex,
+      'note',
+    ]);
+  });
+  prompt.negativeConstraints.forEach((constraint, constraintIndex) =>
+    requireText(constraint, [
+      ...promptPath,
+      'negativeConstraints',
+      constraintIndex,
+    ]),
+  );
+  prompt.continuityNotes.forEach((note, noteIndex) =>
+    requireText(note, [...promptPath, 'continuityNotes', noteIndex]),
+  );
+  if (prompt.beats.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: [...promptPath, 'beats'],
+      message:
+        subject === 'clip'
+          ? 'A lockable clip prompt needs at least one time-coded beat.'
+          : 'A production-ready trailer prompt needs at least one time-coded beat.',
+    });
+  }
+  let previousEndMs = 0;
+  prompt.beats.forEach((beat, beatIndex) => {
+    const beatPath = [...promptPath, 'beats', beatIndex];
+    requireText(beat.visual, [...beatPath, 'visual']);
+    requireText(beat.camera, [...beatPath, 'camera']);
+    requireText(beat.action, [...beatPath, 'action']);
+    if (beat.endMs <= beat.startMs) {
+      context.addIssue({
+        code: 'custom',
+        path: [...beatPath, 'endMs'],
+        message: 'Beat endMs must be greater than startMs.',
+      });
+    }
+    if (beatIndex === 0 && beat.startMs !== 0) {
+      context.addIssue({
+        code: 'custom',
+        path: [...beatPath, 'startMs'],
+        message: `The first ${subject} prompt beat must start at 0ms.`,
+      });
+    } else if (beat.startMs < previousEndMs) {
+      context.addIssue({
+        code: 'custom',
+        path: [...beatPath, 'startMs'],
+        message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be ordered and non-overlapping.`,
+      });
+    } else if (beatIndex > 0 && beat.startMs > previousEndMs) {
+      context.addIssue({
+        code: 'custom',
+        path: [...beatPath, 'startMs'],
+        message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be contiguous with no uncovered time.`,
+      });
+    }
+    if (beat.endMs > prompt.targetDurationMs) {
+      context.addIssue({
+        code: 'custom',
+        path: [...beatPath, 'endMs'],
+        message: 'Beat endMs cannot exceed targetDurationMs.',
+      });
+    }
+    previousEndMs = Math.max(previousEndMs, beat.endMs);
+  });
+  const finalBeat = prompt.beats.at(-1);
+  if (finalBeat && finalBeat.endMs !== prompt.targetDurationMs) {
+    context.addIssue({
+      code: 'custom',
+      path: [...promptPath, 'beats', prompt.beats.length - 1, 'endMs'],
+      message: `The final ${subject} prompt beat must end exactly at targetDurationMs.`,
+    });
+  }
+}
+
+function validateInteractiveFilmGameplayReadiness(
   draft: InteractiveFilmDraftContent,
   context: z.RefinementCtx,
   defaultLocale?: string,
@@ -916,96 +1103,6 @@ function validateLockableDraft(
     });
     return seen;
   };
-  const validateVideoPrompt = (
-    prompt: StoryClipPromptDraft | StoryTrailerPromptDraft,
-    promptPath: PropertyKey[],
-    subject: 'clip' | 'trailer',
-  ) => {
-    requireText(prompt.title, [...promptPath, 'title']);
-    requireText(prompt.masterDirection, [...promptPath, 'masterDirection']);
-    requireText(prompt.emotionalArc, [...promptPath, 'emotionalArc']);
-    prompt.referenceRoleNotes.forEach((note, noteIndex) => {
-      requireText(note.referenceId, [
-        ...promptPath,
-        'referenceRoleNotes',
-        noteIndex,
-        'referenceId',
-      ]);
-      requireText(note.note, [
-        ...promptPath,
-        'referenceRoleNotes',
-        noteIndex,
-        'note',
-      ]);
-    });
-    prompt.negativeConstraints.forEach((constraint, constraintIndex) =>
-      requireText(constraint, [
-        ...promptPath,
-        'negativeConstraints',
-        constraintIndex,
-      ]),
-    );
-    prompt.continuityNotes.forEach((note, noteIndex) =>
-      requireText(note, [...promptPath, 'continuityNotes', noteIndex]),
-    );
-    if (prompt.beats.length === 0) {
-      context.addIssue({
-        code: 'custom',
-        path: [...promptPath, 'beats'],
-        message: `A lockable ${subject} prompt needs at least one time-coded beat.`,
-      });
-    }
-    let previousEndMs = 0;
-    prompt.beats.forEach((beat, beatIndex) => {
-      const beatPath = [...promptPath, 'beats', beatIndex];
-      requireText(beat.visual, [...beatPath, 'visual']);
-      requireText(beat.camera, [...beatPath, 'camera']);
-      requireText(beat.action, [...beatPath, 'action']);
-      if (beat.endMs <= beat.startMs) {
-        context.addIssue({
-          code: 'custom',
-          path: [...beatPath, 'endMs'],
-          message: 'Beat endMs must be greater than startMs.',
-        });
-      }
-      if (beatIndex === 0 && beat.startMs !== 0) {
-        context.addIssue({
-          code: 'custom',
-          path: [...beatPath, 'startMs'],
-          message: `The first ${subject} prompt beat must start at 0ms.`,
-        });
-      } else if (beat.startMs < previousEndMs) {
-        context.addIssue({
-          code: 'custom',
-          path: [...beatPath, 'startMs'],
-          message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be ordered and non-overlapping.`,
-        });
-      } else if (beatIndex > 0 && beat.startMs > previousEndMs) {
-        context.addIssue({
-          code: 'custom',
-          path: [...beatPath, 'startMs'],
-          message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be contiguous with no uncovered time.`,
-        });
-      }
-      if (beat.endMs > prompt.targetDurationMs) {
-        context.addIssue({
-          code: 'custom',
-          path: [...beatPath, 'endMs'],
-          message: 'Beat endMs cannot exceed targetDurationMs.',
-        });
-      }
-      previousEndMs = Math.max(previousEndMs, beat.endMs);
-    });
-    const finalBeat = prompt.beats.at(-1);
-    if (finalBeat && finalBeat.endMs !== prompt.targetDurationMs) {
-      context.addIssue({
-        code: 'custom',
-        path: [...promptPath, 'beats', prompt.beats.length - 1, 'endMs'],
-        message: `The final ${subject} prompt beat must end exactly at targetDurationMs.`,
-      });
-    }
-  };
-
   requireText(draft.storyBible.logline, ['storyBible', 'logline']);
   requireText(draft.storyBible.synopsis, ['storyBible', 'synopsis']);
   requireText(draft.storyBible.worldview, ['storyBible', 'worldview']);
@@ -1158,12 +1255,21 @@ function validateLockableDraft(
     }
   });
 
-  draft.clipPrompts.forEach((prompt, promptIndex) =>
-    validateVideoPrompt(prompt, ['clipPrompts', promptIndex], 'clip'),
-  );
-  if (draft.trailerPrompt) {
-    validateVideoPrompt(draft.trailerPrompt, ['trailerPrompt'], 'trailer');
-  }
+  // Video-first: a clip is playable from its bound video alone, so a complete
+  // director prompt is NOT required to lock/publish. Director prompts only
+  // drive AI video generation; the player never sees them. Only validate a
+  // prompt that the creator actually authored (non-blank), so partially
+  // written prompts still surface their gaps.
+  draft.clipPrompts.forEach((prompt, promptIndex) => {
+    if (isBlankClipPromptForReadiness(prompt)) return;
+    validateProductionReadyVideoPrompt(
+      prompt,
+      context,
+      ['clipPrompts', promptIndex],
+      'clip',
+      'Required before locking a revision.',
+    );
+  });
 
   const nodeIds = unique(
     draft.graph.nodes,
@@ -1324,7 +1430,22 @@ function validateLockableDraft(
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.exit.kind === 'auto') {
+    if (node.kind === 'clip' && node.exit.kind === 'auto') {
+      if (node.exit.nextNodeId === null) {
+        context.addIssue({
+          code: 'custom',
+          path: [...exitPath, 'nextNodeId'],
+          message: 'A clip continuation needs a target node.',
+        });
+      } else if (!nodeIds.has(node.exit.nextNodeId)) {
+        context.addIssue({
+          code: 'custom',
+          path: [...exitPath, 'nextNodeId'],
+          message: `Unknown target node ${node.exit.nextNodeId}.`,
+        });
+      }
+    }
+    if (node.kind === 'router') {
       if (node.exit.routes.length === 0) {
         context.addIssue({
           code: 'custom',
@@ -1452,11 +1573,6 @@ export const FilmFrameRateSchema = z
   })
   .strict();
 
-export const FilmReviewPolicySchema = z.enum([
-  'explicit_approval',
-  'four_eyes',
-]);
-
 export const FilmAspectRatioSchema = z.enum(['16:9', '9:16']);
 export type FilmAspectRatio = z.infer<typeof FilmAspectRatioSchema>;
 
@@ -1506,7 +1622,6 @@ export const FilmSpecSchema = z
       })
       .strict(),
     generation: z.object({ defaultCanonicalModelId: StoryUuidSchema }).strict(),
-    reviewPolicy: FilmReviewPolicySchema,
   })
   .strict()
   .superRefine((spec, context) => {
@@ -1970,33 +2085,6 @@ export type FilmClipDependencySpec = z.infer<
 >;
 
 export const ReviewChecklistValueSchema = z.enum(['pass', 'fail', 'na']);
-export const FilmTakeReviewChecklistSchema = z
-  .object({
-    technical: ReviewChecklistValueSchema,
-    identityContinuity: ReviewChecklistValueSchema,
-    visualContinuity: ReviewChecklistValueSchema,
-    motion: ReviewChecklistValueSchema,
-    dialogueTiming: ReviewChecklistValueSchema,
-    lipSync: ReviewChecklistValueSchema,
-    safety: ReviewChecklistValueSchema,
-  })
-  .strict();
-
-/** Promotional trailers are reviewed as editorial assets, not as individual
- * continuity clips. Keep this contract separate so trailer QA can evolve
- * without weakening the runtime-clip approval checklist. */
-export const FilmTrailerTakeReviewChecklistSchema = z
-  .object({
-    technical: ReviewChecklistValueSchema,
-    storyFidelity: ReviewChecklistValueSchema,
-    identityConsistency: ReviewChecklistValueSchema,
-    visualConsistency: ReviewChecklistValueSchema,
-    pacing: ReviewChecklistValueSchema,
-    textReadability: ReviewChecklistValueSchema,
-    rights: ReviewChecklistValueSchema,
-    safety: ReviewChecklistValueSchema,
-  })
-  .strict();
 
 export const FilmBuildScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('full') }).strict(),
@@ -2020,33 +2108,9 @@ export const FilmBuildStatusSchema = z.enum([
 ]);
 export type FilmBuildStatus = z.infer<typeof FilmBuildStatusSchema>;
 
-export const FilmTakeStatusSchema = z.enum([
-  'queued',
-  'running',
-  'processing',
-  'ready',
-  'failed',
-  'cancelled',
-]);
-export type FilmTakeStatus = z.infer<typeof FilmTakeStatusSchema>;
-
 export const FilmReviewDecisionSchema = z.enum([
   'approve',
   'reject',
   'request_changes',
 ]);
 export type FilmReviewDecision = z.infer<typeof FilmReviewDecisionSchema>;
-
-export const StoryReleaseChannelSchema = z.enum(['preview', 'production']);
-export type StoryReleaseChannel = z.infer<typeof StoryReleaseChannelSchema>;
-
-export const StoryDeploymentEnvironmentSchema = z.enum([
-  'preview',
-  'production',
-]);
-export type StoryDeploymentEnvironment = z.infer<
-  typeof StoryDeploymentEnvironmentSchema
->;
-
-export const StoryDeploymentStatusSchema = z.enum(['active', 'offline']);
-export type StoryDeploymentStatus = z.infer<typeof StoryDeploymentStatusSchema>;

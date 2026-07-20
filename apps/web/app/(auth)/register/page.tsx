@@ -28,6 +28,20 @@ function identifierOk(value: string): boolean {
   return isPhoneIdentifier(value) || EMAIL_PATTERN.test(value.trim());
 }
 
+/**
+ * A gated link (e.g. /play/interactive-film/[id]?recommendationCode=ABC) reaches
+ * the login gate, which stashes the whole path+query in `?redirect=`. When the
+ * visitor chooses to register, pull the referrer's code back out of that
+ * redirect value so attribution still lands. `searchParams.get("redirect")`
+ * returns the already-decoded value, so a plain URLSearchParams parse works.
+ */
+function referralCodeFromRedirect(redirect: string | null | undefined): string | null {
+  if (!redirect) return null;
+  const q = redirect.indexOf("?");
+  if (q === -1) return null;
+  return new URLSearchParams(redirect.slice(q + 1)).get("recommendationCode") ?? null;
+}
+
 export default function RegisterPage() {
   const t = useTranslations("auth");
   const locale = useLocale() as Locale;
@@ -36,11 +50,17 @@ export default function RegisterPage() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  // Prefill referral code from `?recommendationCode=` when the user
-  // lands here via someone's referral link. Read once at mount via
-  // useState lazy initializer so subsequent typing isn't clobbered.
+  // Prefill referral code from `?recommendationCode=`, or — when the user
+  // arrived through the login gate — from the code buried inside the
+  // `?redirect=` value (a gated play/IP link carries the referrer's code in
+  // its own query). Read once at mount via a lazy initializer (both sources
+  // live in the URL, so this is SSR/hydration-safe) so later typing isn't
+  // clobbered.
   const [recommendationCode, setRecommendationCode] = useState(
-    () => searchParams?.get("recommendationCode") ?? ""
+    () =>
+      searchParams?.get("recommendationCode") ??
+      referralCodeFromRedirect(searchParams?.get("redirect")) ??
+      ""
   );
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);

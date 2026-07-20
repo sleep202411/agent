@@ -2,11 +2,11 @@ import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasNodeData } from "./story-project-canvas-model";
 import {
   addChoiceOption,
+  connectClipContinuation,
   connectAutoRoute,
   connectChoiceTarget,
   createClipNode,
   setEntryNode,
-  updateCheckpointTarget,
   updateAutoRouteTarget,
 } from "./story-project-canvas-mutations";
 
@@ -14,11 +14,11 @@ type BlankDropSource = Pick<StoryCanvasNodeData, "kind" | "nodeId" | "sourceNode
 
 export type BlankDropConnectionPlan =
   | { kind: "entry" }
+  | { kind: "clip-continuation"; sourceNodeId: string }
   | { kind: "new-auto-route"; sourceNodeId: string }
   | { kind: "existing-auto-route"; sourceNodeId: string; routeIndex: number }
   | { kind: "new-choice"; sourceNodeId: string }
-  | { kind: "existing-choice"; sourceNodeId: string; choiceId: string }
-  | { kind: "checkpoint"; sourceNodeId: string };
+  | { kind: "existing-choice"; sourceNodeId: string; choiceId: string };
 
 export interface ConnectedClipDropResult {
   content: InteractiveFilmDraftContent;
@@ -27,9 +27,8 @@ export interface ConnectedClipDropResult {
 
 /**
  * Resolves only blank-canvas drops with one unambiguous compatible node kind.
- * Ending creation is intentionally excluded: an empty automatic clip exit can
- * lead to another clip or an ending, so silently choosing an ending would be
- * destructive authoring behavior.
+ * Film-clip completion drops are resolved here only after the contextual
+ * creator has chosen a new clip. Choice creation is handled separately.
  */
 export function resolveBlankDropConnectionPlan(
   source: BlankDropSource,
@@ -56,17 +55,17 @@ export function resolveBlankDropConnectionPlan(
       : null;
   }
 
-  if (source.kind === "clip" && source.exitKind === "checkpoint") {
-    return sourceHandle === "checkpoint"
-      ? { kind: "checkpoint", sourceNodeId: source.nodeId }
+  if (source.kind === "clip") {
+    return source.exitKind === "auto" && sourceHandle === "completion"
+      ? { kind: "clip-continuation", sourceNodeId: source.nodeId }
       : null;
   }
 
-  if ((source.kind !== "clip" && source.kind !== "router") || source.exitKind !== "auto") {
+  if (source.kind !== "router" || source.exitKind !== "auto") {
     return null;
   }
 
-  const prefix = source.kind === "router" ? "route" : "auto";
+  const prefix = "route";
   if (sourceHandle === `${prefix}-new`) {
     return { kind: "new-auto-route", sourceNodeId: source.nodeId };
   }
@@ -96,6 +95,8 @@ export function createConnectedClipForBlankDrop(
 
   if (plan.kind === "entry") {
     next = setEntryNode(next, createdNodeId);
+  } else if (plan.kind === "clip-continuation") {
+    next = connectClipContinuation(next, plan.sourceNodeId, createdNodeId);
   } else if (plan.kind === "new-auto-route") {
     next = connectAutoRoute(next, plan.sourceNodeId, createdNodeId);
   } else if (plan.kind === "existing-auto-route") {
@@ -104,8 +105,6 @@ export function createConnectedClipForBlankDrop(
     next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale).content;
   } else if (plan.kind === "existing-choice") {
     next = connectChoiceTarget(next, plan.sourceNodeId, plan.choiceId, createdNodeId);
-  } else {
-    next = updateCheckpointTarget(next, plan.sourceNodeId, createdNodeId);
   }
 
   return { content: next, createdNodeId };

@@ -4,16 +4,13 @@ import {
   Get,
   Headers,
   Param,
-  Query,
 } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   StoryProjectIdParamsSchema,
   StoryUuidSchema,
-  StoryWorkingPreviewQuerySchema,
   type StoryProjectIdParams,
-  type StoryWorkingPreviewQuery,
 } from './dto';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 
@@ -28,8 +25,6 @@ export class StoryWorkingPreviewController {
     workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
-    @Query(new ZodValidationPipe(StoryWorkingPreviewQuerySchema))
-    query: StoryWorkingPreviewQuery,
   ) {
     return {
       code: 200,
@@ -37,7 +32,6 @@ export class StoryWorkingPreviewController {
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        query.expectedDraftRevision,
       ),
     };
   }

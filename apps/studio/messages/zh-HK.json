@@ -19,6 +19,18 @@
     "fizzDragon": "FizzDragon",
     "fizzStudio": "FizzStudio"
   },
+  "videoPlayer": {
+    "play": "播放",
+    "pause": "暫停",
+    "mute": "靜音",
+    "unmute": "取消靜音",
+    "volume": "音量",
+    "seek": "調整影片進度",
+    "seekForward": "快進",
+    "seekBackward": "快退",
+    "enterFullscreen": "進入全螢幕",
+    "exitFullscreen": "退出全螢幕"
+  },
   "localeSwitcher": {
     "label": "語言"
   },
@@ -924,6 +936,8 @@
   },
   "canvasControls": {
     "comment": "評論",
+    "selectTool": "選擇工具（V）",
+    "panTool": "平移工具（H）",
     "loadingModels": "正在載入模型…",
     "generationSettings": "生成設定",
     "addNode": {
@@ -1520,7 +1534,7 @@
     "metaDescription": "創作、製作、審核並發佈互動影像故事。",
     "eyebrow": "互動敘事製作",
     "title": "Story Studio",
-    "subtitle": "在一個可追溯版本的工作台內完成故事設定、參考包、鏡頭生產與發佈。",
+    "subtitle": "在一個可追溯版本的工作台內完成故事設定、參考包、目前影片與發佈。",
     "newProject": "新增互動影遊",
     "projects": {
       "title": "互動影遊",
@@ -1528,28 +1542,18 @@
       "revision": "版本 {number}",
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
-      "noBlocker": "目前沒有生產阻塞",
+      "videoProgress": "目前影片 {current}/{total}",
+      "generating": "{count} 個影片生成中",
       "updatedUnknown": "更新時間不可用"
     },
     "metrics": {
       "references": "參考位",
       "clips": "鏡頭",
-      "masters": "母版",
-      "blocked": "阻塞",
+      "videos": "目前影片",
+      "generating": "生成中",
       "choices": "選擇",
       "endings": "結局",
       "graphClips": "劇情鏡頭"
-    },
-    "blockers": {
-      "referenceApproval": "{count} 個必需參考位尚待批准。",
-      "clipReferences": "{count} 個鏡頭仍被參考輸入阻塞。",
-      "clipMasters": "{count} 個鏡頭尚無已批准母版。",
-      "productionInputsUnresolved": "生產輸入清單尚未完整解析。",
-      "referenceInputApproval": "必需參考輸入尚無已批准版本。",
-      "omniReferenceRequired": "Omni Reference 輸入包不完整。",
-      "firstFrameRequired": "尚未綁定必需首幀。",
-      "lastFrameRequired": "尚未綁定必需尾幀。",
-      "masterInputStale": "所選母版來自舊版生產輸入。"
     },
     "actions": {
       "retry": "重試",
@@ -1570,14 +1574,6 @@
     "empty": {
       "title": "還沒有互動影遊專案",
       "description": "建立專案和可追溯的故事草稿，然後直接在同一畫布中設計並生成鏡頭。"
-    },
-    "example": {
-      "sectionTitle": "官方範例",
-      "sectionSubtitle": "毋須加入專案庫，即可查看一套已發佈的完整製作。",
-      "readOnly": "官方範例 · 唯讀",
-      "title": "金陵入夢",
-      "description": "查看現有的電影化分支圖和已發佈媒體包；該範例始終與創作者專案保持獨立。",
-      "open": "開啟範例"
     },
     "create": {
       "title": "建立互動影遊",
@@ -1616,36 +1612,89 @@
     "canvas": {
       "back": "返回 Story Studio",
       "mode": "故事畫布",
-      "workbench": "製作工作台",
+      "publish": {
+        "action": "發佈",
+        "actionPending": "正在發佈…",
+        "actionPublished": "已發佈",
+        "statusChecking": "正在確認目前線上版本…",
+        "title": "發佈目前版本？",
+        "description": "系統會準備最新儲存的故事，並將它設為玩家目前存取的線上版本。",
+        "confirmation": {
+          "title": "確認發佈",
+          "draftRevision": "最新已儲存內容 · 第 {revision} 次修訂",
+          "detail": "發佈後仍可繼續編輯畫布；後續修改在再次發佈前不會影響線上版本。"
+        },
+        "progress": {
+          "title": "正在發佈目前版本",
+          "description": "正在儲存、檢查並發佈故事，請保持此視窗開啟。"
+        },
+        "phases": {
+          "saving": {
+            "title": "儲存最新修改",
+            "description": "正在儲存畫布上的目前故事。"
+          },
+          "locking": {
+            "title": "準備發佈版本",
+            "description": "正在將已儲存的故事固定為玩家即將存取的版本。"
+          },
+          "building": {
+            "title": "檢查播放內容",
+            "description": "正在檢查故事路線、影片和玩家可見內容。"
+          },
+          "publishing": {
+            "title": "正在發佈",
+            "description": "正在將此版本設為玩家存取的線上版本。"
+          }
+        },
+        "actions": {
+          "cancel": "取消",
+          "confirm": "發佈目前版本",
+          "close": "關閉",
+          "retry": "重試"
+        },
+        "success": {
+          "title": "版本已發佈",
+          "description": "目前版本已經上線。",
+          "version": "目前版本已上線",
+          "detail": "玩家現在會進入此版本。你可以繼續編輯畫布，不會影響已上線內容。"
+        },
+        "failure": {
+          "title": "目前版本未發佈",
+          "description": "請處理下方問題，然後重新發佈。"
+        },
+        "diagnostics": {
+          "title": "{count} 個待處理問題"
+        },
+        "errors": {
+          "workspaceRequired": "請先選擇工作區再發佈。",
+          "permissionDenied": "你在此專案中的角色沒有發佈權限。",
+          "saveFailed": "無法儲存最新修改。",
+          "lockFailed": "無法準備已儲存的故事版本。",
+          "workbenchFailed": "無法載入已儲存的版本進行檢查。",
+          "revisionMismatch": "準備的版本與已儲存故事不一致，請重新整理畫布後重試。",
+          "productionContractMissing": "這個故事還沒有可發佈的播放內容。",
+          "buildFailed": "無法準備可播放版本。",
+          "buildNotReady": "目前版本還不能發佈，請處理下方問題後重試。",
+          "runtimeUnavailable": "可播放內容暫不可用，請重新準備此版本。",
+          "publishFailed": "無法發佈已準備的版本。",
+          "unexpected": "無法發佈目前版本。"
+        }
+      },
       "workingPreview": {
         "action": "預覽試玩",
-        "title": "目前草稿試玩",
-        "description": "試玩最新儲存的故事圖和目前可用的影片片段。預覽不會凍結專案，也不會阻止繼續修改。",
+        "pageTitle": "故事試玩 · Story Studio",
+        "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
-        "loading": "正在準備最新儲存的草稿…",
-        "errorTitle": "無法準備目前草稿試玩",
-        "errorFallback": "無法載入目前草稿試玩。",
+        "loading": "正在準備試玩…",
+        "errorFallback": "無法載入試玩。",
+        "buildNumber": "構建 {number}",
         "retry": "重試",
         "refresh": "重新整理試玩",
         "editStory": "編輯故事",
         "previewWarnings": "目前試玩有 {count} 條提示",
         "unavailableTitle": "目前故事還不能試玩",
-        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。",
-        "noDiagnostics": "伺服器沒有傳回診斷詳情，請重試或檢查專案製作狀態。",
-        "severity": {
-          "error": "阻塞",
-          "warning": "警告"
-        },
-        "pathReport": {
-          "title": "目前路徑覆蓋",
-          "paths": "路徑",
-          "endings": "結局",
-          "ambiguous": "歧義路徑",
-          "unreachable": "不可達節點",
-          "unavailable": "故事圖可以編譯後會顯示路徑覆蓋。"
-        }
+        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。"
       },
-      "fit": "配合故事全圖",
       "autosave": "自動儲存",
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
@@ -1669,6 +1718,7 @@
       "ports": {
         "entry": "故事入口",
         "input": "故事流入",
+        "completion": "影片的下一步",
         "auto": "自動繼續",
         "checkpoint": "等待玩家確認繼續",
         "checkpointTarget": "確認繼續至 {target}",
@@ -1692,6 +1742,15 @@
         "routerDescription": "沒有影片的條件合流或跳轉節點。",
         "ending": "故事結局",
         "endingDescription": "儲存於故事聖經中的命名結局。"
+      },
+      "connectionCreator": {
+        "title": "建立下一步",
+        "description": "選擇這個影片片段結束後會發生甚麼。",
+        "clip": "影片片段",
+        "clipDescription": "直接繼續到另一個生成的影片片段。",
+        "choice": "玩家選擇",
+        "choiceDescription": "暫停播放，讓玩家選擇後續分支。",
+        "cancel": "取消"
       },
       "endingKinds": {
         "truth": "真相",
@@ -1839,7 +1898,7 @@
       "director": {
         "eyebrow": "導演提示詞",
         "title": "影片導演設計",
-        "description": "為目前鏡頭編寫結構化導演設計。內容始終可編輯；每個生成的 Take 會記錄當時使用的準確輸入。",
+        "description": "為目前鏡頭編寫結構化導演設計。內容始終可編輯；每次影片生成都會記錄當時使用的準確輸入。",
         "compact": {
           "title": "提示詞編排",
           "beats": "{count} 個節拍",
@@ -1932,8 +1991,8 @@
         "description": "宣傳片獨立於劇情鏡頭和運行時分支，在這裡完成導演設計與生產。",
         "close": "關閉宣傳片檢查器",
         "node": {
-          "noMaster": "尚無 Master 宣傳片",
-          "masterPreview": "Master 宣傳片預覽"
+          "noVideo": "尚無宣傳片影片",
+          "videoPreview": "目前宣傳片影片預覽"
         },
         "authoring": {
           "emptyTitle": "先創作宣傳片",
@@ -1943,70 +2002,18 @@
         },
         "production": {
           "title": "宣傳片生產",
-          "refresh": "重新整理宣傳片生產狀態",
           "disabled": {
-            "permission": "你沒有此項目的影片生成權限。",
-            "reviewPermission": "你沒有此項目宣傳片 Take 的審核權限。",
-            "blocked": "請先解決宣傳片的生產阻塞項。"
+            "permission": "你沒有此項目的影片生成權限。"
           },
           "errors": {
-            "action": "宣傳片生產操作未能完成。",
-            "loadTakes": "無法載入宣傳片 Take。"
-          },
-          "statuses": {
-            "queued": "排隊中",
-            "running": "運行中",
-            "processing": "處理中",
-            "ready": "可審核",
-            "failed": "失敗",
-            "cancelled": "已取消"
-          },
-          "takes": {
-            "title": "宣傳片 Take 列表",
-            "count": "共 {count} 個 Take",
-            "empty": "為這支宣傳片生成第一個 Take。",
-            "master": "Master",
-            "take": "Take {number}",
-            "review": "審核",
-            "cancel": "取消",
-            "retry": "重試",
-            "setMaster": "設為 Master"
-          },
-          "review": {
-            "title": "審核宣傳片 Take",
-            "description": "批准前，專項檢查故事忠實度、人物身份、節奏、文字可讀性、權利與安全。",
-            "decisions": {
-              "approve": "批准",
-              "requestChanges": "要求修改",
-              "reject": "拒絕"
-            },
-            "checklist": {
-              "technical": "技術質量",
-              "storyFidelity": "故事忠實度",
-              "identityConsistency": "身份一致性",
-              "visualConsistency": "視覺一致性",
-              "pacing": "節奏",
-              "textReadability": "文字可讀性",
-              "rights": "權利合規",
-              "safety": "安全"
-            },
-            "values": {
-              "pass": "通過",
-              "fail": "未通過",
-              "na": "不適用"
-            },
-            "comment": "審核備註",
-            "commentRequired": "要求修改或拒絕 Take 時必須填寫審核備註。",
-            "approveRequirements": "批准前，技術質量與安全兩項必須通過。",
-            "cancel": "取消",
-            "submit": "提交審核"
+            "action": "宣傳片生產操作未能完成。"
           }
         }
       },
       "production": {
         "eyebrow": "鏡頭製作",
         "title": "影片製作",
-        "description": "根據最新儲存的導演設計建立 Take。畫布始終可編輯，每個 Take 都會儲存自己的輸入快照。",
+        "description": "根據最新儲存的導演設計生成目前影片。畫布始終可編輯，每次生成都會儲存自己的輸入快照。",
         "refresh": "重新整理製作狀態",
         "masterPrompt": "Master Prompt",
         "beats": "{count} 個時間節拍",
@@ -2039,27 +2046,22 @@
           "other": "其他"
         },
         "variationNote": "本次變化說明",
-        "variationPlaceholder": "僅影響本次 Take 的可選指令；不會修改已儲存的導演設計。",
-        "generate": "生成 Take",
+        "variationPlaceholder": "僅影響本次生成的可選指令；不會修改已儲存的導演設計。",
+        "generate": "生成影片",
         "disabled": {
           "preparing": "正在準備目前鏡頭輸入，完成後即可生成。",
           "promptRequired": "請先完成目前鏡頭的導演提示詞。",
           "permission": "你沒有在該專案中生成影片的權限。",
-          "blocked": "請先解決目前鏡頭的製作阻塞。"
+          "generating": "目前節點已有影片生成工作正在進行。"
         },
         "errors": {
           "prepare": "無法準備目前鏡頭的製作輸入。",
-          "action": "製作操作未能完成。",
-          "loadTakes": "無法載入 Take。"
+          "action": "製作操作未能完成。"
         },
         "statuses": {
           "preparing": "正在準備鏡頭輸入",
-          "blocked": "阻塞",
           "ready": "可生成",
           "generating": "生成中",
-          "in_review": "待審核",
-          "approved": "已批准",
-          "stale": "已過期",
           "queued": "排隊中",
           "running": "生成中",
           "processing": "處理中",
@@ -2067,59 +2069,10 @@
           "cancelled": "已取消"
         },
         "node": {
-          "takes": "Take",
-          "running": "執行中",
-          "approved": "已批准",
-          "master": "Master",
-          "noMaster": "尚無 Master 影片",
-          "masterPreview": "Master 影片預覽",
-          "carriedMaster": "草稿已改 · 舊版本影片"
-        },
-        "takes": {
-          "title": "Take 列",
-          "count": "{count} 個 Take",
-          "empty": "為目前鏡頭生成第一個 Take。",
-          "take": "Take {number}",
-          "master": "Master",
-          "stale": "輸入已過期",
-          "review": "審核",
-          "retry": "重試",
-          "retrying": "重試中…",
-          "setMaster": "設為 Master"
-        },
-        "reviewStatuses": {
-          "unreviewed": "未審核",
-          "changes_requested": "需修改",
-          "approved": "已批准",
-          "rejected": "已拒絕"
-        },
-        "review": {
-          "title": "審核 Take {number}",
-          "description": "記錄一次明確的製作審核。選擇「批准」會同時批准該 Take；設為 Master 仍是獨立操作。",
-          "decision": "審核決定",
-          "decisions": {
-            "approve": "批准",
-            "request_changes": "要求修改",
-            "reject": "拒絕"
-          },
-          "checklist": {
-            "technical": "技術品質",
-            "identityContinuity": "人物一致性",
-            "visualContinuity": "畫面連續性",
-            "motion": "動作",
-            "dialogueTiming": "對白時序",
-            "lipSync": "口型同步",
-            "safety": "安全合規"
-          },
-          "values": {
-            "pass": "通過",
-            "fail": "不通過",
-            "na": "不適用"
-          },
-          "comment": "審核備註",
-          "commentPlaceholder": "拒絕或要求修改時必須填寫。",
-          "cancel": "取消",
-          "submit": "提交審核"
+          "noVideo": "尚無影片",
+          "videoPreview": "目前影片預覽",
+          "earlierDirection": "來自較早導演設計",
+          "generationFailed": "生成失敗"
         },
         "bindings": {
           "title": "鏡頭參考圖職責",
@@ -2140,11 +2093,45 @@
           "unapproved": "未審批",
           "remove": "移除 {label}",
           "add": "新增參考",
-          "addTitle": "已審批參考母版"
+          "addTitle": "已審批參考素材"
         },
         "durationControl": {
           "label": "片段時長",
           "seconds": "{count} 秒"
+        },
+        "videoLibrary": {
+          "trigger": "使用已有影片",
+          "title": "影片歷史",
+          "description": "選擇符合目前輸出要求的可重用影片：{width}×{height}，{duration} ± {tolerance}。",
+          "loading": "正在載入影片歷史",
+          "loadingMore": "正在載入更多影片",
+          "loadMore": "載入更多",
+          "retry": "重試",
+          "playPreview": "播放影片預覽 {number}",
+          "pausePreview": "暫停影片預覽 {number}",
+          "previewUnavailable": "無法預覽",
+          "current": "目前影片",
+          "incompatible": "不相容",
+          "select": "使用此影片",
+          "selecting": "正在設為目前影片",
+          "unavailable": "無法使用",
+          "unknownDimensions": "尺寸未知",
+          "unknownDuration": "時長未知",
+          "empty": {
+            "title": "暫無可重用影片",
+            "description": "此工作區生成過的影片會作為可重用歷史保留在這裡。"
+          },
+          "issues": {
+            "preview_unavailable": "此資產沒有可播放的預覽。",
+            "dimensions_unknown": "無法驗證此影片的尺寸。",
+            "dimensions_mismatch": "此影片的尺寸與目前鏡頭不符。",
+            "duration_unknown": "無法驗證此影片的時長。",
+            "duration_mismatch": "此影片的時長超出目前鏡頭的容差。"
+          },
+          "errors": {
+            "load": "無法載入影片歷史。",
+            "select": "無法更改目前影片。"
+          }
         }
       },
       "inspector": {
@@ -2152,6 +2139,28 @@
         "close": "關閉節點檢查器",
         "nodeId": "穩定節點 ID",
         "clipKey": "鏡頭鍵",
+        "media": {
+          "title": "目前影片",
+          "description": "上載本機檔案，或重用目前工作區中的影片。",
+          "preview": "{title} 的目前影片",
+          "empty": "尚未選擇影片",
+          "emptyDescription": "為這個故事片段加入可播放的影片。",
+          "outdated": "較早版本",
+          "upload": "上載本機影片",
+          "replace": "從本機取代",
+          "uploading": "正在上載 · {progress}%",
+          "processing": "正在處理影片…",
+          "processingDescription": "正在校驗影片並準備可播放版本。",
+          "accepted": "支援 MP4 · H.264 影片 · AAC 音訊",
+          "library": "影片素材庫",
+          "libraryDescription": "重用已上載或已生成的影片",
+          "preparing": "正在準備片段媒體資料。",
+          "unknownDimensions": "尺寸未知",
+          "unknownDuration": "時長未知",
+          "errors": {
+            "upload": "無法上載此影片。"
+          }
+        },
         "exit": "後續走向",
         "production": "製作狀態",
         "openProduction": "開啟鏡頭製作",
@@ -2159,10 +2168,12 @@
         "entry": "入口鏡頭",
         "entryNode": "故事入口",
         "makeEntry": "設為入口",
-        "exitAuto": "自動路由",
+        "exitAuto": "繼續到影片",
         "exitChoice": "玩家選擇",
         "exitCheckpoint": "繼續確認點",
         "exitEnding": "故事結局",
+        "continuationTarget": "下一個影片片段",
+        "continuationDescription": "影片只有一個直接後續；需要分支時請使用玩家選擇。",
         "checkpointTarget": "確認後的目標節點",
         "checkpointDescription": "鏡頭結束後暫停，等待玩家明確按一次繼續；它不會建立劇情選擇，也不會改變故事狀態。",
         "choicePrompt": "選擇問題",
@@ -2326,27 +2337,26 @@
         "overview": "總覽",
         "story": "故事",
         "references": "參考包",
-        "production": "鏡頭生產",
-        "build": "預覽試玩"
+        "production": "鏡頭生產"
       },
       "errors": {
         "loadTitle": "無法開啟這個專案。"
       },
       "noProductionDataTitle": "目前還沒有可用的製作資料",
-      "noProductionDataDescription": "請返回故事畫布，完成導演提示詞並建立第一個 Take。整個製作過程中，目前草稿都可以繼續修改。"
+      "noProductionDataDescription": "請返回故事畫布，完成導演提示詞並生成第一批影片。整個製作過程中，目前草稿都可以繼續修改。"
     },
     "overview": {
-      "productionTitle": "生產就緒度",
-      "productionSubtitle": "目前工作草稿的審核與阻塞狀態投影。",
+      "productionTitle": "影片生產",
+      "productionSubtitle": "目前工作草稿的參考就緒度、影片覆蓋與活躍生成工作。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "productionRevision": "生產修訂 {revision}",
       "storyStructureTitle": "故事結構",
       "storyStructureSubtitle": "選擇、狀態與結局均以創作圖為唯一真源。",
       "targetRuntime": "每條路徑目標 {seconds} 秒",
       "maxContinuous": "最長連續播放 {seconds} 秒",
-      "nextBlocker": "下一阻塞項",
-      "noBlocker": "沒有阻塞",
-      "noBlockerDescription": "目前生產狀態沒有未解決的阻塞項。",
+      "videoState": "目前影片狀態",
+      "videoStateGenerating": "{count} 個鏡頭正在生成替換影片。",
+      "videoStateReady": "{total} 個鏡頭中已有 {current} 個綁定目前影片。",
       "revisionTitle": "版本識別",
       "draftRevision": "草稿修訂",
       "schemaVersion": "草稿 Schema",
@@ -2449,12 +2459,16 @@
     },
     "production": {
       "title": "鏡頭生產",
-      "subtitle": "目前草稿的導演設計、生成就緒度、審核與現有 Master。",
+      "subtitle": "目前草稿導演設計、生成狀態，以及每個鏡頭正在使用的影片。",
       "clipCount": "{count} 個鏡頭",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以執行下一步",
       "currentDraftReady": "可從故事畫布直接生成目前提示詞",
       "currentDraftPromptRequired": "請在故事畫布中完成導演提示詞",
+      "generationInProgress": "替換影片正在生成中。",
+      "generationFailed": "最近一次生成失敗；此前的影片仍保持為目前影片。",
+      "currentVideoReady": "目前鏡頭已綁定影片。",
+      "currentVideoOutdated": "目前影片來自較早的導演設計。",
       "detail": {
         "visualIntent": "畫面意圖",
         "masterPrompt": "Seedance 主提示詞",
@@ -2470,7 +2484,7 @@
         "mode": "生成模式",
         "duration": "時長",
         "status": "狀態",
-        "blocker": "阻塞原因"
+        "blocker": "詳情"
       },
       "modes": {
         "omni": "Omni Reference",
@@ -2479,277 +2493,48 @@
       },
       "status": {
         "draft": "目前草稿",
-        "blocked": "阻塞",
         "ready": "就緒",
-        "generating": "生成中",
-        "in_review": "審核中",
-        "approved": "已批准",
-        "stale": "已過期"
-      }
-    },
-    "build": {
-      "title": "構建與試玩",
-      "subtitle": "把已鎖定的故事圖和已批准母版編譯成不可變預覽構建，再用完全凍結的 Runtime 試玩每一條分支。",
-      "buildNumber": "構建 {number}",
-      "activeBuild": "構建 {number} 仍在編譯中。",
-      "actions": {
-        "createPreview": "建立預覽構建",
-        "creating": "正在建立構建…",
-        "refresh": "重新整理構建",
-        "cancel": "取消構建",
-        "retry": "重試"
-      },
-      "permissions": {
-        "build": "你在該專案中的角色沒有構建權限。",
-        "edit": "你在該專案中的角色不能鎖定生產版本。"
-      },
-      "notifications": {
-        "created": "預覽構建已建立。",
-        "validationFailed": "構建發現生產阻塞項，請查看診斷。",
-        "cancelled": "構建已取消。",
-        "revisionLocked": "生產版本已鎖定。"
-      },
-      "errors": {
-        "revisionRequired": "建立構建前請先鎖定生產版本。",
-        "create": "無法建立預覽構建。",
-        "cancel": "無法取消該構建。",
-        "list": "無法載入構建歷史。",
-        "detail": "無法載入所選構建。",
-        "lockRevision": "無法鎖定生產版本。",
-        "revisionState": "鎖定版本與目前草稿的狀態不一致，請重新整理專案後再構建。",
-        "runtimeUnavailable": "這個凍結 Runtime 目前不可用。請查看構建診斷；所有資產符合目前生命週期與審核策略前，媒體會保持無法存取。"
-      },
-      "lockRevision": {
-        "title": "鎖定生產版本",
-        "description": "構建必須指向不可變的故事版本。鎖定已儲存草稿後，系統會物化鏡頭和 Runtime 生產規格。",
-        "action": "鎖定生產版本",
-        "locking": "正在鎖定…",
-        "root": "故事根節點"
-      },
-      "revisionBasis": {
-        "currentTitle": "正在基於鎖定版本 {number} 構建",
-        "currentDescription": "新的預覽構建會明確使用鎖定版本 {number}；它來自草稿 r{sourceRevision}，目前可編輯草稿沒有更新的改動。",
-        "draftAheadTitle": "草稿有更新",
-        "draftAheadDescription": "新的預覽構建仍會使用鎖定版本 {number}，它來自草稿 r{sourceRevision}。目前草稿已更新至 r{draftRevision}；如需包含這些改動，請將目前草稿鎖定為新的生產版本。",
-        "inconsistentTitle": "版本狀態不一致",
-        "inconsistentDescription": "鎖定版本 {number} 來自草稿 r{sourceRevision}，但目前草稿顯示為 r{draftRevision}。重新整理專案狀態前不可構建。",
-        "action": "鎖定目前草稿",
-        "locking": "正在鎖定目前草稿…"
-      },
-      "missingFilm": {
-        "title": "生產規格不可用",
-        "description": "已鎖定版本沒有物化互動影遊生產規格。請重新整理專案，或在構建前檢查伺服器端診斷。"
-      },
-      "history": {
-        "title": "構建歷史",
-        "count": "{count} 個構建",
-        "empty": "尚未建立預覽構建。",
-        "errors": "{count} 個錯誤"
-      },
-      "profile": {
-        "preview": "預覽",
-        "production": "生產"
-      },
-      "scope": {
-        "full": "完整故事圖",
-        "subgraph": "從 {entryClipId} 開始的子圖 · 深度 {maxDepth}",
-        "unbounded": "不限"
-      },
-      "status": {
-        "queued": "已排隊",
-        "validating": "正在校驗",
-        "compiling": "正在編譯",
-        "ready": "已就緒",
+        "queued": "排隊中",
+        "running": "生成中",
+        "processing": "處理中",
         "failed": "失敗",
-        "cancelled": "已取消"
-      },
-      "detail": {
-        "identity": "生產狀態 r{revision} · {profile} · {scope}",
-        "polling": "構建活動期間，本頁面會自動更新。"
-      },
-      "empty": {
-        "title": "編譯第一個可試玩構建",
-        "description": "預覽構建會校驗所有可達路線、凍結已批准媒體，並生成本次試玩所使用的 Runtime。"
-      },
-      "pathReport": {
-        "title": "路徑覆蓋",
-        "description": "構建編譯器從入口開始進行確定性故事圖遍歷。",
-        "duration": "每條路徑 {min}–{max}",
-        "paths": "已枚舉路徑",
-        "endings": "可達結局",
-        "ambiguous": "歧義路徑",
-        "unreachable": "不可達節點"
-      },
-      "diagnostics": {
-        "title": "構建診斷",
-        "summary": "{errors} 個錯誤 · {warnings} 個警告",
-        "error": "{count} 個阻塞錯誤",
-        "warning": "{count} 個警告",
-        "cleanTitle": "構建校驗通過",
-        "cleanDescription": "編譯器未發現阻塞錯誤或警告。"
-      },
-      "entity": {
-        "revision": "版本",
-        "clip": "鏡頭",
-        "reference": "參考",
-        "take": "Take",
-        "choice": "選擇",
-        "ending": "結局",
-        "asset": "資產"
-      },
-      "playtest": {
-        "title": "互動試玩",
-        "description": "只運行這個凍結的預覽清單，不會建立任何生成任務。"
-      },
-      "assets": {
-        "title": "凍結構建資產",
-        "description": "該構建捕獲的精確媒體變體與校驗和。"
-      },
-      "player": {
-        "invalidManifest": "Runtime 清單無效",
-        "manifestRoot": "清單根節點",
-        "routerHops": "已解析 {count} 個路由節點",
-        "localeFallback": "目前顯示已創作的 {locale} 文案",
-        "restart": "重新開始",
-        "play": "播放",
-        "regionLabel": "互動影遊試玩",
-        "playbackPaused": "需要確認後才能繼續播放",
-        "videoLabel": "畫面 {nodeId} 的故事影片",
-        "reactionVideoLabel": "畫面 {nodeId} 的選擇回應影片",
-        "imageAlt": "互動故事畫面",
-        "checkpoint": {
-          "prompt": "準備好進入下一幕了嗎？",
-          "description": "準備好後繼續。",
-          "continue": "繼續",
-          "actionLabel": "繼續進入下一個故事鏡頭"
-        },
-        "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
-        "endingEyebrow": "抵達結局",
-        "unknownEnding": "結局 {endingId}",
-        "playAgain": "再玩一次",
-        "errors": {
-          "runtimeTitle": "試玩無法繼續",
-          "UNKNOWN_NODE": "Runtime 節點 {nodeId} 不存在。",
-          "NO_MATCHING_ROUTE": "路由節點 {nodeId} 在目前故事狀態下沒有可用路線。",
-          "ROUTER_CYCLE": "路由節點 {nodeId} 形成了無法抵達畫面的循環。",
-          "routerNotResolved": "目前 Runtime 節點未能解析為可播放畫面。",
-          "noRoute": "畫面 {nodeId} 沒有符合的自動路線。",
-          "checkpointContract": "畫面 {nodeId} 的內置繼續確認動作無效。",
-          "externalOverlay": "內部試玩尚未安裝擴展渲染器 {rendererId}。",
-          "sequence": "畫面 {nodeId} 引用了無效的影片序列。",
-          "mediaTitle": "預覽媒體不可用",
-          "media": "無法播放凍結媒體資產 {assetId}。",
-          "unknownAsset": "未知",
-          "extensionTitle": "該畫面需要擴展渲染器",
-          "extension": "本次試玩未安裝渲染器 {rendererId}。"
-        }
-      }
-    }
-  },
-  "storyStudioLanding": {
-    "badge": "官方樣例 · 唯讀",
-    "hero": {
-      "eyebrow": "第一季 · 無字來客",
-      "title": "金陵入夢",
-      "description": "以一位不屬於舊命冊的無名來客，隨黛玉同日入府；在連續影像與關鍵選擇中，親手改寫金陵命數。",
-      "openCanvas": "查看製作畫布",
-      "playFilm": "試玩影遊"
-    }
-  },
-  "interactiveFilmStudio": {
-    "previewNotice": "內測預覽階段，即將開放創作功能",
-    "back": "返回故事工作室",
-    "mode": "互動影遊",
-    "saving": "正在儲存…",
-    "saved": "已儲存到本機",
-    "reset": "重設範例",
-    "validate": "檢查發佈",
-    "openPlayer": "開啟玩家端",
-    "canvas": {
-      "mode": "畫布",
-      "fit": "顯示完整劇情圖",
-      "hint": "拖動節點整理劇情 · 捲動平移 · 雙指或滾輪縮放",
-      "fallbackEnding": "保底結局",
-      "authoredEnding": "正式結局",
-      "noSelection": "尚未選擇節點",
-      "nodeTypes": {
-        "entry": "序章節點",
-        "scene": "章節節點",
-        "choice": "選擇與回應節點",
-        "ending": "結局節點"
-      }
-    },
-    "views": {
-      "story": "劇情圖",
-      "media": "素材",
-      "preview": "玩家預覽"
-    },
-    "stats": {
-      "scenes": "{count} 個場景",
-      "endings": "{count} 個結局",
-      "assets": "{count} 個素材"
-    },
-    "toast": {
-      "reset": "已恢復官方範例。",
-      "validationPassed": "發佈檢查全部通過。",
-      "validationFailed": "發佈檢查仍有未解決的問題。"
-    },
-    "assets": {
-      "title": "素材庫",
-      "azureRelease": "Azure 不可變發佈版本",
-      "search": "搜尋素材",
-      "close": "關閉素材庫",
-      "filters": {
-        "all": "全部",
-        "video": "影片",
-        "audio": "音訊"
-      }
-    },
-    "sceneCard": {
-      "clips": "{count} 個片段",
-      "choices": "{count} 個選擇"
-    },
-    "timeline": {
-      "title": "場景時間線",
-      "continuity": "首尾幀連續性已鎖定",
-      "choiceGate": "選擇節點",
-      "reactions": "{count} 個回應片段"
-    },
-    "media": {
-      "audioMaster": "已發佈音訊母版",
-      "published": "已發佈"
-    },
-    "preview": {
-      "choiceMoment": "選擇時刻"
-    },
-    "inspector": {
-      "scene": "場景 {number}",
-      "title": "場景檢查器",
-      "name": "場景名稱",
-      "summary": "劇情摘要",
-      "choices": "玩家選擇",
-      "choiceLabel": "玩家選項",
-      "routeTarget": "分支去向",
-      "sequence": "影片序列",
-      "reaction": "選擇回應影片",
-      "chapterMaster": "章節母版"
-    },
-    "validation": {
-      "title": "專案完整性",
-      "count": "通過 {passed}/{total}",
-      "checks": {
-        "entry": "入口場景存在",
-        "masters": "每個場景都有章節母版",
-        "sequences": "時間線片段均已發佈",
-        "reactions": "每個選擇都有回應片段",
-        "targets": "每條分支都通往場景或結局",
-        "endings": "五個結局素材均已就緒",
-        "delivery": "橫屏交付使用安全素材網址"
+        "cancelled": "已取消",
+        "outdated": "較早導演設計"
       }
     }
   },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI 創意工作台"
+  },
+  "experiencePlayer": {
+    "invalidManifest": "Runtime 清單無效",
+    "manifestRoot": "清單根節點",
+    "interactiveFilm": "互動影遊",
+    "starting": "正在啟動…",
+    "start": "開始試玩",
+    "restart": "重新開始",
+    "regionLabel": "互動影遊試玩",
+    "videoLabel": "畫面 {nodeId} 的故事影片",
+    "checkpointPrompt": "準備好進入下一幕了嗎？",
+    "checkpointDescription": "準備好後繼續。",
+    "continue": "繼續",
+    "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
+    "endingEyebrow": "抵達結局",
+    "unknownEnding": "結局 {endingId}",
+    "playAgain": "再玩一次",
+    "runtimeError": "試玩無法繼續",
+    "mediaError": "無法播放凍結媒體資產 {assetId}。",
+    "video": {
+      "play": "播放",
+      "pause": "暫停",
+      "mute": "靜音",
+      "unmute": "取消靜音",
+      "volume": "音量",
+      "enterFullscreen": "進入全屏",
+      "exitFullscreen": "退出全屏",
+      "seekForward": "快進",
+      "seekBackward": "快退"
+    }
   }
 }

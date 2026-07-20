@@ -69,10 +69,15 @@
     "./interactive-film-runtime": {
       "types": "./dist/interactive-film-runtime.d.ts",
       "default": "./dist/interactive-film-runtime.js"
+    },
+    "./experience-runtime": {
+      "types": "./dist/experience-runtime.d.ts",
+      "default": "./dist/experience-runtime.js"
     }
   },
   "scripts": {
     "build": "tsc",
+    "contracts:experience": "npm run build && node scripts/export-experience-contracts.mjs",
     "dev": "tsc --watch",
     "check-types": "tsc --noEmit"
   },
@@ -80,6 +85,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "prettier": "^3.8.1",
     "typescript": "5.9.2"
   }
 }

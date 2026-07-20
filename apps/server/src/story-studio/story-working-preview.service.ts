@@ -9,20 +9,23 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
-  StoryFilmTakeStatus,
-  StoryReviewDecision,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  createLockableInteractiveFilmDraftContentSchema,
+  createPlayableInteractiveFilmDraftContentSchema,
   type FilmBuildDiagnosticDto,
   type StoryWorkingPreviewDto,
 } from './dto';
 import {
+  compileStoryExperienceManifest,
+  type StoryExperienceMediaIdentity,
+} from './story-experience-manifest-compiler';
+import {
   compileStoryFilmBuild,
+  storyFilmRuntimeAssetId,
   type FrozenFilmClipAsset,
   type StoryFilmBuildClipInput,
 } from './story-film-build-compiler';
@@ -30,48 +33,21 @@ import { storyFilmHasFailedTechnicalCheck } from './story-film-production.servic
 import { projectStoryFilmRevision } from './story-film-revision-projector';
 import { StoryPermissionService } from './story-permission.service';
 
-const WORKING_PREVIEW_TAKE_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmTakeInclude>()({
-    approval: { select: { takeId: true } },
-    reviews: {
-      orderBy: [{ sequence: 'desc' }, { id: 'desc' }],
-      take: 1,
-      select: { decision: true },
-    },
-    outputAsset: {
+const WORKING_PREVIEW_CLIP_INCLUDE =
+  Prisma.validator<Prisma.StoryFilmClipInclude>()({
+    revision: { select: { number: true } },
+    currentVideoAsset: {
       include: {
         placements: true,
         variants: { include: { placements: true } },
       },
     },
-    outputVariant: { include: { placements: true } },
+    currentVideoVariant: { include: { placements: true } },
   });
-
-const WORKING_PREVIEW_CLIP_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmClipInclude>()({
-    masterTake: { include: WORKING_PREVIEW_TAKE_INCLUDE },
-    takes: {
-      where: {
-        status: StoryFilmTakeStatus.ready,
-        supersededAt: null,
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      include: WORKING_PREVIEW_TAKE_INCLUDE,
-    },
-  });
-
-type WorkingPreviewTake = Prisma.StoryFilmTakeGetPayload<{
-  include: typeof WORKING_PREVIEW_TAKE_INCLUDE;
-}>;
 
 type WorkingPreviewClip = Prisma.StoryFilmClipGetPayload<{
   include: typeof WORKING_PREVIEW_CLIP_INCLUDE;
 }>;
-
-interface WorkingPreviewTakeSelection {
-  take: WorkingPreviewTake;
-  kind: 'master' | 'latest_ready';
-}
 
 @Injectable()
 export class StoryWorkingPreviewService {
@@ -84,7 +60,6 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    expectedDraftRevision: number,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -99,27 +74,22 @@ export class StoryWorkingPreviewService {
     }
 
     return this.prisma.$transaction(
-      (tx) =>
-        this.compileSavedDraft(
-          tx,
-          access.project,
-          projectId,
-          expectedDraftRevision,
-        ),
+      (tx) => this.compileLatestSavedDraft(tx, access.project, projectId),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
 
-  private async compileSavedDraft(
+  private async compileLatestSavedDraft(
     tx: Prisma.TransactionClient,
     project: {
       id: string;
       workspaceId: string;
       frameProfile: 'landscape_16_9' | 'portrait_9_16';
       defaultLocale: string;
+      title: string;
+      summary: string | null;
     },
     projectId: string,
-    expectedDraftRevision: number,
   ): Promise<StoryWorkingPreviewDto> {
     const draft = await tx.storyDraft.findUnique({
       where: { storyProjectId: projectId },
@@ -128,14 +98,6 @@ export class StoryWorkingPreviewService {
       throw new NotFoundException({
         code: 'STORY_DRAFT_NOT_FOUND',
         message: 'Story draft not found.',
-      });
-    }
-    if (draft.revision !== expectedDraftRevision) {
-      throw new ConflictException({
-        code: 'DRAFT_REVISION_CONFLICT',
-        message: 'The saved draft changed before the working preview compiled.',
-        expectedRevision: expectedDraftRevision,
-        actualRevision: draft.revision,
       });
     }
     const actualHash = canonicalJsonHash(draft.content);
@@ -148,13 +110,14 @@ export class StoryWorkingPreviewService {
       });
     }
 
-    const playableDraft = createLockableInteractiveFilmDraftContentSchema(
+    const playableDraft = createPlayableInteractiveFilmDraftContentSchema(
       project.defaultLocale,
     ).safeParse(draft.content);
     if (!playableDraft.success) {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: playableDraft.error.issues.map((issue) =>
           previewDiagnostic(
@@ -178,6 +141,7 @@ export class StoryWorkingPreviewService {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: [
           previewDiagnostic(
@@ -200,11 +164,13 @@ export class StoryWorkingPreviewService {
         frameProfile: project.frameProfile,
         defaultLocale: project.defaultLocale,
         defaultCanonicalModelId,
+        includeTrailer: false,
       });
     } catch (error) {
       return {
         draftRevision: draft.revision,
         contentHash: draft.contentHash,
+        runtimeSchemaVersion: 2,
         runtime: null,
         diagnostics: [
           previewDiagnostic(
@@ -222,62 +188,115 @@ export class StoryWorkingPreviewService {
       };
     }
 
+    const projectedClips = projection.clipSpecs.map((spec) => ({
+      spec,
+      specHash: canonicalJsonHash(spec),
+    }));
+    const expectedSpecHashByNodeId = new Map(
+      projectedClips.map(({ spec, specHash }) => [spec.graphNodeId, specHash]),
+    );
     const currentClips = await tx.storyFilmClip.findMany({
       where: {
         storyProjectId: projectId,
         archivedAt: null,
-        revision: {
-          sourceDraftRevision: draft.revision,
-        },
         graphNodeId: {
-          in: projection.clipSpecs.map((clip) => clip.graphNodeId),
+          in: projectedClips.map(({ spec }) => spec.graphNodeId),
         },
+        specHash: {
+          in: [...new Set(projectedClips.map(({ specHash }) => specHash))],
+        },
+        currentVideoAssetId: { not: null },
+        currentVideoVariantId: { not: null },
       },
+      orderBy: [
+        { revision: { number: 'desc' } },
+        { currentVideoRevision: 'desc' },
+        { currentVideoSetAt: 'desc' },
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
       include: WORKING_PREVIEW_CLIP_INCLUDE,
     });
-    const currentClipByNodeId = new Map(
-      currentClips.map((clip) => [clip.graphNodeId, clip]),
+    const currentClipByNodeId = selectNewestWorkingPreviewVideos(
+      currentClips,
+      expectedSpecHashByNodeId,
     );
-    const selections = projection.clipSpecs.map((clip) => {
-      const specHash = canonicalJsonHash(clip);
-      const selection = selectWorkingPreviewTake(
-        currentClipByNodeId.get(clip.graphNodeId) ?? null,
-        specHash,
-      );
+    const selections = projectedClips.map(({ spec, specHash }) => {
+      const currentVideo = currentClipByNodeId.get(spec.graphNodeId) ?? null;
       return {
         input: prepareWorkingPreviewClip(
           project.workspaceId,
-          clip,
+          spec,
           specHash,
-          selection,
+          currentVideo,
         ),
-        source: selection
-          ? {
-              graphNodeId: clip.graphNodeId,
-              takeId: selection.take.id,
-              selection: selection.kind,
-            }
-          : null,
+        source:
+          currentVideo?.currentVideoAssetId &&
+          currentVideo.currentVideoVariantId
+            ? {
+                graphNodeId: spec.graphNodeId,
+                assetId: currentVideo.currentVideoAssetId,
+                variantId: currentVideo.currentVideoVariantId,
+                sourceGenerationId: currentVideo.currentVideoSourceAttemptId,
+                currentVideoRevision: currentVideo.currentVideoRevision,
+                selection: 'current' as const,
+              }
+            : null,
       };
     });
     const compiled = compileStoryFilmBuild({
       projectId,
       revisionId: projectId,
       revisionNumber: draft.revision,
-      buildId: projectId,
+      buildId: `preview:${projectId}:draft:${draft.revision}`,
       profile: 'preview',
       scope: { kind: 'full' },
       draft: playableDraft.data,
       filmSpec: projection.filmSpec,
       clips: selections.map((selection) => selection.input),
     });
+    const mediaIdentities = selections.flatMap((selection) => {
+      const asset = selection.input.asset;
+      if (!asset) return [];
+      return [
+        {
+          runtimeAssetId: storyFilmRuntimeAssetId(selection.input),
+          variantId: asset.variantId,
+          mediaType: asset.contentType,
+        } satisfies StoryExperienceMediaIdentity,
+      ];
+    });
+    const experience = compiled.runtime
+      ? compileStoryExperienceManifest({
+          release: compiled.runtime,
+          metadata: {
+            title: project.title,
+            summary:
+              project.summary?.trim() || playableDraft.data.storyBible.logline,
+          },
+          stateVariables: playableDraft.data.storyBible.stateVariables,
+          mediaIdentities,
+        })
+      : null;
     return {
       draftRevision: draft.revision,
       contentHash: draft.contentHash,
-      runtime: compiled.runtime
-        ? (compiled.runtime as unknown as Record<string, unknown>)
+      runtimeSchemaVersion: 2,
+      runtime: experience?.manifest
+        ? (experience.manifest as Record<string, unknown>)
         : null,
-      diagnostics: compiled.diagnostics,
+      diagnostics: [
+        ...compiled.diagnostics,
+        ...(experience?.diagnostics.map((diagnostic) =>
+          previewDiagnostic(
+            'error',
+            diagnostic.code,
+            diagnostic.message,
+            'revision',
+            projectId,
+          ),
+        ) ?? []),
+      ],
       pathReport: compiled.pathReport,
       sources: selections.flatMap((selection) =>
         selection.source ? [selection.source] : [],
@@ -315,61 +334,77 @@ function prepareWorkingPreviewClip(
   workspaceId: string,
   spec: ReturnType<typeof projectStoryFilmRevision>['clipSpecs'][number],
   specHash: string,
-  selection: WorkingPreviewTakeSelection | null,
+  currentVideo: WorkingPreviewClip | null,
 ): StoryFilmBuildClipInput {
   const diagnostics: FilmBuildDiagnosticDto[] = [];
   let asset: FrozenFilmClipAsset | null = null;
-  const take = selection?.take ?? null;
-  if (!take) {
+  if (!currentVideo) {
     diagnostics.push(
       previewDiagnostic(
         'error',
-        'STORY_WORKING_PREVIEW_TAKE_MISSING',
-        `Shot ${spec.key} has no ready video Take matching its current director design.`,
+        'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
+        `Shot ${spec.key} has no current video.`,
         'clip',
         spec.graphNodeId,
       ),
     );
   } else {
-    if (selection?.kind === 'latest_ready') {
+    if (currentVideo.currentVideoSpecHash === null) {
+      diagnostics.push(
+        previewDiagnostic(
+          'error',
+          'STORY_WORKING_PREVIEW_CURRENT_VIDEO_PROVENANCE_MISSING',
+          `Shot ${spec.key} current video is missing the design snapshot required for playtesting.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
+        ),
+      );
+    } else if (
+      currentVideo.currentVideoSpecHash !== specHash ||
+      currentVideo.currentVideoInputHash !== currentVideo.productionInputHash
+    ) {
       diagnostics.push(
         previewDiagnostic(
           'warning',
-          'STORY_WORKING_PREVIEW_READY_TAKE_FALLBACK',
-          `Shot ${spec.key} has no current Master, so preview is using its latest compatible ready Take.`,
-          'take',
-          take.id,
+          'STORY_WORKING_PREVIEW_CURRENT_VIDEO_OUTDATED',
+          `Shot ${spec.key} is using its previous current video while a newer design is pending.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
         ),
       );
     }
-    if (storyFilmHasFailedTechnicalCheck(take.technicalChecks)) {
+    if (
+      storyFilmHasFailedTechnicalCheck(
+        currentVideo.currentVideoTechnicalChecks ?? [],
+      )
+    ) {
       diagnostics.push(
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_TECHNICAL_CHECK_FAILED',
-          `Shot ${spec.key} latest ready Take has a failed technical check.`,
-          'take',
-          take.id,
+          `Shot ${spec.key} current video has a failed technical check.`,
+          'asset',
+          currentVideo.currentVideoAssetId,
         ),
       );
     }
-    const source = take.outputAsset;
-    const variant = take.outputVariant;
+    const source = currentVideo.currentVideoAsset;
+    const variant = currentVideo.currentVideoVariant;
     if (!source || !variant) {
       diagnostics.push(
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_OUTPUT_MISSING',
-          `Shot ${spec.key} latest ready Take has no playable output.`,
-          'take',
-          take.id,
+          `Shot ${spec.key} current video has no playable output.`,
+          'clip',
+          currentVideo.id,
         ),
       );
     } else {
       const width = variant.width ?? source.width;
       const height = variant.height ?? source.height;
       const durationSeconds = variant.durationSeconds ?? source.durationSeconds;
-      const checksum = take.outputChecksumSha256;
+      const checksum = currentVideo.currentVideoChecksumSha256;
       const url = resolveMediaPublicUrl(source);
       if (
         source.workspaceId !== workspaceId ||
@@ -381,7 +416,6 @@ function prepareWorkingPreviewClip(
         variant.deletedAt ||
         source.moderationStatus === MediaAssetModerationStatus.blocked ||
         !checksum ||
-        source.checksumSha256 !== checksum ||
         variant.checksumSha256 !== checksum ||
         width !== spec.outputContract.width ||
         height !== spec.outputContract.height ||
@@ -394,7 +428,7 @@ function prepareWorkingPreviewClip(
           previewDiagnostic(
             'error',
             'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-            `Shot ${spec.key} latest ready Take does not satisfy the current video output contract.`,
+            `Shot ${spec.key} current video does not satisfy the current video output contract.`,
             'asset',
             source.id,
           ),
@@ -431,49 +465,44 @@ function prepareWorkingPreviewClip(
     graphNodeId: spec.graphNodeId,
     rank: spec.rank,
     specHash,
-    productionInputHash: take?.productionInputHash ?? null,
+    productionInputHash: currentVideo?.currentVideoInputHash ?? null,
     spec,
-    takeId: take?.id ?? null,
+    sourceGenerationId: currentVideo?.currentVideoSourceAttemptId ?? null,
     asset,
     eligibilityDiagnostics: diagnostics,
   };
 }
 
-export function selectWorkingPreviewTake(
+export function selectWorkingPreviewVideo(
   clip: WorkingPreviewClip | null,
   specHash: string,
-): WorkingPreviewTakeSelection | null {
-  if (!clip || clip.specHash !== specHash || !clip.productionInputHash) {
-    return null;
-  }
-  const isCurrent = (
-    take: WorkingPreviewTake | null,
-  ): take is WorkingPreviewTake => {
-    if (
-      !take ||
-      take.status !== StoryFilmTakeStatus.ready ||
-      take.supersededAt ||
-      take.clipSpecHash !== specHash ||
-      take.productionInputHash !== clip.productionInputHash
-    ) {
-      return false;
-    }
-    const latestDecision = take.reviews[0]?.decision;
-    return (
-      latestDecision !== StoryReviewDecision.reject &&
-      latestDecision !== StoryReviewDecision.request_changes
-    );
-  };
-  if (
-    clip.masterTakeId &&
-    clip.masterTake?.id === clip.masterTakeId &&
-    clip.masterTake.approval &&
-    isCurrent(clip.masterTake)
-  ) {
-    return { take: clip.masterTake, kind: 'master' };
-  }
-  const fallback = clip.takes.find((take) => isCurrent(take));
-  return fallback ? { take: fallback, kind: 'latest_ready' } : null;
+): WorkingPreviewClip | null {
+  return clip &&
+    clip.specHash === specHash &&
+    clip.currentVideoAssetId !== null &&
+    clip.currentVideoVariantId !== null
+    ? clip
+    : null;
+}
+
+/**
+ * The database query is newest-first. Keep the first exact (node, spec)
+ * current pointer and never let a newer incompatible production projection
+ * hide an older reusable video whose immutable ClipSpec is still current.
+ */
+function selectNewestWorkingPreviewVideos(
+  clips: readonly WorkingPreviewClip[],
+  expectedSpecHashByNodeId: ReadonlyMap<string, string>,
+): Map<string, WorkingPreviewClip> {
+  const selected = new Map<string, WorkingPreviewClip>();
+  clips.forEach((clip) => {
+    if (selected.has(clip.graphNodeId)) return;
+    const expectedSpecHash = expectedSpecHashByNodeId.get(clip.graphNodeId);
+    if (!expectedSpecHash) return;
+    const current = selectWorkingPreviewVideo(clip, expectedSpecHash);
+    if (current) selected.set(clip.graphNodeId, current);
+  });
+  return selected;
 }
 
 function previewDiagnostic(

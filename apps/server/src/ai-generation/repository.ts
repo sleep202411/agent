@@ -89,7 +89,7 @@ export interface ReserveQueuedJobOptions {
    * Product-plane rows that own an AI job may be inserted here after the
    * canonical AiJob row exists, but before the reservation transaction
    * commits. This is deliberately distinct from `beforeCreate`: foreign keys
-   * such as StoryFilmTake.aiJobId require the job row to exist first.
+   * such as StoryFilmGenerationAttempt.aiJobId require the job row to exist first.
    */
   afterCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;

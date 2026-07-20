@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
 import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
@@ -62,7 +63,12 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
       </CanvasNodeToolbar>
 
       {/* Header = drag handle */}
-      <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-white/80">
+      <div
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80"
+        )}
+      >
         <Icon720 className="size-3.5" />
         {renaming ? (
           <input

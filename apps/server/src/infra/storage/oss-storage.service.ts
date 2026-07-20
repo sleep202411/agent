@@ -27,6 +27,10 @@ import {
 } from '@nestjs/common';
 import OSS from 'ali-oss';
 import {
+  assertExpectedStorageObjectSize,
+  assertStoredObjectSize,
+  assertStoragePromotionLocations,
+  IMMUTABLE_STORAGE_CACHE_CONTROL,
   OutputStorageService,
   type CreateReadUrlInput,
   type CreateReadUrlResult,
@@ -36,6 +40,8 @@ import {
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
+  type PromoteStorageObjectInput,
+  type PromoteStorageObjectResult,
   type RestrictObjectResult,
   type StorageObjectRef,
 } from './storage.types';
@@ -249,13 +255,19 @@ export class AliyunOssStorageService extends OutputStorageService {
   }
 
   async headObject(key: string): Promise<HeadObjectResult> {
-    if (!this.client) {
-      throw new ServiceUnavailableException(
-        'aliyun_oss storage is not configured',
-      );
-    }
+    return this.headStoredObject({
+      bucket: this.bucket,
+      storageKey: key,
+      region: this.region,
+    });
+  }
+
+  override async headStoredObject(
+    ref: StorageObjectRef,
+  ): Promise<HeadObjectResult> {
+    const client = this.clientForBucket(ref.bucket, ref.region);
     try {
-      const res = await this.client.head(key);
+      const res = await client.head(ref.storageKey);
       // The object's real size + type are HTTP response headers
       // (`content-length` / `content-type`), not the SDK's `res.size`
       // (that's the bytes of the HEAD response payload, ~0). Headers are
@@ -265,6 +277,8 @@ export class AliyunOssStorageService extends OutputStorageService {
       const sizeBytes = rawLength != null ? Number(rawLength) : undefined;
       const rawType = headers['content-type'];
       const contentType = typeof rawType === 'string' ? rawType : undefined;
+      const rawEtag = headers.etag;
+      const etag = typeof rawEtag === 'string' ? rawEtag : undefined;
       return {
         exists: true,
         sizeBytes:
@@ -272,9 +286,10 @@ export class AliyunOssStorageService extends OutputStorageService {
             ? sizeBytes
             : undefined,
         contentType,
+        etag,
         provider: 'aliyun_oss',
-        bucket: this.bucket,
-        region: this.region,
+        bucket: ref.bucket,
+        region: ref.region ?? this.region,
       };
     } catch (err) {
       // OSS throws NoSuchKey / 404 when the object is absent — that's the
@@ -285,6 +300,73 @@ export class AliyunOssStorageService extends OutputStorageService {
       }
       throw err;
     }
+  }
+
+  override async promoteObject(
+    input: PromoteStorageObjectInput,
+  ): Promise<PromoteStorageObjectResult> {
+    assertStoragePromotionLocations(input.source, input.destination);
+    assertExpectedStorageObjectSize(input.expectedSizeBytes);
+    assertSameOssRegion(input.source, input.destination);
+
+    const destinationClient = this.clientForBucket(
+      input.destination.bucket,
+      input.destination.region,
+    );
+    const cacheControl = input.cacheControl ?? IMMUTABLE_STORAGE_CACHE_CONTROL;
+    const headers = {
+      'Content-Type': input.contentType,
+      'Cache-Control': cacheControl,
+    };
+    const existing = await this.headStoredObject(input.destination);
+    if (!existing.exists) {
+      const source = await this.headStoredObject(input.source);
+      assertStoredObjectSize(input.source, source, input.expectedSizeBytes);
+      // Four-argument overload performs an in-provider server-side copy and
+      // supports a different source bucket in the same OSS region.
+      await destinationClient.copy(
+        input.destination.storageKey,
+        input.source.storageKey,
+        input.source.bucket,
+        { headers },
+      );
+    } else {
+      assertStoredObjectSize(
+        input.destination,
+        existing,
+        input.expectedSizeBytes,
+      );
+      // A retry can arrive after copy but before cleanup. Re-assert immutable
+      // serving headers on the final object without touching staging.
+      await destinationClient.copy(
+        input.destination.storageKey,
+        input.destination.storageKey,
+        input.destination.bucket,
+        { headers },
+      );
+    }
+
+    const finalHead = await this.headStoredObject(input.destination);
+    assertStoredObjectSize(
+      input.destination,
+      finalHead,
+      input.expectedSizeBytes,
+    );
+    await this.deleteAfterPromotion(input.source);
+    return {
+      bucket: input.destination.bucket,
+      storageKey: input.destination.storageKey,
+      region: input.destination.region ?? this.region,
+      provider: 'aliyun_oss',
+      sizeBytes: input.expectedSizeBytes,
+      contentType: input.contentType,
+      ...(finalHead.etag ? { etag: finalHead.etag } : {}),
+    };
+  }
+
+  override async deleteObject(ref: StorageObjectRef): Promise<void> {
+    // OSS DELETE is idempotent: deleting an absent object is still success.
+    await this.clientForBucket(ref.bucket, ref.region).delete(ref.storageKey);
   }
 
   async restrictObject(ref: StorageObjectRef): Promise<RestrictObjectResult> {
@@ -382,6 +464,19 @@ export class AliyunOssStorageService extends OutputStorageService {
       authorizationV4: true,
     });
   }
+
+  private async deleteAfterPromotion(ref: StorageObjectRef): Promise<void> {
+    try {
+      await this.deleteObject(ref);
+    } catch (err) {
+      // Final is already independent and unsigned. Reclamation can retry this
+      // without holding the promotion job open.
+      this.logger.warn(
+        `Promoted OSS staging object but could not delete ${ref.bucket}/${ref.storageKey}: ` +
+          errorMessage(err),
+      );
+    }
+  }
 }
 
 function responseOptionsForRead(input: CreateReadUrlInput) {
@@ -411,4 +506,19 @@ function isOssNotFound(err: unknown): boolean {
     if (e.code === 'NoSuchKey' || e.name === 'NoSuchKeyError') return true;
   }
   return false;
+}
+
+function assertSameOssRegion(
+  source: StorageObjectRef,
+  destination: StorageObjectRef,
+): void {
+  const sourceRegion = source.region?.replace(/^oss-/, '') ?? null;
+  const destinationRegion = destination.region?.replace(/^oss-/, '') ?? null;
+  if (sourceRegion && destinationRegion && sourceRegion !== destinationRegion) {
+    throw new Error('OSS server-side promotion requires one storage region');
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

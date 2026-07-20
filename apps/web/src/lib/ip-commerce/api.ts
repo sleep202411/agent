@@ -473,6 +473,21 @@ export interface RevokeIpAclInput {
   grantId: string;
 }
 
+export interface TransferIpOwnerInput {
+  ipId: string;
+  /** Existing editor (collaborator) to promote to owner. */
+  toUserId: string;
+  /** Drop the outgoing owner instead of keeping them on as an editor. */
+  removeOldOwner?: boolean;
+}
+
+export interface TransferIpOwnerResult {
+  ipId: string;
+  previousOwnerId: string;
+  newOwnerId: string;
+  oldOwnerKept: boolean;
+}
+
 export interface CreateIpContributorInput {
   ipId: string;
   displayName: string;
@@ -699,6 +714,7 @@ export function listIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
   regions?: string[];
+  q?: string;
   locale?: string;
   cursor?: string;
   limit?: number;
@@ -839,6 +855,14 @@ export function revokeIpEditAccess(input: RevokeIpAclInput) {
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/acl/${encodeURIComponent(
       input.grantId
     )}`
+  );
+}
+
+export function transferIpOwner(input: TransferIpOwnerInput) {
+  const { ipId, toUserId, removeOldOwner } = input;
+  return api.post<TransferIpOwnerResult>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/transfer-owner`,
+    { data: { toUserId, removeOldOwner } }
   );
 }
 

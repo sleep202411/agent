@@ -4,7 +4,7 @@ import {
   frameContractMatchesStoryProfile,
 } from './dto';
 import { FilmClipSpecSchema, FilmSpecSchema } from './interactive-film.schema';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
 describe('StoryProject frame profile contract', () => {
   it('requires one of the two production profiles at project creation', () => {
@@ -71,7 +71,7 @@ describe('StoryProject frame profile contract', () => {
 
 describe('interactive-film frame schemas', () => {
   it('accepts exact 16:9 and 9:16 FilmSpec dimensions', () => {
-    const { filmSpec } = buildHuBaoVillaImportBundle();
+    const { filmSpec } = buildInteractiveFilmTestBundle();
     const portrait = structuredClone(filmSpec);
     portrait.frame = {
       ...portrait.frame,
@@ -85,7 +85,7 @@ describe('interactive-film frame schemas', () => {
   });
 
   it('rejects FilmSpec dimensions that do not match the declared ratio', () => {
-    const { filmSpec } = buildHuBaoVillaImportBundle();
+    const { filmSpec } = buildInteractiveFilmTestBundle();
     const invalid = structuredClone(filmSpec);
     invalid.frame.aspectRatio = '9:16';
 
@@ -93,7 +93,7 @@ describe('interactive-film frame schemas', () => {
   });
 
   it('accepts portrait FilmClip output and rejects mismatched output dimensions', () => {
-    const clip = structuredClone(buildHuBaoVillaImportBundle().clipSpecs[0]);
+    const clip = structuredClone(buildInteractiveFilmTestBundle().clipSpecs[0]);
     clip.outputContract = {
       ...clip.outputContract,
       aspectRatio: '9:16',

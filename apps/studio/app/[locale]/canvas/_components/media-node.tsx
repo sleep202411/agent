@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
 import { IconDownload, IconMaximize, IconMusic, IconPencil, IconUpload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
@@ -56,7 +57,12 @@ function MediaAssetNodeComponent({
 
   return (
     <div className="relative">
-      <div className="mb-1.5 flex max-w-[240px] items-center gap-1.5 px-0.5 text-xs text-white/50">
+      <div
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "mb-1.5 flex max-w-[240px] items-center gap-1.5 rounded px-0.5 text-xs text-white/50"
+        )}
+      >
         <IconUpload className="size-3.5 shrink-0" stroke={1.8} />
         {renaming ? (
           <input
@@ -93,11 +99,14 @@ function MediaAssetNodeComponent({
           <>
             <video
               src={data.src}
+              controls
               muted
               playsInline
               draggable={false}
+              preload="metadata"
               onError={onVideoError}
               onDoubleClick={(event) => {
+                event.preventDefault();
                 event.stopPropagation();
                 setViewerOpen(true);
               }}
@@ -111,7 +120,7 @@ function MediaAssetNodeComponent({
               <IconMusic className="size-5 shrink-0" stroke={1.7} />
               <span className="truncate text-sm">{title}</span>
             </div>
-            <audio src={data.src} controls className="h-8 w-full [color-scheme:dark]" />
+            <audio src={data.src} controls className="nodrag h-8 w-full [color-scheme:dark]" />
           </div>
         )}
       </div>

@@ -361,6 +361,7 @@ export function ModelSettings({
     <div
       role="dialog"
       aria-label={model?.name ?? t("settings.title")}
+      data-canvas-scroll-owner="y"
       className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95"
     >
       <div className="flex items-center justify-between">

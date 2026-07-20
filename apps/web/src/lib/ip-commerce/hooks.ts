@@ -34,6 +34,7 @@ import {
   reportIpContent,
   removeIpCommerceCollection,
   revokeIpEditAccess,
+  transferIpOwner,
   saveIpCommerceCollection,
   submitIpCommerceIpForReview,
   unblockIpContent,
@@ -54,6 +55,7 @@ import {
   type DeleteIpEpisodeInput,
   type GrantIpAclInput,
   type RevokeIpAclInput,
+  type TransferIpOwnerInput,
   type UpdateIpContributorInput,
   type SubmitIpReviewInput,
   type UpdateIpAssetsInput,
@@ -78,6 +80,8 @@ export const ipCommerceKeys = {
   ips: (params?: {
     genreCodes?: string[];
     tagCodes?: string[];
+    regions?: string[];
+    q?: string;
     locale?: string;
     cursor?: string;
     limit?: number;
@@ -85,6 +89,8 @@ export const ipCommerceKeys = {
   ipsInfinite: (params?: {
     genreCodes?: string[];
     tagCodes?: string[];
+    regions?: string[];
+    q?: string;
     locale?: string;
     limit?: number;
   }) => ["ip-commerce", "ips", "infinite", params ?? {}] as const,
@@ -120,6 +126,8 @@ export const ipCommerceKeys = {
 export function useIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
+  regions?: string[];
+  q?: string;
   locale?: string;
   cursor?: string;
   limit?: number;
@@ -135,6 +143,7 @@ export function useInfiniteIpCommerceIps(params?: {
   genreCodes?: string[];
   tagCodes?: string[];
   regions?: string[];
+  q?: string;
   locale?: string;
   limit?: number;
 }) {
@@ -560,6 +569,16 @@ export function useRevokeIpEditAccess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: RevokeIpAclInput) => revokeIpEditAccess(input),
+    onSuccess: async (_result, input) => {
+      await invalidateIpAclCaches(qc, input.ipId);
+    },
+  });
+}
+
+export function useTransferIpOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: TransferIpOwnerInput) => transferIpOwner(input),
     onSuccess: async (_result, input) => {
       await invalidateIpAclCaches(qc, input.ipId);
     },

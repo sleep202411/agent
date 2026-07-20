@@ -9,36 +9,27 @@ import {
   Param,
   Post,
   Put,
-  Query,
 } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
-  ApproveFilmTakeSchema,
-  CancelFilmTakeSchema,
-  CreateDraftFilmTakeSchema,
-  CreateFilmTakeReviewSchema,
-  CreateFilmTakeSchema,
-  FilmTakeListQuerySchema,
-  PrepareDraftFilmClipSchema,
-  PutFilmClipMasterSchema,
-  RetryFilmTakeSchema,
+  CancelFilmGenerationSchema,
+  CreateDraftFilmGenerationSchema,
+  CreateFilmGenerationSchema,
+  PutDraftFilmCurrentVideoSchema,
+  RetryFilmGenerationSchema,
   StoryFilmClipParamsSchema,
   StoryFilmDraftClipParamsSchema,
-  StoryFilmTakeParamsSchema,
+  StoryFilmGenerationParamsSchema,
   StoryUuidSchema,
-  type ApproveFilmTakeInput,
-  type CancelFilmTakeInput,
-  type CreateDraftFilmTakeInput,
-  type CreateFilmTakeInput,
-  type CreateFilmTakeReviewInput,
-  type FilmTakeListQuery,
-  type PrepareDraftFilmClipInput,
-  type PutFilmClipMasterInput,
-  type RetryFilmTakeInput,
+  type CancelFilmGenerationInput,
+  type CreateDraftFilmGenerationInput,
+  type CreateFilmGenerationInput,
+  type PutDraftFilmCurrentVideoInput,
+  type RetryFilmGenerationInput,
   type StoryFilmClipParams,
   type StoryFilmDraftClipParams,
-  type StoryFilmTakeParams,
+  type StoryFilmGenerationParams,
 } from './dto';
 import { StoryFilmProductionService } from './story-film-production.service';
 
@@ -46,31 +37,9 @@ import { StoryFilmProductionService } from './story-film-production.service';
 export class StoryFilmProductionController {
   constructor(private readonly production: StoryFilmProductionService) {}
 
-  @Post(':projectId/clips/:graphNodeId/prepare')
-  async prepareDraftClip(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmDraftClipParamsSchema))
-    params: StoryFilmDraftClipParams,
-    @Body(new ZodValidationPipe(PrepareDraftFilmClipSchema))
-    body: PrepareDraftFilmClipInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.prepareDraftClip(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.graphNodeId,
-        body,
-      ),
-    };
-  }
-
-  @Post(':projectId/clips/:graphNodeId/takes')
+  @Post(':projectId/clips/:graphNodeId/generations')
   @HttpCode(HttpStatus.CREATED)
-  async createDraftTake(
+  async createDraftGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
@@ -78,12 +47,12 @@ export class StoryFilmProductionController {
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryFilmDraftClipParamsSchema))
     params: StoryFilmDraftClipParams,
-    @Body(new ZodValidationPipe(CreateDraftFilmTakeSchema))
-    body: CreateDraftFilmTakeInput,
+    @Body(new ZodValidationPipe(CreateDraftFilmGenerationSchema))
+    body: CreateDraftFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.createDraftTake(
+      data: await this.production.createDraftGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
@@ -94,31 +63,9 @@ export class StoryFilmProductionController {
     };
   }
 
-  @Get(':projectId/clips/:graphNodeId/takes')
-  async listDraftTakes(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmDraftClipParamsSchema))
-    params: StoryFilmDraftClipParams,
-    @Query(new ZodValidationPipe(FilmTakeListQuerySchema))
-    query: FilmTakeListQuery,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.listDraftTakes(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.graphNodeId,
-        query,
-      ),
-    };
-  }
-
-  @Post(':projectId/revisions/:revisionId/clips/:clipId/takes')
+  @Post(':projectId/revisions/:revisionId/clips/:clipId/generations')
   @HttpCode(HttpStatus.CREATED)
-  async createTake(
+  async createGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
@@ -126,12 +73,12 @@ export class StoryFilmProductionController {
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryFilmClipParamsSchema))
     params: StoryFilmClipParams,
-    @Body(new ZodValidationPipe(CreateFilmTakeSchema))
-    body: CreateFilmTakeInput,
+    @Body(new ZodValidationPipe(CreateFilmGenerationSchema))
+    body: CreateFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.createTake(
+      data: await this.production.createGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
@@ -143,159 +90,90 @@ export class StoryFilmProductionController {
     };
   }
 
-  @Get(':projectId/revisions/:revisionId/clips/:clipId/takes')
-  async listTakes(
+  @Get(':projectId/generations/:generationId')
+  async getGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmClipParamsSchema))
-    params: StoryFilmClipParams,
-    @Query(new ZodValidationPipe(FilmTakeListQuerySchema))
-    query: FilmTakeListQuery,
+    @Param(new ZodValidationPipe(StoryFilmGenerationParamsSchema))
+    params: StoryFilmGenerationParams,
   ) {
     return {
       code: 200,
-      data: await this.production.listTakes(
+      data: await this.production.getGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.revisionId,
-        params.clipId,
-        query,
+        params.generationId,
       ),
     };
   }
 
-  @Get(':projectId/takes/:takeId')
-  async getTake(
+  @Post(':projectId/generations/:generationId/cancel')
+  async cancelGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTakeParamsSchema))
-    params: StoryFilmTakeParams,
+    @Param(new ZodValidationPipe(StoryFilmGenerationParamsSchema))
+    params: StoryFilmGenerationParams,
+    @Body(new ZodValidationPipe(CancelFilmGenerationSchema))
+    body: CancelFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.getTake(
+      data: await this.production.cancelGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.takeId,
-      ),
-    };
-  }
-
-  @Post(':projectId/takes/:takeId/cancel')
-  async cancelTake(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTakeParamsSchema))
-    params: StoryFilmTakeParams,
-    @Body(new ZodValidationPipe(CancelFilmTakeSchema))
-    body: CancelFilmTakeInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.cancelTake(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.takeId,
+        params.generationId,
         body,
       ),
     };
   }
 
-  @Post(':projectId/takes/:takeId/retry')
+  @Post(':projectId/generations/:generationId/retry')
   @HttpCode(HttpStatus.CREATED)
-  async retryTake(
+  async retryGeneration(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTakeParamsSchema))
-    params: StoryFilmTakeParams,
-    @Body(new ZodValidationPipe(RetryFilmTakeSchema)) body: RetryFilmTakeInput,
+    @Param(new ZodValidationPipe(StoryFilmGenerationParamsSchema))
+    params: StoryFilmGenerationParams,
+    @Body(new ZodValidationPipe(RetryFilmGenerationSchema))
+    body: RetryFilmGenerationInput,
   ) {
     return {
       code: 200,
-      data: await this.production.retryTake(
+      data: await this.production.retryGeneration(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.takeId,
+        params.generationId,
         body,
         requiredIdempotencyKey(idempotencyHeader),
       ),
     };
   }
 
-  @Post(':projectId/takes/:takeId/reviews')
-  @HttpCode(HttpStatus.CREATED)
-  async reviewTake(
+  @Put(':projectId/clips/:graphNodeId/current-video')
+  async putCurrentVideo(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id')
     workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTakeParamsSchema))
-    params: StoryFilmTakeParams,
-    @Body(new ZodValidationPipe(CreateFilmTakeReviewSchema))
-    body: CreateFilmTakeReviewInput,
+    @Param(new ZodValidationPipe(StoryFilmDraftClipParamsSchema))
+    params: StoryFilmDraftClipParams,
+    @Body(new ZodValidationPipe(PutDraftFilmCurrentVideoSchema))
+    body: PutDraftFilmCurrentVideoInput,
   ) {
     return {
       code: 200,
-      data: await this.production.reviewTake(
+      data: await this.production.putCurrentVideo(
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
-        params.takeId,
-        body,
-      ),
-    };
-  }
-
-  @Post(':projectId/takes/:takeId/approval')
-  @HttpCode(HttpStatus.CREATED)
-  async approveTake(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmTakeParamsSchema))
-    params: StoryFilmTakeParams,
-    @Body(new ZodValidationPipe(ApproveFilmTakeSchema))
-    body: ApproveFilmTakeInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.approveTake(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.takeId,
-        body,
-      ),
-    };
-  }
-
-  @Put(':projectId/revisions/:revisionId/clips/:clipId/master')
-  async putMaster(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryFilmClipParamsSchema))
-    params: StoryFilmClipParams,
-    @Body(new ZodValidationPipe(PutFilmClipMasterSchema))
-    body: PutFilmClipMasterInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.putMaster(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.revisionId,
-        params.clipId,
+        params.graphNodeId,
         body,
       ),
     };

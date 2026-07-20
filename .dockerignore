@@ -20,6 +20,14 @@ apps/mobile
 **/.cxx
 **/android/build
 **/android/app/build
+# iOS build products (xcarchive/dSYMs/ipa, ~230MB) — mirror of the android
+# globs above; store-release artifacts live outside the repo.
+**/ios/build
+# Local production / scratch output: review audio, generated clips, one-off
+# exports (repo-root tmp/ alone was 1.2GB on 2026-07-17). Never in any image;
+# every tmp dir in the repo is generated junk.
+tmp
+**/tmp
 .git
 .github
 .claude
@@ -32,8 +40,16 @@ apps/mobile
 **/.env.local
 **/.env.*.local
 *.tar
+**/*.tar
 *.tar.gz
+**/*.tar.gz
 *.md
 # package.json is needed for npm install in the build — keep it.
 !package.json
 !**/package.json
+# Agent runtime sqlite — gitignored local artifact, ~30MB each, never needed
+# at build (a fresh checkout has none). az's packer ignores it via **/.
+**/mastra.db
+**/mastra.db-wal
+**/mastra.db-shm
+**/.mastra/output

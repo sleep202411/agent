@@ -214,7 +214,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: a187e155cc2da25f85b64b6d5a3cab7331db92eb
+    tag: 4c838daa51f3f3ea5fbc00f814a291ef2e0be0d1
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -240,7 +240,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 124f148dbb62fd42b19d7bd6b8002b81a3613cb6
+    tag: be2bce06c04e2694a9a5a3952a8668d3ee1e2320
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -266,7 +266,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 7a4ee57da6d26589af7929c64ff20fab046bf39a
+    tag: 16b5bf999437de6a7a4bbd70d0f37a4332176ddf
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -314,12 +314,15 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: e2631b24f6cc3d2a3ef9d9c4cc99f766cd211710
+    tag: ba5a561fdf945f6ac013fc45185de77d35f13698
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # story-studio: fallback video model stamped onto clips that don't pick
+    # one; revision lock refuses to proceed without it.
+    STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG: "seedance-2-0"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
     # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
     # subscription; its expiry is not queryable via API, so it's declared here and

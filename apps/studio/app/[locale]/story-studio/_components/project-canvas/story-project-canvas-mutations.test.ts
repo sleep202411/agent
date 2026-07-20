@@ -4,6 +4,7 @@ import {
   addChoiceOption,
   appendClipPromptBeat,
   connectAutoRoute,
+  connectClipContinuation,
   connectChoiceTarget,
   connectEnding,
   convertClipExitToCheckpoint,
@@ -84,7 +85,7 @@ describe("story project canvas mutations", () => {
       kind: "clip",
       nodeId: "clip:scene-1",
       clipKey: "SCENE_1",
-      exit: { kind: "auto", routes: [] },
+      exit: { kind: "auto", nextNodeId: null },
     });
     expect(firstClip.content.clipPrompts).toEqual([
       expect.objectContaining({
@@ -133,7 +134,7 @@ describe("story project canvas mutations", () => {
       beats: [{ ...sourcePrompt.beats[0]!, visual: "A lantern enters frame." }],
     });
     content = createRouterNode(content, { nodeId: "gate" }).content;
-    content = connectAutoRoute(content, "opening", "gate", { priority: 4 });
+    content = connectClipContinuation(content, "opening", "gate");
     content = connectAutoRoute(content, "gate", "opening");
 
     const clipCopy = duplicateClipNode(content, "opening");
@@ -141,7 +142,7 @@ describe("story project canvas mutations", () => {
 
     expect(clipCopy.created.nodeId).toBe("clip:scene-2");
     expect(clipCopy.created.clipKey).toBe("SCENE_2");
-    expect(clipCopy.created.exit).toEqual({ kind: "auto", routes: [] });
+    expect(clipCopy.created.exit).toEqual({ kind: "auto", nextNodeId: null });
     const copiedPrompt = clipCopy.content.clipPrompts.find(
       (prompt) => prompt.graphNodeId === clipCopy.created.nodeId
     );
@@ -337,7 +338,7 @@ describe("story project canvas mutations", () => {
 
     const next = deleteEndingNode(content, "truth");
     expect(next.storyBible.endings.map((candidate) => candidate.id)).toEqual(["failure"]);
-    expect(graphNode(next, "terminal").exit).toEqual({ kind: "auto", routes: [] });
+    expect(graphNode(next, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
     expect(graphNode(next, "decision").exit).toMatchObject({
       choices: [{ effects: [{ kind: "unlock_ending", endingId: "failure" }] }],
     });
@@ -349,7 +350,7 @@ describe("story project canvas mutations", () => {
       entryNodeId: "opening",
       nodes: [autoClip("opening", "OPENING"), autoClip("left", "LEFT"), autoClip("right", "RIGHT")],
     });
-    content = connectAutoRoute(content, "opening", "left");
+    content = connectClipContinuation(content, "opening", "left");
     content = convertClipExitToChoice(content, "opening", "zh-CN");
     content = updateChoiceExitPrompt(content, "opening", "zh-CN", "你要走哪条路？");
     expectMutationCode(
@@ -447,6 +448,35 @@ describe("story project canvas mutations", () => {
       () => moveChoiceOption(content, "decision", "missing", "up"),
       "CHOICE_NOT_FOUND"
     );
+  });
+
+  it("owns exactly one direct continuation on a film clip", () => {
+    let content = draft({
+      entryNodeId: "opening",
+      nodes: [autoClip("opening", "OPENING"), autoClip("left", "LEFT"), autoClip("right", "RIGHT")],
+    });
+
+    content = connectClipContinuation(content, "opening", "left");
+    expect(graphNode(content, "opening").exit).toEqual({
+      kind: "auto",
+      nextNodeId: "left",
+    });
+
+    content = connectClipContinuation(content, "opening", "right");
+    expect(graphNode(content, "opening").exit).toEqual({
+      kind: "auto",
+      nextNodeId: "right",
+    });
+
+    content = disconnectStoryBranch(content, {
+      kind: "continuation",
+      sourceNodeId: "opening",
+      targetNodeId: "right",
+    });
+    expect(graphNode(content, "opening").exit).toEqual({
+      kind: "auto",
+      nextNodeId: null,
+    });
   });
 
   it("connects and disconnects exact automatic branches without disturbing siblings", () => {
@@ -558,9 +588,9 @@ describe("story project canvas mutations", () => {
     content = connectEnding(content, "terminal", "truth");
     expect(graphNode(content, "terminal").exit).toEqual({ kind: "ending", endingId: "truth" });
     content = disconnectEnding(content, "terminal", "truth");
-    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", routes: [] });
+    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
 
-    content = connectAutoRoute(content, "terminal", "next");
+    content = connectClipContinuation(content, "terminal", "next");
     expectMutationCode(() => connectEnding(content, "terminal", "truth"), "BRANCH_ALREADY_EXISTS");
   });
 
@@ -590,7 +620,7 @@ describe("story project canvas mutations", () => {
       sourceNodeId: "opening",
       targetNodeId: "finale",
     });
-    expect(graphNode(content, "opening").exit).toEqual({ kind: "auto", routes: [] });
+    expect(graphNode(content, "opening").exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
   it("cleans checkpoint targets when their graph node is deleted", () => {
@@ -608,7 +638,7 @@ describe("story project canvas mutations", () => {
     });
 
     const next = deleteGraphNode(content, "epilogue");
-    expect(graphNode(next, "opening").exit).toEqual({ kind: "auto", routes: [] });
+    expect(graphNode(next, "opening").exit).toEqual({ kind: "auto", nextNodeId: null });
     expect(
       validateStoryDraftGraph(next, { requireComplete: true }).map((issue) => issue.code)
     ).toEqual(["empty-auto-exit"]);
@@ -634,7 +664,7 @@ describe("story project canvas mutations", () => {
       kind: "hidden",
     });
 
-    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", routes: [] });
+    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
     expect(content.storyBible.endings[0]).toMatchObject({
       id: "truth",
       title: { "en-US": "truth", "zh-CN": "真相结局" },
@@ -649,7 +679,7 @@ describe("story project canvas mutations", () => {
       endings: [ending("truth")],
       nodes: [autoClip("terminal", "TERMINAL"), autoClip("next", "NEXT")],
     });
-    content = connectAutoRoute(content, "terminal", "next");
+    content = connectClipContinuation(content, "terminal", "next");
     content = convertClipExitToEnding(content, "terminal", "truth");
 
     expect(graphNode(content, "terminal").exit).toEqual({
@@ -713,7 +743,7 @@ function draft(
 }
 
 function autoClip(nodeId: string, clipKey: string): StoryGraphNode {
-  return { kind: "clip", nodeId, clipKey, exit: { kind: "auto", routes: [] } };
+  return { kind: "clip", nodeId, clipKey, exit: { kind: "auto", nextNodeId: null } };
 }
 
 function choice(choiceId: string, nextNodeId: string, reactionClipKey?: string) {
@@ -750,7 +780,7 @@ function choiceOptions(content: InteractiveFilmDraftContent, nodeId: string) {
 
 function autoRoutes(content: InteractiveFilmDraftContent, nodeId: string) {
   const node = graphNode(content, nodeId);
-  if (node.exit.kind !== "auto") throw new Error("Expected automatic exit.");
+  if (node.kind !== "router") throw new Error("Expected router node.");
   return node.exit.routes;
 }
 

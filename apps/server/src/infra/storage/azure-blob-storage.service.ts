@@ -24,9 +24,14 @@ import {
 import {
   BlobSASPermissions,
   BlobServiceClient,
+  type BlobClient,
   type ContainerClient,
 } from '@azure/storage-blob';
 import {
+  assertExpectedStorageObjectSize,
+  assertStoredObjectSize,
+  assertStoragePromotionLocations,
+  IMMUTABLE_STORAGE_CACHE_CONTROL,
   OutputStorageService,
   type CreateReadUrlInput,
   type CreateReadUrlResult,
@@ -36,6 +41,8 @@ import {
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
+  type PromoteStorageObjectInput,
+  type PromoteStorageObjectResult,
   type RestrictObjectResult,
   type StorageObjectRef,
 } from './storage.types';
@@ -45,8 +52,10 @@ const DEFAULT_UPLOAD_URL_TTL_SECONDS = 900;
 const DEFAULT_READ_URL_TTL_SECONDS = 300;
 /** SAS startsOn skew tolerance — covers small client/server clock drift. */
 const SAS_CLOCK_SKEW_MS = 60_000;
-/** TTL of the short read-SAS minted only to authorize a server-side copy. */
-const COPY_SOURCE_SAS_TTL_SECONDS = 300;
+/** Server-only read SAS must outlive the longest accepted async copy. */
+const COPY_SOURCE_SAS_TTL_SECONDS = 60 * 60;
+const COPY_COMPLETION_TIMEOUT_MS = 55 * 60_000;
+const COPY_STATUS_POLL_MS = 1_000;
 
 @Injectable()
 export class AzureBlobStorageService extends OutputStorageService {
@@ -228,20 +237,33 @@ export class AzureBlobStorageService extends OutputStorageService {
   }
 
   async headObject(key: string): Promise<HeadObjectResult> {
-    if (!this.client) {
+    return this.headStoredObject({
+      bucket: this.containerName,
+      storageKey: key,
+      region: this.region,
+    });
+  }
+
+  override async headStoredObject(
+    ref: StorageObjectRef,
+  ): Promise<HeadObjectResult> {
+    if (!this.service) {
       throw new ServiceUnavailableException(
         'azure_blob storage is not configured',
       );
     }
-    const block = this.client.getBlockBlobClient(key);
+    const block = this.containerClient(ref.bucket).getBlockBlobClient(
+      ref.storageKey,
+    );
     try {
       const props = await block.getProperties();
       return {
         exists: true,
         sizeBytes: props.contentLength,
         contentType: props.contentType,
+        etag: props.etag,
         provider: 'azure_blob',
-        bucket: this.containerName,
+        bucket: ref.bucket,
         region: this.region,
       };
     } catch (err) {
@@ -254,6 +276,64 @@ export class AzureBlobStorageService extends OutputStorageService {
       }
       throw err;
     }
+  }
+
+  override async promoteObject(
+    input: PromoteStorageObjectInput,
+  ): Promise<PromoteStorageObjectResult> {
+    if (!this.service) {
+      throw new ServiceUnavailableException(
+        'azure_blob storage is not configured',
+      );
+    }
+    assertStoragePromotionLocations(input.source, input.destination);
+    assertExpectedStorageObjectSize(input.expectedSizeBytes);
+
+    const cacheControl = input.cacheControl ?? IMMUTABLE_STORAGE_CACHE_CONTROL;
+    const finalBlob = this.containerClient(
+      input.destination.bucket,
+    ).getBlockBlobClient(input.destination.storageKey);
+    let existing = await this.headStoredObject(input.destination);
+    if (existing.exists && !(await this.copyDestinationIsUsable(finalBlob))) {
+      await finalBlob.deleteIfExists();
+      existing = { exists: false };
+    }
+    if (!existing.exists) {
+      const source = await this.headStoredObject(input.source);
+      assertStoredObjectSize(input.source, source, input.expectedSizeBytes);
+      await this.copyBlob(input.source, input.destination);
+    }
+
+    // Copy inherits staging headers. Rewrite them only on the unsigned final
+    // object so staging remains disposable and the final object is immutable.
+    await finalBlob.setHTTPHeaders({
+      blobCacheControl: cacheControl,
+      blobContentType: input.contentType,
+    });
+    const finalHead = await this.headStoredObject(input.destination);
+    assertStoredObjectSize(
+      input.destination,
+      finalHead,
+      input.expectedSizeBytes,
+    );
+    await this.deleteAfterPromotion(input.source);
+    return promotionResult(
+      'azure_blob',
+      input.destination,
+      input.expectedSizeBytes,
+      input.contentType,
+      finalHead.etag,
+      this.region,
+    );
+  }
+
+  override async deleteObject(ref: StorageObjectRef): Promise<void> {
+    if (!this.service) {
+      throw new ServiceUnavailableException(
+        'azure_blob storage is not configured',
+      );
+    }
+    await this.deleteBlobIfExists(ref);
   }
 
   // The SAS write-URL (createUploadUrl) can't set the blob's Cache-Control, so
@@ -351,8 +431,57 @@ export class AzureBlobStorageService extends OutputStorageService {
     const targetBlob = this.containerClient(target.bucket).getBlobClient(
       target.storageKey,
     );
-    const poller = await targetBlob.beginCopyFromURL(sourceSas);
-    await poller.pollUntilDone();
+    const poller = await targetBlob.beginCopyFromURL(sourceSas, {
+      intervalInMs: COPY_STATUS_POLL_MS,
+    });
+    const timeoutError = new ServiceUnavailableException({
+      code: 'AZURE_BLOB_COPY_TIMEOUT',
+      message: 'Azure Blob timed out while copying the uploaded video.',
+    });
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        poller.pollUntilDone(),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(timeoutError),
+            COPY_COMPLETION_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      if (error === timeoutError) {
+        await poller.cancelOperation().catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+    if (!(await this.copyDestinationIsUsable(targetBlob))) {
+      throw new ServiceUnavailableException({
+        code: 'AZURE_BLOB_COPY_FAILED',
+        message: 'Azure Blob did not complete the server-side copy.',
+      });
+    }
+  }
+
+  private async copyDestinationIsUsable(blob: BlobClient): Promise<boolean> {
+    const deadline = Date.now() + COPY_COMPLETION_TIMEOUT_MS;
+    for (;;) {
+      const properties = await blob.getProperties();
+      const status = properties.copyStatus;
+      if (!status || status === 'success') return true;
+      if (status === 'failed' || status === 'aborted') return false;
+      if (Date.now() >= deadline) {
+        throw new ServiceUnavailableException({
+          code: 'AZURE_BLOB_COPY_TIMEOUT',
+          message: 'Azure Blob timed out while copying the uploaded video.',
+        });
+      }
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, COPY_STATUS_POLL_MS),
+      );
+    }
   }
 
   private async blobExists(ref: StorageObjectRef): Promise<boolean> {
@@ -365,6 +494,19 @@ export class AzureBlobStorageService extends OutputStorageService {
     await this.containerClient(ref.bucket)
       .getBlobClient(ref.storageKey)
       .deleteIfExists();
+  }
+
+  private async deleteAfterPromotion(ref: StorageObjectRef): Promise<void> {
+    try {
+      await this.deleteObject(ref);
+    } catch (err) {
+      // The never-signed final object is already durable. A lingering staging
+      // object cannot mutate it and will be reclaimed by the session reaper.
+      this.logger.warn(
+        `Promoted Azure staging object but could not delete ${ref.bucket}/${ref.storageKey}: ` +
+          errorMessage(err),
+      );
+    }
   }
 
   async isHealthy(): Promise<boolean> {
@@ -413,4 +555,27 @@ function isAzureNotFound(err: unknown): boolean {
     }
   }
   return false;
+}
+
+function promotionResult(
+  provider: 'azure_blob',
+  ref: StorageObjectRef,
+  sizeBytes: number,
+  contentType: string,
+  etag: string | undefined,
+  defaultRegion: string | null,
+): PromoteStorageObjectResult {
+  return {
+    bucket: ref.bucket,
+    storageKey: ref.storageKey,
+    region: ref.region ?? defaultRegion,
+    provider,
+    sizeBytes,
+    contentType,
+    ...(etag ? { etag } : {}),
+  };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

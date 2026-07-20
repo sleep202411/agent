@@ -5,6 +5,7 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
@@ -15,11 +16,12 @@ import {
   MediaObjectPlacementStatus,
   MediaStorageProvider,
   Prisma,
+  StoryBuildKind,
   StoryBuildStatus,
   StoryFilmContinuityDecision,
   StoryFilmDependencyKind,
-  StoryFilmTakeStatus,
 } from '@prisma/client';
+import { EXPERIENCE_RUNTIME_SCHEMA_VERSION } from '@repo/shared/experience-runtime';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -45,15 +47,37 @@ import {
   type FilmBuildSummaryDto,
 } from './dto';
 import {
+  compileStoryExperienceManifest,
+  type StoryExperienceMediaIdentity,
+} from './story-experience-manifest-compiler';
+import {
   compileStoryFilmBuild,
+  storyFilmRuntimeAssetId,
   type FrozenFilmClipAsset,
   type StoryFilmBuildClipInput,
 } from './story-film-build-compiler';
-import { storyFilmHasFailedTechnicalCheck } from './story-film-production.service';
+import { storyFilmTechnicalCheckDtos } from './story-film-production.service';
 import { StoryPermissionService } from './story-permission.service';
 
 const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
   project: { select: { workspaceId: true } },
+  experiencePublication: {
+    select: {
+      status: true,
+      gameId: true,
+      contentVersion: true,
+      manifestUrl: true,
+      publishedAt: true,
+      mediaAuthorizedAt: true,
+      mediaAuthorizationRevokedAt: true,
+      authorityIsCurrent: true,
+      authorityGameExists: true,
+      authorityCurrentVersion: true,
+      authorityCheckedAt: true,
+      lastErrorCode: true,
+      lastErrorDetail: true,
+    },
+  },
   assets: {
     orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     include: {
@@ -63,7 +87,6 @@ const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
           id: true,
           status: true,
           moderationStatus: true,
-          checksumSha256: true,
           deletedAt: true,
         },
       },
@@ -83,7 +106,19 @@ type BuildRow = Prisma.StoryBuildGetPayload<{ include: typeof BUILD_INCLUDE }>;
 
 const BUILD_DELIVERY_ASSET_INCLUDE =
   Prisma.validator<Prisma.StoryBuildAssetInclude>()({
-    build: { select: { status: true } },
+    build: {
+      select: {
+        status: true,
+        kind: true,
+        scope: true,
+        experiencePublication: {
+          select: {
+            mediaAuthorizedAt: true,
+            mediaAuthorizationRevokedAt: true,
+          },
+        },
+      },
+    },
     asset: { include: { placements: true } },
     variant: { include: { placements: true } },
   });
@@ -95,27 +130,25 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
+// Bump this whenever identical authored inputs can compile to materially
+// different Build output without an Experience runtime schema version bump.
+// It is part of semantic Build identity, not transport idempotency: retries
+// with the same Idempotency-Key still replay their original submission.
+const STORY_FILM_BUILD_COMPILER_SEMANTIC_VERSION = 1;
+const REQUIRED_CURRENT_VIDEO_TECHNICAL_CHECK_KEYS = [
+  'kind',
+  'dimensions',
+  'duration',
+  'checksum',
+] as const;
 
 const BUILD_CLIP_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()({
-  references: {
-    orderBy: [{ role: 'asc' }, { position: 'asc' }],
+  currentVideoAsset: {
     include: {
-      referenceSlot: { select: { approvedVersionId: true } },
+      placements: true,
     },
   },
-  masterTake: {
-    include: {
-      approval: true,
-      references: true,
-      outputAsset: {
-        include: {
-          placements: true,
-          variants: { include: { placements: true } },
-        },
-      },
-      outputVariant: { include: { placements: true } },
-    },
-  },
+  currentVideoVariant: { include: { placements: true } },
 });
 type BuildClipRow = Prisma.StoryFilmClipGetPayload<{
   include: typeof BUILD_CLIP_INCLUDE;
@@ -127,8 +160,12 @@ const BUILD_DEPENDENCY_INCLUDE =
       orderBy: [{ id: 'asc' }],
       select: {
         id: true,
-        upstreamTakeId: true,
-        downstreamTakeId: true,
+        upstreamAssetId: true,
+        upstreamVariantId: true,
+        upstreamChecksumSha256: true,
+        downstreamAssetId: true,
+        downstreamVariantId: true,
+        downstreamChecksumSha256: true,
         decision: true,
       },
     },
@@ -143,6 +180,12 @@ interface BuildCursor {
 }
 
 interface CompilationSnapshot {
+  project: {
+    id: string;
+    title: string;
+    summary: string | null;
+    defaultLocale: string;
+  };
   revision: {
     id: string;
     number: number;
@@ -191,76 +234,110 @@ export class StoryFilmBuildService {
 
     let created: BuildRow;
     try {
-      created = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`
+      created = await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`story-film-build-submission:${submissionKey}`})::bigint
           )
         `;
-        const concurrent = await tx.storyBuild.findUnique({
-          where: { submissionKey },
-          include: BUILD_INCLUDE,
-        });
-        if (concurrent) {
-          assertBuildReplay(concurrent, requestFingerprint);
-          return concurrent;
-        }
-        await tx.$executeRaw`
+          const concurrent = await tx.storyBuild.findUnique({
+            where: { submissionKey },
+            include: BUILD_INCLUDE,
+          });
+          if (concurrent) {
+            assertBuildReplay(concurrent, requestFingerprint);
+            return concurrent;
+          }
+          const snapshot = await loadCompilationSnapshot(
+            tx,
+            projectId,
+            input.revisionId,
+          );
+          if (
+            snapshot.filmSpec.productionRevision !==
+            input.expectedProductionRevision
+          ) {
+            throw productionRevisionConflict(
+              input.expectedProductionRevision,
+              snapshot.filmSpec.productionRevision,
+            );
+          }
+          const inputManifest = storyFilmBuildInputManifest(input, snapshot);
+          const inputManifestHash = canonicalJsonHash(inputManifest);
+          const inputHash = storyFilmBuildSemanticInputHash(
+            input,
+            snapshot,
+            inputManifestHash,
+          );
+          // Idempotency-Key protects one transport submission. This second lock
+          // protects the immutable Build meaning itself, so independent tabs
+          // with different random keys converge on one exact artifact. The
+          // post-lock lookup is deliberately exhaustive: a hash collision may
+          // serialize unrelated work but can never cause an incorrect replay.
+          await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`story-film-build-input:${projectId}:${inputHash}`})::bigint
+          )
+        `;
+          const semanticReplay = await tx.storyBuild.findFirst({
+            where: {
+              storyProjectId: projectId,
+              sourceRevisionId: input.revisionId,
+              requestFingerprint,
+              kind: input.profile,
+              scope: { equals: input.scope },
+              sourceProductionRevision: input.expectedProductionRevision,
+              status: { in: semanticReplayBuildStatuses() },
+              inputHash,
+              inputManifestHash,
+              runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+              NOT: {
+                experiencePublication: { is: { status: 'rejected' } },
+              },
+            },
+            orderBy: [{ buildNumber: 'asc' }, { id: 'asc' }],
+            include: BUILD_INCLUDE,
+          });
+          if (semanticReplay) return semanticReplay;
+
+          await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`story-film-build-number:${projectId}`})::bigint
           )
         `;
-        const project = await tx.storyProject.findFirst({
-          where: { id: projectId, workspaceId },
-          select: { nextBuildNumber: true },
-        });
-        if (!project) throw projectNotFound();
-        const snapshot = await loadCompilationSnapshot(
-          tx,
-          projectId,
-          input.revisionId,
-        );
-        if (
-          snapshot.filmSpec.productionRevision !==
-          input.expectedProductionRevision
-        ) {
-          throw productionRevisionConflict(
-            input.expectedProductionRevision,
-            snapshot.filmSpec.productionRevision,
-          );
-        }
-        const inputManifest = buildInputManifest(input, snapshot);
-        const inputManifestHash = canonicalJsonHash(inputManifest);
-        const inputHash = canonicalJsonHash({
-          request: input,
-          revisionContentHash: snapshot.revision.contentHash,
-          filmSpecHash: snapshot.filmSpec.specHash,
-          productionRevision: snapshot.filmSpec.productionRevision,
-          inputManifestHash,
-        });
-        await tx.storyProject.update({
-          where: { id: projectId },
-          data: { nextBuildNumber: { increment: 1 } },
-        });
-        return tx.storyBuild.create({
-          data: {
-            storyProjectId: projectId,
-            sourceRevisionId: input.revisionId,
-            buildNumber: project.nextBuildNumber,
-            submissionKey,
-            requestFingerprint,
-            kind: input.profile,
-            scope: input.scope,
-            sourceProductionRevision: input.expectedProductionRevision,
-            status: StoryBuildStatus.queued,
-            inputHash,
-            inputManifestHash,
-            runtimeSchemaVersion: 1,
-            createdByUserId: user.userId,
-          },
-          include: BUILD_INCLUDE,
-        });
-      });
+          const project = await tx.storyProject.findFirst({
+            where: { id: projectId, workspaceId },
+            select: { nextBuildNumber: true },
+          });
+          if (!project) throw projectNotFound();
+          await tx.storyProject.update({
+            where: { id: projectId },
+            data: { nextBuildNumber: { increment: 1 } },
+          });
+          return tx.storyBuild.create({
+            data: {
+              storyProjectId: projectId,
+              sourceRevisionId: input.revisionId,
+              buildNumber: project.nextBuildNumber,
+              submissionKey,
+              requestFingerprint,
+              kind: input.profile,
+              scope: input.scope,
+              sourceProductionRevision: input.expectedProductionRevision,
+              status: StoryBuildStatus.queued,
+              inputHash,
+              inputManifestHash,
+              runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+              createdByUserId: user.userId,
+            },
+            include: BUILD_INCLUDE,
+          });
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
       const winner = await this.prisma.storyBuild.findUnique({
@@ -322,13 +399,16 @@ export class StoryFilmBuildService {
   }
 
   async issueBuildAssetReadUrl(
-    user: AuthUser,
+    user: AuthUser | undefined,
     projectId: string,
     buildId: string,
     assetId: string,
     variantId: string,
   ): Promise<{ url: string; expiresAt: string | null }> {
-    await this.permissions.requireProject(user.userId, projectId, 'story.read');
+    // The stable URI frozen into a Build is an identity, not an authorization
+    // capability. Java publication is the only event that makes its exact
+    // full-production Build anonymously deliverable. Every other Build is
+    // authorized against current story membership on every URL exchange.
     const frozen = await this.prisma.storyBuildAsset.findFirst({
       where: {
         storyProjectId: projectId,
@@ -343,6 +423,27 @@ export class StoryFilmBuildService {
         code: 'STORY_BUILD_ASSET_NOT_FOUND',
         message: 'Build media asset not found.',
       });
+    }
+    const scope = FilmBuildScopeSchema.safeParse(frozen.build.scope);
+    const isPubliclyPublished =
+      frozen.build.kind === StoryBuildKind.production &&
+      scope.success &&
+      scope.data.kind === 'full' &&
+      frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
+      frozen.build.experiencePublication.mediaAuthorizationRevokedAt === null;
+    if (!isPubliclyPublished) {
+      if (!user) {
+        throw new UnauthorizedException({
+          code: 'STORY_BUILD_ASSET_AUTH_REQUIRED',
+          message:
+            'Authentication is required to access unpublished Build media.',
+        });
+      }
+      await this.permissions.requireProject(
+        user.userId,
+        projectId,
+        'story.read',
+      );
     }
     const currentDiagnostics = storyBuildCurrentMediaDiagnostics(
       [frozen],
@@ -367,11 +468,15 @@ export class StoryFilmBuildService {
       });
     }
     if (source.storageProvider === MediaStorageProvider.external_url) {
-      throw new GoneException({
-        code: 'STORY_BUILD_ASSET_NOT_SIGNABLE',
-        message:
-          'Build media must use product storage that supports expiring signed access.',
-      });
+      // External media is delivered by its own URL — there is nothing to
+      // sign, so access neither expires nor can be revoked. The synthetic
+      // expiry only satisfies the delivery contract shape.
+      return {
+        url: source.externalUrl as string,
+        expiresAt: new Date(
+          Date.now() + BUILD_MEDIA_READ_URL_TTL_SECONDS * 1_000,
+        ).toISOString(),
+      };
     }
     const signed = await this.storageAccess.createReadUrl(source, {
       cacheControl: 'private, no-store',
@@ -450,7 +555,7 @@ export class StoryFilmBuildService {
         build.sourceRevisionId,
       );
       const currentManifestHash = canonicalJsonHash(
-        buildInputManifest(
+        storyFilmBuildInputManifest(
           {
             revisionId: build.sourceRevisionId,
             expectedProductionRevision: build.sourceProductionRevision,
@@ -477,6 +582,34 @@ export class StoryFilmBuildService {
           ],
           emptyPathReport(),
           'STORY_BUILD_SOURCE_CHANGED',
+        );
+      }
+      const currentInputHash = storyFilmBuildSemanticInputHash(
+        {
+          revisionId: build.sourceRevisionId,
+          expectedProductionRevision: build.sourceProductionRevision,
+          profile: build.kind,
+          scope: FilmBuildScopeSchema.parse(build.scope),
+        },
+        snapshot,
+        currentManifestHash,
+      );
+      if (
+        build.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION ||
+        currentInputHash !== build.inputHash
+      ) {
+        return this.failBuild(
+          build,
+          [
+            buildDiagnostic(
+              'STORY_BUILD_COMPILER_CHANGED',
+              'The Build compiler changed after this Build was submitted. Create a new Build.',
+              'revision',
+              build.sourceRevisionId,
+            ),
+          ],
+          emptyPathReport(),
+          'STORY_BUILD_COMPILER_CHANGED',
         );
       }
 
@@ -559,7 +692,7 @@ export class StoryFilmBuildService {
         filmSpec: filmSpec.data,
         clips: preparedClips,
       });
-      const continuityDiagnostics = continuityBuildDiagnostics(
+      const continuityDiagnostics = storyFilmBuildContinuityDiagnostics(
         snapshot.dependencies,
         preparedClips,
         new Set(compiled.includedClipIds),
@@ -590,7 +723,47 @@ export class StoryFilmBuildService {
       const includedById = new Map(
         preparedClips.map((clip) => [clip.id, clip]),
       );
-      const runtimeHash = canonicalJsonHash(compiled.runtime);
+      const mediaIdentities = compiled.includedClipIds.flatMap((clipId) => {
+        const clip = includedById.get(clipId);
+        if (!clip?.asset) return [];
+        return [
+          {
+            runtimeAssetId: storyFilmRuntimeAssetId(clip),
+            variantId: clip.asset.variantId,
+            mediaType: clip.asset.contentType,
+          } satisfies StoryExperienceMediaIdentity,
+        ];
+      });
+      const experience = compileStoryExperienceManifest({
+        release: compiled.runtime,
+        metadata: {
+          title: snapshot.project.title,
+          summary:
+            snapshot.project.summary?.trim() || draft.data.storyBible.logline,
+        },
+        stateVariables: draft.data.storyBible.stateVariables,
+        mediaIdentities,
+      });
+      if (!experience.manifest) {
+        return this.failBuild(
+          build,
+          [
+            ...compiled.diagnostics,
+            ...experience.diagnostics.map((item) =>
+              buildDiagnostic(
+                item.code,
+                item.message,
+                'revision',
+                build.sourceRevisionId,
+              ),
+            ),
+          ],
+          compiled.pathReport,
+          experience.diagnostics[0]?.code ??
+            'STORY_EXPERIENCE_MANIFEST_COMPILATION_FAILED',
+        );
+      }
+      const runtimeHash = canonicalJsonHash(experience.manifest);
       await this.prisma.$transaction(async (tx) => {
         await lockCompilationSnapshot(
           tx,
@@ -603,7 +776,7 @@ export class StoryFilmBuildService {
           build.sourceRevisionId,
         );
         const lockedManifestHash = canonicalJsonHash(
-          buildInputManifest(
+          storyFilmBuildInputManifest(
             {
               revisionId: build.sourceRevisionId,
               expectedProductionRevision: build.sourceProductionRevision,
@@ -618,12 +791,7 @@ export class StoryFilmBuildService {
         }
         for (const [rank, clipId] of compiled.includedClipIds.entries()) {
           const clip = includedById.get(clipId);
-          if (
-            !clip?.spec ||
-            !clip.asset ||
-            !clip.takeId ||
-            !clip.productionInputHash
-          ) {
+          if (!clip?.spec || !clip.asset) {
             throw new Error(`Compiler admitted an ineligible Clip ${clipId}.`);
           }
           const logicalKey = `clip:${clip.key}:video`;
@@ -650,7 +818,7 @@ export class StoryFilmBuildService {
               storyProjectId: build.storyProjectId,
               revisionId: build.sourceRevisionId,
               clipId: clip.id,
-              takeId: clip.takeId,
+              sourceGenerationAttemptId: clip.sourceGenerationId,
               buildAssetId: buildAsset.id,
               logicalKey,
               clipSpecHash: clip.specHash,
@@ -670,7 +838,7 @@ export class StoryFilmBuildService {
           },
           data: {
             status: StoryBuildStatus.ready,
-            runtimeJson: compiled.runtime as Prisma.InputJsonObject,
+            runtimeJson: experience.manifest as Prisma.InputJsonObject,
             runtimeHash,
             diagnostics:
               compiled.diagnostics as unknown as Prisma.InputJsonArray,
@@ -738,116 +906,114 @@ export class StoryFilmBuildService {
         ),
       );
     }
-    const take = clip.masterTake;
-    if (!clip.masterTakeId || !take) {
+    const hasCurrentAssetId = clip.currentVideoAssetId !== null;
+    const hasCurrentVariantId = clip.currentVideoVariantId !== null;
+    if (!hasCurrentAssetId && !hasCurrentVariantId) {
       diagnostics.push(
         buildDiagnostic(
-          'STORY_BUILD_MASTER_MISSING',
-          `Clip ${clip.key} has no selected Master Take.`,
+          'STORY_BUILD_CURRENT_VIDEO_MISSING',
+          `Clip ${clip.key} has no current video.`,
           'clip',
           clip.id,
         ),
       );
-    } else {
-      if (take.status !== StoryFilmTakeStatus.ready) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_NOT_READY',
-            `Clip ${clip.key} Master Take is not ready.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (!take.approval) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_NOT_APPROVED',
-            `Clip ${clip.key} Master Take has not been approved.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (take.supersededAt) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_SUPERSEDED',
-            `Clip ${clip.key} Master Take was superseded.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (
-        take.clipSpecHash !== clip.specHash ||
-        !clip.productionInputHash ||
-        take.productionInputHash !== clip.productionInputHash
-      ) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_STALE',
-            `Clip ${clip.key} Master Take does not match the current production snapshot.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      if (storyFilmHasFailedTechnicalCheck(take.technicalChecks)) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_MASTER_TECHNICAL_CHECKS_FAILED',
-            `Clip ${clip.key} Master Take has failed technical checks.`,
-            'take',
-            take.id,
-          ),
-        );
-      }
-      clip.references
-        .filter((binding) => binding.required)
-        .forEach((binding) => {
-          const approvedVersionId = binding.referenceSlot.approvedVersionId;
-          const frozen = take.references.some(
-            (reference) =>
-              reference.referenceSlotId === binding.referenceSlotId &&
-              reference.referenceVersionId === approvedVersionId &&
-              reference.role === binding.role &&
-              reference.position === binding.position,
-          );
-          if (!approvedVersionId || !frozen) {
-            diagnostics.push(
-              buildDiagnostic(
-                'STORY_BUILD_MASTER_REFERENCE_STALE',
-                `Clip ${clip.key} Master Take does not freeze the currently approved required references.`,
-                'take',
-                take.id,
-              ),
-            );
-          }
-        });
-    }
-
-    const asset = take?.outputAsset;
-    const variant = take?.outputVariant;
-    let frozenAsset: FrozenFilmClipAsset | null = null;
-    if (take && (!asset || !variant)) {
+    } else if (!hasCurrentAssetId || !hasCurrentVariantId) {
       diagnostics.push(
         buildDiagnostic(
-          'STORY_BUILD_MASTER_OUTPUT_MISSING',
-          `Clip ${clip.key} Master Take has no output asset and variant.`,
-          'asset',
-          take.id,
+          'STORY_BUILD_CURRENT_VIDEO_POINTER_INVALID',
+          `Clip ${clip.key} current video asset and variant pointers are incomplete.`,
+          'clip',
+          clip.id,
         ),
       );
-    } else if (take && asset && variant) {
+    }
+    if (
+      (hasCurrentAssetId || hasCurrentVariantId) &&
+      (clip.currentVideoRevision < 1 || clip.currentVideoSetAt === null)
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_POINTER_INVALID',
+          `Clip ${clip.key} current video selection metadata is incomplete.`,
+          'clip',
+          clip.id,
+        ),
+      );
+    }
+    // Generation-contract freshness applies to GENERATED currents only: a
+    // manually bound (uploaded/imported) video IS the shot's content and is
+    // anchored by checksum + moderation, not by spec/prompt hashes. For
+    // generated currents the input-hash axis applies once generation inputs
+    // exist on the clip (relocks leave productionInputHash NULL until the
+    // next prepare).
+    if (
+      hasCurrentAssetId &&
+      hasCurrentVariantId &&
+      clip.currentVideoSourceAttemptId !== null &&
+      (clip.currentVideoSpecHash !== clip.specHash ||
+        (clip.productionInputHash !== null &&
+          clip.currentVideoInputHash !== clip.productionInputHash))
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_OUTDATED',
+          `Clip ${clip.key} current video does not match the current production snapshot.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    }
+
+    const rawTechnicalChecks = clip.currentVideoTechnicalChecks;
+    const technicalChecks = storyFilmTechnicalCheckDtos(
+      rawTechnicalChecks ?? [],
+    );
+    const technicalCheckKeys = new Set(
+      technicalChecks.map((check) => check.key),
+    );
+    if (
+      (hasCurrentAssetId || hasCurrentVariantId) &&
+      (!Array.isArray(rawTechnicalChecks) ||
+        rawTechnicalChecks.length === 0 ||
+        technicalChecks.length !== rawTechnicalChecks.length ||
+        REQUIRED_CURRENT_VIDEO_TECHNICAL_CHECK_KEYS.some(
+          (key) => !technicalCheckKeys.has(key),
+        ) ||
+        technicalChecks.some((check) => check.status !== 'passed'))
+    ) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_TECHNICAL_CHECKS_FAILED',
+          `Clip ${clip.key} current video has incomplete or failed technical checks.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    }
+
+    const asset = clip.currentVideoAsset;
+    const variant = clip.currentVideoVariant;
+    let frozenAsset: FrozenFilmClipAsset | null = null;
+    if ((hasCurrentAssetId || hasCurrentVariantId) && (!asset || !variant)) {
+      diagnostics.push(
+        buildDiagnostic(
+          'STORY_BUILD_CURRENT_VIDEO_OUTPUT_MISSING',
+          `Clip ${clip.key} current video asset or variant is missing.`,
+          'asset',
+          clip.currentVideoAssetId,
+        ),
+      );
+    } else if (asset && variant) {
       if (
         asset.workspaceId !== build.project.workspaceId ||
+        asset.id !== clip.currentVideoAssetId ||
+        variant.id !== clip.currentVideoVariantId ||
         variant.assetId !== asset.id
       ) {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_SCOPE_INVALID',
-            `Clip ${clip.key} output asset does not belong to this Workspace or variant.`,
+            `Clip ${clip.key} current video does not belong to this Workspace or selected asset.`,
             'asset',
             asset.id,
           ),
@@ -863,7 +1029,7 @@ export class StoryFilmBuildService {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_NOT_READY',
-            `Clip ${clip.key} output asset and selected variant must both be ready video media.`,
+            `Clip ${clip.key} current video asset and variant must both be ready video media.`,
             'asset',
             asset.id,
           ),
@@ -874,19 +1040,15 @@ export class StoryFilmBuildService {
           asset,
           variant,
           requireModerationApproval(),
-          `Clip ${clip.key} output asset`,
+          `Clip ${clip.key} current video`,
         ),
       );
-      const checksum = take.outputChecksumSha256;
-      if (
-        !checksum ||
-        asset.checksumSha256 !== checksum ||
-        variant.checksumSha256 !== checksum
-      ) {
+      const checksum = clip.currentVideoChecksumSha256;
+      if (!checksum || variant.checksumSha256 !== checksum) {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_CHECKSUM_INVALID',
-            `Clip ${clip.key} output checksums are missing or inconsistent.`,
+            `Clip ${clip.key} current video checksum does not match its selected variant.`,
             'asset',
             asset.id,
           ),
@@ -896,18 +1058,19 @@ export class StoryFilmBuildService {
       const height = variant.height ?? asset.height;
       const durationSeconds = variant.durationSeconds ?? asset.durationSeconds;
       if (
-        !spec.success ||
-        width !== spec.data.outputContract.width ||
-        height !== spec.data.outputContract.height ||
-        durationSeconds === null ||
-        Math.abs(
-          durationSeconds * 1_000 - spec.data.outputContract.durationMs,
-        ) > spec.data.outputContract.durationToleranceMs
+        clip.currentVideoSourceAttemptId !== null &&
+        (!spec.success ||
+          width !== spec.data.outputContract.width ||
+          height !== spec.data.outputContract.height ||
+          durationSeconds === null ||
+          Math.abs(
+            durationSeconds * 1_000 - spec.data.outputContract.durationMs,
+          ) > spec.data.outputContract.durationToleranceMs)
       ) {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_OUTPUT_CONTRACT_MISMATCH',
-            `Clip ${clip.key} output dimensions or duration do not satisfy the immutable output contract.`,
+            `Clip ${clip.key} current video dimensions or duration do not satisfy the immutable output contract.`,
             'asset',
             asset.id,
           ),
@@ -918,31 +1081,29 @@ export class StoryFilmBuildService {
         diagnostics.push(
           buildDiagnostic(
             'STORY_BUILD_ASSET_STORAGE_UNAVAILABLE',
-            `Clip ${clip.key} output variant has no active delivery source.`,
+            `Clip ${clip.key} current video variant has no active delivery source.`,
             'asset',
             asset.id,
           ),
         );
       }
-      if (
-        deliverySource?.storageProvider === MediaStorageProvider.external_url
-      ) {
-        diagnostics.push(
-          buildDiagnostic(
-            'STORY_BUILD_ASSET_NOT_SIGNABLE',
-            `Clip ${clip.key} uses external media that cannot be delivered through expiring signed access.`,
-            'asset',
-            asset.id,
-          ),
-        );
-      }
+      // external_url delivery sources are allowed: the delivery endpoint
+      // hands back the external URL as-is instead of a signed read URL.
+      // Trade-off accepted 2026-07-17: such media is immutable-by-promise
+      // only — no expiring access, no takedown lever, and the bytes served
+      // can drift from what moderation reviewed.
       const url = storyBuildAssetDeliveryPath(
         build.storyProjectId,
         build.id,
         asset.id,
         variant.id,
       );
-      if (checksum && width && height && durationSeconds !== null && url) {
+      if (
+        checksum &&
+        width !== null &&
+        height !== null &&
+        durationSeconds !== null
+      ) {
         frozenAsset = {
           assetId: asset.id,
           variantId: variant.id,
@@ -964,7 +1125,7 @@ export class StoryFilmBuildService {
       specHash: clip.specHash,
       productionInputHash: clip.productionInputHash,
       spec: spec.success ? spec.data : null,
-      takeId: take?.id ?? null,
+      sourceGenerationId: clip.currentVideoSourceAttemptId,
       asset: frozenAsset,
       eligibilityDiagnostics: diagnostics,
     };
@@ -1052,6 +1213,15 @@ export class StoryFilmBuildService {
         message: 'The stored Build scope is invalid.',
       });
     }
+    if (
+      row.runtimeSchemaVersion !== 1 &&
+      row.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION
+    ) {
+      throw new ConflictException({
+        code: 'STORY_FILM_BUILD_CORRUPT',
+        message: `The stored Build runtime schema version ${row.runtimeSchemaVersion} is unsupported.`,
+      });
+    }
     const persistedDiagnostics = parseBuildDiagnostics(row.diagnostics);
     const currentMediaDiagnostics = storyBuildCurrentMediaDiagnostics(
       row.assets,
@@ -1076,7 +1246,7 @@ export class StoryFilmBuildService {
       sourceProductionRevision: row.sourceProductionRevision,
       inputHash: row.inputHash,
       inputManifestHash: row.inputManifestHash,
-      runtimeSchemaVersion: 1,
+      runtimeSchemaVersion: row.runtimeSchemaVersion,
       // The immutable Build remains ready and retains its frozen manifest, but
       // a read must never disclose permanent media URLs after moderation or
       // lifecycle policy makes one of its assets unavailable. This projection
@@ -1091,6 +1261,30 @@ export class StoryFilmBuildService {
       assets: row.assets.map(toBuildAssetDto),
       diagnostics,
       pathReport: parsePathReport(row.pathReport),
+      publication: row.experiencePublication
+        ? {
+            status: row.experiencePublication.status,
+            gameId: row.experiencePublication.gameId,
+            contentVersion: row.experiencePublication.contentVersion,
+            manifestUrl: row.experiencePublication.manifestUrl,
+            publishedAt:
+              row.experiencePublication.publishedAt?.toISOString() ?? null,
+            mediaAuthorizedAt:
+              row.experiencePublication.mediaAuthorizedAt.toISOString(),
+            mediaAuthorizationRevokedAt:
+              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
+              null,
+            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
+            authorityGameExists: row.experiencePublication.authorityGameExists,
+            authorityCurrentVersion:
+              row.experiencePublication.authorityCurrentVersion,
+            authorityCheckedAt:
+              row.experiencePublication.authorityCheckedAt?.toISOString() ??
+              null,
+            lastErrorCode: row.experiencePublication.lastErrorCode,
+            lastErrorDetail: row.experiencePublication.lastErrorDetail,
+          }
+        : null,
       createdByUserId: row.createdByUserId,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
@@ -1107,6 +1301,7 @@ export class StoryFilmBuildService {
       status: dto.status,
       sourceProductionRevision: dto.sourceProductionRevision,
       diagnostics: dto.diagnostics,
+      publication: dto.publication,
       createdAt: dto.createdAt,
       completedAt: dto.completedAt,
     };
@@ -1118,7 +1313,16 @@ async function loadCompilationSnapshot(
   projectId: string,
   revisionId: string,
 ): Promise<CompilationSnapshot> {
-  const [revision, filmSpec, clips, dependencies] = await Promise.all([
+  const [project, revision, filmSpec, clips, dependencies] = await Promise.all([
+    prisma.storyProject.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        defaultLocale: true,
+      },
+    }),
     prisma.storyRevision.findFirst({
       where: { id: revisionId, storyProjectId: projectId },
       select: { id: true, number: true, content: true, contentHash: true },
@@ -1142,6 +1346,12 @@ async function loadCompilationSnapshot(
       include: BUILD_DEPENDENCY_INCLUDE,
     }),
   ]);
+  if (!project) {
+    throw new NotFoundException({
+      code: 'STORY_PROJECT_NOT_FOUND',
+      message: 'Story project not found.',
+    });
+  }
   if (!revision) {
     throw new NotFoundException({
       code: 'STORY_REVISION_NOT_FOUND',
@@ -1154,7 +1364,7 @@ async function loadCompilationSnapshot(
       message: 'This revision has no immutable interactive-film specification.',
     });
   }
-  return { revision, filmSpec, clips, dependencies };
+  return { project, revision, filmSpec, clips, dependencies };
 }
 
 /** Lock every mutable row class that contributes to eligibility or runtime
@@ -1166,6 +1376,17 @@ async function lockCompilationSnapshot(
   projectId: string,
   revisionId: string,
 ): Promise<void> {
+  await tx.$queryRaw`
+    SELECT "id" FROM "story_projects"
+    WHERE "id" = ${projectId}::uuid
+    FOR SHARE
+  `;
+  await tx.$queryRaw`
+    SELECT "id" FROM "story_revisions"
+    WHERE "story_project_id" = ${projectId}::uuid
+      AND "id" = ${revisionId}::uuid
+    FOR SHARE
+  `;
   await tx.$queryRaw`
     SELECT "revision_id" FROM "story_film_specs"
     WHERE "story_project_id" = ${projectId}::uuid
@@ -1180,26 +1401,9 @@ async function lockCompilationSnapshot(
     FOR SHARE
   `;
   await tx.$queryRaw`
-    SELECT t."id"
-    FROM "story_film_takes" t
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
-    WHERE c."story_project_id" = ${projectId}::uuid
-      AND c."revision_id" = ${revisionId}::uuid
-      AND c."archived_at" IS NULL
-    FOR SHARE OF t
-  `;
-  await tx.$queryRaw`
-    SELECT s."id"
-    FROM "story_film_reference_slots" s
-    WHERE s."story_project_id" = ${projectId}::uuid
-      AND s."revision_id" = ${revisionId}::uuid
-    FOR SHARE OF s
-  `;
-  await tx.$queryRaw`
     SELECT a."id"
     FROM "media_assets" a
-    JOIN "story_film_takes" t ON t."output_asset_id" = a."id"
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c ON c."current_video_asset_id" = a."id"
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
@@ -1208,8 +1412,7 @@ async function lockCompilationSnapshot(
   await tx.$queryRaw`
     SELECT v."id"
     FROM "media_asset_variants" v
-    JOIN "story_film_takes" t ON t."output_variant_id" = v."id"
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c ON c."current_video_variant_id" = v."id"
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
@@ -1218,14 +1421,23 @@ async function lockCompilationSnapshot(
   await tx.$queryRaw`
     SELECT p."id"
     FROM "media_object_placements" p
-    JOIN "story_film_takes" t
-      ON p."asset_id" = t."output_asset_id"
-     AND (p."variant_id" IS NULL OR p."variant_id" = t."output_variant_id")
-    JOIN "story_film_clips" c ON c."master_take_id" = t."id"
+    JOIN "story_film_clips" c
+      ON p."asset_id" = c."current_video_asset_id"
+     AND (
+       p."variant_id" IS NULL
+       OR p."variant_id" = c."current_video_variant_id"
+     )
     WHERE c."story_project_id" = ${projectId}::uuid
       AND c."revision_id" = ${revisionId}::uuid
       AND c."archived_at" IS NULL
     FOR SHARE OF p
+  `;
+  await tx.$queryRaw`
+    SELECT d."id"
+    FROM "story_film_clip_dependencies" d
+    WHERE d."story_project_id" = ${projectId}::uuid
+      AND d."revision_id" = ${revisionId}::uuid
+    FOR SHARE OF d
   `;
   await tx.$queryRaw`
     SELECT cc."id"
@@ -1236,14 +1448,20 @@ async function lockCompilationSnapshot(
   `;
 }
 
-function buildInputManifest(
+export function storyFilmBuildInputManifest(
   input: CreateFilmBuildInput,
   snapshot: CompilationSnapshot,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profile: input.profile,
     scope: input.scope,
+    project: {
+      id: snapshot.project.id,
+      title: snapshot.project.title,
+      summary: snapshot.project.summary,
+      defaultLocale: snapshot.project.defaultLocale,
+    },
     revision: {
       id: snapshot.revision.id,
       number: snapshot.revision.number,
@@ -1260,56 +1478,24 @@ function buildInputManifest(
       rank: clip.rank,
       specHash: clip.specHash,
       productionInputHash: clip.productionInputHash,
-      masterTakeId: clip.masterTakeId,
-      masterRevision: clip.masterRevision,
-      requiredReferences: clip.references
-        .filter((binding) => binding.required)
-        .map((binding) => ({
-          referenceSlotId: binding.referenceSlotId,
-          approvedVersionId: binding.referenceSlot.approvedVersionId,
-          role: binding.role,
-          position: binding.position,
-        })),
-      take: clip.masterTake
-        ? {
-            id: clip.masterTake.id,
-            status: clip.masterTake.status,
-            clipSpecHash: clip.masterTake.clipSpecHash,
-            productionInputHash: clip.masterTake.productionInputHash,
-            outputAssetId: clip.masterTake.outputAssetId,
-            outputVariantId: clip.masterTake.outputVariantId,
-            outputChecksumSha256: clip.masterTake.outputChecksumSha256,
-            supersededAt: clip.masterTake.supersededAt?.toISOString() ?? null,
-            approval: clip.masterTake.approval
-              ? {
-                  reviewId: clip.masterTake.approval.reviewId,
-                  approvedByUserId: clip.masterTake.approval.approvedByUserId,
-                  approvedAt: clip.masterTake.approval.approvedAt.toISOString(),
-                }
-              : null,
-            technicalChecks: clip.masterTake.technicalChecks,
-            references: [...clip.masterTake.references]
-              .sort(
-                (left, right) =>
-                  left.role.localeCompare(right.role) ||
-                  left.position - right.position,
-              )
-              .map((reference) => ({
-                referenceSlotId: reference.referenceSlotId,
-                referenceVersionId: reference.referenceVersionId,
-                role: reference.role,
-                position: reference.position,
-                assetId: reference.assetId,
-                checksumSha256: reference.checksumSha256,
-              })),
-            asset: clip.masterTake.outputAsset
-              ? mediaAssetManifest(clip.masterTake.outputAsset)
-              : null,
-            variant: clip.masterTake.outputVariant
-              ? mediaVariantManifest(clip.masterTake.outputVariant)
-              : null,
-          }
-        : null,
+      currentVideo: {
+        revision: clip.currentVideoRevision,
+        assetId: clip.currentVideoAssetId,
+        variantId: clip.currentVideoVariantId,
+        sourceGenerationAttemptId: clip.currentVideoSourceAttemptId,
+        specHash: clip.currentVideoSpecHash,
+        inputHash: clip.currentVideoInputHash,
+        checksumSha256: clip.currentVideoChecksumSha256,
+        technicalChecks: clip.currentVideoTechnicalChecks,
+        setByUserId: clip.currentVideoSetByUserId,
+        setAt: clip.currentVideoSetAt?.toISOString() ?? null,
+        asset: clip.currentVideoAsset
+          ? mediaAssetManifest(clip.currentVideoAsset)
+          : null,
+        variant: clip.currentVideoVariant
+          ? mediaVariantManifest(clip.currentVideoVariant)
+          : null,
+      },
     })),
     dependencies: snapshot.dependencies.map((dependency) => ({
       id: dependency.id,
@@ -1318,16 +1504,36 @@ function buildInputManifest(
       successorClipId: dependency.successorClipId,
       continuityChecks: dependency.continuityChecks.map((check) => ({
         id: check.id,
-        upstreamTakeId: check.upstreamTakeId,
-        downstreamTakeId: check.downstreamTakeId,
+        upstreamAssetId: check.upstreamAssetId,
+        upstreamVariantId: check.upstreamVariantId,
+        upstreamChecksumSha256: check.upstreamChecksumSha256,
+        downstreamAssetId: check.downstreamAssetId,
+        downstreamVariantId: check.downstreamVariantId,
+        downstreamChecksumSha256: check.downstreamChecksumSha256,
         decision: check.decision,
       })),
     })),
   };
 }
 
+function storyFilmBuildSemanticInputHash(
+  input: CreateFilmBuildInput,
+  snapshot: CompilationSnapshot,
+  inputManifestHash: string,
+): string {
+  return canonicalJsonHash({
+    compilerSemanticVersion: STORY_FILM_BUILD_COMPILER_SEMANTIC_VERSION,
+    runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
+    request: input,
+    revisionContentHash: snapshot.revision.contentHash,
+    filmSpecHash: snapshot.filmSpec.specHash,
+    productionRevision: snapshot.filmSpec.productionRevision,
+    inputManifestHash,
+  });
+}
+
 function mediaAssetManifest(
-  asset: NonNullable<BuildClipRow['masterTake']>['outputAsset'] & {},
+  asset: NonNullable<BuildClipRow['currentVideoAsset']>,
 ): Record<string, unknown> {
   return {
     id: asset.id,
@@ -1353,7 +1559,7 @@ function mediaAssetManifest(
 }
 
 function mediaVariantManifest(
-  variant: NonNullable<BuildClipRow['masterTake']>['outputVariant'] & {},
+  variant: NonNullable<BuildClipRow['currentVideoVariant']>,
 ): Record<string, unknown> {
   return {
     id: variant.id,
@@ -1404,12 +1610,14 @@ function placementManifest(
     }));
 }
 
-function continuityBuildDiagnostics(
+export function storyFilmBuildContinuityDiagnostics(
   dependencies: BuildDependencyRow[],
   clips: StoryFilmBuildClipInput[],
   includedClipIds: Set<string>,
 ): FilmBuildDiagnosticDto[] {
-  const takeByClipId = new Map(clips.map((clip) => [clip.id, clip.takeId]));
+  const currentVideoByClipId = new Map(
+    clips.map((clip) => [clip.id, clip.asset]),
+  );
   return dependencies.flatMap((dependency) => {
     if (
       !includedClipIds.has(dependency.predecessorClipId) ||
@@ -1419,16 +1627,20 @@ function continuityBuildDiagnostics(
     ) {
       return [];
     }
-    const upstreamTakeId = takeByClipId.get(dependency.predecessorClipId);
-    const downstreamTakeId = takeByClipId.get(dependency.successorClipId);
-    // Missing Masters already carry an actionable Clip-level diagnostic. A
-    // continuity review cannot exist until both concrete Takes are selected,
-    // so reporting it here would only multiply secondary errors.
-    if (!upstreamTakeId || !downstreamTakeId) return [];
+    const upstream = currentVideoByClipId.get(dependency.predecessorClipId);
+    const downstream = currentVideoByClipId.get(dependency.successorClipId);
+    // Missing or ineligible current videos already carry actionable Clip-level
+    // diagnostics. Reporting continuity before both concrete media identities
+    // exist would only multiply secondary errors.
+    if (!upstream || !downstream) return [];
     const passed = dependency.continuityChecks.some(
       (check) =>
-        check.upstreamTakeId === upstreamTakeId &&
-        check.downstreamTakeId === downstreamTakeId &&
+        check.upstreamAssetId === upstream.assetId &&
+        check.upstreamVariantId === upstream.variantId &&
+        check.upstreamChecksumSha256 === upstream.checksumSha256 &&
+        check.downstreamAssetId === downstream.assetId &&
+        check.downstreamVariantId === downstream.variantId &&
+        check.downstreamChecksumSha256 === downstream.checksumSha256 &&
         (check.decision === StoryFilmContinuityDecision.pass ||
           check.decision === StoryFilmContinuityDecision.waived),
     );
@@ -1437,7 +1649,7 @@ function continuityBuildDiagnostics(
       : [
           buildDiagnostic(
             'STORY_BUILD_CONTINUITY_CHECK_MISSING',
-            'The selected Master Takes do not have a passing continuity check for a required transition.',
+            'The selected current videos do not have a passing continuity check for a required transition.',
             'clip',
             dependency.successorClipId,
           ),
@@ -1506,7 +1718,6 @@ interface CurrentBuildMediaRow {
     id: string;
     status: MediaAssetStatus;
     moderationStatus: MediaAssetModerationStatus;
-    checksumSha256: string | null;
     deletedAt: Date | null;
   };
   variant: {
@@ -1703,10 +1914,7 @@ function storyBuildCurrentMediaDiagnostics(
       ];
     }
     if (moderation.length > 0) return moderation;
-    if (
-      frozen.asset.checksumSha256 !== frozen.checksumSha256 ||
-      frozen.variant.checksumSha256 !== frozen.checksumSha256
-    ) {
+    if (frozen.variant.checksumSha256 !== frozen.checksumSha256) {
       return [
         buildDiagnostic(
           'STORY_BUILD_ASSET_INTEGRITY_CHANGED',
@@ -1735,8 +1943,46 @@ function storyBuildRuntimeDeliveryDiagnostics(
       ),
     ),
   );
+  const sources = runtimeDeliverySources(runtime, build.runtimeSchemaVersion);
+  if (
+    sources.length === build.assets.length &&
+    sources.every((source) => allowedSources.has(source))
+  ) {
+    return [];
+  }
+  return [
+    buildDiagnostic(
+      'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
+      'This Build runtime predates authenticated Build media delivery and cannot be exposed. Create a new Build.',
+      'revision',
+      build.sourceRevisionId,
+    ),
+  ];
+}
+
+function runtimeDeliverySources(
+  runtime: Record<string, unknown>,
+  schemaVersion: number,
+): string[] {
+  if (schemaVersion === EXPERIENCE_RUNTIME_SCHEMA_VERSION) {
+    const assets = Array.isArray(runtime.assets) ? runtime.assets : [];
+    return assets.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+        return [];
+      const asset = entry as Record<string, unknown>;
+      if (asset.kind !== 'video' && asset.kind !== 'image') return [];
+      if (!Array.isArray(asset.variants)) return [];
+      return asset.variants.flatMap((variant) => {
+        if (!variant || typeof variant !== 'object' || Array.isArray(variant)) {
+          return [];
+        }
+        const uri = (variant as Record<string, unknown>).uri;
+        return typeof uri === 'string' ? [uri] : [];
+      });
+    });
+  }
   const media = Array.isArray(runtime.media) ? runtime.media : [];
-  const sources = media.flatMap((entry) => {
+  return media.flatMap((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
     const variants = (entry as Record<string, unknown>).variants;
     if (!variants || typeof variants !== 'object' || Array.isArray(variants)) {
@@ -1752,20 +1998,6 @@ function storyBuildRuntimeDeliveryDiagnostics(
       },
     );
   });
-  if (
-    sources.length === build.assets.length &&
-    sources.every((source) => allowedSources.has(source))
-  ) {
-    return [];
-  }
-  return [
-    buildDiagnostic(
-      'STORY_BUILD_RUNTIME_DELIVERY_UNSAFE',
-      'This Build runtime predates authenticated Build media delivery and cannot be exposed. Create a new Build.',
-      'revision',
-      build.sourceRevisionId,
-    ),
-  ];
 }
 
 function mergeBuildDiagnostics(
@@ -1889,6 +2121,10 @@ function nonTerminalBuildStatuses(): StoryBuildStatus[] {
     StoryBuildStatus.validating,
     StoryBuildStatus.compiling,
   ];
+}
+
+function semanticReplayBuildStatuses(): StoryBuildStatus[] {
+  return [...nonTerminalBuildStatuses(), StoryBuildStatus.ready];
 }
 
 function projectNotFound(): NotFoundException {

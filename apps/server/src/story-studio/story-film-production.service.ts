@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -15,9 +14,8 @@ import {
   StoryFilmFrameMode,
   StoryFilmGenerationMode,
   StoryFilmReferenceKind,
-  StoryFilmTakeStatus,
+  StoryFilmGenerationAttemptStatus,
   StoryRevisionSource,
-  StoryReviewDecision,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import {
@@ -36,28 +34,20 @@ import {
   InteractiveFilmDraftContentSchema,
   STORY_FRAME_PROFILE_CONTRACTS,
   createLockableInteractiveFilmDraftContentSchema,
-  type ApproveFilmTakeInput,
-  type CancelFilmTakeInput,
-  type CreateDraftFilmTakeInput,
-  type CreateFilmTakeInput,
-  type CreateFilmTakeReviewInput,
-  type CursorPageDto,
+  type CancelFilmGenerationInput,
+  type CreateDraftFilmGenerationInput,
+  type CreateFilmGenerationInput,
   type FilmClipSummaryDto,
-  type FilmReviewDto,
-  type FilmTakeDto,
-  type FilmTakeListQuery,
+  type FilmVideoGenerationDto,
   type MediaAssetSummaryDto,
-  type PreparedDraftFilmClipDto,
-  type PrepareDraftFilmClipInput,
-  type PutFilmClipMasterInput,
-  type RetryFilmTakeInput,
+  type PutFilmCurrentVideoInput,
+  type RetryFilmGenerationInput,
 } from './dto';
 import type {
   FilmClipSpec,
   FilmTrailerSpec,
   StoryClipPromptDraft,
 } from './interactive-film.schema';
-import { filmClipProductionBlockReasons } from './story-film-production-read-model';
 import {
   compileStoryFilmPrompt,
   modelPromptMaxLength,
@@ -69,45 +59,64 @@ import {
 } from './story-film-revision-projector';
 import { StoryPermissionService } from './story-permission.service';
 
-const TAKE_INCLUDE = Prisma.validator<Prisma.StoryFilmTakeInclude>()({
-  aiJob: {
-    include: {
-      outputs: {
-        where: { deletedAt: null },
-        orderBy: { outputIndex: 'asc' },
-        include: {
-          asset: {
-            include: {
-              placements: true,
-              variants: { include: { placements: true } },
+const GENERATION_INCLUDE =
+  Prisma.validator<Prisma.StoryFilmGenerationAttemptInclude>()({
+    aiJob: {
+      include: {
+        outputs: {
+          where: { deletedAt: null },
+          orderBy: { outputIndex: 'asc' },
+          include: {
+            asset: {
+              include: {
+                placements: true,
+                variants: { include: { placements: true } },
+              },
             },
           },
         },
       },
     },
+    outputAsset: {
+      include: {
+        placements: true,
+        variants: { include: { placements: true } },
+      },
+    },
+    outputVariant: true,
+    revision: { select: { sourceDraftRevision: true, contentHash: true } },
+    clip: {
+      select: {
+        graphNodeId: true,
+        specHash: true,
+        productionInputHash: true,
+        latestGenerationAttemptId: true,
+      },
+    },
+  });
+
+type GenerationRow = Prisma.StoryFilmGenerationAttemptGetPayload<{
+  include: typeof GENERATION_INCLUDE;
+}>;
+
+const CLIP_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()({
+  references: {
+    orderBy: [{ role: 'asc' }, { position: 'asc' }],
+    include: {
+      referenceSlot: { select: { approvedVersionId: true } },
+    },
   },
-  outputAsset: {
+  currentVideoAsset: {
     include: {
       placements: true,
       variants: { include: { placements: true } },
     },
   },
-  outputVariant: true,
-  revision: { select: { sourceDraftRevision: true, contentHash: true } },
-  clip: {
-    select: {
-      graphNodeId: true,
-      specHash: true,
-      productionInputHash: true,
-      masterTakeId: true,
-    },
-  },
-  reviews: { orderBy: [{ sequence: 'desc' }, { id: 'desc' }] },
-  approval: true,
+  latestGenerationAttempt: { include: GENERATION_INCLUDE },
 });
 
-type TakeRow = Prisma.StoryFilmTakeGetPayload<{
-  include: typeof TAKE_INCLUDE;
+type ClipSummaryRow = Prisma.StoryFilmClipGetPayload<{
+  include: typeof CLIP_SUMMARY_INCLUDE;
 }>;
 
 const CLIP_PRODUCTION_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()(
@@ -137,16 +146,6 @@ const CLIP_PRODUCTION_INCLUDE = Prisma.validator<Prisma.StoryFilmClipInclude>()(
 type ProductionClipRow = Prisma.StoryFilmClipGetPayload<{
   include: typeof CLIP_PRODUCTION_INCLUDE;
 }>;
-
-interface TakeCursor {
-  number: number;
-  id: string;
-}
-
-interface DraftTakeCursor {
-  createdAt: string;
-  id: string;
-}
 
 interface DraftSourceSnapshot {
   revision: number;
@@ -209,7 +208,7 @@ interface PreparedProduction {
   productionInputHash: string;
   aiInput: Record<string, unknown>;
   referenceBindings: AiSubmitReferenceBinding[];
-  takeReferences: Array<{
+  generationReferences: Array<{
     referenceSlotId: string;
     referenceVersionId: string;
     role: ProductionClipRow['references'][number]['role'];
@@ -227,104 +226,22 @@ export class StoryFilmProductionService {
     private readonly aiGeneration: AiGenerationService,
   ) {}
 
-  async prepareDraftClip(
+  async createDraftGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
     graphNodeId: string,
-    input: PrepareDraftFilmClipInput,
-  ): Promise<PreparedDraftFilmClipDto> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.generate',
-    );
-    const materialized = await this.materializeDraftClip(
-      user,
-      scope.project,
-      graphNodeId,
-      input,
-    );
-    const [clip, filmSpec] = await this.prisma.$transaction(
-      async (tx) =>
-        Promise.all([
-          tx.storyFilmClip.findFirst({
-            where: {
-              id: materialized.clipId,
-              storyProjectId: projectId,
-              revisionId: materialized.revisionId,
-              archivedAt: null,
-            },
-            include: {
-              references: {
-                select: {
-                  id: true,
-                  referenceSlotId: true,
-                  role: true,
-                  position: true,
-                  required: true,
-                  referenceSlot: { select: { approvedVersionId: true } },
-                },
-              },
-              takes: {
-                select: {
-                  status: true,
-                  productionInputHash: true,
-                  approval: { select: { takeId: true } },
-                },
-              },
-              masterTake: {
-                select: {
-                  productionInputHash: true,
-                  status: true,
-                  outputAsset: {
-                    include: {
-                      placements: true,
-                      variants: { include: { placements: true } },
-                    },
-                  },
-                },
-              },
-            },
-          }),
-          tx.storyFilmSpec.findUnique({
-            where: { revisionId: materialized.revisionId },
-            select: { productionRevision: true },
-          }),
-        ]),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
-    if (!clip || !filmSpec) {
-      throw new ConflictException({
-        code: 'STORY_DRAFT_PRODUCTION_PREPARATION_INCOMPLETE',
-        message: 'The current shot production plan could not be prepared.',
-      });
-    }
-    return {
-      draftRevision: materialized.source.revision,
-      revisionId: materialized.revisionId,
-      productionRevision: filmSpec.productionRevision,
-      clip: toClipSummary(clip),
-    };
-  }
-
-  async createDraftTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    graphNodeId: string,
-    input: CreateDraftFilmTakeInput,
+    input: CreateDraftFilmGenerationInput,
     idempotencyKey: string,
-  ): Promise<FilmTakeDto> {
+  ): Promise<FilmVideoGenerationDto> {
     const scope = await this.requireProjectScope(
       user,
       workspaceId,
       projectId,
       'story.generate',
     );
-    const submissionSubjectId = draftTakeSubmissionSubject(graphNodeId);
-    const idempotencyFingerprint = draftTakeIdempotencyFingerprint(
+    const submissionSubjectId = draftGenerationSubmissionSubject(graphNodeId);
+    const idempotencyFingerprint = draftGenerationIdempotencyFingerprint(
       graphNodeId,
       input,
     );
@@ -334,13 +251,13 @@ export class StoryFilmProductionService {
       submissionSubjectId,
       idempotencyKey,
     );
-    const existing = await this.prisma.storyFilmTake.findUnique({
+    const existing = await this.prisma.storyFilmGenerationAttempt.findUnique({
       where: { submissionKey },
-      include: TAKE_INCLUDE,
+      include: GENERATION_INCLUDE,
     });
     if (existing) {
-      assertIdempotentTakeFingerprint(existing, idempotencyFingerprint);
-      return this.toTakeDto(await this.reconcileTake(existing));
+      assertIdempotentGenerationFingerprint(existing, idempotencyFingerprint);
+      return this.toGenerationDto(await this.reconcileGeneration(existing));
     }
     const materialized = await this.materializeDraftClip(
       user,
@@ -348,7 +265,7 @@ export class StoryFilmProductionService {
       graphNodeId,
       input,
     );
-    return this.createTake(
+    return this.createGeneration(
       user,
       workspaceId,
       projectId,
@@ -365,7 +282,7 @@ export class StoryFilmProductionService {
         ...materialized.source,
         submissionSubjectId,
         idempotencyFingerprint,
-        requestFingerprint: draftTakeRequestFingerprint(
+        requestFingerprint: draftGenerationRequestFingerprint(
           graphNodeId,
           input,
           materialized.source.contentHash,
@@ -374,75 +291,16 @@ export class StoryFilmProductionService {
     );
   }
 
-  async listDraftTakes(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    graphNodeId: string,
-    query: FilmTakeListQuery,
-  ): Promise<CursorPageDto<FilmTakeDto>> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-    );
-    const currentSnapshot = await this.currentDraftClipSnapshot(
-      scope.project,
-      graphNodeId,
-    );
-    const cursor = query.cursor ? decodeDraftTakeCursor(query.cursor) : null;
-    const rows = await this.prisma.storyFilmTake.findMany({
-      where: {
-        storyProjectId: projectId,
-        clip: { graphNodeId },
-        ...(query.status ? { status: query.status } : {}),
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: new Date(cursor.createdAt) } },
-                {
-                  createdAt: new Date(cursor.createdAt),
-                  id: { lt: cursor.id },
-                },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      include: TAKE_INCLUDE,
-    });
-    const hasMore = rows.length > query.limit;
-    const page = hasMore ? rows.slice(0, query.limit) : rows;
-    const reconciled = await Promise.all(
-      page.map((row) => this.reconcileTake(row)),
-    );
-    const last = reconciled.at(-1);
-    return {
-      items: reconciled.map((row) =>
-        markDraftStale(this.toTakeDto(row), row, currentSnapshot),
-      ),
-      nextCursor:
-        hasMore && last
-          ? encodeDraftTakeCursor({
-              createdAt: last.createdAt.toISOString(),
-              id: last.id,
-            })
-          : null,
-    };
-  }
-
-  async createTake(
+  async createGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
     revisionId: string,
     clipId: string,
-    input: CreateFilmTakeInput,
+    input: CreateFilmGenerationInput,
     idempotencyKey: string,
     draftSource?: DraftSourceGuard,
-  ): Promise<FilmTakeDto> {
+  ): Promise<FilmVideoGenerationDto> {
     const scope = await this.requireProjectScope(
       user,
       workspaceId,
@@ -463,16 +321,16 @@ export class StoryFilmProductionService {
       effectiveDraftSource.submissionSubjectId,
       idempotencyKey,
     );
-    const existing = await this.prisma.storyFilmTake.findUnique({
+    const existing = await this.prisma.storyFilmGenerationAttempt.findUnique({
       where: { submissionKey },
-      include: TAKE_INCLUDE,
+      include: GENERATION_INCLUDE,
     });
     if (existing) {
-      assertIdempotentTakeFingerprint(
+      assertIdempotentGenerationFingerprint(
         existing,
         effectiveDraftSource.idempotencyFingerprint,
       );
-      return this.toTakeDto(await this.reconcileTake(existing));
+      return this.toGenerationDto(await this.reconcileGeneration(existing));
     }
 
     const prepared = await this.prepareProduction(
@@ -484,8 +342,8 @@ export class StoryFilmProductionService {
       input,
       effectiveDraftSource,
     );
-    const jobKey = `story-take:${canonicalJsonHash(submissionKey)}`;
-    let createdTakeId: string | null = null;
+    const jobKey = `story-generation:${canonicalJsonHash(submissionKey)}`;
+    let createdGenerationId: string | null = null;
     const hooks: AiJobSubmissionHooks = {
       afterJobCreate: async (tx, job) => {
         const currentDraft = await tx.storyDraft.findUnique({
@@ -509,7 +367,7 @@ export class StoryFilmProductionService {
         }
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
-            hashtext(${`story-film-take:${clipId}`})::bigint
+            hashtext(${`story-film-current-video:${clipId}`})::bigint
           )
         `;
         const lockedClip = await tx.storyFilmClip.findFirst({
@@ -530,41 +388,19 @@ export class StoryFilmProductionService {
         }
         assertReferenceSnapshotCurrent(lockedClip, prepared);
 
-        const manifestChanged =
-          lockedClip.productionInputHash !== prepared.productionInputHash;
-        if (manifestChanged) {
-          await tx.storyFilmClip.update({
-            where: { id: lockedClip.id },
-            data: {
-              productionInputManifest: prepared.productionManifest,
-              productionInputHash: prepared.productionInputHash,
-              version: { increment: 1 },
-              ...(lockedClip.masterTakeId
-                ? {
-                    masterTakeId: null,
-                    masterSelectedByUserId: null,
-                    masterSelectedAt: null,
-                    masterRevision: { increment: 1 },
-                  }
-                : {}),
-              updatedByUserId: user.userId,
-            },
-          });
-        }
-
-        const latest = await tx.storyFilmTake.findFirst({
+        const latest = await tx.storyFilmGenerationAttempt.findFirst({
           where: { clipId },
-          orderBy: [{ takeNumber: 'desc' }, { id: 'desc' }],
-          select: { takeNumber: true },
+          orderBy: [{ attemptNumber: 'desc' }, { id: 'desc' }],
+          select: { attemptNumber: true },
         });
-        const take = await tx.storyFilmTake.create({
+        const generation = await tx.storyFilmGenerationAttempt.create({
           data: {
             storyProjectId: projectId,
             revisionId,
             clipId,
-            takeNumber: (latest?.takeNumber ?? 0) + 1,
+            attemptNumber: (latest?.attemptNumber ?? 0) + 1,
             submissionKey,
-            status: StoryFilmTakeStatus.queued,
+            status: StoryFilmGenerationAttemptStatus.queued,
             clipSpecHash: prepared.clip.specHash,
             productionInputHash: prepared.productionInputHash,
             promptSnapshot: prepared.promptSnapshot,
@@ -575,7 +411,7 @@ export class StoryFilmProductionService {
             queuedAt: job.queuedAt ? new Date(job.queuedAt) : new Date(),
             references: {
               createMany: {
-                data: prepared.takeReferences.map((reference) => ({
+                data: prepared.generationReferences.map((reference) => ({
                   storyProjectId: projectId,
                   revisionId,
                   ...reference,
@@ -584,7 +420,21 @@ export class StoryFilmProductionService {
             },
           },
         });
-        createdTakeId = take.id;
+        await tx.storyFilmClip.update({
+          where: { id: lockedClip.id },
+          data: {
+            latestGenerationAttemptId: generation.id,
+            ...(lockedClip.productionInputHash !== prepared.productionInputHash
+              ? {
+                  productionInputManifest: prepared.productionManifest,
+                  productionInputHash: prepared.productionInputHash,
+                  version: { increment: 1 },
+                }
+              : {}),
+            updatedByUserId: user.userId,
+          },
+        });
+        createdGenerationId = generation.id;
       },
     };
 
@@ -615,35 +465,38 @@ export class StoryFilmProductionService {
         workspaceId,
         hooks,
       );
-      const take = await this.prisma.storyFilmTake.findFirst({
-        where: {
-          OR: [
-            { submissionKey },
-            { aiJobId: submitted.request_id },
-            ...(createdTakeId ? [{ id: createdTakeId }] : []),
-          ],
+      const generation = await this.prisma.storyFilmGenerationAttempt.findFirst(
+        {
+          where: {
+            OR: [
+              { submissionKey },
+              { aiJobId: submitted.request_id },
+              ...(createdGenerationId ? [{ id: createdGenerationId }] : []),
+            ],
+          },
+          include: GENERATION_INCLUDE,
         },
-        include: TAKE_INCLUDE,
-      });
-      if (!take) {
+      );
+      if (!generation) {
         throw new ConflictException({
-          code: 'STORY_TAKE_BINDING_MISSING',
-          message: 'The generation job has no StoryFilmTake binding.',
+          code: 'STORY_GENERATION_BINDING_MISSING',
+          message:
+            'The generation job has no StoryFilmGenerationAttempt binding.',
         });
       }
-      return this.toTakeDto(await this.reconcileTake(take));
+      return this.toGenerationDto(await this.reconcileGeneration(generation));
     } catch (error) {
       if (isUniqueConstraintError(error)) {
-        const winner = await this.prisma.storyFilmTake.findUnique({
+        const winner = await this.prisma.storyFilmGenerationAttempt.findUnique({
           where: { submissionKey },
-          include: TAKE_INCLUDE,
+          include: GENERATION_INCLUDE,
         });
         if (winner) {
-          assertIdempotentTakeFingerprint(
+          assertIdempotentGenerationFingerprint(
             winner,
             effectiveDraftSource.idempotencyFingerprint,
           );
-          return this.toTakeDto(await this.reconcileTake(winner));
+          return this.toGenerationDto(await this.reconcileGeneration(winner));
         }
       }
       throw error;
@@ -654,7 +507,7 @@ export class StoryFilmProductionService {
     projectId: string,
     revisionId: string,
     clipId: string,
-    input: CreateFilmTakeInput,
+    input: CreateFilmGenerationInput,
   ): Promise<DraftSourceGuard> {
     const [revision, draft] = await Promise.all([
       this.prisma.storyRevision.findFirst({
@@ -696,7 +549,7 @@ export class StoryFilmProductionService {
         currentDraftRevision: draft.revision,
       });
     }
-    const idempotencyFingerprint = clipTakeRequestFingerprint(input);
+    const idempotencyFingerprint = clipGenerationRequestFingerprint(input);
     return {
       revision: draft.revision,
       contentHash: draft.contentHash,
@@ -721,7 +574,8 @@ export class StoryFilmProductionService {
       defaultLocale: string;
     },
     graphNodeId: string,
-    input: CreateDraftFilmTakeInput,
+    input: CreateDraftFilmGenerationInput,
+    options: { videoFirst?: boolean } = {},
   ): Promise<MaterializedDraftClip> {
     return this.prisma.$transaction(
       async (tx) => {
@@ -770,6 +624,7 @@ export class StoryFilmProductionService {
             draft: parsedDraft.data,
             frameProfile: project.frameProfile,
             graphNodeId,
+            allowVideoFirst: options.videoFirst,
           });
         } catch (error) {
           throw new UnprocessableEntityException({
@@ -784,16 +639,19 @@ export class StoryFilmProductionService {
         const clipPrompt = parsedDraft.data.clipPrompts.find(
           (prompt) => prompt.graphNodeId === graphNodeId,
         );
-        if (!clipPrompt) {
+        if (!clipPrompt && !options.videoFirst) {
           throw new UnprocessableEntityException({
             code: 'STORY_FILM_CLIP_NOT_GENERATABLE',
             message: 'Complete this shot prompt before preparing video.',
           });
         }
-        const referencePlan = requiredDraftClipReferencePlan(
-          clipSpec,
-          clipPrompt,
-        );
+        // Manual video bind needs no generation references. Also skip when
+        // the draft only has the empty prompt shell — otherwise omni slots
+        // would be synthesized from the video-first placeholder control mode.
+        const referencePlan =
+          options.videoFirst || !clipPrompt
+            ? []
+            : requiredDraftClipReferencePlan(clipSpec, clipPrompt);
 
         let revision = await tx.storyRevision.findUnique({
           where: {
@@ -833,29 +691,34 @@ export class StoryFilmProductionService {
           where: { revisionId: revision.id },
         });
         if (!filmSpec) {
-          const modelSlug =
+          // The FilmSpec stamps a default video model, but a video-first
+          // bind never generates. Prefer an explicit modelId, then the
+          // configured default slug, but fall back to any active video model
+          // so an unset/unknown env never blocks a manual-video project.
+          const preferredSlug =
             input.modelId ??
             process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG?.trim();
-          if (!modelSlug) {
-            throw new UnprocessableEntityException({
-              code: 'STORY_DEFAULT_VIDEO_MODEL_NOT_CONFIGURED',
-              message:
-                'Select a video model or configure the Story Studio default video model.',
-            });
-          }
-          const canonicalModel = await tx.aiCanonicalModel.findFirst({
-            where: {
-              slug: modelSlug,
-              modality: 'video',
-              status: 'active',
-              archivedAt: null,
-            },
-            select: { id: true },
-          });
+          const activeVideoModel = {
+            modality: 'video',
+            status: 'active',
+            archivedAt: null,
+          } as const;
+          const canonicalModel =
+            (preferredSlug
+              ? await tx.aiCanonicalModel.findFirst({
+                  where: { slug: preferredSlug, ...activeVideoModel },
+                  select: { id: true },
+                })
+              : null) ??
+            (await tx.aiCanonicalModel.findFirst({
+              where: activeVideoModel,
+              orderBy: { slug: 'asc' },
+              select: { id: true },
+            }));
           if (!canonicalModel) {
             throw new UnprocessableEntityException({
               code: 'STORY_FILM_MODEL_NOT_AVAILABLE',
-              message: 'The selected canonical video model is not active.',
+              message: 'No active video model is available in the catalogue.',
             });
           }
           const snapshotSpec = draftFilmSpecSnapshot({
@@ -887,7 +750,6 @@ export class StoryFilmProductionService {
               defaultLocale: snapshotSpec.locales.defaultLocale,
               enabledLocales: snapshotSpec.locales.enabledLocales,
               defaultCanonicalModelId: canonicalModel.id,
-              reviewPolicy: snapshotSpec.reviewPolicy,
               specJson: snapshotSpec as Prisma.InputJsonObject,
               specHash: snapshotSpecHash,
               createdByUserId: user.userId,
@@ -917,6 +779,26 @@ export class StoryFilmProductionService {
             });
           }
         } else {
+          const carriedVideo = await tx.storyFilmClip.findFirst({
+            where: {
+              storyProjectId: project.id,
+              key: clipSpec.key,
+              currentVideoAssetId: { not: null },
+              archivedAt: null,
+            },
+            orderBy: [{ revision: { number: 'desc' } }, { id: 'desc' }],
+            select: {
+              currentVideoAssetId: true,
+              currentVideoVariantId: true,
+              currentVideoSpecHash: true,
+              currentVideoInputHash: true,
+              currentVideoChecksumSha256: true,
+              currentVideoTechnicalChecks: true,
+              currentVideoRevision: true,
+              currentVideoSetByUserId: true,
+              currentVideoSetAt: true,
+            },
+          });
           materializedClip = await tx.storyFilmClip.create({
             data: {
               storyProjectId: project.id,
@@ -938,6 +820,29 @@ export class StoryFilmProductionService {
               specJson: clipSpec as Prisma.InputJsonObject,
               specHash: clipSpecHash,
               rank: clipSpec.rank,
+              ...(carriedVideo?.currentVideoAssetId &&
+              carriedVideo.currentVideoVariantId &&
+              carriedVideo.currentVideoChecksumSha256 &&
+              carriedVideo.currentVideoSetAt
+                ? {
+                    currentVideoAssetId: carriedVideo.currentVideoAssetId,
+                    currentVideoVariantId: carriedVideo.currentVideoVariantId,
+                    currentVideoSourceAttemptId: null,
+                    currentVideoSpecHash: carriedVideo.currentVideoSpecHash,
+                    currentVideoInputHash: carriedVideo.currentVideoInputHash,
+                    currentVideoChecksumSha256:
+                      carriedVideo.currentVideoChecksumSha256,
+                    currentVideoTechnicalChecks:
+                      carriedVideo.currentVideoTechnicalChecks ?? Prisma.DbNull,
+                    currentVideoRevision: Math.max(
+                      1,
+                      carriedVideo.currentVideoRevision,
+                    ),
+                    currentVideoSetByUserId:
+                      carriedVideo.currentVideoSetByUserId,
+                    currentVideoSetAt: carriedVideo.currentVideoSetAt,
+                  }
+                : {}),
               createdByUserId: user.userId,
               updatedByUserId: user.userId,
             },
@@ -1084,153 +989,101 @@ export class StoryFilmProductionService {
     return changed;
   }
 
-  async listTakes(
+  async getGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    revisionId: string,
-    clipId: string,
-    query: FilmTakeListQuery,
-  ): Promise<CursorPageDto<FilmTakeDto>> {
+    generationId: string,
+  ): Promise<FilmVideoGenerationDto> {
     await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
-    const clip = await this.prisma.storyFilmClip.findFirst({
-      where: { id: clipId, storyProjectId: projectId, revisionId },
-      select: { id: true },
-    });
-    if (!clip) throw clipNotFound();
-    const cursor = query.cursor ? decodeTakeCursor(query.cursor) : null;
-    const rows = await this.prisma.storyFilmTake.findMany({
-      where: {
-        storyProjectId: projectId,
-        revisionId,
-        clipId,
-        ...(query.status ? { status: query.status } : {}),
-        ...(cursor
-          ? {
-              OR: [
-                { takeNumber: { lt: cursor.number } },
-                { takeNumber: cursor.number, id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ takeNumber: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      include: TAKE_INCLUDE,
-    });
-    const hasMore = rows.length > query.limit;
-    const page = hasMore ? rows.slice(0, query.limit) : rows;
-    const reconciled = await Promise.all(
-      page.map((row) => this.reconcileTake(row)),
-    );
-    const last = reconciled.at(-1);
-    return {
-      items: reconciled.map((row) => this.toTakeDto(row)),
-      nextCursor:
-        hasMore && last
-          ? encodeTakeCursor({ number: last.takeNumber, id: last.id })
-          : null,
-    };
-  }
-
-  async getTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    takeId: string,
-  ): Promise<FilmTakeDto> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-    );
-    const take = await this.loadTake(projectId, takeId);
-    const reconciled = await this.reconcileTake(take);
-    const currentSnapshot = await this.currentDraftClipSnapshot(
-      scope.project,
-      reconciled.clip.graphNodeId,
-    );
-    return markDraftStale(
-      this.toTakeDto(reconciled),
-      reconciled,
-      currentSnapshot,
+    return this.toGenerationDto(
+      await this.reconcileGeneration(
+        await this.loadGeneration(projectId, generationId),
+      ),
     );
   }
 
-  async cancelTake(
+  async cancelGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    takeId: string,
-    input: CancelFilmTakeInput,
-  ): Promise<FilmTakeDto> {
+    generationId: string,
+    input: CancelFilmGenerationInput,
+  ): Promise<FilmVideoGenerationDto> {
     await this.requireProjectScope(
       user,
       workspaceId,
       projectId,
       'story.generate',
     );
-    const take = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
+    const generation = await this.reconcileGeneration(
+      await this.loadGeneration(projectId, generationId),
     );
-    if (take.version !== input.expectedTakeVersion) {
-      throw takeVersionConflict(input.expectedTakeVersion, take.version);
+    if (generation.version !== input.expectedGenerationVersion) {
+      throw generationVersionConflict(
+        input.expectedGenerationVersion,
+        generation.version,
+      );
     }
-    await this.aiGeneration.cancelJob(user, take.aiJobId);
-    return this.toTakeDto(
-      await this.reconcileTake(await this.loadTake(projectId, takeId)),
+    await this.aiGeneration.cancelJob(user, generation.aiJobId);
+    return this.toGenerationDto(
+      await this.reconcileGeneration(
+        await this.loadGeneration(projectId, generationId),
+      ),
     );
   }
 
-  async retryTake(
+  async retryGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    takeId: string,
-    input: RetryFilmTakeInput,
+    generationId: string,
+    input: RetryFilmGenerationInput,
     idempotencyKey: string,
-  ): Promise<FilmTakeDto> {
+  ): Promise<FilmVideoGenerationDto> {
     const scope = await this.requireProjectScope(
       user,
       workspaceId,
       projectId,
       'story.generate',
     );
-    const take = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
+    const generation = await this.reconcileGeneration(
+      await this.loadGeneration(projectId, generationId),
     );
-    await this.assertDraftTakeIsCurrent(scope.project, take);
-    if (take.version !== input.expectedTakeVersion) {
-      throw takeVersionConflict(input.expectedTakeVersion, take.version);
+    await this.assertDraftGenerationIsCurrent(scope.project, generation);
+    if (generation.version !== input.expectedGenerationVersion) {
+      throw generationVersionConflict(
+        input.expectedGenerationVersion,
+        generation.version,
+      );
     }
     if (
-      take.status !== StoryFilmTakeStatus.failed &&
-      take.status !== StoryFilmTakeStatus.cancelled
+      generation.status !== StoryFilmGenerationAttemptStatus.failed &&
+      generation.status !== StoryFilmGenerationAttemptStatus.cancelled
     ) {
       throw new ConflictException({
-        code: 'STORY_TAKE_NOT_RETRYABLE',
-        message: 'Only a failed or cancelled Take may be retried.',
+        code: 'STORY_GENERATION_NOT_RETRYABLE',
+        message: 'Only a failed or cancelled generation may be retried.',
       });
     }
-    const modelId = jsonString(take.modelSnapshot, 'slug');
+    const modelId = jsonString(generation.modelSnapshot, 'slug');
     if (!modelId) {
       throw new ConflictException({
-        code: 'STORY_TAKE_MODEL_SNAPSHOT_CORRUPT',
-        message: 'The Take model snapshot cannot be resolved for retry.',
+        code: 'STORY_GENERATION_MODEL_SNAPSHOT_CORRUPT',
+        message: 'The generation model snapshot cannot be resolved for retry.',
       });
     }
     const clip = await this.prisma.storyFilmClip.findUnique({
-      where: { id: take.clipId },
+      where: { id: generation.clipId },
       select: { version: true },
     });
     if (!clip) throw clipNotFound();
-    return this.createTake(
+    return this.createGeneration(
       user,
       workspaceId,
       projectId,
-      take.revisionId,
-      take.clipId,
+      generation.revisionId,
+      generation.clipId,
       {
         expectedClipVersion: clip.version,
         modelId,
@@ -1238,22 +1091,22 @@ export class StoryFilmProductionService {
       },
       idempotencyKey,
       {
-        revision: take.revision.sourceDraftRevision,
-        contentHash: take.revision.contentHash,
-        submissionSubjectId: `retry:${canonicalJsonHash(take.id)}`,
+        revision: generation.revision.sourceDraftRevision,
+        contentHash: generation.revision.contentHash,
+        submissionSubjectId: `retry:${canonicalJsonHash(generation.id)}`,
         idempotencyFingerprint: canonicalJsonHash({
-          kind: 'story_film_take_retry',
-          takeId: take.id,
-          expectedTakeVersion: input.expectedTakeVersion,
+          kind: 'story_film_generation_retry',
+          generationId: generation.id,
+          expectedGenerationVersion: input.expectedGenerationVersion,
           modelId,
           variationNote: input.variationNote ?? null,
         }),
         requestFingerprint: canonicalJsonHash({
-          kind: 'story_film_take_retry',
-          takeId: take.id,
-          sourceDraftRevision: take.revision.sourceDraftRevision,
-          sourceContentHash: take.revision.contentHash,
-          expectedTakeVersion: input.expectedTakeVersion,
+          kind: 'story_film_generation_retry',
+          generationId: generation.id,
+          sourceDraftRevision: generation.revision.sourceDraftRevision,
+          sourceContentHash: generation.revision.contentHash,
+          expectedGenerationVersion: input.expectedGenerationVersion,
           modelId,
           variationNote: input.variationNote ?? null,
         }),
@@ -1261,189 +1114,12 @@ export class StoryFilmProductionService {
     );
   }
 
-  async reviewTake(
+  async putCurrentVideo(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    takeId: string,
-    input: CreateFilmTakeReviewInput,
-  ): Promise<{ take: FilmTakeDto; review: FilmReviewDto }> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.review',
-    );
-    const reconciled = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
-    );
-    await this.assertDraftTakeIsCurrent(scope.project, reconciled);
-    const review = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-take-review:${takeId}`})::bigint
-        )
-      `;
-      const current = await tx.storyFilmTake.findFirst({
-        where: { id: takeId, storyProjectId: projectId },
-        select: {
-          status: true,
-          reviewRevision: true,
-          approval: { select: { takeId: true } },
-        },
-      });
-      if (!current) {
-        throw new NotFoundException({
-          code: 'STORY_TAKE_NOT_FOUND',
-          message: 'Story film Take not found.',
-        });
-      }
-      if (current.reviewRevision !== input.expectedReviewRevision) {
-        throw new ConflictException({
-          code: 'STORY_TAKE_REVIEW_REVISION_CONFLICT',
-          message: 'The Take review history changed. Refresh and try again.',
-          expectedRevision: input.expectedReviewRevision,
-          actualRevision: current.reviewRevision,
-        });
-      }
-      if (current.status !== StoryFilmTakeStatus.ready) {
-        throw new ConflictException({
-          code: 'STORY_TAKE_NOT_READY',
-          message: 'Only a ready Take may be reviewed.',
-        });
-      }
-      if (current.approval) {
-        throw new ConflictException({
-          code: 'STORY_TAKE_ALREADY_APPROVED',
-          message: 'An approved Take cannot receive another review.',
-        });
-      }
-      // The database trigger owns the reviewRevision increment. Keeping that
-      // counter trigger-managed makes the sequence claim and append atomic;
-      // application code must never increment it separately.
-      return tx.storyFilmTakeReview.create({
-        data: {
-          takeId,
-          sequence: input.expectedReviewRevision + 1,
-          decision: input.decision,
-          technicalPassed: input.checklist.technical === 'pass',
-          safetyPassed: input.checklist.safety === 'pass',
-          checklist: input.checklist,
-          notes: input.comment,
-          reviewerUserId: user.userId,
-        },
-      });
-    });
-    const refreshed = await this.loadTake(projectId, takeId);
-    return { take: this.toTakeDto(refreshed), review: toReviewDto(review) };
-  }
-
-  async approveTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    takeId: string,
-    input: ApproveFilmTakeInput,
-  ): Promise<FilmTakeDto> {
-    const scope = await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.review',
-    );
-    const reconciled = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
-    );
-    await this.assertDraftTakeIsCurrent(scope.project, reconciled);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-take-approval:${takeId}`})::bigint
-        )
-      `;
-      const current = await tx.storyFilmTake.findFirst({
-        where: { id: takeId, storyProjectId: projectId },
-        select: {
-          version: true,
-          status: true,
-          reviewRevision: true,
-          technicalChecks: true,
-          outputAsset: { select: { moderationStatus: true } },
-          approval: true,
-        },
-      });
-      if (!current) {
-        throw new NotFoundException({
-          code: 'STORY_TAKE_NOT_FOUND',
-          message: 'Story film Take not found.',
-        });
-      }
-      if (current.version !== input.expectedTakeVersion) {
-        throw takeVersionConflict(input.expectedTakeVersion, current.version);
-      }
-      if (
-        current.outputAsset?.moderationStatus ===
-        MediaAssetModerationStatus.blocked
-      ) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TAKE_OUTPUT_MODERATION_BLOCKED',
-          message: 'A moderation-blocked output cannot be approved.',
-        });
-      }
-      if (current.approval) {
-        if (current.approval.reviewId === input.approveReviewId) return;
-        throw new ConflictException({
-          code: 'STORY_TAKE_ALREADY_APPROVED',
-          message: 'The Take was already approved using another review.',
-        });
-      }
-      if (current.status !== StoryFilmTakeStatus.ready) {
-        throw new ConflictException({
-          code: 'STORY_TAKE_NOT_READY',
-          message: 'Only a ready Take may be approved.',
-        });
-      }
-      if (storyFilmHasFailedTechnicalCheck(current.technicalChecks)) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TAKE_TECHNICAL_CHECKS_FAILED',
-          message: 'A Take with failed technical checks cannot be approved.',
-        });
-      }
-      const review = await tx.storyFilmTakeReview.findFirst({
-        where: { id: input.approveReviewId, takeId },
-      });
-      if (
-        !review ||
-        review.sequence !== current.reviewRevision ||
-        review.decision !== StoryReviewDecision.approve ||
-        !review.technicalPassed ||
-        !review.safetyPassed ||
-        review.reviewerUserId !== user.userId
-      ) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TAKE_APPROVAL_REVIEW_INVALID',
-          message:
-            'Approval requires this Take’s latest passing approve review.',
-        });
-      }
-      await tx.storyFilmTakeApproval.create({
-        data: {
-          takeId,
-          reviewId: review.id,
-          approvedByUserId: user.userId,
-        },
-      });
-    });
-    return this.toTakeDto(await this.loadTake(projectId, takeId));
-  }
-
-  async putMaster(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    revisionId: string,
-    clipId: string,
-    input: PutFilmClipMasterInput,
+    graphNodeId: string,
+    input: PutFilmCurrentVideoInput & { expectedDraftRevision: number },
   ): Promise<FilmClipSummaryDto> {
     const scope = await this.requireProjectScope(
       user,
@@ -1451,127 +1127,126 @@ export class StoryFilmProductionService {
       projectId,
       'story.generate',
     );
-    if (input.takeId) {
-      const selectedTake = await this.loadTake(projectId, input.takeId);
-      await this.assertDraftTakeIsCurrent(scope.project, selectedTake);
-    }
+    const materialized = await this.materializeDraftClip(
+      user,
+      scope.project,
+      graphNodeId,
+      {
+        expectedDraftRevision: input.expectedDraftRevision,
+      },
+      { videoFirst: true },
+    );
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-master:${clipId}`})::bigint
+          hashtext(${`story-film-current-video:${materialized.clipId}`})::bigint
         )
       `;
-      const spec = await tx.storyFilmSpec.findFirst({
-        where: { storyProjectId: projectId, revisionId },
-        select: { productionRevision: true },
-      });
-      if (!spec) throw revisionNotProductionReady();
-      if (spec.productionRevision !== input.expectedProductionRevision) {
-        throw new ConflictException({
-          code: 'STORY_FILM_PRODUCTION_REVISION_CONFLICT',
-          message: 'The film production plan changed. Refresh and try again.',
-          expectedRevision: input.expectedProductionRevision,
-          actualRevision: spec.productionRevision,
-        });
-      }
       const clip = await tx.storyFilmClip.findFirst({
-        where: { id: clipId, storyProjectId: projectId, revisionId },
-        include: CLIP_PRODUCTION_INCLUDE,
+        where: {
+          id: materialized.clipId,
+          storyProjectId: projectId,
+          revisionId: materialized.revisionId,
+          archivedAt: null,
+        },
       });
       if (!clip) throw clipNotFound();
-      if (clip.masterRevision !== input.expectedMasterRevision) {
-        throw new ConflictException({
-          code: 'STORY_FILM_MASTER_REVISION_CONFLICT',
-          message: 'The clip Master changed. Refresh and try again.',
-          expectedRevision: input.expectedMasterRevision,
-          actualRevision: clip.masterRevision,
-        });
+      if (clip.currentVideoRevision !== input.expectedCurrentVideoRevision) {
+        throw currentVideoRevisionConflict(
+          input.expectedCurrentVideoRevision,
+          clip.currentVideoRevision,
+        );
       }
-      if (input.takeId) {
-        const candidate = await tx.storyFilmTake.findFirst({
+
+      if (input.assetId === null || input.variantId === null) {
+        await tx.storyFilmClip.update({
+          where: { id: clip.id },
+          data: {
+            currentVideoAssetId: null,
+            currentVideoVariantId: null,
+            currentVideoSourceAttemptId: null,
+            currentVideoSpecHash: null,
+            currentVideoInputHash: null,
+            currentVideoChecksumSha256: null,
+            currentVideoTechnicalChecks: Prisma.DbNull,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: null,
+            currentVideoSetAt: null,
+            latestGenerationAttemptId: null,
+            updatedByUserId: user.userId,
+          },
+        });
+      } else {
+        const asset = await tx.mediaAsset.findFirst({
           where: {
-            id: input.takeId,
-            clipId,
-            storyProjectId: projectId,
-            revisionId,
-            status: StoryFilmTakeStatus.ready,
-            supersededAt: null,
-            clipSpecHash: clip.specHash,
-            productionInputHash: clip.productionInputHash ?? undefined,
-            approval: { isNot: null },
+            id: input.assetId,
+            workspaceId,
+            kind: MediaAssetKind.video,
+            status: MediaAssetStatus.ready,
+            deletedAt: null,
+            moderationStatus: { not: MediaAssetModerationStatus.blocked },
           },
-          select: {
-            id: true,
-            technicalChecks: true,
-            outputAsset: { select: { moderationStatus: true } },
+          include: {
+            placements: true,
+            variants: { include: { placements: true } },
           },
         });
-        if (!candidate || clip.productionInputHash === null) {
+        const variant = asset?.variants.find(
+          (candidate) =>
+            candidate.id === input.variantId &&
+            candidate.assetId === asset.id &&
+            candidate.status === MediaAssetVariantStatus.ready &&
+            candidate.deletedAt === null,
+        );
+        const checksum = variant?.checksumSha256;
+        if (!asset || !variant || !checksum) {
           throw new UnprocessableEntityException({
-            code: 'STORY_FILM_MASTER_INELIGIBLE',
+            code: 'STORY_CURRENT_VIDEO_ASSET_INVALID',
             message:
-              'Master must be an approved, ready, current Take of this clip.',
+              'Select a ready, non-blocked video and one of its ready variants from this Workspace.',
           });
         }
-        if (storyFilmHasFailedTechnicalCheck(candidate.technicalChecks)) {
+        // Manual binds: the video IS the shot's content, not a generation
+        // output — the player cover-crops any aspect, so the authored output
+        // contract does not constrain dimensions or duration here. Generated
+        // videos keep the strict contract checks on their own path.
+        const technicalChecks = storyFilmManualBindTechnicalChecks({
+          kind: asset.kind,
+          width: variant.width ?? asset.width,
+          height: variant.height ?? asset.height,
+          durationSeconds: variant.durationSeconds ?? asset.durationSeconds,
+          checksumSha256: checksum,
+        });
+        if (storyFilmHasFailedTechnicalCheck(technicalChecks)) {
           throw new UnprocessableEntityException({
-            code: 'STORY_FILM_MASTER_TECHNICAL_CHECKS_FAILED',
+            code: 'STORY_CURRENT_VIDEO_TECHNICAL_CHECK_FAILED',
             message:
-              'A Take with failed technical checks cannot become Master.',
+              "The selected video does not satisfy this shot's output contract.",
+            technicalChecks,
           });
         }
-        if (
-          candidate.outputAsset?.moderationStatus ===
-          MediaAssetModerationStatus.blocked
-        ) {
-          throw new UnprocessableEntityException({
-            code: 'STORY_FILM_MASTER_OUTPUT_MODERATION_BLOCKED',
-            message: 'A moderation-blocked output cannot become Master.',
-          });
-        }
+        await tx.storyFilmClip.update({
+          where: { id: clip.id },
+          data: {
+            currentVideoAssetId: asset.id,
+            currentVideoVariantId: variant.id,
+            currentVideoSourceAttemptId: null,
+            currentVideoSpecHash: clip.specHash,
+            currentVideoInputHash: clip.productionInputHash,
+            currentVideoChecksumSha256: checksum,
+            currentVideoTechnicalChecks: technicalChecks,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: user.userId,
+            currentVideoSetAt: new Date(),
+            latestGenerationAttemptId: null,
+            updatedByUserId: user.userId,
+          },
+        });
       }
-      await tx.storyFilmClip.update({
-        where: { id: clipId },
-        data: {
-          masterTakeId: input.takeId,
-          masterRevision: { increment: 1 },
-          masterSelectedByUserId: input.takeId ? user.userId : null,
-          masterSelectedAt: input.takeId ? new Date() : null,
-        },
-      });
       return tx.storyFilmClip.findUniqueOrThrow({
-        where: { id: clipId },
-        include: {
-          references: {
-            select: {
-              id: true,
-              referenceSlotId: true,
-              role: true,
-              position: true,
-              required: true,
-              referenceSlot: { select: { approvedVersionId: true } },
-            },
-          },
-          takes: {
-            select: {
-              status: true,
-              productionInputHash: true,
-              approval: { select: { takeId: true } },
-            },
-          },
-          masterTake: {
-            select: {
-              productionInputHash: true,
-              status: true,
-              outputAsset: {
-                include: {
-                  placements: true,
-                  variants: { include: { placements: true } },
-                },
-              },
-            },
-          },
-        },
+        where: { id: clip.id },
+        include: CLIP_SUMMARY_INCLUDE,
       });
     });
     return toClipSummary(updated);
@@ -1583,7 +1258,7 @@ export class StoryFilmProductionService {
     projectId: string,
     revisionId: string,
     clipId: string,
-    input: CreateFilmTakeInput,
+    input: CreateFilmGenerationInput,
     draftSource?: DraftSourceGuard,
   ): Promise<PreparedProduction> {
     const [clip, filmSpec] = await Promise.all([
@@ -1632,7 +1307,7 @@ export class StoryFilmProductionService {
     }
     assertModelSupportsClip(model, clipSpec);
 
-    const takeReferences: PreparedProduction['takeReferences'] = [];
+    const generationReferences: PreparedProduction['generationReferences'] = [];
     const referenceBindings: AiSubmitReferenceBinding[] = [];
     const referenceInputRows: Array<{
       role: string;
@@ -1683,7 +1358,7 @@ export class StoryFilmProductionService {
         url,
         assetId: version.assetId,
       });
-      takeReferences.push({
+      generationReferences.push({
         referenceSlotId: binding.referenceSlotId,
         referenceVersionId: version.id,
         role: binding.role,
@@ -1726,7 +1401,7 @@ export class StoryFilmProductionService {
         compiledPromptHash: canonicalJsonHash(compiledPrompt),
         submittedLength: promptCompilation.stats.submittedLength,
       },
-      references: takeReferences.map((reference) => ({
+      references: generationReferences.map((reference) => ({
         referenceSlotId: reference.referenceSlotId,
         referenceVersionId: reference.referenceVersionId,
         role: reference.role,
@@ -1746,10 +1421,11 @@ export class StoryFilmProductionService {
       promptSnapshot: {
         version: 1,
         requestFingerprint:
-          draftSource?.requestFingerprint ?? clipTakeRequestFingerprint(input),
+          draftSource?.requestFingerprint ??
+          clipGenerationRequestFingerprint(input),
         idempotencyFingerprint:
           draftSource?.idempotencyFingerprint ??
-          clipTakeRequestFingerprint(input),
+          clipGenerationRequestFingerprint(input),
         ...(draftSource
           ? {
               draftSource: {
@@ -1779,23 +1455,32 @@ export class StoryFilmProductionService {
       productionInputHash,
       aiInput,
       referenceBindings: submitReferenceBindings,
-      takeReferences,
+      generationReferences,
     };
   }
 
-  private async reconcileTake(row: TakeRow): Promise<TakeRow> {
+  private async reconcileGeneration(
+    row: GenerationRow,
+  ): Promise<GenerationRow> {
     if (
-      row.status === StoryFilmTakeStatus.ready ||
-      row.status === StoryFilmTakeStatus.failed ||
-      row.status === StoryFilmTakeStatus.cancelled
+      row.status === StoryFilmGenerationAttemptStatus.ready ||
+      row.status === StoryFilmGenerationAttemptStatus.failed ||
+      row.status === StoryFilmGenerationAttemptStatus.cancelled
     ) {
       return row;
     }
     const job = row.aiJob;
     const now = new Date();
-    let data: Prisma.StoryFilmTakeUncheckedUpdateManyInput | null = null;
+    let data: Prisma.StoryFilmGenerationAttemptUncheckedUpdateManyInput | null =
+      null;
+    let currentVideoCandidate: {
+      assetId: string;
+      variantId: string;
+      checksumSha256: string;
+      technicalChecks: Prisma.InputJsonArray;
+    } | null = null;
     if (job.status === 'in_queue') {
-      data = { status: StoryFilmTakeStatus.queued };
+      data = { status: StoryFilmGenerationAttemptStatus.queued };
     } else if (job.status === 'in_progress') {
       const processing = [
         'fetching_output',
@@ -1804,13 +1489,13 @@ export class StoryFilmProductionService {
       ].includes(job.stage.toLowerCase());
       data = {
         status: processing
-          ? StoryFilmTakeStatus.processing
-          : StoryFilmTakeStatus.running,
+          ? StoryFilmGenerationAttemptStatus.processing
+          : StoryFilmGenerationAttemptStatus.running,
         startedAt: row.startedAt ?? job.startedAt ?? now,
       };
     } else if (job.status === 'failed' || job.status === 'expired') {
       data = {
-        status: StoryFilmTakeStatus.failed,
+        status: StoryFilmGenerationAttemptStatus.failed,
         error: (job.error ?? {
           code: 'AI_JOB_FAILED',
           message: 'The generation job failed.',
@@ -1819,7 +1504,7 @@ export class StoryFilmProductionService {
       };
     } else if (job.status === 'cancelled') {
       data = {
-        status: StoryFilmTakeStatus.cancelled,
+        status: StoryFilmGenerationAttemptStatus.cancelled,
         error: (job.error ?? {
           code: 'AI_JOB_CANCELLED',
           message: 'The generation job was cancelled.',
@@ -1840,9 +1525,9 @@ export class StoryFilmProductionService {
       );
       if (asset?.moderationStatus === MediaAssetModerationStatus.blocked) {
         data = {
-          status: StoryFilmTakeStatus.failed,
+          status: StoryFilmGenerationAttemptStatus.failed,
           error: {
-            code: 'STORY_TAKE_OUTPUT_MODERATION_BLOCKED',
+            code: 'STORY_GENERATION_OUTPUT_MODERATION_BLOCKED',
             message: 'The generated video was blocked by moderation.',
           },
           completedAt: job.completedAt ?? now,
@@ -1851,41 +1536,68 @@ export class StoryFilmProductionService {
         // AiGenerationRepository currently commits the terminal job status
         // immediately before it persists output rows. Treat that short window
         // as processing; only diagnose a genuinely orphaned completion after
-        // a grace period, otherwise a fast poll could permanently fail a Take
+        // a grace period, otherwise a fast poll could permanently fail a generation
         // whose MediaAsset is about to be committed.
         const completedAt = job.completedAt ?? now;
         const orphaned = now.getTime() - completedAt.getTime() > 60_000;
         data = orphaned
           ? {
-              status: StoryFilmTakeStatus.failed,
+              status: StoryFilmGenerationAttemptStatus.failed,
               error: {
-                code: 'STORY_TAKE_OUTPUT_MISSING',
+                code: 'STORY_GENERATION_OUTPUT_MISSING',
                 message: 'The completed AI job has no durable video output.',
               },
               completedAt,
             }
-          : { status: StoryFilmTakeStatus.processing };
-      } else if (!original || !asset.checksumSha256) {
-        data = { status: StoryFilmTakeStatus.processing };
+          : { status: StoryFilmGenerationAttemptStatus.processing };
+      } else if (!original?.checksumSha256) {
+        data = { status: StoryFilmGenerationAttemptStatus.processing };
       } else {
         const clipSpec = FilmClipSpecSchema.parse(
           await this.prisma.storyFilmClip
             .findUniqueOrThrow({ where: { id: row.clipId } })
             .then((clip) => clip.specJson),
         );
+        const technicalChecks = storyFilmTechnicalChecks(
+          {
+            kind: asset.kind,
+            width: original.width ?? asset.width,
+            height: original.height ?? asset.height,
+            durationSeconds: original.durationSeconds ?? asset.durationSeconds,
+            checksumSha256: original.checksumSha256,
+          },
+          clipSpec.outputContract,
+        );
+        const technicalChecksFailed =
+          storyFilmHasFailedTechnicalCheck(technicalChecks);
         data = {
-          status: StoryFilmTakeStatus.ready,
+          status: technicalChecksFailed
+            ? StoryFilmGenerationAttemptStatus.failed
+            : StoryFilmGenerationAttemptStatus.ready,
           aiJobOutputId: output.id,
           outputAssetId: asset.id,
           outputVariantId: original.id,
-          outputChecksumSha256: asset.checksumSha256,
-          technicalChecks: storyFilmTechnicalChecks(
-            asset,
-            clipSpec.outputContract,
-          ),
-          readyAt: now,
+          outputChecksumSha256: original.checksumSha256,
+          technicalChecks,
+          ...(technicalChecksFailed
+            ? {
+                error: {
+                  code: 'STORY_GENERATION_TECHNICAL_CHECKS_FAILED',
+                  message:
+                    'The generated video did not satisfy the shot output contract.',
+                },
+              }
+            : { readyAt: now }),
           completedAt: job.completedAt ?? now,
         };
+        if (!technicalChecksFailed) {
+          currentVideoCandidate = {
+            assetId: asset.id,
+            variantId: original.id,
+            checksumSha256: original.checksumSha256,
+            technicalChecks,
+          };
+        }
       }
     }
     if (
@@ -1894,26 +1606,71 @@ export class StoryFilmProductionService {
     ) {
       return row;
     }
-    const updated = await this.prisma.storyFilmTake.updateMany({
-      where: { id: row.id, version: row.version, status: row.status },
-      data: { ...data, version: { increment: 1 } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`story-film-current-video:${row.clipId}`})::bigint
+        )
+      `;
+      const generationUpdate = await tx.storyFilmGenerationAttempt.updateMany({
+        where: { id: row.id, version: row.version, status: row.status },
+        data: { ...data, version: { increment: 1 } },
+      });
+      if (generationUpdate.count !== 1) return false;
+      if (currentVideoCandidate) {
+        const applied = await tx.storyFilmClip.updateMany({
+          where: {
+            id: row.clipId,
+            storyProjectId: row.storyProjectId,
+            revisionId: row.revisionId,
+            archivedAt: null,
+            latestGenerationAttemptId: row.id,
+            specHash: row.clipSpecHash,
+            productionInputHash: row.productionInputHash,
+          },
+          data: {
+            currentVideoAssetId: currentVideoCandidate.assetId,
+            currentVideoVariantId: currentVideoCandidate.variantId,
+            currentVideoSourceAttemptId: row.id,
+            currentVideoSpecHash: row.clipSpecHash,
+            currentVideoInputHash: row.productionInputHash,
+            currentVideoChecksumSha256: currentVideoCandidate.checksumSha256,
+            currentVideoTechnicalChecks: currentVideoCandidate.technicalChecks,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: row.createdByUserId,
+            currentVideoSetAt: now,
+          },
+        });
+        if (applied.count !== 1) {
+          await tx.storyFilmGenerationAttempt.update({
+            where: { id: row.id },
+            data: { supersededAt: now },
+          });
+        }
+      }
+      return true;
     });
-    if (updated.count === 0) return this.loadTake(row.storyProjectId, row.id);
-    return this.loadTake(row.storyProjectId, row.id);
+    if (!updated) {
+      return this.loadGeneration(row.storyProjectId, row.id);
+    }
+    return this.loadGeneration(row.storyProjectId, row.id);
   }
 
-  private async loadTake(projectId: string, takeId: string): Promise<TakeRow> {
-    const take = await this.prisma.storyFilmTake.findFirst({
-      where: { id: takeId, storyProjectId: projectId },
-      include: TAKE_INCLUDE,
+  private async loadGeneration(
+    projectId: string,
+    generationId: string,
+  ): Promise<GenerationRow> {
+    const generation = await this.prisma.storyFilmGenerationAttempt.findFirst({
+      where: { id: generationId, storyProjectId: projectId },
+      include: GENERATION_INCLUDE,
     });
-    if (!take) {
+    if (!generation) {
       throw new NotFoundException({
-        code: 'STORY_TAKE_NOT_FOUND',
-        message: 'Story film Take not found.',
+        code: 'STORY_GENERATION_NOT_FOUND',
+        message: 'Story film generation not found.',
       });
     }
-    return take;
+    return generation;
   }
 
   private async requireProjectScope(
@@ -1983,87 +1740,41 @@ export class StoryFilmProductionService {
     }
   }
 
-  private async assertDraftTakeIsCurrent(
+  private async assertDraftGenerationIsCurrent(
     project: {
       id: string;
       frameProfile: keyof typeof STORY_FRAME_PROFILE_CONTRACTS;
     },
-    take: TakeRow,
+    generation: GenerationRow,
   ): Promise<void> {
-    const promptSnapshot = jsonRecord(take.promptSnapshot);
+    const promptSnapshot = jsonRecord(generation.promptSnapshot);
     const draftSource =
       promptSnapshot.draftSource === undefined
         ? null
         : jsonRecord(promptSnapshot.draftSource as Prisma.JsonValue);
     const currentSnapshot = await this.currentDraftClipSnapshot(
       project,
-      take.clip.graphNodeId,
+      generation.clip.graphNodeId,
     );
     if (
       !currentSnapshot?.specHash ||
-      take.clipSpecHash !== currentSnapshot.specHash ||
+      generation.clipSpecHash !== currentSnapshot.specHash ||
       (draftSource !== null &&
         (draftSource.revision !== currentSnapshot.revision ||
           draftSource.contentHash !== currentSnapshot.contentHash)) ||
-      take.revision.sourceDraftRevision !== currentSnapshot.revision ||
-      take.revision.contentHash !== currentSnapshot.contentHash
+      generation.revision.sourceDraftRevision !== currentSnapshot.revision ||
+      generation.revision.contentHash !== currentSnapshot.contentHash
     ) {
       throw new ConflictException({
-        code: 'STORY_TAKE_STALE_DRAFT',
+        code: 'STORY_GENERATION_STALE_DRAFT',
         message:
-          'This Take belongs to an earlier shot design. Generate a new Take from the current draft.',
+          'This generation belongs to an earlier shot design. Generate a new video from the current draft.',
       });
     }
   }
 
-  private toTakeDto(row: TakeRow): FilmTakeDto {
-    const latestReview = row.reviews[0] ?? null;
-    const staleReasons: string[] = [];
-    if (row.clipSpecHash !== row.clip.specHash) staleReasons.push('clip_spec');
-    if (row.productionInputHash !== row.clip.productionInputHash) {
-      staleReasons.push('production_inputs');
-    }
-    if (
-      row.outputAsset?.moderationStatus === MediaAssetModerationStatus.blocked
-    ) {
-      staleReasons.push('output_moderation_blocked');
-    }
-    return {
-      id: row.id,
-      projectId: row.storyProjectId,
-      revisionId: row.revisionId,
-      clipId: row.clipId,
-      number: row.takeNumber,
-      version: row.version,
-      aiJobId: row.aiJobId,
-      aiJobOutputId: row.aiJobOutputId,
-      status: row.status,
-      reviewStatus: row.approval
-        ? 'approved'
-        : latestReview?.decision === StoryReviewDecision.request_changes
-          ? 'changes_requested'
-          : latestReview?.decision === StoryReviewDecision.reject
-            ? 'rejected'
-            : 'unreviewed',
-      reviewRevision: row.reviewRevision,
-      clipSpecHash: row.clipSpecHash,
-      productionInputHash: row.productionInputHash,
-      promptSnapshot: jsonRecord(row.promptSnapshot),
-      generationConfig: jsonRecord(row.generationConfig),
-      modelSnapshot: jsonRecord(row.modelSnapshot),
-      stale: staleReasons.length > 0,
-      staleReasons,
-      outputAsset: row.outputAsset ? toMediaAsset(row.outputAsset) : null,
-      technicalChecks: storyFilmTechnicalCheckDtos(row.technicalChecks),
-      error: row.error ? jsonRecord(row.error) : null,
-      createdByUserId: row.createdByUserId,
-      queuedAt: row.queuedAt?.toISOString() ?? null,
-      startedAt: row.startedAt?.toISOString() ?? null,
-      readyAt: row.readyAt?.toISOString() ?? null,
-      cancelledAt: row.cancelledAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-      completedAt: row.completedAt?.toISOString() ?? null,
-    };
+  private toGenerationDto(row: GenerationRow): FilmVideoGenerationDto {
+    return toFilmVideoGenerationDto(row);
   }
 }
 
@@ -2263,11 +1974,12 @@ function generationSnapshotFilmSpec(input: {
     generation: {
       defaultCanonicalModelId: input.defaultCanonicalModelId,
     },
-    reviewPolicy: 'explicit_approval',
   });
 }
 
-function clipTakeRequestFingerprint(input: CreateFilmTakeInput): string {
+function clipGenerationRequestFingerprint(
+  input: CreateFilmGenerationInput,
+): string {
   return canonicalJsonHash({
     expectedClipVersion: input.expectedClipVersion,
     modelId: input.modelId ?? null,
@@ -2276,13 +1988,13 @@ function clipTakeRequestFingerprint(input: CreateFilmTakeInput): string {
   });
 }
 
-function draftTakeSubmissionSubject(graphNodeId: string): string {
+function draftGenerationSubmissionSubject(graphNodeId: string): string {
   return `d:${canonicalJsonHash(graphNodeId)}`;
 }
 
-function draftTakeIdempotencyFingerprint(
+function draftGenerationIdempotencyFingerprint(
   graphNodeId: string,
-  input: CreateDraftFilmTakeInput,
+  input: CreateDraftFilmGenerationInput,
 ): string {
   return canonicalJsonHash({
     graphNodeId,
@@ -2293,9 +2005,9 @@ function draftTakeIdempotencyFingerprint(
   });
 }
 
-function draftTakeRequestFingerprint(
+function draftGenerationRequestFingerprint(
   graphNodeId: string,
-  input: CreateDraftFilmTakeInput,
+  input: CreateDraftFilmGenerationInput,
   sourceContentHash: string,
 ): string {
   return canonicalJsonHash({
@@ -2308,17 +2020,17 @@ function draftTakeRequestFingerprint(
   });
 }
 
-function assertIdempotentTakeFingerprint(
-  take: { promptSnapshot: Prisma.JsonValue },
+function assertIdempotentGenerationFingerprint(
+  generation: { promptSnapshot: Prisma.JsonValue },
   expectedFingerprint: string,
 ): void {
   if (
-    (jsonString(take.promptSnapshot, 'idempotencyFingerprint') ??
-      jsonString(take.promptSnapshot, 'requestFingerprint')) !==
+    (jsonString(generation.promptSnapshot, 'idempotencyFingerprint') ??
+      jsonString(generation.promptSnapshot, 'requestFingerprint')) !==
     expectedFingerprint
   ) {
     throw new ConflictException({
-      code: 'STORY_TAKE_IDEMPOTENCY_CONFLICT',
+      code: 'STORY_GENERATION_IDEMPOTENCY_CONFLICT',
       message:
         'This Idempotency-Key is already bound to a different video generation request.',
     });
@@ -2335,26 +2047,6 @@ function draftRevisionConflict(
     expectedRevision,
     actualRevision,
   });
-}
-
-function markDraftStale(
-  take: FilmTakeDto,
-  row: Pick<TakeRow, 'clipSpecHash' | 'revision'>,
-  current: CurrentDraftClipSnapshot | null,
-): FilmTakeDto {
-  if (
-    current?.specHash &&
-    row.clipSpecHash === current.specHash &&
-    row.revision.sourceDraftRevision === current.revision &&
-    row.revision.contentHash === current.contentHash
-  ) {
-    return take;
-  }
-  return {
-    ...take,
-    stale: true,
-    staleReasons: [...new Set([...take.staleReasons, 'draft_clip'])],
-  };
 }
 
 function storySubmissionKey(
@@ -2378,7 +2070,7 @@ function assertReferenceSnapshotCurrent(
       position: binding.position,
     }))
     .filter((binding) => binding.referenceVersionId !== null);
-  const expected = prepared.takeReferences.map((binding) => ({
+  const expected = prepared.generationReferences.map((binding) => ({
     referenceSlotId: binding.referenceSlotId,
     referenceVersionId: binding.referenceVersionId,
     role: binding.role,
@@ -2387,7 +2079,8 @@ function assertReferenceSnapshotCurrent(
   if (canonicalJsonHash(current) !== canonicalJsonHash(expected)) {
     throw new ConflictException({
       code: 'STORY_FILM_REFERENCE_SNAPSHOT_CONFLICT',
-      message: 'Approved references changed while the Take was being queued.',
+      message:
+        'Approved references changed while the generation was being queued.',
     });
   }
 }
@@ -2554,6 +2247,21 @@ export function storyFilmTechnicalChecks(
   ];
 }
 
+export function storyFilmManualBindTechnicalChecks(
+  asset: StoryFilmTechnicalAsset,
+): Prisma.InputJsonArray {
+  return [
+    check('kind', asset.kind === MediaAssetKind.video, 'Output must be video.'),
+    check('dimensions', true, 'unconstrained for manual binds'),
+    check('duration', true, 'unconstrained for manual binds'),
+    check(
+      'checksum',
+      Boolean(asset.checksumSha256),
+      'Output checksum is required.',
+    ),
+  ];
+}
+
 function check(key: string, passed: boolean, message: string) {
   return {
     key,
@@ -2563,8 +2271,8 @@ function check(key: string, passed: boolean, message: string) {
 }
 
 export function storyFilmTechnicalCheckDtos(
-  value: Prisma.JsonValue,
-): FilmTakeDto['technicalChecks'] {
+  value: unknown,
+): FilmVideoGenerationDto['technicalChecks'] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((candidate) => {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
@@ -2585,16 +2293,16 @@ export function storyFilmTechnicalCheckDtos(
   });
 }
 
-export function storyFilmHasFailedTechnicalCheck(
-  value: Prisma.JsonValue,
-): boolean {
+export function storyFilmHasFailedTechnicalCheck(value: unknown): boolean {
   return storyFilmTechnicalCheckDtos(value).some(
     (check) => check.status === 'failed',
   );
 }
 
 function toMediaAsset(
-  row: NonNullable<TakeRow['outputAsset']>,
+  row:
+    | NonNullable<GenerationRow['outputAsset']>
+    | NonNullable<ClipSummaryRow['currentVideoAsset']>,
 ): MediaAssetSummaryDto {
   return {
     id: row.id,
@@ -2610,104 +2318,55 @@ function toMediaAsset(
   };
 }
 
-function toReviewDto(row: {
-  id: string;
-  decision: StoryReviewDecision;
-  checklist: Prisma.JsonValue;
-  notes: string | null;
-  reviewerUserId: string;
-  createdAt: Date;
-}): FilmReviewDto {
+function toFilmVideoGenerationDto(row: GenerationRow): FilmVideoGenerationDto {
   return {
     id: row.id,
-    decision: row.decision,
-    checklist: jsonRecord(row.checklist) as Record<
-      string,
-      'pass' | 'fail' | 'na'
-    >,
-    comment: row.notes,
-    reviewerUserId: row.reviewerUserId,
+    projectId: row.storyProjectId,
+    revisionId: row.revisionId,
+    target: { kind: 'clip', clipId: row.clipId },
+    number: row.attemptNumber,
+    version: row.version,
+    aiJobId: row.aiJobId,
+    aiJobOutputId: row.aiJobOutputId,
+    status: row.status,
+    specHash: row.clipSpecHash,
+    inputHash: row.productionInputHash,
+    promptSnapshot: jsonRecord(row.promptSnapshot),
+    generationConfig: jsonRecord(row.generationConfig),
+    modelSnapshot: jsonRecord(row.modelSnapshot),
+    outputAsset: row.outputAsset ? toMediaAsset(row.outputAsset) : null,
+    outputVariantId: row.outputVariantId,
+    outputChecksumSha256: row.outputChecksumSha256,
+    technicalChecks: storyFilmTechnicalCheckDtos(row.technicalChecks),
+    error: row.error ? jsonRecord(row.error) : null,
+    createdByUserId: row.createdByUserId,
+    queuedAt: row.queuedAt?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    readyAt: row.readyAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    supersededAt: row.supersededAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? null,
   };
 }
 
-function toClipSummary(
-  row: Prisma.StoryFilmClipGetPayload<{
-    include: {
-      references: {
-        select: {
-          id: true;
-          referenceSlotId: true;
-          role: true;
-          position: true;
-          required: true;
-          referenceSlot: { select: { approvedVersionId: true } };
-        };
-      };
-      takes: {
-        select: {
-          status: true;
-          productionInputHash: true;
-          approval: { select: { takeId: true } };
-        };
-      };
-      masterTake: {
-        select: {
-          productionInputHash: true;
-          status: true;
-          outputAsset: {
-            include: {
-              placements: true;
-              variants: { include: { placements: true } };
-            };
-          };
-        };
-      };
-    };
-  }>,
-): FilmClipSummaryDto {
+function toClipSummary(row: ClipSummaryRow): FilmClipSummaryDto {
   const spec = FilmClipSpecSchema.parse(row.specJson);
-  const runningStatuses = new Set<StoryFilmTakeStatus>([
-    StoryFilmTakeStatus.queued,
-    StoryFilmTakeStatus.running,
-    StoryFilmTakeStatus.processing,
-  ]);
-  const running = row.takes.filter((take) =>
-    runningStatuses.has(take.status),
-  ).length;
-  const ready = row.takes.filter(
-    (take) => take.status === StoryFilmTakeStatus.ready,
-  ).length;
-  const approved = row.takes.filter((take) => take.approval).length;
-  const stale = Boolean(
-    row.masterTake &&
-    row.masterTake.productionInputHash !== row.productionInputHash,
-  );
-  const blockReasons = filmClipProductionBlockReasons(
-    spec,
-    row.references.map((binding) => ({
-      role: binding.role,
-      required: binding.required,
-      approvedReferenceVersionId: binding.referenceSlot.approvedVersionId,
-    })),
+  const hasCurrentVideo = Boolean(
+    row.currentVideoAsset &&
+    row.currentVideoVariantId &&
+    row.currentVideoChecksumSha256 &&
+    row.currentVideoSpecHash &&
+    row.currentVideoSetAt,
   );
   return {
     ...spec,
     id: row.id,
+    revisionId: row.revisionId,
     version: row.version,
     productionInputHash: row.productionInputHash,
-    productionStatus: stale
-      ? 'stale'
-      : blockReasons.length > 0
-        ? 'blocked'
-        : row.masterTakeId
-          ? 'approved'
-          : running > 0
-            ? 'generating'
-            : ready > 0
-              ? 'in_review'
-              : 'ready',
-    blockReasons,
+    currentVideoRevision: row.currentVideoRevision,
     referenceBindings: row.references.map((binding) => ({
       id: binding.id,
       referenceSlotId: binding.referenceSlotId,
@@ -2716,20 +2375,28 @@ function toClipSummary(
       required: binding.required,
       approvedReferenceVersionId: binding.referenceSlot.approvedVersionId,
     })),
-    master:
-      row.masterTakeId && row.masterSelectedByUserId && row.masterSelectedAt
-        ? {
-            takeId: row.masterTakeId,
-            status: row.masterTake?.status ?? StoryFilmTakeStatus.ready,
-            outputAsset: row.masterTake?.outputAsset
-              ? toMediaAsset(row.masterTake.outputAsset)
-              : null,
-            masterRevision: row.masterRevision,
-            selectedByUserId: row.masterSelectedByUserId,
-            selectedAt: row.masterSelectedAt.toISOString(),
-          }
-        : null,
-    takeCounts: { total: row.takes.length, running, ready, approved },
+    currentVideo: hasCurrentVideo
+      ? {
+          asset: toMediaAsset(row.currentVideoAsset!),
+          variantId: row.currentVideoVariantId!,
+          sourceGenerationId: row.currentVideoSourceAttemptId,
+          specHash: row.currentVideoSpecHash!,
+          inputHash: row.currentVideoInputHash,
+          checksumSha256: row.currentVideoChecksumSha256!,
+          technicalChecks: storyFilmTechnicalCheckDtos(
+            row.currentVideoTechnicalChecks ?? [],
+          ),
+          revision: row.currentVideoRevision,
+          setByUserId: row.currentVideoSetByUserId,
+          setAt: row.currentVideoSetAt!.toISOString(),
+          outdated:
+            row.currentVideoSpecHash !== row.specHash ||
+            row.currentVideoInputHash !== row.productionInputHash,
+        }
+      : null,
+    generation: row.latestGenerationAttempt
+      ? toFilmVideoGenerationDto(row.latestGenerationAttempt)
+      : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -2745,57 +2412,6 @@ function jsonString(value: Prisma.JsonValue, key: string): string | null {
   return typeof candidate === 'string' ? candidate : null;
 }
 
-function encodeTakeCursor(cursor: TakeCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
-}
-
-function decodeTakeCursor(value: string): TakeCursor {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, 'base64url').toString('utf8'),
-    ) as TakeCursor;
-    if (
-      !Number.isInteger(parsed.number) ||
-      parsed.number < 1 ||
-      typeof parsed.id !== 'string'
-    )
-      throw new Error();
-    return parsed;
-  } catch {
-    throw new BadRequestException({
-      code: 'INVALID_CURSOR',
-      message: 'Invalid Take cursor.',
-    });
-  }
-}
-
-function encodeDraftTakeCursor(cursor: DraftTakeCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
-}
-
-function decodeDraftTakeCursor(value: string): DraftTakeCursor {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, 'base64url').toString('utf8'),
-    ) as DraftTakeCursor;
-    const createdAt = new Date(parsed.createdAt);
-    if (
-      typeof parsed.createdAt !== 'string' ||
-      Number.isNaN(createdAt.getTime()) ||
-      typeof parsed.id !== 'string' ||
-      parsed.id.length === 0
-    ) {
-      throw new Error();
-    }
-    return { createdAt: createdAt.toISOString(), id: parsed.id };
-  } catch {
-    throw new BadRequestException({
-      code: 'INVALID_CURSOR',
-      message: 'Invalid draft Take cursor.',
-    });
-  }
-}
-
 function clipNotFound() {
   return new NotFoundException({
     code: 'STORY_FILM_CLIP_NOT_FOUND',
@@ -2806,7 +2422,7 @@ function clipNotFound() {
 function revisionNotProductionReady() {
   return new ConflictException({
     code: 'STORY_FILM_REVISION_NOT_READY',
-    message: 'Prepare the current shot before producing video Takes.',
+    message: 'Prepare the current shot before generating video.',
   });
 }
 
@@ -2819,12 +2435,21 @@ function clipVersionConflict(expected: number, actual: number) {
   });
 }
 
-function takeVersionConflict(expected: number, actual: number) {
+function generationVersionConflict(expected: number, actual: number) {
   return new ConflictException({
-    code: 'STORY_TAKE_VERSION_CONFLICT',
-    message: 'The Take changed. Refresh and try again.',
+    code: 'STORY_GENERATION_VERSION_CONFLICT',
+    message: 'The generation changed. Refresh and try again.',
     expectedVersion: expected,
     actualVersion: actual,
+  });
+}
+
+function currentVideoRevisionConflict(expected: number, actual: number) {
+  return new ConflictException({
+    code: 'STORY_CURRENT_VIDEO_REVISION_CONFLICT',
+    message: 'The current video changed. Refresh and try again.',
+    expectedRevision: expected,
+    actualRevision: actual,
   });
 }
 

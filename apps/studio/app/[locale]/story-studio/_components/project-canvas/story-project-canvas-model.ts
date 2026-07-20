@@ -1,7 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
+import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canvas/canvas-interaction-policy";
 import type {
-  FilmCarriedMaster,
-  FilmClipProductionStatus,
   FilmClipSummary,
   FilmTrailerSummary,
   InteractiveFilmDraftContent,
@@ -36,13 +35,11 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   clipKey?: string;
   endingId?: string;
   exitKind?: StoryCanvasExitKind;
+  continuationTargetNodeId?: string;
   checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   autoRoutes?: StoryCanvasAutoRouteData[];
-  productionStatus?: FilmClipProductionStatus;
   filmClip?: FilmClipSummary;
-  /** Master video carried over from an earlier revision (draft edited since). */
-  carriedMaster?: FilmCarriedMaster;
   filmTrailer?: FilmTrailerSummary;
   frameAspectRatio?: "16:9" | "9:16";
   directorPrompt?: StoryClipPromptDraft;
@@ -51,7 +48,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
     characters: number;
     locations: number;
     props: number;
-    rules: number;
   };
 }
 
@@ -59,6 +55,7 @@ export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
   | { kind: "root" }
+  | { kind: "continuation" }
   | { kind: "auto"; priority: number; routeIndex: number }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
   | { kind: "choice"; choiceId: string }
@@ -95,8 +92,7 @@ export interface StoryCanvasCopy {
 export function normalizeStoryClipPromptDrafts(
   content: InteractiveFilmDraftContent
 ): InteractiveFilmDraftContent {
-  const legacyPrompts = (content as Partial<InteractiveFilmDraftContent>).clipPrompts;
-  const existing = Array.isArray(legacyPrompts) ? legacyPrompts : [];
+  const existing = content.clipPrompts;
   const existingByNodeId = new Map(existing.map((prompt) => [prompt.graphNodeId, prompt]));
   const clipPrompts = content.graph.nodes.flatMap((node) =>
     node.kind === "clip"
@@ -133,15 +129,13 @@ export function normalizeStoryClipPromptDrafts(
         ]
       : []
   );
-  const trailerPrompt = (content as Partial<InteractiveFilmDraftContent>).trailerPrompt ?? null;
   if (
     clipPrompts.length === existing.length &&
-    clipPrompts.every((prompt, index) => prompt === existing[index]) &&
-    content.trailerPrompt === trailerPrompt
+    clipPrompts.every((prompt, index) => prompt === existing[index])
   ) {
     return content;
   }
-  return { ...content, clipPrompts, trailerPrompt };
+  return { ...content, clipPrompts };
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
@@ -164,14 +158,12 @@ export function buildStoryCanvasModel(
   clips: FilmClipSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  trailer: FilmTrailerSummary | null = null,
-  carriedMasters: FilmCarriedMaster[] = []
+  trailer: FilmTrailerSummary | null = null
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   content = normalizeStoryClipPromptDrafts(content);
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
   const clipsByKey = indexClips(clips, (clip) => clip.key);
-  const carriedMastersByKey = new Map(carriedMasters.map((master) => [master.clipKey, master]));
   const promptByGraphNodeId = new Map(
     content.clipPrompts.map((prompt) => [prompt.graphNodeId, prompt])
   );
@@ -195,7 +187,6 @@ export function buildStoryCanvasModel(
           characters: content.storyBible.characters.length,
           locations: content.storyBible.locations.length,
           props: content.storyBible.props.length,
-          rules: content.storyBible.storyRules.length,
         },
         frameAspectRatio: frameProfile === "portrait_9_16" ? "9:16" : "16:9",
         filmTrailer: trailer ?? undefined,
@@ -243,10 +234,9 @@ export function buildStoryCanvasModel(
           exitKind: node.exit.kind,
           checkpointTargetNodeId:
             node.exit.kind === "checkpoint" ? node.exit.nextNodeId : undefined,
-          autoRoutes: node.exit.kind === "auto" ? projectAutoRoutes(node.exit.routes) : undefined,
-          productionStatus: clip?.productionStatus,
+          continuationTargetNodeId:
+            node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
           filmClip: clip,
-          carriedMaster: carriedMastersByKey.get(node.clipKey),
           frameAspectRatio:
             clip?.outputContract.aspectRatio ??
             (frameProfile === "portrait_9_16" ? "9:16" : "16:9"),
@@ -324,6 +314,7 @@ export function buildStoryCanvasModel(
       // Node deletion is confirmed in the inspector. Keeping XYFlow keyboard
       // deletion disabled prevents bypassing that domain-level confirmation.
       deletable: false,
+      dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));
 
@@ -340,7 +331,23 @@ function buildConnections(
   let order = 0;
 
   for (const node of graphNodes) {
-    if (node.exit.kind === "auto") {
+    if (node.kind === "clip" && node.exit.kind === "auto") {
+      if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
+      connections.push({
+        order: order++,
+        edge: {
+          id: `continuation:${node.nodeId}:${node.exit.nextNodeId}`,
+          source: node.nodeId,
+          target: node.exit.nextNodeId,
+          sourceHandle: "completion",
+          targetHandle: "in",
+          data: { kind: "continuation" },
+        },
+      });
+      continue;
+    }
+
+    if (node.kind === "router") {
       const routes = node.exit.routes
         .map((route, routeIndex) => ({ route, routeIndex }))
         .sort(
@@ -358,7 +365,7 @@ function buildConnections(
             id: `auto:${node.nodeId}:${route.priority}:${routeIndex}:${route.nextNodeId}`,
             source: node.nodeId,
             target: route.nextNodeId,
-            sourceHandle: `${node.kind === "router" ? "route" : "auto"}:${routeIndex}`,
+            sourceHandle: `route:${routeIndex}`,
             targetHandle: "in",
             data: { kind: "auto", priority: route.priority, routeIndex },
           },
@@ -375,7 +382,7 @@ function buildConnections(
           id: `decision:${node.nodeId}:${node.exit.decisionId}`,
           source: node.nodeId,
           target: decisionNodeId,
-          sourceHandle: "choice-trigger",
+          sourceHandle: "completion",
           targetHandle: "decision-in",
           data: {
             kind: "decision",
@@ -410,13 +417,15 @@ function buildConnections(
           id: `checkpoint:${node.nodeId}:${node.exit.nextNodeId}`,
           source: node.nodeId,
           target: node.exit.nextNodeId,
-          sourceHandle: "checkpoint",
+          sourceHandle: "completion",
           targetHandle: "in",
           data: { kind: "checkpoint" },
         },
       });
       continue;
     }
+
+    if (node.kind !== "clip" || node.exit.kind !== "ending") continue;
 
     const target = endingCanvasIds.get(node.exit.endingId);
     if (!target) continue;
@@ -426,7 +435,7 @@ function buildConnections(
         id: `ending:${node.nodeId}:${node.exit.endingId}`,
         source: node.nodeId,
         target,
-        sourceHandle: "ending",
+        sourceHandle: "completion",
         targetHandle: "ending-in",
         data: { kind: "ending", endingId: node.exit.endingId },
       },
@@ -437,7 +446,7 @@ function buildConnections(
 }
 
 function projectAutoRoutes(
-  routes: Extract<StoryGraphNode["exit"], { kind: "auto" }>["routes"]
+  routes: Extract<StoryGraphNode, { kind: "router" }>["exit"]["routes"]
 ): StoryCanvasAutoRouteData[] {
   return routes.map((route, routeIndex) => ({
     routeIndex,

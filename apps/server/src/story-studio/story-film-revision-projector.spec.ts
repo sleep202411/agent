@@ -1,17 +1,98 @@
-import { LockableInteractiveFilmDraftContentSchema } from './interactive-film.schema';
-import { buildHuBaoVillaImportBundle } from './import/hu-bao-villa.builder';
+import {
+  createDefaultStoryClipPromptDraft,
+  LockableInteractiveFilmDraftContentSchema,
+  type StoryTrailerPromptDraft,
+} from './interactive-film.schema';
+import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryDirectorPrompt,
+  isUnauthoredClipPrompt,
   projectStoryFilmDraftClip,
   projectStoryFilmRevision,
 } from './story-film-revision-projector';
 
 const MODEL_ID = '01980f10-7a20-7c01-8000-000000000099';
 
+function completeTrailerPrompt(): StoryTrailerPromptDraft {
+  return {
+    title: '分支影游测试｜15 秒宣传片',
+    description: '从故事世界出发的独立宣传片。',
+    targetDurationMs: 15_000,
+    generationControl: { mode: 'omni_reference' },
+    masterDirection: '电影级夜景，克制悬疑，不剧透结局。',
+    referenceRoleNotes: [
+      {
+        id: 'trailer:ref:cheng',
+        role: 'subject',
+        referenceId: 'REF-01',
+        note: 'Lock Cheng Rui identity, wet field jacket, and restrained performance.',
+      },
+    ],
+    emotionalArc: '好奇转为逼近真相的恐惧。',
+    beats: [
+      {
+        id: 'trailer:beat:1',
+        startMs: 0,
+        endMs: 15_000,
+        visual: '潮湿夜色中的巨龙入口逐步显现。',
+        camera: '从远景稳定推进到人物近景。',
+        action: '录音机自行启动，两位女主同时停步。',
+        performance: '呼吸克制，短促交换视线。',
+        emotion: '威胁逐渐逼近。',
+        dialogue: '',
+        audio: '磁带底噪覆盖潮湿环境声。',
+        endState: '停在张开的龙口。',
+        continuity: '保持人物服装与录音机一致。',
+      },
+    ],
+    negativeConstraints: ['不揭示四个结局。'],
+    continuityNotes: ['角色身份必须跟随正式参考位。'],
+  };
+}
+
 describe('Story film revision projector', () => {
+  it('treats the empty default clip prompt shell as video-first when allowed', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle({
+        defaultCanonicalModelId: MODEL_ID,
+      }).draftContent,
+    );
+    const selected = draft.graph.nodes.find((node) => node.kind === 'clip');
+    if (!selected || selected.kind !== 'clip') {
+      throw new Error('Fixture clip missing.');
+    }
+    draft.clipPrompts = [
+      createDefaultStoryClipPromptDraft({
+        graphNodeId: selected.nodeId,
+        clipKey: selected.clipKey,
+      }),
+      ...draft.clipPrompts.filter(
+        (prompt) => prompt.graphNodeId !== selected.nodeId,
+      ),
+    ];
+    expect(isUnauthoredClipPrompt(draft.clipPrompts[0])).toBe(true);
+
+    expect(() =>
+      projectStoryFilmDraftClip({
+        draft,
+        frameProfile: 'landscape_16_9',
+        graphNodeId: selected.nodeId,
+      }),
+    ).toThrow(/Too small|expected string/i);
+
+    const projected = projectStoryFilmDraftClip({
+      draft,
+      frameProfile: 'landscape_16_9',
+      graphNodeId: selected.nodeId,
+      allowVideoFirst: true,
+    });
+    expect(projected.prompt.masterPrompt).toContain('Video-first clip');
+    expect(projected.outputContract.durationToleranceMs).toBe(30_000);
+  });
+
   it('strictly projects one selected shot while neighbouring draft shots remain incomplete', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -45,7 +126,7 @@ describe('Story film revision projector', () => {
   });
 
   it('deterministically projects the locked graph and director prompts', () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
 
@@ -90,7 +171,7 @@ describe('Story film revision projector', () => {
 
   it('treats a checkpoint as a duration-preserving interaction boundary', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -103,7 +184,7 @@ describe('Story film revision projector', () => {
     const nextNodeId = checkpointNode.exit.nextNodeId;
     checkpointNode.exit = {
       kind: 'auto',
-      routes: [{ nextNodeId, priority: 0 }],
+      nextNodeId,
     };
 
     const projection = projectStoryFilmRevision({
@@ -123,7 +204,7 @@ describe('Story film revision projector', () => {
 
   it('includes checkpoint continuations in graph cycle detection', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -149,7 +230,7 @@ describe('Story film revision projector', () => {
 
   it('derives total tolerance and uninterrupted duration from authored reaction playback', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -181,44 +262,11 @@ describe('Story film revision projector', () => {
 
   it('projects an authored root trailer without changing runtime clip targets', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
-    draft.trailerPrompt = {
-      title: '虎豹别墅：龙口入夜｜15 秒宣传片',
-      description: '从故事世界出发的独立宣传片。',
-      targetDurationMs: 15_000,
-      generationControl: { mode: 'omni_reference' },
-      masterDirection: '电影级夜景，克制悬疑，不剧透结局。',
-      referenceRoleNotes: [
-        {
-          id: 'trailer:ref:cheng',
-          role: 'subject',
-          referenceId: 'REF-01',
-          note: 'Lock Cheng Rui identity, wet field jacket, and restrained performance.',
-        },
-      ],
-      emotionalArc: '好奇转为逼近真相的恐惧。',
-      beats: [
-        {
-          id: 'trailer:beat:1',
-          startMs: 0,
-          endMs: 15_000,
-          visual: '潮湿夜色中的巨龙入口逐步显现。',
-          camera: '从远景稳定推进到人物近景。',
-          action: '录音机自行启动，两位女主同时停步。',
-          performance: '呼吸克制，短促交换视线。',
-          emotion: '威胁逐渐逼近。',
-          dialogue: '',
-          audio: '磁带底噪覆盖潮湿环境声。',
-          endState: '停在张开的龙口。',
-          continuity: '保持人物服装与录音机一致。',
-        },
-      ],
-      negativeConstraints: ['不揭示四个结局。'],
-      continuityNotes: ['角色身份必须跟随正式参考位。'],
-    };
+    draft.trailerPrompt = completeTrailerPrompt();
     const lockable = LockableInteractiveFilmDraftContentSchema.parse(draft);
 
     const projection = projectStoryFilmRevision({
@@ -236,7 +284,7 @@ describe('Story film revision projector', () => {
     expect(projection.clipSpecs).toHaveLength(21);
     expect(projection.trailerSpec).toMatchObject({
       schemaVersion: 1,
-      title: '虎豹别墅：龙口入夜｜15 秒宣传片',
+      title: '分支影游测试｜15 秒宣传片',
       targetDurationMs: 15_000,
       generationControl: { mode: 'omni_reference' },
       referenceRoleNotes: [
@@ -267,8 +315,34 @@ describe('Story film revision projector', () => {
     );
   });
 
+  it('skips an unfinished optional trailer while projecting complete gameplay', () => {
+    const draft = structuredClone(
+      buildInteractiveFilmTestBundle({
+        defaultCanonicalModelId: MODEL_ID,
+      }).draftContent,
+    );
+    draft.trailerPrompt = completeTrailerPrompt();
+    draft.trailerPrompt.masterDirection = '';
+    const lockable = LockableInteractiveFilmDraftContentSchema.parse(draft);
+
+    const projection = projectStoryFilmRevision({
+      draft: lockable,
+      frameProfile: 'landscape_16_9',
+      defaultLocale: 'zh-CN',
+      defaultCanonicalModelId: MODEL_ID,
+    });
+
+    expect(projection.clipSpecs).toHaveLength(21);
+    expect(projection.filmSpec.targets).toMatchObject({
+      clipCount: 21,
+      choiceCount: 6,
+      endingCount: 4,
+    });
+    expect(projection.trailerSpec).toBeNull();
+  });
+
   it('locks every clip output to the project frame profile', () => {
-    const draft = buildHuBaoVillaImportBundle({
+    const draft = buildInteractiveFilmTestBundle({
       defaultCanonicalModelId: MODEL_ID,
     }).draftContent;
     const projection = projectStoryFilmRevision({
@@ -295,7 +369,7 @@ describe('Story film revision projector', () => {
 
   it('preserves micro-performance and end-state direction in the immutable manifest', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -335,7 +409,7 @@ describe('Story film revision projector', () => {
 
   it('derives authoritative locales only from runtime copy and rejects incomplete coverage', () => {
     const draft = structuredClone(
-      buildHuBaoVillaImportBundle({
+      buildInteractiveFilmTestBundle({
         defaultCanonicalModelId: MODEL_ID,
       }).draftContent,
     );
@@ -367,7 +441,7 @@ describe('Story film revision projector', () => {
 
     expect(() =>
       projectStoryFilmRevision({
-        draft: buildHuBaoVillaImportBundle().draftContent,
+        draft: buildInteractiveFilmTestBundle().draftContent,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'ja-JP',
         defaultCanonicalModelId: MODEL_ID,

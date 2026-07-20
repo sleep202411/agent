@@ -1,19 +1,28 @@
 /**
- * /aurora/media/*  — direct-to-storage upload pipeline (stateless + confirm).
+ * /aurora/media/* — authenticated direct-to-storage upload pipeline.
  *
- *   POST /aurora/media/upload-url   STATELESS. Mint a signed write URL for
- *                                   a server-decided, caller-scoped key. NO
- *                                   MediaAsset is created here.
+ *   POST /aurora/media/upload-url   Mint a signed write URL for a
+ *                                   server-decided, caller-scoped key. Story
+ *                                   clips first persist a durable staging
+ *                                   session; generic kinds remain stateless.
  *   POST /aurora/media/confirm      After the PUT lands: verify ownership +
  *                                   blob existence (HEAD), then create the
- *                                   ACTIVE MediaAsset. Idempotent.
+ *                                   MediaAsset. Story assets remain uploading
+ *                                   until asynchronous finalization. Idempotent.
  *
  * Authenticated only — the global AuthGuard runs before this controller,
  * so @CurrentUser() is always populated; the userId is the scope root for
  * the storage key (issue) and the ownership check (confirm). There is NO
  * @Public() route here.
  */
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
@@ -38,20 +47,22 @@ export class MediaUploadController {
   @HttpCode(HttpStatus.OK)
   async createUploadUrl(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceHeader: string | undefined,
     @Body(new ZodValidationPipe(CreateUploadUrlSchema))
     body: CreateUploadUrlInputDto,
   ): Promise<CreateUploadUrlResponseDto> {
-    return this.svc.createUploadUrl(user.userId, body);
+    return this.svc.createUploadUrl(user.userId, body, workspaceHeader);
   }
 
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   async confirmUpload(
     @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceHeader: string | undefined,
     @Body(new ZodValidationPipe(ConfirmUploadSchema))
     body: ConfirmUploadInputDto,
   ): Promise<ConfirmUploadResponseDto> {
-    return this.svc.confirmUpload(user.userId, body);
+    return this.svc.confirmUpload(user.userId, body, workspaceHeader);
   }
 
   @Post('provider-assets/status')

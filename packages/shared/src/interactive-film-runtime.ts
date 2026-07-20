@@ -551,9 +551,8 @@ export const InteractiveFilmReleaseSchema = z
     });
 
     const requireEnding = (endingId: string, path: PropertyKey[]): void => {
-      // Historical Jinling preview manifests predate display metadata. Once a
-      // release declares an endings catalog, every graph ending must resolve
-      // through it so a player never has to invent display copy.
+      // Once a release declares an endings catalog, every graph ending must
+      // resolve through it so a player never has to invent display copy.
       if (endings.size > 0 && !endings.has(endingId)) {
         context.addIssue({ code: "custom", path, message: `Unknown ending ${endingId}` });
       }
@@ -774,10 +773,6 @@ export const InteractiveFilmReleaseSchema = z
 
 export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema>;
 export type InteractiveFilmRuntimeNode = z.infer<typeof InteractiveFilmRuntimeNodeSchema>;
-export type InteractiveFilmSceneNode = z.infer<typeof SceneNodeSchema>;
-export type InteractiveFilmSceneRelease = Omit<InteractiveFilmRelease, "nodes"> & {
-  nodes: InteractiveFilmSceneNode[];
-};
 export type InteractiveFilmRouterNode = z.infer<typeof RouterNodeSchema>;
 export type RuntimeAutoExit = z.infer<typeof RuntimeAutoExitSchema>;
 export type RuntimeChoiceExit = z.infer<typeof RuntimeChoiceExitSchema>;
@@ -788,20 +783,6 @@ export type RuntimeVideoVariant = z.infer<typeof VideoVariantSchema>;
 
 export function parseInteractiveFilmRelease(input: unknown): InteractiveFilmRelease {
   return InteractiveFilmReleaseSchema.parse(input);
-}
-
-/**
- * Parse a release owned by a scene-only experience such as Jinling P00 while
- * retaining a precise node type for its existing player. Story Studio builds
- * use parseInteractiveFilmRelease because their graph may contain routers.
- */
-export function parseInteractiveFilmSceneRelease(input: unknown): InteractiveFilmSceneRelease {
-  const release = parseInteractiveFilmRelease(input);
-  const router = release.nodes.find((node) => !("presentation" in node));
-  if (router) {
-    throw new Error(`Scene-only release cannot contain router node ${router.nodeId}`);
-  }
-  return release as InteractiveFilmSceneRelease;
 }
 
 function validateRuntimeDecisionDefinitions(

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -11,8 +10,7 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
-  StoryFilmTakeStatus,
-  StoryReviewDecision,
+  StoryFilmGenerationAttemptStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import {
@@ -26,26 +24,18 @@ import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver
 import { canonicalJsonHash } from './canonical-json';
 import {
   FilmTrailerSpecSchema,
-  FilmTrailerTakeReviewChecklistSchema,
   ValidateFilmClipReferencePlanSchema,
-  filmTrailerChecklistAllowsApproval,
-  type ApproveFilmTakeInput,
-  type CancelFilmTakeInput,
-  type CreateFilmTrailerTakeInput,
-  type CreateFilmTrailerTakeReviewInput,
-  type CursorPageDto,
+  type CancelFilmGenerationInput,
+  type CreateFilmTrailerGenerationInput,
   type FilmClipReferenceBindingDto,
-  type FilmReviewDto,
-  type FilmTakeListQuery,
   type FilmTrailerReferencesDto,
   type FilmTrailerSummaryDto,
-  type FilmTrailerTakeDto,
+  type FilmVideoGenerationDto,
   type MediaAssetSummaryDto,
-  type PutFilmTrailerMasterInput,
+  type PutFilmCurrentVideoInput,
   type PutFilmTrailerReferencesInput,
-  type RetryFilmTakeInput,
+  type RetryFilmGenerationInput,
 } from './dto';
-import { filmTrailerProductionReadModel } from './story-film-production-read-model';
 import {
   assertModelSupportsClip,
   buildGenerationConfig,
@@ -63,8 +53,8 @@ import {
 import { roleMatchesSlotKind } from './story-film-reference.service';
 import { StoryPermissionService } from './story-permission.service';
 
-const TRAILER_TAKE_INCLUDE =
-  Prisma.validator<Prisma.StoryFilmTrailerTakeInclude>()({
+const TRAILER_GENERATION_INCLUDE =
+  Prisma.validator<Prisma.StoryFilmTrailerGenerationAttemptInclude>()({
     aiJob: {
       include: {
         outputs: {
@@ -92,11 +82,9 @@ const TRAILER_TAKE_INCLUDE =
       select: {
         specHash: true,
         productionInputHash: true,
-        masterTakeId: true,
+        latestGenerationAttemptId: true,
       },
     },
-    reviews: { orderBy: [{ sequence: 'desc' }, { id: 'desc' }] },
-    approval: true,
   });
 
 const TRAILER_PRODUCTION_INCLUDE =
@@ -130,29 +118,19 @@ const TRAILER_SUMMARY_INCLUDE =
         referenceSlot: { select: { approvedVersionId: true } },
       },
     },
-    takes: {
-      select: {
-        status: true,
-        productionInputHash: true,
-        approval: { select: { takeId: true } },
+    currentVideoAsset: {
+      include: {
+        placements: true,
+        variants: { include: { placements: true } },
       },
     },
-    masterTake: {
-      select: {
-        productionInputHash: true,
-        status: true,
-        outputAsset: {
-          include: {
-            placements: true,
-            variants: { include: { placements: true } },
-          },
-        },
-      },
+    latestGenerationAttempt: {
+      include: TRAILER_GENERATION_INCLUDE,
     },
   });
 
-type TrailerTakeRow = Prisma.StoryFilmTrailerTakeGetPayload<{
-  include: typeof TRAILER_TAKE_INCLUDE;
+type TrailerGenerationRow = Prisma.StoryFilmTrailerGenerationAttemptGetPayload<{
+  include: typeof TRAILER_GENERATION_INCLUDE;
 }>;
 type ProductionTrailerRow = Prisma.StoryFilmTrailerGetPayload<{
   include: typeof TRAILER_PRODUCTION_INCLUDE;
@@ -160,11 +138,6 @@ type ProductionTrailerRow = Prisma.StoryFilmTrailerGetPayload<{
 type TrailerSummaryRow = Prisma.StoryFilmTrailerGetPayload<{
   include: typeof TRAILER_SUMMARY_INCLUDE;
 }>;
-
-interface TrailerTakeCursor {
-  number: number;
-  id: string;
-}
 
 interface PreparedTrailerProduction {
   trailer: ProductionTrailerRow;
@@ -178,7 +151,7 @@ interface PreparedTrailerProduction {
   productionInputHash: string;
   aiInput: Record<string, unknown>;
   referenceBindings: AiSubmitReferenceBinding[];
-  takeReferences: Array<{
+  generationReferences: Array<{
     referenceSlotId: string;
     referenceVersionId: string;
     role: ProductionTrailerRow['references'][number]['role'];
@@ -285,7 +258,7 @@ export class StoryFilmTrailerProductionService {
         return {
           trailerId: trailer.id,
           trailerVersion: trailer.version,
-          masterRevision: trailer.masterRevision,
+          currentVideoRevision: trailer.currentVideoRevision,
           bindings: current.map(toReferenceBinding),
         };
       }
@@ -317,17 +290,10 @@ export class StoryFilmTrailerProductionService {
           productionInputManifest: Prisma.DbNull,
           productionInputHash: null,
           version: { increment: 1 },
-          ...(trailer.masterTakeId
-            ? {
-                masterTakeId: null,
-                masterRevision: { increment: 1 },
-                masterSelectedByUserId: null,
-                masterSelectedAt: null,
-              }
-            : {}),
+          latestGenerationAttemptId: null,
           updatedByUserId: user.userId,
         },
-        select: { version: true, masterRevision: true },
+        select: { version: true, currentVideoRevision: true },
       });
       const bindings = await tx.storyFilmTrailerReference.findMany({
         where: { trailerId: trailer.id },
@@ -339,20 +305,20 @@ export class StoryFilmTrailerProductionService {
       return {
         trailerId: trailer.id,
         trailerVersion: updated.version,
-        masterRevision: updated.masterRevision,
+        currentVideoRevision: updated.currentVideoRevision,
         bindings: bindings.map(toReferenceBinding),
       };
     });
   }
 
-  async createTake(
+  async createGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
     revisionId: string,
-    input: CreateFilmTrailerTakeInput,
+    input: CreateFilmTrailerGenerationInput,
     idempotencyKey: string,
-  ): Promise<FilmTrailerTakeDto> {
+  ): Promise<FilmVideoGenerationDto> {
     const scope = await this.requireProjectScope(
       user,
       workspaceId,
@@ -370,13 +336,14 @@ export class StoryFilmTrailerProductionService {
       trailer.id,
       idempotencyKey,
     );
-    const existing = await this.prisma.storyFilmTrailerTake.findUnique({
-      where: { submissionKey },
-      include: TRAILER_TAKE_INCLUDE,
-    });
+    const existing =
+      await this.prisma.storyFilmTrailerGenerationAttempt.findUnique({
+        where: { submissionKey },
+        include: TRAILER_GENERATION_INCLUDE,
+      });
     if (existing) {
-      assertIdempotentTakeInput(existing, input);
-      return this.toTakeDto(await this.reconcileTake(existing));
+      assertIdempotentGenerationInput(existing, input);
+      return this.toGenerationDto(await this.reconcileGeneration(existing));
     }
 
     const prepared = await this.prepareProduction(
@@ -386,13 +353,13 @@ export class StoryFilmTrailerProductionService {
       revisionId,
       input,
     );
-    const jobKey = `story-trailer-take:${canonicalJsonHash(submissionKey)}`;
-    let createdTakeId: string | null = null;
+    const jobKey = `story-trailer-generation:${canonicalJsonHash(submissionKey)}`;
+    let createdGenerationId: string | null = null;
     const hooks: AiJobSubmissionHooks = {
       afterJobCreate: async (tx, job) => {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
-            hashtext(${`story-film-trailer-take:${prepared.trailer.id}`})::bigint
+            hashtext(${`story-film-trailer-current-video:${revisionId}`})::bigint
           )
         `;
         const locked = await tx.storyFilmTrailer.findFirst({
@@ -411,38 +378,19 @@ export class StoryFilmTrailerProductionService {
           );
         }
         assertReferenceSnapshotCurrent(locked, prepared);
-        if (locked.productionInputHash !== prepared.productionInputHash) {
-          await tx.storyFilmTrailer.update({
-            where: { id: locked.id },
-            data: {
-              productionInputManifest: prepared.productionManifest,
-              productionInputHash: prepared.productionInputHash,
-              version: { increment: 1 },
-              ...(locked.masterTakeId
-                ? {
-                    masterTakeId: null,
-                    masterRevision: { increment: 1 },
-                    masterSelectedByUserId: null,
-                    masterSelectedAt: null,
-                  }
-                : {}),
-              updatedByUserId: user.userId,
-            },
-          });
-        }
-        const latest = await tx.storyFilmTrailerTake.findFirst({
+        const latest = await tx.storyFilmTrailerGenerationAttempt.findFirst({
           where: { trailerId: locked.id },
-          orderBy: [{ takeNumber: 'desc' }, { id: 'desc' }],
-          select: { takeNumber: true },
+          orderBy: [{ attemptNumber: 'desc' }, { id: 'desc' }],
+          select: { attemptNumber: true },
         });
-        const take = await tx.storyFilmTrailerTake.create({
+        const generation = await tx.storyFilmTrailerGenerationAttempt.create({
           data: {
             storyProjectId: projectId,
             revisionId,
             trailerId: locked.id,
-            takeNumber: (latest?.takeNumber ?? 0) + 1,
+            attemptNumber: (latest?.attemptNumber ?? 0) + 1,
             submissionKey,
-            status: StoryFilmTakeStatus.queued,
+            status: StoryFilmGenerationAttemptStatus.queued,
             trailerSpecHash: prepared.trailer.specHash,
             productionInputHash: prepared.productionInputHash,
             promptSnapshot: prepared.promptSnapshot,
@@ -453,7 +401,7 @@ export class StoryFilmTrailerProductionService {
             queuedAt: job.queuedAt ? new Date(job.queuedAt) : new Date(),
             references: {
               createMany: {
-                data: prepared.takeReferences.map((reference) => ({
+                data: prepared.generationReferences.map((reference) => ({
                   storyProjectId: projectId,
                   revisionId,
                   ...reference,
@@ -462,7 +410,21 @@ export class StoryFilmTrailerProductionService {
             },
           },
         });
-        createdTakeId = take.id;
+        await tx.storyFilmTrailer.update({
+          where: { id: locked.id },
+          data: {
+            latestGenerationAttemptId: generation.id,
+            ...(locked.productionInputHash !== prepared.productionInputHash
+              ? {
+                  productionInputManifest: prepared.productionManifest,
+                  productionInputHash: prepared.productionInputHash,
+                  version: { increment: 1 },
+                }
+              : {}),
+            updatedByUserId: user.userId,
+          },
+        });
+        createdGenerationId = generation.id;
       },
     };
     try {
@@ -487,169 +449,134 @@ export class StoryFilmTrailerProductionService {
         workspaceId,
         hooks,
       );
-      const take = await this.prisma.storyFilmTrailerTake.findFirst({
-        where: {
-          OR: [
-            { submissionKey },
-            { aiJobId: submitted.request_id },
-            ...(createdTakeId ? [{ id: createdTakeId }] : []),
-          ],
-        },
-        include: TRAILER_TAKE_INCLUDE,
-      });
-      if (!take) {
+      const generation =
+        await this.prisma.storyFilmTrailerGenerationAttempt.findFirst({
+          where: {
+            OR: [
+              { submissionKey },
+              { aiJobId: submitted.request_id },
+              ...(createdGenerationId ? [{ id: createdGenerationId }] : []),
+            ],
+          },
+          include: TRAILER_GENERATION_INCLUDE,
+        });
+      if (!generation) {
         throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_BINDING_MISSING',
-          message: 'The generation job has no trailer Take binding.',
+          code: 'STORY_TRAILER_GENERATION_BINDING_MISSING',
+          message: 'The generation job has no trailer generation binding.',
         });
       }
-      return this.toTakeDto(await this.reconcileTake(take));
+      return this.toGenerationDto(await this.reconcileGeneration(generation));
     } catch (error) {
       if (isUniqueConstraintError(error)) {
-        const winner = await this.prisma.storyFilmTrailerTake.findUnique({
-          where: { submissionKey },
-          include: TRAILER_TAKE_INCLUDE,
-        });
+        const winner =
+          await this.prisma.storyFilmTrailerGenerationAttempt.findUnique({
+            where: { submissionKey },
+            include: TRAILER_GENERATION_INCLUDE,
+          });
         if (winner) {
-          assertIdempotentTakeInput(winner, input);
-          return this.toTakeDto(await this.reconcileTake(winner));
+          assertIdempotentGenerationInput(winner, input);
+          return this.toGenerationDto(await this.reconcileGeneration(winner));
         }
       }
       throw error;
     }
   }
 
-  async listTakes(
+  async getGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    revisionId: string,
-    query: FilmTakeListQuery,
-  ): Promise<CursorPageDto<FilmTrailerTakeDto>> {
+    generationId: string,
+  ): Promise<FilmVideoGenerationDto> {
     await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
-    const trailer = await this.prisma.storyFilmTrailer.findFirst({
-      where: { storyProjectId: projectId, revisionId },
-      select: { id: true },
-    });
-    if (!trailer) throw trailerNotFound();
-    const cursor = query.cursor ? decodeTakeCursor(query.cursor) : null;
-    const rows = await this.prisma.storyFilmTrailerTake.findMany({
-      where: {
-        storyProjectId: projectId,
-        revisionId,
-        trailerId: trailer.id,
-        ...(query.status ? { status: query.status } : {}),
-        ...(cursor
-          ? {
-              OR: [
-                { takeNumber: { lt: cursor.number } },
-                { takeNumber: cursor.number, id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ takeNumber: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      include: TRAILER_TAKE_INCLUDE,
-    });
-    const hasMore = rows.length > query.limit;
-    const page = hasMore ? rows.slice(0, query.limit) : rows;
-    const reconciled = await Promise.all(
-      page.map((row) => this.reconcileTake(row)),
-    );
-    const last = reconciled.at(-1);
-    return {
-      items: reconciled.map((row) => this.toTakeDto(row)),
-      nextCursor:
-        hasMore && last
-          ? encodeTakeCursor({ number: last.takeNumber, id: last.id })
-          : null,
-    };
-  }
-
-  async getTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    takeId: string,
-  ): Promise<FilmTrailerTakeDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
-    return this.toTakeDto(
-      await this.reconcileTake(await this.loadTake(projectId, takeId)),
+    return this.toGenerationDto(
+      await this.reconcileGeneration(
+        await this.loadGeneration(projectId, generationId),
+      ),
     );
   }
 
-  async cancelTake(
+  async cancelGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    takeId: string,
-    input: CancelFilmTakeInput,
-  ): Promise<FilmTrailerTakeDto> {
+    generationId: string,
+    input: CancelFilmGenerationInput,
+  ): Promise<FilmVideoGenerationDto> {
     await this.requireProjectScope(
       user,
       workspaceId,
       projectId,
       'story.generate',
     );
-    const take = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
+    const generation = await this.reconcileGeneration(
+      await this.loadGeneration(projectId, generationId),
     );
-    if (take.version !== input.expectedTakeVersion) {
-      throw takeVersionConflict(input.expectedTakeVersion, take.version);
+    if (generation.version !== input.expectedGenerationVersion) {
+      throw generationVersionConflict(
+        input.expectedGenerationVersion,
+        generation.version,
+      );
     }
-    await this.aiGeneration.cancelJob(user, take.aiJobId);
-    return this.toTakeDto(
-      await this.reconcileTake(await this.loadTake(projectId, takeId)),
+    await this.aiGeneration.cancelJob(user, generation.aiJobId);
+    return this.toGenerationDto(
+      await this.reconcileGeneration(
+        await this.loadGeneration(projectId, generationId),
+      ),
     );
   }
 
-  async retryTake(
+  async retryGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    takeId: string,
-    input: RetryFilmTakeInput,
+    generationId: string,
+    input: RetryFilmGenerationInput,
     idempotencyKey: string,
-  ): Promise<FilmTrailerTakeDto> {
+  ): Promise<FilmVideoGenerationDto> {
     await this.requireProjectScope(
       user,
       workspaceId,
       projectId,
       'story.generate',
     );
-    const take = await this.reconcileTake(
-      await this.loadTake(projectId, takeId),
+    const generation = await this.reconcileGeneration(
+      await this.loadGeneration(projectId, generationId),
     );
-    if (take.version !== input.expectedTakeVersion) {
-      throw takeVersionConflict(input.expectedTakeVersion, take.version);
+    if (generation.version !== input.expectedGenerationVersion) {
+      throw generationVersionConflict(
+        input.expectedGenerationVersion,
+        generation.version,
+      );
     }
     if (
-      take.status !== StoryFilmTakeStatus.failed &&
-      take.status !== StoryFilmTakeStatus.cancelled
+      generation.status !== StoryFilmGenerationAttemptStatus.failed &&
+      generation.status !== StoryFilmGenerationAttemptStatus.cancelled
     ) {
       throw new ConflictException({
-        code: 'STORY_TRAILER_TAKE_NOT_RETRYABLE',
-        message: 'Only a failed or cancelled trailer Take may be retried.',
+        code: 'STORY_TRAILER_GENERATION_NOT_RETRYABLE',
+        message:
+          'Only a failed or cancelled trailer generation may be retried.',
       });
     }
-    const modelId = jsonString(take.modelSnapshot, 'slug');
+    const modelId = jsonString(generation.modelSnapshot, 'slug');
     if (!modelId) {
       throw new ConflictException({
-        code: 'STORY_TRAILER_TAKE_MODEL_SNAPSHOT_CORRUPT',
-        message: 'The trailer Take model snapshot cannot be resolved.',
+        code: 'STORY_TRAILER_GENERATION_MODEL_SNAPSHOT_CORRUPT',
+        message: 'The trailer generation model snapshot cannot be resolved.',
       });
     }
     const trailer = await this.prisma.storyFilmTrailer.findUnique({
-      where: { id: take.trailerId },
+      where: { id: generation.trailerId },
       select: { version: true },
     });
     if (!trailer) throw trailerNotFound();
-    return this.createTake(
+    return this.createGeneration(
       user,
       workspaceId,
       projectId,
-      take.revisionId,
+      generation.revisionId,
       {
         expectedTrailerVersion: trailer.version,
         modelId,
@@ -659,180 +586,12 @@ export class StoryFilmTrailerProductionService {
     );
   }
 
-  async reviewTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    takeId: string,
-    input: CreateFilmTrailerTakeReviewInput,
-  ): Promise<{ take: FilmTrailerTakeDto; review: FilmReviewDto }> {
-    await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.review',
-    );
-    await this.reconcileTake(await this.loadTake(projectId, takeId));
-    const review = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-trailer-take-review:${takeId}`})::bigint
-        )
-      `;
-      const current = await tx.storyFilmTrailerTake.findFirst({
-        where: { id: takeId, storyProjectId: projectId },
-        select: {
-          status: true,
-          reviewRevision: true,
-          approval: { select: { takeId: true } },
-        },
-      });
-      if (!current) throw trailerTakeNotFound();
-      if (current.reviewRevision !== input.expectedReviewRevision) {
-        throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_REVIEW_REVISION_CONFLICT',
-          message:
-            'The trailer Take review history changed. Refresh and try again.',
-          expectedRevision: input.expectedReviewRevision,
-          actualRevision: current.reviewRevision,
-        });
-      }
-      if (current.status !== StoryFilmTakeStatus.ready) {
-        throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_NOT_READY',
-          message: 'Only a ready trailer Take may be reviewed.',
-        });
-      }
-      if (current.approval) {
-        throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_ALREADY_APPROVED',
-          message: 'An approved trailer Take cannot receive another review.',
-        });
-      }
-      return tx.storyFilmTrailerTakeReview.create({
-        data: {
-          takeId,
-          sequence: input.expectedReviewRevision + 1,
-          decision: input.decision,
-          technicalPassed: input.checklist.technical === 'pass',
-          safetyPassed: input.checklist.safety === 'pass',
-          checklist: input.checklist,
-          notes: input.comment,
-          reviewerUserId: user.userId,
-        },
-      });
-    });
-    const refreshed = await this.loadTake(projectId, takeId);
-    return {
-      take: this.toTakeDto(refreshed),
-      review: toReviewDto(review),
-    };
-  }
-
-  async approveTake(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    takeId: string,
-    input: ApproveFilmTakeInput,
-  ): Promise<FilmTrailerTakeDto> {
-    await this.requireProjectScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.review',
-    );
-    await this.reconcileTake(await this.loadTake(projectId, takeId));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-trailer-take-approval:${takeId}`})::bigint
-        )
-      `;
-      const current = await tx.storyFilmTrailerTake.findFirst({
-        where: { id: takeId, storyProjectId: projectId },
-        select: {
-          version: true,
-          status: true,
-          reviewRevision: true,
-          technicalChecks: true,
-          outputAsset: { select: { moderationStatus: true } },
-          approval: true,
-        },
-      });
-      if (!current) throw trailerTakeNotFound();
-      if (current.version !== input.expectedTakeVersion) {
-        throw takeVersionConflict(input.expectedTakeVersion, current.version);
-      }
-      if (
-        current.outputAsset?.moderationStatus ===
-        MediaAssetModerationStatus.blocked
-      ) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TRAILER_TAKE_OUTPUT_MODERATION_BLOCKED',
-          message: 'A moderation-blocked trailer output cannot be approved.',
-        });
-      }
-      if (current.approval) {
-        if (current.approval.reviewId === input.approveReviewId) return;
-        throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_ALREADY_APPROVED',
-          message:
-            'The trailer Take was already approved using another review.',
-        });
-      }
-      if (current.status !== StoryFilmTakeStatus.ready) {
-        throw new ConflictException({
-          code: 'STORY_TRAILER_TAKE_NOT_READY',
-          message: 'Only a ready trailer Take may be approved.',
-        });
-      }
-      if (storyFilmHasFailedTechnicalCheck(current.technicalChecks)) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TRAILER_TAKE_TECHNICAL_CHECKS_FAILED',
-          message:
-            'A trailer Take with failed technical checks cannot be approved.',
-        });
-      }
-      const review = await tx.storyFilmTrailerTakeReview.findFirst({
-        where: { id: input.approveReviewId, takeId },
-      });
-      const checklist = review
-        ? FilmTrailerTakeReviewChecklistSchema.safeParse(review.checklist)
-        : null;
-      if (
-        !review ||
-        review.sequence !== current.reviewRevision ||
-        review.decision !== StoryReviewDecision.approve ||
-        !review.technicalPassed ||
-        !review.safetyPassed ||
-        !checklist?.success ||
-        !filmTrailerChecklistAllowsApproval(checklist.data) ||
-        review.reviewerUserId !== user.userId
-      ) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_TRAILER_TAKE_APPROVAL_REVIEW_INVALID',
-          message:
-            'Approval requires this trailer Take’s latest passing approve review.',
-        });
-      }
-      await tx.storyFilmTrailerTakeApproval.create({
-        data: {
-          takeId,
-          reviewId: review.id,
-          approvedByUserId: user.userId,
-        },
-      });
-    });
-    return this.toTakeDto(await this.loadTake(projectId, takeId));
-  }
-
-  async putMaster(
+  async putCurrentVideo(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
     revisionId: string,
-    input: PutFilmTrailerMasterInput,
+    input: PutFilmCurrentVideoInput,
   ): Promise<FilmTrailerSummaryDto> {
     await this.requireProjectScope(
       user,
@@ -840,84 +599,110 @@ export class StoryFilmTrailerProductionService {
       projectId,
       'story.generate',
     );
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
-          hashtext(${`story-film-trailer-master:${revisionId}`})::bigint
+          hashtext(${`story-film-trailer-current-video:${revisionId}`})::bigint
         )
       `;
       const trailer = await tx.storyFilmTrailer.findFirst({
         where: { storyProjectId: projectId, revisionId },
       });
       if (!trailer) throw trailerNotFound();
-      if (trailer.masterTakeId === input.takeId) {
-        return tx.storyFilmTrailer.findUniqueOrThrow({
+      if (trailer.currentVideoRevision !== input.expectedCurrentVideoRevision) {
+        throw currentVideoRevisionConflict(
+          input.expectedCurrentVideoRevision,
+          trailer.currentVideoRevision,
+        );
+      }
+
+      if (input.assetId === null || input.variantId === null) {
+        await tx.storyFilmTrailer.update({
           where: { id: trailer.id },
-          include: TRAILER_SUMMARY_INCLUDE,
+          data: {
+            currentVideoAssetId: null,
+            currentVideoVariantId: null,
+            currentVideoSourceAttemptId: null,
+            currentVideoSpecHash: null,
+            currentVideoInputHash: null,
+            currentVideoChecksumSha256: null,
+            currentVideoTechnicalChecks: Prisma.DbNull,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: null,
+            currentVideoSetAt: null,
+            latestGenerationAttemptId: null,
+            updatedByUserId: user.userId,
+          },
         });
-      }
-      if (trailer.masterRevision !== input.expectedMasterRevision) {
-        throw new ConflictException({
-          code: 'STORY_FILM_TRAILER_MASTER_REVISION_CONFLICT',
-          message: 'The trailer Master changed. Refresh and try again.',
-          expectedRevision: input.expectedMasterRevision,
-          actualRevision: trailer.masterRevision,
-        });
-      }
-      if (input.takeId) {
-        const candidate = await tx.storyFilmTrailerTake.findFirst({
+      } else {
+        const asset = await tx.mediaAsset.findFirst({
           where: {
-            id: input.takeId,
-            trailerId: trailer.id,
-            storyProjectId: projectId,
-            revisionId,
-            status: StoryFilmTakeStatus.ready,
-            supersededAt: null,
-            trailerSpecHash: trailer.specHash,
-            productionInputHash: trailer.productionInputHash ?? undefined,
-            approval: { isNot: null },
+            id: input.assetId,
+            workspaceId,
+            kind: MediaAssetKind.video,
+            status: MediaAssetStatus.ready,
+            deletedAt: null,
+            moderationStatus: { not: MediaAssetModerationStatus.blocked },
           },
-          select: {
-            id: true,
-            technicalChecks: true,
-            outputAsset: { select: { moderationStatus: true } },
+          include: {
+            placements: true,
+            variants: { include: { placements: true } },
           },
         });
-        if (!candidate || trailer.productionInputHash === null) {
+        const variant = asset?.variants.find(
+          (candidate) =>
+            candidate.id === input.variantId &&
+            candidate.assetId === asset.id &&
+            candidate.status === MediaAssetVariantStatus.ready &&
+            candidate.deletedAt === null,
+        );
+        const checksum = variant?.checksumSha256;
+        if (!asset || !variant || !checksum) {
           throw new UnprocessableEntityException({
-            code: 'STORY_FILM_TRAILER_MASTER_INELIGIBLE',
-            message: 'Master must be an approved, ready, current trailer Take.',
-          });
-        }
-        if (storyFilmHasFailedTechnicalCheck(candidate.technicalChecks)) {
-          throw new UnprocessableEntityException({
-            code: 'STORY_FILM_TRAILER_MASTER_TECHNICAL_CHECKS_FAILED',
+            code: 'STORY_TRAILER_CURRENT_VIDEO_ASSET_INVALID',
             message:
-              'A trailer Take with failed technical checks cannot become Master.',
+              'Select a ready, non-blocked video and one of its ready variants from this Workspace.',
           });
         }
-        if (
-          candidate.outputAsset?.moderationStatus ===
-          MediaAssetModerationStatus.blocked
-        ) {
+        const trailerSpec = FilmTrailerSpecSchema.parse(trailer.specJson);
+        const technicalChecks = storyFilmTechnicalChecks(
+          {
+            kind: asset.kind,
+            width: variant.width ?? asset.width,
+            height: variant.height ?? asset.height,
+            durationSeconds: variant.durationSeconds ?? asset.durationSeconds,
+            checksumSha256: checksum,
+          },
+          trailerSpec.outputContract,
+        );
+        if (storyFilmHasFailedTechnicalCheck(technicalChecks)) {
           throw new UnprocessableEntityException({
-            code: 'STORY_FILM_TRAILER_MASTER_OUTPUT_MODERATION_BLOCKED',
+            code: 'STORY_TRAILER_CURRENT_VIDEO_TECHNICAL_CHECK_FAILED',
             message:
-              'A moderation-blocked trailer output cannot become Master.',
+              "The selected video does not satisfy this trailer's output contract.",
+            technicalChecks,
           });
         }
+        await tx.storyFilmTrailer.update({
+          where: { id: trailer.id },
+          data: {
+            currentVideoAssetId: asset.id,
+            currentVideoVariantId: variant.id,
+            currentVideoSourceAttemptId: null,
+            currentVideoSpecHash: trailer.specHash,
+            currentVideoInputHash: trailer.productionInputHash,
+            currentVideoChecksumSha256: checksum,
+            currentVideoTechnicalChecks: technicalChecks,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: user.userId,
+            currentVideoSetAt: new Date(),
+            latestGenerationAttemptId: null,
+            updatedByUserId: user.userId,
+          },
+        });
       }
-      await tx.storyFilmTrailer.update({
-        where: { id: trailer.id },
-        data: {
-          masterTakeId: input.takeId,
-          masterRevision: { increment: 1 },
-          version: { increment: 1 },
-          masterSelectedByUserId: input.takeId ? user.userId : null,
-          masterSelectedAt: input.takeId ? new Date() : null,
-          updatedByUserId: user.userId,
-        },
-      });
+
       return tx.storyFilmTrailer.findUniqueOrThrow({
         where: { id: trailer.id },
         include: TRAILER_SUMMARY_INCLUDE,
@@ -931,7 +716,7 @@ export class StoryFilmTrailerProductionService {
     workspaceId: string,
     projectId: string,
     revisionId: string,
-    input: CreateFilmTrailerTakeInput,
+    input: CreateFilmTrailerGenerationInput,
   ): Promise<PreparedTrailerProduction> {
     const [trailer, filmSpec] = await Promise.all([
       this.prisma.storyFilmTrailer.findFirst({
@@ -969,7 +754,8 @@ export class StoryFilmTrailerProductionService {
     }
     assertModelSupportsClip(model, trailerSpec);
 
-    const takeReferences: PreparedTrailerProduction['takeReferences'] = [];
+    const generationReferences: PreparedTrailerProduction['generationReferences'] =
+      [];
     const referenceBindings: AiSubmitReferenceBinding[] = [];
     const referenceInputRows: Array<{
       role: string;
@@ -1017,7 +803,7 @@ export class StoryFilmTrailerProductionService {
         url,
         assetId: version.assetId,
       });
-      takeReferences.push({
+      generationReferences.push({
         referenceSlotId: binding.referenceSlotId,
         referenceVersionId: version.id,
         role: binding.role,
@@ -1055,7 +841,7 @@ export class StoryFilmTrailerProductionService {
         compiledPromptHash: canonicalJsonHash(promptCompilation.text),
         submittedLength: promptCompilation.stats.submittedLength,
       },
-      references: takeReferences,
+      references: generationReferences,
       outputContract: trailerSpec.outputContract,
     } as Prisma.InputJsonObject;
     const productionInputHash = canonicalJsonHash(productionManifest);
@@ -1072,7 +858,7 @@ export class StoryFilmTrailerProductionService {
         referenceRoleNotes: trailerSpec.referenceRoleNotes,
         continuityNotes: trailerSpec.continuityNotes,
         variationNote: input.variationNote ?? null,
-        requestFingerprint: trailerTakeRequestFingerprint(input),
+        requestFingerprint: trailerGenerationRequestFingerprint(input),
         compiledPrompt: promptCompilation.text,
         compilerStats: promptCompilation.stats,
       } as Prisma.InputJsonObject,
@@ -1094,23 +880,32 @@ export class StoryFilmTrailerProductionService {
         ...referenceInputForClip(trailerSpec, referenceInputRows),
       },
       referenceBindings: submitReferenceBindings,
-      takeReferences,
+      generationReferences,
     };
   }
 
-  private async reconcileTake(row: TrailerTakeRow): Promise<TrailerTakeRow> {
+  private async reconcileGeneration(
+    row: TrailerGenerationRow,
+  ): Promise<TrailerGenerationRow> {
     if (
-      row.status === StoryFilmTakeStatus.ready ||
-      row.status === StoryFilmTakeStatus.failed ||
-      row.status === StoryFilmTakeStatus.cancelled
+      row.status === StoryFilmGenerationAttemptStatus.ready ||
+      row.status === StoryFilmGenerationAttemptStatus.failed ||
+      row.status === StoryFilmGenerationAttemptStatus.cancelled
     ) {
       return row;
     }
     const job = row.aiJob;
     const now = new Date();
-    let data: Prisma.StoryFilmTrailerTakeUncheckedUpdateManyInput | null = null;
+    let data: Prisma.StoryFilmTrailerGenerationAttemptUncheckedUpdateManyInput | null =
+      null;
+    let currentVideoCandidate: {
+      assetId: string;
+      variantId: string;
+      checksumSha256: string;
+      technicalChecks: Prisma.InputJsonArray;
+    } | null = null;
     if (job.status === 'in_queue') {
-      data = { status: StoryFilmTakeStatus.queued };
+      data = { status: StoryFilmGenerationAttemptStatus.queued };
     } else if (job.status === 'in_progress') {
       const processing = [
         'fetching_output',
@@ -1119,13 +914,13 @@ export class StoryFilmTrailerProductionService {
       ].includes(job.stage.toLowerCase());
       data = {
         status: processing
-          ? StoryFilmTakeStatus.processing
-          : StoryFilmTakeStatus.running,
+          ? StoryFilmGenerationAttemptStatus.processing
+          : StoryFilmGenerationAttemptStatus.running,
         startedAt: row.startedAt ?? job.startedAt ?? now,
       };
     } else if (job.status === 'failed' || job.status === 'expired') {
       data = {
-        status: StoryFilmTakeStatus.failed,
+        status: StoryFilmGenerationAttemptStatus.failed,
         error: (job.error ?? {
           code: 'AI_JOB_FAILED',
           message: 'The trailer generation job failed.',
@@ -1134,7 +929,7 @@ export class StoryFilmTrailerProductionService {
       };
     } else if (job.status === 'cancelled') {
       data = {
-        status: StoryFilmTakeStatus.cancelled,
+        status: StoryFilmGenerationAttemptStatus.cancelled,
         error: (job.error ?? {
           code: 'AI_JOB_CANCELLED',
           message: 'The trailer generation job was cancelled.',
@@ -1155,9 +950,9 @@ export class StoryFilmTrailerProductionService {
       );
       if (asset?.moderationStatus === MediaAssetModerationStatus.blocked) {
         data = {
-          status: StoryFilmTakeStatus.failed,
+          status: StoryFilmGenerationAttemptStatus.failed,
           error: {
-            code: 'STORY_TRAILER_TAKE_OUTPUT_MODERATION_BLOCKED',
+            code: 'STORY_TRAILER_GENERATION_OUTPUT_MODERATION_BLOCKED',
             message: 'The generated trailer was blocked by moderation.',
           },
           completedAt: job.completedAt ?? now,
@@ -1167,36 +962,63 @@ export class StoryFilmTrailerProductionService {
         const orphaned = now.getTime() - completedAt.getTime() > 60_000;
         data = orphaned
           ? {
-              status: StoryFilmTakeStatus.failed,
+              status: StoryFilmGenerationAttemptStatus.failed,
               error: {
-                code: 'STORY_TRAILER_TAKE_OUTPUT_MISSING',
+                code: 'STORY_TRAILER_GENERATION_OUTPUT_MISSING',
                 message:
                   'The completed trailer job has no durable video output.',
               },
               completedAt,
             }
-          : { status: StoryFilmTakeStatus.processing };
-      } else if (!original || !asset.checksumSha256) {
-        data = { status: StoryFilmTakeStatus.processing };
+          : { status: StoryFilmGenerationAttemptStatus.processing };
+      } else if (!original?.checksumSha256) {
+        data = { status: StoryFilmGenerationAttemptStatus.processing };
       } else {
         const trailerSpec = FilmTrailerSpecSchema.parse(
           await this.prisma.storyFilmTrailer
             .findUniqueOrThrow({ where: { id: row.trailerId } })
             .then((trailer) => trailer.specJson),
         );
+        const technicalChecks = storyFilmTechnicalChecks(
+          {
+            kind: asset.kind,
+            width: original.width ?? asset.width,
+            height: original.height ?? asset.height,
+            durationSeconds: original.durationSeconds ?? asset.durationSeconds,
+            checksumSha256: original.checksumSha256,
+          },
+          trailerSpec.outputContract,
+        );
+        const technicalChecksFailed =
+          storyFilmHasFailedTechnicalCheck(technicalChecks);
         data = {
-          status: StoryFilmTakeStatus.ready,
+          status: technicalChecksFailed
+            ? StoryFilmGenerationAttemptStatus.failed
+            : StoryFilmGenerationAttemptStatus.ready,
           aiJobOutputId: output.id,
           outputAssetId: asset.id,
           outputVariantId: original.id,
-          outputChecksumSha256: asset.checksumSha256,
-          technicalChecks: storyFilmTechnicalChecks(
-            asset,
-            trailerSpec.outputContract,
-          ),
-          readyAt: now,
+          outputChecksumSha256: original.checksumSha256,
+          technicalChecks,
+          ...(technicalChecksFailed
+            ? {
+                error: {
+                  code: 'STORY_TRAILER_GENERATION_TECHNICAL_CHECKS_FAILED',
+                  message:
+                    'The generated trailer did not satisfy the output contract.',
+                },
+              }
+            : { readyAt: now }),
           completedAt: job.completedAt ?? now,
         };
+        if (!technicalChecksFailed) {
+          currentVideoCandidate = {
+            assetId: asset.id,
+            variantId: original.id,
+            checksumSha256: original.checksumSha256,
+            technicalChecks,
+          };
+        }
       }
     }
     if (
@@ -1205,24 +1027,67 @@ export class StoryFilmTrailerProductionService {
     ) {
       return row;
     }
-    const updated = await this.prisma.storyFilmTrailerTake.updateMany({
-      where: { id: row.id, version: row.version, status: row.status },
-      data: { ...data, version: { increment: 1 } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`story-film-trailer-current-video:${row.revisionId}`})::bigint
+        )
+      `;
+      const generationUpdate =
+        await tx.storyFilmTrailerGenerationAttempt.updateMany({
+          where: { id: row.id, version: row.version, status: row.status },
+          data: { ...data, version: { increment: 1 } },
+        });
+      if (generationUpdate.count !== 1) return false;
+      if (currentVideoCandidate) {
+        const applied = await tx.storyFilmTrailer.updateMany({
+          where: {
+            id: row.trailerId,
+            storyProjectId: row.storyProjectId,
+            revisionId: row.revisionId,
+            latestGenerationAttemptId: row.id,
+            specHash: row.trailerSpecHash,
+            productionInputHash: row.productionInputHash,
+          },
+          data: {
+            currentVideoAssetId: currentVideoCandidate.assetId,
+            currentVideoVariantId: currentVideoCandidate.variantId,
+            currentVideoSourceAttemptId: row.id,
+            currentVideoSpecHash: row.trailerSpecHash,
+            currentVideoInputHash: row.productionInputHash,
+            currentVideoChecksumSha256: currentVideoCandidate.checksumSha256,
+            currentVideoTechnicalChecks: currentVideoCandidate.technicalChecks,
+            currentVideoRevision: { increment: 1 },
+            currentVideoSetByUserId: row.createdByUserId,
+            currentVideoSetAt: now,
+          },
+        });
+        if (applied.count !== 1) {
+          await tx.storyFilmTrailerGenerationAttempt.update({
+            where: { id: row.id },
+            data: { supersededAt: now },
+          });
+        }
+      }
+      return true;
     });
-    if (updated.count === 0) return this.loadTake(row.storyProjectId, row.id);
-    return this.loadTake(row.storyProjectId, row.id);
+    if (!updated) {
+      return this.loadGeneration(row.storyProjectId, row.id);
+    }
+    return this.loadGeneration(row.storyProjectId, row.id);
   }
 
-  private async loadTake(
+  private async loadGeneration(
     projectId: string,
-    takeId: string,
-  ): Promise<TrailerTakeRow> {
-    const take = await this.prisma.storyFilmTrailerTake.findFirst({
-      where: { id: takeId, storyProjectId: projectId },
-      include: TRAILER_TAKE_INCLUDE,
-    });
-    if (!take) throw trailerTakeNotFound();
-    return take;
+    generationId: string,
+  ): Promise<TrailerGenerationRow> {
+    const generation =
+      await this.prisma.storyFilmTrailerGenerationAttempt.findFirst({
+        where: { id: generationId, storyProjectId: projectId },
+        include: TRAILER_GENERATION_INCLUDE,
+      });
+    if (!generation) throw trailerGenerationNotFound();
+    return generation;
   }
 
   private async requireProjectScope(
@@ -1245,56 +1110,8 @@ export class StoryFilmTrailerProductionService {
     return scope;
   }
 
-  private toTakeDto(row: TrailerTakeRow): FilmTrailerTakeDto {
-    const latestReview = row.reviews[0] ?? null;
-    const staleReasons: string[] = [];
-    if (row.trailerSpecHash !== row.trailer.specHash) {
-      staleReasons.push('trailer_spec');
-    }
-    if (row.productionInputHash !== row.trailer.productionInputHash) {
-      staleReasons.push('production_inputs');
-    }
-    if (
-      row.outputAsset?.moderationStatus === MediaAssetModerationStatus.blocked
-    ) {
-      staleReasons.push('output_moderation_blocked');
-    }
-    return {
-      id: row.id,
-      projectId: row.storyProjectId,
-      revisionId: row.revisionId,
-      trailerId: row.trailerId,
-      number: row.takeNumber,
-      version: row.version,
-      aiJobId: row.aiJobId,
-      aiJobOutputId: row.aiJobOutputId,
-      status: row.status,
-      reviewStatus: row.approval
-        ? 'approved'
-        : latestReview?.decision === StoryReviewDecision.request_changes
-          ? 'changes_requested'
-          : latestReview?.decision === StoryReviewDecision.reject
-            ? 'rejected'
-            : 'unreviewed',
-      reviewRevision: row.reviewRevision,
-      trailerSpecHash: row.trailerSpecHash,
-      productionInputHash: row.productionInputHash,
-      promptSnapshot: jsonRecord(row.promptSnapshot),
-      generationConfig: jsonRecord(row.generationConfig),
-      modelSnapshot: jsonRecord(row.modelSnapshot),
-      stale: staleReasons.length > 0,
-      staleReasons,
-      outputAsset: row.outputAsset ? toMediaAsset(row.outputAsset) : null,
-      technicalChecks: storyFilmTechnicalCheckDtos(row.technicalChecks),
-      error: row.error ? jsonRecord(row.error) : null,
-      createdByUserId: row.createdByUserId,
-      queuedAt: row.queuedAt?.toISOString() ?? null,
-      startedAt: row.startedAt?.toISOString() ?? null,
-      readyAt: row.readyAt?.toISOString() ?? null,
-      cancelledAt: row.cancelledAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-      completedAt: row.completedAt?.toISOString() ?? null,
-    };
+  private toGenerationDto(row: TrailerGenerationRow): FilmVideoGenerationDto {
+    return toTrailerGenerationDto(row);
   }
 }
 
@@ -1307,24 +1124,25 @@ function trailerSubmissionKey(
   return `${userId}:${projectId}:${trailerId}:${canonicalJsonHash(idempotencyKey)}`;
 }
 
-function assertIdempotentTakeInput(
-  row: TrailerTakeRow,
-  input: CreateFilmTrailerTakeInput,
+function assertIdempotentGenerationInput(
+  row: TrailerGenerationRow,
+  input: CreateFilmTrailerGenerationInput,
 ): void {
   const promptSnapshot = jsonRecord(row.promptSnapshot);
   if (
-    promptSnapshot.requestFingerprint !== trailerTakeRequestFingerprint(input)
+    promptSnapshot.requestFingerprint !==
+    trailerGenerationRequestFingerprint(input)
   ) {
     throw new ConflictException({
-      code: 'STORY_TRAILER_TAKE_IDEMPOTENCY_CONFLICT',
+      code: 'STORY_TRAILER_GENERATION_IDEMPOTENCY_CONFLICT',
       message:
         'Idempotency-Key was already used with another trailer generation input.',
     });
   }
 }
 
-export function trailerTakeRequestFingerprint(
-  input: CreateFilmTrailerTakeInput,
+export function trailerGenerationRequestFingerprint(
+  input: CreateFilmTrailerGenerationInput,
 ): string {
   return canonicalJsonHash({
     expectedTrailerVersion: input.expectedTrailerVersion,
@@ -1346,7 +1164,7 @@ function assertReferenceSnapshotCurrent(
       position: binding.position,
     }))
     .filter((binding) => binding.referenceVersionId !== null);
-  const expected = prepared.takeReferences.map((binding) => ({
+  const expected = prepared.generationReferences.map((binding) => ({
     referenceSlotId: binding.referenceSlotId,
     referenceVersionId: binding.referenceVersionId,
     role: binding.role,
@@ -1356,56 +1174,89 @@ function assertReferenceSnapshotCurrent(
     throw new ConflictException({
       code: 'STORY_FILM_TRAILER_REFERENCE_SNAPSHOT_CONFLICT',
       message:
-        'Approved trailer references changed while the Take was being queued.',
+        'Approved trailer references changed while the generation was being queued.',
     });
   }
 }
 
 function toTrailerSummary(row: TrailerSummaryRow): FilmTrailerSummaryDto {
   const spec = FilmTrailerSpecSchema.parse(row.specJson);
-  const production = filmTrailerProductionReadModel({
-    trailer: spec,
-    references: row.references.map((binding) => ({
-      role: binding.role,
-      required: binding.required,
-      approvedReferenceVersionId: binding.referenceSlot.approvedVersionId,
-    })),
-    takes: row.takes,
-    productionInputHash: row.productionInputHash,
-    masterTakeId: row.masterTakeId,
-    masterTake: row.masterTake,
-  });
+  const hasCurrentVideo = Boolean(
+    row.currentVideoAsset &&
+    row.currentVideoVariantId &&
+    row.currentVideoChecksumSha256 &&
+    row.currentVideoSpecHash &&
+    row.currentVideoSetAt,
+  );
   return {
     ...spec,
     id: row.id,
     projectId: row.storyProjectId,
     revisionId: row.revisionId,
     version: row.version,
-    masterRevision: row.masterRevision,
+    currentVideoRevision: row.currentVideoRevision,
     specHash: row.specHash,
     productionInputHash: row.productionInputHash,
-    productionStatus: production.productionStatus,
-    blockReasons: production.blockReasons,
     referenceBindings: row.references.map(toReferenceBinding),
-    master:
-      row.masterTakeId &&
-      row.masterTake &&
-      row.masterSelectedByUserId &&
-      row.masterSelectedAt
-        ? {
-            takeId: row.masterTakeId,
-            status: row.masterTake.status,
-            outputAsset: row.masterTake.outputAsset
-              ? toMediaAsset(row.masterTake.outputAsset)
-              : null,
-            masterRevision: row.masterRevision,
-            selectedByUserId: row.masterSelectedByUserId,
-            selectedAt: row.masterSelectedAt.toISOString(),
-          }
-        : null,
-    takeCounts: production.takeCounts,
+    currentVideo: hasCurrentVideo
+      ? {
+          asset: toMediaAsset(row.currentVideoAsset!),
+          variantId: row.currentVideoVariantId!,
+          sourceGenerationId: row.currentVideoSourceAttemptId,
+          specHash: row.currentVideoSpecHash,
+          inputHash: row.currentVideoInputHash,
+          checksumSha256: row.currentVideoChecksumSha256!,
+          technicalChecks: storyFilmTechnicalCheckDtos(
+            row.currentVideoTechnicalChecks ?? [],
+          ),
+          revision: row.currentVideoRevision,
+          setByUserId: row.currentVideoSetByUserId,
+          setAt: row.currentVideoSetAt!.toISOString(),
+          outdated:
+            row.currentVideoSpecHash !== row.specHash ||
+            row.currentVideoInputHash !== row.productionInputHash,
+        }
+      : null,
+    generation: row.latestGenerationAttempt
+      ? toTrailerGenerationDto(row.latestGenerationAttempt)
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toTrailerGenerationDto(
+  row: TrailerGenerationRow,
+): FilmVideoGenerationDto {
+  return {
+    id: row.id,
+    projectId: row.storyProjectId,
+    revisionId: row.revisionId,
+    target: { kind: 'trailer', trailerId: row.trailerId },
+    number: row.attemptNumber,
+    version: row.version,
+    aiJobId: row.aiJobId,
+    aiJobOutputId: row.aiJobOutputId,
+    status: row.status,
+    specHash: row.trailerSpecHash,
+    inputHash: row.productionInputHash,
+    promptSnapshot: jsonRecord(row.promptSnapshot),
+    generationConfig: jsonRecord(row.generationConfig),
+    modelSnapshot: jsonRecord(row.modelSnapshot),
+    outputAsset: row.outputAsset ? toMediaAsset(row.outputAsset) : null,
+    outputVariantId: row.outputVariantId,
+    outputChecksumSha256: row.outputChecksumSha256,
+    technicalChecks: storyFilmTechnicalCheckDtos(row.technicalChecks),
+    error: row.error ? jsonRecord(row.error) : null,
+    createdByUserId: row.createdByUserId,
+    queuedAt: row.queuedAt?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    readyAt: row.readyAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    supersededAt: row.supersededAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? null,
   };
 }
 
@@ -1478,7 +1329,7 @@ function bindingOrder(
 }
 
 function toMediaAsset(
-  row: NonNullable<TrailerTakeRow['outputAsset']>,
+  row: NonNullable<TrailerGenerationRow['outputAsset']>,
 ): MediaAssetSummaryDto {
   return {
     id: row.id,
@@ -1494,27 +1345,6 @@ function toMediaAsset(
   };
 }
 
-function toReviewDto(row: {
-  id: string;
-  decision: StoryReviewDecision;
-  checklist: Prisma.JsonValue;
-  notes: string | null;
-  reviewerUserId: string;
-  createdAt: Date;
-}): FilmReviewDto {
-  return {
-    id: row.id,
-    decision: row.decision,
-    checklist: jsonRecord(row.checklist) as Record<
-      string,
-      'pass' | 'fail' | 'na'
-    >,
-    comment: row.notes,
-    reviewerUserId: row.reviewerUserId,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
-
 function jsonRecord(value: Prisma.JsonValue): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1526,31 +1356,6 @@ function jsonString(value: Prisma.JsonValue, key: string): string | null {
   return typeof candidate === 'string' ? candidate : null;
 }
 
-function encodeTakeCursor(cursor: TrailerTakeCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
-}
-
-function decodeTakeCursor(value: string): TrailerTakeCursor {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, 'base64url').toString('utf8'),
-    ) as TrailerTakeCursor;
-    if (
-      !Number.isInteger(parsed.number) ||
-      parsed.number < 1 ||
-      typeof parsed.id !== 'string'
-    ) {
-      throw new Error();
-    }
-    return parsed;
-  } catch {
-    throw new BadRequestException({
-      code: 'INVALID_CURSOR',
-      message: 'Invalid trailer Take cursor.',
-    });
-  }
-}
-
 function trailerNotFound(): NotFoundException {
   return new NotFoundException({
     code: 'STORY_FILM_TRAILER_NOT_FOUND',
@@ -1558,17 +1363,17 @@ function trailerNotFound(): NotFoundException {
   });
 }
 
-function trailerTakeNotFound(): NotFoundException {
+function trailerGenerationNotFound(): NotFoundException {
   return new NotFoundException({
-    code: 'STORY_TRAILER_TAKE_NOT_FOUND',
-    message: 'Story film trailer Take not found.',
+    code: 'STORY_TRAILER_GENERATION_NOT_FOUND',
+    message: 'Story film trailer generation not found.',
   });
 }
 
 function revisionNotProductionReady(): ConflictException {
   return new ConflictException({
     code: 'STORY_FILM_REVISION_NOT_READY',
-    message: 'Lock the Story Revision before producing a trailer Take.',
+    message: 'Lock the Story Revision before producing a trailer generation.',
   });
 }
 
@@ -1588,12 +1393,21 @@ function trailerVersionConflict(expected: number, actual: number) {
   });
 }
 
-function takeVersionConflict(expected: number, actual: number) {
+function generationVersionConflict(expected: number, actual: number) {
   return new ConflictException({
-    code: 'STORY_TRAILER_TAKE_VERSION_CONFLICT',
-    message: 'The trailer Take changed. Refresh and try again.',
+    code: 'STORY_TRAILER_GENERATION_VERSION_CONFLICT',
+    message: 'The trailer generation changed. Refresh and try again.',
     expectedVersion: expected,
     actualVersion: actual,
+  });
+}
+
+function currentVideoRevisionConflict(expected: number, actual: number) {
+  return new ConflictException({
+    code: 'STORY_TRAILER_CURRENT_VIDEO_REVISION_CONFLICT',
+    message: 'The current trailer video changed. Refresh and try again.',
+    expectedRevision: expected,
+    actualRevision: actual,
   });
 }
 

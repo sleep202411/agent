@@ -29,13 +29,16 @@ interface SignedUrlResponse {
   storageKey: string;
   provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
   expiresAt: string;
+  uploadSessionId?: string;
+  mediaAssetId?: string;
 }
 
 interface ConfirmResponse {
   mediaAssetId: string;
-  storageKey: string;
-  provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
-  url: string;
+  storageKey?: string;
+  provider?: "azure_blob" | "aliyun_oss" | "s3_compatible";
+  status?: string;
+  url?: string;
 }
 
 const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
@@ -57,6 +60,11 @@ export interface UploadFileOptions {
   /** Called with 0–100 as the PUT streams bytes. */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
+  /** Required ownership scope for Story Studio clip-video uploads. */
+  workspaceId?: string;
+  scope?: { projectId: string };
+  /** Story-only durable reservation identity, emitted before the direct PUT. */
+  onSessionIssued?: (session: { uploadSessionId: string; mediaAssetId: string }) => void;
 }
 
 export interface UploadFileResult {
@@ -65,16 +73,29 @@ export interface UploadFileResult {
   url: string;
 }
 
+export interface StoryClipUploadFileResult {
+  mediaAssetId: string;
+  storageKey: string;
+  url: string | null;
+}
+
+export type StoryClipUploadFileOptions = UploadFileOptions & {
+  kind: "story_clip_video";
+  workspaceId: string;
+  scope: { projectId: string };
+};
+
 async function postJson<T extends object>(
   endpoint: string,
   body: unknown,
   label: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  headers?: Record<string, string>
 ): Promise<T> {
   const res = await fetch(endpoint, {
     method: "POST",
     credentials: "include",
-    headers: jsonHeaders(),
+    headers: { ...jsonHeaders(), ...headers },
     body: JSON.stringify(body),
     signal,
   });
@@ -120,17 +141,27 @@ function contentTypeForFile(file: File, explicit?: string): string {
 function putBytesToStorage(
   info: SignedUrlResponse,
   file: File,
-  options?: { onProgress?: (percent: number) => void; signal?: AbortSignal }
+  options: {
+    contentType: string;
+    onProgress?: (percent: number) => void;
+    signal?: AbortSignal;
+  }
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(info.method ?? "PUT", info.uploadUrl, true);
 
-    const headers: Record<string, string> = {
-      "Content-Type": file.type || "application/octet-stream",
-      ...(info.headers ?? {}),
-    };
-    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    // `file.type` is frequently empty for MOV files. Use the same canonical
+    // type that was signed and will be echoed to confirm. Normalize names so a
+    // provider-issued `content-type` overrides our default regardless of case,
+    // and set every header once (XHR appends repeated header values).
+    const headers = new Map<string, { name: string; value: string }>([
+      ["content-type", { name: "Content-Type", value: options.contentType }],
+    ]);
+    for (const [name, value] of Object.entries(info.headers ?? {})) {
+      headers.set(name.toLowerCase(), { name, value });
+    }
+    for (const { name, value } of headers.values()) xhr.setRequestHeader(name, value);
 
     if (options?.onProgress) {
       xhr.upload.onprogress = (e) => {
@@ -185,33 +216,97 @@ export function isUploadAbort(err: unknown): boolean {
 }
 
 /** Upload a file straight to storage and return the confirmed MediaAsset. */
+export function uploadFileViaSignedUrl(
+  file: File,
+  opts: StoryClipUploadFileOptions
+): Promise<StoryClipUploadFileResult>;
+export function uploadFileViaSignedUrl(
+  file: File,
+  opts: UploadFileOptions
+): Promise<UploadFileResult>;
 export async function uploadFileViaSignedUrl(
   file: File,
   opts: UploadFileOptions
-): Promise<UploadFileResult> {
+): Promise<UploadFileResult | StoryClipUploadFileResult> {
+  const storyUpload = opts.kind === "story_clip_video";
+  if (storyUpload && (!opts.workspaceId?.trim() || !opts.scope?.projectId.trim())) {
+    throw new Error("Story clip video uploads require a workspace and project scope.");
+  }
+  if (opts.signal?.aborted) {
+    throw new DOMException("Upload aborted", "AbortError");
+  }
   const contentType = contentTypeForFile(file, opts.contentType);
+  if (storyUpload && contentType.toLowerCase() !== "video/mp4") {
+    throw new Error("Story clip uploads require an MP4 file with H.264 video and AAC audio.");
+  }
+  const scopedHeaders = opts.workspaceId ? { "x-fizz-workspace-id": opts.workspaceId } : undefined;
   const info = await postJson<SignedUrlResponse>(
     UPLOAD_URL_ENDPOINT,
-    { kind: opts.kind, contentType, fileName: file.name, sizeBytes: file.size },
+    {
+      kind: opts.kind,
+      contentType,
+      fileName: file.name,
+      sizeBytes: file.size,
+      ...(opts.scope ? { scope: opts.scope } : {}),
+    },
     "getUploadUrl",
-    opts.signal
+    // Once a Story reservation request reaches the server, let this small
+    // request return its durable identity even if the user changes nodes. The
+    // caller can then cancel it; aborting the response would lose that key and
+    // leave an unaddressable quota reservation until expiry.
+    storyUpload ? undefined : opts.signal,
+    scopedHeaders
   );
   if (!info.uploadUrl || !info.storageKey) {
     throw new Error("getUploadUrl succeeded but returned no upload URL");
   }
-  await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
+  if (storyUpload && !info.uploadSessionId) {
+    throw new Error("getUploadUrl succeeded but returned no story upload session");
+  }
+  if (storyUpload && !info.mediaAssetId) {
+    throw new Error("getUploadUrl succeeded but returned no story media asset");
+  }
+  if (storyUpload) {
+    opts.onSessionIssued?.({
+      uploadSessionId: info.uploadSessionId!,
+      mediaAssetId: info.mediaAssetId!,
+    });
+  }
+  if (opts.signal?.aborted) {
+    throw new DOMException("Upload aborted", "AbortError");
+  }
+  await putBytesToStorage(info, file, {
+    contentType,
+    onProgress: opts.onProgress,
+    signal: opts.signal,
+  });
   const confirmed = await postJson<ConfirmResponse>(
     CONFIRM_ENDPOINT,
-    { storageKey: info.storageKey, kind: opts.kind, contentType },
+    {
+      storageKey: info.storageKey,
+      kind: opts.kind,
+      contentType,
+      ...(info.uploadSessionId ? { uploadSessionId: info.uploadSessionId } : {}),
+    },
     "confirmUpload",
-    opts.signal
+    opts.signal,
+    scopedHeaders
   );
-  if (!confirmed.mediaAssetId || !confirmed.url) {
-    throw new Error("confirmUpload succeeded but returned no mediaAssetId/url");
+  if (!confirmed.mediaAssetId) {
+    throw new Error("confirmUpload succeeded but returned no mediaAssetId");
   }
-  return {
-    mediaAssetId: confirmed.mediaAssetId,
-    storageKey: info.storageKey,
-    url: confirmed.url,
-  };
+  if (!storyUpload && !confirmed.url) {
+    throw new Error("confirmUpload succeeded but returned no media URL");
+  }
+  return storyUpload
+    ? {
+        mediaAssetId: confirmed.mediaAssetId,
+        storageKey: info.storageKey,
+        url: confirmed.url ?? null,
+      }
+    : {
+        mediaAssetId: confirmed.mediaAssetId,
+        storageKey: info.storageKey,
+        url: confirmed.url!,
+      };
 }

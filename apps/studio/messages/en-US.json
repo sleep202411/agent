@@ -19,6 +19,18 @@
     "fizzDragon": "FizzDragon",
     "fizzStudio": "FizzStudio"
   },
+  "videoPlayer": {
+    "play": "Play",
+    "pause": "Pause",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "volume": "Volume",
+    "seek": "Seek video",
+    "seekForward": "Seek forward",
+    "seekBackward": "Seek backward",
+    "enterFullscreen": "Enter fullscreen",
+    "exitFullscreen": "Exit fullscreen"
+  },
   "localeSwitcher": {
     "label": "Language"
   },
@@ -924,6 +936,8 @@
   },
   "canvasControls": {
     "comment": "Comment",
+    "selectTool": "Select tool (V)",
+    "panTool": "Hand tool (H)",
     "loadingModels": "Loading models…",
     "generationSettings": "Generation settings",
     "addNode": {
@@ -1520,7 +1534,7 @@
     "metaDescription": "Author, produce, review, and release interactive cinematic stories.",
     "eyebrow": "Interactive narrative production",
     "title": "Story Studio",
-    "subtitle": "Develop the story, reference pack, production takes, and release from one versioned workspace.",
+    "subtitle": "Develop the story, reference pack, current videos, and release from one versioned workspace.",
     "newProject": "New interactive film",
     "projects": {
       "title": "Interactive films",
@@ -1528,28 +1542,18 @@
       "revision": "Revision {number}",
       "draft": "Draft",
       "noSummary": "No project summary yet.",
-      "noBlocker": "No active production blocker",
+      "videoProgress": "{current}/{total} current videos",
+      "generating": "{count} videos generating",
       "updatedUnknown": "Update time unavailable"
     },
     "metrics": {
       "references": "References",
       "clips": "Clips",
-      "masters": "Masters",
-      "blocked": "Blocked",
+      "videos": "Videos",
+      "generating": "Generating",
       "choices": "Choices",
       "endings": "Endings",
       "graphClips": "Graph clips"
-    },
-    "blockers": {
-      "referenceApproval": "{count} required reference slots need approval.",
-      "clipReferences": "{count} clips are blocked by reference inputs.",
-      "clipMasters": "{count} clips still need an approved master.",
-      "productionInputsUnresolved": "The production input manifest is not fully resolved.",
-      "referenceInputApproval": "A required reference input has no approved version.",
-      "omniReferenceRequired": "The Omni Reference input package is incomplete.",
-      "firstFrameRequired": "The required first frame is not bound.",
-      "lastFrameRequired": "The required last frame is not bound.",
-      "masterInputStale": "The selected master was generated from older inputs."
     },
     "actions": {
       "retry": "Retry",
@@ -1570,14 +1574,6 @@
     "empty": {
       "title": "No interactive-film projects yet",
       "description": "Create a project to start an editable story draft, then direct and generate clips from the same canvas."
-    },
-    "example": {
-      "sectionTitle": "Official example",
-      "sectionSubtitle": "Study a published production without adding it to your project library.",
-      "readOnly": "Official example · Read-only",
-      "title": "Dream of Jinling",
-      "description": "Inspect the existing cinematic branch map and published media package. This example remains separate from creator projects.",
-      "open": "Open example"
     },
     "create": {
       "title": "Create an interactive film",
@@ -1616,36 +1612,89 @@
     "canvas": {
       "back": "Back to Story Studio",
       "mode": "Story canvas",
-      "workbench": "Production workspace",
+      "publish": {
+        "action": "Publish",
+        "actionPending": "Publishing…",
+        "actionPublished": "Published",
+        "statusChecking": "Checking the current live version…",
+        "title": "Publish current version?",
+        "description": "This will prepare the latest saved story and set it as the live version players receive.",
+        "confirmation": {
+          "title": "Ready to publish",
+          "draftRevision": "Latest saved story · revision {revision}",
+          "detail": "The canvas stays editable after publication. Future edits remain private until you publish again."
+        },
+        "progress": {
+          "title": "Publishing current version",
+          "description": "Keep this window open while the story is saved, checked, and published."
+        },
+        "phases": {
+          "saving": {
+            "title": "Save latest changes",
+            "description": "Saving the exact story currently on the canvas."
+          },
+          "locking": {
+            "title": "Prepare release version",
+            "description": "Freezing the saved story into the version players will receive."
+          },
+          "building": {
+            "title": "Check playable content",
+            "description": "Checking routes, videos, and player-facing content."
+          },
+          "publishing": {
+            "title": "Publish",
+            "description": "Setting this as the live version for players."
+          }
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "confirm": "Publish current version",
+          "close": "Close",
+          "retry": "Try again"
+        },
+        "success": {
+          "title": "Version published",
+          "description": "The current version is now live.",
+          "version": "Current version is live",
+          "detail": "Players now enter this version. You can keep editing the canvas without changing it."
+        },
+        "failure": {
+          "title": "This version was not published",
+          "description": "Resolve the issue below, then try publishing again."
+        },
+        "diagnostics": {
+          "title": "{count, plural, one {# issue to resolve} other {# issues to resolve}}"
+        },
+        "errors": {
+          "workspaceRequired": "Select a workspace before publishing.",
+          "permissionDenied": "Your project role does not allow publishing.",
+          "saveFailed": "The latest changes could not be saved.",
+          "lockFailed": "The saved story could not be prepared for publication.",
+          "workbenchFailed": "The saved version could not be loaded for checking.",
+          "revisionMismatch": "The prepared version did not match the saved story. Refresh the canvas and try again.",
+          "productionContractMissing": "This story does not yet have playable content to publish.",
+          "buildFailed": "The playable version could not be prepared.",
+          "buildNotReady": "This version is not ready to publish. Resolve the issues below and try again.",
+          "runtimeUnavailable": "The playable content is unavailable. Try preparing this version again.",
+          "publishFailed": "The prepared version could not be published.",
+          "unexpected": "The current version could not be published."
+        }
+      },
       "workingPreview": {
         "action": "Preview playtest",
-        "title": "Working preview",
-        "description": "Play the latest saved story graph with its current video takes. This preview never freezes the project or stops you from editing.",
+        "pageTitle": "Story Playtest · Story Studio",
+        "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
-        "loading": "Preparing the latest saved draft…",
-        "errorTitle": "Working preview could not be prepared",
-        "errorFallback": "The working preview could not be loaded.",
+        "loading": "Preparing the playtest…",
+        "errorFallback": "The playtest could not be loaded.",
+        "buildNumber": "Build {number}",
         "retry": "Retry",
         "refresh": "Refresh preview",
         "editStory": "Edit story",
-        "previewWarnings": "{count} working-preview warnings",
+        "previewWarnings": "{count} playtest warnings",
         "unavailableTitle": "The story is not playable yet",
-        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
-        "noDiagnostics": "No diagnostic details were returned. Retry or inspect the project production state.",
-        "severity": {
-          "error": "Blocking",
-          "warning": "Warning"
-        },
-        "pathReport": {
-          "title": "Current path coverage",
-          "paths": "Paths",
-          "endings": "Endings",
-          "ambiguous": "Ambiguous",
-          "unreachable": "Unreachable",
-          "unavailable": "Path coverage becomes available after the graph can be compiled."
-        }
+        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable."
       },
-      "fit": "Fit story to view",
       "autosave": "Autosave",
       "readOnly": "Read only",
       "addNode": "Add story node",
@@ -1669,6 +1718,7 @@
       "ports": {
         "entry": "Story entry",
         "input": "Incoming story flow",
+        "completion": "Next step from this clip",
         "auto": "Continue automatically",
         "checkpoint": "Wait for player confirmation",
         "checkpointTarget": "Continue checkpoint to {target}",
@@ -1692,6 +1742,15 @@
         "routerDescription": "A graph-only conditional merge or redirect with no video.",
         "ending": "Story ending",
         "endingDescription": "A named outcome stored in the story bible."
+      },
+      "connectionCreator": {
+        "title": "Create next step",
+        "description": "Choose what happens when this clip finishes.",
+        "clip": "Film clip",
+        "clipDescription": "Continue directly into another generated video segment.",
+        "choice": "Player choice",
+        "choiceDescription": "Pause playback and let the player choose a branch.",
+        "cancel": "Cancel"
       },
       "endingKinds": {
         "truth": "Truth",
@@ -1839,7 +1898,7 @@
       "director": {
         "eyebrow": "Director prompt",
         "title": "Video direction",
-        "description": "Author the structured direction for this clip. It stays editable; each generated Take records the exact saved inputs it used.",
+        "description": "Author the structured direction for this clip. It stays editable; each video generation records the exact saved inputs it used.",
         "compact": {
           "title": "Prompt composer",
           "beats": "{count, plural, one {# beat} other {# beats}}",
@@ -1932,8 +1991,8 @@
         "description": "Author and produce the project trailer independently from story clips and runtime paths.",
         "close": "Close trailer inspector",
         "node": {
-          "noMaster": "No Master trailer yet",
-          "masterPreview": "Master trailer preview"
+          "noVideo": "No trailer video yet",
+          "videoPreview": "Trailer video preview"
         },
         "authoring": {
           "emptyTitle": "Author the trailer first",
@@ -1943,70 +2002,18 @@
         },
         "production": {
           "title": "Trailer production",
-          "refresh": "Refresh trailer production",
           "disabled": {
-            "permission": "You do not have permission to generate video for this project.",
-            "reviewPermission": "You do not have permission to review trailer Takes for this project.",
-            "blocked": "Resolve this trailer's production blockers before generating."
+            "permission": "You do not have permission to generate video for this project."
           },
           "errors": {
-            "action": "The trailer production action could not be completed.",
-            "loadTakes": "Trailer Takes could not be loaded."
-          },
-          "statuses": {
-            "queued": "Queued",
-            "running": "Running",
-            "processing": "Processing",
-            "ready": "Ready",
-            "failed": "Failed",
-            "cancelled": "Cancelled"
-          },
-          "takes": {
-            "title": "Trailer Take Strip",
-            "count": "{count, plural, one {# Take} other {# Takes}}",
-            "empty": "Generate the first Take for this trailer.",
-            "master": "Master",
-            "take": "Take {number}",
-            "review": "Review",
-            "cancel": "Cancel",
-            "retry": "Retry",
-            "setMaster": "Set Master"
-          },
-          "review": {
-            "title": "Review trailer Take",
-            "description": "Review trailer-specific story fidelity, identity, pacing, readability, rights, and safety before approval.",
-            "decisions": {
-              "approve": "Approve",
-              "requestChanges": "Request changes",
-              "reject": "Reject"
-            },
-            "checklist": {
-              "technical": "Technical",
-              "storyFidelity": "Story fidelity",
-              "identityConsistency": "Identity consistency",
-              "visualConsistency": "Visual consistency",
-              "pacing": "Pacing",
-              "textReadability": "Text readability",
-              "rights": "Rights",
-              "safety": "Safety"
-            },
-            "values": {
-              "pass": "Pass",
-              "fail": "Fail",
-              "na": "N/A"
-            },
-            "comment": "Review note",
-            "commentRequired": "Add a review note when requesting changes or rejecting a Take.",
-            "approveRequirements": "Technical and safety checks must both pass before approval.",
-            "cancel": "Cancel",
-            "submit": "Submit review"
+            "action": "The trailer production action could not be completed."
           }
         }
       },
       "production": {
         "eyebrow": "Clip production",
         "title": "Video production",
-        "description": "Create Takes from the latest saved director design. The canvas stays editable and every Take preserves its own input snapshot.",
+        "description": "Generate the current video from the latest saved director design. The canvas stays editable and every generation preserves its own input snapshot.",
         "refresh": "Refresh production status",
         "masterPrompt": "Master Prompt",
         "beats": "{count, plural, one {# timed beat} other {# timed beats}}",
@@ -2039,27 +2046,22 @@
           "other": "Other"
         },
         "variationNote": "Variation note",
-        "variationPlaceholder": "Optional direction for this Take only. It does not modify the saved director design.",
-        "generate": "Generate Take",
+        "variationPlaceholder": "Optional direction for this generation only. It does not modify the saved director design.",
+        "generate": "Generate video",
         "disabled": {
           "preparing": "Preparing the current shot inputs before generation.",
           "promptRequired": "Complete the current clip's director prompt before generating.",
           "permission": "You do not have permission to generate video for this project.",
-          "blocked": "Resolve this clip's production blockers before generating."
+          "generating": "A video generation is already in progress for this node."
         },
         "errors": {
           "prepare": "The current shot inputs could not be prepared.",
-          "action": "The production action could not be completed.",
-          "loadTakes": "Takes could not be loaded."
+          "action": "The production action could not be completed."
         },
         "statuses": {
           "preparing": "Preparing shot inputs",
-          "blocked": "Blocked",
           "ready": "Ready",
           "generating": "Generating",
-          "in_review": "In review",
-          "approved": "Approved",
-          "stale": "Stale",
           "queued": "Queued",
           "running": "Running",
           "processing": "Processing",
@@ -2067,59 +2069,10 @@
           "cancelled": "Cancelled"
         },
         "node": {
-          "takes": "Takes",
-          "running": "Running",
-          "approved": "Approved",
-          "master": "Master",
-          "noMaster": "No Master video yet",
-          "masterPreview": "Master video preview",
-          "carriedMaster": "Draft edited · older video"
-        },
-        "takes": {
-          "title": "Take Strip",
-          "count": "{count, plural, one {# Take} other {# Takes}}",
-          "empty": "Generate the first Take for this clip.",
-          "take": "Take {number}",
-          "master": "Master",
-          "stale": "stale inputs",
-          "review": "Review",
-          "retry": "Retry",
-          "retrying": "Retrying…",
-          "setMaster": "Set Master"
-        },
-        "reviewStatuses": {
-          "unreviewed": "Unreviewed",
-          "changes_requested": "Changes requested",
-          "approved": "Approved",
-          "rejected": "Rejected"
-        },
-        "review": {
-          "title": "Review Take {number}",
-          "description": "Record an explicit production review. An Approve decision also promotes the reviewed Take to approved status; Master selection remains separate.",
-          "decision": "Decision",
-          "decisions": {
-            "approve": "Approve",
-            "request_changes": "Request changes",
-            "reject": "Reject"
-          },
-          "checklist": {
-            "technical": "Technical",
-            "identityContinuity": "Identity continuity",
-            "visualContinuity": "Visual continuity",
-            "motion": "Motion",
-            "dialogueTiming": "Dialogue timing",
-            "lipSync": "Lip sync",
-            "safety": "Safety"
-          },
-          "values": {
-            "pass": "Pass",
-            "fail": "Fail",
-            "na": "N/A"
-          },
-          "comment": "Review note",
-          "commentPlaceholder": "Required when rejecting or requesting changes.",
-          "cancel": "Cancel",
-          "submit": "Submit review"
+          "noVideo": "No video yet",
+          "videoPreview": "Current video preview",
+          "earlierDirection": "Earlier direction",
+          "generationFailed": "Generation failed"
         },
         "bindings": {
           "title": "Clip reference responsibilities",
@@ -2145,6 +2098,40 @@
         "durationControl": {
           "label": "Clip duration",
           "seconds": "{count}s"
+        },
+        "videoLibrary": {
+          "trigger": "Use existing video",
+          "title": "Video history",
+          "description": "Choose a reusable video that matches this output: {width}×{height}, {duration} ± {tolerance}.",
+          "loading": "Loading video history",
+          "loadingMore": "Loading more videos",
+          "loadMore": "Load more",
+          "retry": "Try again",
+          "playPreview": "Play video preview {number}",
+          "pausePreview": "Pause video preview {number}",
+          "previewUnavailable": "Preview unavailable",
+          "current": "Current video",
+          "incompatible": "Incompatible",
+          "select": "Use this video",
+          "selecting": "Setting current video",
+          "unavailable": "Cannot use",
+          "unknownDimensions": "Unknown size",
+          "unknownDuration": "Unknown duration",
+          "empty": {
+            "title": "No reusable videos yet",
+            "description": "Videos generated in this workspace will remain here as reusable history."
+          },
+          "issues": {
+            "preview_unavailable": "This asset has no playable preview.",
+            "dimensions_unknown": "Its dimensions cannot be verified.",
+            "dimensions_mismatch": "Its dimensions do not match this shot.",
+            "duration_unknown": "Its duration cannot be verified.",
+            "duration_mismatch": "Its duration is outside this shot's tolerance."
+          },
+          "errors": {
+            "load": "Video history could not be loaded.",
+            "select": "The current video could not be changed."
+          }
         }
       },
       "inspector": {
@@ -2152,6 +2139,28 @@
         "close": "Close node inspector",
         "nodeId": "Stable node ID",
         "clipKey": "Clip key",
+        "media": {
+          "title": "Current video",
+          "description": "Upload a local file or reuse a video from this workspace.",
+          "preview": "Current video for {title}",
+          "empty": "No video selected",
+          "emptyDescription": "Add the playable video for this story clip.",
+          "outdated": "Earlier version",
+          "upload": "Upload local video",
+          "replace": "Replace from device",
+          "uploading": "Uploading · {progress}%",
+          "processing": "Processing video…",
+          "processingDescription": "Checking the video and preparing it for playback.",
+          "accepted": "MP4 · H.264 video · AAC audio",
+          "library": "Video library",
+          "libraryDescription": "Reuse an uploaded or generated video",
+          "preparing": "Clip media is still being prepared.",
+          "unknownDimensions": "Unknown size",
+          "unknownDuration": "Unknown duration",
+          "errors": {
+            "upload": "The video could not be uploaded."
+          }
+        },
         "exit": "Next step",
         "production": "Production status",
         "openProduction": "Open clip production",
@@ -2159,10 +2168,12 @@
         "entry": "Entry clip",
         "entryNode": "Story entry",
         "makeEntry": "Set as entry",
-        "exitAuto": "Automatic route",
+        "exitAuto": "Continue to clip",
         "exitChoice": "Player choice",
         "exitCheckpoint": "Continue checkpoint",
         "exitEnding": "Story ending",
+        "continuationTarget": "Next film clip",
+        "continuationDescription": "A clip has one direct continuation. Use a player choice when the story must branch.",
         "checkpointTarget": "Target after checkpoint",
         "checkpointDescription": "Pauses after this clip for one explicit Continue action. It does not create a narrative choice or change story state.",
         "choicePrompt": "Decision prompt",
@@ -2326,27 +2337,26 @@
         "overview": "Overview",
         "story": "Story",
         "references": "References",
-        "production": "Production",
-        "build": "Preview & Playtest"
+        "production": "Production"
       },
       "errors": {
         "loadTitle": "This project could not be opened."
       },
       "noProductionDataTitle": "Production data is not available yet",
-      "noProductionDataDescription": "Return to the story canvas to complete director prompts and create the first Take. The working draft remains editable throughout production."
+      "noProductionDataDescription": "Return to the story canvas to complete director prompts and generate the first videos. The working draft remains editable throughout production."
     },
     "overview": {
-      "productionTitle": "Production readiness",
-      "productionSubtitle": "Approval and blocker projections for the current working draft.",
+      "productionTitle": "Video production",
+      "productionSubtitle": "Reference readiness, current video coverage, and active generations for this working draft.",
       "draftRevisionStatus": "Working draft r{revision}",
       "productionRevision": "Production revision {revision}",
       "storyStructureTitle": "Story structure",
       "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
       "targetRuntime": "Target {seconds}s per path",
       "maxContinuous": "Maximum continuous playback {seconds}s",
-      "nextBlocker": "Next blocker",
-      "noBlocker": "No blocker",
-      "noBlockerDescription": "The current production projection has no unresolved blocker.",
+      "videoState": "Current video state",
+      "videoStateGenerating": "{count} clips are generating replacement videos.",
+      "videoStateReady": "{current} of {total} clips currently have a video.",
       "revisionTitle": "Version identity",
       "draftRevision": "Draft revision",
       "schemaVersion": "Draft schema",
@@ -2449,12 +2459,16 @@
     },
     "production": {
       "title": "Clip production",
-      "subtitle": "Current draft direction, generation readiness, reviews, and available Masters.",
+      "subtitle": "Current draft direction, generation state, and the video currently bound to each clip.",
       "clipCount": "{count} clips",
       "seconds": "{seconds}s",
       "noBlocker": "Ready for the next action",
       "currentDraftReady": "Current prompt can be generated from the canvas",
       "currentDraftPromptRequired": "Complete the director prompt in the canvas",
+      "generationInProgress": "The replacement video is being generated.",
+      "generationFailed": "The latest generation failed; the previous video remains current.",
+      "currentVideoReady": "A current video is bound to this clip.",
+      "currentVideoOutdated": "The current video was generated from an earlier direction.",
       "detail": {
         "visualIntent": "Visual intent",
         "masterPrompt": "Seedance master prompt",
@@ -2470,7 +2484,7 @@
         "mode": "Generation mode",
         "duration": "Duration",
         "status": "Status",
-        "blocker": "Blocker"
+        "blocker": "Details"
       },
       "modes": {
         "omni": "Omni Reference",
@@ -2479,277 +2493,48 @@
       },
       "status": {
         "draft": "Current draft",
-        "blocked": "Blocked",
         "ready": "Ready",
-        "generating": "Generating",
-        "in_review": "In review",
-        "approved": "Approved",
-        "stale": "Stale"
-      }
-    },
-    "build": {
-      "title": "Build & Playtest",
-      "subtitle": "Compile the locked story graph and approved masters into an immutable preview build, then play every branch against the exact frozen runtime.",
-      "buildNumber": "Build {number}",
-      "activeBuild": "Build {number} is still compiling.",
-      "actions": {
-        "createPreview": "Create preview build",
-        "creating": "Creating build…",
-        "refresh": "Refresh builds",
-        "cancel": "Cancel build",
-        "retry": "Retry"
-      },
-      "permissions": {
-        "build": "Your project role does not include build permission.",
-        "edit": "Your project role cannot lock a production revision."
-      },
-      "notifications": {
-        "created": "Preview build created.",
-        "validationFailed": "The build found production blockers. Review the diagnostics.",
-        "cancelled": "Build cancelled.",
-        "revisionLocked": "Production revision locked."
-      },
-      "errors": {
-        "revisionRequired": "Lock a production revision before creating a build.",
-        "create": "The preview build could not be created.",
-        "cancel": "The build could not be cancelled.",
-        "list": "Build history could not be loaded.",
-        "detail": "The selected build could not be loaded.",
-        "lockRevision": "The production revision could not be locked.",
-        "revisionState": "The locked version is inconsistent with the current draft. Refresh the project before building.",
-        "runtimeUnavailable": "This frozen runtime is currently unavailable. Review the build diagnostics; media stays inaccessible until every asset satisfies current lifecycle and moderation policy."
-      },
-      "lockRevision": {
-        "title": "Lock a production revision",
-        "description": "A build must point to an immutable story version. Lock the saved draft to materialize its clip and runtime production contracts.",
-        "action": "Lock production version",
-        "locking": "Locking…",
-        "root": "Story root"
-      },
-      "revisionBasis": {
-        "currentTitle": "Building locked version {number}",
-        "currentDescription": "New preview builds explicitly use locked version {number}, captured from draft r{sourceRevision}. The mutable draft has no later changes.",
-        "draftAheadTitle": "The draft has newer changes",
-        "draftAheadDescription": "New preview builds still use locked version {number}, captured from draft r{sourceRevision}. The current draft is r{draftRevision}; lock it as a new production version to include those changes.",
-        "inconsistentTitle": "Version state is inconsistent",
-        "inconsistentDescription": "Locked version {number} comes from draft r{sourceRevision}, but the current draft reports r{draftRevision}. Building is disabled until the project state is refreshed.",
-        "action": "Lock current draft",
-        "locking": "Locking current draft…"
-      },
-      "missingFilm": {
-        "title": "Production contracts are unavailable",
-        "description": "The locked revision did not materialize an interactive-film production contract. Refresh the project or inspect the server diagnostics before building."
-      },
-      "history": {
-        "title": "Build history",
-        "count": "{count, plural, one {# build} other {# builds}}",
-        "empty": "No preview build has been created.",
-        "errors": "{count, plural, one {# error} other {# errors}}"
-      },
-      "profile": {
-        "preview": "Preview",
-        "production": "Production"
-      },
-      "scope": {
-        "full": "Full graph",
-        "subgraph": "Subgraph from {entryClipId} · depth {maxDepth}",
-        "unbounded": "unbounded"
-      },
-      "status": {
         "queued": "Queued",
-        "validating": "Validating",
-        "compiling": "Compiling",
-        "ready": "Ready",
+        "running": "Running",
+        "processing": "Processing",
         "failed": "Failed",
-        "cancelled": "Cancelled"
-      },
-      "detail": {
-        "identity": "Production state r{revision} · {profile} · {scope}",
-        "polling": "This view updates automatically while the build is active."
-      },
-      "empty": {
-        "title": "Compile the first playable build",
-        "description": "A preview build validates every reachable route, freezes approved media, and produces the runtime used by this playtest."
-      },
-      "pathReport": {
-        "title": "Path coverage",
-        "description": "Deterministic graph traversal from the build compiler.",
-        "duration": "{min}–{max} per path",
-        "paths": "Enumerated paths",
-        "endings": "Reachable endings",
-        "ambiguous": "Ambiguous paths",
-        "unreachable": "Unreachable nodes"
-      },
-      "diagnostics": {
-        "title": "Build diagnostics",
-        "summary": "{errors} errors · {warnings} warnings",
-        "error": "{count, plural, one {# blocking error} other {# blocking errors}}",
-        "warning": "{count, plural, one {# warning} other {# warnings}}",
-        "cleanTitle": "Build validation passed",
-        "cleanDescription": "The compiler found no blocking errors or warnings."
-      },
-      "entity": {
-        "revision": "Revision",
-        "clip": "Clip",
-        "reference": "Reference",
-        "take": "Take",
-        "choice": "Choice",
-        "ending": "Ending",
-        "asset": "Asset"
-      },
-      "playtest": {
-        "title": "Interactive playtest",
-        "description": "Runs only this frozen preview manifest; no generation task is created."
-      },
-      "assets": {
-        "title": "Frozen build assets",
-        "description": "Exact variants and checksums captured by this build."
-      },
-      "player": {
-        "invalidManifest": "The runtime manifest is invalid",
-        "manifestRoot": "Manifest root",
-        "routerHops": "Resolved {count, plural, one {# router} other {# routers}}",
-        "localeFallback": "Showing authored {locale} copy",
-        "restart": "Restart",
-        "play": "Play",
-        "regionLabel": "Interactive film playtest",
-        "playbackPaused": "Playback needs your confirmation",
-        "videoLabel": "Story video for scene {nodeId}",
-        "reactionVideoLabel": "Choice reaction video for scene {nodeId}",
-        "imageAlt": "Interactive story scene",
-        "checkpoint": {
-          "prompt": "Ready for the next scene?",
-          "description": "Continue when you are ready.",
-          "continue": "Continue",
-          "actionLabel": "Continue to the next story scene"
-        },
-        "noVisibleChoices": "No choice is currently available for this story state.",
-        "endingEyebrow": "Ending reached",
-        "unknownEnding": "Ending {endingId}",
-        "playAgain": "Play again",
-        "errors": {
-          "runtimeTitle": "The playtest cannot continue",
-          "UNKNOWN_NODE": "Runtime node {nodeId} does not exist.",
-          "NO_MATCHING_ROUTE": "Router {nodeId} has no route for the current story state.",
-          "ROUTER_CYCLE": "Router {nodeId} forms a cycle that cannot resolve to a scene.",
-          "routerNotResolved": "The current runtime node did not resolve to a playable scene.",
-          "noRoute": "Scene {nodeId} has no matching automatic route.",
-          "checkpointContract": "Scene {nodeId} has an invalid built-in checkpoint action.",
-          "externalOverlay": "Extension renderer {rendererId} is not available in the internal playtest.",
-          "sequence": "Scene {nodeId} references an invalid video sequence.",
-          "mediaTitle": "Preview media is unavailable",
-          "media": "Frozen media asset {assetId} could not be played.",
-          "unknownAsset": "unknown",
-          "extensionTitle": "This scene requires an extension renderer",
-          "extension": "Renderer {rendererId} is not installed in this playtest."
-        }
-      }
-    }
-  },
-  "storyStudioLanding": {
-    "badge": "Official example · Read only",
-    "hero": {
-      "eyebrow": "Season One · The Unwritten Visitor",
-      "title": "Dream of Jinling",
-      "description": "Enter the Rongguo Mansion beside Daiyu as a visitor absent from the old story, then reshape Jinling through continuous cinema and consequential choices.",
-      "openCanvas": "View production canvas",
-      "playFilm": "Play interactive film"
-    }
-  },
-  "interactiveFilmStudio": {
-    "previewNotice": "Internal preview stage — creation features coming soon",
-    "back": "Back to Story Studio",
-    "mode": "Interactive film",
-    "saving": "Saving…",
-    "saved": "Saved locally",
-    "reset": "Reset example",
-    "validate": "Validate",
-    "openPlayer": "Open player",
-    "canvas": {
-      "mode": "Canvas",
-      "fit": "Fit story to view",
-      "hint": "Drag nodes to arrange · Scroll to pan · Pinch or wheel to zoom",
-      "fallbackEnding": "Fallback ending",
-      "authoredEnding": "Authored ending",
-      "noSelection": "No node selected",
-      "nodeTypes": {
-        "entry": "Prologue node",
-        "scene": "Chapter node",
-        "choice": "Choice and reaction node",
-        "ending": "Ending node"
-      }
-    },
-    "views": {
-      "story": "Story map",
-      "media": "Media",
-      "preview": "Player preview"
-    },
-    "stats": {
-      "scenes": "{count} scenes",
-      "endings": "{count} endings",
-      "assets": "{count} assets"
-    },
-    "toast": {
-      "reset": "Official example restored.",
-      "validationPassed": "Release validation passed.",
-      "validationFailed": "Release validation has unresolved issues."
-    },
-    "assets": {
-      "title": "Media library",
-      "azureRelease": "Immutable Azure release",
-      "search": "Search media",
-      "close": "Close media library",
-      "filters": {
-        "all": "All",
-        "video": "Video",
-        "audio": "Audio"
-      }
-    },
-    "sceneCard": {
-      "clips": "{count} clips",
-      "choices": "{count} choices"
-    },
-    "timeline": {
-      "title": "Scene timeline",
-      "continuity": "First/last-frame continuity locked",
-      "choiceGate": "Choice gate",
-      "reactions": "{count} reactions"
-    },
-    "media": {
-      "audioMaster": "Published audio master",
-      "published": "Published"
-    },
-    "preview": {
-      "choiceMoment": "Choice moment"
-    },
-    "inspector": {
-      "scene": "Scene {number}",
-      "title": "Scene inspector",
-      "name": "Scene name",
-      "summary": "Summary",
-      "choices": "Choices",
-      "choiceLabel": "Player choice",
-      "routeTarget": "Route target",
-      "sequence": "Video sequence",
-      "reaction": "Reaction film",
-      "chapterMaster": "Chapter master"
-    },
-    "validation": {
-      "title": "Project integrity",
-      "count": "{passed}/{total} passed",
-      "checks": {
-        "entry": "Entry scene exists",
-        "masters": "Every scene has a chapter master",
-        "sequences": "All timeline clips are published",
-        "reactions": "Every choice has a reaction clip",
-        "targets": "Every branch reaches a scene or ending",
-        "endings": "All five endings are available",
-        "delivery": "Landscape delivery uses secure media URLs"
+        "cancelled": "Cancelled",
+        "outdated": "Earlier direction"
       }
     }
   },
   "metadata": {
     "studioTitle": "FizzStudio",
     "studioDescription": "AI creative studio"
+  },
+  "experiencePlayer": {
+    "invalidManifest": "The runtime manifest is invalid",
+    "manifestRoot": "Manifest root",
+    "interactiveFilm": "Interactive film",
+    "starting": "Starting…",
+    "start": "Start experience",
+    "restart": "Restart",
+    "regionLabel": "Interactive film playtest",
+    "videoLabel": "Story video for scene {nodeId}",
+    "checkpointPrompt": "Ready for the next scene?",
+    "checkpointDescription": "Continue when you are ready.",
+    "continue": "Continue",
+    "noVisibleChoices": "No choice is currently available for this story state.",
+    "endingEyebrow": "Ending reached",
+    "unknownEnding": "Ending {endingId}",
+    "playAgain": "Play again",
+    "runtimeError": "The playtest cannot continue",
+    "mediaError": "Frozen media asset {assetId} could not be played.",
+    "video": {
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "volume": "Volume",
+      "enterFullscreen": "Enter fullscreen",
+      "exitFullscreen": "Exit fullscreen",
+      "seekForward": "Seek forward",
+      "seekBackward": "Seek backward"
+    }
   }
 }

@@ -30,6 +30,7 @@ import {
   IconTrash,
   IconUpload,
   IconUserCheck,
+  IconCrown,
   IconUserPlus,
   IconUsers,
   IconVideo,
@@ -81,6 +82,7 @@ import {
   useMyIpCommerceOverview,
   useMyIpCommerceIp,
   useRevokeIpEditAccess,
+  useTransferIpOwner,
   useSearchIpCommerceUsers,
   useSubmitIpCommerceIpForReview,
   useUpdateIpCommerceContributor,
@@ -365,14 +367,21 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
   const taxonomy = ip.genres;
   const updateAssets = useUpdateIpCommerceIpAssets();
   const uploadMedia = useUploadIpCommerceMedia();
+  // Cover + trailer share one mutation, so `isPending` can't tell which
+  // slot is in flight — track the active slot so only it shows loading.
+  const [uploadingSlot, setUploadingSlot] = useState<"cover" | "trailer" | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleCoverUpload = async (file: File) => {
+    setUploadingSlot("cover");
+    setUploadProgress(0);
     try {
       const { asset } = await uploadMedia.mutateAsync({
         ipId: ip.id,
         file,
         kind: "image",
         purpose: "cover",
+        onProgress: setUploadProgress,
       });
       await updateAssets.mutateAsync({
         ipId: ip.id,
@@ -381,16 +390,21 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
       toast.success(t("assetsPanel.toasts.uploadSaved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.toasts.uploadFailed"));
+    } finally {
+      setUploadingSlot(null);
     }
   };
 
   const handleTrailerUpload = async (file: File) => {
+    setUploadingSlot("trailer");
+    setUploadProgress(0);
     try {
       const { asset } = await uploadMedia.mutateAsync({
         ipId: ip.id,
         file,
         kind: "video",
         purpose: "trailer",
+        onProgress: setUploadProgress,
       });
       await updateAssets.mutateAsync({
         ipId: ip.id,
@@ -399,6 +413,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
       toast.success(t("assetsPanel.toasts.uploadSaved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.toasts.uploadFailed"));
+    } finally {
+      setUploadingSlot(null);
     }
   };
 
@@ -463,7 +479,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
             uploadingLabel={t("assetsPanel.form.uploading")}
             uploadAccept="image/*"
             uploadDisabled={uploadMedia.isPending || updateAssets.isPending}
-            isUploading={uploadMedia.isPending}
+            isUploading={uploadingSlot === "cover"}
+            progress={uploadProgress}
             onUpload={(file) => void handleCoverUpload(file)}
           />
           <AssetUploadSlot
@@ -476,7 +493,8 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
             uploadingLabel={t("assetsPanel.form.uploading")}
             uploadAccept="video/*"
             uploadDisabled={uploadMedia.isPending || updateAssets.isPending}
-            isUploading={uploadMedia.isPending}
+            isUploading={uploadingSlot === "trailer"}
+            progress={uploadProgress}
             onUpload={(file) => void handleTrailerUpload(file)}
           />
         </div>
@@ -2235,10 +2253,34 @@ function AccessControlPanel({
   locale: Locale;
 }) {
   const canManageAcl = ip.viewerAccess.canManageAcl;
+  const canTransferOwner = ip.viewerAccess.canTransferOwner;
   const acl = useMyIpAclGrants(ip.id, canManageAcl);
   const grantAccess = useGrantIpEditAccess();
   const revokeAccess = useRevokeIpEditAccess();
+  const transferOwner = useTransferIpOwner();
   const [selectedUser, setSelectedUser] = useState<LinkedUserDraft | null>(null);
+  const [pendingTransfer, setPendingTransfer] = useState<{ userId: string; name: string } | null>(
+    null
+  );
+  // Whether the outgoing owner is dropped (default: kept on as an editor).
+  const [transferLeave, setTransferLeave] = useState(false);
+
+  const handleTransfer = async () => {
+    if (!pendingTransfer) return;
+    const { userId, name } = pendingTransfer;
+    try {
+      await transferOwner.mutateAsync({
+        ipId: ip.id,
+        toUserId: userId,
+        removeOldOwner: transferLeave,
+      });
+      toast.success(t("membersPanel.toasts.ownerTransferred", { name }));
+      setPendingTransfer(null);
+      setTransferLeave(false);
+    } catch (err) {
+      toast.error(errorMessage(err) || t("membersPanel.toasts.ownerTransferFailed"));
+    }
+  };
 
   if (!canManageAcl) {
     return (
@@ -2368,18 +2410,35 @@ function AccessControlPanel({
                       })}
                       badge={t("viewerAccess.editor")}
                       action={
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          color="muted"
-                          className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                          disabled={revokeAccess.isPending}
-                          onClick={() => void handleRevoke(grant)}
-                        >
-                          <IconX className="size-3.5" />
-                          {t("membersPanel.accessRevoke")}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {canTransferOwner ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              color="muted"
+                              disabled={transferOwner.isPending}
+                              onClick={() =>
+                                setPendingTransfer({ userId: grant.userId, name: label })
+                              }
+                            >
+                              <IconCrown className="size-3.5" />
+                              {t("membersPanel.transferOwner")}
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            color="muted"
+                            className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                            disabled={revokeAccess.isPending}
+                            onClick={() => void handleRevoke(grant)}
+                          >
+                            <IconX className="size-3.5" />
+                            {t("membersPanel.accessRevoke")}
+                          </Button>
+                        </div>
                       }
                     />
                   );
@@ -2431,6 +2490,61 @@ function AccessControlPanel({
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={pendingTransfer !== null}
+        onOpenChange={(v) => {
+          if (!v && !transferOwner.isPending) {
+            setPendingTransfer(null);
+            setTransferLeave(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("membersPanel.transferOwner")}</DialogTitle>
+            <DialogDescription>
+              {pendingTransfer
+                ? t("membersPanel.transferOwnerConfirm", { name: pendingTransfer.name })
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={transferLeave}
+                onChange={(event) => setTransferLeave(event.target.checked)}
+                disabled={transferOwner.isPending}
+                className="size-4 accent-primary"
+              />
+              {t("membersPanel.transferOwnerLeaveLabel")}
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              onClick={() => {
+                setPendingTransfer(null);
+                setTransferLeave(false);
+              }}
+              disabled={transferOwner.isPending}
+            >
+              {t("membersPanel.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleTransfer()}
+              disabled={transferOwner.isPending}
+            >
+              {transferOwner.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {t("membersPanel.transferOwner")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3028,6 +3142,7 @@ function AssetUploadSlot({
   uploadAccept,
   uploadDisabled,
   isUploading,
+  progress,
   onUpload,
 }: {
   icon: IconComponent;
@@ -3040,6 +3155,7 @@ function AssetUploadSlot({
   uploadAccept: string;
   uploadDisabled: boolean;
   isUploading: boolean;
+  progress: number;
   onUpload: (file: File) => void;
 }) {
   const assetUrl = getAssetUrl(asset);
@@ -3097,18 +3213,35 @@ function AssetUploadSlot({
             : "cursor-pointer hover:border-primary/60 hover:bg-primary/5",
         ].join(" ")}
       >
-        {assetUrl ? <AssetPreview asset={asset} assetUrl={assetUrl} icon={Icon} /> : null}
-        {!assetUrl ? (
+        {isUploading ? (
           <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <IconUpload className="size-5" />
+            <IconLoader2 className="size-5 animate-spin" />
           </span>
-        ) : null}
+        ) : (
+          <>
+            {assetUrl ? <AssetPreview asset={asset} assetUrl={assetUrl} icon={Icon} /> : null}
+            {!assetUrl ? (
+              <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <IconUpload className="size-5" />
+              </span>
+            ) : null}
+          </>
+        )}
         <p className="mt-3 text-sm font-semibold text-foreground">
-          {isUploading ? uploadingLabel : uploadLabel}
+          {isUploading ? `${uploadingLabel}${progress > 0 ? ` ${progress}%` : ""}` : uploadLabel}
         </p>
-        <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
-          {t("assetsPanel.form.uploadHint")}
-        </p>
+        {isUploading ? (
+          <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-200"
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+        ) : (
+          <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
+            {t("assetsPanel.form.uploadHint")}
+          </p>
+        )}
       </div>
     </div>
   );

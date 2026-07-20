@@ -1,34 +1,4 @@
-import type {
-  FilmReviewDecision,
-  FilmTrailerReviewChecklist,
-  FilmTrailerSummary,
-  StoryCapability,
-  StoryTrailerPromptDraft,
-} from "@/lib/story-projects-api";
-
-export type TrailerReviewValidationError = "comment_required" | "approve_requirements";
-
-export function trailerProductionCapabilities(capabilities: readonly StoryCapability[]): {
-  canGenerate: boolean;
-  canReview: boolean;
-} {
-  return {
-    canGenerate: capabilities.includes("story.generate"),
-    canReview: capabilities.includes("story.review"),
-  };
-}
-
-export function validateTrailerReviewSubmission(
-  decision: FilmReviewDecision,
-  checklist: FilmTrailerReviewChecklist,
-  comment: string
-): TrailerReviewValidationError | null {
-  if (decision !== "approve" && !comment.trim()) return "comment_required";
-  if (decision === "approve" && (checklist.technical !== "pass" || checklist.safety !== "pass")) {
-    return "approve_requirements";
-  }
-  return null;
-}
+import type { FilmTrailerSummary, StoryTrailerPromptDraft } from "@/lib/story-projects-api";
 
 interface SubmissionKeyRecord {
   fingerprint: string;

@@ -11,20 +11,21 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  Controls,
+  applyNodeChanges,
   Handle,
   MiniMap,
   Position,
-  ReactFlow,
   ReactFlowProvider,
-  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useStore,
   type Connection,
   type Edge,
   type FinalConnectionState,
+  type NodeChange,
   type NodeProps,
+  type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -32,9 +33,8 @@ import {
   IconArrowLeft,
   IconBook2,
   IconCheck,
-  IconFocusCentered,
+  IconCloudUpload,
   IconGitBranch,
-  IconLayoutDashboard,
   IconLoader2,
   IconMovie,
   IconPlayerPlay,
@@ -45,49 +45,57 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
+import { CanvasControls } from "@/components/canvas/canvas-controls";
+import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
+import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
+import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
+import {
+  canActivateCanvasMediaPreview,
+  canClaimCanvasManualPlayback,
+} from "@/components/canvas/canvas-media-preview-policy";
+import {
+  MediaHoverPreviewProvider,
+  useMediaHoverPreview,
+  useMediaHoverPreviewInterruption,
+} from "@/components/media/media-hover-preview";
+import type { MediaManualPlaybackLease } from "@/components/media/media-preview-coordinator";
+import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/studio-video-player";
+import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
-import { Link } from "@/i18n/navigation";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Link, useRouter } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
+import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
 import {
   canvasLayoutRevisionConflict,
-  approveFilmTake,
-  approveFilmTrailerTake,
-  cancelFilmTrailerTake,
-  createFilmTake,
-  createFilmTrailerTake,
+  cancelStoryClipVideoUpload,
+  completeStoryClipVideoUpload,
+  createFilmClipGeneration,
+  createFilmTrailerGeneration,
   draftRevisionConflict,
   getStoryCanvasLayout,
-  getStoryWorkingPreview,
+  getStoryExperienceCurrentRelease,
   getStoryWorkbench,
-  listFilmTakes,
-  listFilmTrailerTakes,
-  prepareFilmClip,
+  putFilmClipCurrentVideo,
   putStoryCanvasLayout,
   putStoryDraft,
-  putFilmClipMaster,
   putFilmClipReferences,
-  putFilmTrailerMaster,
+  putFilmTrailerCurrentVideo,
   putFilmTrailerReferences,
-  retryFilmTake,
-  retryFilmTrailerTake,
-  reviewFilmTake,
-  reviewFilmTrailerTake,
   storyApiErrorMessage,
+  waitForStoryClipVideoUploadFinalization,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveFilmDraftContent,
-  type FilmReviewDecision,
-  type FilmTake,
-  type FilmTakeReviewChecklist,
-  type FilmTrailerReviewChecklist,
-  type FilmTrailerTake,
+  type FilmVideoGeneration,
+  type StoryVideoLibraryItem,
   type StoryCanvasPosition,
-  type StoryWorkingPreview,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import {
@@ -100,17 +108,22 @@ import {
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
 import {
+  nextStoryCanvasFocusedNodeId,
+  reconcileStoryCanvasSelectedIds,
+} from "./story-project-canvas-selection";
+import {
   coalesceQueuedLayout,
   layoutPositionSignature,
   layoutRetryDelay,
   selectLatestLayoutPayload,
 } from "./story-canvas-layout-retry";
 import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
+import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
+  connectClipContinuation,
   connectAutoRoute,
   connectChoiceTarget,
-  convertClipExitToCheckpoint,
   convertClipExitToChoice,
   convertClipExitToEnding,
   convertExitToAuto,
@@ -132,41 +145,46 @@ import {
   setEntryNode,
   updateChoiceExit,
   updateChoiceOption,
-  updateCheckpointTarget,
   updateAutoRoute,
   updateAutoRouteTarget,
   updateEndingNode,
 } from "./story-project-canvas-mutations";
+import {
+  StoryConnectionCreator,
+  type StoryConnectionCreationKind,
+} from "./story-connection-creator";
 import { StoryNodeCreator, type StoryNodeCreationKind } from "./story-node-creator";
 import type { StoryReferenceBindingInput } from "./story-clip-reference-bindings-model";
+import type { StoryClipMediaUploadState } from "./story-clip-media-panel";
 import { StoryNodeInspector } from "./story-node-inspector";
-import {
-  StoryShotComposer,
-  type StoryShotComposerProps,
-  type StoryVideoComposerProps,
-} from "./story-shot-composer";
-import type { StoryTrailerProductionProps } from "./story-trailer-production";
+import { StoryPublicationDialog } from "./story-publication-dialog";
+import { StoryShotComposer, type StoryVideoComposerProps } from "./story-shot-composer";
 import {
   projectLockedTrailerPrompt,
   StoryProductionActionGate,
   StorySubmissionKeyRegistry,
-  trailerProductionCapabilities,
 } from "./story-trailer-production-model";
 import {
   addWorldTextItem,
   createStoryCharacter,
-  createStoryStateVariable,
   deleteStoryCharacter,
-  deleteStoryStateVariable,
   removeWorldTextItem,
-  replaceStoryStateVariable,
   updateStoryCharacter,
   updateWorldTextItem,
   type StoryWorldTextField,
 } from "./story-world-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
-import { shouldPrepareStoryClip, StoryClipPreparationGate } from "./story-clip-preparation-gate";
-import { StoryWorkingPreviewDialog } from "./story-working-preview-dialog";
+import {
+  filmGenerationError,
+  isActiveVideoGeneration,
+  resolveStoryVideoState,
+  workbenchHasActiveGeneration,
+} from "./story-video-state";
+import {
+  projectConfirmedClipCurrentVideo,
+  projectConfirmedTrailerCurrentVideo,
+} from "./story-workbench-current-video";
+import { useStoryPublication } from "./use-story-publication";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -180,10 +198,11 @@ type StoryClipGenerationRequest = {
   variationNote?: string;
   modelId?: string;
 };
-type StoryClipPreparationUiState = {
-  attemptKey: string;
-  status: "preparing" | "error";
-  error: string | null;
+type PendingCompletionDrop = {
+  sourceCanvasNodeId: string;
+  sourceHandleId: string;
+  clientPosition: { x: number; y: number };
+  flowPosition: StoryCanvasPosition;
 };
 
 const NODE_TYPES = { storyCanvas: StoryGraphNodeCard };
@@ -204,16 +223,21 @@ const STORY_REFERENCE_API_CONNECTED = true;
 
 type StoryProductionUiContextValue = {
   graphNodeId: string;
-  composer: StoryShotComposerProps;
+  composer: StoryVideoComposerProps;
 };
 
 type StoryTrailerUiContextValue = {
   composer: StoryVideoComposerProps | null;
-  production: StoryTrailerProductionProps;
 };
 
 const StoryProductionUiContext = createContext<StoryProductionUiContextValue | null>(null);
 const StoryTrailerUiContext = createContext<StoryTrailerUiContextValue | null>(null);
+const StoryCanvasFocusContext = createContext<string | null>(null);
+
+function StoryCanvasReactFlow(props: CanvasReactFlowProps<StoryCanvasNode, StoryCanvasEdge>) {
+  const interruptHoverPreview = useMediaHoverPreviewInterruption();
+  return <CanvasReactFlow {...props} onInteractionStart={interruptHoverPreview} />;
+}
 
 export function StoryProjectCanvas({ projectId }: { projectId: string }) {
   const { activeWorkspace } = useWorkspace();
@@ -229,15 +253,17 @@ export function StoryProjectCanvas({ projectId }: { projectId: string }) {
 function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
-  const interfaceLocale = useLocale();
+  const router = useRouter();
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [showFoundation, setShowFoundation] = useState(true);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
+    null
+  );
   const [graphError, setGraphError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -248,18 +274,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
-  const [clipPreparationStates, setClipPreparationStates] = useState<
-    Record<string, StoryClipPreparationUiState>
-  >({});
   const [clipGenerationRequest, setClipGenerationRequest] =
     useState<StoryClipGenerationRequest | null>(null);
-  const [workingPreviewOpen, setWorkingPreviewOpen] = useState(false);
   const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
-  const [workingPreviewError, setWorkingPreviewError] = useState<string | null>(null);
-  const [workingPreview, setWorkingPreview] = useState<StoryWorkingPreview | null>(null);
   const [productionActionGate] = useState(() => new StoryProductionActionGate());
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
-  const [clipPreparationGate] = useState(() => new StoryClipPreparationGate());
   const [productionSubmissionKeys] = useState(
     () =>
       new StorySubmissionKeyRegistry(
@@ -289,7 +308,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         }
       )
   );
-  const [canvasNodes, setCanvasNodes, onCanvasNodesChange] = useNodesState<StoryCanvasNode>([]);
+  const [canvasNodes, setCanvasNodes] = useNodesState<StoryCanvasNode>([]);
   const [canvasEdges, setCanvasEdges, onCanvasEdgesChange] = useEdgesState<StoryCanvasEdge>([]);
   const [sessionId] = useState(() => globalThis.crypto.randomUUID());
   const hydratedRef = useRef(false);
@@ -327,13 +346,82 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     async () => {}
   );
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
+  const pendingCanvasSelectionRef = useRef<string | null>(null);
+  const requestedCanvasFocusRef = useRef<string | null>(null);
+  const marqueeSelectionActiveRef = useRef(false);
+  const latestCanvasSelectionRef = useRef<string[]>([]);
   const pendingNodePositionsRef = useRef(new Map<string, StoryCanvasPosition>());
+
+  const onCanvasNodesChange = useCallback(
+    (changes: NodeChange<StoryCanvasNode>[]) => {
+      setCanvasNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        canvasNodesRef.current = next;
+        return next;
+      });
+    },
+    [setCanvasNodes]
+  );
+
+  const selectCanvasNodeExclusively = useCallback(
+    (nodeId: string | null) => {
+      pendingCanvasSelectionRef.current = nodeId;
+      requestedCanvasFocusRef.current = null;
+      setFocusedNodeId(nodeId);
+      setCanvasNodes((current) => {
+        const nodeExists = nodeId !== null && current.some((node) => node.id === nodeId);
+        if (nodeId !== null && !nodeExists) return current;
+
+        const selectedNodeIds = nodeId ? new Set([nodeId]) : new Set<string>();
+        const next = current.map((node) => ({
+          ...node,
+          selected: selectedNodeIds.has(node.id),
+        }));
+        pendingCanvasSelectionRef.current = null;
+        latestCanvasSelectionRef.current = [...selectedNodeIds];
+        canvasNodesRef.current = next;
+        return next;
+      });
+    },
+    [setCanvasNodes]
+  );
+
+  const reconcileCanvasFocus = useCallback((selectedNodeIds: readonly string[]) => {
+    const preferredNodeId = requestedCanvasFocusRef.current;
+    requestedCanvasFocusRef.current = null;
+    setFocusedNodeId((current) =>
+      nextStoryCanvasFocusedNodeId(current, selectedNodeIds, preferredNodeId)
+    );
+  }, []);
+
+  const onCanvasSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: OnSelectionChangeParams<StoryCanvasNode, StoryCanvasEdge>) => {
+      const selectedNodeIds = selectedNodes.map((node) => node.id);
+      latestCanvasSelectionRef.current = selectedNodeIds;
+      const pendingSelection = pendingCanvasSelectionRef.current;
+      if (!pendingSelection || selectedNodeIds.includes(pendingSelection)) {
+        pendingCanvasSelectionRef.current = null;
+      }
+      if (!marqueeSelectionActiveRef.current) reconcileCanvasFocus(selectedNodeIds);
+    },
+    [reconcileCanvasFocus]
+  );
+
+  const onCanvasSelectionStart = useCallback(() => {
+    marqueeSelectionActiveRef.current = true;
+  }, []);
+
+  const onCanvasSelectionEnd = useCallback(() => {
+    marqueeSelectionActiveRef.current = false;
+    reconcileCanvasFocus(latestCanvasSelectionRef.current);
+  }, [reconcileCanvasFocus]);
 
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "workbench", workspaceId, projectId],
     queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
     enabled: Boolean(workspaceId),
     retry: false,
+    refetchInterval: (query) => (workbenchHasActiveGeneration(query.state.data) ? 2_000 : false),
   });
   const refetchWorkbench = workbenchQuery.refetch;
   const layoutQuery = useQuery({
@@ -341,6 +429,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     queryFn: () => getStoryCanvasLayout(workspaceId as string, projectId),
     enabled: Boolean(workspaceId),
     retry: false,
+  });
+  const currentReleaseQuery = useQuery({
+    queryKey: ["story-studio", "current-release", workspaceId, projectId],
+    queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
+    enabled: Boolean(workspaceId),
+    retry: 1,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const project = workbenchQuery.data?.project ?? null;
   const film = workbenchQuery.data?.film ?? null;
@@ -608,24 +705,27 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [clearSaveRetry, commonT, draftSnapshotCoordinator, saveError, waitForSaveToSettle, workspaceId]
   );
 
-  const loadWorkingPreview = useCallback(async () => {
-    if (!workspaceId) return;
-    setWorkingPreviewOpen(true);
+  const openWorkingPreview = useCallback(async () => {
+    if (!workspaceId || workingPreviewPending) return;
     setWorkingPreviewPending(true);
-    setWorkingPreviewError(null);
     try {
-      const preview = await withSavedDraftSnapshot((expectedDraftRevision) =>
-        getStoryWorkingPreview(workspaceId, projectId, expectedDraftRevision)
-      );
-      if (!disposedRef.current) setWorkingPreview(preview);
+      await withSavedDraftSnapshot(async () => {
+        router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest`);
+      });
     } catch (error) {
-      if (!disposedRef.current) {
-        setWorkingPreviewError(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-      }
+      if (!disposedRef.current)
+        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
     } finally {
       if (!disposedRef.current) setWorkingPreviewPending(false);
     }
-  }, [projectId, t, withSavedDraftSnapshot, workspaceId]);
+  }, [projectId, router, t, withSavedDraftSnapshot, workingPreviewPending, workspaceId]);
+
+  const publication = useStoryPublication({
+    workspaceId,
+    projectId,
+    capabilities: project?.capabilities ?? [],
+    withSavedDraftSnapshot,
+  });
 
   useEffect(() => {
     latestContentRef.current = content;
@@ -845,14 +945,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         ? buildStoryCanvasModel(
             content,
             project?.defaultLocale ?? "en-US",
-            currentDraftProductionRevisionId ? film?.clips : [],
+            film?.clips ?? [],
             projectionCopy,
             project?.frameProfile,
-            currentDraftProductionRevisionId ? film?.trailer : null,
-            // Carried masters are revision-independent: keep a shot's generated
-            // video visible even after an edit rolls the draft off the locked
-            // production revision.
-            film?.carriedMasters ?? []
+            film?.trailer ?? null
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -862,8 +958,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       content,
       film?.clips,
       film?.trailer,
-      film?.carriedMasters,
-      currentDraftProductionRevisionId,
       project?.defaultLocale,
       project?.frameProfile,
       projectionCopy.rootTitle,
@@ -878,6 +972,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const canEdit = Boolean(
     !conflict && project?.status === "active" && project.capabilities.includes("story.edit")
   );
+  const canManageClipMedia = Boolean(canEdit && project?.capabilities.includes("story.generate"));
+  const clipMediaDisabledReason = !canEdit
+    ? t("readOnly")
+    : !project?.capabilities.includes("story.generate")
+      ? t("production.disabled.permission")
+      : null;
 
   useEffect(() => {
     canvasNodesRef.current = canvasNodes;
@@ -885,11 +985,29 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!model || !layoutQuery.data) return;
+    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
+    const pendingSelection = pendingCanvasSelectionRef.current;
+    const selectedNodeIds = reconcileStoryCanvasSelectedIds(
+      model.nodes.map((node) => node.id),
+      new Set(canvasNodesRef.current.filter((node) => node.selected).map((node) => node.id)),
+      pendingSelection
+    );
+    if (pendingSelection && selectedNodeIds.has(pendingSelection)) {
+      pendingCanvasSelectionRef.current = null;
+    }
+
+    const reconcileFocusAfterModel = (nodes: StoryCanvasNode[]) => {
+      const nextSelectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
+      latestCanvasSelectionRef.current = nextSelectedNodeIds;
+      if (pendingSelection && !selectedNodeIds.has(pendingSelection)) return;
+      setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, nextSelectedNodeIds));
+    };
+
     if (!layoutHydratedRef.current) {
       const initialNodes = model.nodes.map((node) => ({
         ...node,
         position: layoutQuery.data.nodePositions[node.id] ?? node.position,
-        selected: node.id === selectedNodeId,
+        selected: selectedNodeIds.has(node.id),
       }));
       layoutHydratedRef.current = true;
       layoutRevisionRef.current = layoutQuery.data.revision;
@@ -897,16 +1015,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveState("idle");
       canvasNodesRef.current = initialNodes;
       setCanvasNodes(initialNodes);
+      reconcileFocusAfterModel(initialNodes);
       return;
     }
-    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const placedNodeIds: string[] = [];
     const nextNodes = model.nodes.map((node) => {
       const pendingPosition = pendingNodePositionsRef.current.get(node.id);
       if (pendingPosition) placedNodeIds.push(node.id);
       return {
         ...node,
-        selected: node.id === selectedNodeId,
+        selected: selectedNodeIds.has(node.id),
         position:
           pendingPosition ??
           currentById.get(node.id)?.position ??
@@ -917,12 +1035,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     placedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
     canvasNodesRef.current = nextNodes;
     setCanvasNodes(nextNodes);
+    reconcileFocusAfterModel(nextNodes);
     if (placedNodeIds.length > 0) {
       const positions = nodePositions(nextNodes);
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(positions);
     }
-  }, [layoutQuery.data, model, selectedNodeId, setCanvasNodes]);
+  }, [layoutQuery.data, model, setCanvasNodes]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1028,140 +1147,24 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   useEffect(() => () => clearLayoutSaveRetry(), [clearLayoutSaveRetry]);
 
-  const selectedNode = useMemo(
-    () => model?.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [model?.nodes, selectedNodeId]
+  const focusedNode = useMemo(
+    () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
+    [focusedNodeId, model?.nodes]
   );
-  const selectedFilmClip =
-    selectedNode?.data.kind === "clip" ? (selectedNode.data.filmClip ?? null) : null;
-  const selectedDirectorPrompt =
-    selectedNode?.data.kind === "clip" ? (selectedNode.data.directorPrompt ?? null) : null;
-  const selectedGraphNodeId = selectedNode?.data.kind === "clip" ? selectedNode.data.nodeId : null;
-  const currentSelectedFilmClip = currentDraftProductionRevisionId ? selectedFilmClip : null;
-  const takesQuery = useQuery({
-    queryKey: ["story-studio", "film-takes", workspaceId, projectId, selectedGraphNodeId],
-    queryFn: () =>
-      listFilmTakes(workspaceId as string, projectId, selectedGraphNodeId as string, { limit: 50 }),
-    enabled: Boolean(workspaceId && selectedGraphNodeId),
-    retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.items.some(
-        (take) =>
-          take.status === "queued" || take.status === "running" || take.status === "processing"
-      )
-        ? 2_000
-        : false,
-  });
+  const focusedFilmClip =
+    focusedNode?.data.kind === "clip" ? (focusedNode.data.filmClip ?? null) : null;
+  const focusedDirectorPrompt =
+    focusedNode?.data.kind === "clip" ? (focusedNode.data.directorPrompt ?? null) : null;
+  const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
+  const currentRevisionFocusedFilmClip =
+    currentDraftProductionRevisionId &&
+    focusedFilmClip?.revisionId === currentDraftProductionRevisionId
+      ? focusedFilmClip
+      : null;
 
   const refreshProduction = useCallback(async () => {
-    await Promise.all([
-      workbenchQuery.refetch(),
-      selectedGraphNodeId ? takesQuery.refetch() : Promise.resolve(),
-    ]);
-  }, [selectedGraphNodeId, takesQuery, workbenchQuery]);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-    if (
-      !shouldPrepareStoryClip({
-        graphNodeId: selectedGraphNodeId,
-        hasMaterializedClip: Boolean(currentSelectedFilmClip),
-        masterDirection: selectedDirectorPrompt?.masterDirection ?? null,
-        canGenerate: Boolean(project?.capabilities.includes("story.generate")),
-        draftSettled: saveState === "idle" || saveState === "saved",
-        draftRevision,
-      })
-    ) {
-      return;
-    }
-
-    const graphNodeId = selectedGraphNodeId as string;
-    const triggerKey = canonicalJsonString({ draftRevision, modelId: null });
-    let scheduled = true;
-
-    queueMicrotask(() => {
-      if (!scheduled || !clipPreparationGate.tryStart(graphNodeId, triggerKey)) return;
-      let activeKey = triggerKey;
-      setClipPreparationStates((current) => ({
-        ...current,
-        [graphNodeId]: { attemptKey: activeKey, status: "preparing", error: null },
-      }));
-
-      void withSavedDraftSnapshot((expectedDraftRevision) => {
-        const exactKey = canonicalJsonString({
-          draftRevision: expectedDraftRevision,
-          modelId: null,
-        });
-        if (exactKey !== activeKey) {
-          const previousKey = activeKey;
-          if (clipPreparationGate.rekey(graphNodeId, previousKey, exactKey)) {
-            activeKey = exactKey;
-            if (!disposedRef.current) {
-              setClipPreparationStates((current) =>
-                current[graphNodeId]?.attemptKey === previousKey
-                  ? {
-                      ...current,
-                      [graphNodeId]: {
-                        attemptKey: exactKey,
-                        status: "preparing",
-                        error: null,
-                      },
-                    }
-                  : current
-              );
-            }
-          }
-        }
-        return prepareFilmClip(workspaceId, projectId, graphNodeId, {
-          expectedDraftRevision,
-        });
-      })
-        .then(async () => {
-          await refetchWorkbench();
-          clipPreparationGate.settle(graphNodeId, activeKey, "succeeded");
-          if (disposedRef.current) return;
-          setClipPreparationStates((current) => {
-            if (current[graphNodeId]?.attemptKey !== activeKey) return current;
-            const next = { ...current };
-            delete next[graphNodeId];
-            return next;
-          });
-        })
-        .catch((error: unknown) => {
-          clipPreparationGate.settle(graphNodeId, activeKey, "failed");
-          if (disposedRef.current) return;
-          setClipPreparationStates((current) =>
-            current[graphNodeId]?.attemptKey === activeKey
-              ? {
-                  ...current,
-                  [graphNodeId]: {
-                    attemptKey: activeKey,
-                    status: "error",
-                    error: storyApiErrorMessage(error, t("production.errors.prepare")),
-                  },
-                }
-              : current
-          );
-        });
-    });
-
-    return () => {
-      scheduled = false;
-    };
-  }, [
-    clipPreparationGate,
-    currentSelectedFilmClip,
-    draftRevision,
-    project?.capabilities,
-    projectId,
-    refetchWorkbench,
-    saveState,
-    selectedDirectorPrompt?.masterDirection,
-    selectedGraphNodeId,
-    t,
-    withSavedDraftSnapshot,
-    workspaceId,
-  ]);
+    await workbenchQuery.refetch();
+  }, [workbenchQuery]);
 
   const runProductionAction = useCallback(
     async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
@@ -1193,21 +1196,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const generateSelectedClip = useCallback(
     (variationNote?: string, modelId?: string) => {
-      if (!selectedGraphNodeId) return;
-      setClipPreparationStates((current) => {
-        if (!current[selectedGraphNodeId]) return current;
-        const next = { ...current };
-        delete next[selectedGraphNodeId];
-        return next;
-      });
+      if (!focusedGraphNodeId) return;
       setClipGenerationRequest({
         requestId: globalThis.crypto.randomUUID(),
-        graphNodeId: selectedGraphNodeId,
+        graphNodeId: focusedGraphNodeId,
         variationNote,
         modelId,
       });
     },
-    [selectedGraphNodeId]
+    [focusedGraphNodeId]
   );
 
   useEffect(() => {
@@ -1228,7 +1225,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           const idempotencyKey = productionSubmissionKeys.keyFor(slot, fingerprint, () =>
             globalThis.crypto.randomUUID()
           );
-          return createFilmTake(
+          return createFilmClipGeneration(
             workspaceId,
             projectId,
             request.graphNodeId,
@@ -1238,9 +1235,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               variationNote: request.variationNote,
             },
             idempotencyKey
-          ).then((take) => {
+          ).then((generation) => {
             productionSubmissionKeys.confirm(slot, fingerprint);
-            return take;
+            return generation;
           });
         })
       ).finally(() => {
@@ -1262,94 +1259,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     workspaceId,
   ]);
 
-  const retrySelectedTake = useCallback(
-    (take: FilmTake, variationNote?: string) => {
-      if (!workspaceId || take.stale) return;
-      void runProductionAction(`retry:${take.id}`, () =>
-        retryFilmTake(
-          workspaceId,
-          projectId,
-          take.id,
-          {
-            expectedTakeVersion: take.version,
-            variationNote,
-          },
-          globalThis.crypto.randomUUID()
-        )
-      );
-    },
-    [projectId, runProductionAction, workspaceId]
-  );
-
-  const reviewSelectedTake = useCallback(
-    (
-      take: FilmTake,
-      decision: FilmReviewDecision,
-      checklist: FilmTakeReviewChecklist,
-      comment?: string
-    ) => {
-      if (take.stale) return;
-      if (!workspaceId) return;
-      void runProductionAction(`review:${take.id}`, async () => {
-        const result = await reviewFilmTake(workspaceId, projectId, take.id, {
-          expectedReviewRevision: take.reviewRevision,
-          decision,
-          checklist,
-          comment,
-        });
-        if (decision === "approve") {
-          await approveFilmTake(workspaceId, projectId, take.id, {
-            expectedTakeVersion: result.take.version,
-            approveReviewId: result.review.id,
-          });
-        }
-      });
-    },
-    [projectId, runProductionAction, workspaceId]
-  );
-
-  const setSelectedMaster = useCallback(
-    (take: FilmTake) => {
-      if (
-        take.stale ||
-        !workspaceId ||
-        !currentDraftProductionRevisionId ||
-        !currentSelectedFilmClip ||
-        !film
-      ) {
-        return;
-      }
-      void runProductionAction(`master:${take.id}`, () =>
-        putFilmClipMaster(
-          workspaceId,
-          projectId,
-          currentDraftProductionRevisionId,
-          currentSelectedFilmClip.id,
-          {
-            expectedMasterRevision: currentSelectedFilmClip.master?.masterRevision ?? 0,
-            expectedProductionRevision: film.productionRevision,
-            takeId: take.id,
-          }
-        )
-      );
-    },
-    [
-      currentDraftProductionRevisionId,
-      currentSelectedFilmClip,
-      film,
-      projectId,
-      runProductionAction,
-      workspaceId,
-    ]
-  );
-
   const updateSelectedReferenceBindings = useCallback(
     (bindings: StoryReferenceBindingInput[]) => {
       if (
         !STORY_REFERENCE_API_CONNECTED ||
         !workspaceId ||
         !currentDraftProductionRevisionId ||
-        !currentSelectedFilmClip ||
+        !currentRevisionFocusedFilmClip ||
         !film
       ) {
         return;
@@ -1359,9 +1275,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           workspaceId,
           projectId,
           currentDraftProductionRevisionId,
-          currentSelectedFilmClip.id,
+          currentRevisionFocusedFilmClip.id,
           {
-            expectedClipVersion: currentSelectedFilmClip.version,
+            expectedClipVersion: currentRevisionFocusedFilmClip.version,
             expectedProductionRevision: film.productionRevision,
             bindings,
           }
@@ -1370,7 +1286,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [
       currentDraftProductionRevisionId,
-      currentSelectedFilmClip,
+      currentRevisionFocusedFilmClip,
       film,
       projectId,
       runProductionAction,
@@ -1378,104 +1294,168 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     ]
   );
 
-  const generationInputBlocker = currentSelectedFilmClip?.blockReasons.find((reason) =>
-    [
-      "PRODUCTION_INPUTS_UNRESOLVED",
-      "REFERENCE_APPROVAL_REQUIRED",
-      "OMNI_REFERENCE_REQUIRED",
-      "FIRST_FRAME_REQUIRED",
-      "LAST_FRAME_REQUIRED",
-    ].includes(reason.code)
-  );
+  const clipGenerationActive = isActiveVideoGeneration(focusedFilmClip?.generation);
   const productionDisabledReason = !project?.capabilities.includes("story.generate")
     ? t("production.disabled.permission")
-    : !selectedDirectorPrompt?.masterDirection.trim()
+    : !focusedDirectorPrompt?.masterDirection.trim()
       ? t("production.disabled.promptRequired")
-      : generationInputBlocker
-        ? generationInputBlocker.message || t("production.disabled.blocked")
+      : clipGenerationActive
+        ? t("production.disabled.generating")
         : null;
-  const selectedClipPreparation =
-    selectedGraphNodeId && !currentSelectedFilmClip
-      ? (clipPreparationStates[selectedGraphNodeId] ?? null)
-      : null;
-  const productionComposer: StoryShotComposerProps | null =
-    selectedNode?.data.kind === "clip" && selectedDirectorPrompt
+  const bindClipVideo = useCallback(
+    async (
+      graphNodeId: string,
+      expectedCurrentVideoRevision: number,
+      item: StoryVideoLibraryItem
+    ) => {
+      if (!workspaceId) throw new Error(t("production.errors.action"));
+      const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
+        putFilmClipCurrentVideo(workspaceId, projectId, graphNodeId, {
+          expectedDraftRevision,
+          expectedCurrentVideoRevision,
+          assetId: item.asset.id,
+          variantId: item.variantId,
+        })
+      );
+      queryClient.setQueryData<StoryWorkbench>(
+        ["story-studio", "workbench", workspaceId, projectId],
+        (current) => projectConfirmedClipCurrentVideo(current, confirmedClip)
+      );
+      void refetchWorkbench();
+    },
+    [projectId, queryClient, refetchWorkbench, t, withSavedDraftSnapshot, workspaceId]
+  );
+  const selectExistingClipVideo = useCallback(
+    async (item: StoryVideoLibraryItem) => {
+      if (!workspaceId || !focusedGraphNodeId) {
+        throw new Error(t("production.errors.action"));
+      }
+      await bindClipVideo(focusedGraphNodeId, focusedFilmClip?.currentVideoRevision ?? 0, item);
+    },
+    [bindClipVideo, focusedFilmClip, focusedGraphNodeId, t, workspaceId]
+  );
+  const uploadSelectedClipVideo = useCallback(
+    async (
+      file: File,
+      onState: (state: StoryClipMediaUploadState) => void,
+      signal: AbortSignal
+    ) => {
+      if (!workspaceId || !focusedGraphNodeId) {
+        throw new Error(t("production.errors.action"));
+      }
+      // Capture the target before the long upload starts. Selecting another
+      // canvas node mid-upload must never bind the result to that later node.
+      // A node without a materialized clip is fine: putCurrentVideo lazily
+      // materializes the revision + clip from the current draft, and a fresh
+      // clip starts at currentVideoRevision 0.
+      const graphNodeId = focusedGraphNodeId;
+      const expectedCurrentVideoRevision = focusedFilmClip?.currentVideoRevision ?? 0;
+      let issuedMediaAssetId: string | null = null;
+      let finalizationAccepted = false;
+      try {
+        const uploaded = await uploadFileViaSignedUrl(file, {
+          kind: "story_clip_video",
+          workspaceId,
+          scope: { projectId },
+          onProgress: (progress) => onState({ stage: "uploading", progress }),
+          onSessionIssued: ({ mediaAssetId }) => {
+            issuedMediaAssetId = mediaAssetId;
+          },
+          signal,
+        });
+        if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+        onState({ stage: "processing" });
+        const finalization = await completeStoryClipVideoUpload(
+          workspaceId,
+          projectId,
+          {
+            mediaAssetId: uploaded.mediaAssetId,
+          },
+          signal
+        );
+        // From this point the durable worker owns completion. If the user
+        // changes nodes during polling, keep the resulting asset in the
+        // workspace library instead of attempting to cancel active processing.
+        finalizationAccepted = true;
+        const item = await waitForStoryClipVideoUploadFinalization(
+          workspaceId,
+          projectId,
+          finalization,
+          { signal }
+        );
+        if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+        await bindClipVideo(graphNodeId, expectedCurrentVideoRevision, item);
+      } catch (error) {
+        if (issuedMediaAssetId && !finalizationAccepted) {
+          // Use a fresh bounded request: the upload signal is already aborted.
+          // Cancellation is best-effort and must never hide the real failure.
+          await cancelStoryClipVideoUpload(workspaceId, projectId, issuedMediaAssetId).catch(
+            () => undefined
+          );
+        }
+        throw error;
+      }
+    },
+    [bindClipVideo, focusedFilmClip, focusedGraphNodeId, projectId, t, workspaceId]
+  );
+  const productionComposer: StoryVideoComposerProps | null =
+    focusedNode?.data.kind === "clip" && focusedDirectorPrompt
       ? {
-          clip: currentSelectedFilmClip,
-          prompt: selectedDirectorPrompt,
+          clip: focusedFilmClip,
+          prompt: focusedDirectorPrompt,
           references: film?.references ?? [],
-          takes:
-            takesQuery.data?.items.map((take) => ({
-              ...take,
-              stale:
-                take.stale ||
-                !currentDraftProductionRevisionId ||
-                take.revisionId !== currentDraftProductionRevisionId,
-            })) ?? [],
           defaultModel: film?.defaultModel,
           frameProfile: project?.frameProfile ?? "landscape_16_9",
-          takesLoading: takesQuery.isLoading,
-          refreshing: workbenchQuery.isFetching || takesQuery.isFetching,
           canGenerate: productionDisabledReason === null,
           disabledReason: productionDisabledReason,
-          preparingInputs: selectedClipPreparation?.status === "preparing",
-          pendingKey: productionPendingKey,
-          error:
-            productionError ??
-            selectedClipPreparation?.error ??
-            (takesQuery.isError
-              ? storyApiErrorMessage(takesQuery.error, t("production.errors.loadTakes"))
-              : null),
+          pendingKey: productionPendingKey ?? (clipGenerationActive ? "generate" : null),
+          error: productionError ?? filmGenerationError(focusedFilmClip?.generation),
           onGenerate: generateSelectedClip,
           onModeChange: (mode) => {
-            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            if (!focusedGraphNodeId || !focusedDirectorPrompt) return;
             const nextControl =
               mode === "omni_reference"
                 ? ({ mode: "omni_reference" } as const)
                 : ({ mode: "frame_lock", frameMode: "first_last_frame" } as const);
             if (
               JSON.stringify(nextControl) ===
-              JSON.stringify(selectedDirectorPrompt.generationControl)
+              JSON.stringify(focusedDirectorPrompt.generationControl)
             ) {
               return;
             }
             applyGraphMutation((current) =>
-              replaceClipPrompt(current, selectedGraphNodeId, {
-                ...selectedDirectorPrompt,
+              replaceClipPrompt(current, focusedGraphNodeId, {
+                ...focusedDirectorPrompt,
                 generationControl: nextControl,
               })
             );
           },
           onPromptCommit: (next) => {
             if (
-              !selectedGraphNodeId ||
-              !selectedDirectorPrompt ||
-              next === selectedDirectorPrompt.masterDirection
+              !focusedGraphNodeId ||
+              !focusedDirectorPrompt ||
+              next === focusedDirectorPrompt.masterDirection
             ) {
               return;
             }
             applyGraphMutation((current) =>
-              replaceClipPrompt(current, selectedGraphNodeId, {
-                ...selectedDirectorPrompt,
+              replaceClipPrompt(current, focusedGraphNodeId, {
+                ...focusedDirectorPrompt,
                 masterDirection: next,
               })
             );
           },
           onDurationCommit: (durationMs) => {
-            if (!selectedGraphNodeId || !selectedDirectorPrompt) return;
+            if (!focusedGraphNodeId || !focusedDirectorPrompt) return;
             applyGraphMutation((current) =>
               replaceClipPrompt(
                 current,
-                selectedGraphNodeId,
-                setClipPromptTargetDuration(selectedDirectorPrompt, durationMs)
+                focusedGraphNodeId,
+                setClipPromptTargetDuration(focusedDirectorPrompt, durationMs)
               )
             );
           },
           maxDurationMs: film?.spec?.duration.maxGeneratedClipMs,
-          onRefresh: () => void refreshProduction(),
-          onRetry: retrySelectedTake,
-          onReview: reviewSelectedTake,
-          onSetMaster: setSelectedMaster,
           referenceApiConnected: STORY_REFERENCE_API_CONNECTED,
           referenceBindingsPending: productionPendingKey === "reference-bindings",
           onUpdateReferenceBindings: updateSelectedReferenceBindings,
@@ -1485,41 +1465,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
      latestContentRef only inside event handlers; these objects carry no ref
      reads at render time. */
   const productionUi: StoryProductionUiContextValue | null =
-    selectedGraphNodeId && productionComposer
-      ? { graphNodeId: selectedGraphNodeId, composer: productionComposer }
+    focusedGraphNodeId && productionComposer
+      ? { graphNodeId: focusedGraphNodeId, composer: productionComposer }
       : null;
-  const inspectorProduction = productionComposer ?? undefined;
   /* eslint-enable react-hooks/refs */
-  const selectedIsRoot = selectedNode?.data.kind === "root";
+  const focusedIsRoot = focusedNode?.data.kind === "root";
   const selectedTrailer =
-    selectedIsRoot && currentDraftProductionRevisionId ? (film?.trailer ?? null) : null;
-  const trailerTakesQuery = useQuery({
-    queryKey: [
-      "story-studio",
-      "film-trailer-takes",
-      workspaceId,
-      projectId,
-      selectedRevisionId,
-      selectedTrailer?.id,
-    ],
-    queryFn: () =>
-      listFilmTrailerTakes(workspaceId as string, projectId, selectedRevisionId as string, {
-        limit: 50,
-      }),
-    enabled: Boolean(workspaceId && selectedRevisionId && selectedTrailer?.id && selectedIsRoot),
-    retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.items.some(
-        (take) =>
-          take.status === "queued" || take.status === "running" || take.status === "processing"
-      )
-        ? 2_000
-        : false,
-  });
+    focusedIsRoot && currentDraftProductionRevisionId ? (film?.trailer ?? null) : null;
 
   const refreshTrailerProduction = useCallback(async () => {
-    await Promise.all([workbenchQuery.refetch(), trailerTakesQuery.refetch()]);
-  }, [trailerTakesQuery, workbenchQuery]);
+    await workbenchQuery.refetch();
+  }, [workbenchQuery]);
 
   const runTrailerAction = useCallback(
     async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
@@ -1546,9 +1502,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [refreshTrailerProduction, t, trailerActionGate]
   );
 
-  const trailerCapabilities = trailerProductionCapabilities(project?.capabilities ?? []);
-  const canGenerateTrailer = trailerCapabilities.canGenerate;
-  const canReviewTrailer = trailerCapabilities.canReview;
+  const canGenerateTrailer = Boolean(project?.capabilities.includes("story.generate"));
 
   const generateTrailer = useCallback(
     (variationNote?: string, modelId?: string) => {
@@ -1564,7 +1518,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         globalThis.crypto.randomUUID()
       );
       void runTrailerAction("generate", () =>
-        createFilmTrailerTake(
+        createFilmTrailerGeneration(
           workspaceId,
           projectId,
           selectedRevisionId,
@@ -1574,9 +1528,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             variationNote,
           },
           idempotencyKey
-        ).then((take) => {
+        ).then((generation) => {
           trailerSubmissionKeys.confirm(slot, fingerprint);
-          return take;
+          return generation;
         })
       );
     },
@@ -1587,92 +1541,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       selectedRevisionId,
       selectedTrailer,
       trailerSubmissionKeys,
-      workspaceId,
-    ]
-  );
-
-  const retryTrailerTake = useCallback(
-    (take: FilmTrailerTake) => {
-      if (!workspaceId || !canGenerateTrailer) return;
-      const slot = `trailer:retry:${take.id}`;
-      const fingerprint = canonicalJsonString({
-        takeId: take.id,
-        expectedTakeVersion: take.version,
-        variationNote: null,
-      });
-      const idempotencyKey = trailerSubmissionKeys.keyFor(slot, fingerprint, () =>
-        globalThis.crypto.randomUUID()
-      );
-      void runTrailerAction(`retry:${take.id}`, () =>
-        retryFilmTrailerTake(
-          workspaceId,
-          projectId,
-          take.id,
-          { expectedTakeVersion: take.version },
-          idempotencyKey
-        ).then((retried) => {
-          trailerSubmissionKeys.confirm(slot, fingerprint);
-          return retried;
-        })
-      );
-    },
-    [canGenerateTrailer, projectId, runTrailerAction, trailerSubmissionKeys, workspaceId]
-  );
-
-  const cancelTrailerTake = useCallback(
-    (take: FilmTrailerTake) => {
-      if (!workspaceId || !canGenerateTrailer) return;
-      void runTrailerAction(`cancel:${take.id}`, () =>
-        cancelFilmTrailerTake(workspaceId, projectId, take.id, {
-          expectedTakeVersion: take.version,
-        })
-      );
-    },
-    [canGenerateTrailer, projectId, runTrailerAction, workspaceId]
-  );
-
-  const reviewTrailerTake = useCallback(
-    (
-      take: FilmTrailerTake,
-      decision: FilmReviewDecision,
-      checklist: FilmTrailerReviewChecklist,
-      comment?: string
-    ) => {
-      if (!workspaceId || !canReviewTrailer) return Promise.resolve(false);
-      return runTrailerAction(`review:${take.id}`, async () => {
-        const result = await reviewFilmTrailerTake(workspaceId, projectId, take.id, {
-          expectedReviewRevision: take.reviewRevision,
-          decision,
-          checklist,
-          comment,
-        });
-        if (decision === "approve") {
-          await approveFilmTrailerTake(workspaceId, projectId, take.id, {
-            expectedTakeVersion: result.take.version,
-            approveReviewId: result.review.id,
-          });
-        }
-      });
-    },
-    [canReviewTrailer, projectId, runTrailerAction, workspaceId]
-  );
-
-  const setTrailerMaster = useCallback(
-    (take: FilmTrailerTake) => {
-      if (!workspaceId || !selectedRevisionId || !selectedTrailer || !canGenerateTrailer) return;
-      void runTrailerAction(`master:${take.id}`, () =>
-        putFilmTrailerMaster(workspaceId, projectId, selectedRevisionId, {
-          expectedMasterRevision: selectedTrailer.masterRevision,
-          takeId: take.id,
-        })
-      );
-    },
-    [
-      canGenerateTrailer,
-      projectId,
-      runTrailerAction,
-      selectedRevisionId,
-      selectedTrailer,
       workspaceId,
     ]
   );
@@ -1690,16 +1558,40 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [projectId, runTrailerAction, selectedRevisionId, selectedTrailer, workspaceId]
   );
 
+  const trailerGenerationActive = isActiveVideoGeneration(selectedTrailer?.generation);
   const trailerDisabledReason = !canGenerateTrailer
     ? t("trailer.production.disabled.permission")
-    : selectedTrailer?.productionStatus === "blocked"
-      ? selectedTrailer.blockReasons[0]?.message || t("trailer.production.disabled.blocked")
+    : trailerGenerationActive
+      ? t("production.disabled.generating")
       : null;
+  const selectExistingTrailerVideo = useCallback(
+    async (item: StoryVideoLibraryItem) => {
+      if (!workspaceId || !selectedRevisionId || !selectedTrailer) {
+        throw new Error(t("trailer.production.errors.action"));
+      }
+      const confirmedTrailer = await putFilmTrailerCurrentVideo(
+        workspaceId,
+        projectId,
+        selectedRevisionId,
+        {
+          expectedCurrentVideoRevision: selectedTrailer.currentVideoRevision,
+          assetId: item.asset.id,
+          variantId: item.variantId,
+        }
+      );
+      queryClient.setQueryData<StoryWorkbench>(
+        ["story-studio", "workbench", workspaceId, projectId],
+        (current) => projectConfirmedTrailerCurrentVideo(current, confirmedTrailer)
+      );
+      void refetchWorkbench();
+    },
+    [projectId, queryClient, refetchWorkbench, selectedRevisionId, selectedTrailer, t, workspaceId]
+  );
   // Like productionUi, this stays a plain per-render object: the composer
   // closures reach through applyGraphMutation, which the hooks lint forbids
   // inside memoized values that are read during render.
   const trailerUi: StoryTrailerUiContextValue | null =
-    selectedIsRoot && selectedTrailer
+    focusedIsRoot && selectedTrailer
       ? {
           composer: {
             subject: "trailer",
@@ -1710,15 +1602,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             frameProfile: project?.frameProfile ?? "landscape_16_9",
             canGenerate: trailerDisabledReason === null,
             disabledReason: trailerDisabledReason,
-            pendingKey: trailerPendingKey,
-            error:
-              trailerError ??
-              (trailerTakesQuery.isError
-                ? storyApiErrorMessage(
-                    trailerTakesQuery.error,
-                    t("trailer.production.errors.loadTakes")
-                  )
-                : null),
+            pendingKey: trailerPendingKey ?? (trailerGenerationActive ? "generate" : null),
+            error: trailerError ?? filmGenerationError(selectedTrailer.generation),
             onGenerate: generateTrailer,
             onPromptCommit: (next: string) => {
               const base = content?.trailerPrompt ?? projectLockedTrailerPrompt(selectedTrailer);
@@ -1744,54 +1629,36 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             referenceApiConnected: STORY_REFERENCE_API_CONNECTED,
             referenceBindingsPending: trailerPendingKey === "reference-bindings",
             onUpdateReferenceBindings: updateTrailerReferenceBindings,
-          },
-          production: {
-            trailer: selectedTrailer,
-            references: film?.references ?? [],
-            takes: trailerTakesQuery.data?.items ?? [],
-            loading: trailerTakesQuery.isLoading,
-            refreshing: workbenchQuery.isFetching || trailerTakesQuery.isFetching,
-            pendingKey: trailerPendingKey,
-            error:
-              trailerError ??
-              (trailerTakesQuery.isError
-                ? storyApiErrorMessage(
-                    trailerTakesQuery.error,
-                    t("trailer.production.errors.loadTakes")
-                  )
-                : null),
-            referenceBindingsPending: trailerPendingKey === "reference-bindings",
-            canGenerateActions: canGenerateTrailer,
-            generateDisabledReason: canGenerateTrailer
-              ? null
-              : t("trailer.production.disabled.permission"),
-            canReviewActions: canReviewTrailer,
-            reviewDisabledReason: canReviewTrailer
-              ? null
-              : t("trailer.production.disabled.reviewPermission"),
-            onRefresh: () => void refreshTrailerProduction(),
-            onCancel: cancelTrailerTake,
-            onRetry: retryTrailerTake,
-            onReview: reviewTrailerTake,
-            onSetMaster: setTrailerMaster,
-            onUpdateReferenceBindings: updateTrailerReferenceBindings,
+            videoLibrary:
+              workspaceId && selectedTrailer
+                ? {
+                    workspaceId,
+                    projectId,
+                    disabled: !canGenerateTrailer,
+                    disabledReason: !canGenerateTrailer
+                      ? t("trailer.production.disabled.permission")
+                      : null,
+                    onSelect: selectExistingTrailerVideo,
+                  }
+                : undefined,
           },
         }
       : null;
-  /* eslint-disable-next-line react-hooks/refs -- see inspectorProduction. */
-  const inspectorTrailerProduction = trailerUi?.production;
+  const inspectorTrailerProduction = trailerUi?.composer ?? undefined;
   const authoringLocale = project?.defaultLocale ?? "en-US";
-  const selectedChoiceSourceId =
-    selectedNode?.data.kind === "decision"
-      ? selectedNode.data.sourceNodeId
-      : selectedNode?.data.kind === "clip"
-        ? selectedNode.data.nodeId
-        : undefined;
+  const layeredCanvasNodes = useMemo(
+    () =>
+      canvasNodes.map((node) => {
+        const zIndex = node.id === focusedNodeId ? 1 : 0;
+        return node.zIndex === zIndex ? node : { ...node, zIndex };
+      }),
+    [canvasNodes, focusedNodeId]
+  );
   const displayEdges = useMemo(
     () =>
       model?.edges.map((edge) => {
         const related =
-          !selectedNodeId || edge.source === selectedNodeId || edge.target === selectedNodeId;
+          !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
         const sourceKind = model?.nodes.find((node) => node.id === edge.source)?.data.kind;
         return {
           ...edge,
@@ -1818,7 +1685,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           labelBgBorderRadius: 8,
         };
       }) ?? [],
-    [model, selectedNodeId]
+    [focusedNodeId, model]
   );
 
   useEffect(() => {
@@ -1855,20 +1722,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const applyGraphMutation = (
-    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent,
-    nextSelection?: string | null
-  ) => {
-    if (!content || !canEdit) return;
+    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent
+  ): boolean => {
+    if (!content || !canEdit) return false;
     try {
       const next = mutation(content);
       setGraphError(null);
       commitContent(next);
-      if (nextSelection !== undefined) {
-        setSelectedNodeId(nextSelection);
-        setShowFoundation(nextSelection === null);
-      }
+      return true;
     } catch {
       setGraphError(t("graphError.generic"));
+      return false;
     }
   };
 
@@ -1878,21 +1742,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       if (kind === "clip") {
         const result = createClipNode(content);
         commitContent(result.content);
-        setSelectedNodeId(result.created.nodeId);
+        selectCanvasNodeExclusively(result.created.nodeId);
       } else if (kind === "router") {
         const result = createRouterNode(content);
         commitContent(result.content);
-        setSelectedNodeId(result.created.nodeId);
+        selectCanvasNodeExclusively(result.created.nodeId);
       } else if (kind === "ending") {
         const result = createEndingNode(content, { locale: authoringLocale });
         commitContent(result.content);
-        setSelectedNodeId(syntheticEndingNodeId(result.created.id));
-      } else if (selectedChoiceSourceId) {
-        commitContent(convertClipExitToChoice(content, selectedChoiceSourceId, authoringLocale));
-        setSelectedNodeId(syntheticDecisionNodeId(selectedChoiceSourceId));
+        selectCanvasNodeExclusively(syntheticEndingNodeId(result.created.id));
       }
       setGraphError(null);
-      setShowFoundation(false);
     } catch {
       setGraphError(t("graphError.generic"));
     }
@@ -1921,17 +1781,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           authoringLocale
         ).content;
       }
-      if (
-        source.data.kind === "clip" &&
-        source.data.exitKind === "checkpoint" &&
-        connection.sourceHandle === "checkpoint"
-      ) {
-        return updateCheckpointTarget(current, source.data.nodeId, target.data.nodeId);
-      }
       if (target.data.kind === "ending" && target.data.endingId) {
         return convertClipExitToEnding(current, source.data.nodeId, target.data.endingId);
       }
-      const routeHandle = connection.sourceHandle?.match(/^(?:auto|route):(\d+)$/u);
+      if (
+        source.data.kind === "clip" &&
+        source.data.exitKind === "auto" &&
+        connection.sourceHandle === "completion"
+      ) {
+        return connectClipContinuation(current, source.data.nodeId, target.data.nodeId);
+      }
+      const routeHandle = connection.sourceHandle?.match(/^route:(\d+)$/u);
       if (routeHandle) {
         return updateAutoRouteTarget(
           current,
@@ -1963,17 +1823,33 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const source = model.nodes.find((node) => node.id === connectionState.fromNode?.id);
     const clientPosition = connectionDropClientPosition(event);
     if (!source || !clientPosition) return;
+    const sourceHandleId = connectionState.fromHandle.id ?? "";
+    const dropPosition = screenToFlowPosition(clientPosition);
+
+    if (
+      source.data.kind === "clip" &&
+      source.data.exitKind === "auto" &&
+      sourceHandleId === "completion"
+    ) {
+      setCreatorOpen(false);
+      setPendingCompletionDrop({
+        sourceCanvasNodeId: source.id,
+        sourceHandleId,
+        clientPosition,
+        flowPosition: dropPosition,
+      });
+      return;
+    }
 
     try {
       const created = createConnectedClipForBlankDrop(
         content,
         source.data,
-        connectionState.fromHandle.id ?? null,
+        sourceHandleId,
         authoringLocale
       );
       if (!created) return;
 
-      const dropPosition = screenToFlowPosition(clientPosition);
       pendingNodePositionsRef.current.set(created.createdNodeId, {
         // The newly-created clip's input handle lands beside the release
         // point instead of placing the whole card underneath the pointer.
@@ -1982,11 +1858,51 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       });
       setGraphError(null);
       commitContent(created.content);
-      setSelectedNodeId(created.createdNodeId);
-      setShowFoundation(false);
+      selectCanvasNodeExclusively(created.createdNodeId);
       setCreatorOpen(false);
     } catch {
       setGraphError(t("graphError.generic"));
+    }
+  };
+
+  const createCompletionStep = (kind: StoryConnectionCreationKind) => {
+    const pending = pendingCompletionDrop;
+    if (!pending || !content || !model || !canEdit) return;
+    const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
+    if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
+      setPendingCompletionDrop(null);
+      return;
+    }
+
+    try {
+      if (kind === "choice") {
+        const decisionNodeId = syntheticDecisionNodeId(source.data.nodeId);
+        pendingNodePositionsRef.current.set(decisionNodeId, {
+          x: pending.flowPosition.x + 18,
+          y: pending.flowPosition.y - 72,
+        });
+        commitContent(convertClipExitToChoice(content, source.data.nodeId, authoringLocale));
+        selectCanvasNodeExclusively(decisionNodeId);
+      } else {
+        const created = createConnectedClipForBlankDrop(
+          content,
+          source.data,
+          pending.sourceHandleId,
+          authoringLocale
+        );
+        if (!created) return;
+        pendingNodePositionsRef.current.set(created.createdNodeId, {
+          x: pending.flowPosition.x + 18,
+          y: pending.flowPosition.y - 108,
+        });
+        commitContent(created.content);
+        selectCanvasNodeExclusively(created.createdNodeId);
+      }
+      setGraphError(null);
+    } catch {
+      setGraphError(t("graphError.generic"));
+    } finally {
+      setPendingCompletionDrop(null);
     }
   };
 
@@ -2020,28 +1936,29 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         (target.data.kind === "clip" || target.data.kind === "router")
       );
     }
-    if (source.data.kind === "clip" && source.data.exitKind === "checkpoint") {
-      return (
-        connection.sourceHandle === "checkpoint" &&
-        connection.targetHandle === "in" &&
-        (target.data.kind === "clip" || target.data.kind === "router")
-      );
-    }
     if (target.data.kind === "ending") {
       return (
         source.data.kind === "clip" &&
         source.data.exitKind === "auto" &&
-        (source.data.autoRoutes?.length ?? 0) === 0 &&
-        connection.sourceHandle === "auto-new" &&
+        !source.data.continuationTargetNodeId &&
+        connection.sourceHandle === "completion" &&
         connection.targetHandle === "ending-in"
       );
     }
-    if (source.data.exitKind !== "auto" || connection.targetHandle !== "in") return false;
-    return source.data.kind === "router"
-      ? connection.sourceHandle === "route-new" ||
-          Boolean(connection.sourceHandle?.match(/^route:\d+$/u))
-      : connection.sourceHandle === "auto-new" ||
-          Boolean(connection.sourceHandle?.match(/^auto:\d+$/u));
+    if (connection.targetHandle !== "in") return false;
+    if (source.data.kind === "clip") {
+      return (
+        source.data.exitKind === "auto" &&
+        !source.data.continuationTargetNodeId &&
+        connection.sourceHandle === "completion" &&
+        (target.data.kind === "clip" || target.data.kind === "router")
+      );
+    }
+    return (
+      source.data.kind === "router" &&
+      (connection.sourceHandle === "route-new" ||
+        Boolean(connection.sourceHandle?.match(/^route:\d+$/u)))
+    );
   };
 
   const deleteStoryEdges = (edges: StoryCanvasEdge[]) => {
@@ -2065,6 +1982,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     applyGraphMutation((current) =>
       orderedEdges.reduce((next, edge) => {
         if (edge.data.kind === "root") return setEntryNode(next, null);
+        if (edge.data.kind === "continuation") {
+          return disconnectStoryBranch(next, {
+            kind: "continuation",
+            sourceNodeId: edge.source,
+            targetNodeId: edge.target,
+          });
+        }
         if (edge.data.kind === "auto") {
           return disconnectStoryBranch(next, {
             kind: "auto",
@@ -2106,48 +2030,27 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const deleteStoryNodes = (nodes: StoryCanvasNode[]) => {
-    applyGraphMutation(
-      (current) =>
-        nodes.reduce((next, node) => {
-          if (node.data.kind === "root") return next;
-          if (node.data.kind === "decision" && node.data.sourceNodeId) {
-            return convertExitToAuto(next, node.data.sourceNodeId);
-          }
-          if (node.data.kind === "ending" && node.data.endingId) {
-            return deleteEndingNode(next, node.data.endingId);
-          }
-          return deleteGraphNode(next, node.data.nodeId);
-        }, current),
-      null
+    const deletedNodeIds = new Set(nodes.map((node) => node.id));
+    const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
+      (nodeId) => !deletedNodeIds.has(nodeId)
     );
-  };
-
-  const changeExitKind = (
-    nodeId: string,
-    kind: "auto" | "choice" | "checkpoint" | "ending",
-    targetId?: string
-  ) => {
-    applyGraphMutation((current) => {
-      const node = current.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-      if (!node || node.kind !== "clip") return current;
-      if (node.exit.kind === kind) {
-        if (node.exit.kind === "ending" && node.exit.endingId !== targetId) {
-          return targetId ? convertClipExitToEnding(current, nodeId, targetId) : current;
+    const deleted = applyGraphMutation((current) =>
+      nodes.reduce((next, node) => {
+        if (node.data.kind === "root") return next;
+        if (node.data.kind === "decision" && node.data.sourceNodeId) {
+          return convertExitToAuto(next, node.data.sourceNodeId);
         }
-        if (node.exit.kind === "checkpoint" && node.exit.nextNodeId !== targetId) {
-          return targetId ? updateCheckpointTarget(current, nodeId, targetId) : current;
+        if (node.data.kind === "ending" && node.data.endingId) {
+          return deleteEndingNode(next, node.data.endingId);
         }
-        return current;
-      }
-      if (kind === "auto") return convertExitToAuto(current, nodeId);
-      if (kind === "choice") {
-        return convertClipExitToChoice(current, nodeId, authoringLocale);
-      }
-      if (!targetId) return current;
-      return kind === "checkpoint"
-        ? convertClipExitToCheckpoint(current, nodeId, targetId)
-        : convertClipExitToEnding(current, nodeId, targetId);
-    });
+        return deleteGraphNode(next, node.data.nodeId);
+      }, current)
+    );
+    if (!deleted) return;
+    pendingCanvasSelectionRef.current = null;
+    requestedCanvasFocusRef.current = null;
+    latestCanvasSelectionRef.current = remainingSelectedNodeIds;
+    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, remainingSelectedNodeIds));
   };
 
   const addChoice = (nodeId: string, targetNodeId: string) => {
@@ -2209,21 +2112,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     }
   };
 
-  const createStateVariable = (
-    type: InteractiveFilmDraftContent["storyBible"]["stateVariables"][number]["type"]
-  ): string | null => {
-    if (!content || !canEdit) return null;
-    try {
-      const result = createStoryStateVariable(content, { type });
-      commitContent(result.content);
-      setGraphError(null);
-      return result.created.key;
-    } catch {
-      setGraphError(t("graphError.generic"));
-      return null;
-    }
-  };
-
   const addWorldItem = (field: StoryWorldTextField) => {
     applyGraphMutation((current) => addWorldTextItem(current, field, ""));
   };
@@ -2238,8 +2126,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           ? duplicateClipNode(content, nodeId)
           : duplicateRouterNode(content, nodeId);
       commitContent(result.content);
-      setSelectedNodeId(result.created.nodeId);
-      setShowFoundation(false);
+      selectCanvasNodeExclusively(result.created.nodeId);
       setGraphError(null);
     } catch {
       setGraphError(t("graphError.generic"));
@@ -2265,8 +2152,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const loadLatestLayoutAfterConflict = () => {
     if (!layoutConflict || !model) return;
+    const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const latestNodes = model.nodes.map((node) => ({
       ...node,
+      selected: Boolean(currentById.get(node.id)?.selected),
       position: layoutConflict.current.nodePositions[node.id] ?? node.position,
     }));
     layoutConflictRef.current = null;
@@ -2275,6 +2164,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
     layoutSavedSignatureRef.current = layoutPositionSignature(nodePositions(latestNodes));
+    canvasNodesRef.current = latestNodes;
+    const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
+    latestCanvasSelectionRef.current = selectedNodeIds;
+    setFocusedNodeId((current) => nextStoryCanvasFocusedNodeId(current, selectedNodeIds));
     setCanvasNodes(latestNodes);
     setLayoutConflict(null);
     setLayoutSaveError(null);
@@ -2285,7 +2178,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     workspaceLoading ||
     (Boolean(workspaceId) && (workbenchQuery.isLoading || layoutQuery.isLoading));
   if (isLoading) return <CanvasLoading />;
-  if (workbenchQuery.isError || layoutQuery.isError || !project || !content || !model) {
+  const workbenchUnavailable = workbenchQuery.isError && !workbenchQuery.data;
+  const layoutUnavailable = layoutQuery.isError && !layoutQuery.data;
+  if (workbenchUnavailable || layoutUnavailable || !project || !content || !model) {
     return (
       <CanvasError
         message={storyApiErrorMessage(
@@ -2301,33 +2196,48 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   }
 
   const displaySaveState = mergeSaveStates(saveState, layoutSaveState);
+  const locallyConfirmedCurrentDraftPublished = Boolean(
+    (saveState === "idle" || saveState === "saved") &&
+    publication.lastSucceeded?.lockedRevision.sourceDraftRevision === draftRevision &&
+    publication.lastSucceeded.build.revisionId === publication.lastSucceeded.lockedRevision.id &&
+    publication.lastSucceeded.build.sourceProductionRevision === film?.productionRevision
+  );
+  const authorityConfirmedCurrentDraftPublished =
+    (saveState === "idle" || saveState === "saved") &&
+    isExactCurrentStoryRelease(currentReleaseQuery.data, {
+      draftRevision,
+      revisionId: currentDraftProductionRevisionId,
+      productionRevision: film?.productionRevision ?? null,
+    });
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
       <CanvasHeader
-        projectId={projectId}
         title={project.title}
         revision={draftRevision}
         saveState={displaySaveState}
         saveError={saveError ?? layoutSaveError}
         canEdit={canEdit}
         previewPending={workingPreviewPending}
-        onPreview={() => void loadWorkingPreview()}
-        onFit={() => void fitView({ padding: 0.16, duration: 420, maxZoom: 0.78 })}
-        onShowFoundation={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        publishPending={publication.isPending}
+        published={
+          authorityConfirmedCurrentDraftPublished ||
+          (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
+        }
+        canPublish={publication.canPublish && !currentReleaseQuery.isLoading}
+        publishDisabledReason={
+          currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
+        }
+        onPreview={() => void openWorkingPreview()}
+        onPublish={publication.open}
+        onShowFoundation={() => selectCanvasNodeExclusively(null)}
       />
 
-      <StoryWorkingPreviewDialog
-        open={workingPreviewOpen}
-        onOpenChange={setWorkingPreviewOpen}
-        preview={workingPreview}
-        pending={workingPreviewPending}
-        error={workingPreviewError}
-        locale={interfaceLocale}
-        frameProfile={project.frameProfile}
-        onRetry={() => void loadWorkingPreview()}
+      <StoryPublicationDialog
+        state={publication.state}
+        draftRevision={draftRevision}
+        onClose={publication.close}
+        onConfirm={publication.confirm}
+        onRetry={publication.retry}
       />
 
       <section className="absolute inset-x-0 top-16 bottom-0 right-[380px]">
@@ -2341,105 +2251,133 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             backgroundSize: "20px 20px",
           }}
         />
-        <StoryTrailerUiContext.Provider value={trailerUi}>
-          <StoryProductionUiContext.Provider value={productionUi}>
-            <ReactFlow
-              nodes={canvasNodes}
-              edges={canvasEdges}
-              onNodesChange={onCanvasNodesChange}
-              onEdgesChange={(changes) =>
-                onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-              }
-              onConnect={connectStoryNodes}
-              onConnectEnd={finishConnectionOnBlankCanvas}
-              isValidConnection={isValidStoryConnection}
-              onEdgesDelete={deleteStoryEdges}
-              onNodesDelete={deleteStoryNodes}
-              onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                const movedNodes = new Map(
-                  [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                );
-                const positions = nodePositions(
-                  canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
-                );
-                if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current) return;
-                setLayoutSaveState("dirty");
-                void persistLayoutRef.current(positions);
-              }}
-              onNodeClick={(_event, node) => {
-                if (node.data.kind === "root") {
-                  setSelectedNodeId(node.id);
-                  setShowFoundation(false);
-                  return;
-                }
-                setSelectedNodeId(node.id);
-                setShowFoundation(false);
-              }}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setShowFoundation(true);
-                setCreatorOpen(false);
-              }}
-              nodeTypes={NODE_TYPES}
-              defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-              colorMode="dark"
-              proOptions={{ hideAttribution: true }}
-              minZoom={0.16}
-              maxZoom={1.4}
-              defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-              selectionOnDrag
-              selectionMode={SelectionMode.Partial}
-              selectionKeyCode={null}
-              panOnDrag={[1, 2]}
-              panActivationKeyCode="Space"
-              panOnScroll
-              nodesDraggable={canEdit}
-              nodesConnectable={canEdit}
-              edgesReconnectable={false}
-              edgesFocusable={canEdit}
-              deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
-              selectNodesOnDrag
-              zoomOnDoubleClick={false}
-              fitView={canvasNodes.length > 0}
-              fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-              className="relative z-10"
-              style={{ backgroundColor: "transparent" }}
-            >
-              <MiniMap
-                pannable
-                zoomable
-                position="bottom-left"
-                className="bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
-                bgColor="oklch(0.24 0 0 / 0.82)"
-                maskColor="rgba(0,0,0,0.46)"
-                nodeColor="rgba(255,255,255,0.42)"
-                nodeStrokeWidth={0}
-              />
-              <Controls
-                position="bottom-left"
-                className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9! [&_button]:border-0! [&_button]:bg-transparent! [&_button]:text-white/70! [&_button:hover]:bg-white/10! [&_svg]:fill-white/70!"
-                showInteractive={false}
-              />
-            </ReactFlow>
-          </StoryProductionUiContext.Provider>
-        </StoryTrailerUiContext.Provider>
+        <MediaHoverPreviewProvider>
+          <StoryTrailerUiContext.Provider value={trailerUi}>
+            <StoryProductionUiContext.Provider value={productionUi}>
+              <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                <StoryCanvasReactFlow
+                  nodes={layeredCanvasNodes}
+                  edges={canvasEdges}
+                  onNodesChange={onCanvasNodesChange}
+                  onEdgesChange={(changes) =>
+                    onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
+                  }
+                  onConnect={connectStoryNodes}
+                  onConnectEnd={finishConnectionOnBlankCanvas}
+                  isValidConnection={isValidStoryConnection}
+                  onEdgesDelete={deleteStoryEdges}
+                  onNodesDelete={deleteStoryNodes}
+                  onSelectionChange={onCanvasSelectionChange}
+                  onSelectionStart={onCanvasSelectionStart}
+                  onSelectionEnd={onCanvasSelectionEnd}
+                  onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                    const movedNodes = new Map(
+                      [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                    );
+                    const positions = nodePositions(
+                      canvasNodes.map((node) => movedNodes.get(node.id) ?? node)
+                    );
+                    if (layoutPositionSignature(positions) === layoutSavedSignatureRef.current)
+                      return;
+                    setLayoutSaveState("dirty");
+                    void persistLayoutRef.current(positions);
+                  }}
+                  onNodeClick={(event, node) => {
+                    if (event.shiftKey && node.selected) {
+                      requestedCanvasFocusRef.current = null;
+                      const remainingNodeIds = latestCanvasSelectionRef.current.filter(
+                        (nodeId) => nodeId !== node.id
+                      );
+                      latestCanvasSelectionRef.current = remainingNodeIds;
+                      reconcileCanvasFocus(remainingNodeIds);
+                      return;
+                    }
+                    requestedCanvasFocusRef.current = node.id;
+                    setFocusedNodeId(node.id);
+                  }}
+                  onPaneClick={() => {
+                    selectCanvasNodeExclusively(null);
+                    setCreatorOpen(false);
+                  }}
+                  nodeTypes={NODE_TYPES}
+                  defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                  colorMode="dark"
+                  proOptions={{ hideAttribution: true }}
+                  minZoom={0.16}
+                  maxZoom={1.4}
+                  defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                  nodesDraggable={canEdit}
+                  nodesConnectable={canEdit}
+                  edgesReconnectable={false}
+                  edgesFocusable={canEdit}
+                  deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+                  selectNodesOnDrag
+                  zoomOnDoubleClick={false}
+                  fitView={canvasNodes.length > 0}
+                  fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                  className="relative z-10"
+                  style={{ backgroundColor: "transparent" }}
+                >
+                  <MiniMap
+                    pannable
+                    position="bottom-left"
+                    className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
+                    bgColor="oklch(0.24 0 0 / 0.82)"
+                    maskColor="rgba(0,0,0,0.46)"
+                    nodeColor="rgba(255,255,255,0.42)"
+                    nodeStrokeWidth={0}
+                  />
+                  <CanvasControls
+                    position="bottom-left"
+                    className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
+                  />
+                </StoryCanvasReactFlow>
+              </StoryCanvasFocusContext.Provider>
+            </StoryProductionUiContext.Provider>
+          </StoryTrailerUiContext.Provider>
+        </MediaHoverPreviewProvider>
 
         {canEdit ? (
           <StoryNodeCreator
             open={creatorOpen}
-            canAddChoice={Boolean(selectedChoiceSourceId)}
             onOpenChange={setCreatorOpen}
             onCreate={createStoryElement}
           />
         ) : null}
       </section>
 
+      {pendingCompletionDrop ? (
+        <StoryConnectionCreator
+          position={pendingCompletionDrop.clientPosition}
+          onCreate={createCompletionStep}
+          onCancel={() => setPendingCompletionDrop(null)}
+        />
+      ) : null}
+
       <StoryNodeInspector
-        projectId={projectId}
         content={content}
         locale={authoringLocale}
-        selectedNode={selectedNode}
-        production={inspectorProduction}
+        selectedNode={focusedNode}
+        clipMedia={
+          focusedNode?.data.kind === "clip"
+            ? {
+                clip: focusedFilmClip ?? null,
+                canEdit: canManageClipMedia,
+                disabledReason: clipMediaDisabledReason,
+                onUpload: uploadSelectedClipVideo,
+                videoLibrary:
+                  workspaceId && focusedFilmClip
+                    ? {
+                        workspaceId,
+                        projectId,
+                        disabled: !canManageClipMedia,
+                        disabledReason: clipMediaDisabledReason,
+                        onSelect: selectExistingClipVideo,
+                      }
+                    : undefined,
+              }
+            : undefined
+        }
         filmTrailer={film?.trailer ?? null}
         trailerProduction={inspectorTrailerProduction}
         onCreateTrailerPrompt={() =>
@@ -2450,12 +2388,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onReplaceTrailerPrompt={(prompt) =>
           applyGraphMutation((current) => replaceTrailerPrompt(current, prompt))
         }
-        showFoundation={showFoundation}
+        showFoundation={focusedNodeId === null}
         canEdit={canEdit}
-        onShowFoundation={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        onShowFoundation={() => selectCanvasNodeExclusively(null)}
         onUpdateFoundation={updateFoundation}
         onCreateCharacter={createCharacter}
         onUpdateCharacter={(characterId, patch) =>
@@ -2471,25 +2406,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onRemoveWorldTextItem={(field, index) =>
           applyGraphMutation((current) => removeWorldTextItem(current, field, index))
         }
-        onCreateStateVariable={createStateVariable}
-        onReplaceStateVariable={(key, next) =>
-          applyGraphMutation((current) => replaceStoryStateVariable(current, key, next))
-        }
-        onDeleteStateVariable={(key) =>
-          applyGraphMutation((current) => deleteStoryStateVariable(current, key))
-        }
-        onReplaceClipPrompt={(graphNodeId, next) =>
-          applyGraphMutation((current) => replaceClipPrompt(current, graphNodeId, next))
-        }
-        onCloseNode={() => {
-          setSelectedNodeId(null);
-          setShowFoundation(true);
-        }}
+        onCloseNode={() => selectCanvasNodeExclusively(null)}
         onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
-        onChangeExitKind={changeExitKind}
-        onUpdateCheckpointTarget={(nodeId, targetNodeId) =>
-          applyGraphMutation((current) => updateCheckpointTarget(current, nodeId, targetNodeId))
-        }
         onAddAutoRoute={(nodeId, targetNodeId) =>
           applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
         }
@@ -2513,7 +2431,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         onUpdateEnding={updateEnding}
         onDuplicateNode={duplicateNode}
         onDeleteSelected={() => {
-          if (selectedNode) deleteStoryNodes([selectedNode]);
+          if (focusedNode) deleteStoryNodes([focusedNode]);
         }}
       />
 
@@ -2544,29 +2462,58 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 }
 
 function CanvasHeader({
-  projectId,
   title,
   revision,
   saveState,
   saveError,
   canEdit,
   previewPending,
+  publishPending,
+  published,
+  canPublish,
+  publishDisabledReason,
   onPreview,
-  onFit,
+  onPublish,
   onShowFoundation,
 }: {
-  projectId: string;
   title: string;
   revision: number;
   saveState: SaveState;
   saveError: string | null;
   canEdit: boolean;
   previewPending: boolean;
+  publishPending: boolean;
+  published: boolean;
+  canPublish: boolean;
+  publishDisabledReason: string | null;
   onPreview: () => void;
-  onFit: () => void;
+  onPublish: () => void;
   onShowFoundation: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
+  const publishButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="lg"
+      onClick={onPublish}
+      disabled={!canPublish || publishPending || published}
+      className="h-9 gap-2 rounded-xl bg-white/[0.07] px-3 font-semibold text-white/66 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed"
+    >
+      {publishPending ? (
+        <IconLoader2 className="size-4 animate-spin" />
+      ) : published ? (
+        <IconCheck className="size-4" />
+      ) : (
+        <IconCloudUpload className="size-4" />
+      )}
+      {publishPending
+        ? t("publish.actionPending")
+        : published
+          ? t("publish.actionPublished")
+          : t("publish.action")}
+    </Button>
+  );
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <FrostedPanel className="pointer-events-auto flex h-12 min-w-0 items-center gap-3 rounded-[20px] bg-[oklch(0.205_0_0/0.72)] px-2.5 pr-4 shadow-[0_14px_50px_rgba(0,0,0,0.3)] backdrop-blur-[60px]">
@@ -2610,13 +2557,6 @@ function CanvasHeader({
           <IconBook2 className="size-4" />
           {t("foundation.action")}
         </button>
-        <Link
-          href={`/story-studio/projects/${projectId}/overview`}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white"
-        >
-          <IconLayoutDashboard className="size-4" />
-          {t("workbench")}
-        </Link>
         <button
           type="button"
           onClick={onPreview}
@@ -2630,15 +2570,24 @@ function CanvasHeader({
           )}
           {t("workingPreview.action")}
         </button>
-        <button
-          type="button"
-          onClick={onFit}
-          className="grid size-9 place-items-center rounded-xl bg-white/[0.07] text-white/66 transition hover:bg-white/[0.12] hover:text-white"
-          aria-label={t("fit")}
-          title={t("fit")}
-        >
-          <IconFocusCentered className="size-4" />
-        </button>
+        {!canPublish && publishDisabledReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="inline-flex rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
+                aria-label={`${t("publish.action")}: ${publishDisabledReason}`}
+              >
+                {publishButton}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              {publishDisabledReason}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          publishButton
+        )}
         <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-[11px] font-semibold text-black">
           {saveState === "saving" ? (
             <IconLoader2 className="size-3.5 animate-spin" />
@@ -2692,32 +2641,31 @@ function StoryPortHandle({
   );
 }
 
-function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
+function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
   const t = useTranslations("storyStudio.canvas");
-  const nodeCardRef = useRef<HTMLDivElement>(null);
   const productionUi = useContext(StoryProductionUiContext);
   const trailerUi = useContext(StoryTrailerUiContext);
+  const focusedNodeId = useContext(StoryCanvasFocusContext);
   const isRoot = data.kind === "root";
   const isEnding = data.kind === "ending";
   const isRouter = data.kind === "router";
   const isDecision = data.kind === "decision";
-  const selectedMasterTake =
-    productionUi?.graphNodeId === data.nodeId && data.filmClip?.master
-      ? productionUi.composer.takes.find((take) => take.id === data.filmClip?.master?.takeId)
-      : null;
-  const liveMasterPreviewUrl =
-    data.kind === "root"
-      ? data.filmTrailer?.master?.outputAsset?.previewUrl
-      : (data.filmClip?.master?.outputAsset?.previewUrl ??
-        selectedMasterTake?.outputAsset?.previewUrl);
-  // Fall back to the carried-over master (an earlier revision's video for this
-  // clip identity) so an in-progress draft edit doesn't blank the shot.
-  const carriedPreviewUrl =
-    data.kind === "clip" ? data.carriedMaster?.outputAsset?.previewUrl : undefined;
-  const masterPreviewUrl = liveMasterPreviewUrl ?? carriedPreviewUrl ?? undefined;
-  const showsCarriedMaster = Boolean(!liveMasterPreviewUrl && carriedPreviewUrl);
   const productionTarget = data.kind === "root" ? data.filmTrailer : data.filmClip;
-  const nodeProductionStatus = productionTarget?.productionStatus;
+  const { currentVideo, generation, generationActive } = resolveStoryVideoState(productionTarget);
+  const currentVideoAsset = currentVideo?.asset;
+  const currentVideoSource: StudioVideoSource | undefined = currentVideoAsset?.previewUrl
+    ? {
+        src: currentVideoAsset.previewUrl,
+        type: currentVideoAsset.contentType,
+      }
+    : undefined;
+  const mediaPreview = useMediaHoverPreview({
+    ownerId: id,
+    enabled: Boolean(currentVideoSource) && !generationActive,
+    canActivate: canActivateCanvasMediaPreview,
+    canClaimManual: canClaimCanvasManualPlayback,
+  });
+  const previewFocused = focusedNodeId === id;
   const chipStyle =
     data.kind === "root"
       ? { background: "rgba(123,75,232,0.42)", iconBackground: "rgba(143,101,255,0.70)" }
@@ -2729,10 +2677,13 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
             ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
             : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
-    <div ref={nodeCardRef} className="relative pt-10">
+    <div className="relative pt-10">
       <FrostedPanel
         rim={false}
-        className="pointer-events-none absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+        className={cn(
+          CANVAS_NODE_DRAG_HANDLE_CLASS,
+          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+        )}
         style={{ backgroundColor: chipStyle.background }}
       >
         <span
@@ -2748,6 +2699,7 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
       <article
+        {...mediaPreview.hoverProps}
         className={cn(
           "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
           isRoot && "w-[360px]",
@@ -2788,86 +2740,105 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
             className="-right-1.75!"
           />
         ) : null}
-        {data.kind === "clip" && data.exitKind === "choice" ? (
+        {data.kind === "clip" ? (
           <StoryPortHandle
-            id="choice-trigger"
+            id="completion"
             type="source"
             position={Position.Right}
-            color={STORY_PORT_COLORS.choice}
-            label={t("ports.choiceTrigger")}
-            isConnectable={false}
+            color={
+              data.exitKind === "choice"
+                ? STORY_PORT_COLORS.choice
+                : data.exitKind === "checkpoint"
+                  ? STORY_PORT_COLORS.checkpoint
+                  : data.exitKind === "ending"
+                    ? STORY_PORT_COLORS.ending
+                    : STORY_PORT_COLORS.flow
+            }
+            label={t("ports.completion")}
+            isConnectable={
+              isConnectable && data.exitKind === "auto" && !data.continuationTargetNodeId
+            }
             className="-right-1.75!"
           />
         ) : null}
-        {data.kind === "clip" && data.exitKind === "ending" ? (
-          <StoryPortHandle
-            id="ending"
-            type="source"
-            position={Position.Right}
-            color={STORY_PORT_COLORS.ending}
-            label={t("ports.ending")}
-            isConnectable={false}
-            className="-right-1.75!"
+        {data.kind === "clip" ? (
+          <StoryVideoPreview
+            source={currentVideoSource}
+            interactive={previewFocused}
+            frameAspectRatio={data.frameAspectRatio}
+            ariaLabel={t("production.node.videoPreview")}
+            emptyLabel={t("production.node.noVideo")}
+            outdated={Boolean(currentVideo?.outdated)}
+            outdatedLabel={t("production.node.earlierDirection")}
+            generation={generation}
+            generationLabel={
+              generationActive && generation ? t(`production.statuses.${generation.status}`) : null
+            }
+            generationFailedLabel={t("production.node.generationFailed")}
+            autoPreviewActive={mediaPreview.isAutoPreviewActive}
+            manualPlaybackOwned={mediaPreview.isManualPlaybackOwner}
+            onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+            onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+            className="rounded-t-[22px]"
           />
         ) : null}
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
-                {data.eyebrow}
-              </p>
-              <h2 className="mt-1 truncate text-[15px] font-semibold text-white/90">
+        <div className="p-3">
+          {data.kind === "clip" ? (
+            data.title ? (
+              <h2
+                className={cn(
+                  CANVAS_NODE_DRAG_HANDLE_CLASS,
+                  "-mx-1 truncate rounded px-1 text-[15px] font-semibold text-white/90"
+                )}
+              >
                 {data.title}
               </h2>
-            </div>
-            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
-              {data.kind === "clip" ? <IconMovie className="size-4" /> : null}
-              {isDecision ? <IconGitBranch className="size-4" /> : null}
-              {isRouter ? <IconRoute className="size-4" /> : null}
-              {isEnding ? <IconSparkles className="size-4" /> : null}
-              {isRoot ? <IconWorld className="size-4" /> : null}
-            </span>
-          </div>
-          {data.kind === "clip" || data.kind === "root" ? (
+            ) : null
+          ) : (
             <div
-              className="nodrag nopan nowheel relative mt-3 w-full overflow-hidden rounded-[16px] bg-black/30"
-              style={{ aspectRatio: data.frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
-            >
-              {masterPreviewUrl ? (
-                <>
-                  <video
-                    src={masterPreviewUrl}
-                    controls={selected}
-                    muted={!selected}
-                    playsInline
-                    preload="metadata"
-                    className={cn("size-full object-cover", !selected && "pointer-events-none")}
-                    aria-label={t(
-                      data.kind === "root"
-                        ? "trailer.node.masterPreview"
-                        : "production.node.masterPreview"
-                    )}
-                  />
-                  {showsCarriedMaster ? (
-                    <span className="pointer-events-none absolute top-2 left-2 rounded-full bg-black/62 px-2 py-1 text-[8px] font-semibold text-white/82 backdrop-blur-sm">
-                      {t("production.node.carriedMaster")}
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
-                  <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
-                    <IconMovie className="size-4" />
-                  </span>
-                  <span className="text-[9px] font-semibold">
-                    {t(data.kind === "root" ? "trailer.node.noMaster" : "production.node.noMaster")}
-                  </span>
-                  <span className="text-[8px] tabular-nums text-white/18">
-                    {data.frameAspectRatio ?? "16:9"}
-                  </span>
-                </div>
+              className={cn(
+                CANVAS_NODE_DRAG_HANDLE_CLASS,
+                "-mx-1 flex items-start justify-between gap-3 rounded px-1"
               )}
+            >
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
+                  {data.eyebrow}
+                </p>
+                <h2 className="mt-1 truncate text-[15px] font-semibold text-white/90">
+                  {data.title}
+                </h2>
+              </div>
+              <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
+                {isDecision ? <IconGitBranch className="size-4" /> : null}
+                {isRouter ? <IconRoute className="size-4" /> : null}
+                {isEnding ? <IconSparkles className="size-4" /> : null}
+                {isRoot ? <IconWorld className="size-4" /> : null}
+              </span>
             </div>
+          )}
+          {data.kind === "root" ? (
+            <StoryVideoPreview
+              source={currentVideoSource}
+              interactive={previewFocused}
+              frameAspectRatio={data.frameAspectRatio}
+              ariaLabel={t("trailer.node.videoPreview")}
+              emptyLabel={t("trailer.node.noVideo")}
+              outdated={Boolean(currentVideo?.outdated)}
+              outdatedLabel={t("production.node.earlierDirection")}
+              generation={generation}
+              generationLabel={
+                generationActive && generation
+                  ? t(`production.statuses.${generation.status}`)
+                  : null
+              }
+              generationFailedLabel={t("production.node.generationFailed")}
+              autoPreviewActive={mediaPreview.isAutoPreviewActive}
+              manualPlaybackOwned={mediaPreview.isManualPlaybackOwner}
+              onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+              onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+              className="mt-3 rounded-[16px]"
+            />
           ) : null}
           {data.summary ? (
             <p className="mt-3 line-clamp-3 text-[11px] leading-[18px] text-white/48">
@@ -2875,11 +2846,10 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
             </p>
           ) : null}
           {data.rootStats ? (
-            <div className="mt-3 grid grid-cols-4 gap-1.5">
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
               <NodeStat label={t("metrics.characters")} value={data.rootStats.characters} />
               <NodeStat label={t("metrics.locations")} value={data.rootStats.locations} />
               <NodeStat label={t("metrics.props")} value={data.rootStats.props} />
-              <NodeStat label={t("metrics.rules")} value={data.rootStats.rules} />
             </div>
           ) : null}
           {isDecision ? (
@@ -2918,7 +2888,7 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
               ) : null}
             </div>
           ) : null}
-          {(data.kind === "clip" || isRouter) && data.exitKind === "auto" ? (
+          {isRouter && data.exitKind === "auto" ? (
             <div className="mt-3 space-y-1.5">
               {(data.autoRoutes ?? []).map((route) => (
                 <div
@@ -2932,84 +2902,27 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
                   </span>
                   <span className="shrink-0 text-white/28">→ {route.targetNodeId}</span>
                   <StoryPortHandle
-                    id={`${isRouter ? "route" : "auto"}:${route.routeIndex}`}
+                    id={`route:${route.routeIndex}`}
                     type="source"
                     position={Position.Right}
                     isConnectable={isConnectable}
-                    color={isRouter ? STORY_PORT_COLORS.route : STORY_PORT_COLORS.flow}
+                    color={STORY_PORT_COLORS.route}
                     label={t("ports.route", { target: route.targetNodeId })}
                     className="-right-[23px]!"
                   />
                 </div>
               ))}
               {(data.autoRoutes?.length ?? 0) < 20 ? (
-                <div
-                  className={cn(
-                    "relative flex h-8 items-center rounded-xl px-2.5 text-[10px] font-semibold",
-                    isRouter
-                      ? "bg-[rgba(224,164,92,0.08)] text-[#e0a45c]/74"
-                      : "bg-white/[0.045] text-white/42"
-                  )}
-                >
+                <div className="relative flex h-8 items-center rounded-xl bg-[rgba(224,164,92,0.08)] px-2.5 text-[10px] font-semibold text-[#e0a45c]/74">
                   {t("ports.newRoute")}
                   <StoryPortHandle
-                    id={isRouter ? "route-new" : "auto-new"}
+                    id="route-new"
                     type="source"
                     position={Position.Right}
                     isConnectable={isConnectable}
-                    color={isRouter ? STORY_PORT_COLORS.route : STORY_PORT_COLORS.flow}
+                    color={STORY_PORT_COLORS.route}
                     label={t("ports.newRoute")}
                     className="-right-[23px]!"
-                  />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {data.kind === "clip" && data.exitKind === "checkpoint" ? (
-            <div className="relative mt-3 flex items-center justify-between gap-3 rounded-xl bg-[rgba(143,101,255,0.1)] px-2.5 py-2 pr-3.5 text-[10px]">
-              <span className="truncate font-semibold text-[#b7a5ff]/82">
-                {t("ports.checkpoint")}
-              </span>
-              <span className="shrink-0 text-white/28">→ {data.checkpointTargetNodeId}</span>
-              <StoryPortHandle
-                id="checkpoint"
-                type="source"
-                position={Position.Right}
-                isConnectable={isConnectable}
-                color={STORY_PORT_COLORS.checkpoint}
-                label={t("ports.checkpointTarget", {
-                  target: data.checkpointTargetNodeId ?? "",
-                })}
-                className="-right-[23px]!"
-              />
-            </div>
-          ) : null}
-          {nodeProductionStatus ? (
-            <div className="mt-3 rounded-[14px] bg-black/18 p-2.5">
-              <div className="flex items-center justify-between gap-2 text-[9px] font-semibold">
-                <span className="rounded-full bg-white/[0.06] px-2 py-1 text-white/52">
-                  {t(`production.statuses.${nodeProductionStatus}`)}
-                </span>
-                {productionTarget?.master ? (
-                  <span className="flex items-center gap-1 text-white/70">
-                    <IconCheck className="size-3" />
-                    {t("production.node.master")}
-                  </span>
-                ) : null}
-              </div>
-              {productionTarget ? (
-                <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
-                  <NodeProductionStat
-                    label={t("production.node.takes")}
-                    value={productionTarget.takeCounts.total}
-                  />
-                  <NodeProductionStat
-                    label={t("production.node.running")}
-                    value={productionTarget.takeCounts.running}
-                  />
-                  <NodeProductionStat
-                    label={t("production.node.approved")}
-                    value={productionTarget.takeCounts.approved}
                   />
                 </div>
               ) : null}
@@ -3021,12 +2934,189 @@ function StoryGraphNodeCard({ data, selected, isConnectable }: NodeProps<StoryCa
       data.kind === "clip" &&
       data.directorPrompt &&
       productionUi?.graphNodeId === data.nodeId ? (
-        <StoryShotComposer {...productionUi.composer} anchorRef={nodeCardRef} />
+        <StoryShotComposer {...productionUi.composer} />
       ) : null}
       {selected && data.kind === "root" && trailerUi?.composer ? (
-        <StoryShotComposer {...trailerUi.composer} anchorRef={nodeCardRef} />
+        <StoryShotComposer {...trailerUi.composer} />
       ) : null}
     </div>
+  );
+}
+
+function StoryVideoPreview({
+  source,
+  interactive,
+  frameAspectRatio,
+  ariaLabel,
+  emptyLabel,
+  outdated,
+  outdatedLabel,
+  generation,
+  generationLabel,
+  generationFailedLabel,
+  autoPreviewActive,
+  manualPlaybackOwned,
+  onManualPlaybackStart,
+  onManualPlaybackStop,
+  className,
+}: {
+  source?: StudioVideoSource;
+  interactive: boolean;
+  frameAspectRatio?: string;
+  ariaLabel: string;
+  emptyLabel: string;
+  outdated: boolean;
+  outdatedLabel: string;
+  generation: FilmVideoGeneration | null | undefined;
+  generationLabel: string | null;
+  generationFailedLabel: string;
+  autoPreviewActive: boolean;
+  manualPlaybackOwned: boolean;
+  onManualPlaybackStart: () => MediaManualPlaybackLease | null;
+  onManualPlaybackStop: (lease: MediaManualPlaybackLease) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn("relative w-full overflow-hidden bg-black/30", className)}
+      style={{ aspectRatio: frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+    >
+      {source ? (
+        interactive ? (
+          <StoryInteractiveVideoPreview
+            source={source}
+            ariaLabel={ariaLabel}
+            autoPreviewActive={autoPreviewActive}
+            manualPlaybackOwned={manualPlaybackOwned}
+            onManualPlaybackStart={onManualPlaybackStart}
+            onManualPlaybackStop={onManualPlaybackStop}
+          />
+        ) : (
+          <StoryPassiveVideoPreview source={source} active={autoPreviewActive} />
+        )
+      ) : (
+        <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
+          <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
+            <IconMovie className="size-4" />
+          </span>
+          <span className="text-[9px] font-semibold">{emptyLabel}</span>
+          <span className="text-[8px] tabular-nums text-white/18">
+            {frameAspectRatio ?? "16:9"}
+          </span>
+        </div>
+      )}
+      {outdated ? (
+        <span className="pointer-events-none absolute top-2 left-2 z-30 rounded-full bg-black/62 px-2 py-1 text-[8px] font-semibold text-white/78 backdrop-blur-sm">
+          {outdatedLabel}
+        </span>
+      ) : null}
+      {isActiveVideoGeneration(generation) ? (
+        <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-black/52 backdrop-blur-[2px]">
+          <span className="flex items-center gap-2 rounded-full bg-black/52 px-3 py-2 text-[9px] font-semibold text-white/84 backdrop-blur-md">
+            <IconLoader2 className="size-3.5 animate-spin" />
+            {generationLabel}
+          </span>
+        </div>
+      ) : generation?.status === "failed" ? (
+        <span className="pointer-events-none absolute top-2 right-2 z-40 flex max-w-[70%] items-center gap-1.5 rounded-full bg-black/72 px-2 py-1 text-[8px] font-semibold text-[#ffb2b4] backdrop-blur-md">
+          <IconAlertTriangle className="size-3 shrink-0" />
+          <span className="truncate">
+            {filmGenerationError(generation) ?? generationFailedLabel}
+          </span>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function StoryInteractiveVideoPreview({
+  source,
+  ariaLabel,
+  autoPreviewActive,
+  manualPlaybackOwned,
+  onManualPlaybackStart,
+  onManualPlaybackStop,
+}: {
+  source: StudioVideoSource;
+  ariaLabel: string;
+  autoPreviewActive: boolean;
+  manualPlaybackOwned: boolean;
+  onManualPlaybackStart: () => MediaManualPlaybackLease | null;
+  onManualPlaybackStop: (lease: MediaManualPlaybackLease) => void;
+}) {
+  const zoom = useStore((state) => state.transform[2]);
+  const controlDensity = resolveCanvasVideoControlDensity(zoom);
+
+  return (
+    <CanvasNativePointerOwner
+      className={cn("absolute inset-0", controlDensity === null && "pointer-events-none")}
+    >
+      <StudioVideoPlayer
+        source={source}
+        ariaLabel={ariaLabel}
+        controlDensity={controlDensity}
+        autoPreviewActive={autoPreviewActive}
+        manualPlaybackOwned={manualPlaybackOwned}
+        onManualPlaybackStart={onManualPlaybackStart}
+        onManualPlaybackStop={onManualPlaybackStop}
+        fit="cover"
+        renderScale={zoom}
+      />
+    </CanvasNativePointerOwner>
+  );
+}
+
+function StoryPassiveVideoPreview({
+  source,
+  active,
+}: {
+  source: StudioVideoSource;
+  active: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const playbackEpochRef = useRef(0);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const epoch = ++playbackEpochRef.current;
+
+    if (!active) {
+      video.pause();
+      video.currentTime = 0;
+      return;
+    }
+
+    video.muted = true;
+    video.currentTime = 0;
+    void video
+      .play()
+      .then(() => {
+        if (epoch === playbackEpochRef.current && active) return;
+        video.pause();
+        video.currentTime = 0;
+      })
+      .catch(() => {});
+
+    return () => {
+      playbackEpochRef.current += 1;
+      video.pause();
+    };
+  }, [active, source.src]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={source.src}
+      muted
+      draggable={false}
+      playsInline
+      preload="metadata"
+      tabIndex={-1}
+      aria-hidden="true"
+      data-auto-preview={active ? "true" : undefined}
+      className="pointer-events-none size-full object-cover select-none"
+    />
   );
 }
 
@@ -3035,15 +3125,6 @@ function NodeStat({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg bg-white/[0.045] px-2 py-2">
       <p className="truncate text-[8px] font-semibold text-white/30">{label}</p>
       <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-white/68">{value}</p>
-    </div>
-  );
-}
-
-function NodeProductionStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg bg-white/[0.045] px-1.5 py-1.5">
-      <p className="truncate text-[7px] font-semibold text-white/26">{label}</p>
-      <p className="mt-0.5 text-[10px] font-semibold tabular-nums text-white/62">{value}</p>
     </div>
   );
 }
