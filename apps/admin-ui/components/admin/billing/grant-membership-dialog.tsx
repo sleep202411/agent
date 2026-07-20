@@ -95,11 +95,9 @@ export function GrantMembershipDialog({
   const [granted, setGranted] = useState<MembershipGrant | null>(null);
 
   const parsedDays = Number(days);
-  const daysValid =
-    Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 366;
+  const daysValid = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 366;
   const canLookup = Boolean(identifier.trim()) && !looking;
-  const canSubmit =
-    Boolean(user) && daysValid && Boolean(note.trim()) && !submitting;
+  const canSubmit = Boolean(user) && daysValid && Boolean(note.trim()) && !submitting;
 
   useEffect(() => {
     if (!open) {
@@ -168,15 +166,12 @@ export function GrantMembershipDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const grant = await mutateEnvelope<MembershipGrant>(
-        "/api/admin/billing/membership-grants",
-        {
-          userId: user.userId,
-          planKey,
-          durationDays: parsedDays,
-          note: note.trim(),
-        }
-      );
+      const grant = await mutateEnvelope<MembershipGrant>("/api/admin/billing/membership-grants", {
+        userId: user.userId,
+        planKey,
+        durationDays: parsedDays,
+        note: note.trim(),
+      });
       setGranted(grant);
       setNote("");
       await loadGrants(user.userId);
@@ -328,9 +323,7 @@ export function GrantMembershipDialog({
                   >
                     <span className="font-medium text-slate-950">{planLabel(g.planKey)}</span>
                     <span
-                      className={
-                        g.activeNow ? "font-medium text-emerald-600" : "text-slate-400"
-                      }
+                      className={g.activeNow ? "font-medium text-emerald-600" : "text-slate-400"}
                     >
                       {g.activeNow ? "生效中" : GRANT_STATUS_LABEL[g.status]}
                     </span>
