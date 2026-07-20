@@ -1610,19 +1610,21 @@
       "titlePlaceholder": "未命名互動故事",
       "summary": "簡介",
       "summaryPlaceholder": "描述故事前提與目標體驗。",
-      "primaryExperience": "首選體驗",
-      "primaryExperienceHint": "只決定創作起點；每個專案都可以混合文字與影像場景。",
+      "primaryExperience": "故事形態",
+      "primaryExperienceHint": "決定 AI 起草形態與影片畫幅契約；畫布上仍可手動混用文字與影像場景。",
       "frameProfile": "影片畫幅",
-      "frameProfileHint": "只作用於影片節點；專案內所有生成影片片段都會使用此固定畫幅。"
+      "frameProfileHint": "只作用於影片節點；專案內所有生成影片片段都會使用此固定畫幅。",
+      "storyLocale": "故事語言",
+      "storyLocaleHint": "（寫作與發佈的主語言）"
     },
     "formats": {
       "interactive_film": {
         "label": "互動影遊",
-        "description": "從影像場景開始，仍可隨時加入關鍵劇情。"
+        "description": "以影像場景為主線，全專案共用固定畫幅；AI 起草產出影像分鏡。"
       },
       "text_adventure": {
         "label": "文字冒險",
-        "description": "從關鍵劇情開始，可在任何位置加入影片。"
+        "description": "以文字劇情為主線，AI 起草為純文字；可手動加入影片場景。"
       }
     },
     "frameProfiles": {

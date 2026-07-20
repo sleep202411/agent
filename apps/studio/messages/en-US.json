@@ -1610,19 +1610,21 @@
       "titlePlaceholder": "Untitled interactive story",
       "summary": "Summary",
       "summaryPlaceholder": "Describe the premise and intended experience.",
-      "primaryExperience": "Primary experience",
-      "primaryExperienceHint": "Sets the starting point only. Every project can mix text and video scenes.",
+      "primaryExperience": "Story format",
+      "primaryExperienceHint": "Shapes AI drafting and the video frame contract. Both scene types can still be mixed on the canvas.",
       "frameProfile": "Video format",
-      "frameProfileHint": "Used only by video nodes. Every generated clip in this project uses this fixed format."
+      "frameProfileHint": "Used only by video nodes. Every generated clip in this project uses this fixed format.",
+      "storyLocale": "Story language",
+      "storyLocaleHint": "(authoring & publish primary language)"
     },
     "formats": {
       "interactive_film": {
         "label": "Cinematic",
-        "description": "Start with video scenes; plot beats remain available."
+        "description": "Video-first: scenes share one fixed frame; AI drafts cinematic storyboards."
       },
       "text_adventure": {
         "label": "Text adventure",
-        "description": "Start with plot beats; add video anywhere."
+        "description": "Text-first: AI drafts are text-only; video scenes can be added by hand."
       }
     },
     "frameProfiles": {

@@ -38,8 +38,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Field } from "@/components/ui/field";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -425,8 +435,9 @@ function CreateProjectDialog({
   const t = useTranslations("storyStudio");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [storyLocale, setStoryLocale] = useState(defaultLocale);
   const [format, setFormat] = useState<CreatableStoryFormat>("interactive_film");
-  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(null);
+  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(DEFAULT_FRAME_PROFILE);
   // A text-first project sets no frame profile at all; a film project requires one.
   const requiresFrameProfile = format === "interactive_film";
   const createMutation = useMutation({
@@ -439,15 +450,16 @@ function CreateProjectDialog({
         ...(requiresFrameProfile && frameProfile ? { frameProfile } : {}),
         title: title.trim(),
         summary: summary.trim() || null,
-        defaultLocale,
+        defaultLocale: storyLocale,
         visibility: "private",
       });
     },
     onSuccess: (project) => {
       setTitle("");
       setSummary("");
+      setStoryLocale(defaultLocale);
       setFormat("interactive_film");
-      setFrameProfile(null);
+      setFrameProfile(DEFAULT_FRAME_PROFILE);
       onOpenChange(false);
       onCreated(project);
     },
@@ -462,39 +474,66 @@ function CreateProjectDialog({
           <DialogDescription>{t("create.description")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.title")}</span>
+          <Field dense required label={t("fields.title")} htmlFor="story-create-title">
             <Input
+              id="story-create-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={160}
               autoFocus
+              aria-required="true"
               placeholder={t("fields.titlePlaceholder")}
             />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.summary")}</span>
+          </Field>
+          <Field dense label={t("fields.summary")} htmlFor="story-create-summary">
             <Textarea
+              id="story-create-summary"
               value={summary}
               onChange={(event) => setSummary(event.target.value)}
               maxLength={2000}
               rows={4}
               placeholder={t("fields.summaryPlaceholder")}
             />
-          </label>
+          </Field>
+          <Field
+            dense
+            required
+            label={t("fields.storyLocale")}
+            hint={t("fields.storyLocaleHint")}
+            htmlFor="story-create-locale"
+          >
+            <Select value={storyLocale} onValueChange={setStoryLocale}>
+              <SelectTrigger id="story-create-locale" aria-required="true" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STORY_LOCALE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-white/58">
               {t("fields.primaryExperience")}
+              <RequiredMark />
             </legend>
             <p className="text-[11px] leading-4 text-white/38">
               {t("fields.primaryExperienceHint")}
             </p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup">
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
               <FormatOption
                 format="interactive_film"
                 selected={format === "interactive_film"}
                 icon={<IconMovie className="size-5" stroke={1.7} />}
-                onSelect={setFormat}
+                onSelect={(next) => {
+                  setFormat(next);
+                  // Coming back from text-first: restore the frame default so
+                  // the film contract is never silently empty.
+                  setFrameProfile((prev) => prev ?? DEFAULT_FRAME_PROFILE);
+                }}
               />
               <FormatOption
                 format="text_adventure"
@@ -513,9 +552,10 @@ function CreateProjectDialog({
             <fieldset className="space-y-2">
               <legend className="text-xs font-medium text-white/58">
                 {t("fields.frameProfile")}
+                <RequiredMark />
               </legend>
               <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
-              <div className="grid grid-cols-2 gap-2" role="radiogroup">
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
                 <FrameProfileOption
                   profile="landscape_16_9"
                   selected={frameProfile === "landscape_16_9"}
@@ -542,6 +582,7 @@ function CreateProjectDialog({
             {t("actions.cancel")}
           </Button>
           <Button
+            variant="primary-cta"
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
@@ -561,6 +602,23 @@ function CreateProjectDialog({
   );
 }
 
+// Landscape is the dominant story format in practice — preselect it so a film
+// project is creatable with only a title typed.
+const DEFAULT_FRAME_PROFILE: StoryFrameProfile = "landscape_16_9";
+
+// Language autonyms are locale-invariant data (a language picker always shows
+// each language in itself), not translatable UI copy.
+const STORY_LOCALE_OPTIONS = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-HK", label: "繁體中文" },
+  { value: "en-US", label: "English" },
+] as const;
+
+// Brand-red selection treatment for option cards (DESIGN.md rule 3): the rim
+// gradient mirrors the subscription dialog's Popular-tier red GlassRim.
+const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
+const SELECTED_CARD_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
+
 function FormatOption({
   format,
   selected,
@@ -578,18 +636,19 @@ function FormatOption({
       type="button"
       role="radio"
       aria-checked={selected}
-      className={`flex min-h-24 flex-col rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
+      className={`relative flex min-h-24 flex-col rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
         selected
-          ? "bg-white text-black shadow-[0_14px_32px_rgba(0,0,0,0.3)]"
+          ? "bg-[#E52227]/[0.07] text-white"
           : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
       }`}
       onClick={() => onSelect(format)}
     >
-      <span className={selected ? "text-black/72" : "text-white/48"}>{icon}</span>
+      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
+      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
       <span className="mt-3 block text-xs font-semibold">{t(`formats.${format}.label`)}</span>
       <span
         className={`mt-1 block text-[10px] leading-4 font-medium ${
-          selected ? "text-black/56" : "text-white/38"
+          selected ? "text-white/58" : "text-white/38"
         }`}
       >
         {t(`formats.${format}.description`)}
@@ -615,19 +674,20 @@ function FrameProfileOption({
       type="button"
       role="radio"
       aria-checked={selected}
-      className={`flex min-h-24 flex-col justify-between rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
+      className={`relative flex min-h-24 flex-col justify-between rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
         selected
-          ? "bg-white text-black shadow-[0_14px_32px_rgba(0,0,0,0.3)]"
+          ? "bg-[#E52227]/[0.07] text-white"
           : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
       }`}
       onClick={() => onSelect(profile)}
     >
-      <span className={selected ? "text-black/72" : "text-white/48"}>{icon}</span>
+      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
+      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
       <span className="mt-3 block">
         <span className="block text-xs font-semibold">{t(`frameProfiles.${profile}.label`)}</span>
         <span
           className={`mt-0.5 block text-[10px] font-medium tabular-nums ${
-            selected ? "text-black/54" : "text-white/36"
+            selected ? "text-white/56" : "text-white/36"
           }`}
         >
           {t(`frameProfiles.${profile}.dimensions`)}
@@ -682,20 +742,38 @@ function EditProjectDialog({
           <DialogTitle>{t("edit.title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.title")}</span>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.summary")}</span>
-            <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} />
-          </label>
+          <Field dense required label={t("fields.title")} htmlFor="story-edit-title">
+            <Input
+              id="story-edit-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={160}
+              aria-required="true"
+            />
+          </Field>
+          <Field dense label={t("fields.summary")} htmlFor="story-edit-summary">
+            <Textarea
+              id="story-edit-summary"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              maxLength={2000}
+              rows={4}
+            />
+          </Field>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="pt-2">
+          <Button
+            variant="ghost"
+            size="xl"
+            className="sm:min-w-24"
+            onClick={() => onOpenChange(false)}
+          >
             {t("actions.cancel")}
           </Button>
           <Button
+            variant="primary-cta"
+            size="xl"
+            className="sm:min-w-32"
             onClick={() => updateMutation.mutate()}
             disabled={!title.trim() || updateMutation.isPending}
           >
