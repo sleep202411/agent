@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { IconArrowUp, IconPlayerStopFilled } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,26 @@ export function CopilotComposer({
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tokensRef = useRef<HTMLSpanElement>(null);
+  // Inline tokens sit IN the text flow: the chip is absolutely positioned on
+  // the first line and the textarea's first line indents past it, so typed
+  // text continues right after the chip and wraps to the full width below.
+  const [tokenIndent, setTokenIndent] = useState(0);
   const inputId = useId();
+
+  useLayoutEffect(() => {
+    if (!inlineTokens) {
+      setTokenIndent(0);
+      return;
+    }
+    const tokens = tokensRef.current;
+    if (!tokens) return;
+    const measure = () => setTokenIndent(tokens.offsetWidth + 8);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(tokens);
+    return () => observer.disconnect();
+  }, [inlineTokens]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -51,12 +70,12 @@ export function CopilotComposer({
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
     textarea.style.overflowY = textarea.scrollHeight > 144 ? "auto" : "hidden";
-  }, [inlineTokens, value]);
+  }, [inlineTokens, tokenIndent, value]);
 
   const canSend = (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
   const enhanced = Boolean(inlineTokens);
 
-  const textarea = (className?: string) => (
+  const textarea = (className?: string, style?: React.CSSProperties) => (
     <textarea
       ref={textareaRef}
       id={inputId}
@@ -71,6 +90,7 @@ export function CopilotComposer({
       rows={1}
       autoFocus={autoFocus}
       placeholder={placeholder}
+      style={style}
       className={cn(
         "min-h-10 resize-none bg-transparent py-2 text-sm leading-5 text-white/88 outline-none placeholder:text-white/28",
         className
@@ -116,9 +136,14 @@ export function CopilotComposer({
       {attachmentBar ? <div className="px-2 pb-1.5">{attachmentBar}</div> : null}
       {enhanced ? (
         <>
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-2">
-            {inlineTokens}
-            {textarea("min-w-48 flex-[1_1_18rem] px-0")}
+          <div className="relative min-w-0 px-2">
+            <span
+              ref={tokensRef}
+              className="absolute top-[9px] left-2 z-10 inline-flex max-w-[70%]"
+            >
+              {inlineTokens}
+            </span>
+            {textarea("w-full px-0", tokenIndent ? { textIndent: `${tokenIndent}px` } : undefined)}
           </div>
           <div
             className={cn(

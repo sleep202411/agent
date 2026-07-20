@@ -12,7 +12,8 @@ describe("Story Agent run aura", () => {
 
     expect(html).toContain("data-story-agent-run-aura");
     expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain("pointer-events-none fixed inset-0");
+    // Scoped to its column (the canvas), never the whole viewport.
+    expect(html).toContain("pointer-events-none absolute inset-0");
     expect(html.match(/data-story-agent-aura-edge=/g)).toHaveLength(4);
     expect(html.match(/data-story-agent-aura-ribbon=/g)).toHaveLength(4);
   });

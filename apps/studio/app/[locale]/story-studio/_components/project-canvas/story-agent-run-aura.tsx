@@ -141,20 +141,20 @@ export function StoryAgentRunAura({ active }: StoryAgentRunAuraProps) {
       ref={rootRef}
       data-story-agent-run-aura
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-[90] overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-[90] overflow-hidden"
     >
       <div
         ref={topRef}
         data-story-agent-aura-edge="top"
-        className="absolute -top-14 left-[4%] h-28 w-[92%] opacity-70 [will-change:transform,opacity]"
+        className="absolute -top-8 left-[4%] h-16 w-[92%] opacity-70 [will-change:transform,opacity]"
       >
         <div
-          className="absolute inset-0 mix-blend-screen blur-[26px]"
+          className="absolute inset-0 mix-blend-screen blur-[18px]"
           style={{ background: TOP_GLOW }}
         />
         <div
           data-story-agent-aura-ribbon
-          className="absolute inset-x-[7%] bottom-7 h-5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
+          className="absolute inset-x-[7%] bottom-4 h-3.5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
           style={{ background: HORIZONTAL_RIBBON }}
         />
       </div>
@@ -162,15 +162,15 @@ export function StoryAgentRunAura({ active }: StoryAgentRunAuraProps) {
       <div
         ref={rightRef}
         data-story-agent-aura-edge="right"
-        className="absolute top-[4%] -right-14 h-[92%] w-28 opacity-70 [will-change:transform,opacity]"
+        className="absolute top-[4%] -right-8 h-[92%] w-16 opacity-70 [will-change:transform,opacity]"
       >
         <div
-          className="absolute inset-0 mix-blend-screen blur-[26px]"
+          className="absolute inset-0 mix-blend-screen blur-[18px]"
           style={{ background: RIGHT_GLOW }}
         />
         <div
           data-story-agent-aura-ribbon
-          className="absolute inset-y-[7%] left-7 w-5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
+          className="absolute inset-y-[7%] left-4 w-3.5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
           style={{ background: VERTICAL_RIBBON }}
         />
       </div>
@@ -178,15 +178,15 @@ export function StoryAgentRunAura({ active }: StoryAgentRunAuraProps) {
       <div
         ref={bottomRef}
         data-story-agent-aura-edge="bottom"
-        className="absolute -bottom-14 left-[4%] h-28 w-[92%] opacity-70 [will-change:transform,opacity]"
+        className="absolute -bottom-8 left-[4%] h-16 w-[92%] opacity-70 [will-change:transform,opacity]"
       >
         <div
-          className="absolute inset-0 mix-blend-screen blur-[26px]"
+          className="absolute inset-0 mix-blend-screen blur-[18px]"
           style={{ background: BOTTOM_GLOW }}
         />
         <div
           data-story-agent-aura-ribbon
-          className="absolute inset-x-[7%] top-7 h-5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
+          className="absolute inset-x-[7%] top-4 h-3.5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
           style={{ background: HORIZONTAL_RIBBON_REVERSED }}
         />
       </div>
@@ -194,15 +194,15 @@ export function StoryAgentRunAura({ active }: StoryAgentRunAuraProps) {
       <div
         ref={leftRef}
         data-story-agent-aura-edge="left"
-        className="absolute top-[4%] -left-14 h-[92%] w-28 opacity-70 [will-change:transform,opacity]"
+        className="absolute top-[4%] -left-8 h-[92%] w-16 opacity-70 [will-change:transform,opacity]"
       >
         <div
-          className="absolute inset-0 mix-blend-screen blur-[26px]"
+          className="absolute inset-0 mix-blend-screen blur-[18px]"
           style={{ background: LEFT_GLOW }}
         />
         <div
           data-story-agent-aura-ribbon
-          className="absolute inset-y-[7%] right-7 w-5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
+          className="absolute inset-y-[7%] right-4 w-3.5 rounded-full opacity-75 mix-blend-screen blur-[8px] [will-change:transform,opacity]"
           style={{ background: VERTICAL_RIBBON_REVERSED }}
         />
       </div>

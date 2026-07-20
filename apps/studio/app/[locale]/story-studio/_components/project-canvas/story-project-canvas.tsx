@@ -3184,13 +3184,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     (agentPhase === "reconciling" && (workbenchQuery.isError || layoutQuery.isError));
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
-      <StoryAgentRunAura
-        active={
-          agentPhase === "takeover-pending" ||
-          agentPhase === "applying" ||
-          agentPhase === "reconciling"
-        }
-      />
       <StoryCanvasAssistantLayer
         key={`${workspaceId}:${projectId}`}
         projectId={projectId}
@@ -3203,6 +3196,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           project.status === "active" && project.capabilities.includes("story.edit")
         )}
       >
+        {/* The takeover aura frames ONLY the canvas column — the assistant
+            panel stays outside the glow. */}
+        <StoryAgentRunAura
+          active={
+            agentPhase === "takeover-pending" ||
+            agentPhase === "applying" ||
+            agentPhase === "reconciling"
+          }
+        />
         {agentStatusMessage ? (
           <div
             role="status"

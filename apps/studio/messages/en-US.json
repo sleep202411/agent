@@ -1730,23 +1730,23 @@
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
       "assistant": {
-        "action": "Director Agent"
+        "action": "StoryOS"
       },
       "emptyAgent": {
         "title": "Every choice rewrites the story",
-        "description": "Tell the Director Agent about your story, or choose a directing skill to shape the first conversation.",
-        "assistantTitle": "Director Agent",
-        "close": "Close Director Agent",
-        "inputLabel": "Message the Director Agent",
+        "description": "Tell the StoryOS about your story, or choose a directing skill to shape the first conversation.",
+        "assistantTitle": "StoryOS",
+        "close": "Close StoryOS",
+        "inputLabel": "Message the StoryOS",
         "placeholder": "Describe the story, feeling, or player experience you want to create…",
         "panelPlaceholder": "Continue developing the story…",
         "panelEmpty": "Describe the story or player experience you want to develop.",
-        "transcriptLabel": "Director Agent conversation",
+        "transcriptLabel": "StoryOS conversation",
         "scrollToLatest": "Scroll to the latest message",
         "send": "Send message",
         "stop": "Stop response",
-        "thinking": "Director Agent is thinking…",
-        "error": "The Director Agent could not respond.",
+        "thinking": "StoryOS is thinking…",
+        "error": "The StoryOS could not respond.",
         "retry": "Retry",
         "historyLoading": "Loading this project's conversation…",
         "historyError": "The existing conversation could not be loaded. Sending stays disabled to protect its history.",
@@ -1762,7 +1762,7 @@
         "historyLimitReached": "This conversation reached its safe history limit. Start a new conversation to continue.",
         "newConversation": "New conversation",
         "newConversationTitle": "Start a new conversation?",
-        "newConversationDescription": "This permanently clears your private Director Agent chat for this project. It does not change the story canvas or other collaborators' chats.",
+        "newConversationDescription": "This permanently clears your private StoryOS chat for this project. It does not change the story canvas or other collaborators' chats.",
         "cancelNewConversation": "Keep conversation",
         "confirmNewConversation": "Clear and start new",
         "you": "You",
@@ -1848,13 +1848,16 @@
         "skills": {
           "symmetricalStorybook": {
             "title": "Symmetrical storybook cinema",
-            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone."
+            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
+            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Plot: advance in chapters, one pivotal choice per chapter, each making the hotel more absurd and the truth closer. Pacing: around 12 beats in three acts, each act closing on a small reversal. Endings: 3 — lifting the hat, keeping his secret, becoming the next hat-wearer — each rewriting the bellboy's place in the hotel."
           },
           "halftoneCollage": {
             "title": "Halftone collage",
-            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor."
+            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
+            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Pacing: 10-14 beats, hook within the first 2, then a meaningful choice every 2-3 beats. Endings: 3 — departing, staying, locking the case again — each decided by which memories the player restores or tears up."
           }
-        }
+        },
+        "placeholderWithSkill": "Share your story idea — StoryOS will draft it in the {skill} style…"
       },
       "saveState": {
         "idle": "Mutable draft · revision {revision}",

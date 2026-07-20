@@ -1730,23 +1730,23 @@
       "addNode": "添加故事节点",
       "loading": "正在打开故事画布…",
       "assistant": {
-        "action": "导演 Agent"
+        "action": "StoryOS"
       },
       "emptyAgent": {
         "title": "让每个选择，改写故事",
-        "description": "和导演 Agent 说说你的故事，或选择一种创作 Skill 来确定第一次对话的方向。",
-        "assistantTitle": "导演 Agent",
-        "close": "关闭导演 Agent",
-        "inputLabel": "向导演 Agent 发送消息",
+        "description": "和StoryOS 说说你的故事，或选择一种创作 Skill 来确定第一次对话的方向。",
+        "assistantTitle": "StoryOS",
+        "close": "关闭StoryOS",
+        "inputLabel": "向StoryOS 发送消息",
         "placeholder": "描述你想创作的故事、情绪或玩家体验……",
         "panelPlaceholder": "继续完善这个故事……",
         "panelEmpty": "描述你想要创作的故事或玩家体验。",
-        "transcriptLabel": "导演 Agent 对话",
+        "transcriptLabel": "StoryOS 对话",
         "scrollToLatest": "滚动到最新消息",
         "send": "发送消息",
         "stop": "停止回复",
-        "thinking": "导演 Agent 正在思考……",
-        "error": "导演 Agent 暂时无法回复。",
+        "thinking": "StoryOS 正在思考……",
+        "error": "StoryOS 暂时无法回复。",
         "retry": "重试",
         "historyLoading": "正在载入这个项目的对话……",
         "historyError": "无法载入已有对话。为保护历史记录，重新载入成功前不能发送。",
@@ -1762,7 +1762,7 @@
         "historyLimitReached": "这段对话已达到安全历史上限，请新建对话后继续。",
         "newConversation": "新建对话",
         "newConversationTitle": "开始新对话？",
-        "newConversationDescription": "这会永久清除你在此项目中的私人导演 Agent 对话，但不会修改故事画布或其他协作者的对话。",
+        "newConversationDescription": "这会永久清除你在此项目中的私人StoryOS 对话，但不会修改故事画布或其他协作者的对话。",
         "cancelNewConversation": "保留当前对话",
         "confirmNewConversation": "清除并新建",
         "you": "你",
@@ -1848,13 +1848,16 @@
         "skills": {
           "symmetricalStorybook": {
             "title": "对称童话电影",
-            "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。"
+            "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。",
+            "prompt": "创作一个互动短篇:粉色山间旅馆迎来一位从不摘帽的神秘住客,门童奉命查明缘由。剧情:按章节推进,每章一次关键选择,让旅馆秩序更荒诞一分、真相更近一步。整体节奏:12 个节点左右,三幕结构,每幕收在一个小反转。结局:3 个——揭开帽子、替他守密、成为下一个戴帽人,分别改写门童与旅馆的关系。"
           },
           "halftoneCollage": {
             "title": "半调纸拼贴",
-            "description": "纯色纸底、半调剪贴与卡纸点缀,每个选择拼装成一个视觉隐喻。"
+            "description": "纯色纸底、半调剪贴与卡纸点缀,每个选择拼装成一个视觉隐喻。",
+            "prompt": "创作一个互动短篇:一只装满旧车票与照片的手提箱在午夜自动打开,每个剪贴物件都是一段被折叠的记忆。剧情:主人公整理遗物时,逐渐拼出母亲隐瞒一生的旅程。整体节奏:10-14 个节点,开场 2 个节点内抛出悬念,之后每 2-3 个节点一次关键选择。结局:3 个——启程、留下、把箱子重新锁上,分别对应玩家把哪些记忆拼回、哪些撕碎。"
           }
-        }
+        },
+        "placeholderWithSkill": "说说你的故事想法,StoryOS 将以「{skill}」的风格起草……"
       },
       "saveState": {
         "idle": "可编辑草稿 · 修订 {revision}",

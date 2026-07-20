@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { IconLayoutGrid, IconScissors, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import type { StoryDirectingSkillKey } from "@repo/shared/story-directing-skills";
 import { CopilotStatusNotice } from "@/components/copilot/copilot-status-notice";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { GlitchText } from "@/components/ui/glitch-text";
@@ -38,11 +39,35 @@ export function StoryCanvasAgentLauncher({
 }) {
   const t = useTranslations("storyStudio.canvas.emptyAgent");
   const skillCopy = useCallback(
-    (copyKey: StoryCanvasSkillCopyKey, field: "title" | "description") =>
+    (copyKey: StoryCanvasSkillCopyKey, field: "title" | "description" | "prompt") =>
       t(`skills.${copyKey}.${field}`),
     [t]
   );
   const historyReady = session.history.status === "ready";
+  const selectedSkill = STORY_CANVAS_DIRECTING_SKILLS.find(
+    (skill) => skill.key === session.selectedSkillKey
+  );
+  const placeholder = selectedSkill
+    ? t("placeholderWithSkill", { skill: skillCopy(selectedSkill.copyKey, "title") })
+    : t("placeholder");
+
+  // Selecting a skill seeds an editable example brief (the style instruction
+  // itself travels server-side with the skill key). The seed only ever
+  // replaces an empty draft or another skill's untouched seed — text the
+  // creator typed or edited is never clobbered, and deselecting only clears
+  // its own untouched seed.
+  const toggleSkill = (key: StoryDirectingSkillKey, currentlySelected: boolean) => {
+    const next = currentlySelected ? null : key;
+    session.setSelectedSkillKey(next);
+    const seeds = STORY_CANVAS_DIRECTING_SKILLS.map((skill) =>
+      skillCopy(skill.copyKey, "prompt").trim()
+    );
+    const draft = session.draft.trim();
+    const draftIsSeed = draft === "" || seeds.includes(draft);
+    if (!draftIsSeed) return;
+    const nextSkill = STORY_CANVAS_DIRECTING_SKILLS.find((skill) => skill.key === next);
+    session.setDraft(nextSkill ? skillCopy(nextSkill.copyKey, "prompt") : "");
+  };
 
   const submit = async () => {
     if (await session.submit()) onOpenAssistant();
@@ -86,7 +111,7 @@ export function StoryCanvasAgentLauncher({
           <StoryCanvasAssistantComposer
             session={session}
             onSubmit={submit}
-            placeholder={t("placeholder")}
+            placeholder={placeholder}
             autoFocus
             className="bg-[oklch(0.24_0_0/0.96)] backdrop-blur-[30px] backdrop-saturate-150"
             disabled={disabled}
@@ -137,7 +162,7 @@ export function StoryCanvasAgentLauncher({
                   type="button"
                   aria-pressed={selected}
                   disabled={disabled || !historyReady || session.busy}
-                  onClick={() => session.setSelectedSkillKey(selected ? null : skill.key)}
+                  onClick={() => toggleSkill(skill.key, selected)}
                   className={cn(
                     "relative flex min-h-24 items-stretch overflow-hidden rounded-[20px] bg-[oklch(0.205_0_0/0.88)] text-left shadow-[0_14px_48px_rgba(0,0,0,0.24)] backdrop-blur-[30px] transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
                     selected ? "bg-[oklch(0.27_0_0/0.95)]" : "hover:bg-[oklch(0.24_0_0/0.92)]",

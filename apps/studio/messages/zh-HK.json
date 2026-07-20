@@ -1730,23 +1730,23 @@
       "addNode": "新增故事節點",
       "loading": "正在開啟故事畫布…",
       "assistant": {
-        "action": "導演 Agent"
+        "action": "StoryOS"
       },
       "emptyAgent": {
         "title": "讓每個選擇，改寫故事",
-        "description": "和導演 Agent 說說你的故事，或選擇一種創作 Skill 來確定第一次對話的方向。",
-        "assistantTitle": "導演 Agent",
-        "close": "關閉導演 Agent",
-        "inputLabel": "向導演 Agent 傳送訊息",
+        "description": "和StoryOS 說說你的故事，或選擇一種創作 Skill 來確定第一次對話的方向。",
+        "assistantTitle": "StoryOS",
+        "close": "關閉StoryOS",
+        "inputLabel": "向StoryOS 傳送訊息",
         "placeholder": "描述你想創作的故事、情緒或玩家體驗……",
         "panelPlaceholder": "繼續完善這個故事……",
         "panelEmpty": "描述你想要創作的故事或玩家體驗。",
-        "transcriptLabel": "導演 Agent 對話",
+        "transcriptLabel": "StoryOS 對話",
         "scrollToLatest": "捲動到最新訊息",
         "send": "傳送訊息",
         "stop": "停止回覆",
-        "thinking": "導演 Agent 正在思考……",
-        "error": "導演 Agent 暫時無法回覆。",
+        "thinking": "StoryOS 正在思考……",
+        "error": "StoryOS 暫時無法回覆。",
         "retry": "重試",
         "historyLoading": "正在載入這個專案的對話……",
         "historyError": "無法載入已有對話。為保護歷史記錄，重新載入成功前不能傳送。",
@@ -1762,7 +1762,7 @@
         "historyLimitReached": "這段對話已達到安全歷史上限，請新增對話後繼續。",
         "newConversation": "新增對話",
         "newConversationTitle": "開始新對話？",
-        "newConversationDescription": "這會永久清除你在此專案中的私人導演 Agent 對話，但不會修改故事畫布或其他協作者的對話。",
+        "newConversationDescription": "這會永久清除你在此專案中的私人StoryOS 對話，但不會修改故事畫布或其他協作者的對話。",
         "cancelNewConversation": "保留目前對話",
         "confirmNewConversation": "清除並新增",
         "you": "你",
@@ -1848,13 +1848,16 @@
         "skills": {
           "symmetricalStorybook": {
             "title": "對稱童話電影",
-            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。"
+            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
+            "prompt": "創作一個互動短篇:粉色山間旅館迎來一位從不摘帽的神秘住客,門童奉命查明緣由。劇情:按章節推進,每章一次關鍵選擇,讓旅館秩序更荒誕一分、真相更近一步。整體節奏:12 個節點左右,三幕結構,每幕收在一個小反轉。結局:3 個——揭開帽子、替他守密、成為下一個戴帽人,分別改寫門童與旅館的關係。"
           },
           "halftoneCollage": {
             "title": "半調紙拼貼",
-            "description": "純色紙底、半調剪貼與卡紙點綴,每個選擇拼裝成一個視覺隱喻。"
+            "description": "純色紙底、半調剪貼與卡紙點綴,每個選擇拼裝成一個視覺隱喻。",
+            "prompt": "創作一個互動短篇:一隻裝滿舊車票與照片的手提箱在午夜自動打開,每個剪貼物件都是一段被摺疊的記憶。劇情:主人公整理遺物時,逐漸拼出母親隱瞞一生的旅程。整體節奏:10-14 個節點,開場 2 個節點內拋出懸念,之後每 2-3 個節點一次關鍵選擇。結局:3 個——啟程、留下、把箱子重新鎖上,分別對應玩家把哪些記憶拼回、哪些撕碎。"
           }
-        }
+        },
+        "placeholderWithSkill": "說說你的故事想法,StoryOS 將以「{skill}」的風格起草……"
       },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",
