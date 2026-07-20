@@ -3,7 +3,7 @@ import { z } from "zod";
 export const STORY_PATCH_SCHEMA_VERSION = "story-patch-v1" as const;
 
 /** The only mutable Story draft shape these operations are allowed to target. */
-export const STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v3" as const;
+export const STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v1" as const;
 
 export const STORY_AGENT_MAX_PROPOSAL_OPERATIONS = 100;
 
@@ -15,8 +15,6 @@ export const STORY_AGENT_MAX_PROPOSAL_OPERATIONS = 100;
 export const STORY_PATCH_COMPLEXITY_LIMITS = {
   serializedBytes: 512 * 1024,
   nestingDepth: 64,
-  conditionDepth: 16,
-  conditionNodes: 1_000,
   containers: 2_500,
   arrayItems: 5_000,
 } as const;
@@ -24,8 +22,6 @@ export const STORY_PATCH_COMPLEXITY_LIMITS = {
 export interface StoryPatchComplexityStats {
   serializedBytes: number;
   nestingDepth: number;
-  conditionDepth: number;
-  conditionNodes: number;
   containers: number;
   arrayItems: number;
 }
@@ -71,16 +67,14 @@ export class StoryPatchPreflightError extends Error {
 
 /**
  * Inspect an arbitrary value without recursion. Besides bounding CPU/memory,
- * this guarantees a 5,000-level hostile condition tree is rejected before
- * Zod, JSON.stringify, canonicalization, or the patch executor can overflow
- * the JavaScript call stack.
+ * this guarantees a deeply nested hostile payload is rejected before Zod,
+ * JSON.stringify, canonicalization, or the patch executor can overflow the
+ * JavaScript call stack.
  */
 export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexityStats {
   const stats: StoryPatchComplexityStats = {
     serializedBytes: 0,
     nestingDepth: 0,
-    conditionDepth: 0,
-    conditionNodes: 0,
     containers: 0,
     arrayItems: 0,
   };
@@ -89,8 +83,7 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
     value: unknown;
     path: string;
     depth: number;
-    parentConditionDepth: number;
-  }> = [{ value, path: "$", depth: 0, parentConditionDepth: 0 }];
+  }> = [{ value, path: "$", depth: 0 }];
 
   while (stack.length > 0) {
     const current = stack.pop()!;
@@ -139,7 +132,6 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
           value: current.value[index],
           path: `${current.path}[${index}]`,
           depth: current.depth + 1,
-          parentConditionDepth: current.parentConditionDepth,
         });
       }
       continue;
@@ -151,16 +143,6 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
     }
     const record = current.value as Record<string, unknown>;
     const keys = Object.keys(record);
-    const isCondition = isConditionRecord(record);
-    const conditionDepth = isCondition
-      ? current.parentConditionDepth + 1
-      : current.parentConditionDepth;
-    if (isCondition) {
-      stats.conditionNodes += 1;
-      stats.conditionDepth = Math.max(stats.conditionDepth, conditionDepth);
-      assertComplexityLimit("conditionNodes", stats.conditionNodes, current.path);
-      assertComplexityLimit("conditionDepth", stats.conditionDepth, current.path);
-    }
     addSerializedBytes(stats, 2 + Math.max(0, keys.length - 1), current.path);
     for (let index = keys.length - 1; index >= 0; index -= 1) {
       const key = keys[index];
@@ -173,7 +155,6 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
         value: child,
         path: `${current.path}.${key}`,
         depth: current.depth + 1,
-        parentConditionDepth: conditionDepth,
       });
     }
   }
@@ -232,27 +213,16 @@ function invalidJson(path: string, detail: string): StoryPatchPreflightError {
   });
 }
 
-function isConditionRecord(value: Record<string, unknown>): boolean {
-  return (
-    value.kind === "flag" ||
-    value.kind === "variable" ||
-    value.kind === "relationship-at-least" ||
-    value.kind === "all" ||
-    value.kind === "any" ||
-    value.kind === "not"
-  );
-}
-
 const StoryAgentUuidSchema = z.uuid();
 const StoryAgentActorIdSchema = z.string().trim().min(1).max(128);
 const StoryAgentTimestampSchema = z.iso.datetime({ offset: true });
-const StoryAgentStableIdSchema = z
+export const StoryAgentStableIdSchema = z
   .string()
   .trim()
   .min(1)
   .max(120)
   .regex(/^[A-Za-z][A-Za-z0-9._:-]*$/, "Use a stable identifier.");
-const StoryAgentClipKeySchema = z
+export const StoryAgentClipKeySchema = z
   .string()
   .trim()
   .min(1)
@@ -265,163 +235,25 @@ export const StoryAgentLocalizedTextSchema = z.record(
   StoryAgentLocaleSchema,
   z.string().max(4_000)
 );
-
-export const StoryAgentScalarValueSchema = z.union([
-  z.string().max(2_000),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
-export type StoryAgentScalarValue = z.infer<typeof StoryAgentScalarValueSchema>;
-
-export type StoryAgentCondition =
-  | { kind: "flag"; flag: string; equals: boolean }
-  | {
-      kind: "variable";
-      key: string;
-      operator: "equals" | "not_equals" | "greater_than" | "at_least" | "less_than" | "at_most";
-      value: StoryAgentScalarValue;
-    }
-  | { kind: "relationship-at-least"; characterId: string; value: number }
-  | { kind: "all"; conditions: StoryAgentCondition[] }
-  | { kind: "any"; conditions: StoryAgentCondition[] }
-  | { kind: "not"; condition: StoryAgentCondition };
-
-export const StoryAgentConditionSchema: z.ZodType<StoryAgentCondition> = z.lazy(() =>
-  z.discriminatedUnion("kind", [
-    z
-      .object({
-        kind: z.literal("flag"),
-        flag: StoryAgentStableIdSchema,
-        equals: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("variable"),
-        key: StoryAgentStableIdSchema,
-        operator: z.enum([
-          "equals",
-          "not_equals",
-          "greater_than",
-          "at_least",
-          "less_than",
-          "at_most",
-        ]),
-        value: StoryAgentScalarValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("relationship-at-least"),
-        characterId: StoryAgentStableIdSchema,
-        value: z.number().finite(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("all"),
-        conditions: z.array(StoryAgentConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("any"),
-        conditions: z.array(StoryAgentConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("not"),
-        condition: StoryAgentConditionSchema,
-      })
-      .strict(),
-  ])
+export const StoryAgentTextBodyLocalizedTextSchema = z.record(
+  StoryAgentLocaleSchema,
+  z.string().max(20_000)
 );
-
-export const StoryAgentEffectSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("set_variable"),
-      key: StoryAgentStableIdSchema,
-      value: StoryAgentScalarValueSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("increment_variable"),
-      key: StoryAgentStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("set_flag"),
-      flag: StoryAgentStableIdSchema,
-      value: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("adjust_relationship"),
-      characterId: StoryAgentStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("unlock_ending"),
-      endingId: StoryAgentStableIdSchema,
-    })
-    .strict(),
-]);
-export type StoryAgentEffect = z.infer<typeof StoryAgentEffectSchema>;
 
 export const StoryAgentCharacterSchema = z
   .object({
     id: StoryAgentStableIdSchema,
     name: StoryAgentLocalizedTextSchema,
-    role: z.string().max(160),
     summary: z.string().max(4_000),
-    playable: z.boolean().default(false),
-    continuityRules: z.array(z.string().trim().min(1).max(1_000)).max(50),
   })
   .strict();
 export type StoryAgentCharacter = z.infer<typeof StoryAgentCharacterSchema>;
-
-export const StoryAgentStateVariableSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      key: StoryAgentStableIdSchema,
-      type: z.literal("boolean"),
-      initialValue: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryAgentStableIdSchema,
-      type: z.literal("number"),
-      initialValue: z.number().finite(),
-      minimum: z.number().finite().optional(),
-      maximum: z.number().finite().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryAgentStableIdSchema,
-      type: z.literal("string"),
-      initialValue: z.string().max(2_000),
-      allowedValues: z.array(z.string().max(2_000)).min(1).max(100).optional(),
-    })
-    .strict(),
-]);
-export type StoryAgentStateVariable = z.infer<typeof StoryAgentStateVariableSchema>;
 
 export const StoryAgentEndingSchema = z
   .object({
     id: StoryAgentStableIdSchema,
     title: StoryAgentLocalizedTextSchema,
-    summary: StoryAgentLocalizedTextSchema,
+    summary: StoryAgentLocalizedTextSchema.optional(),
     kind: z.enum(["truth", "bond", "echo", "failure", "hidden", "custom"]),
   })
   .strict();
@@ -431,21 +263,7 @@ export const StoryAgentGraphChoiceSchema = z
   .object({
     choiceId: StoryAgentStableIdSchema,
     label: StoryAgentLocalizedTextSchema,
-    accessibilityLabel: StoryAgentLocalizedTextSchema.optional(),
-    visibleWhen: StoryAgentConditionSchema.optional(),
-    effects: z.array(StoryAgentEffectSchema).max(30).default([]),
     nextNodeId: StoryAgentStableIdSchema,
-    afterSelect: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("immediate") }).strict(),
-        z
-          .object({
-            kind: z.literal("play"),
-            reactionClipKey: StoryAgentClipKeySchema,
-          })
-          .strict(),
-      ])
-      .default({ kind: "immediate" }),
   })
   .strict();
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
@@ -470,15 +288,6 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
             kind: z.literal("choice"),
             decisionId: StoryAgentStableIdSchema,
             prompt: StoryAgentLocalizedTextSchema,
-            trigger: z.discriminatedUnion("kind", [
-              z.object({ kind: z.literal("media-ended") }).strict(),
-              z
-                .object({
-                  kind: z.literal("timecode"),
-                  atMs: z.number().int().nonnegative(),
-                })
-                .strict(),
-            ]),
             choices: z.array(StoryAgentGraphChoiceSchema).max(6),
           })
           .strict(),
@@ -499,24 +308,38 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      kind: z.literal("router"),
+      kind: z.literal("text"),
       nodeId: StoryAgentStableIdSchema,
-      exit: z
-        .object({
-          kind: z.literal("auto"),
-          routes: z
-            .array(
-              z
-                .object({
-                  nextNodeId: StoryAgentStableIdSchema,
-                  when: StoryAgentConditionSchema.optional(),
-                  priority: z.number().int().min(0).max(10_000).default(0),
-                })
-                .strict()
-            )
-            .max(20),
-        })
-        .strict(),
+      title: StoryAgentLocalizedTextSchema.optional(),
+      body: StoryAgentTextBodyLocalizedTextSchema,
+      exit: z.discriminatedUnion("kind", [
+        z
+          .object({
+            kind: z.literal("auto"),
+            nextNodeId: StoryAgentStableIdSchema.nullable(),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("choice"),
+            decisionId: StoryAgentStableIdSchema,
+            prompt: StoryAgentLocalizedTextSchema,
+            choices: z.array(StoryAgentGraphChoiceSchema).max(6),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("checkpoint"),
+            nextNodeId: StoryAgentStableIdSchema,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("ending"),
+            endingId: StoryAgentStableIdSchema,
+          })
+          .strict(),
+      ]),
     })
     .strict(),
 ]);
@@ -548,9 +371,9 @@ const StoryAgentOverviewPayloadSchema = z
  * Explicit domain commands proposed by the Story Agent.
  *
  * These are intentionally not JSON Patch. Each command names a domain action
- * and carries a v3-compatible payload. Application code must execute commands
+ * and carries an interactive-story-v1-compatible payload. Application code must execute commands
  * sequentially against `baseDraftRevision`, then validate the complete result
- * with the authoritative interactive-film draft-v3 schema before CAS commit.
+ * with the authoritative unified story schema before CAS commit.
  */
 export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
   z
@@ -558,17 +381,6 @@ export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
       ...StoryAgentOperationBaseShape,
       kind: z.literal("story_bible.update_overview"),
       payload: StoryAgentOverviewPayloadSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.replace_story_rules"),
-      payload: z
-        .object({
-          storyRules: z.array(z.string().max(2_000)).max(100),
-        })
-        .strict(),
     })
     .strict(),
   z
@@ -588,39 +400,6 @@ export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
       ...StoryAgentOperationBaseShape,
       kind: z.literal("story_bible.remove_character"),
       payload: z.object({ characterId: StoryAgentStableIdSchema }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.replace_locations"),
-      payload: z.object({ locations: z.array(z.string().max(500)).max(200) }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.replace_props"),
-      payload: z.object({ props: z.array(z.string().max(500)).max(200) }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.put_state_variable"),
-      payload: z
-        .object({
-          intent: StoryAgentPutIntentSchema,
-          stateVariable: StoryAgentStateVariableSchema,
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.remove_state_variable"),
-      payload: z.object({ key: StoryAgentStableIdSchema }).strict(),
     })
     .strict(),
   z
@@ -723,6 +502,28 @@ export const StoryAgentRunStatusSchema = z.enum([
   "stale",
 ]);
 export type StoryAgentRunStatus = z.infer<typeof StoryAgentRunStatusSchema>;
+
+/**
+ * Ordered batons of the deterministic authoring pipeline. Hosted here (the DTO
+ * home) so the run DTO and the pipeline service share one source of truth
+ * without a module cycle.
+ */
+export const STORY_AUTHORING_STAGE_KEYS = [
+  "worldview",
+  "structure",
+  "branch",
+  "scene",
+  "validate",
+] as const;
+export type StoryAuthoringStageKey = (typeof STORY_AUTHORING_STAGE_KEYS)[number];
+
+export const StoryAuthoringStageProgressSchema = z
+  .object({
+    key: z.enum(STORY_AUTHORING_STAGE_KEYS),
+    status: z.enum(["pending", "running", "done", "failed"]),
+  })
+  .strict();
+export type StoryAuthoringStageProgress = z.infer<typeof StoryAuthoringStageProgressSchema>;
 
 export const StoryAgentRunKindSchema = z.enum(["apply", "undo"]);
 export type StoryAgentRunKind = z.infer<typeof StoryAgentRunKindSchema>;
@@ -842,6 +643,8 @@ export const StoryAgentRunDtoSchema = z
     confirmedByUserId: StoryAgentActorIdSchema.nullable(),
     cancelledByUserId: StoryAgentActorIdSchema.nullable(),
     proposal: StoryAgentRunProposalSchema,
+    /** Per-baton progress while drafting; null outside the authoring window. */
+    authoringStages: z.array(StoryAuthoringStageProgressSchema).max(16).nullable(),
     undoOfRunId: StoryAgentUuidSchema.nullable(),
     baseDraftRevision: z.number().int().nonnegative(),
     baseLayoutRevision: z.number().int().nonnegative(),
@@ -895,6 +698,22 @@ export const StoryAgentRunDtoSchema = z
           "Run baseLayoutRevision must match its immutable proposal."
         );
       }
+    }
+    // Stage progress exists only while drafting; every other status nulls it.
+    if (AUTHORING_PHASE_STATUSES.has(run.status)) {
+      if (run.authoringStages === null) {
+        addRunIssue(
+          context,
+          ["authoringStages"],
+          `A ${run.status} run must carry pipeline stage progress.`
+        );
+      }
+    } else if (run.authoringStages !== null) {
+      addRunIssue(
+        context,
+        ["authoringStages"],
+        `A ${run.status} run must not carry pipeline stage progress.`
+      );
     }
     if (run.kind === "apply" && run.undoOfRunId !== null) {
       addRunIssue(context, ["undoOfRunId"], "Apply runs cannot reference an undo source run.");
