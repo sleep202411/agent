@@ -19,6 +19,11 @@ import {
 
 const APPLYING_POLL_MS = 1_000;
 const PROPOSED_POLL_MS = 5_000;
+// Fallback cadence while the realtime socket is not reporting connected (or the
+// authority generation is catching up). This is a steady-state rate that can run
+// for the whole session in environments where the WebSocket never opens, so it
+// stays gentle rather than hammering — realtime is the fast path, this is backup.
+const DISCONNECTED_POLL_MS = 3_000;
 
 /**
  * Server-side drafting holds no write fence, but its brief-carrying run can be
@@ -166,7 +171,7 @@ export function useStoryAgentRun({
         !realtimeConnected ||
         (state.data?.authorityGeneration ?? -1) < requiredAuthorityGeneration
       ) {
-        return APPLYING_POLL_MS;
+        return DISCONNECTED_POLL_MS;
       }
       if (state.data?.run?.status === "applying") return APPLYING_POLL_MS;
       // Authoring lands proposed operations (or a failure) server-side; poll as
@@ -391,7 +396,7 @@ export function useStoryAgentRun({
       onDisconnected: () => {
         // Realtime is the immediate lock-notification path. The instant it is
         // unavailable, invalidate the previous authority snapshot and establish
-        // a fresh canonical snapshot through the 1s polling fallback. Polling
+        // a fresh canonical snapshot through the polling fallback. Polling
         // remains active until the socket reconnects.
         setRealtimeConnected(false);
         requireFreshAuthorityRead();
