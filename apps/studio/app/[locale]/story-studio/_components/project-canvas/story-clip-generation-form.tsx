@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconCheck,
   IconChevronDown,
@@ -9,6 +9,7 @@ import {
   IconPhoto,
   IconPlus,
   IconSparkles,
+  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
@@ -24,23 +25,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAiCatalog } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
 import { useDismiss } from "@/lib/use-dismiss";
 import { cn } from "@/lib/utils";
-import { STORY_FRAME_PROFILE_CONTRACTS } from "@/lib/story-projects-api";
+import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
+import {
+  createStoryReferenceSlots,
+  createStoryReferenceVersion,
+  STORY_FRAME_PROFILE_CONTRACTS,
+  storyApiErrorMessage,
+} from "@/lib/story-projects-api";
 import type {
   StoryClipVideoSummary,
   StoryFrameProfile,
   StoryReferenceSlot,
   StoryTrailerVideoSummary,
+  StoryVideoGenerationMode,
   StoryVideoGenerationRecipeInput,
 } from "@/lib/story-projects-api";
 import {
   addStoryRecipeReference,
-  filterStoryVideoCatalog,
+  filterStoryVideoModels,
   isStoryRecipeReferencePlanValid,
+  pruneStoryRecipeReferencesForMode,
   removeStoryRecipeReference,
   selectedStoryVideoModel,
   storyComposerAddableSlots,
   storyComposerReferenceItems,
+  storyFreeformUploadTarget,
   storyVideoDurationContract,
+  supportedStoryVideoModes,
   type StoryVideoDurationContract,
 } from "./story-shot-composer-model";
 import {
@@ -48,19 +59,27 @@ import {
   type StoryVideoLibraryDialogProps,
 } from "./story-video-library-dialog";
 
-// The inspector generation form is deliberately single-mode. Reference-driven
-// multimodal generation covers the authoring need; the first/last-frame mode
-// (and its extra controls) was removed to keep this a plain form.
-const GENERATION_MODE = "multimodal_to_video" as const;
-
 export type StoryGenerationTarget = StoryClipVideoSummary | StoryTrailerVideoSummary;
+
+/**
+ * Context a free-form reference upload needs: the uploaded image is turned into
+ * a real project reference slot+version (the generation backend is slot-based),
+ * then `refresh` reloads the workbench so the new slot appears in `references`.
+ */
+export interface StoryReferenceUploadContext {
+  workspaceId: string;
+  projectId: string;
+  refresh: () => Promise<unknown>;
+}
 
 export interface StoryClipGenerationFormProps {
   subject?: "clip" | "trailer";
   target: StoryGenerationTarget | null;
   recipe: StoryVideoGenerationRecipeInput;
   references: StoryReferenceSlot[];
-  frameProfile: StoryFrameProfile;
+  // Null for a text-first project: generated video is inline at native size and
+  // is not constrained to a fixed picture frame.
+  frameProfile: StoryFrameProfile | null;
   readOnly: boolean;
   canGenerate: boolean;
   disabledReason: string | null;
@@ -69,6 +88,9 @@ export interface StoryClipGenerationFormProps {
   onRecipeChange: (next: StoryVideoGenerationRecipeInput) => void;
   onGenerate: (recipe: StoryVideoGenerationRecipeInput) => void;
   videoLibrary?: Omit<StoryVideoLibraryDialogProps, "frameContract" | "currentVideo">;
+  // Present when a free-form image upload can be created as a project reference
+  // slot for this recipe. Absent (e.g. no active workspace) hides that control.
+  referenceUpload?: StoryReferenceUploadContext | null;
 }
 
 /**
@@ -90,12 +112,13 @@ export function StoryClipGenerationForm({
   onRecipeChange,
   onGenerate,
   videoLibrary,
+  referenceUpload,
 }: StoryClipGenerationFormProps) {
   const t = useTranslations("storyStudio.canvas.production");
   const catalogQuery = useAiCatalog();
 
   const storyCatalog = useMemo(
-    () => filterStoryVideoCatalog(catalogQuery.data, GENERATION_MODE),
+    () => filterStoryVideoModels(catalogQuery.data),
     [catalogQuery.data]
   );
   const catalogModel = useMemo(
@@ -103,17 +126,24 @@ export function StoryClipGenerationForm({
     [recipe.modelId, storyCatalog]
   );
   const durationContract = useMemo(() => storyVideoDurationContract(catalogModel), [catalogModel]);
-  const frame = STORY_FRAME_PROFILE_CONTRACTS[frameProfile];
+  const supportedModes = useMemo(() => supportedStoryVideoModes(catalogModel), [catalogModel]);
+  // The recipe mode is authoritative, but a persisted mode may not fit the
+  // selected model — fall back to its first supported mode for rendering.
+  const mode: StoryVideoGenerationMode =
+    supportedModes.length > 0 && !supportedModes.includes(recipe.mode)
+      ? supportedModes[0]
+      : recipe.mode;
+  const frame = frameProfile ? STORY_FRAME_PROFILE_CONTRACTS[frameProfile] : null;
   const generating = pendingKey === "generate";
   const referenceItems = useMemo(
     () => storyComposerReferenceItems(recipe.references, references),
     [recipe.references, references]
   );
   const addableSlots = useMemo(
-    () => storyComposerAddableSlots(GENERATION_MODE, recipe.references, references),
-    [recipe.references, references]
+    () => storyComposerAddableSlots(mode, recipe.references, references),
+    [mode, recipe.references, references]
   );
-  const referencePlanValid = isStoryRecipeReferencePlanValid(GENERATION_MODE, recipe.references);
+  const referencePlanValid = isStoryRecipeReferencePlanValid(mode, recipe.references);
   const recipeDisabledReason = !recipe.prompt.trim()
     ? t("disabled.promptRequired")
     : !catalogModel
@@ -122,6 +152,27 @@ export function StoryClipGenerationForm({
         ? t("disabled.referencesRequired")
         : disabledReason;
   const models = storyCatalog?.models ?? [];
+
+  const changeMode = (nextMode: StoryVideoGenerationMode) => {
+    if (readOnly || nextMode === recipe.mode) return;
+    onRecipeChange({
+      ...recipe,
+      mode: nextMode,
+      references: pruneStoryRecipeReferencesForMode(nextMode, recipe.references),
+    });
+  };
+
+  // Reconcile a persisted recipe whose mode the selected model can't drive, so
+  // the submitted recipe always matches what the rail renders.
+  useEffect(() => {
+    if (!catalogModel || supportedModes.length === 0) return;
+    if (supportedModes.includes(recipe.mode)) return;
+    onRecipeChange({
+      ...recipe,
+      mode: supportedModes[0],
+      references: pruneStoryRecipeReferencesForMode(supportedModes[0], recipe.references),
+    });
+  }, [catalogModel, supportedModes, recipe, onRecipeChange]);
 
   return (
     <section className="mt-6 space-y-4">
@@ -142,7 +193,11 @@ export function StoryClipGenerationForm({
         />
       </div>
 
-      {(referenceItems.length > 0 || addableSlots.length > 0) && (
+      {supportedModes.length > 1 ? (
+        <StoryModeToggle mode={mode} disabled={readOnly} onChange={changeMode} />
+      ) : null}
+
+      {catalogModel && (referenceItems.length > 0 || addableSlots.length > 0 || referenceUpload) ? (
         <div>
           <p className="text-xs font-semibold text-white/78">{t("references")}</p>
           <StoryReferenceRail
@@ -162,8 +217,23 @@ export function StoryClipGenerationForm({
               })
             }
           />
+          {referenceUpload ? (
+            <StoryReferenceUploadControl
+              mode={mode}
+              references={recipe.references}
+              slotRank={references.length}
+              disabled={readOnly}
+              context={referenceUpload}
+              onUploaded={(referenceVersionId, role) =>
+                onRecipeChange({
+                  ...recipe,
+                  references: addStoryRecipeReference(recipe.references, referenceVersionId, role),
+                })
+              }
+            />
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
@@ -180,10 +250,20 @@ export function StoryClipGenerationForm({
               if (readOnly) return;
               const nextModel = models.find((model) => model.id === modelId);
               const nextDuration = storyVideoDurationContract(nextModel);
+              const nextModes = supportedStoryVideoModes(nextModel);
+              const nextMode =
+                nextModes.length > 0 && !nextModes.includes(recipe.mode)
+                  ? nextModes[0]
+                  : recipe.mode;
               onRecipeChange({
                 ...recipe,
                 modelId,
                 durationMs: nextDuration?.defaultMs ?? recipe.durationMs,
+                mode: nextMode,
+                references:
+                  nextMode === recipe.mode
+                    ? recipe.references
+                    : pruneStoryRecipeReferencesForMode(nextMode, recipe.references),
               });
             }}
           >
@@ -217,7 +297,7 @@ export function StoryClipGenerationForm({
         <StoryVideoLibraryDialog
           {...videoLibrary}
           disabled={readOnly || videoLibrary.disabled}
-          frameContract={{ width: frame.width, height: frame.height }}
+          frameContract={frame ? { width: frame.width, height: frame.height } : null}
           currentVideo={target?.currentVideo ?? null}
         />
       ) : null}
@@ -252,6 +332,183 @@ export function StoryClipGenerationForm({
       ) : null}
     </section>
   );
+}
+
+/**
+ * The per-recipe story-mode toggle. Shown only when the selected model can
+ * drive BOTH story modes; a single-mode model uses its mode with no control.
+ */
+function StoryModeToggle({
+  mode,
+  disabled,
+  onChange,
+}: {
+  mode: StoryVideoGenerationMode;
+  disabled: boolean;
+  onChange: (mode: StoryVideoGenerationMode) => void;
+}) {
+  const t = useTranslations("storyStudio.canvas.production.modeToggle");
+  const options: Array<{ value: StoryVideoGenerationMode; label: string }> = [
+    { value: "multimodal_to_video", label: t("multimodal") },
+    { value: "first_last_frame_to_video", label: t("firstLast") },
+  ];
+  return (
+    <div>
+      <p className="text-[10px] font-semibold text-white/54">{t("label")}</p>
+      <div
+        role="radiogroup"
+        aria-label={t("label")}
+        className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl bg-white/[0.055] p-1"
+      >
+        {options.map((option) => {
+          const active = option.value === mode;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              onClick={() => {
+                if (!disabled) onChange(option.value);
+              }}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                active ? "bg-white/[0.14] text-white" : "text-white/60 hover:bg-white/[0.08]",
+                disabled && "cursor-not-allowed opacity-45 hover:bg-transparent"
+              )}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Free-form reference upload. The picked image is uploaded, then turned into a
+ * real project reference slot + version (the generation backend is slot-based),
+ * added to the recipe with the mode-appropriate role, and the workbench is
+ * refreshed so the new slot surfaces in the shared references list.
+ */
+function StoryReferenceUploadControl({
+  mode,
+  references,
+  slotRank,
+  disabled,
+  context,
+  onUploaded,
+}: {
+  mode: StoryVideoGenerationMode;
+  references: StoryVideoGenerationRecipeInput["references"];
+  slotRank: number;
+  disabled: boolean;
+  context: StoryReferenceUploadContext;
+  onUploaded: (
+    referenceVersionId: string,
+    role: "reference" | "first_frame" | "last_frame"
+  ) => void;
+}) {
+  const t = useTranslations("storyStudio.canvas.production.uploadReference");
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const target = storyFreeformUploadTarget(mode, references);
+  const busy = progress !== null;
+
+  const upload = async (file: File) => {
+    if (disabled || busy || !target) return;
+    setProgress(0);
+    setError(null);
+    try {
+      const asset = await uploadFileViaSignedUrl(file, {
+        kind: "ai_reference_image",
+        contentType: file.type || undefined,
+        workspaceId: context.workspaceId,
+        onProgress: setProgress,
+      });
+      const [slot] = await createStoryReferenceSlots(
+        context.workspaceId,
+        context.projectId,
+        {
+          slots: [
+            {
+              key: freeformSlotKey(),
+              kind: target.kind,
+              label: freeformSlotLabel(file.name),
+              description: "",
+              required: false,
+              // Server caps rank at 100_000; append after existing slots.
+              rank: Math.min(Math.max(slotRank, 0), 100_000),
+            },
+          ],
+        },
+        globalThis.crypto.randomUUID()
+      );
+      if (!slot) throw new Error("Reference slot was not created.");
+      const version = await createStoryReferenceVersion(
+        context.workspaceId,
+        context.projectId,
+        slot.id,
+        {
+          expectedSlotVersion: slot.version,
+          assetId: asset.mediaAssetId,
+          variantId: asset.variantId,
+          source: "upload",
+        },
+        globalThis.crypto.randomUUID()
+      );
+      // Refresh first so the new slot is present in `references` before the
+      // recipe points at its version (otherwise the rail item can't resolve).
+      await context.refresh();
+      onUploaded(version.id, target.role);
+    } catch (cause) {
+      if (!isUploadAbort(cause)) setError(storyApiErrorMessage(cause, t("error")));
+    } finally {
+      setProgress(null);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={disabled || busy || !target}
+        onClick={() => inputRef.current?.click()}
+      >
+        {busy ? <IconLoader2 className="size-4 animate-spin" /> : <IconUpload className="size-4" />}
+        {busy ? t("uploading", { progress: progress ?? 0 }) : t("action")}
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void upload(file);
+        }}
+      />
+      {error ? <p className="mt-2 text-[10px] leading-4 text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/** A schema-valid, collision-resistant slot key for a free-form upload. */
+function freeformSlotKey(): string {
+  const suffix = globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
+  return `UPLOAD_${suffix}`;
+}
+
+/** A readable slot label from the uploaded file name, with a sane fallback. */
+function freeformSlotLabel(fileName: string): string {
+  const stem = fileName.replace(/\.[^.]+$/u, "").trim();
+  return (stem || "Uploaded reference").slice(0, 80);
 }
 
 /**

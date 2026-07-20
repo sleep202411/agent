@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import {
   getStoryBuild,
+  getStoryWorkbench,
   getStoryWorkingPreview,
   storyApiErrorMessage,
   type StoryBuild,
@@ -17,6 +18,7 @@ import {
   type StoryWorkingPreview,
 } from "@/lib/story-projects-api";
 import type { StoryProjectPlaytestSource } from "../_lib/story-playtest-source";
+import { StoryTextPlayPanel } from "./story-text-play-panel";
 
 type LoadedPlaytestRuntime =
   | { kind: "draft"; preview: StoryWorkingPreview }
@@ -33,6 +35,18 @@ export function StoryProjectPlaytest({
   const locale = useLocale();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
+  // A draft-source text adventure plays through the LLM turn loop, not the
+  // manifest-driven cinematic runtime.
+  const formatQuery = useQuery({
+    queryKey: ["story-studio", "playtest-format", workspaceId, projectId],
+    queryFn: async () => {
+      if (!workspaceId) throw new Error(t("errorFallback"));
+      return (await getStoryWorkbench(workspaceId, projectId)).project.format;
+    },
+    enabled: Boolean(workspaceId),
+    retry: false,
+  });
+  const isDraftTextAdventure = source.kind === "draft" && formatQuery.data === "text_adventure";
   const runtimeQuery = useQuery<LoadedPlaytestRuntime>({
     queryKey: [
       "story-studio",
@@ -54,13 +68,16 @@ export function StoryProjectPlaytest({
             build: await getStoryBuild(workspaceId, projectId, source.buildId),
           };
     },
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && !isDraftTextAdventure && !formatQuery.isLoading,
     retry: false,
   });
 
-  const loading = workspaceLoading || runtimeQuery.isLoading;
-  const loadError = runtimeQuery.error;
+  const loading = workspaceLoading || formatQuery.isLoading || runtimeQuery.isLoading;
+  const loadError = formatQuery.error ?? runtimeQuery.error;
 
+  if (workspaceId && isDraftTextAdventure) {
+    return <StoryTextPlayPanel projectId={projectId} />;
+  }
   if (loading) return <PlaytestLoading />;
   if (!workspaceId) {
     return (

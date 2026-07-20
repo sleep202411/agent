@@ -67,6 +67,32 @@ describe("Story video library eligibility", () => {
     expect(state.issues).toEqual(["dimensions_mismatch"]);
   });
 
+  it("accepts any native dimensions when a text-first project has no frame contract", () => {
+    const state = resolveStoryVideoLibraryItemState(item({ width: 1280, height: 720 }), null, null);
+
+    expect(state).toEqual({
+      current: false,
+      selectable: true,
+      technicallyCompatible: true,
+      issues: [],
+    });
+  });
+
+  it("still requires known dimensions without a frame contract", () => {
+    const state = resolveStoryVideoLibraryItemState(
+      item({
+        asset: { ...item().asset, width: null, height: null },
+        width: null,
+        height: null,
+      }),
+      null,
+      null
+    );
+
+    expect(state.selectable).toBe(false);
+    expect(state.issues).toEqual(["dimensions_unknown"]);
+  });
+
   it("keeps the current item identifiable even when it cannot be previewed or selected", () => {
     const unavailable = item({
       asset: { ...item().asset, previewUrl: null },

@@ -9,6 +9,7 @@ import {
   IconDeviceMobile,
   IconDots,
   IconEdit,
+  IconFileText,
   IconGitBranch,
   IconLoader2,
   IconMovie,
@@ -48,12 +49,13 @@ import {
   listStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
+  type CreatableStoryFormat,
   type StoryFrameProfile,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
 import { StoryStudioHero } from "./story-studio-hero";
 
-const STORY_PROJECTS_QUERY = ["story-studio", "interactive-film-projects"] as const;
+const STORY_PROJECTS_QUERY = ["story-studio", "projects"] as const;
 const JINLING_SOURCE_TITLE = "金陵入梦";
 const JINLING_FEATURE_TAGS = ["interactive_film", "classical_literature", "mystery"] as const;
 
@@ -70,8 +72,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
 
   const projectsQuery = useQuery({
     queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
-    queryFn: () =>
-      listStoryProjects(workspaceId as string, { format: "interactive_film", limit: 100 }),
+    queryFn: () => listStoryProjects(workspaceId as string, { limit: 100 }),
     enabled: Boolean(workspaceId),
     retry: false,
   });
@@ -96,7 +97,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
     <>
       <StoryStudioHero featuredProjectHref={featuredProjectHref} playerHref={featuredPlayerHref} />
       <section
-        id="interactive-films"
+        id="story-projects"
         className="relative z-20 pr-6 pb-16 pl-6 pt-12 sm:pl-20 lg:pl-[120px]"
       >
         <div className="w-full">
@@ -217,6 +218,8 @@ function StoryProjectCard({
   const canAdmin = project.capabilities.includes("story.admin");
 
   const coverUrl = project.cover?.previewUrl ?? null;
+  const isTextFirstWithoutVideo =
+    project.format === "text_adventure" && project.production.clipCount === 0;
 
   return (
     <div className="group relative min-w-0">
@@ -237,31 +240,49 @@ function StoryProjectCard({
               <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.055),transparent_48%,rgba(255,255,255,0.018))]" />
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:28px_28px] opacity-70" />
               <div className="absolute inset-0 grid place-items-center">
-                <IconMovie className="size-9 text-white/16" stroke={1.4} />
+                {project.format === "text_adventure" ? (
+                  <IconFileText className="size-9 text-white/16" stroke={1.4} />
+                ) : (
+                  <IconMovie className="size-9 text-white/16" stroke={1.4} />
+                )}
               </div>
             </>
           )}
 
-          <span className="absolute top-2.5 left-2.5 rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
-            {t("projects.draft")}
-          </span>
+          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+            <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
+              {t("projects.draft")}
+            </span>
+            <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-semibold text-white/78 backdrop-blur-md">
+              {t(`formats.${project.format}.label`)}
+            </span>
+          </div>
 
           <div className="absolute right-2.5 bottom-2.5 left-2.5 flex items-center gap-1.5">
-            <ProjectMetricChip
-              icon={<IconPhoto className="size-3" />}
-              value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
-              label={t("metrics.references")}
-            />
-            <ProjectMetricChip
-              icon={<IconMovie className="size-3" />}
-              value={String(project.production.clipCount)}
-              label={t("metrics.clips")}
-            />
-            <ProjectMetricChip
-              icon={<IconSparkles className="size-3" />}
-              value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
-              label={t("metrics.videos")}
-            />
+            {isTextFirstWithoutVideo ? (
+              <ProjectStateChip
+                icon={<IconFileText className="size-3" />}
+                label={t("projects.textFirstWithoutVideo")}
+              />
+            ) : (
+              <>
+                <ProjectMetricChip
+                  icon={<IconPhoto className="size-3" />}
+                  value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
+                  label={t("metrics.references")}
+                />
+                <ProjectMetricChip
+                  icon={<IconMovie className="size-3" />}
+                  value={String(project.production.clipCount)}
+                  label={t("metrics.clips")}
+                />
+                <ProjectMetricChip
+                  icon={<IconSparkles className="size-3" />}
+                  value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
+                  label={t("metrics.videos")}
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -279,12 +300,14 @@ function StoryProjectCard({
             </p>
             <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white/38">
               <span className="truncate">
-                {project.production.generatingClipCount > 0
-                  ? t("projects.generating", { count: project.production.generatingClipCount })
-                  : t("projects.videoProgress", {
-                      current: project.production.currentVideoCount,
-                      total: project.production.clipCount,
-                    })}
+                {isTextFirstWithoutVideo
+                  ? t("projects.textFirstProgress")
+                  : project.production.generatingClipCount > 0
+                    ? t("projects.generating", { count: project.production.generatingClipCount })
+                    : t("projects.videoProgress", {
+                        current: project.production.currentVideoCount,
+                        total: project.production.clipCount,
+                      })}
               </span>
               <IconArrowRight
                 className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-white/66"
@@ -322,6 +345,15 @@ function StoryProjectCard({
         </DropdownMenu>
       ) : null}
     </div>
+  );
+}
+
+function ProjectStateChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-black/52 px-2 py-1 text-[9px] font-semibold text-white/72 backdrop-blur-md">
+      {icon}
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 
@@ -393,15 +425,18 @@ function CreateProjectDialog({
   const t = useTranslations("storyStudio");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [format, setFormat] = useState<CreatableStoryFormat>("interactive_film");
   const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(null);
+  // A text-first project sets no frame profile at all; a film project requires one.
+  const requiresFrameProfile = format === "interactive_film";
   const createMutation = useMutation({
     mutationFn: () => {
-      if (!workspaceId || !frameProfile) {
+      if (!workspaceId || (requiresFrameProfile && !frameProfile)) {
         throw new Error(t("errors.createProject"));
       }
       return createStoryProject(workspaceId, {
-        format: "interactive_film",
-        frameProfile,
+        format,
+        ...(requiresFrameProfile && frameProfile ? { frameProfile } : {}),
         title: title.trim(),
         summary: summary.trim() || null,
         defaultLocale,
@@ -411,6 +446,7 @@ function CreateProjectDialog({
     onSuccess: (project) => {
       setTitle("");
       setSummary("");
+      setFormat("interactive_film");
       setFrameProfile(null);
       onOpenChange(false);
       onCreated(project);
@@ -448,24 +484,53 @@ function CreateProjectDialog({
           </label>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-white/58">
-              {t("fields.frameProfile")}
+              {t("fields.primaryExperience")}
             </legend>
-            <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
+            <p className="text-[11px] leading-4 text-white/38">
+              {t("fields.primaryExperienceHint")}
+            </p>
             <div className="grid grid-cols-2 gap-2" role="radiogroup">
-              <FrameProfileOption
-                profile="landscape_16_9"
-                selected={frameProfile === "landscape_16_9"}
-                icon={<IconRectangle className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
+              <FormatOption
+                format="interactive_film"
+                selected={format === "interactive_film"}
+                icon={<IconMovie className="size-5" stroke={1.7} />}
+                onSelect={setFormat}
               />
-              <FrameProfileOption
-                profile="portrait_9_16"
-                selected={frameProfile === "portrait_9_16"}
-                icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
+              <FormatOption
+                format="text_adventure"
+                selected={format === "text_adventure"}
+                icon={<IconFileText className="size-5" stroke={1.7} />}
+                onSelect={(next) => {
+                  setFormat(next);
+                  // A text-first project has no frame contract; drop any picked
+                  // profile so it is never sent in the create payload.
+                  if (next === "text_adventure") setFrameProfile(null);
+                }}
               />
             </div>
           </fieldset>
+          {requiresFrameProfile ? (
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-white/58">
+                {t("fields.frameProfile")}
+              </legend>
+              <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup">
+                <FrameProfileOption
+                  profile="landscape_16_9"
+                  selected={frameProfile === "landscape_16_9"}
+                  icon={<IconRectangle className="size-5" stroke={1.7} />}
+                  onSelect={setFrameProfile}
+                />
+                <FrameProfileOption
+                  profile="portrait_9_16"
+                  selected={frameProfile === "portrait_9_16"}
+                  icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
+                  onSelect={setFrameProfile}
+                />
+              </div>
+            </fieldset>
+          ) : null}
         </div>
         <DialogFooter className="pt-2">
           <Button
@@ -480,7 +545,12 @@ function CreateProjectDialog({
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
-            disabled={!workspaceId || !title.trim() || !frameProfile || createMutation.isPending}
+            disabled={
+              !workspaceId ||
+              !title.trim() ||
+              (requiresFrameProfile && !frameProfile) ||
+              createMutation.isPending
+            }
           >
             {createMutation.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("actions.create")}
@@ -488,6 +558,43 @@ function CreateProjectDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function FormatOption({
+  format,
+  selected,
+  icon,
+  onSelect,
+}: {
+  format: CreatableStoryFormat;
+  selected: boolean;
+  icon: React.ReactNode;
+  onSelect: (format: CreatableStoryFormat) => void;
+}) {
+  const t = useTranslations("storyStudio");
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={`flex min-h-24 flex-col rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
+        selected
+          ? "bg-white text-black shadow-[0_14px_32px_rgba(0,0,0,0.3)]"
+          : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
+      }`}
+      onClick={() => onSelect(format)}
+    >
+      <span className={selected ? "text-black/72" : "text-white/48"}>{icon}</span>
+      <span className="mt-3 block text-xs font-semibold">{t(`formats.${format}.label`)}</span>
+      <span
+        className={`mt-1 block text-[10px] leading-4 font-medium ${
+          selected ? "text-black/56" : "text-white/38"
+        }`}
+      >
+        {t(`formats.${format}.description`)}
+      </span>
+    </button>
   );
 }
 

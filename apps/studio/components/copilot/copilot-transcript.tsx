@@ -18,6 +18,16 @@ import { CopilotMarkdown } from "./copilot-markdown";
 
 type MessagePart = UIMessage["parts"][number];
 
+/**
+ * Whether a part is something the transcript actually shows. Non-empty text
+ * and tool parts count; a still-streaming reasoning trace or an empty text
+ * shell does not, so the thinking marker stays up until real output lands.
+ */
+function isVisiblePart(part: MessagePart): boolean {
+  if (isTextUIPart(part)) return Boolean(part.text?.trim());
+  return part.type.startsWith("tool-") || part.type === "dynamic-tool";
+}
+
 export function CopilotTranscript({
   messages,
   status,
@@ -39,6 +49,15 @@ export function CopilotTranscript({
   empty: ReactNode;
   renderNonTextPart?: (part: MessagePart, key: string) => ReactNode;
 }) {
+  // Keep the thinking marker up until the assistant produces something to
+  // show. A reasoning model streams a long SILENT phase where status is
+  // already "streaming" but no visible part has arrived — without this, the
+  // panel goes blank between send and first token.
+  const lastMessage = messages.at(-1);
+  const assistantHasVisibleContent =
+    lastMessage?.role === "assistant" && lastMessage.parts.some(isVisiblePart);
+  const showThinking =
+    status === "submitted" || (status === "streaming" && !assistantHasVisibleContent);
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
       <MessageScroller>
@@ -97,7 +116,7 @@ export function CopilotTranscript({
                 </MessageScrollerItem>
               ))
             )}
-            {status === "submitted" ? (
+            {showThinking ? (
               <MessageScrollerItem>
                 <Marker role="status" className="px-1">
                   <MarkerIcon>

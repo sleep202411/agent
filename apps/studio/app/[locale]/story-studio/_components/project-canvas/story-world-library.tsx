@@ -1,43 +1,32 @@
 "use client";
 
-import { IconBook2, IconBox, IconMapPin, IconUsers, IconX } from "@tabler/icons-react";
+import { useState } from "react";
+import { IconChevronDown, IconMovie, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
-import { StoryCharacterLibrary } from "./story-character-library";
-import { StoryTextCollectionEditor } from "./story-world-collections";
+import { cn } from "@/lib/utils";
+import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
+import {
+  StoryClipGenerationForm,
+  type StoryClipGenerationFormProps,
+} from "./story-clip-generation-form";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
-type WorldTextField = "locations" | "props";
-type Character = InteractiveFilmDraftContent["storyBible"]["characters"][number];
 
 interface StoryWorldLibraryProps {
-  content: InteractiveFilmDraftContent;
-  locale: string;
+  content: InteractiveStoryDraftContent;
   canEdit: boolean;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
-  onCreateCharacter: () => string | null;
-  onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
-  onDeleteCharacter: (characterId: string) => void;
-  onAddTextItem: (field: WorldTextField) => void;
-  onUpdateTextItem: (field: WorldTextField, index: number, value: string) => void;
-  onRemoveTextItem: (field: WorldTextField, index: number) => void;
   onClose: () => void;
+  trailerGeneration?: StoryClipGenerationFormProps;
 }
 
 export function StoryWorldLibrary({
   content,
-  locale,
   canEdit,
   onUpdateFoundation,
-  onCreateCharacter,
-  onUpdateCharacter,
-  onDeleteCharacter,
-  onAddTextItem,
-  onUpdateTextItem,
-  onRemoveTextItem,
   onClose,
+  trailerGeneration,
 }: StoryWorldLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
   return (
@@ -60,72 +49,60 @@ export function StoryWorldLibrary({
         </button>
       </header>
 
-      <div className="mt-4 grid grid-cols-3 gap-1.5">
-        <WorldMetric label={t("metrics.characters")} value={content.storyBible.characters.length} />
-        <WorldMetric label={t("metrics.locations")} value={content.storyBible.locations.length} />
-        <WorldMetric label={t("metrics.props")} value={content.storyBible.props.length} />
+      <div className="mt-5">
+        <FoundationEditor
+          content={content}
+          canEdit={canEdit}
+          onUpdateFoundation={onUpdateFoundation}
+        />
       </div>
 
-      <Tabs defaultValue="foundation" className="mt-5 gap-4">
-        <TabsList className="grid h-auto! w-full grid-cols-2 gap-1 rounded-[16px] bg-white/[0.045] p-1">
-          <WorldTab value="foundation" label={t("world.tabs.foundation")} icon={<IconBook2 />} />
-          <WorldTab value="characters" label={t("world.tabs.characters")} icon={<IconUsers />} />
-          <WorldTab value="locations" label={t("world.tabs.locations")} icon={<IconMapPin />} />
-          <WorldTab value="props" label={t("world.tabs.props")} icon={<IconBox />} />
-        </TabsList>
-
-        <TabsContent value="foundation">
-          <FoundationEditor
-            content={content}
-            canEdit={canEdit}
-            onUpdateFoundation={onUpdateFoundation}
-          />
-        </TabsContent>
-        <TabsContent value="characters">
-          <StoryCharacterLibrary
-            content={content}
-            locale={locale}
-            canEdit={canEdit}
-            onCreate={onCreateCharacter}
-            onUpdate={onUpdateCharacter}
-            onDelete={onDeleteCharacter}
-          />
-        </TabsContent>
-        <TabsContent value="locations">
-          <StoryTextCollectionEditor
-            kind="locations"
-            values={content.storyBible.locations}
-            canEdit={canEdit}
-            onAdd={() => onAddTextItem("locations")}
-            onUpdate={(index, value) => onUpdateTextItem("locations", index, value)}
-            onRemove={(index) => onRemoveTextItem("locations", index)}
-          />
-        </TabsContent>
-        <TabsContent value="props">
-          <StoryTextCollectionEditor
-            kind="props"
-            values={content.storyBible.props}
-            canEdit={canEdit}
-            onAdd={() => onAddTextItem("props")}
-            onUpdate={(index, value) => onUpdateTextItem("props", index, value)}
-            onRemove={(index) => onRemoveTextItem("props", index)}
-          />
-        </TabsContent>
-      </Tabs>
+      {trailerGeneration ? (
+        <StoryWorldTrailerSection trailerGeneration={trailerGeneration} />
+      ) : null}
     </>
   );
 }
 
-function WorldTab({ value, label, icon }: { value: string; label: string; icon: React.ReactNode }) {
+function StoryWorldTrailerSection({
+  trailerGeneration,
+}: {
+  trailerGeneration: StoryClipGenerationFormProps;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  const [open, setOpen] = useState(false);
   return (
-    <TabsTrigger
-      value={value}
-      title={label}
-      className="h-9 rounded-xl px-2 text-[10px] data-active:bg-white/[0.1]"
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-    </TabsTrigger>
+    <section className="mt-5 rounded-[18px] bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center gap-3 text-left"
+      >
+        <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48">
+          <IconMovie className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[9px] font-semibold tracking-[0.12em] text-white/32 uppercase">
+            {t("trailer.eyebrow")}
+          </span>
+          <span className="mt-0.5 block truncate text-xs font-semibold text-white/76">
+            {t("trailer.title")}
+          </span>
+        </span>
+        <IconChevronDown
+          className={cn("size-4 shrink-0 text-white/34 transition", open && "rotate-180")}
+        />
+      </button>
+      {open ? (
+        <div className="mt-3">
+          <p className="text-[10px] leading-4 text-white/36">{t("trailer.description")}</p>
+          <div className="mt-3">
+            <StoryClipGenerationForm {...trailerGeneration} subject="trailer" />
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -199,14 +176,5 @@ function FoundationField({
         className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
       />
     </label>
-  );
-}
-
-function WorldMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl bg-white/[0.045] px-2 py-2.5">
-      <p className="truncate text-[8px] font-semibold text-white/30">{label}</p>
-      <p className="mt-1 text-xs font-semibold tabular-nums text-white/68">{value}</p>
-    </div>
   );
 }

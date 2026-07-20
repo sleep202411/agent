@@ -33,16 +33,18 @@ import {
   IconAlertTriangle,
   IconArrowLeft,
   IconBook2,
+  IconLayoutGrid,
   IconCheck,
   IconCloudUpload,
   IconDownload,
+  IconFileText,
   IconGitBranch,
   IconLoader2,
   IconMovie,
   IconPlayerPlay,
   IconRefresh,
-  IconRoute,
   IconSparkles,
+  IconUser,
   IconWorld,
   IconX,
 } from "@tabler/icons-react";
@@ -99,7 +101,7 @@ import {
   waitForStoryClipVideoUploadFinalization,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
-  type InteractiveFilmDraftContent,
+  type InteractiveStoryDraftContent,
   type StoryVideoGeneration,
   type StoryVideoLibraryItem,
   type StoryCanvasPosition,
@@ -110,12 +112,17 @@ import {
 import {
   STORY_ROOT_NODE_ID,
   buildStoryCanvasModel,
+  characterCanvasNodeId,
+  rejectsStoryCastWiring,
   syntheticDecisionNodeId,
   syntheticEndingNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
-import { reconcileStoryCanvasSelectedIds } from "./story-project-canvas-selection";
+import {
+  reconcileStoryCanvasSelectedIds,
+  resolveStoryCanvasNodeClick,
+} from "./story-project-canvas-selection";
 import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   STORY_WORLD_INSPECTOR,
@@ -133,7 +140,7 @@ import {
   unsavedDesiredLayout,
   type StoryCanvasLayoutPayload,
 } from "./story-canvas-layout-retry";
-import { createConnectedClipForBlankDrop } from "./story-project-canvas-drop";
+import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { StoryAgentRunAura } from "./story-agent-run-aura";
 import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
@@ -160,25 +167,22 @@ import { useLastDefinedData } from "./use-last-defined-data";
 import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
-  connectClipContinuation,
-  connectAutoRoute,
+  connectSceneContinuation,
   connectChoiceTarget,
-  convertClipExitToChoice,
-  convertClipExitToEnding,
+  convertSceneExitToChoice,
+  convertSceneExitToEnding,
   createClipNode,
   createEndingNode,
-  createRouterNode,
-  disconnectAutoRoute,
+  createTextNode,
   duplicateClipNode,
-  duplicateRouterNode,
+  duplicateTextNode,
   moveChoiceOption,
   removeChoiceOption,
   setEntryNode,
   updateChoiceExit,
   updateChoiceOption,
-  updateAutoRoute,
-  updateAutoRouteTarget,
   updateEndingNode,
+  updateTextNode,
 } from "./story-project-canvas-mutations";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
 import {
@@ -200,14 +204,10 @@ import {
   StorySubmissionKeyRegistry,
 } from "./story-trailer-production-model";
 import {
-  addWorldTextItem,
   createStoryCharacter,
   deleteStoryCharacter,
-  removeWorldTextItem,
   updateStoryCharacter,
   updateStoryClipMeta,
-  updateWorldTextItem,
-  type StoryWorldTextField,
 } from "./story-world-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import {
@@ -266,9 +266,10 @@ const STORY_PORT_COLORS = {
   flow: "rgba(255,255,255,0.72)",
   choice: "#5b9dff",
   checkpoint: "#8f65ff",
-  route: "#e0a45c",
   ending: "#E52227",
+  cast: "rgba(255,255,255,0.34)",
 } as const;
+const STORY_MEMBERSHIP_EDGE_COLOR = "rgba(255,255,255,0.14)";
 const TRAILER_RECIPE_KEY = "trailer";
 
 function emptyStoryGenerationRecipe(): StoryVideoGenerationRecipeInput {
@@ -322,7 +323,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const agentRunController = useStoryAgentRun({ workspaceId, projectId });
   const agentApplying = agentRunController.applying;
   const agentAuthorityReady = agentRunController.authorityState === "ready";
-  const [content, setContent] = useState<InteractiveFilmDraftContent | null>(null);
+  const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
   const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
     CLOSED_STORY_CANVAS_INSPECTOR
   );
@@ -344,9 +345,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [appliedLayoutRevision, setAppliedLayoutRevision] = useState<number | null>(null);
   const [layoutSaveState, setLayoutSaveState] = useState<SaveState>("idle");
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
-  const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverride] = useState<
-    boolean | null
-  >(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [clipGenerationRequest, setClipGenerationRequest] =
@@ -396,14 +394,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const hydratedRef = useRef(false);
   const revisionRef = useRef(0);
   const savedSignatureRef = useRef("");
-  const latestContentRef = useRef<InteractiveFilmDraftContent | null>(null);
+  const latestContentRef = useRef<InteractiveStoryDraftContent | null>(null);
   const conflictRef = useRef<DraftRevisionConflict | null>(null);
   const disposedRef = useRef(false);
   const saveInFlightRef = useRef(false);
   const inFlightSignatureRef = useRef<string | null>(null);
-  const inFlightContentRef = useRef<InteractiveFilmDraftContent | null>(null);
-  const queuedContentRef = useRef<InteractiveFilmDraftContent | null>(null);
-  const recoveryContentRef = useRef<InteractiveFilmDraftContent | null>(null);
+  const inFlightContentRef = useRef<InteractiveStoryDraftContent | null>(null);
+  const queuedContentRef = useRef<InteractiveStoryDraftContent | null>(null);
+  const recoveryContentRef = useRef<InteractiveStoryDraftContent | null>(null);
   const saveDebounceTimerRef = useRef<number | null>(null);
   const saveRetryTimerRef = useRef<number | null>(null);
   const saveRetryAttemptRef = useRef(0);
@@ -415,7 +413,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const currentHistoryEntryRef = useRef<StoryCanvasHistoryEntry | null>(null);
   const pendingLeaveActionRef = useRef<(() => void) | null>(null);
   const persistRef = useRef<
-    (next: InteractiveFilmDraftContent, options?: PersistDraftOptions) => Promise<void>
+    (next: InteractiveStoryDraftContent, options?: PersistDraftOptions) => Promise<void>
   >(async () => {});
   const saveSettledWaitersRef = useRef(new Set<() => void>());
   const draftSnapshotBarrierRef = useRef(false);
@@ -441,6 +439,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const latestCanvasSelectionRef = useRef<string[]>([]);
   const pendingNodePositionsRef = useRef(new Map<string, StoryCanvasPosition>());
   const dragStartHistorySnapshotRef = useRef<StoryCanvasHistorySnapshot | null>(null);
+  // Set true once a node actually moves during a drag; consumed by onNodeClick
+  // so the pointer-up that ends a drag can never open the inspector.
+  const didDragNodeRef = useRef(false);
   const hasDirtyGenerationRecipeRef = useRef(false);
   const agentTakeoverPendingRef = useRef(false);
 
@@ -600,8 +601,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   // the last defined projections for every render-side consumer.
   const workbenchProjection = useLastDefinedData(workbenchQuery.data);
   const layoutProjection = useLastDefinedData(layoutQuery.data);
-  const storyWorldNodePresent =
-    storyWorldNodePresentOverride ?? layoutProjection?.storyWorldNodePresent ?? true;
+  // The Story World root is mandatory and always present on the canvas.
+  const storyWorldNodePresent = true;
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -691,7 +692,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   }, [agentApplying, agentAuthorityReady]);
 
   const persist = useCallback(
-    async (next: InteractiveFilmDraftContent, options: PersistDraftOptions = {}) => {
+    async (next: InteractiveStoryDraftContent, options: PersistDraftOptions = {}) => {
       if (!workspaceId || conflictRef.current || disposedRef.current) return;
       if (agentApplying || !agentAuthorityReady) {
         recoveryContentRef.current = next;
@@ -956,7 +957,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       const generation = finalFlushGenerationRef.current + 1;
       finalFlushGenerationRef.current = generation;
 
-      const saveOnce = async (next: InteractiveFilmDraftContent, expected: number) => {
+      const saveOnce = async (next: InteractiveStoryDraftContent, expected: number) => {
         try {
           return await putStoryDraft(
             workspaceId,
@@ -976,7 +977,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         }
       };
       const saveWithResponseRecovery = async (
-        next: InteractiveFilmDraftContent,
+        next: InteractiveStoryDraftContent,
         expected: number
       ) => {
         try {
@@ -1056,8 +1057,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     rootEyebrow: t("projection.rootEyebrow"),
     rootSummary: t("projection.rootSummary"),
     clip: t("projection.clip"),
+    text: t("projection.text"),
     decision: t("projection.decision"),
-    router: t("projection.router"),
     ending: t("projection.ending"),
   };
   const model = useMemo(
@@ -1087,8 +1088,8 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       projectionCopy.rootEyebrow,
       projectionCopy.rootSummary,
       projectionCopy.clip,
+      projectionCopy.text,
       projectionCopy.decision,
-      projectionCopy.router,
       projectionCopy.ending,
     ]
   );
@@ -1228,7 +1229,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     if (shouldAdoptAuthoritativeLayout) {
       layoutRevisionRef.current = layoutProjection.revision;
       setAppliedLayoutRevision(layoutProjection.revision);
-      setStoryWorldNodePresentOverride(layoutProjection.storyWorldNodePresent);
       setLayoutSaveError(null);
       setLayoutSaveState("idle");
       history.clear();
@@ -2092,7 +2092,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           target: focusedClipVideo,
           recipe: focusedRecipe,
           references,
-          frameProfile: project?.frameProfile ?? "landscape_16_9",
+          frameProfile: project?.frameProfile ?? null,
           readOnly: !canManageClipMedia,
           canGenerate: productionDisabledReason === null,
           disabledReason: productionDisabledReason,
@@ -2100,10 +2100,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           error: productionError ?? storyGenerationError(focusedClipVideo?.generation),
           onRecipeChange: (next) => updateGenerationRecipe(focusedRecipeKey!, next),
           onGenerate: generateSelectedClip,
+          referenceUpload: workspaceId
+            ? { workspaceId, projectId, refresh: refetchWorkbench }
+            : null,
         }
       : null;
-  const focusedIsRoot = focusedNode?.data.kind === "root";
-  const selectedTrailer = focusedIsRoot ? (video?.trailer ?? null) : null;
+  // Trailer production lives inside the Story Bible panel as a secondary action,
+  // so it is scoped to the world inspector rather than a focused root node.
+  const worldInspectorOpen = inspectorTarget.kind === "world";
+  const selectedTrailer = worldInspectorOpen ? (video?.trailer ?? null) : null;
 
   const refreshTrailerProduction = useCallback(async () => {
     await workbenchQuery.refetch();
@@ -2214,13 +2219,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     ]
   );
   const trailerGeneration: StoryClipGenerationFormProps | null =
-    focusedIsRoot && selectedTrailer
+    worldInspectorOpen && selectedTrailer
       ? {
           subject: "trailer",
           target: selectedTrailer,
           recipe: trailerRecipe,
           references,
-          frameProfile: project?.frameProfile ?? "landscape_16_9",
+          frameProfile: project?.frameProfile ?? null,
           readOnly: !canGenerateTrailer,
           canGenerate: trailerDisabledReason === null,
           disabledReason: trailerDisabledReason,
@@ -2228,6 +2233,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           error: trailerError ?? storyGenerationError(selectedTrailer.generation),
           onRecipeChange: (next) => updateGenerationRecipe(TRAILER_RECIPE_KEY, next),
           onGenerate: generateTrailer,
+          referenceUpload: workspaceId
+            ? { workspaceId, projectId, refresh: refetchWorkbench }
+            : null,
           videoLibrary: workspaceId
             ? {
                 workspaceId,
@@ -2266,15 +2274,19 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       model?.edges.map((edge) => {
         const related =
           !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
-        const sourceKind = model?.nodes.find((node) => node.id === edge.source)?.data.kind;
+        const isMembership = edge.data.kind === "membership";
         return {
           ...edge,
-          zIndex: related ? 2 : 0,
+          // The membership tether reads as "belongs to this world", never story
+          // flow: it stays behind the flow edges and never lifts on focus.
+          zIndex: isMembership ? 0 : related ? 2 : 0,
           style: {
             ...DEFAULT_EDGE_OPTIONS.style,
-            opacity: related ? 1 : 0.18,
-            stroke:
-              edge.data.kind === "root"
+            strokeWidth: isMembership ? 1 : DEFAULT_EDGE_OPTIONS.style.strokeWidth,
+            opacity: isMembership ? (related ? 0.9 : 0.32) : related ? 1 : 0.18,
+            stroke: isMembership
+              ? STORY_MEMBERSHIP_EDGE_COLOR
+              : edge.data.kind === "root"
                 ? STORY_PORT_COLORS.entry
                 : edge.data.kind === "choice" || edge.data.kind === "decision"
                   ? STORY_PORT_COLORS.choice
@@ -2282,9 +2294,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                     ? STORY_PORT_COLORS.checkpoint
                     : edge.data.kind === "ending"
                       ? STORY_PORT_COLORS.ending
-                      : sourceKind === "router"
-                        ? STORY_PORT_COLORS.route
-                        : "rgba(255,255,255,0.34)",
+                      : "rgba(255,255,255,0.34)",
           },
           labelStyle: { fill: "rgba(255,255,255,0.68)", fontSize: 10, fontWeight: 600 },
           labelBgStyle: { fill: "rgba(24,24,24,0.88)", fillOpacity: 1 },
@@ -2362,7 +2372,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setContent(snapshot.content);
 
       if (!layoutChanged) return;
-      setStoryWorldNodePresentOverride(snapshot.storyWorldNodePresent);
       pendingNodePositionsRef.current.clear();
       Object.entries(snapshot.nodePositions).forEach(([nodeId, position]) => {
         pendingNodePositionsRef.current.set(nodeId, { ...position });
@@ -2381,6 +2390,38 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     },
     [closeCreatorMenu, mutationBarrier, readHistorySnapshot, setCanvasNodes]
   );
+
+  // Re-apply the deterministic layout (BFS story lanes + evenly-spaced cast
+  // lane) the model computes from structure, discarding manual/stray positions
+  // so a batch-generated graph tidies to a clean arrangement in one click.
+  const tidyCanvas = useCallback(() => {
+    if (!model || !mutationBarrier.permits("layout")) return;
+    const before = readHistorySnapshot();
+    const modelPositions = new Map(model.nodes.map((node) => [node.id, node.position]));
+    pendingNodePositionsRef.current.clear();
+    const tidied = canvasNodesRef.current.map((node) => {
+      const fresh = modelPositions.get(node.id);
+      return fresh ? { ...node, position: { ...fresh } } : node;
+    });
+    canvasNodesRef.current = tidied;
+    setCanvasNodes(tidied);
+    const nextLayout = canvasLayoutPayload(tidied, storyWorldNodePresent);
+    if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current) return;
+    if (before) {
+      history.capture(before);
+      refreshHistoryState();
+    }
+    setLayoutSaveState("dirty");
+    void persistLayoutRef.current(nextLayout);
+  }, [
+    history,
+    model,
+    mutationBarrier,
+    readHistorySnapshot,
+    refreshHistoryState,
+    setCanvasNodes,
+    storyWorldNodePresent,
+  ]);
 
   const undoStoryCanvas = useCallback(() => {
     if (!mutationBarrier.permits("layout")) return;
@@ -2409,7 +2450,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   });
 
   const commitContent = (
-    next: InteractiveFilmDraftContent,
+    next: InteractiveStoryDraftContent,
     options: CommitContentOptions = {}
   ): boolean => {
     // This is the final write barrier. Event handlers also gate eagerly for
@@ -2440,7 +2481,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   };
 
   const applyGraphMutation = (
-    mutation: (current: InteractiveFilmDraftContent) => InteractiveFilmDraftContent,
+    mutation: (current: InteractiveStoryDraftContent) => InteractiveStoryDraftContent,
     options: CommitContentOptions = {}
   ): boolean => {
     const current = latestContentRef.current;
@@ -2457,50 +2498,61 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     }
   };
 
-  const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
+  // Newborn cards live only in pendingNodePositionsRef until some later drag
+  // persists the layout; an authoritative layout echo arriving before that
+  // (realtime, revision adoption) doesn't know the node and snaps it back to
+  // its model-default slot. Persist immediately so the placement sticks.
+  const persistLayoutWithPendingPositions = (nextContent: InteractiveStoryDraftContent) => {
+    const nextLayout: StoryCanvasLayoutPayload = {
+      nodePositions: historyNodePositions(
+        nextContent,
+        canvasNodesRef.current,
+        pendingNodePositionsRef.current,
+        storyWorldNodePresent
+      ),
+      storyWorldNodePresent,
+    };
+    setLayoutSaveState("dirty");
+    void persistLayoutRef.current(nextLayout);
+  };
+
+  const createStoryElement = (
+    kind: StoryNodeCreationKind,
+    position: StoryCanvasPosition,
+    options?: { atDropPosition?: boolean }
+  ) => {
     if (!content || !mutationBarrier.permits("layout")) return;
     try {
-      if (kind === "root") {
-        if (storyWorldNodePresent) return;
-        const snapshot = readHistorySnapshot();
-        if (!snapshot) return;
-        history.capture(snapshot);
-        refreshHistoryState();
-        pendingNodePositionsRef.current.set(STORY_ROOT_NODE_ID, { ...position });
-        const nextLayout: StoryCanvasLayoutPayload = {
-          nodePositions: {
-            ...snapshot.nodePositions,
-            [STORY_ROOT_NODE_ID]: { ...position },
-          },
-          storyWorldNodePresent: true,
-        };
-        setStoryWorldNodePresentOverride(true);
-        setLayoutSaveState("dirty");
-        void persistLayoutRef.current(nextLayout);
-        selectCanvasNodeExclusively(STORY_ROOT_NODE_ID);
-        setGraphError(null);
-        return;
-      }
-
-      let nextContent: InteractiveFilmDraftContent;
+      let nextContent: InteractiveStoryDraftContent;
       let createdCanvasNodeId: string;
+      // Characters are never wired into the story-flow graph; a fresh cast card
+      // is seeded in the cast lane left of the root regardless of the click
+      // point that opened the creator.
+      let placement = position;
 
       if (kind === "clip") {
         const result = createClipNode(content);
         nextContent = result.content;
         createdCanvasNodeId = result.created.nodeId;
-      } else if (kind === "router") {
-        const result = createRouterNode(content);
+      } else if (kind === "text") {
+        const result = createTextNode(content, { locale: authoringLocale });
         nextContent = result.content;
         createdCanvasNodeId = result.created.nodeId;
       } else if (kind === "ending") {
         const result = createEndingNode(content, { locale: authoringLocale });
         nextContent = result.content;
         createdCanvasNodeId = syntheticEndingNodeId(result.created.id);
+      } else if (kind === "character") {
+        const result = createStoryCharacter(content, { locale: authoringLocale });
+        nextContent = result.content;
+        createdCanvasNodeId = characterCanvasNodeId(result.created.id);
+        // A cast-anchor drag carries spatial intent; menu/dock entries don't
+        // and keep the tidy cast-lane default.
+        if (!options?.atDropPosition) placement = nextCastLanePosition(canvasNodesRef.current);
       } else return;
 
-      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...position });
-      commitContent(nextContent);
+      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...placement });
+      if (commitContent(nextContent)) persistLayoutWithPendingPositions(nextContent);
       selectCanvasNodeExclusively(createdCanvasNodeId);
       setGraphError(null);
     } catch {
@@ -2521,7 +2573,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         clientPosition,
         container,
         flowPosition: screenToFlowPosition(clientPosition),
-        showStoryWorld: !storyWorldNodePresent,
       })
     );
   };
@@ -2552,6 +2603,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const source = model.nodes.find((node) => node.id === connection.source);
     const target = model.nodes.find((node) => node.id === connection.target);
     if (!source || !target) return;
+    // Red line: character cards tether only to the Story World root and can
+    // never participate in a story-flow connection in either direction.
+    if (
+      rejectsStoryCastWiring({
+        sourceKind: source.data.kind,
+        targetKind: target.data.kind,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      })
+    ) {
+      return;
+    }
     applyGraphMutation((current) => {
       if (source.id === STORY_ROOT_NODE_ID) return setEntryNode(current, target.data.nodeId);
       if (source.data.kind === "decision" && source.data.sourceNodeId) {
@@ -2571,25 +2634,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         ).content;
       }
       if (target.data.kind === "ending" && target.data.endingId) {
-        return convertClipExitToEnding(current, source.data.nodeId, target.data.endingId);
+        return convertSceneExitToEnding(current, source.data.nodeId, target.data.endingId);
       }
       if (
-        source.data.kind === "clip" &&
+        (source.data.kind === "clip" || source.data.kind === "text") &&
         source.data.exitKind === "auto" &&
         connection.sourceHandle === "completion"
       ) {
-        return connectClipContinuation(current, source.data.nodeId, target.data.nodeId);
+        return connectSceneContinuation(current, source.data.nodeId, target.data.nodeId);
       }
-      const routeHandle = connection.sourceHandle?.match(/^route:(\d+)$/u);
-      if (routeHandle) {
-        return updateAutoRouteTarget(
-          current,
-          source.data.nodeId,
-          Number(routeHandle[1]),
-          target.data.nodeId
-        );
-      }
-      return connectAutoRoute(current, source.data.nodeId, target.data.nodeId);
+      // No other source handle produces a story-flow connection in a pure
+      // branching tree; leave the draft unchanged.
+      return current;
     });
   };
 
@@ -2604,6 +2660,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       !isCanvasPaneTarget(event.target) ||
       !content ||
       !model ||
+      !project ||
       !mutationBarrier.permits("layout")
     ) {
       return;
@@ -2615,8 +2672,21 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const sourceHandleId = connectionState.fromHandle.id ?? "";
     const dropPosition = screenToFlowPosition(clientPosition);
 
+    if (source.data.kind === "root" && sourceHandleId === "cast") {
+      // The drag IS the tether: seat the new card so its right-edge cast port
+      // lands on the release point (a fresh cast card is 310px wide with the
+      // port at the mid-height of its header-only body), instead of dropping
+      // the card's top-left corner under the pointer.
+      createStoryElement(
+        "character",
+        { x: dropPosition.x - 310, y: dropPosition.y - 44 },
+        { atDropPosition: true }
+      );
+      return;
+    }
+
     if (
-      source.data.kind === "clip" &&
+      (source.data.kind === "clip" || source.data.kind === "text") &&
       source.data.exitKind === "auto" &&
       sourceHandleId === "completion"
     ) {
@@ -2631,22 +2701,23 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     }
 
     try {
-      const created = createConnectedClipForBlankDrop(
+      const created = createConnectedSceneForBlankDrop(
         content,
         source.data,
         sourceHandleId,
-        authoringLocale
+        authoringLocale,
+        project.format === "text_adventure" ? "text" : "clip"
       );
       if (!created) return;
 
       pendingNodePositionsRef.current.set(created.createdNodeId, {
-        // The newly-created clip's input handle lands beside the release
+        // The newly-created scene's input handle lands beside the release
         // point instead of placing the whole card underneath the pointer.
         x: dropPosition.x + 18,
         y: dropPosition.y - 108,
       });
       setGraphError(null);
-      commitContent(created.content);
+      if (commitContent(created.content)) persistLayoutWithPendingPositions(created.content);
       selectCanvasNodeExclusively(created.createdNodeId);
       closeCreatorMenu();
     } catch {
@@ -2660,7 +2731,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       return;
     }
     const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
-    if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
+    if (
+      !source ||
+      (source.data.kind !== "clip" && source.data.kind !== "text") ||
+      source.data.exitKind !== "auto"
+    ) {
       setPendingCompletionDrop(null);
       return;
     }
@@ -2672,14 +2747,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           x: pending.flowPosition.x + 18,
           y: pending.flowPosition.y - 72,
         });
-        commitContent(convertClipExitToChoice(content, source.data.nodeId, authoringLocale));
+        commitContent(convertSceneExitToChoice(content, source.data.nodeId, authoringLocale));
         selectCanvasNodeExclusively(decisionNodeId);
       } else {
-        const created = createConnectedClipForBlankDrop(
+        const created = createConnectedSceneForBlankDrop(
           content,
           source.data,
           pending.sourceHandleId,
-          authoringLocale
+          authoringLocale,
+          kind
         );
         if (!created) return;
         pendingNodePositionsRef.current.set(created.createdNodeId, {
@@ -2713,11 +2789,24 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     ) {
       return false;
     }
+    // Red line: character cards tether only to the root cast anchor. Reject any
+    // attempt to wire a character into the story graph, a story node into the
+    // cast anchor, or the cast handles as a story-flow connection.
+    if (
+      rejectsStoryCastWiring({
+        sourceKind: source.data.kind,
+        targetKind: target.data.kind,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      })
+    ) {
+      return false;
+    }
     if (source.data.kind === "root") {
       return (
         connection.sourceHandle === "entry" &&
         connection.targetHandle === "in" &&
-        (target.data.kind === "clip" || target.data.kind === "router")
+        (target.data.kind === "clip" || target.data.kind === "text")
       );
     }
     if (source.data.kind === "decision") {
@@ -2725,12 +2814,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         (connection.sourceHandle === "choice-new" ||
           Boolean(connection.sourceHandle?.startsWith("choice:"))) &&
         connection.targetHandle === "in" &&
-        (target.data.kind === "clip" || target.data.kind === "router")
+        (target.data.kind === "clip" || target.data.kind === "text")
       );
     }
     if (target.data.kind === "ending") {
       return (
-        source.data.kind === "clip" &&
+        (source.data.kind === "clip" || source.data.kind === "text") &&
         source.data.exitKind === "auto" &&
         !source.data.continuationTargetNodeId &&
         connection.sourceHandle === "completion" &&
@@ -2738,19 +2827,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       );
     }
     if (connection.targetHandle !== "in") return false;
-    if (source.data.kind === "clip") {
+    if (source.data.kind === "clip" || source.data.kind === "text") {
       return (
         source.data.exitKind === "auto" &&
         !source.data.continuationTargetNodeId &&
         connection.sourceHandle === "completion" &&
-        (target.data.kind === "clip" || target.data.kind === "router")
+        (target.data.kind === "clip" || target.data.kind === "text")
       );
     }
-    return (
-      source.data.kind === "router" &&
-      (connection.sourceHandle === "route-new" ||
-        Boolean(connection.sourceHandle?.match(/^route:\d+$/u)))
-    );
+    return false;
   };
 
   const deleteStoryElements = ({
@@ -2764,24 +2849,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     const currentSnapshot = readHistorySnapshot();
     const current = latestContentRef.current;
     if (!currentSnapshot || !current) return;
-    const deletesStoryWorld =
-      storyWorldNodePresent && nodes.some((node) => node.id === STORY_ROOT_NODE_ID);
 
     try {
       const next = deleteStoryCanvasElements(current, { nodes, edges });
-      const contentChanged = next !== current;
-      if (!contentChanged && !deletesStoryWorld) return;
+      // The Story World root is non-deletable, so only content deletions matter.
+      if (next === current) return;
 
       history.capture(currentSnapshot);
       refreshHistoryState();
-      if (contentChanged) {
-        latestContentRef.current = next;
-        setContent(next);
-      }
-      if (deletesStoryWorld) setStoryWorldNodePresentOverride(false);
+      latestContentRef.current = next;
+      setContent(next);
 
-      const nextStoryWorldNodePresent = deletesStoryWorld ? false : storyWorldNodePresent;
-      const nextNodeIds = storyCanvasContentNodeIds(next, nextStoryWorldNodePresent);
+      const nextNodeIds = storyCanvasContentNodeIds(next, storyWorldNodePresent);
       const deletedNodeIds = new Set(
         [...storyCanvasContentNodeIds(current, storyWorldNodePresent)].filter(
           (nodeId) => !nextNodeIds.has(nodeId)
@@ -2797,7 +2876,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         deletedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
         const nextLayout: StoryCanvasLayoutPayload = {
           nodePositions: remainingPositions,
-          storyWorldNodePresent: nextStoryWorldNodePresent,
+          storyWorldNodePresent,
         };
         setLayoutSaveState("dirty");
         void persistLayoutRef.current(nextLayout);
@@ -2826,27 +2905,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const updateChoice = (
     nodeId: string,
     choiceId: string,
-    patch: Parameters<typeof updateChoiceOption>[3] & { nextNodeId?: string }
+    patch: Parameters<typeof updateChoiceOption>[3]
   ) => {
-    applyGraphMutation(
-      (current) => {
-        let next = current;
-        const { nextNodeId, ...optionPatch } = patch;
-        if (Object.keys(optionPatch).length > 0) {
-          next = updateChoiceOption(next, nodeId, choiceId, optionPatch);
-        }
-        if (nextNodeId !== undefined) {
-          next = connectChoiceTarget(next, nodeId, choiceId, nextNodeId);
-        }
-        return next;
-      },
-      { mergeKey: `choice:${nodeId}:${choiceId}:${Object.keys(patch).sort().join(",")}` }
-    );
+    applyGraphMutation((current) => updateChoiceOption(current, nodeId, choiceId, patch), {
+      mergeKey: `choice:${nodeId}:${choiceId}:${Object.keys(patch).sort().join(",")}`,
+    });
   };
 
   const updateEnding = (
     endingId: string,
-    patch: Partial<InteractiveFilmDraftContent["storyBible"]["endings"][number]>
+    patch: Partial<InteractiveStoryDraftContent["storyBible"]["endings"][number]>
   ) => {
     applyGraphMutation(
       (current) =>
@@ -2868,21 +2936,31 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     );
   };
 
-  const createCharacter = (): string | null => {
-    if (!content || !mutationBarrier.permits("content")) return null;
+  const deleteCharacter = (characterId: string) => {
+    if (!content || !mutationBarrier.permits("content")) return;
+    // The inspector disables delete while a character is still referenced by a
+    // condition/effect, so this only ever removes an unreferenced character.
+    const snapshot = readHistorySnapshot();
     try {
-      const result = createStoryCharacter(content, { locale: authoringLocale });
-      commitContent(result.content);
+      if (!commitContent(deleteStoryCharacter(content, characterId))) return;
       setGraphError(null);
-      return result.created.id;
+      // Drop the removed character's orphaned cast-lane position.
+      const characterNodeId = characterCanvasNodeId(characterId);
+      pendingNodePositionsRef.current.delete(characterNodeId);
+      if (snapshot && characterNodeId in snapshot.nodePositions) {
+        const remainingPositions = Object.fromEntries(
+          Object.entries(snapshot.nodePositions).filter(([nodeId]) => nodeId !== characterNodeId)
+        );
+        setLayoutSaveState("dirty");
+        void persistLayoutRef.current({
+          nodePositions: remainingPositions,
+          storyWorldNodePresent,
+        });
+      }
+      selectCanvasNodeExclusively(null);
     } catch {
       setGraphError(t("graphError.generic"));
-      return null;
     }
-  };
-
-  const addWorldItem = (field: StoryWorldTextField) => {
-    applyGraphMutation((current) => addWorldTextItem(current, field, ""));
   };
 
   const duplicateNode = (nodeId: string) => {
@@ -2893,7 +2971,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       const result =
         source.kind === "clip"
           ? duplicateClipNode(content, nodeId)
-          : duplicateRouterNode(content, nodeId);
+          : duplicateTextNode(content, nodeId, { locale: authoringLocale });
       commitContent(result.content);
       selectCanvasNodeExclusively(result.created.nodeId);
       setGraphError(null);
@@ -2950,21 +3028,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     setAppliedLayoutRevision(layoutConflict.current.revision);
     layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
     queryClient.setQueryData(layoutQueryKey, layoutConflict.current);
-    setStoryWorldNodePresentOverride(layoutConflict.current.storyWorldNodePresent);
     pendingNodePositionsRef.current.clear();
     Object.entries(layoutConflict.current.nodePositions).forEach(([nodeId, position]) => {
       pendingNodePositionsRef.current.set(nodeId, { ...position });
     });
     history.clear();
     refreshHistoryState();
-    const latestNodes = canvasNodesRef.current
-      .filter(
-        (node) => layoutConflict.current.storyWorldNodePresent || node.id !== STORY_ROOT_NODE_ID
-      )
-      .map((node) => ({
-        ...node,
-        position: layoutConflict.current.nodePositions[node.id] ?? node.position,
-      }));
+    const latestNodes = canvasNodesRef.current.map((node) => ({
+      ...node,
+      position: layoutConflict.current.nodePositions[node.id] ?? node.position,
+    }));
     canvasNodesRef.current = latestNodes;
     const selectedNodeIds = latestNodes.filter((node) => node.selected).map((node) => node.id);
     latestCanvasSelectionRef.current = selectedNodeIds;
@@ -3150,7 +3223,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         projectId={projectId}
         workspaceId={workspaceId}
         hasNodes={model.nodes.length > 0}
-        inspectorOpen={inspectorOpen}
         open={assistantOpen}
         onOpenChange={setAssistantOpen}
         agentRunController={canvasAgentRunController}
@@ -3223,6 +3295,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
           onShowFoundation={showStoryWorldInspector}
+          onTidy={canEdit ? tidyCanvas : undefined}
           assistantOpen={assistantOpen}
           agentRunStatus={agentRunController.run?.status ?? null}
           onToggleAssistant={() => setAssistantOpen((current) => !current)}
@@ -3247,10 +3320,12 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
         <section
           ref={canvasSectionRef}
-          className={cn(
-            "absolute top-16 right-0 bottom-0",
-            inspectorOpen ? "left-[380px]" : "left-0"
-          )}
+          // The left inspector is a floating overlay (below): the canvas keeps
+          // its full width whether the inspector is open or not, so opening it
+          // never resizes the React Flow container or jumps the viewport. Only
+          // the RIGHT assistant rail (StoryCanvasAssistantLayer) squeezes the
+          // page, which is intended.
+          className="absolute top-16 right-0 bottom-0 left-0"
           onDoubleClick={(event) => {
             if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
               return;
@@ -3287,9 +3362,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 onSelectionStart={onCanvasSelectionStart}
                 onSelectionEnd={onCanvasSelectionEnd}
                 onNodeDragStart={() => {
+                  didDragNodeRef.current = false;
                   dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
                     ? readHistorySnapshot()
                     : null;
+                }}
+                onNodeDrag={() => {
+                  // A real move occurred: the following pointer-up is a drag, not
+                  // a click, so it must not open the inspector.
+                  didDragNodeRef.current = true;
                 }}
                 onNodeDragStop={(_event, draggedNode, draggedNodes) => {
                   if (!mutationBarrier.permits("layout")) {
@@ -3321,17 +3402,25 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 }}
                 onNodeClick={(event, node) => {
                   closeCreatorMenu();
-                  if (event.shiftKey && node.selected) {
+                  const outcome = resolveStoryCanvasNodeClick({
+                    nodeId: node.id,
+                    nodeSelected: Boolean(node.selected),
+                    shiftKey: event.shiftKey,
+                    didDrag: didDragNodeRef.current,
+                    currentSelection: latestCanvasSelectionRef.current,
+                  });
+                  didDragNodeRef.current = false;
+                  // A pointer-up that ended a drag never opens the inspector.
+                  if (outcome.kind === "drag-suppressed") return;
+                  if (outcome.kind === "toggle-off") {
                     requestedCanvasFocusRef.current = null;
-                    const remainingNodeIds = latestCanvasSelectionRef.current.filter(
-                      (nodeId) => nodeId !== node.id
-                    );
-                    latestCanvasSelectionRef.current = remainingNodeIds;
-                    reconcileCanvasFocus(remainingNodeIds);
+                    latestCanvasSelectionRef.current = outcome.remainingNodeIds;
+                    reconcileCanvasFocus(outcome.remainingNodeIds);
                     return;
                   }
-                  requestedCanvasFocusRef.current = node.id;
-                  setInspectorTarget(storyNodeInspectorTarget(node.id));
+                  // Explicit click is the ONLY path that opens the node inspector.
+                  requestedCanvasFocusRef.current = outcome.nodeId;
+                  setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
                 }}
                 onPaneClick={() => {
                   selectCanvasNodeExclusively(null);
@@ -3366,7 +3455,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                   <MiniMap
                     pannable
                     position="bottom-left"
-                    className="canvas-wheel-zoom bottom-5! left-20! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!"
+                    className={cn(
+                      "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                      // Clear the full-width canvas's left inspector overlay.
+                      inspectorOpen ? "left-[452px]!" : "left-20!"
+                    )}
                     bgColor="oklch(0.24 0 0 / 0.82)"
                     maskColor="rgba(0,0,0,0.46)"
                     nodeColor="rgba(255,255,255,0.42)"
@@ -3375,18 +3468,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 ) : null}
                 <CanvasControls
                   position="bottom-left"
-                  className="bottom-5! left-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!"
+                  className={cn(
+                    "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
+                    // Clear the full-width canvas's left inspector overlay.
+                    inspectorOpen ? "left-[392px]!" : "left-5!"
+                  )}
                 />
               </StoryCanvasReactFlow>
             </StoryCanvasFocusContext.Provider>
           </MediaHoverPreviewProvider>
 
-          {canMutateCanvasLayout ? (
-            <StoryNodeDock
-              showStoryWorld={!storyWorldNodePresent}
-              onCreate={createStoryElementFromDock}
-            />
-          ) : null}
+          {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
 
           {canMutateCanvasLayout ? (
             <CanvasHistoryControls
@@ -3403,7 +3495,6 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           {canMutateCanvasLayout && creatorMenu ? (
             <StoryNodeCreator
               position={{ left: creatorMenu.left, top: creatorMenu.top }}
-              showStoryWorld={!storyWorldNodePresent}
               onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
               onCancel={closeCreatorMenu}
             />
@@ -3437,7 +3528,9 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                             projectId,
                             disabled: !canManageClipMedia,
                             disabledReason: clipMediaDisabledReason,
-                            frameContract: STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile],
+                            frameContract: project.frameProfile
+                              ? STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile]
+                              : null,
                             onSelect: selectExistingClipVideo,
                           }
                         : undefined,
@@ -3451,41 +3544,23 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
               })
             }
+            onUpdateText={(nodeId, patch) =>
+              applyGraphMutation(
+                (current) => updateTextNode(current, nodeId, authoringLocale, patch),
+                { mergeKey: `text:${nodeId}:${Object.keys(patch).sort().join(",")}` }
+              )
+            }
             showFoundation={inspectorTarget.kind === "world"}
             canEdit={canMutateCanvasLayout}
             onShowFoundation={showStoryWorldInspector}
             onUpdateFoundation={updateFoundation}
-            onCreateCharacter={createCharacter}
             onUpdateCharacter={(characterId, patch) =>
               applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
                 mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
               })
             }
-            onDeleteCharacter={(characterId) =>
-              applyGraphMutation((current) => deleteStoryCharacter(current, characterId))
-            }
-            onAddWorldTextItem={addWorldItem}
-            onUpdateWorldTextItem={(field, index, value) =>
-              applyGraphMutation((current) => updateWorldTextItem(current, field, index, value), {
-                mergeKey: `world:${field}:${index}`,
-              })
-            }
-            onRemoveWorldTextItem={(field, index) =>
-              applyGraphMutation((current) => removeWorldTextItem(current, field, index))
-            }
+            onDeleteCharacter={deleteCharacter}
             onCloseNode={() => selectCanvasNodeExclusively(null)}
-            onSetEntry={(nodeId) => applyGraphMutation((current) => setEntryNode(current, nodeId))}
-            onAddAutoRoute={(nodeId, targetNodeId) =>
-              applyGraphMutation((current) => connectAutoRoute(current, nodeId, targetNodeId))
-            }
-            onUpdateAutoRoute={(nodeId, routeIndex, patch) =>
-              applyGraphMutation((current) => updateAutoRoute(current, nodeId, routeIndex, patch), {
-                mergeKey: `auto-route:${nodeId}:${routeIndex}:${Object.keys(patch).sort().join(",")}`,
-              })
-            }
-            onRemoveAutoRoute={(nodeId, routeIndex) =>
-              applyGraphMutation((current) => disconnectAutoRoute(current, nodeId, { routeIndex }))
-            }
             onUpdateChoiceExit={(nodeId, patch) =>
               applyGraphMutation((current) => updateChoiceExit(current, nodeId, patch), {
                 mergeKey: `choice-exit:${nodeId}:${Object.keys(patch).sort().join(",")}`,
@@ -3556,6 +3631,7 @@ function CanvasHeader({
   onPreview,
   onPublish,
   onShowFoundation,
+  onTidy,
   assistantOpen,
   agentRunStatus,
   onToggleAssistant,
@@ -3574,6 +3650,7 @@ function CanvasHeader({
   onPreview: () => void;
   onPublish: () => void;
   onShowFoundation: () => void;
+  onTidy?: () => void;
   assistantOpen: boolean;
   agentRunStatus: StoryAgentRunStatus | null;
   onToggleAssistant: () => void;
@@ -3667,21 +3744,37 @@ function CanvasHeader({
           className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white"
         >
           <IconBook2 className="size-4" />
-          {t("foundation.action")}
+          {t("world.action")}
         </button>
-        <button
-          type="button"
-          onClick={onPreview}
-          disabled={previewPending}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-wait disabled:opacity-50"
-        >
-          {previewPending ? (
-            <IconLoader2 className="size-4 animate-spin" />
-          ) : (
-            <IconPlayerPlay className="size-4" />
-          )}
-          {t("workingPreview.action")}
-        </button>
+        {onTidy ? (
+          <button
+            type="button"
+            onClick={onTidy}
+            title={t("tidy.action")}
+            aria-label={t("tidy.action")}
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white"
+          >
+            <IconLayoutGrid className="size-4" />
+            {t("tidy.action")}
+          </button>
+        ) : null}
+        {/* Playtest hidden for now — the working-preview flow isn't a good fit
+            yet. Re-enable by restoring this button once it's reworked. */}
+        {false ? (
+          <button
+            type="button"
+            onClick={onPreview}
+            disabled={previewPending}
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/66 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-wait disabled:opacity-50"
+          >
+            {previewPending ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconPlayerPlay className="size-4" />
+            )}
+            {t("workingPreview.action")}
+          </button>
+        ) : null}
         {!canPublish && publishDisabledReason ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -3755,8 +3848,8 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
   const focusedNodeId = useContext(StoryCanvasFocusContext);
   const isRoot = data.kind === "root";
   const isEnding = data.kind === "ending";
-  const isRouter = data.kind === "router";
   const isDecision = data.kind === "decision";
+  const isCharacter = data.kind === "character";
   const productionTarget = data.kind === "root" ? data.trailerVideo : data.clipVideo;
   const { currentVideo, generation, generationActive } = resolveStoryVideoState(productionTarget);
   const currentVideoAsset = currentVideo?.asset;
@@ -3778,10 +3871,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       ? { background: "rgba(123,75,232,0.42)", iconBackground: "rgba(143,101,255,0.70)" }
       : data.kind === "decision"
         ? { background: "rgba(91,157,255,0.38)", iconBackground: "rgba(91,157,255,0.62)" }
-        : data.kind === "router"
-          ? { background: "rgba(224,164,92,0.30)", iconBackground: "rgba(224,164,92,0.54)" }
-          : data.kind === "ending"
-            ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
+        : data.kind === "ending"
+          ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
+          : isCharacter
+            ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
             : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
     <div className="relative pt-10" data-story-node-id={id}>
@@ -3799,9 +3892,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         >
           {isRoot ? <IconWorld className="size-3.5" stroke={2} /> : null}
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
+          {data.kind === "text" ? <IconFileText className="size-3.5" stroke={2} /> : null}
           {isDecision ? <IconGitBranch className="size-3.5" stroke={2} /> : null}
-          {isRouter ? <IconRoute className="size-3.5" stroke={2} /> : null}
           {isEnding ? <IconSparkles className="size-3.5" stroke={2} /> : null}
+          {isCharacter ? <IconUser className="size-3.5" stroke={2} /> : null}
         </span>
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
@@ -3810,14 +3904,15 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         className={cn(
           "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
           isRoot && "w-[360px]",
-          isRouter && "w-[250px]",
+          data.kind === "text" && "w-[330px]",
           isDecision && "w-[290px]",
           isEnding && "w-[280px]",
+          isCharacter && "w-[236px]",
           selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]"
         )}
       >
         <GlassRim width="1px" />
-        {!isRoot ? (
+        {!isRoot && !isCharacter ? (
           <StoryPortHandle
             id={isDecision ? "decision-in" : isEnding ? "ending-in" : "in"}
             type="target"
@@ -3828,9 +3923,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 ? STORY_PORT_COLORS.choice
                 : isEnding
                   ? STORY_PORT_COLORS.ending
-                  : isRouter
-                    ? STORY_PORT_COLORS.route
-                    : STORY_PORT_COLORS.flow
+                  : STORY_PORT_COLORS.flow
             }
             label={isEnding ? t("ports.ending") : t("ports.input")}
             className="-left-1.75!"
@@ -3847,7 +3940,32 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             className="-right-1.75!"
           />
         ) : null}
-        {data.kind === "clip" ? (
+        {isRoot ? (
+          // Dedicated LEFT cast anchor — the world membership port. It never
+          // completes a story-flow connection (rejectsStoryCastWiring), but a
+          // drag released on blank canvas seeds a new character in the cast lane.
+          <StoryPortHandle
+            id="cast"
+            type="source"
+            position={Position.Left}
+            isConnectable={isConnectable}
+            color={STORY_PORT_COLORS.cast}
+            label={t("ports.cast")}
+            className="-left-1.75!"
+          />
+        ) : null}
+        {isCharacter ? (
+          <StoryPortHandle
+            id="cast-in"
+            type="target"
+            position={Position.Right}
+            isConnectable={false}
+            color={STORY_PORT_COLORS.cast}
+            label={t("ports.cast")}
+            className="-right-1.75!"
+          />
+        ) : null}
+        {data.kind === "clip" || data.kind === "text" ? (
           <StoryPortHandle
             id="completion"
             type="source"
@@ -3887,6 +4005,15 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             className="rounded-t-[22px]"
           />
         ) : null}
+        {isCharacter && data.characterImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- unsized user upload
+          <img
+            src={data.characterImageUrl}
+            alt=""
+            draggable={false}
+            className="aspect-[3/4] w-full select-none rounded-t-[22px] object-cover"
+          />
+        ) : null}
         <div className="p-3">
           {data.kind === "clip" ? (
             data.title ? (
@@ -3908,17 +4035,23 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             >
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
-                  {data.eyebrow}
+                  {isCharacter ? t("world.characters.cardEyebrow") : data.eyebrow}
                 </p>
-                <h2 className="mt-1 truncate text-[15px] font-semibold text-white/90">
-                  {data.title}
+                <h2
+                  className={cn(
+                    "mt-1 truncate text-[15px] font-semibold",
+                    isCharacter && !data.title ? "text-white/40" : "text-white/90"
+                  )}
+                >
+                  {isCharacter ? data.title || t("world.characters.cardUntitled") : data.title}
                 </h2>
               </div>
-              <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
+              <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.07] text-white/58">
                 {isDecision ? <IconGitBranch className="size-4" /> : null}
-                {isRouter ? <IconRoute className="size-4" /> : null}
                 {isEnding ? <IconSparkles className="size-4" /> : null}
                 {isRoot ? <IconWorld className="size-4" /> : null}
+                {isCharacter ? <IconUser className="size-4" /> : null}
+                {data.kind === "text" ? <IconFileText className="size-4" /> : null}
               </span>
             </div>
           )}
@@ -3949,10 +4082,8 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             </p>
           ) : null}
           {data.rootStats ? (
-            <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <div className="mt-3">
               <NodeStat label={t("metrics.characters")} value={data.rootStats.characters} />
-              <NodeStat label={t("metrics.locations")} value={data.rootStats.locations} />
-              <NodeStat label={t("metrics.props")} value={data.rootStats.props} />
             </div>
           ) : null}
           {isDecision ? (
@@ -3985,46 +4116,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                     isConnectable={isConnectable}
                     color={STORY_PORT_COLORS.choice}
                     label={t("ports.newChoice")}
-                    className="-right-[23px]!"
-                  />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {isRouter && data.exitKind === "auto" ? (
-            <div className="mt-3 space-y-1.5">
-              {(data.autoRoutes ?? []).map((route) => (
-                <div
-                  key={`${route.routeIndex}:${route.targetNodeId}`}
-                  className="relative flex items-center justify-between gap-3 rounded-xl bg-black/18 px-2.5 py-2 pr-3.5 text-[10px]"
-                >
-                  <span className="truncate text-white/54">
-                    {route.hasCondition
-                      ? t("ports.priority", { priority: route.priority })
-                      : t("ports.auto")}
-                  </span>
-                  <span className="shrink-0 text-white/28">→ {route.targetNodeId}</span>
-                  <StoryPortHandle
-                    id={`route:${route.routeIndex}`}
-                    type="source"
-                    position={Position.Right}
-                    isConnectable={isConnectable}
-                    color={STORY_PORT_COLORS.route}
-                    label={t("ports.route", { target: route.targetNodeId })}
-                    className="-right-[23px]!"
-                  />
-                </div>
-              ))}
-              {(data.autoRoutes?.length ?? 0) < 20 ? (
-                <div className="relative flex h-8 items-center rounded-xl bg-[rgba(224,164,92,0.08)] px-2.5 text-[10px] font-semibold text-[#e0a45c]/74">
-                  {t("ports.newRoute")}
-                  <StoryPortHandle
-                    id="route-new"
-                    type="source"
-                    position={Position.Right}
-                    isConnectable={isConnectable}
-                    color={STORY_PORT_COLORS.route}
-                    label={t("ports.newRoute")}
                     className="-right-[23px]!"
                   />
                 </div>
@@ -4298,6 +4389,24 @@ function CanvasError({
   );
 }
 
+// Cast-lane geometry mirrors the model's auto-layout: characters stack in a
+// dedicated column to the LEFT of the Story World root, clear of the story-flow
+// lane on the right.
+const CAST_LANE_COLUMN_GAP = 480;
+const CAST_LANE_ROW_GAP = 150;
+
+function nextCastLanePosition(nodes: readonly StoryCanvasNode[]): StoryCanvasPosition {
+  const rootPosition = nodes.find((node) => node.id === STORY_ROOT_NODE_ID)?.position ?? {
+    x: 0,
+    y: 0,
+  };
+  const existingCharacters = nodes.filter((node) => node.data.kind === "character").length;
+  return {
+    x: rootPosition.x - CAST_LANE_COLUMN_GAP,
+    y: rootPosition.y + existingCharacters * CAST_LANE_ROW_GAP,
+  };
+}
+
 function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosition> {
   return Object.fromEntries(
     [...nodes]
@@ -4319,7 +4428,7 @@ function canvasLayoutPayload(
 }
 
 function historyNodePositions(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   nodes: readonly StoryCanvasNode[],
   pending: ReadonlyMap<string, StoryCanvasPosition>,
   storyWorldNodePresent: boolean
@@ -4339,19 +4448,25 @@ function historyNodePositions(
 }
 
 function storyCanvasContentNodeIds(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   storyWorldNodePresent: boolean
 ): Set<string> {
   const nodeIds = new Set<string>();
   if (storyWorldNodePresent) nodeIds.add(STORY_ROOT_NODE_ID);
   content.graph.nodes.forEach((node) => {
     nodeIds.add(node.nodeId);
-    if (node.kind === "clip" && node.exit.kind === "choice") {
+    if (node.exit.kind === "choice") {
       nodeIds.add(syntheticDecisionNodeId(node.nodeId));
     }
   });
   content.storyBible.endings.forEach((ending) => {
     nodeIds.add(syntheticEndingNodeId(ending.id));
+  });
+  // Character cards persist their layout under `character:` keys. Including them
+  // here keeps their positions in history snapshots and drops a deleted
+  // character's orphaned position alongside the story-graph nodes.
+  content.storyBible.characters.forEach((character) => {
+    nodeIds.add(characterCanvasNodeId(character.id));
   });
   return nodeIds;
 }

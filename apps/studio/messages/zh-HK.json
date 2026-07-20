@@ -1552,18 +1552,20 @@
   },
   "storyStudio": {
     "metaTitle": "Story Studio",
-    "metaDescription": "創作、製作、審核並發佈互動影像故事。",
-    "eyebrow": "互動敘事製作",
+    "metaDescription": "創作、製作、審核並發佈影像與文字並存的互動故事。",
+    "eyebrow": "互動故事製作",
     "title": "Story Studio",
-    "subtitle": "在一個可追溯版本的工作台內完成故事設定、參考包、目前影片與發佈。",
-    "newProject": "新增互動影遊",
+    "subtitle": "在一個可追溯版本的工作台內設計故事、混合文字與影像場景並完成發佈。",
+    "newProject": "新增故事專案",
     "projects": {
-      "title": "互動影遊",
-      "subtitle": "目前工作區中的真實 Story Project。",
+      "title": "故事專案",
+      "subtitle": "目前工作區中的全部可編輯故事。",
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
       "generating": "{count} 個影片生成中",
+      "textFirstWithoutVideo": "文字優先 · 影片可選",
+      "textFirstProgress": "文字優先故事",
       "updatedUnknown": "更新時間不可用"
     },
     "metrics": {
@@ -1573,7 +1575,8 @@
       "generating": "生成中",
       "choices": "選擇",
       "endings": "結局",
-      "graphClips": "劇情鏡頭"
+      "graphClips": "劇情鏡頭",
+      "graphScenes": "互動場景"
     },
     "actions": {
       "retry": "重試",
@@ -1592,23 +1595,35 @@
       "archiveProject": "無法封存專案。"
     },
     "empty": {
-      "title": "還沒有互動影遊專案",
-      "description": "建立專案和可追溯的故事草稿，然後直接在同一畫布中設計並生成鏡頭。"
+      "title": "還沒有故事專案",
+      "description": "建立一份可編輯、可追溯的故事草稿，在同一畫布中組合文字與影像場景。"
     },
     "create": {
-      "title": "建立互動影遊",
-      "description": "將在目前工作區建立獨立的 Story Project，並建立一份空白的可追溯草稿。"
+      "title": "建立故事專案",
+      "description": "在目前工作區建立一份私人、可追溯的草稿；之後可隨時混合文字與影像。"
     },
     "edit": {
       "title": "編輯專案資料"
     },
     "fields": {
       "title": "標題",
-      "titlePlaceholder": "未命名互動影遊",
+      "titlePlaceholder": "未命名互動故事",
       "summary": "簡介",
       "summaryPlaceholder": "描述故事前提與目標體驗。",
+      "primaryExperience": "首選體驗",
+      "primaryExperienceHint": "只決定創作起點；每個專案都可以混合文字與影像場景。",
       "frameProfile": "影片畫幅",
-      "frameProfileHint": "只可選擇一次；專案內所有生成影片片段都會固定使用此畫幅。"
+      "frameProfileHint": "只作用於影片節點；專案內所有生成影片片段都會使用此固定畫幅。"
+    },
+    "formats": {
+      "interactive_film": {
+        "label": "互動影遊",
+        "description": "從影像場景開始，仍可隨時加入關鍵劇情。"
+      },
+      "text_adventure": {
+        "label": "文字冒險",
+        "description": "從關鍵劇情開始，可在任何位置加入影片。"
+      }
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -1784,6 +1799,7 @@
             "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "草擬期間故事持續發生變更，請在編輯暫停後重試。",
             "STORY_AGENT_PROPOSAL_NO_CHANGES": "Agent 沒有發現需要修改的內容，可放棄該請求，或待故事變更後重試。",
             "STORY_AGENT_CONTEXT_TOO_LARGE": "目前故事過大，Agent 暫時無法據此草擬變更。",
+            "STORY_AGENT_CONTENT_REJECTED": "來源素材被內容審核攔下，無法完成起草。請調整文件或指令、弱化敏感內容後再試。",
             "generic": "草擬在產生提案前失敗了。"
           },
           "discard": "放棄",
@@ -1817,7 +1833,15 @@
           "viewOnly": "僅查看",
           "historical": "較早的提案",
           "checking": "正在確認……",
-          "unavailable": "暫不可用"
+          "unavailable": "暫不可用",
+          "authoringStage": "步驟 {step}/{total} · {stage}",
+          "stages": {
+            "worldview": "世界觀架構師",
+            "structure": "劇情結構師",
+            "branch": "分支編排師",
+            "scene": "場景撰寫師",
+            "validate": "校驗修復師"
+          }
         },
         "skills": {
           "symmetricalStorybook": {
@@ -1857,46 +1881,46 @@
       "nodeKinds": {
         "root": "故事世界",
         "clip": "影像鏡頭",
+        "text": "關鍵劇情",
         "choice": "分支選擇",
         "decision": "分支選擇",
-        "router": "條件路由",
-        "ending": "故事結局"
+        "ending": "故事結局",
+        "character": "角色"
       },
       "ports": {
         "entry": "故事入口",
+        "cast": "角色成員",
         "input": "故事流入",
-        "completion": "影片的下一步",
-        "auto": "自動繼續",
+        "completion": "場景的下一步",
         "checkpoint": "等待玩家確認繼續",
         "checkpointTarget": "確認繼續至 {target}",
         "choiceTrigger": "觸發選擇",
         "choiceOption": "選擇：{label}",
         "newChoice": "連接新選項",
-        "route": "路由至 {target}",
-        "priority": "優先級 {priority}",
-        "newRoute": "連接新路線",
         "ending": "進入結局"
       },
       "creator": {
         "title": "新增至故事圖",
-        "description": "建立互動影遊故事結構中的圖元素。",
-        "root": "故事世界",
-        "rootDescription": "將世界觀與宣傳片節點重新加入畫布。",
+        "description": "建立互動故事結構中的圖元素。",
         "clip": "影像鏡頭",
         "clipDescription": "一段帶有明確後續走向的生成影片。",
+        "text": "關鍵劇情",
+        "textDescription": "帶有獨立後續走向或玩家選擇的關鍵劇情。",
+        "character": "角色",
+        "characterDescription": "隸屬於本故事世界的角色卡。",
         "choice": "分支選擇",
         "choiceDescription": "把目前鏡頭的結尾轉換成玩家選擇。",
         "choiceUnavailable": "請先選取一個影像鏡頭。",
-        "router": "條件路由",
-        "routerDescription": "沒有影片的條件合流或跳轉節點。",
         "ending": "故事結局",
         "endingDescription": "儲存於故事聖經中的命名結局。"
       },
       "connectionCreator": {
         "title": "建立下一步",
-        "description": "選擇這個影片片段結束後會發生甚麼。",
+        "description": "選擇這個場景結束後會發生甚麼。",
         "clip": "影片片段",
         "clipDescription": "直接繼續到另一個生成的影片片段。",
+        "text": "關鍵劇情",
+        "textDescription": "繼續到一個不依賴影片的關鍵劇情。",
         "choice": "玩家選擇",
         "choiceDescription": "暫停播放，讓玩家選擇後續分支。",
         "cancel": "取消"
@@ -1914,14 +1938,11 @@
         "rootEyebrow": "世界觀 Root",
         "rootSummary": "從這裡定義故事前提、世界規則、人物關係與敘事狀態。",
         "clip": "鏡頭",
+        "text": "關鍵劇情",
         "decision": "選擇",
-        "router": "路由",
         "ending": "結局"
       },
       "foundation": {
-        "action": "故事設定",
-        "eyebrow": "故事設定",
-        "title": "故事總綱",
         "description": "先固定戲劇承諾，再展開分支圖；修改會自動儲存到可編輯草稿。",
         "logline": "一句話梗概",
         "loglinePlaceholder": "用一句話寫清主角、壓力與不可逆的選擇。",
@@ -1932,66 +1953,41 @@
       },
       "world": {
         "eyebrow": "故事世界",
-        "title": "故事世界庫",
-        "description": "在這裡定義可重用的故事實體；劇情圖可以引用它們，但它們不會成為播放節點。",
-        "tabs": {
-          "foundation": "總綱",
-          "characters": "角色",
-          "locations": "地點",
-          "props": "道具",
-          "rules": "規則",
-          "variables": "變數"
-        },
+        "title": "故事設定",
+        "action": "故事設定",
+        "description": "支撐每個分支的前提、角色與世界規則；修改會自動儲存到草稿。",
         "characters": {
-          "eyebrow": "角色庫",
-          "title": "角色",
-          "description": "每名角色都是獨立的故事實體，可由條件與效果透過穩定 ID 引用。",
-          "create": "新增角色",
-          "emptyTitle": "還沒有角色",
-          "emptyDescription": "為這個故事世界建立第一個可重用角色。",
-          "openCharacter": "開啟角色 {name}",
-          "roleEmpty": "尚未定義角色定位",
-          "referenceCount": "{count} 處引用",
-          "backToList": "返回角色列表",
-          "detailEyebrow": "角色檔案",
+          "cardEyebrow": "角色",
+          "cardUntitled": "未命名角色",
           "stableId": "穩定角色 ID",
           "name": "姓名 · {locale}",
           "namePlaceholder": "角色姓名",
-          "role": "劇情身份",
-          "rolePlaceholder": "主角、引路人、對手……",
           "summary": "人物摘要",
           "summaryPlaceholder": "動機、衝突、人物弧線與戲劇功能。",
-          "playable": "可操控角色",
-          "playableToggle": "切換是否為可操控角色",
-          "playableOn": "可以操控",
-          "playableOff": "不可操控",
-          "continuityRules": "連續性規則",
-          "noContinuityRules": "還沒有連續性規則。",
-          "newRulePlaceholder": "服裝、傷痕、口音、行為或其他連續性約束",
-          "newRuleLabel": "新的連續性規則",
-          "addRule": "新增規則",
-          "ruleLabel": "規則 {number}",
-          "removeRule": "刪除規則 {number}",
+          "images": "形象圖",
+          "imagesHint": "最多 {max} 張外觀參考圖，生成時用於鎖定角色形象。",
+          "imagesEmpty": "還沒有形象圖。",
+          "imageAlt": "形象圖 {number}",
+          "imageLabelLabel": "形象 {number} 的名字",
+          "imageLabelPlaceholder": "為這套形象命名",
+          "addImage": "新增形象圖",
+          "removeImage": "移除形象圖 {number}",
+          "imageUploadFailed": "形象圖上傳失敗，請重試。",
+          "uploading": "上傳中…",
+          "voice": "音色",
+          "voiceHint": "一段該角色的聲音參考（不超過 {seconds} 秒），生成時用於鎖定音色。",
+          "voiceEmpty": "還沒有音色樣本。",
+          "voicePlay": "播放音色",
+          "voiceStop": "停止播放",
+          "addVoice": "上傳音色",
+          "replaceVoice": "更換音色",
+          "removeVoice": "移除音色",
+          "voiceTooLong": "音色樣本不能超過 5 秒。",
+          "voiceUnreadable": "無法讀取該音訊檔案。",
+          "voiceUploadFailed": "音色上傳失敗，請重試。",
           "delete": "刪除角色",
           "deleteBlocked": "該角色被引用 {count} 次，請先移除這些引用。",
-          "deleteAvailable": "該角色沒有被引用，可以安全刪除。",
-          "deleteTitle": "刪除這個角色？",
-          "deleteDescription": "「{name}」將從故事世界中移除；製作參考素材不會受到影響。",
-          "cancel": "取消",
-          "confirmDelete": "刪除角色"
-        },
-        "collections": {
-          "kinds": {
-            "locations": "地點",
-            "props": "道具",
-            "storyRules": "故事規則"
-          },
-          "add": "新增",
-          "remove": "刪除條目 {number}：{value}",
-          "emptyValue": "空值",
-          "itemLabel": "條目 {number}",
-          "empty": "這裡還沒有定義任何內容。",
-          "requiredBeforeComplete": "完整故事必須填寫。"
+          "deleteAvailable": "該角色沒有被引用，可以安全刪除。"
         },
         "variables": {
           "title": "狀態變數",
@@ -2037,18 +2033,12 @@
         }
       },
       "metrics": {
-        "characters": "人物",
-        "locations": "地點",
-        "props": "道具",
-        "rules": "規則",
-        "nodes": "圖節點",
-        "endings": "結局"
+        "characters": "人物"
       },
       "trailer": {
         "eyebrow": "世界觀宣傳片",
         "title": "宣傳片導演設計",
         "description": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-        "close": "關閉宣傳片檢查器",
         "node": {
           "noVideo": "尚無宣傳片影片",
           "videoPreview": "目前宣傳片影片預覽"
@@ -2103,6 +2093,7 @@
           "trigger": "使用已有影片",
           "title": "影片歷史",
           "description": "選擇符合 {width}×{height} 的可重用影片。",
+          "descriptionNative": "選擇任何已就緒的影片，將以原始尺寸內嵌播放。",
           "loading": "正在載入影片歷史",
           "loadingMore": "正在載入更多影片",
           "loadMore": "載入更多",
@@ -2140,7 +2131,17 @@
           "generationFailed": "生成失敗"
         },
         "model": "模型",
-        "references": "參考圖"
+        "references": "參考圖",
+        "modeToggle": {
+          "label": "生成模式",
+          "multimodal": "參考圖",
+          "firstLast": "首尾幀"
+        },
+        "uploadReference": {
+          "action": "上載參考圖",
+          "uploading": "上載中 {progress}%",
+          "error": "參考圖上載失敗。"
+        }
       },
       "inspector": {
         "eyebrow": "節點檢查器",
@@ -2157,7 +2158,7 @@
           "uploading": "正在上載 · {progress}%",
           "processing": "正在處理影片…",
           "processingDescription": "正在校驗影片並準備可播放版本。",
-          "accepted": "支援 MP4 · H.264 影片 · AAC 音訊",
+          "accepted": "MP4 影片",
           "library": "影片素材庫",
           "libraryDescription": "重用已上載或已生成的影片",
           "preparing": "正在準備片段媒體資料。",
@@ -2173,32 +2174,25 @@
         "production": "製作狀態",
         "openProduction": "開啟鏡頭製作",
         "choices": "分支選擇",
-        "entry": "入口鏡頭",
+        "entry": "入口場景",
         "entryNode": "故事入口",
         "makeEntry": "設為入口",
-        "exitAuto": "繼續到影片",
+        "exitAuto": "繼續到場景",
         "exitChoice": "玩家選擇",
         "exitCheckpoint": "繼續確認點",
         "exitEnding": "故事結局",
-        "continuationTarget": "下一個影片片段",
-        "continuationDescription": "影片只有一個直接後續；需要分支時請使用玩家選擇。",
+        "continuationTarget": "下一個場景",
+        "continuationDescription": "一個場景只有一個直接後續；需要分支時請使用玩家選擇。",
         "checkpointTarget": "確認後的目標節點",
-        "checkpointDescription": "鏡頭結束後暫停，等待玩家明確按一次繼續；它不會建立劇情選擇，也不會改變故事狀態。",
+        "checkpointDescription": "場景結束後暫停，等待玩家明確按一次繼續；它不會建立劇情選擇，也不會改變故事狀態。",
         "choicePrompt": "選擇問題",
         "choicePromptPlaceholder": "玩家此刻必須決定甚麼？",
-        "choiceTrigger": "選擇觸發",
-        "triggerMediaEnded": "鏡頭播放結束時",
-        "triggerTimecode": "在指定時間碼",
-        "timecodeMs": "時間碼（毫秒）",
         "optionLabel": "選項 {number}",
         "optionPlaceholder": "填寫玩家看到的選項文字",
-        "target": "目標節點",
-        "targetPlaceholder": "選擇目標節點",
-        "newChoiceTarget": "新選項的目標節點",
         "addChoice": "新增選項",
         "removeChoice": "刪除選項",
         "removeChoiceTitle": "刪除這個選項？",
-        "removeChoiceDescription": "它的可見條件、狀態效果和反應鏡頭設定也會一併刪除。",
+        "removeChoiceDescription": "這個選項及其分支也會一併刪除。",
         "moveChoiceUp": "上移選項",
         "moveChoiceDown": "下移選項",
         "choiceMinimum": "可試玩的選擇至少需要 2 個選項，目前為 {count} 個。",
@@ -2218,103 +2212,11 @@
         "cancel": "取消",
         "nodeName": "名稱",
         "nodeDescription": "描述",
-        "nodeDescriptionPlaceholder": "這個片段講甚麼？"
-      },
-      "routes": {
-        "title": "自動路由",
-        "description": "按優先級進入第一條符合條件的路線。",
-        "routerDescription": "只判斷故事條件，不額外生成影片鏡頭。",
-        "empty": "必須新增路線",
-        "emptyDescription": "目前草稿仍可儲存，但這個節點還沒有有效的後續走向。",
-        "routeLabel": "路線 {number}",
-        "priority": "優先級",
-        "addCondition": "新增條件",
-        "unconditional": "無條件 · 永遠可進入",
-        "add": "新增路線",
-        "newTarget": "新路線的目標節點",
-        "remove": "刪除路線",
-        "removeTitle": "刪除這條路線？",
-        "removeDescription": "目標節點、優先級和完整條件樹都會被刪除。",
-        "searchTarget": "搜尋節點",
-        "noTargets": "沒有符合的節點"
-      },
-      "condition": {
-        "title": "路線條件",
-        "kindLabel": "條件類型",
-        "flagLabel": "標記",
-        "equalsLabel": "等於",
-        "variableLabel": "狀態變數",
-        "operatorLabel": "運算子",
-        "valueLabel": "數值",
-        "characterLabel": "人物",
-        "noVariables": "還沒有狀態變數",
-        "noCharacters": "還沒有人物",
-        "missingReference": "引用缺失：{id}",
-        "removeCondition": "刪除條件",
-        "addCondition": "新增巢狀條件",
-        "maxDepth": "已達到條件最大巢狀層級",
-        "boolean": {
-          "true": "是",
-          "false": "否"
-        },
-        "kinds": {
-          "flag": "故事標記",
-          "variable": "狀態變數",
-          "relationship-at-least": "關係值門檻",
-          "all": "符合全部條件",
-          "any": "符合任一條件",
-          "not": "條件不成立"
-        },
-        "operators": {
-          "equals": "等於",
-          "not_equals": "不等於",
-          "greater_than": "大於",
-          "at_least": "大於等於",
-          "less_than": "小於",
-          "at_most": "小於等於"
-        }
-      },
-      "choiceAdvanced": {
-        "accessibilityLabel": "無障礙標籤",
-        "accessibilityPlaceholder": "可選：為輔助技術提供更清楚的表述",
-        "visibility": "選項可見條件",
-        "addVisibilityCondition": "新增可見條件",
-        "effects": "故事狀態效果",
-        "addEffect": "新增效果",
-        "noEffects": "這個選項不會改變故事狀態。",
-        "removeEffect": "刪除效果",
-        "variable": "狀態變數",
-        "value": "數值",
-        "amount": "變化量",
-        "flag": "標記",
-        "character": "人物",
-        "ending": "結局",
-        "reactionClip": "反應鏡頭",
-        "selectVariable": "選擇變數",
-        "selectCharacter": "選擇人物",
-        "selectEnding": "選擇結局",
-        "selectReactionClip": "選擇反應鏡頭",
-        "effectKinds": {
-          "set_variable": "設定變數",
-          "increment_variable": "改變數值",
-          "set_flag": "設定標記",
-          "adjust_relationship": "調整關係值",
-          "unlock_ending": "解鎖結局"
-        },
-        "booleans": {
-          "true": "是",
-          "false": "否"
-        },
-        "afterSelect": "選擇之後",
-        "afterSelectKinds": {
-          "immediate": "立即繼續",
-          "play": "播放反應鏡頭"
-        }
-      },
-      "empty": {
-        "title": "從故事總綱開始",
-        "description": "先在右側寫下一句話梗概和完整梗概，再新增開場鏡頭，開始建立互動影遊分支圖。",
-        "addOpening": "新增開場鏡頭"
+        "nodeDescriptionPlaceholder": "這個片段講甚麼？",
+        "textTitle": "場景標題",
+        "textTitlePlaceholder": "為這個關鍵劇情命名",
+        "textBody": "場景正文",
+        "textBodyPlaceholder": "寫下玩家在這個場景中讀到的內容…"
       },
       "conflict": {
         "description": "其他工作階段儲存了更新版本。你的本機草稿已保留；如需留存，請先匯出再捨棄。",
@@ -2353,12 +2255,28 @@
       "error": {
         "title": "無法開啟故事畫布",
         "retry": "重試"
+      },
+      "textPlay": {
+        "eyebrow": "試玩 · 草稿",
+        "back": "返回畫布",
+        "restart": "重新開始",
+        "loading": "正在載入工作區…",
+        "thinking": "旁白正在書寫…",
+        "anchorLabel": "場景",
+        "continue": "繼續",
+        "theEnd": "全劇終",
+        "playAgain": "再玩一次",
+        "inputPlaceholder": "輸入你的行動…",
+        "send": "傳送",
+        "errorFallback": "出錯了，請重試。"
+      },
+      "tidy": {
+        "action": "整理畫布"
       }
     },
     "workbench": {
       "back": "返回 Story Studio",
       "draftHead": "可編輯草稿 · 修訂 {revision}",
-      "formatInteractiveFilm": "互動影遊",
       "stageNav": "專案階段",
       "stages": {
         "overview": "總覽",
@@ -2390,14 +2308,12 @@
       "logline": "一句話梗概",
       "empty": "故事聖經仍為空。",
       "characters": "人物",
-      "rules": "故事規則",
       "storyGraph": "劇情圖",
       "graphNodes": "圖節點",
-      "stateVariables": "狀態變數",
       "endings": "結局",
       "decisions": "分支選擇",
       "decisionsSubtitle": "穩定決策、選項、狀態效果及其下一劇情節點。",
-      "decisionSources": "出現於 {clips} 之後"
+      "decisionSources": "出現於 {scenes} 之後"
     },
     "references": {
       "title": "參考包",
@@ -2527,11 +2443,11 @@
   "experiencePlayer": {
     "invalidManifest": "Runtime 清單無效",
     "manifestRoot": "清單根節點",
-    "interactiveFilm": "互動影遊",
+    "interactiveFilm": "互動故事",
     "starting": "正在啟動…",
     "start": "開始試玩",
     "restart": "重新開始",
-    "regionLabel": "互動影遊試玩",
+    "regionLabel": "互動故事試玩",
     "videoLabel": "畫面 {nodeId} 的故事影片",
     "checkpointPrompt": "準備好進入下一幕了嗎？",
     "checkpointDescription": "準備好後繼續。",

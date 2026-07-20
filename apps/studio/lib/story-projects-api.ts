@@ -10,10 +10,11 @@ import { StoryAgentRunDtoSchema, type StoryAgentRunDto } from "@repo/shared/stor
  * records capture server-owned immutable input snapshots automatically.
  */
 
-export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION = "interactive-film-draft-v3" as const;
+export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v1" as const;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v2" as const;
 
-export type StoryFormat = "text_adventure" | "interactive_film" | "narrative_rpg";
+export type StoryFormat = "text_adventure" | "interactive_film";
+export type CreatableStoryFormat = StoryFormat;
 export type StoryProjectStatus = "active" | "archived";
 export type StoryVisibility = "private" | "unlisted" | "public";
 export type StoryFrameProfile = "landscape_16_9" | "portrait_9_16";
@@ -117,7 +118,7 @@ export interface StoryProjectSummary {
   id: string;
   workspaceId: string;
   format: StoryFormat;
-  frameProfile: StoryFrameProfile;
+  frameProfile: StoryFrameProfile | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -134,41 +135,18 @@ export interface StoryProjectSummary {
   updatedAt: string;
 }
 
-export type StoryScalarValue = string | number | boolean | null;
-
-export type StoryCondition =
-  | { kind: "flag"; flag: string; equals: boolean }
-  | {
-      kind: "variable";
-      key: string;
-      operator: "equals" | "not_equals" | "greater_than" | "at_least" | "less_than" | "at_most";
-      value: StoryScalarValue;
-    }
-  | { kind: "relationship-at-least"; characterId: string; value: number }
-  | { kind: "all" | "any"; conditions: StoryCondition[] }
-  | { kind: "not"; condition: StoryCondition };
-
-export type StoryEffect =
-  | { kind: "set_variable"; key: string; value: StoryScalarValue }
-  | { kind: "increment_variable"; key: string; amount: number }
-  | { kind: "set_flag"; flag: string; value: boolean }
-  | { kind: "adjust_relationship"; characterId: string; amount: number }
-  | { kind: "unlock_ending"; endingId: string };
-
 export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
-  accessibilityLabel?: Record<string, string>;
-  visibleWhen?: StoryCondition;
-  effects: StoryEffect[];
   nextNodeId: string;
-  afterSelect: { kind: "immediate" } | { kind: "play"; reactionClipKey: string };
 }
 
-export interface StoryAutoRoute {
-  nextNodeId: string;
-  when?: StoryCondition;
-  priority: number;
+/** Clip and text nodes share one choice exit: a prompt and its labelled choices. */
+export interface StoryChoiceExit {
+  kind: "choice";
+  decisionId: string;
+  prompt: Record<string, string>;
+  choices: StoryGraphChoice[];
 }
 
 export type StoryGraphNode =
@@ -180,54 +158,40 @@ export type StoryGraphNode =
       description?: string;
       exit:
         | { kind: "auto"; nextNodeId: string | null }
-        | {
-            kind: "choice";
-            decisionId: string;
-            prompt: Record<string, string>;
-            trigger: { kind: "media-ended" } | { kind: "timecode"; atMs: number };
-            choices: StoryGraphChoice[];
-          }
+        | StoryChoiceExit
         | { kind: "checkpoint"; nextNodeId: string }
         | { kind: "ending"; endingId: string };
     }
-  | { kind: "router"; nodeId: string; exit: { kind: "auto"; routes: StoryAutoRoute[] } };
+  | {
+      kind: "text";
+      nodeId: string;
+      title?: Record<string, string>;
+      body: Record<string, string>;
+      exit:
+        | { kind: "auto"; nextNodeId: string | null }
+        | StoryChoiceExit
+        | { kind: "checkpoint"; nextNodeId: string }
+        | { kind: "ending"; endingId: string };
+    };
 
-export interface InteractiveFilmDraftContent {
+export interface InteractiveStoryDraftContent {
   storyBible: {
     logline: string;
     synopsis: string;
     worldview: string;
-    storyRules: string[];
     characters: Array<{
       id: string;
       name: Record<string, string>;
-      role: string;
       summary: string;
-      playable: boolean;
-      continuityRules: string[];
+      /** Appearance-reference images (形象图); the label names the look. */
+      images: Array<{ mediaAssetId: string; url: string; label: string }>;
+      /** Voice-clone sample (音色), hard-capped at 5 seconds. */
+      voice: { mediaAssetId: string; url: string; durationMs: number } | null;
     }>;
-    locations: string[];
-    props: string[];
-    stateVariables: Array<
-      | { key: string; type: "boolean"; initialValue: boolean }
-      | {
-          key: string;
-          type: "number";
-          initialValue: number;
-          minimum?: number;
-          maximum?: number;
-        }
-      | {
-          key: string;
-          type: "string";
-          initialValue: string;
-          allowedValues?: string[];
-        }
-    >;
     endings: Array<{
       id: string;
       title: Record<string, string>;
-      summary: Record<string, string>;
+      summary?: Record<string, string>;
       kind: "truth" | "bond" | "echo" | "failure" | "hidden" | "custom";
     }>;
   };
@@ -237,9 +201,9 @@ export interface InteractiveFilmDraftContent {
 
 export interface StoryDraft {
   projectId: string;
-  format: "interactive_film";
-  schemaVersion: typeof INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION;
-  content: InteractiveFilmDraftContent;
+  format: CreatableStoryFormat;
+  schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
+  content: InteractiveStoryDraftContent;
   contentHash: string;
   revision: number;
   updatedByUserId: string;
@@ -622,8 +586,9 @@ export interface StoryWorkbench {
 export type StoryAgentRun = StoryAgentRunDto;
 
 export interface CreateStoryProjectInput {
-  format: "interactive_film";
-  frameProfile: StoryFrameProfile;
+  format: CreatableStoryFormat;
+  // Film-only: required for interactive_film, omitted for text_adventure.
+  frameProfile?: StoryFrameProfile;
   title: string;
   summary?: string | null;
   defaultLocale: string;
@@ -986,13 +951,13 @@ export async function putStoryDraft(
   projectId: string,
   input: {
     expectedRevision: number;
-    content: InteractiveFilmDraftContent;
+    content: InteractiveStoryDraftContent;
     sessionId: string;
   },
   request?: Pick<RequestInit, "keepalive">
 ): Promise<StoryDraft> {
   return api.put<StoryDraft>(`/aurora/story-projects/${encodeURIComponent(projectId)}/draft`, {
-    data: { schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION, ...input },
+    data: { schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION, ...input },
     headers: storyWorkspaceHeaders(workspaceId),
     ...request,
   });
@@ -1060,6 +1025,60 @@ export async function createStoryClipVideoGeneration(
   return api.post<StoryVideoGeneration>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(graphNodeId)}/generations`,
     { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Creator-side text-adventure 试玩 (the public player runtime is Java's).
+
+export interface StoryTextPlayState {
+  nodeId: string | null;
+  freeTurnsUsed: number;
+  transcript: Array<{ role: "narration" | "player" | "anchor"; text: string }>;
+}
+
+export type StoryTextPlayAction =
+  | { kind: "choice"; choiceId: string }
+  | { kind: "free"; text: string }
+  | { kind: "continue" };
+
+export interface StoryTextPlayEvent {
+  kind: "anchor" | "narration" | "choices" | "suggestions" | "ending" | "end";
+  nodeId?: string;
+  title?: string;
+  body?: string;
+  text?: string;
+  prompt?: string;
+  choices?: Array<{ choiceId: string; label: string }>;
+  items?: string[];
+  endingId?: string;
+  summary?: string;
+}
+
+export interface StoryTextPlayTurnResult {
+  events: StoryTextPlayEvent[];
+  state: StoryTextPlayState;
+  ended: boolean;
+}
+
+export async function startStoryTextPlay(
+  workspaceId: string,
+  projectId: string
+): Promise<StoryTextPlayTurnResult> {
+  return api.post<StoryTextPlayTurnResult>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/text-play/start`,
+    { headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function turnStoryTextPlay(
+  workspaceId: string,
+  projectId: string,
+  input: { state: StoryTextPlayState; action: StoryTextPlayAction; freeTurnLimit?: number }
+): Promise<StoryTextPlayTurnResult> {
+  return api.post<StoryTextPlayTurnResult>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/text-play/turn`,
+    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
 
@@ -1350,8 +1369,10 @@ function assertProjectSummary(value: unknown): asserts value is StoryProjectSumm
   }
   const project = value as Partial<StoryProjectSummary>;
   if (
-    project.format !== "interactive_film" ||
-    (project.frameProfile !== "landscape_16_9" && project.frameProfile !== "portrait_9_16") ||
+    (project.format !== "interactive_film" && project.format !== "text_adventure") ||
+    (project.frameProfile !== null &&
+      project.frameProfile !== "landscape_16_9" &&
+      project.frameProfile !== "portrait_9_16") ||
     !Array.isArray(project.capabilities) ||
     !project.production ||
     typeof project.production !== "object" ||

@@ -1,4 +1,4 @@
-import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasEdge, StoryCanvasNode } from "./story-project-canvas-model";
 import {
   convertExitToAuto,
@@ -7,9 +7,10 @@ import {
   disconnectStoryBranch,
   setEntryNode,
 } from "./story-project-canvas-mutations";
+import { deleteStoryCharacter } from "./story-world-mutations";
 
 export function deleteStoryCanvasElements(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   {
     nodes,
     edges,
@@ -17,7 +18,7 @@ export function deleteStoryCanvasElements(
     nodes: readonly StoryCanvasNode[];
     edges: readonly StoryCanvasEdge[];
   }
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   const selectedNodes = uniqueById(nodes);
   const deletableNodes = selectedNodes.filter((node) => node.data.kind !== "root");
   // The Story World root is a layout-only projection. Its incident edge must
@@ -26,7 +27,7 @@ export function deleteStoryCanvasElements(
   const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
   const deletedGraphNodeIds = new Set(
     deletableNodes.flatMap((node) =>
-      node.data.kind === "clip" || node.data.kind === "router" ? [node.data.nodeId] : []
+      node.data.kind === "clip" || node.data.kind === "text" ? [node.data.nodeId] : []
     )
   );
   const standaloneEdges = edges.filter(
@@ -45,15 +46,21 @@ export function deleteStoryCanvasElements(
       next = deleteEndingNode(next, node.data.endingId);
       continue;
     }
+    if (node.data.kind === "character") {
+      // A pure branching tree never references a character, so the same
+      // mutation the inspector uses always succeeds here.
+      if (node.data.characterId) next = deleteStoryCharacter(next, node.data.characterId);
+      continue;
+    }
     next = deleteGraphNode(next, node.data.nodeId);
   }
   return next;
 }
 
 function deleteStandaloneEdges(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   edges: readonly StoryCanvasEdge[]
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   const deletedDecisionSources = new Set(
     edges.flatMap((edge) => (edge.data.kind === "decision" ? [edge.data.sourceNodeId] : []))
   );
@@ -61,12 +68,7 @@ function deleteStandaloneEdges(
     .filter(
       (edge) => edge.data.kind !== "choice" || !deletedDecisionSources.has(edge.data.sourceNodeId)
     )
-    .sort((left, right) => {
-      if (left.source === right.source && left.data.kind === "auto" && right.data.kind === "auto") {
-        return right.data.routeIndex - left.data.routeIndex;
-      }
-      return left.id.localeCompare(right.id);
-    });
+    .sort((left, right) => left.id.localeCompare(right.id));
 
   return orderedEdges.reduce((next, edge) => {
     if (edge.data.kind === "root") return setEntryNode(next, null);
@@ -75,15 +77,6 @@ function deleteStandaloneEdges(
         kind: "continuation",
         sourceNodeId: edge.source,
         targetNodeId: edge.target,
-      });
-    }
-    if (edge.data.kind === "auto") {
-      return disconnectStoryBranch(next, {
-        kind: "auto",
-        sourceNodeId: edge.source,
-        routeIndex: edge.data.routeIndex,
-        targetNodeId: edge.target,
-        priority: edge.data.priority,
       });
     }
     if (edge.data.kind === "decision") {
@@ -106,11 +99,16 @@ function deleteStandaloneEdges(
         targetNodeId: edge.target,
       });
     }
-    return disconnectStoryBranch(next, {
-      kind: "ending",
-      sourceNodeId: edge.source,
-      endingId: edge.data.endingId,
-    });
+    if (edge.data.kind === "ending") {
+      return disconnectStoryBranch(next, {
+        kind: "ending",
+        sourceNodeId: edge.source,
+        endingId: edge.data.endingId,
+      });
+    }
+    // Membership tethers are non-selectable and non-deletable, so they never
+    // reach a delete request; ignore them defensively.
+    return next;
   }, content);
 }
 

@@ -176,11 +176,12 @@ export function StoryAgentRunSummaryCard({
         </div>
 
         {isStoryPatchBrief(run.proposal) ? (
-          run.status === "authoring" && authority === "current" ? (
-            // Pulse only for the live drafting head; a frozen accept-time
-            // snapshot that no head recognizes must read as history, not as
-            // perpetual progress.
-            <RunDraftingIndicator />
+          // The stage checklist renders for the live drafting head AND the
+          // failed head (so the creator sees which baton stopped). A frozen
+          // accept-time snapshot no head recognizes stays quiet — history, not
+          // perpetual progress.
+          authority === "current" && run.authoringStages ? (
+            <RunStageChecklist stages={run.authoringStages} />
           ) : null
         ) : (
           <RunOperationList key={run.id} proposal={run.proposal} />
@@ -249,9 +250,14 @@ function RunActions({
         />
       );
     }
+    const active = run.authoringStages?.find((stage) => stage.status === "running");
+    const total = run.authoringStages?.length ?? 0;
+    const step = active ? (run.authoringStages?.indexOf(active) ?? 0) + 1 : 0;
     return (
       <RunFooter icon={<IconLoader2 className="size-3.5 animate-spin" />}>
-        {t("authoring")}
+        {active
+          ? t("authoringStage", { step, total, stage: t(`stages.${active.key}`) })
+          : t("authoring")}
       </RunFooter>
     );
   }
@@ -265,7 +271,12 @@ function RunActions({
         />
       );
     }
-    const reason = t(`authoringErrors.${storyAgentAuthoringFailureKey(run.error?.code)}`);
+    const failureKey = storyAgentAuthoringFailureKey(run.error?.code);
+    const reason = t(`authoringErrors.${failureKey}`);
+    // Retrying re-runs the same source + brief; for a content-review rejection
+    // that just reproduces the block. The message tells the creator to edit
+    // and send afresh, so only "discard" makes sense here.
+    const retryIsFutile = failureKey === "STORY_AGENT_CONTENT_REJECTED";
     if (!canManageAgentRuns) {
       return (
         <RunFooter tone="error" icon={<IconAlertTriangle className="size-3.5" stroke={1.7} />}>
@@ -293,20 +304,22 @@ function RunActions({
             ) : null}
             {t("discard")}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={pending}
-            onClick={() => runAction(() => controller.retryAuthoring(run.id))}
-            className="h-8 rounded-full bg-white px-3.5 text-xs text-black hover:bg-white/88"
-          >
-            {controller.pendingAction === "retryAuthoring" ? (
-              <IconLoader2 className="size-3.5 animate-spin" />
-            ) : (
-              <IconRotateClockwise className="size-3.5" stroke={1.7} />
-            )}
-            {t("retryAuthoring")}
-          </Button>
+          {retryIsFutile ? null : (
+            <Button
+              type="button"
+              size="sm"
+              disabled={pending}
+              onClick={() => runAction(() => controller.retryAuthoring(run.id))}
+              className="h-8 rounded-full bg-white px-3.5 text-xs text-black hover:bg-white/88"
+            >
+              {controller.pendingAction === "retryAuthoring" ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconRotateClockwise className="size-3.5" stroke={1.7} />
+              )}
+              {t("retryAuthoring")}
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -501,17 +514,47 @@ function RunOperationList({ proposal }: { proposal: StoryPatchProposal }) {
 }
 
 /**
- * Quiet stand-in for the operation list while the server-side author is still
- * drafting. Purely decorative skeleton lines; the footer carries the status.
+ * The authoring pipeline's per-baton progress, updated in place as each named
+ * stage flips (worldview → structure → branch → scene → validate). Replaces the
+ * old single decorative pulse.
  */
-function RunDraftingIndicator() {
+function RunStageChecklist({
+  stages,
+}: {
+  stages: NonNullable<StoryAgentRunDto["authoringStages"]>;
+}) {
+  const t = useTranslations("storyStudio.canvas.emptyAgent.agentRun");
   return (
-    <div aria-hidden="true" className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3">
-      <div className="h-2 w-3/4 animate-pulse rounded-full bg-white/[0.07]" />
-      <div className="h-2 w-1/2 animate-pulse rounded-full bg-white/[0.07] [animation-delay:150ms]" />
-      <div className="h-2 w-2/3 animate-pulse rounded-full bg-white/[0.07] [animation-delay:300ms]" />
-    </div>
+    <ul
+      role="list"
+      aria-live="polite"
+      className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3"
+    >
+      {stages.map((stage) => (
+        <li key={stage.key} className="flex items-center gap-2 text-[11px] leading-4">
+          <StageStatusIcon status={stage.status} />
+          <span
+            className={cn(
+              stage.status === "done" && "text-white/50",
+              stage.status === "running" && "text-white/82",
+              stage.status === "pending" && "text-white/30",
+              stage.status === "failed" && "text-destructive/90"
+            )}
+          >
+            {t(`stages.${stage.key}`)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
+}
+
+function StageStatusIcon({ status }: { status: "pending" | "running" | "done" | "failed" }) {
+  if (status === "done") return <IconCheck className="size-3.5 text-white/50" stroke={2} />;
+  if (status === "running") return <IconLoader2 className="size-3.5 animate-spin text-white/70" />;
+  if (status === "failed")
+    return <IconAlertTriangle className="size-3.5 text-destructive/90" stroke={1.7} />;
+  return <span aria-hidden="true" className="size-1.5 rounded-full bg-white/24 mx-1" />;
 }
 
 function RunAuthorityFooter({
@@ -675,6 +718,7 @@ type StoryAgentAuthoringFailureKey =
   | "STORY_AGENT_AUTHORING_BASE_UNSTABLE"
   | "STORY_AGENT_PROPOSAL_NO_CHANGES"
   | "STORY_AGENT_CONTEXT_TOO_LARGE"
+  | "STORY_AGENT_CONTENT_REJECTED"
   | "generic";
 
 function storyAgentAuthoringFailureKey(code: string | undefined): StoryAgentAuthoringFailureKey {
@@ -683,6 +727,7 @@ function storyAgentAuthoringFailureKey(code: string | undefined): StoryAgentAuth
     case "STORY_AGENT_AUTHORING_BASE_UNSTABLE":
     case "STORY_AGENT_PROPOSAL_NO_CHANGES":
     case "STORY_AGENT_CONTEXT_TOO_LARGE":
+    case "STORY_AGENT_CONTENT_REJECTED":
       return code;
     default:
       return "generic";

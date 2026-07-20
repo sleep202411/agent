@@ -13,7 +13,6 @@ describe("resolveStoryNodeCreationMenuPlacement", () => {
         clientPosition: { x: 700, y: 400 },
         container,
         flowPosition: { x: 1234, y: -480 },
-        showStoryWorld: false,
       })
     ).toEqual({
       left: 320,
@@ -28,7 +27,6 @@ describe("resolveStoryNodeCreationMenuPlacement", () => {
         clientPosition: { x: 200, y: 20 },
         container,
         flowPosition: { x: -200, y: -100 },
-        showStoryWorld: false,
       })
     ).toEqual({ left: 12, top: 12, flowPosition: { x: -200, y: -100 } });
 
@@ -37,20 +35,8 @@ describe("resolveStoryNodeCreationMenuPlacement", () => {
         clientPosition: { x: 1_300, y: 1_100 },
         container,
         flowPosition: { x: 900, y: 800 },
-        showStoryWorld: false,
       })
-    ).toEqual({ left: 418, top: 620, flowPosition: { x: 900, y: 800 } });
-  });
-
-  it("reserves space for the story-world restore action when it is available", () => {
-    expect(
-      resolveStoryNodeCreationMenuPlacement({
-        clientPosition: { x: 1_300, y: 1_100 },
-        container,
-        flowPosition: { x: 900, y: 800 },
-        showStoryWorld: true,
-      })
-    ).toEqual({ left: 418, top: 552, flowPosition: { x: 900, y: 800 } });
+    ).toEqual({ left: 418, top: 550, flowPosition: { x: 900, y: 800 } });
   });
 });
 

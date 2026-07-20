@@ -1,3 +1,4 @@
+import { STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
 import { nextStoryCanvasFocusedNodeId } from "./story-project-canvas-selection";
 
 export type StoryCanvasInspectorTarget =
@@ -9,6 +10,9 @@ export const CLOSED_STORY_CANVAS_INSPECTOR: StoryCanvasInspectorTarget = { kind:
 export const STORY_WORLD_INSPECTOR: StoryCanvasInspectorTarget = { kind: "world" };
 
 export function storyNodeInspectorTarget(nodeId: string): StoryCanvasInspectorTarget {
+  // The mandatory Story World root has no per-node inspector: selecting it opens
+  // the Story Bible panel (world inspector) instead of a node editor.
+  if (nodeId === STORY_ROOT_NODE_ID) return STORY_WORLD_INSPECTOR;
   return { kind: "node", nodeId };
 }
 

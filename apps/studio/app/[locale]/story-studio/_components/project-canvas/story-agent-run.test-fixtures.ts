@@ -34,6 +34,15 @@ export function storyAgentRunFixture(
     initiator: { id: "user-1", displayName: "Isaac" },
     confirmedByUserId: applying || succeeded ? "user-1" : null,
     cancelledByUserId: cancelled ? "user-1" : null,
+    authoringStages: authoringPhase
+      ? [
+          { key: "worldview", status: "done" },
+          { key: "structure", status: status === "authoring_failed" ? "failed" : "running" },
+          { key: "branch", status: "pending" },
+          { key: "scene", status: "pending" },
+          { key: "validate", status: "pending" },
+        ]
+      : null,
     proposal: authoringPhase
       ? {
           schemaVersion: "story-patch-brief-v1",
@@ -44,7 +53,7 @@ export function storyAgentRunFixture(
         }
       : {
           schemaVersion: "story-patch-v1",
-          draftSchemaVersion: "interactive-film-draft-v3",
+          draftSchemaVersion: "interactive-story-draft-v1",
           baseDraftRevision: 8,
           baseContentHash: "a".repeat(64),
           baseLayoutRevision: 5,

@@ -62,9 +62,25 @@ export function storyVideoDurationContract(
   return { defaultMs, optionsMs, minMs, maxMs };
 }
 
-export function filterStoryVideoCatalog(
-  catalog: FizzAiCatalog | undefined,
-  mode: StoryVideoGenerationMode
+/**
+ * The story modes a model can drive, in canonical order. Empty when the model
+ * offers neither story mode.
+ */
+export function supportedStoryVideoModes(
+  model: FizzAiModel | undefined
+): StoryVideoGenerationMode[] {
+  if (!model) return [];
+  const modes = model.generationModes ?? [];
+  return STORY_VIDEO_GENERATION_MODES.filter((mode) => modes.includes(mode));
+}
+
+/**
+ * Every usable video model that can drive AT LEAST ONE story mode and declares
+ * a valid duration contract. The single model dropdown spans both modes; the
+ * selected model's own supported modes gate the per-recipe mode toggle.
+ */
+export function filterStoryVideoModels(
+  catalog: FizzAiCatalog | undefined
 ): FizzAiCatalog | undefined {
   if (!catalog) return undefined;
   return {
@@ -73,7 +89,7 @@ export function filterStoryVideoCatalog(
       (model) =>
         model.type === "video" &&
         isFizzAiModelUsable(model) &&
-        model.generationModes?.includes(mode) &&
+        supportedStoryVideoModes(model).length > 0 &&
         storyVideoDurationContract(model) !== null
     ),
   };
@@ -202,6 +218,44 @@ export function removeStoryRecipeReference(
   referenceVersionId: string
 ): StoryVideoGenerationReferenceInput[] {
   return references.filter((reference) => reference.referenceVersionId !== referenceVersionId);
+}
+
+/**
+ * Re-validate a recipe's references against a (possibly new) mode: multimodal
+ * keeps only the `reference`-role images (capped at 12); first/last-frame keeps
+ * at most one first-frame and one last-frame. A mode switch therefore drops the
+ * roles that don't belong to the destination mode, leaving the recipe valid.
+ */
+export function pruneStoryRecipeReferencesForMode(
+  mode: StoryVideoGenerationMode,
+  references: readonly StoryVideoGenerationReferenceInput[]
+): StoryVideoGenerationReferenceInput[] {
+  if (mode === "multimodal_to_video") {
+    return references.filter((reference) => reference.role === "reference").slice(0, 12);
+  }
+  const first = references.find((reference) => reference.role === "first_frame");
+  const last = references.find((reference) => reference.role === "last_frame");
+  return [first, last].filter((reference): reference is StoryVideoGenerationReferenceInput =>
+    Boolean(reference)
+  );
+}
+
+/**
+ * The reference slot a free-form upload should become for the active mode, or
+ * `null` when the plan is already full. Multimodal uploads land as a generic
+ * `graphic` reference; first/last-frame uploads fill the first empty frame.
+ */
+export function storyFreeformUploadTarget(
+  mode: StoryVideoGenerationMode,
+  references: readonly StoryVideoGenerationReferenceInput[]
+): { kind: StoryReferenceKind; role: StoryVideoGenerationReferenceRole } | null {
+  if (mode === "multimodal_to_video") {
+    return references.length >= 12 ? null : { kind: "graphic", role: "reference" };
+  }
+  const occupied = new Set(references.map((reference) => reference.role));
+  if (!occupied.has("first_frame")) return { kind: "first_frame", role: "first_frame" };
+  if (!occupied.has("last_frame")) return { kind: "last_frame", role: "last_frame" };
+  return null;
 }
 
 export function isStoryRecipeReferencePlanValid(

@@ -62,7 +62,6 @@ describe("Story Canvas assistant layer", () => {
           projectId="0198c1de-9d33-7c66-a06f-3f3ffe1f3b30"
           workspaceId="0198c1de-9d33-7c66-a06f-3f3ffe1f3b31"
           hasNodes
-          inspectorOpen={false}
           open={open}
           onOpenChange={onOpenChange}
           agentRunController={{ applying: false } as StoryAgentRunController}

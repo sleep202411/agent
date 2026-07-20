@@ -26,7 +26,6 @@ export function StoryCanvasAssistantLayer({
   projectId,
   workspaceId,
   hasNodes,
-  inspectorOpen,
   open,
   onOpenChange,
   agentRunController,
@@ -36,7 +35,6 @@ export function StoryCanvasAssistantLayer({
   projectId: string;
   workspaceId: string;
   hasNodes: boolean;
-  inspectorOpen: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentRunController: StoryAgentRunController;
@@ -63,10 +61,11 @@ export function StoryCanvasAssistantLayer({
       <div className="relative h-full min-w-0 flex-1">
         {children}
         {!hasNodes && !open ? (
+          // The empty-state launcher never shifts for the left inspector: that
+          // panel is a floating overlay, so the launcher keeps its place.
           <StoryCanvasAgentLauncher
             session={session}
             onOpenAssistant={() => onOpenChange(true)}
-            className={inspectorOpen ? "left-[380px]" : undefined}
             disabled={agentRunController.applying}
           />
         ) : null}

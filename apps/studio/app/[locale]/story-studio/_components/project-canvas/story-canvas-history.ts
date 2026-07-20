@@ -1,7 +1,7 @@
-import type { InteractiveFilmDraftContent, StoryCanvasPosition } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent, StoryCanvasPosition } from "@/lib/story-projects-api";
 
 export interface StoryCanvasHistorySnapshot {
-  content: InteractiveFilmDraftContent;
+  content: InteractiveStoryDraftContent;
   nodePositions: Record<string, StoryCanvasPosition>;
   storyWorldNodePresent: boolean;
 }

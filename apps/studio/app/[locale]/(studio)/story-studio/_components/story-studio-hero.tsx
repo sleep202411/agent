@@ -105,7 +105,7 @@ export function StoryStudioHero({
                 {t("hero.openCanvas")}
               </Link>
             ) : (
-              <a href="#interactive-films" className={PRIMARY_CTA_CLASS}>
+              <a href="#story-projects" className={PRIMARY_CTA_CLASS}>
                 <IconBook2 className="size-4" stroke={2.1} aria-hidden="true" />
                 {t("hero.browseProjects")}
               </a>

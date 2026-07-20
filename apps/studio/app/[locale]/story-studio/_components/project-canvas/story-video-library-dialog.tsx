@@ -41,7 +41,8 @@ const VIDEO_LIBRARY_PAGE_SIZE = 30;
 export interface StoryVideoLibraryDialogProps {
   workspaceId: string;
   projectId: string;
-  frameContract: StoryVideoFrameContract;
+  // Null for a text-first project: any ready video is accepted at native size.
+  frameContract: StoryVideoFrameContract | null;
   currentVideo: StoryCurrentVideo | null;
   disabled?: boolean;
   disabledReason?: string | null;
@@ -189,10 +190,12 @@ export function StoryVideoLibraryDialog({
                 {t("title")}
               </DialogTitle>
               <DialogDescription className="mt-1 max-w-2xl text-[11px] leading-5 text-white/42">
-                {t("description", {
-                  width: frameContract.width,
-                  height: frameContract.height,
-                })}
+                {frameContract
+                  ? t("description", {
+                      width: frameContract.width,
+                      height: frameContract.height,
+                    })
+                  : t("descriptionNative")}
               </DialogDescription>
             </div>
           </div>
@@ -321,7 +324,7 @@ function StoryVideoLibraryCard({
   item: StoryVideoLibraryItem;
   index: number;
   locale: string;
-  frameContract: StoryVideoFrameContract;
+  frameContract: StoryVideoFrameContract | null;
   currentSelection: { assetId: string; variantId: string } | null;
   selecting: boolean;
   selectionLocked: boolean;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconMovie, IconRoute, IconSparkles, IconWorld, type Icon } from "@tabler/icons-react";
+import { IconFileText, IconMovie, IconSparkles, IconUser, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,7 +12,6 @@ export type { StoryNodeCreationKind } from "./story-node-creator-model";
 
 interface StoryNodeCreatorProps {
   position: { left: number; top: number };
-  showStoryWorld: boolean;
   onCreate: (kind: StoryNodeCreationKind) => void;
   onCancel: () => void;
 }
@@ -26,22 +25,22 @@ interface CreatorItem {
 
 const CREATOR_ITEMS: CreatorItem[] = [
   {
-    kind: "root",
-    icon: IconWorld,
-    color: "rgba(255,255,255,0.10)",
-    iconBackground: "rgba(255,255,255,0.18)",
-  },
-  {
     kind: "clip",
     icon: IconMovie,
     color: "rgba(255,255,255,0.14)",
     iconBackground: "rgba(255,255,255,0.22)",
   },
   {
-    kind: "router",
-    icon: IconRoute,
-    color: "rgba(224,164,92,0.30)",
-    iconBackground: "rgba(224,164,92,0.54)",
+    kind: "text",
+    icon: IconFileText,
+    color: "rgba(255,255,255,0.12)",
+    iconBackground: "rgba(255,255,255,0.20)",
+  },
+  {
+    kind: "character",
+    icon: IconUser,
+    color: "rgba(255,255,255,0.10)",
+    iconBackground: "rgba(255,255,255,0.18)",
   },
   {
     kind: "ending",
@@ -51,19 +50,8 @@ const CREATOR_ITEMS: CreatorItem[] = [
   },
 ];
 
-function visibleCreatorItems(showStoryWorld: boolean): CreatorItem[] {
-  return showStoryWorld ? CREATOR_ITEMS : CREATOR_ITEMS.filter((item) => item.kind !== "root");
-}
-
-export function StoryNodeDock({
-  showStoryWorld,
-  onCreate,
-}: {
-  showStoryWorld: boolean;
-  onCreate: (kind: StoryNodeCreationKind) => void;
-}) {
+export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreationKind) => void }) {
   const t = useTranslations("storyStudio.canvas");
-  const creatorItems = visibleCreatorItems(showStoryWorld);
 
   return (
     <FrostedPanel
@@ -71,7 +59,7 @@ export function StoryNodeDock({
       aria-label={t("addNode")}
       className="absolute bottom-5 left-1/2 z-40 flex h-12 -translate-x-1/2 items-center gap-1 rounded-[18px] bg-[oklch(0.24_0_0/0.86)] px-2 shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px] backdrop-saturate-150"
     >
-      {creatorItems.map((item) => {
+      {CREATOR_ITEMS.map((item) => {
         const ItemIcon = item.icon;
         const label = t(`creator.${item.kind}`);
         return (
@@ -96,15 +84,9 @@ export function StoryNodeDock({
   );
 }
 
-export function StoryNodeCreator({
-  position,
-  showStoryWorld,
-  onCreate,
-  onCancel,
-}: StoryNodeCreatorProps) {
+export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCreatorProps) {
   const t = useTranslations("storyStudio.canvas");
   const firstActionRef = useRef<HTMLButtonElement>(null);
-  const creatorItems = visibleCreatorItems(showStoryWorld);
 
   useDismiss(true, onCancel);
   useEffect(() => firstActionRef.current?.focus(), []);
@@ -128,7 +110,7 @@ export function StoryNodeCreator({
         <p className="mt-1 text-[10px] leading-4 text-white/38">{t("creator.description")}</p>
       </div>
       <div className="grid gap-1">
-        {creatorItems.map((item, index) => {
+        {CREATOR_ITEMS.map((item, index) => {
           const ItemIcon = item.icon;
           return (
             <button

@@ -1,15 +1,20 @@
 import type {
-  StoryCondition,
-  InteractiveFilmDraftContent,
+  InteractiveStoryDraftContent,
   StoryGraphChoice,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 
 type ClipGraphNode = Extract<StoryGraphNode, { kind: "clip" }>;
-type RouterGraphNode = Extract<StoryGraphNode, { kind: "router" }>;
-type ChoiceExit = Extract<ClipGraphNode["exit"], { kind: "choice" }>;
-type CheckpointExit = Extract<ClipGraphNode["exit"], { kind: "checkpoint" }>;
-type StoryEnding = InteractiveFilmDraftContent["storyBible"]["endings"][number];
+type TextGraphNode = Extract<StoryGraphNode, { kind: "text" }>;
+type SceneGraphNode = ClipGraphNode | TextGraphNode;
+type ClipChoiceExit = Extract<ClipGraphNode["exit"], { kind: "choice" }>;
+type TextChoiceExit = Extract<TextGraphNode["exit"], { kind: "choice" }>;
+type ChoiceExit = ClipChoiceExit | TextChoiceExit;
+type ChoiceScene =
+  | (ClipGraphNode & { exit: ClipChoiceExit })
+  | (TextGraphNode & { exit: TextChoiceExit });
+type CheckpointExit = Extract<SceneGraphNode["exit"], { kind: "checkpoint" }>;
+type StoryEnding = InteractiveStoryDraftContent["storyBible"]["endings"][number];
 
 const STABLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]*$/;
 const CLIP_KEY_PATTERN = /^[A-Z][A-Z0-9_-]*$/;
@@ -25,16 +30,12 @@ export type StoryDraftMutationErrorCode =
   | "INVALID_STABLE_ID"
   | "INVALID_CLIP_KEY"
   | "INVALID_LOCALE"
-  | "INVALID_CHOICE_TIMECODE"
-  | "INVALID_ROUTE_PRIORITY"
-  | "INVALID_BRANCH_SELECTOR"
   | "NODE_NOT_FOUND"
   | "CLIP_NOT_FOUND"
   | "ENDING_NOT_FOUND"
   | "CHOICE_NOT_FOUND"
   | "TARGET_NODE_NOT_FOUND"
   | "SOURCE_EXIT_KIND_MISMATCH"
-  | "ENDING_SOURCE_MUST_BE_CLIP"
   | "CHOICE_LIMIT_REACHED"
   | "BRANCH_ALREADY_EXISTS"
   | "BRANCH_NOT_FOUND";
@@ -54,8 +55,11 @@ export interface CreateClipNodeOptions {
   clipKey?: string;
 }
 
-export interface CreateRouterNodeOptions {
+export interface CreateTextNodeOptions {
   nodeId?: string;
+  locale?: string;
+  title?: string;
+  body?: string;
 }
 
 export interface CreateEndingNodeOptions {
@@ -67,12 +71,12 @@ export interface CreateEndingNodeOptions {
 }
 
 export interface StoryNodeCreationResult<T> {
-  content: InteractiveFilmDraftContent;
+  content: InteractiveStoryDraftContent;
   created: T;
 }
 
 export function createClipNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   options: CreateClipNodeOptions = {}
 ): StoryNodeCreationResult<ClipGraphNode> {
   const ordinal = content.graph.nodes.filter((node) => node.kind === "clip").length + 1;
@@ -100,30 +104,30 @@ export function createClipNode(
   };
 }
 
-export function createRouterNode(
-  content: InteractiveFilmDraftContent,
-  options: CreateRouterNodeOptions = {}
-): StoryNodeCreationResult<RouterGraphNode> {
-  const ordinal = content.graph.nodes.filter((node) => node.kind === "router").length + 1;
+export function createTextNode(
+  content: InteractiveStoryDraftContent,
+  options: CreateTextNodeOptions = {}
+): StoryNodeCreationResult<TextGraphNode> {
+  const ordinal = content.graph.nodes.filter((node) => node.kind === "text").length + 1;
   const nodeId = options.nodeId
     ? assertAvailableNodeId(content, options.nodeId)
     : allocateStableId(
         content.graph.nodes.map((node) => node.nodeId),
-        `router:route-${ordinal}`
+        `text:scene-${ordinal}`
       );
-  const created: RouterGraphNode = {
-    kind: "router",
+  const locale = assertLocale(options.locale ?? "en-US");
+  const created: TextGraphNode = {
+    kind: "text",
     nodeId,
-    exit: { kind: "auto", routes: [] },
+    title: { [locale]: options.title ?? "" },
+    body: { [locale]: options.body ?? "" },
+    exit: { kind: "auto", nextNodeId: null },
   };
-  return {
-    content: appendGraphNode(content, created),
-    created,
-  };
+  return { content: appendGraphNode(content, created), created };
 }
 
 export function createEndingNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   options: CreateEndingNodeOptions = {}
 ): StoryNodeCreationResult<StoryEnding> {
   const ordinal = content.storyBible.endings.length + 1;
@@ -153,16 +157,16 @@ export function createEndingNode(
 }
 
 export function setEntryNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   nodeId: string | null
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   if (nodeId !== null) requireTargetNode(content, nodeId);
   if (content.graph.entryNodeId === nodeId) return content;
   return { ...content, graph: { ...content.graph, entryNodeId: nodeId } };
 }
 
 export function duplicateClipNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   options: CreateClipNodeOptions = {}
 ): StoryNodeCreationResult<ClipGraphNode> {
@@ -180,16 +184,41 @@ export function duplicateClipNode(
   };
 }
 
-export function duplicateRouterNode(
-  content: InteractiveFilmDraftContent,
+export function duplicateTextNode(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
-  options: CreateRouterNodeOptions = {}
-): StoryNodeCreationResult<RouterGraphNode> {
-  const source = requireGraphNode(content, sourceNodeId);
-  if (source.kind !== "router") {
-    throw mutationError("NODE_NOT_FOUND", `Unknown router node ${sourceNodeId}.`);
-  }
-  return createRouterNode(content, options);
+  options: CreateTextNodeOptions = {}
+): StoryNodeCreationResult<TextGraphNode> {
+  const source = requireText(content, sourceNodeId);
+  const result = createTextNode(content, options);
+  const created: TextGraphNode = {
+    ...source,
+    nodeId: result.created.nodeId,
+    exit: { kind: "auto", nextNodeId: null },
+  };
+  return {
+    content: replaceGraphNode(result.content, result.created.nodeId, created),
+    created,
+  };
+}
+
+export function updateTextNode(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  locale: string,
+  patch: { title?: string; body?: string }
+): InteractiveStoryDraftContent {
+  const source = requireText(content, sourceNodeId);
+  const normalizedLocale = assertLocale(locale);
+  return replaceGraphNode(content, sourceNodeId, {
+    ...source,
+    ...(patch.title !== undefined
+      ? { title: { ...(source.title ?? {}), [normalizedLocale]: patch.title } }
+      : {}),
+    ...(patch.body !== undefined
+      ? { body: { ...source.body, [normalizedLocale]: patch.body } }
+      : {}),
+  });
 }
 
 /**
@@ -198,9 +227,9 @@ export function duplicateRouterNode(
  * the previous final node when the deleted node was last).
  */
 export function deleteGraphNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   nodeId: string
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   const deletedIndex = content.graph.nodes.findIndex((node) => node.nodeId === nodeId);
   if (deletedIndex < 0) {
     throw mutationError("NODE_NOT_FOUND", `Unknown graph node ${nodeId}.`);
@@ -222,9 +251,9 @@ export function deleteGraphNode(
 
 /** Removes a story-bible ending plus ending exits/effects that reference it. */
 export function deleteEndingNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   endingId: string
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   if (!content.storyBible.endings.some((ending) => ending.id === endingId)) {
     throw mutationError("ENDING_NOT_FOUND", `Unknown ending ${endingId}.`);
   }
@@ -242,25 +271,25 @@ export function deleteEndingNode(
 }
 
 /**
- * Makes a clip own a canonical choice exit. This is the explicit destructive
+ * Makes a scene own a canonical choice exit. This is the explicit destructive
  * conversion point: any previous auto/ending exit is replaced atomically.
  * Choice options are added separately because the persisted contract does not
  * permit an option without a valid target node.
  */
-export function convertClipExitToChoice(
-  content: InteractiveFilmDraftContent,
+export function convertSceneExitToChoice(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   locale: string,
   options: { decisionId?: string } = {}
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   const normalizedLocale = assertLocale(locale);
-  const source = requireClip(content, sourceNodeId);
+  const source = requireScene(content, sourceNodeId);
   if (source.exit.kind === "choice" && !options.decisionId) return content;
   const decisionId = options.decisionId
     ? assertStableId(options.decisionId)
     : allocateStableId(
         content.graph.nodes.flatMap((node) =>
-          node.kind === "clip" && node.exit.kind === "choice" ? [node.exit.decisionId] : []
+          node.exit.kind === "choice" ? [node.exit.decisionId] : []
         ),
         `decision:${content.graph.nodes.indexOf(source) + 1}`
       );
@@ -270,7 +299,6 @@ export function convertClipExitToChoice(
       kind: "choice",
       decisionId,
       prompt: { [normalizedLocale]: "" },
-      trigger: { kind: "media-ended" },
       choices: [],
     },
   });
@@ -278,10 +306,10 @@ export function convertClipExitToChoice(
 
 /** Explicit destructive conversion used before adding automatic branches. */
 export function convertExitToAuto(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   if (source.exit.kind === "auto") return content;
   return replaceGraphNode(content, sourceNodeId, {
     ...source,
@@ -290,30 +318,21 @@ export function convertExitToAuto(
 }
 
 export function updateChoiceExit(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
-  patch: Partial<Pick<ChoiceExit, "prompt" | "trigger">>
-): InteractiveFilmDraftContent {
-  const source = requireChoiceClip(content, sourceNodeId);
-  if (
-    patch.trigger?.kind === "timecode" &&
-    (!Number.isInteger(patch.trigger.atMs) || patch.trigger.atMs < 0)
-  ) {
-    throw mutationError(
-      "INVALID_CHOICE_TIMECODE",
-      "Choice timecode must be a non-negative integer number of milliseconds."
-    );
-  }
-  return replaceChoiceExit(content, source, { ...source.exit, ...patch });
+  patch: Partial<Pick<ChoiceExit, "prompt">>
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
+  return replaceChoiceExit(content, source, patch);
 }
 
 export function updateChoiceExitPrompt(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   locale: string,
   prompt: string
-): InteractiveFilmDraftContent {
-  const source = requireChoiceClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
   const normalizedLocale = assertLocale(locale);
   return replaceChoiceExit(content, source, {
     ...source.exit,
@@ -322,16 +341,16 @@ export function updateChoiceExitPrompt(
 }
 
 /**
- * Replaces a clip's next step with a deterministic player checkpoint. A
+ * Replaces a scene's next step with a deterministic player checkpoint. A
  * checkpoint is an interaction boundary, not a narrative decision: it keeps
  * the current story session intact and owns exactly one target.
  */
-export function convertClipExitToCheckpoint(
-  content: InteractiveFilmDraftContent,
+export function convertSceneExitToCheckpoint(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   targetNodeId: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
   if (source.exit.kind === "checkpoint" && source.exit.nextNodeId === targetNodeId) return content;
   return replaceGraphNode(content, sourceNodeId, {
@@ -341,11 +360,11 @@ export function convertClipExitToCheckpoint(
 }
 
 export function updateCheckpointTarget(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   targetNodeId: string
-): InteractiveFilmDraftContent {
-  const source = requireCheckpointClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireCheckpointScene(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
   if (source.exit.nextNodeId === targetNodeId) return content;
   return replaceGraphNode(content, sourceNodeId, {
@@ -357,20 +376,16 @@ export function updateCheckpointTarget(
 export interface AddChoiceOptionOptions {
   choiceId?: string;
   label?: string;
-  accessibilityLabel?: string;
-  visibleWhen?: StoryCondition;
-  effects?: StoryGraphChoice["effects"];
-  afterSelect?: StoryGraphChoice["afterSelect"];
 }
 
 export function addChoiceOption(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   targetNodeId: string,
   locale: string,
   options: AddChoiceOptionOptions = {}
 ): StoryNodeCreationResult<StoryGraphChoice> {
-  const source = requireChoiceClip(content, sourceNodeId);
+  const source = requireChoiceScene(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
   const normalizedLocale = assertLocale(locale);
   if (source.exit.choices.length >= MAX_CHOICES) {
@@ -388,13 +403,7 @@ export function addChoiceOption(
   const created: StoryGraphChoice = {
     choiceId,
     label: { [normalizedLocale]: options.label ?? "" },
-    ...(options.accessibilityLabel !== undefined
-      ? { accessibilityLabel: { [normalizedLocale]: options.accessibilityLabel } }
-      : {}),
-    ...(options.visibleWhen ? { visibleWhen: options.visibleWhen } : {}),
-    effects: options.effects ?? [],
     nextNodeId: targetNodeId,
-    afterSelect: options.afterSelect ?? { kind: "immediate" },
   };
   return {
     content: replaceChoiceExit(content, source, {
@@ -405,27 +414,19 @@ export function addChoiceOption(
   };
 }
 
-export type ChoiceOptionPatch = Partial<
-  Pick<StoryGraphChoice, "label" | "accessibilityLabel" | "visibleWhen" | "effects" | "afterSelect">
->;
+export type ChoiceOptionPatch = Partial<Pick<StoryGraphChoice, "label">>;
 
 export type ChoiceMoveDirection = "up" | "down";
 
 export function updateChoiceOption(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string,
   patch: ChoiceOptionPatch
-): InteractiveFilmDraftContent {
-  const source = requireChoiceClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
   const choice = requireChoice(source.exit, choiceId);
   const updated: StoryGraphChoice = { ...choice, ...patch };
-  if (patch.accessibilityLabel === undefined && "accessibilityLabel" in patch) {
-    delete updated.accessibilityLabel;
-  }
-  if (patch.visibleWhen === undefined && "visibleWhen" in patch) {
-    delete updated.visibleWhen;
-  }
   return replaceChoiceExit(content, source, {
     ...source.exit,
     choices: source.exit.choices.map((candidate) =>
@@ -435,11 +436,11 @@ export function updateChoiceOption(
 }
 
 export function removeChoiceOption(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string
-): InteractiveFilmDraftContent {
-  const source = requireChoiceClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
   requireChoice(source.exit, choiceId);
   return replaceChoiceExit(content, source, {
     ...source.exit,
@@ -448,12 +449,12 @@ export function removeChoiceOption(
 }
 
 export function moveChoiceOption(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string,
   direction: ChoiceMoveDirection
-): InteractiveFilmDraftContent {
-  const source = requireChoiceClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
   requireChoice(source.exit, choiceId);
   const currentIndex = source.exit.choices.findIndex((choice) => choice.choiceId === choiceId);
   const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
@@ -465,13 +466,13 @@ export function moveChoiceOption(
 }
 
 export function connectChoiceTarget(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string,
   targetNodeId: string
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   requireTargetNode(content, targetNodeId);
-  const source = requireChoiceClip(content, sourceNodeId);
+  const source = requireChoiceScene(content, sourceNodeId);
   const choice = requireChoice(source.exit, choiceId);
   if (choice.nextNodeId === targetNodeId) return content;
   return replaceChoiceExit(content, source, {
@@ -487,25 +488,25 @@ export function connectChoiceTarget(
  * removes the option atomically instead of writing an invalid placeholder ID.
  */
 export function disconnectChoiceTarget(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   return removeChoiceOption(content, sourceNodeId, choiceId);
 }
 
-/** Sets the one completion target owned by a clip. */
-export function connectClipContinuation(
-  content: InteractiveFilmDraftContent,
+/** Sets the one completion target owned by a scene. */
+export function connectSceneContinuation(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   targetNodeId: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   requireTargetNode(content, targetNodeId);
   if (source.exit.kind !== "auto") {
     throw mutationError(
       "SOURCE_EXIT_KIND_MISMATCH",
-      `Clip ${sourceNodeId} has a ${source.exit.kind} exit, not an automatic exit.`
+      `Scene ${sourceNodeId} has a ${source.exit.kind} exit, not an automatic exit.`
     );
   }
   if (source.exit.nextNodeId === targetNodeId) return content;
@@ -515,12 +516,12 @@ export function connectClipContinuation(
   });
 }
 
-export function disconnectClipContinuation(
-  content: InteractiveFilmDraftContent,
+export function disconnectSceneContinuation(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   targetNodeId?: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   if (
     source.exit.kind !== "auto" ||
     source.exit.nextNodeId === null ||
@@ -528,7 +529,7 @@ export function disconnectClipContinuation(
   ) {
     throw mutationError(
       "BRANCH_NOT_FOUND",
-      `Clip ${sourceNodeId} is not connected to that continuation target.`
+      `Scene ${sourceNodeId} is not connected to that continuation target.`
     );
   }
   return replaceGraphNode(content, sourceNodeId, {
@@ -537,166 +538,18 @@ export function disconnectClipContinuation(
   });
 }
 
-export function connectAutoRoute(
-  content: InteractiveFilmDraftContent,
-  sourceNodeId: string,
-  targetNodeId: string,
-  options: { priority?: number; when?: StoryCondition } = {}
-): InteractiveFilmDraftContent {
-  const source = requireRouter(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
-  if (source.exit.kind !== "auto") {
-    throw mutationError(
-      "SOURCE_EXIT_KIND_MISMATCH",
-      `Node ${sourceNodeId} has a ${source.exit.kind} exit, not an auto exit.`
-    );
-  }
-  const priority = assertRoutePriority(options.priority ?? 0);
-  if (
-    source.exit.routes.some(
-      (route) =>
-        route.nextNodeId === targetNodeId &&
-        route.priority === priority &&
-        sameCondition(route.when, options.when)
-    )
-  ) {
-    throw mutationError(
-      "BRANCH_ALREADY_EXISTS",
-      `Auto route ${sourceNodeId} -> ${targetNodeId} already exists.`
-    );
-  }
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: {
-      ...source.exit,
-      routes: [
-        ...source.exit.routes,
-        {
-          nextNodeId: targetNodeId,
-          priority,
-          ...(options.when ? { when: options.when } : {}),
-        },
-      ],
-    },
-  });
-}
-
-export interface AutoRoutePatch {
-  targetNodeId?: string;
-  priority?: number;
-  /** `null` explicitly removes the route condition. */
-  when?: StoryCondition | null;
-}
-
-/** Updates exactly one canonical auto route without changing its array position. */
-export function updateAutoRoute(
-  content: InteractiveFilmDraftContent,
-  sourceNodeId: string,
-  routeIndex: number,
-  patch: AutoRoutePatch
-): InteractiveFilmDraftContent {
-  const source = requireRouter(content, sourceNodeId);
-  if (!Number.isInteger(routeIndex) || routeIndex < 0) {
-    throw mutationError(
-      "INVALID_BRANCH_SELECTOR",
-      `Route index ${routeIndex} must be a non-negative integer.`
-    );
-  }
-  const route = source.exit.routes[routeIndex];
-  if (!route) {
-    throw mutationError(
-      "BRANCH_NOT_FOUND",
-      `Auto route ${routeIndex} does not exist on ${sourceNodeId}.`
-    );
-  }
-  const targetNodeId = patch.targetNodeId ?? route.nextNodeId;
-  requireTargetNode(content, targetNodeId);
-  const priority = assertRoutePriority(patch.priority ?? route.priority);
-  const when = "when" in patch ? (patch.when ?? undefined) : route.when;
-  if (
-    source.exit.routes.some(
-      (candidate, candidateIndex) =>
-        candidateIndex !== routeIndex &&
-        candidate.nextNodeId === targetNodeId &&
-        candidate.priority === priority &&
-        sameCondition(candidate.when, when)
-    )
-  ) {
-    throw mutationError(
-      "BRANCH_ALREADY_EXISTS",
-      `Auto route ${sourceNodeId} -> ${targetNodeId} already exists.`
-    );
-  }
-  if (
-    route.nextNodeId === targetNodeId &&
-    route.priority === priority &&
-    sameCondition(route.when, when)
-  ) {
-    return content;
-  }
-  const updatedRoute = {
-    nextNodeId: targetNodeId,
-    priority,
-    ...(when ? { when } : {}),
-  };
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: {
-      ...source.exit,
-      routes: source.exit.routes.map((candidate, candidateIndex) =>
-        candidateIndex === routeIndex ? updatedRoute : candidate
-      ),
-    },
-  });
-}
-
-/** Retargets one route while preserving its priority and condition. */
-export function updateAutoRouteTarget(
-  content: InteractiveFilmDraftContent,
-  sourceNodeId: string,
-  routeIndex: number,
-  targetNodeId: string
-): InteractiveFilmDraftContent {
-  return updateAutoRoute(content, sourceNodeId, routeIndex, { targetNodeId });
-}
-
-export function disconnectAutoRoute(
-  content: InteractiveFilmDraftContent,
-  sourceNodeId: string,
-  selector: { routeIndex?: number; targetNodeId?: string; priority?: number }
-): InteractiveFilmDraftContent {
-  if (selector.routeIndex === undefined && selector.targetNodeId === undefined) {
-    throw mutationError(
-      "INVALID_BRANCH_SELECTOR",
-      "Select an automatic route by routeIndex or targetNodeId."
-    );
-  }
-  const source = requireRouter(content, sourceNodeId);
-  const routeIndex = findAutoRouteIndex(source.exit.routes, selector);
-  if (routeIndex < 0) {
-    throw mutationError("BRANCH_NOT_FOUND", `No matching auto route leaves ${sourceNodeId}.`);
-  }
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: {
-      ...source.exit,
-      routes: source.exit.routes.filter((_route, index) => index !== routeIndex),
-    },
-  });
-}
-
 export function connectEnding(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   endingId: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   requireEnding(content, endingId);
   if (source.exit.kind === "ending" && source.exit.endingId === endingId) return content;
   if (hasBranches(source.exit)) {
     throw mutationError(
       "BRANCH_ALREADY_EXISTS",
-      `Clip ${sourceNodeId} already has an outgoing branch; disconnect it before connecting an ending.`
+      `Scene ${sourceNodeId} already has an outgoing branch; disconnect it before connecting an ending.`
     );
   }
   return replaceGraphNode(content, sourceNodeId, {
@@ -706,12 +559,12 @@ export function connectEnding(
 }
 
 /** Explicit destructive conversion used by the inspector exit-type control. */
-export function convertClipExitToEnding(
-  content: InteractiveFilmDraftContent,
+export function convertSceneExitToEnding(
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   endingId: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   requireEnding(content, endingId);
   if (source.exit.kind === "ending" && source.exit.endingId === endingId) return content;
   return replaceGraphNode(content, sourceNodeId, {
@@ -721,18 +574,18 @@ export function convertClipExitToEnding(
 }
 
 export function disconnectEnding(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   endingId?: string
-): InteractiveFilmDraftContent {
-  const source = requireClip(content, sourceNodeId);
+): InteractiveStoryDraftContent {
+  const source = requireScene(content, sourceNodeId);
   if (
     source.exit.kind !== "ending" ||
     (endingId !== undefined && source.exit.endingId !== endingId)
   ) {
     throw mutationError(
       "BRANCH_NOT_FOUND",
-      `Clip ${sourceNodeId} is not connected to that ending.`
+      `Scene ${sourceNodeId} is not connected to that ending.`
     );
   }
   return replaceGraphNode(content, sourceNodeId, {
@@ -747,13 +600,6 @@ export type StoryBranchSelector =
       sourceNodeId: string;
       targetNodeId: string;
     }
-  | {
-      kind: "auto";
-      sourceNodeId: string;
-      routeIndex: number;
-      targetNodeId?: string;
-      priority?: number;
-    }
   | { kind: "decision"; sourceNodeId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string }
   | { kind: "checkpoint"; sourceNodeId: string; targetNodeId: string }
@@ -761,18 +607,11 @@ export type StoryBranchSelector =
 
 /** Dispatches a projected canvas edge deletion back into canonical content. */
 export function disconnectStoryBranch(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   selector: StoryBranchSelector
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   if (selector.kind === "continuation") {
-    return disconnectClipContinuation(content, selector.sourceNodeId, selector.targetNodeId);
-  }
-  if (selector.kind === "auto") {
-    return disconnectAutoRoute(content, selector.sourceNodeId, {
-      routeIndex: selector.routeIndex,
-      targetNodeId: selector.targetNodeId,
-      priority: selector.priority,
-    });
+    return disconnectSceneContinuation(content, selector.sourceNodeId, selector.targetNodeId);
   }
   if (selector.kind === "decision") {
     return convertExitToAuto(content, selector.sourceNodeId);
@@ -781,7 +620,7 @@ export function disconnectStoryBranch(
     return disconnectChoiceTarget(content, selector.sourceNodeId, selector.choiceId);
   }
   if (selector.kind === "checkpoint") {
-    const source = requireCheckpointClip(content, selector.sourceNodeId);
+    const source = requireCheckpointScene(content, selector.sourceNodeId);
     if (source.exit.nextNodeId !== selector.targetNodeId) {
       throw mutationError(
         "BRANCH_NOT_FOUND",
@@ -799,17 +638,17 @@ export type EndingNodePatch = Partial<Pick<StoryEnding, "kind">> & {
 };
 
 export function updateEndingNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   endingId: string,
   patch: EndingNodePatch
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   const ending = requireEnding(content, endingId);
   const updated: StoryEnding = {
     ...ending,
     ...(patch.summary
       ? {
           summary: {
-            ...ending.summary,
+            ...(ending.summary ?? {}),
             [assertLocale(patch.summary.locale)]: patch.summary.value,
           },
         }
@@ -844,11 +683,8 @@ export type StoryDraftGraphIssueCode =
   | "unknown-entry-node"
   | "unknown-target-node"
   | "unknown-ending"
-  | "unknown-reaction-clip"
-  | "unknown-state-variable"
-  | "invalid-state-variable-type"
-  | "unknown-character"
   | "empty-auto-exit"
+  | "empty-text-body"
   | "empty-choice-prompt"
   | "empty-choice-label"
   | "incomplete-choice-exit";
@@ -866,7 +702,7 @@ export interface StoryDraftGraphIssue {
  * autosaves deliberately allow empty auto/choice exits.
  */
 export function validateStoryDraftGraph(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   options: { requireComplete?: boolean } = {}
 ): StoryDraftGraphIssue[] {
   const issues: StoryDraftGraphIssue[] = [];
@@ -876,7 +712,7 @@ export function validateStoryDraftGraph(
     ["graph", "nodes"],
     issues
   );
-  const clipKeys = duplicateAwareSet(
+  duplicateAwareSet(
     content.graph.nodes.flatMap((node) => (node.kind === "clip" ? [node.clipKey] : [])),
     "duplicate-clip-key",
     ["graph", "nodes"],
@@ -888,10 +724,6 @@ export function validateStoryDraftGraph(
     ["storyBible", "endings"],
     issues
   );
-  const stateVariables = new Map(
-    content.storyBible.stateVariables.map((variable) => [variable.key, variable])
-  );
-  const characterIds = new Set(content.storyBible.characters.map((character) => character.id));
 
   if (options.requireComplete && !content.graph.entryNodeId) {
     issues.push({
@@ -909,12 +741,24 @@ export function validateStoryDraftGraph(
 
   content.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: Array<string | number> = ["graph", "nodes", nodeIndex, "exit"];
-    if (node.kind === "clip" && node.exit.kind === "auto") {
+    if (
+      options.requireComplete &&
+      node.kind === "text" &&
+      (Object.keys(node.body).length === 0 ||
+        Object.values(node.body).every((value) => !value.trim()))
+    ) {
+      issues.push({
+        code: "empty-text-body",
+        path: ["graph", "nodes", nodeIndex, "body"],
+        message: "A playable text scene needs non-empty localized body copy.",
+      });
+    }
+    if (node.exit.kind === "auto") {
       if (options.requireComplete && node.exit.nextNodeId === null) {
         issues.push({
           code: "empty-auto-exit",
           path: [...exitPath, "nextNodeId"],
-          message: "An automatic clip exit needs a continuation target to be playable.",
+          message: "An automatic scene exit needs a continuation target to be playable.",
         });
       }
       if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
@@ -924,35 +768,6 @@ export function validateStoryDraftGraph(
           message: `Unknown target node ${node.exit.nextNodeId}.`,
         });
       }
-      return;
-    }
-    if (node.kind === "router") {
-      if (options.requireComplete && node.exit.routes.length === 0) {
-        issues.push({
-          code: "empty-auto-exit",
-          path: [...exitPath, "routes"],
-          message: "A conditional router needs at least one route to be playable.",
-        });
-      }
-      node.exit.routes.forEach((route, routeIndex) => {
-        const routePath = [...exitPath, "routes", routeIndex];
-        if (!nodeIds.has(route.nextNodeId)) {
-          issues.push({
-            code: "unknown-target-node",
-            path: [...routePath, "nextNodeId"],
-            message: `Unknown target node ${route.nextNodeId}.`,
-          });
-        }
-        if (route.when) {
-          validateConditionReferences(
-            route.when,
-            [...routePath, "when"],
-            stateVariables,
-            characterIds,
-            issues
-          );
-        }
-      });
       return;
     }
     if (node.exit.kind === "choice") {
@@ -1003,35 +818,6 @@ export function validateStoryDraftGraph(
             message: `Unknown target node ${choice.nextNodeId}.`,
           });
         }
-        if (
-          choice.afterSelect.kind === "play" &&
-          !clipKeys.has(choice.afterSelect.reactionClipKey)
-        ) {
-          issues.push({
-            code: "unknown-reaction-clip",
-            path: [...choicePath, "afterSelect", "reactionClipKey"],
-            message: `Unknown reaction clip ${choice.afterSelect.reactionClipKey}.`,
-          });
-        }
-        if (choice.visibleWhen) {
-          validateConditionReferences(
-            choice.visibleWhen,
-            [...choicePath, "visibleWhen"],
-            stateVariables,
-            characterIds,
-            issues
-          );
-        }
-        choice.effects.forEach((effect, effectIndex) =>
-          validateEffectReferences(
-            effect,
-            [...choicePath, "effects", effectIndex],
-            stateVariables,
-            characterIds,
-            endingIds,
-            issues
-          )
-        );
       });
       return;
     }
@@ -1045,7 +831,7 @@ export function validateStoryDraftGraph(
       }
       return;
     }
-    if (node.kind === "clip" && node.exit.kind === "ending" && !endingIds.has(node.exit.endingId)) {
+    if (node.exit.kind === "ending" && !endingIds.has(node.exit.endingId)) {
       issues.push({
         code: "unknown-ending",
         path: [...exitPath, "endingId"],
@@ -1057,9 +843,9 @@ export function validateStoryDraftGraph(
 }
 
 function appendGraphNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   node: StoryGraphNode
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   return {
     ...content,
     graph: {
@@ -1070,38 +856,16 @@ function appendGraphNode(
 }
 
 function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode): StoryGraphNode {
-  if (node.kind === "router") {
-    return {
-      ...node,
-      exit: {
-        ...node.exit,
-        routes: node.exit.routes.filter((route) => route.nextNodeId !== deleted.nodeId),
-      },
-    };
-  }
   if (node.exit.kind === "auto") {
     return node.exit.nextNodeId === deleted.nodeId
       ? { ...node, exit: { kind: "auto", nextNodeId: null } }
       : node;
   }
-  if (node.kind === "clip" && node.exit.kind === "choice") {
-    return {
-      ...node,
-      exit: {
-        ...node.exit,
-        choices: node.exit.choices
-          .filter((choice) => choice.nextNodeId !== deleted.nodeId)
-          .map((choice) =>
-            deleted.kind === "clip" &&
-            choice.afterSelect.kind === "play" &&
-            choice.afterSelect.reactionClipKey === deleted.clipKey
-              ? { ...choice, afterSelect: { kind: "immediate" as const } }
-              : choice
-          ),
-      },
-    };
+  if (node.exit.kind === "choice") {
+    const choices = node.exit.choices.filter((choice) => choice.nextNodeId !== deleted.nodeId);
+    return replaceSceneChoices(node as ChoiceScene, choices);
   }
-  if (node.kind === "clip" && node.exit.kind === "checkpoint") {
+  if (node.exit.kind === "checkpoint") {
     return node.exit.nextNodeId === deleted.nodeId
       ? { ...node, exit: { kind: "auto", nextNodeId: null } }
       : node;
@@ -1110,29 +874,23 @@ function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode
 }
 
 function removeEndingReferences(node: StoryGraphNode, endingId: string): StoryGraphNode {
-  if (node.kind === "clip" && node.exit.kind === "ending" && node.exit.endingId === endingId) {
+  if (node.exit.kind === "ending" && node.exit.endingId === endingId) {
     return { ...node, exit: { kind: "auto", nextNodeId: null } };
   }
-  if (node.kind !== "clip" || node.exit.kind !== "choice") return node;
-  return {
-    ...node,
-    exit: {
-      ...node.exit,
-      choices: node.exit.choices.map((choice) => ({
-        ...choice,
-        effects: choice.effects.filter(
-          (effect) => effect.kind !== "unlock_ending" || effect.endingId !== endingId
-        ),
-      })),
-    },
-  };
+  return node;
+}
+
+function replaceSceneChoices(source: ChoiceScene, choices: StoryGraphChoice[]): StoryGraphNode {
+  return source.kind === "clip"
+    ? { ...source, exit: { ...source.exit, choices } }
+    : { ...source, exit: { ...source.exit, choices } };
 }
 
 function replaceGraphNode(
-  content: InteractiveFilmDraftContent,
+  content: InteractiveStoryDraftContent,
   nodeId: string,
   replacement: StoryGraphNode
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   return {
     ...content,
     graph: {
@@ -1143,20 +901,30 @@ function replaceGraphNode(
 }
 
 function replaceChoiceExit(
-  content: InteractiveFilmDraftContent,
-  source: ClipGraphNode & { exit: ChoiceExit },
-  exit: ChoiceExit
-): InteractiveFilmDraftContent {
-  return replaceGraphNode(content, source.nodeId, { ...source, exit });
+  content: InteractiveStoryDraftContent,
+  source: ChoiceScene,
+  patch: Partial<{
+    decisionId: string;
+    prompt: Record<string, string>;
+    choices: StoryGraphChoice[];
+  }>
+): InteractiveStoryDraftContent {
+  return replaceGraphNode(content, source.nodeId, {
+    ...source,
+    exit: {
+      ...source.exit,
+      ...patch,
+    },
+  });
 }
 
-function requireGraphNode(content: InteractiveFilmDraftContent, nodeId: string): StoryGraphNode {
+function requireGraphNode(content: InteractiveStoryDraftContent, nodeId: string): StoryGraphNode {
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
   if (!node) throw mutationError("NODE_NOT_FOUND", `Unknown graph node ${nodeId}.`);
   return node;
 }
 
-function requireClip(content: InteractiveFilmDraftContent, nodeId: string): ClipGraphNode {
+function requireClip(content: InteractiveStoryDraftContent, nodeId: string): ClipGraphNode {
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
   if (!node || node.kind !== "clip") {
     throw mutationError("CLIP_NOT_FOUND", `Unknown clip node ${nodeId}.`);
@@ -1164,49 +932,51 @@ function requireClip(content: InteractiveFilmDraftContent, nodeId: string): Clip
   return node;
 }
 
-function requireRouter(content: InteractiveFilmDraftContent, nodeId: string): RouterGraphNode {
+function requireText(content: InteractiveStoryDraftContent, nodeId: string): TextGraphNode {
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node || node.kind !== "router") {
-    throw mutationError("NODE_NOT_FOUND", `Unknown router node ${nodeId}.`);
+  if (!node || node.kind !== "text") {
+    throw mutationError("NODE_NOT_FOUND", `Unknown text scene ${nodeId}.`);
   }
   return node;
 }
 
-function requireChoiceClip(
-  content: InteractiveFilmDraftContent,
-  nodeId: string
-): ClipGraphNode & { exit: ChoiceExit } {
-  const node = requireClip(content, nodeId);
+function requireScene(content: InteractiveStoryDraftContent, nodeId: string): SceneGraphNode {
+  // Every graph node is a playable scene in a pure branching tree.
+  return requireGraphNode(content, nodeId);
+}
+
+function requireChoiceScene(content: InteractiveStoryDraftContent, nodeId: string): ChoiceScene {
+  const node = requireScene(content, nodeId);
   if (node.exit.kind !== "choice") {
     throw mutationError(
       "SOURCE_EXIT_KIND_MISMATCH",
-      `Clip ${nodeId} has a ${node.exit.kind} exit, not a choice exit.`
+      `Scene ${nodeId} has a ${node.exit.kind} exit, not a choice exit.`
     );
   }
-  return node as ClipGraphNode & { exit: ChoiceExit };
+  return node as ChoiceScene;
 }
 
-function requireCheckpointClip(
-  content: InteractiveFilmDraftContent,
+function requireCheckpointScene(
+  content: InteractiveStoryDraftContent,
   nodeId: string
-): ClipGraphNode & { exit: CheckpointExit } {
-  const node = requireClip(content, nodeId);
+): SceneGraphNode & { exit: CheckpointExit } {
+  const node = requireScene(content, nodeId);
   if (node.exit.kind !== "checkpoint") {
     throw mutationError(
       "SOURCE_EXIT_KIND_MISMATCH",
-      `Clip ${nodeId} has a ${node.exit.kind} exit, not a checkpoint exit.`
+      `Scene ${nodeId} has a ${node.exit.kind} exit, not a checkpoint exit.`
     );
   }
-  return node as ClipGraphNode & { exit: CheckpointExit };
+  return node as SceneGraphNode & { exit: CheckpointExit };
 }
 
-function requireTargetNode(content: InteractiveFilmDraftContent, nodeId: string): void {
+function requireTargetNode(content: InteractiveStoryDraftContent, nodeId: string): void {
   if (!content.graph.nodes.some((node) => node.nodeId === nodeId)) {
     throw mutationError("TARGET_NODE_NOT_FOUND", `Unknown target node ${nodeId}.`);
   }
 }
 
-function requireEnding(content: InteractiveFilmDraftContent, endingId: string): StoryEnding {
+function requireEnding(content: InteractiveStoryDraftContent, endingId: string): StoryEnding {
   const ending = content.storyBible.endings.find((candidate) => candidate.id === endingId);
   if (!ending) throw mutationError("ENDING_NOT_FOUND", `Unknown ending ${endingId}.`);
   return ending;
@@ -1223,7 +993,7 @@ function requireChoice(exit: ChoiceExit, choiceId: string): StoryGraphChoice {
   return choice;
 }
 
-function assertAvailableNodeId(content: InteractiveFilmDraftContent, nodeId: string): string {
+function assertAvailableNodeId(content: InteractiveStoryDraftContent, nodeId: string): string {
   const valid = assertStableId(nodeId);
   if (content.graph.nodes.some((node) => node.nodeId === valid)) {
     throw mutationError("DUPLICATE_NODE_ID", `Graph node ${valid} already exists.`);
@@ -1231,7 +1001,7 @@ function assertAvailableNodeId(content: InteractiveFilmDraftContent, nodeId: str
   return valid;
 }
 
-function assertAvailableEndingId(content: InteractiveFilmDraftContent, endingId: string): string {
+function assertAvailableEndingId(content: InteractiveStoryDraftContent, endingId: string): string {
   const valid = assertStableId(endingId);
   if (content.storyBible.endings.some((ending) => ending.id === valid)) {
     throw mutationError("DUPLICATE_ENDING_ID", `Ending ${valid} already exists.`);
@@ -1247,7 +1017,7 @@ function assertAvailableChoiceId(exit: ChoiceExit, choiceId: string): string {
   return valid;
 }
 
-function assertAvailableClipKey(content: InteractiveFilmDraftContent, clipKey: string): string {
+function assertAvailableClipKey(content: InteractiveStoryDraftContent, clipKey: string): string {
   const valid = assertClipKey(clipKey);
   if (content.graph.nodes.some((node) => node.kind === "clip" && node.clipKey === valid)) {
     throw mutationError("DUPLICATE_CLIP_KEY", `Clip key ${valid} already exists.`);
@@ -1287,16 +1057,6 @@ function assertLocale(value: string): string {
   return normalized;
 }
 
-function assertRoutePriority(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 10_000) {
-    throw mutationError(
-      "INVALID_ROUTE_PRIORITY",
-      `Route priority ${value} must be an integer between 0 and 10000.`
-    );
-  }
-  return value;
-}
-
 function allocateStableId(existing: string[], preferred: string): string {
   const existingIds = new Set(existing);
   const validPreferred = assertStableId(preferred);
@@ -1323,130 +1083,10 @@ function allocateClipKey(existing: string[], preferred: string): string {
   }
 }
 
-function findAutoRouteIndex(
-  routes: Array<{ nextNodeId: string; priority: number }>,
-  selector: { routeIndex?: number; targetNodeId?: string; priority?: number }
-): number {
-  if (selector.routeIndex !== undefined) {
-    const route = routes[selector.routeIndex];
-    if (!route) return -1;
-    if (selector.targetNodeId !== undefined && route.nextNodeId !== selector.targetNodeId)
-      return -1;
-    if (selector.priority !== undefined && route.priority !== selector.priority) return -1;
-    return selector.routeIndex;
-  }
-  return routes.findIndex(
-    (route) =>
-      (selector.targetNodeId === undefined || route.nextNodeId === selector.targetNodeId) &&
-      (selector.priority === undefined || route.priority === selector.priority)
-  );
-}
-
-function hasBranches(exit: ClipGraphNode["exit"]): boolean {
+function hasBranches(exit: SceneGraphNode["exit"]): boolean {
   if (exit.kind === "ending" || exit.kind === "checkpoint") return true;
   if (exit.kind === "choice") return exit.choices.length > 0;
   return exit.nextNodeId !== null;
-}
-
-function sameCondition(
-  left: StoryCondition | undefined,
-  right: StoryCondition | undefined
-): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function validateConditionReferences(
-  condition: StoryCondition,
-  path: Array<string | number>,
-  stateVariables: ReadonlyMap<
-    string,
-    InteractiveFilmDraftContent["storyBible"]["stateVariables"][number]
-  >,
-  characterIds: ReadonlySet<string>,
-  issues: StoryDraftGraphIssue[]
-): void {
-  if (condition.kind === "variable" && !stateVariables.has(condition.key)) {
-    issues.push({
-      code: "unknown-state-variable",
-      path: [...path, "key"],
-      message: `Unknown state variable ${condition.key}.`,
-    });
-  }
-  if (condition.kind === "relationship-at-least" && !characterIds.has(condition.characterId)) {
-    issues.push({
-      code: "unknown-character",
-      path: [...path, "characterId"],
-      message: `Unknown character ${condition.characterId}.`,
-    });
-  }
-  if (condition.kind === "all" || condition.kind === "any") {
-    condition.conditions.forEach((child, index) =>
-      validateConditionReferences(
-        child,
-        [...path, "conditions", index],
-        stateVariables,
-        characterIds,
-        issues
-      )
-    );
-  }
-  if (condition.kind === "not") {
-    validateConditionReferences(
-      condition.condition,
-      [...path, "condition"],
-      stateVariables,
-      characterIds,
-      issues
-    );
-  }
-}
-
-function validateEffectReferences(
-  effect: StoryGraphChoice["effects"][number],
-  path: Array<string | number>,
-  stateVariables: ReadonlyMap<
-    string,
-    InteractiveFilmDraftContent["storyBible"]["stateVariables"][number]
-  >,
-  characterIds: ReadonlySet<string>,
-  endingIds: ReadonlySet<string>,
-  issues: StoryDraftGraphIssue[]
-): void {
-  if (
-    (effect.kind === "set_variable" || effect.kind === "increment_variable") &&
-    !stateVariables.has(effect.key)
-  ) {
-    issues.push({
-      code: "unknown-state-variable",
-      path: [...path, "key"],
-      message: `Unknown state variable ${effect.key}.`,
-    });
-  }
-  if (
-    effect.kind === "increment_variable" &&
-    stateVariables.has(effect.key) &&
-    stateVariables.get(effect.key)?.type !== "number"
-  ) {
-    issues.push({
-      code: "invalid-state-variable-type",
-      path: [...path, "key"],
-      message: "increment_variable requires a numeric state variable.",
-    });
-  }
-  if (effect.kind === "adjust_relationship" && !characterIds.has(effect.characterId)) {
-    issues.push({
-      code: "unknown-character",
-      path: [...path, "characterId"],
-      message: `Unknown character ${effect.characterId}.`,
-    });
-  }
-  if (effect.kind === "unlock_ending" && !endingIds.has(effect.endingId)) {
-    issues.push({
-      code: "unknown-ending",
-      path: [...path, "endingId"],
-      message: `Unknown ending ${effect.endingId}.`,
-    });
-  }
 }
 
 function duplicateAwareSet(

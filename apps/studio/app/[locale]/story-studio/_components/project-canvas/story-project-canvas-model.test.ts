@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type {
   StoryTrailerVideoSummary,
-  InteractiveFilmDraftContent,
+  InteractiveStoryDraftContent,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
+  characterCanvasNodeId,
+  characterIdForCanvasNode,
   projectStoryDomainIdsToCanvasNodeIds,
+  rejectsStoryCastWiring,
   STORY_ROOT_NODE_ID,
   storyDomainIdForCanvasProjection,
+  syntheticDecisionNodeId,
+  syntheticEndingNodeId,
 } from "./story-project-canvas-model";
 
 describe("Story domain id canvas projection", () => {
@@ -45,7 +50,7 @@ describe("Story domain id canvas projection", () => {
 });
 
 describe("buildStoryCanvasModel", () => {
-  it("allows every projected story element to be deleted", () => {
+  it("keeps the mandatory Story World root non-deletable while every other element can be deleted", () => {
     const content = draft({
       entryNodeId: "decision",
       nodes: [
@@ -53,10 +58,12 @@ describe("buildStoryCanvasModel", () => {
           kind: "choice",
           decisionId: "gate",
           prompt: { "en-US": "Choose" },
-          trigger: { kind: "media-ended" },
-          choices: [choice("continue", "Continue", "继续", "router")],
+          choices: [
+            choice("continue", "Continue", "继续", "outcome"),
+            choice("stay", "Stay", "留下", "decision"),
+          ],
         }),
-        { kind: "router", nodeId: "router", exit: { kind: "auto", routes: [] } },
+        clip("outcome", "OUTCOME", { kind: "ending", endingId: "truth" }),
       ],
       endings: [ending("truth", "Truth", "真相")],
     });
@@ -64,7 +71,7 @@ describe("buildStoryCanvasModel", () => {
     const model = buildStoryCanvasModel(content, "en-US");
 
     expect(Object.fromEntries(model.nodes.map((node) => [node.data.kind, node.deletable]))).toEqual(
-      { root: true, clip: true, decision: true, router: true, ending: true }
+      { root: false, clip: true, decision: true, ending: true }
     );
   });
 
@@ -208,7 +215,7 @@ describe("buildStoryCanvasModel", () => {
     });
   });
 
-  it("keeps choices as localized labeled edges and projects routers and endings", () => {
+  it("keeps choices as localized labeled edges and projects endings", () => {
     const content = draft({
       entryNodeId: "decision",
       nodes: [
@@ -216,26 +223,11 @@ describe("buildStoryCanvasModel", () => {
           kind: "choice",
           decisionId: "gate",
           prompt: { "en-US": "Choose a path", "zh-CN": "选择道路" },
-          trigger: { kind: "media-ended" },
           choices: [
-            choice("follow", "Follow the light", "追随灯光", "conditional-route"),
+            choice("follow", "Follow the light", "追随灯光", "truth-scene"),
             choice("stay", "Stay behind", "留在原地", "failure-scene"),
           ],
         }),
-        {
-          kind: "router",
-          nodeId: "conditional-route",
-          exit: {
-            kind: "auto",
-            routes: [
-              {
-                nextNodeId: "truth-scene",
-                priority: 10,
-                when: { kind: "flag", flag: "truth-open", equals: true },
-              },
-            ],
-          },
-        },
         clip("truth-scene", "clip-truth", { kind: "ending", endingId: "truth" }),
         clip("failure-scene", "clip-failure", {
           kind: "ending",
@@ -248,7 +240,6 @@ describe("buildStoryCanvasModel", () => {
     const model = buildStoryCanvasModel(content, "zh-CN");
     const decision = model.nodes.find((node) => node.id === "decision");
     const decisionProjection = model.nodes.find((node) => node.id === "__decision__:decision");
-    const router = model.nodes.find((node) => node.id === "conditional-route");
     const choiceEdges = model.edges.filter((edge) => edge.data.kind === "choice");
 
     expect(decision?.data).toMatchObject({
@@ -262,15 +253,8 @@ describe("buildStoryCanvasModel", () => {
       decisionId: "gate",
       sourceNodeId: "decision",
       choices: [
-        { choiceId: "follow", label: "追随灯光", targetNodeId: "conditional-route" },
+        { choiceId: "follow", label: "追随灯光", targetNodeId: "truth-scene" },
         { choiceId: "stay", label: "留在原地", targetNodeId: "failure-scene" },
-      ],
-    });
-    expect(router?.data).toMatchObject({
-      kind: "router",
-      exitKind: "auto",
-      autoRoutes: [
-        { routeIndex: 0, targetNodeId: "truth-scene", priority: 10, hasCondition: true },
       ],
     });
     expect(choiceEdges.map((edge) => edge.label)).toEqual(["追随灯光", "留在原地"]);
@@ -290,13 +274,6 @@ describe("buildStoryCanvasModel", () => {
           sourceHandle: "completion",
           targetHandle: "decision-in",
           data: { kind: "decision", decisionId: "gate", sourceNodeId: "decision" },
-        }),
-        expect.objectContaining({
-          source: "conditional-route",
-          target: "truth-scene",
-          sourceHandle: "route:0",
-          targetHandle: "in",
-          data: { kind: "auto", priority: 10, routeIndex: 0 },
         }),
       ])
     );
@@ -343,25 +320,264 @@ describe("buildStoryCanvasModel", () => {
       ])
     );
   });
+
+  it("projects mixed text and video scenes through one graph", () => {
+    const content = draft({
+      entryNodeId: "prologue",
+      nodes: [
+        textScene("prologue", "Prologue", "Read the letter.", {
+          kind: "auto",
+          nextNodeId: "memory",
+        }),
+        clip("memory", "MEMORY", { kind: "ending", endingId: "truth" }),
+      ],
+      endings: [ending("truth", "Truth", "真相")],
+    });
+
+    const model = buildStoryCanvasModel(content, "en-US");
+    expect(model.nodes.find((node) => node.id === "prologue")?.data).toMatchObject({
+      kind: "text",
+      title: "Prologue",
+      summary: "Read the letter.",
+      continuationTargetNodeId: "memory",
+    });
+    expect(model.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "prologue",
+          target: "memory",
+          data: { kind: "continuation" },
+        }),
+      ])
+    );
+  });
+
+  it("projects text scenes without optional titles and endings without optional summaries", () => {
+    const content = draft({
+      entryNodeId: "untitled",
+      nodes: [
+        {
+          kind: "text",
+          nodeId: "untitled",
+          body: { "en-US": "The story begins." },
+          exit: { kind: "ending", endingId: "finish" },
+        },
+      ],
+      endings: [
+        {
+          id: "finish",
+          title: { "en-US": "Finish" },
+          kind: "custom",
+        },
+      ],
+    });
+
+    const model = buildStoryCanvasModel(content, "en-US");
+
+    expect(model.nodes.find((node) => node.id === "untitled")?.data).toMatchObject({
+      kind: "text",
+      title: "Text scene 1",
+      summary: "The story begins.",
+    });
+    expect(
+      model.nodes.find((node) => node.id === syntheticEndingNodeId("finish"))?.data
+    ).toMatchObject({
+      kind: "ending",
+      title: "Finish",
+    });
+  });
+
+  it("projects text choices, checkpoints, and endings with the canonical edge semantics", () => {
+    const content = draft({
+      entryNodeId: "question",
+      nodes: [
+        textScene("question", "Question", "Choose a path.", {
+          kind: "choice",
+          decisionId: "decision:path",
+          prompt: { "en-US": "Where next?" },
+          choices: [
+            choice("wait", "Wait", "等待", "pause"),
+            choice("leave", "Leave", "離開", "farewell"),
+          ],
+        }),
+        textScene("pause", "Pause", "Take a breath.", {
+          kind: "checkpoint",
+          nextNodeId: "farewell",
+        }),
+        textScene("farewell", "Farewell", "The door closes.", {
+          kind: "ending",
+          endingId: "truth",
+        }),
+      ],
+      endings: [ending("truth", "Truth", "真相")],
+    });
+
+    const model = buildStoryCanvasModel(content, "en-US");
+    expect(
+      model.nodes.find((node) => node.id === syntheticDecisionNodeId("question"))?.data
+    ).toMatchObject({
+      kind: "decision",
+      sourceNodeId: "question",
+      decisionId: "decision:path",
+    });
+    expect(model.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "question",
+          target: syntheticDecisionNodeId("question"),
+          data: expect.objectContaining({ kind: "decision", sourceNodeId: "question" }),
+        }),
+        expect.objectContaining({
+          source: syntheticDecisionNodeId("question"),
+          target: "pause",
+          data: expect.objectContaining({ kind: "choice", sourceNodeId: "question" }),
+        }),
+        expect.objectContaining({
+          source: "pause",
+          target: "farewell",
+          data: { kind: "checkpoint" },
+        }),
+        expect.objectContaining({
+          source: "farewell",
+          target: syntheticEndingNodeId("truth"),
+          data: { kind: "ending", endingId: "truth" },
+        }),
+      ])
+    );
+  });
+});
+
+describe("Story cast projection", () => {
+  it("projects one character node per bible character with a character: id in the left cast lane", () => {
+    const content = draft({
+      entryNodeId: "opening",
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
+      characters: [
+        character("hero", "Hero", "The lead."),
+        character("rival", "Rival", "The foil."),
+      ],
+    });
+
+    const model = buildStoryCanvasModel(content, "en-US");
+    const cast = model.nodes.filter((node) => node.data.kind === "character");
+    expect(cast.map((node) => node.id)).toEqual(["character:hero", "character:rival"]);
+    expect(cast[0]?.data).toMatchObject({
+      kind: "character",
+      title: "Hero",
+      characterId: "hero",
+      summary: "The lead.",
+    });
+    // Character cards join the standard delete pipeline and are always deletable
+    // in a pure branching tree.
+    expect(cast.every((node) => node.deletable === true)).toBe(true);
+    // The cast lane sits LEFT of the root; the story-flow lane runs to its right.
+    const rootX = model.nodes.find((node) => node.id === STORY_ROOT_NODE_ID)!.position.x;
+    const openingX = model.nodes.find((node) => node.id === "opening")!.position.x;
+    expect(cast.every((node) => node.position.x < rootX)).toBe(true);
+    expect(openingX).toBeGreaterThan(rootX);
+    // A single vertical column: one shared x, distinct rows.
+    expect(new Set(cast.map((node) => node.position.x)).size).toBe(1);
+    expect(cast[0]!.position.y).not.toBe(cast[1]!.position.y);
+  });
+
+  it("derives a non-flow membership tether from the root to each character", () => {
+    const content = draft({ characters: [character("hero", "Hero", "The lead.")] });
+    const model = buildStoryCanvasModel(content, "en-US");
+    const tethers = model.edges.filter((edge) => edge.data.kind === "membership");
+    expect(tethers).toHaveLength(1);
+    expect(tethers[0]).toMatchObject({
+      source: STORY_ROOT_NODE_ID,
+      target: "character:hero",
+      sourceHandle: "cast",
+      targetHandle: "cast-in",
+      selectable: false,
+      deletable: false,
+    });
+    // Tethers reach ONLY the root — never a clip/text/ending node.
+    expect(
+      model.edges.every(
+        (edge) => edge.data.kind !== "membership" || edge.source === STORY_ROOT_NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  it("drops the membership tether when the Story World root is hidden but keeps the card", () => {
+    const content = draft({
+      entryNodeId: "opening",
+      nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
+      characters: [character("hero", "Hero", "The lead.")],
+    });
+    const model = buildStoryCanvasModel(
+      content,
+      "en-US",
+      [],
+      undefined,
+      "landscape_16_9",
+      null,
+      false
+    );
+    expect(model.edges.some((edge) => edge.data.kind === "membership")).toBe(false);
+    expect(model.nodes.some((node) => node.id === "character:hero")).toBe(true);
+  });
+
+  it("maps character canvas ids and keeps them out of the executable-graph domain", () => {
+    expect(characterCanvasNodeId("hero")).toBe("character:hero");
+    expect(characterIdForCanvasNode("character:hero")).toBe("hero");
+    expect(characterIdForCanvasNode("opening")).toBeNull();
+    expect(storyDomainIdForCanvasProjection("character:hero")).toBeNull();
+  });
+});
+
+describe("rejectsStoryCastWiring", () => {
+  it("rejects any connection touching a character node or a cast handle", () => {
+    expect(rejectsStoryCastWiring({ sourceKind: "character", targetKind: "clip" })).toBe(true);
+    expect(rejectsStoryCastWiring({ sourceKind: "clip", targetKind: "character" })).toBe(true);
+    expect(
+      rejectsStoryCastWiring({ sourceKind: "root", targetKind: "clip", sourceHandle: "cast" })
+    ).toBe(true);
+    expect(
+      rejectsStoryCastWiring({
+        sourceKind: "clip",
+        targetKind: "character",
+        targetHandle: "cast-in",
+      })
+    ).toBe(true);
+  });
+
+  it("allows ordinary story-flow connections", () => {
+    expect(
+      rejectsStoryCastWiring({
+        sourceKind: "root",
+        targetKind: "clip",
+        sourceHandle: "entry",
+        targetHandle: "in",
+      })
+    ).toBe(false);
+    expect(
+      rejectsStoryCastWiring({
+        sourceKind: "clip",
+        targetKind: "clip",
+        sourceHandle: "completion",
+        targetHandle: "in",
+      })
+    ).toBe(false);
+  });
 });
 
 function draft(
   overrides: {
     entryNodeId?: string | null;
     nodes?: StoryGraphNode[];
-    endings?: InteractiveFilmDraftContent["storyBible"]["endings"];
+    endings?: InteractiveStoryDraftContent["storyBible"]["endings"];
+    characters?: InteractiveStoryDraftContent["storyBible"]["characters"];
   } = {}
-): InteractiveFilmDraftContent {
+): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline: "",
       synopsis: "",
       worldview: "",
-      storyRules: [],
-      characters: [],
-      locations: [],
-      props: [],
-      stateVariables: [],
+      characters: overrides.characters ?? [],
       endings: overrides.endings ?? [],
     },
     graph: {
@@ -372,12 +588,35 @@ function draft(
   };
 }
 
+function character(
+  id: string,
+  name: string,
+  summary: string
+): InteractiveStoryDraftContent["storyBible"]["characters"][number] {
+  return { id, name: { "en-US": name }, summary, images: [], voice: null };
+}
+
 function clip(
   nodeId: string,
   clipKey: string,
   exit: Extract<StoryGraphNode, { kind: "clip" }>["exit"]
 ): StoryGraphNode {
   return { kind: "clip", nodeId, clipKey, exit };
+}
+
+function textScene(
+  nodeId: string,
+  title: string,
+  body: string,
+  exit: Extract<StoryGraphNode, { kind: "text" }>["exit"]
+): StoryGraphNode {
+  return {
+    kind: "text",
+    nodeId,
+    title: { "en-US": title },
+    body: { "en-US": body },
+    exit,
+  };
 }
 
 function choice(
@@ -392,9 +631,7 @@ function choice(
   return {
     choiceId,
     label: { "en-US": englishLabel, "zh-CN": chineseLabel },
-    effects: [],
     nextNodeId,
-    afterSelect: { kind: "immediate" },
   };
 }
 
@@ -402,7 +639,7 @@ function ending(
   id: string,
   englishTitle: string,
   chineseTitle: string
-): InteractiveFilmDraftContent["storyBible"]["endings"][number] {
+): InteractiveStoryDraftContent["storyBible"]["endings"][number] {
   return {
     id,
     title: { "en-US": englishTitle, "zh-CN": chineseTitle },

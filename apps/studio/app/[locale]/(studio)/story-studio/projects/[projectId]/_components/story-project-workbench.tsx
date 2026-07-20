@@ -5,6 +5,7 @@ import {
   IconArrowLeft,
   IconBook2,
   IconCheck,
+  IconFileText,
   IconGitBranch,
   IconMovie,
   IconPhoto,
@@ -25,8 +26,7 @@ import {
   STORY_FRAME_PROFILE_CONTRACTS,
   getStoryWorkbench,
   storyApiErrorMessage,
-  type StoryEffect,
-  type InteractiveFilmDraftContent,
+  type InteractiveStoryDraftContent,
   type StoryProjectProductionSummary,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
@@ -117,6 +117,7 @@ export function StoryProjectWorkbench({
 
 function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
+  const FormatIcon = workbench.project.format === "text_adventure" ? IconFileText : IconMovie;
   return (
     <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
       <div className="min-w-0">
@@ -129,7 +130,7 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
         </Link>
         <div className="mt-4 flex items-center gap-3">
           <div className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/[0.055] text-white/72">
-            <IconMovie className="size-5" stroke={1.7} />
+            <FormatIcon className="size-5" stroke={1.7} />
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-[-0.025em] text-white">
@@ -146,12 +147,14 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
           {t(`visibility.${workbench.project.visibility}`)}
         </span>
         <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
-          {t("workbench.formatInteractiveFilm")}
+          {t(`formats.${workbench.project.format}.label`)}
         </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
-          {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
-          {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
-        </span>
+        {workbench.project.frameProfile ? (
+          <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
+            {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
+            {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
+          </span>
+        ) : null}
       </div>
     </header>
   );
@@ -195,9 +198,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   const production = workbench.project.production;
   const choices = countChoices(workbench.draft.content);
   const endings = workbench.draft.content.storyBible.endings.length;
-  const clipNodes = workbench.draft.content.graph.nodes.filter(
-    (node) => node.kind === "clip"
-  ).length;
+  const sceneNodes = workbench.draft.content.graph.nodes.length;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
@@ -251,15 +252,17 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
             />
             <OverviewMetric icon={IconRoute} label={t("metrics.endings")} value={String(endings)} />
             <OverviewMetric
-              icon={IconMovie}
-              label={t("metrics.graphClips")}
-              value={String(clipNodes)}
+              icon={IconRoute}
+              label={t("metrics.graphScenes")}
+              value={String(sceneNodes)}
             />
           </div>
-          <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
-            {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].width} ×{" "}
-            {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].height}
-          </div>
+          {workbench.project.frameProfile ? (
+            <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
+              {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].width} ×{" "}
+              {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].height}
+            </div>
+          ) : null}
         </FrostedPanel>
       </div>
 
@@ -307,12 +310,12 @@ function CurrentVideoState({ production }: { production: StoryProjectProductionS
   );
 }
 
-function StoryStage({ content }: { content: InteractiveFilmDraftContent }) {
+function StoryStage({ content }: { content: InteractiveStoryDraftContent }) {
   const t = useTranslations("storyStudio");
   const locale = useLocale();
   const bible = content.storyBible;
   const choices = countChoices(content);
-  const decisions = collectDecisions(content);
+  const decisions = collectDecisions(content, locale);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
@@ -338,39 +341,29 @@ function StoryStage({ content }: { content: InteractiveFilmDraftContent }) {
             {bible.characters.map((character) => (
               <div key={character.id} className="rounded-2xl bg-white/[0.035] p-4">
                 <div className="flex items-start gap-3">
-                  <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-white/48">
-                    <IconUser className="size-4" />
-                  </div>
+                  {character.images[0] ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- unsized user upload
+                    <img
+                      src={character.images[0].url}
+                      alt=""
+                      draggable={false}
+                      className="size-9 shrink-0 select-none rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-white/48">
+                      <IconUser className="size-4" />
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="font-semibold text-white/82">
                       {localizedText(character.name, locale)}
                     </p>
-                    <p className="mt-1 text-[11px] text-white/34">{character.role}</p>
                   </div>
                 </div>
                 <p className="mt-3 text-xs leading-5 text-white/46">{character.summary}</p>
-                {character.continuityRules.length > 0 ? (
-                  <p className="mt-3 line-clamp-2 text-[11px] leading-5 text-white/32">
-                    {character.continuityRules.join(" · ")}
-                  </p>
-                ) : null}
               </div>
             ))}
           </div>
-        </FrostedPanel>
-
-        <FrostedPanel className="p-5 lg:p-6">
-          <h2 className="text-base font-semibold text-white">{t("story.rules")}</h2>
-          <ol className="mt-4 space-y-3">
-            {bible.storyRules.map((rule, index) => (
-              <li key={`${index}:${rule}`} className="flex gap-3 text-xs leading-6 text-white/48">
-                <span className="shrink-0 font-mono text-white/24">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span>{rule}</span>
-              </li>
-            ))}
-          </ol>
         </FrostedPanel>
 
         <FrostedPanel className="p-5 lg:p-6">
@@ -387,7 +380,7 @@ function StoryStage({ content }: { content: InteractiveFilmDraftContent }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="font-mono text-xs font-semibold text-white/68">{decision.id}</p>
                   <p className="text-[10px] text-white/30">
-                    {t("story.decisionSources", { clips: decision.sourceClipKeys.join(" / ") })}
+                    {t("story.decisionSources", { scenes: decision.sourceSceneLabels.join(" / ") })}
                   </p>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -401,11 +394,6 @@ function StoryStage({ content }: { content: InteractiveFilmDraftContent }) {
                           → {option.nextNodeId}
                         </span>
                       </div>
-                      {option.effects.length > 0 ? (
-                        <p className="mt-2 font-mono text-[10px] leading-5 text-white/32">
-                          {option.effects.map(formatEffect).join(" · ")}
-                        </p>
-                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -422,10 +410,6 @@ function StoryStage({ content }: { content: InteractiveFilmDraftContent }) {
             <InfoRow label={t("metrics.choices")} value={String(choices)} />
             <InfoRow label={t("metrics.endings")} value={String(bible.endings.length)} />
             <InfoRow label={t("story.graphNodes")} value={String(content.graph.nodes.length)} />
-            <InfoRow
-              label={t("story.stateVariables")}
-              value={String(bible.stateVariables.length)}
-            />
           </dl>
         </FrostedPanel>
         <FrostedPanel className="p-5">
@@ -482,7 +466,9 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
   const clipNodes = workbench.draft.content.graph.nodes.filter((node) => node.kind === "clip");
   const videos = new Map(workbench.video.clips.map((clip) => [clip.graphNodeId, clip]));
-  const frame = STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile];
+  const frame = workbench.project.frameProfile
+    ? STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile]
+    : null;
   return (
     <div>
       <div className="flex items-end justify-between gap-4">
@@ -552,9 +538,11 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
               );
             })}
           </div>
-          <div className="px-5 py-3 text-[10px] text-white/28">
-            {frame.width} × {frame.height}
-          </div>
+          {frame ? (
+            <div className="px-5 py-3 text-[10px] text-white/28">
+              {frame.width} × {frame.height}
+            </div>
+          ) : null}
         </FrostedPanel>
       ) : null}
     </div>
@@ -642,10 +630,10 @@ function WorkbenchSkeleton() {
   );
 }
 
-function countChoices(content: InteractiveFilmDraftContent): number {
+function countChoices(content: InteractiveStoryDraftContent): number {
   const decisionIds = new Set<string>();
   for (const node of content.graph.nodes) {
-    if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
+    if (node.exit.kind !== "choice") continue;
     decisionIds.add(node.exit.decisionId);
   }
   return decisionIds.size;
@@ -653,53 +641,48 @@ function countChoices(content: InteractiveFilmDraftContent): number {
 
 interface AuthoredDecision {
   id: string;
-  sourceClipKeys: string[];
+  sourceSceneLabels: string[];
   options: Array<{
     id: string;
     label: Record<string, string>;
     nextNodeId: string;
-    effects: StoryEffect[];
   }>;
 }
 
-function collectDecisions(content: InteractiveFilmDraftContent): AuthoredDecision[] {
+function collectDecisions(
+  content: InteractiveStoryDraftContent,
+  locale: string
+): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
+    if (node.exit.kind !== "choice") continue;
+    const sourceLabel =
+      node.kind === "clip"
+        ? node.clipKey
+        : node.title?.[locale]?.trim() ||
+          Object.values(node.title ?? {})
+            .find((value) => value.trim())
+            ?.trim() ||
+          node.nodeId;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {
-      existing.sourceClipKeys.push(node.clipKey);
+      existing.sourceSceneLabels.push(sourceLabel);
       continue;
     }
     decisions.set(node.exit.decisionId, {
       id: node.exit.decisionId,
-      sourceClipKeys: [node.clipKey],
+      sourceSceneLabels: [sourceLabel],
       options: node.exit.choices.map((choice) => ({
         id: choice.choiceId,
         label: choice.label,
         nextNodeId: choice.nextNodeId,
-        effects: choice.effects,
       })),
     });
   }
   return [...decisions.values()];
 }
 
-function formatEffect(effect: StoryEffect): string {
-  switch (effect.kind) {
-    case "set_variable":
-      return `${effect.key} = ${String(effect.value)}`;
-    case "increment_variable":
-      return `${effect.key} ${effect.amount >= 0 ? "+" : ""}${effect.amount}`;
-    case "set_flag":
-      return `${effect.flag} = ${String(effect.value)}`;
-    case "adjust_relationship":
-      return `${effect.characterId} ${effect.amount >= 0 ? "+" : ""}${effect.amount}`;
-    case "unlock_ending":
-      return `unlock ${effect.endingId}`;
-  }
-}
-
-function localizedText(values: Record<string, string>, locale: string): string {
+function localizedText(values: Record<string, string> | undefined, locale: string): string {
+  if (!values) return "—";
   return values[locale] || values["zh-CN"] || values["en-US"] || Object.values(values)[0] || "—";
 }

@@ -18,13 +18,15 @@ export interface StoryVideoFrameContract {
 }
 
 /**
- * Existing videos keep their real duration. Selection only checks the fixed
- * project frame, while the server remains authoritative for asset readiness,
- * ownership, moderation, and exact variant metadata.
+ * Existing videos keep their real duration. A film project passes its fixed
+ * frame contract and selection rejects any mismatch; a text-first project
+ * passes a null contract, so inline video is accepted at its native size. The
+ * server remains authoritative for asset readiness, ownership, moderation, and
+ * exact variant metadata in both cases.
  */
 export function resolveStoryVideoLibraryItemState(
   item: StoryVideoLibraryItem,
-  frameContract: StoryVideoFrameContract,
+  frameContract: StoryVideoFrameContract | null,
   current: { assetId: string; variantId: string } | null
 ): StoryVideoLibraryItemState {
   const issues: StoryVideoLibraryIssue[] = [];
@@ -34,7 +36,10 @@ export function resolveStoryVideoLibraryItemState(
   if (!item.asset.previewUrl) issues.push("preview_unavailable");
   if (width === null || height === null) {
     issues.push("dimensions_unknown");
-  } else if (width !== frameContract.width || height !== frameContract.height) {
+  } else if (
+    frameContract !== null &&
+    (width !== frameContract.width || height !== frameContract.height)
+  ) {
     issues.push("dimensions_mismatch");
   }
 

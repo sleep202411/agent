@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
 
 describe("StoryCanvasHistory", () => {
@@ -44,17 +44,13 @@ function snapshot(
   return { content: draft(logline), nodePositions, storyWorldNodePresent };
 }
 
-function draft(logline: string): InteractiveFilmDraftContent {
+function draft(logline: string): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline,
       synopsis: "",
       worldview: "",
-      storyRules: [],
       characters: [],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
