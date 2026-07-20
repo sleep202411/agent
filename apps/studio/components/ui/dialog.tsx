@@ -63,11 +63,12 @@ function DialogContent({
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button variant="ghost" className="absolute top-2 right-2" size="icon-sm">
-              <IconX />
-              <span className="sr-only">{t("close")}</span>
-            </Button>
+          <DialogPrimitive.Close
+            data-slot="dialog-close"
+            className="absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-lg bg-white/[0.06] text-white/55 transition hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+          >
+            <IconX className="size-3.5" />
+            <span className="sr-only">{t("close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
