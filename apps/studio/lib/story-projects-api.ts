@@ -1008,8 +1008,21 @@ export async function createStoryClipVideoGeneration(
 // ---------------------------------------------------------------------------
 // Creator-side text-adventure 试玩 (the public player runtime is Java's).
 
+/** The entry angle a public player picked; creator 试玩 always carries null. */
+export interface StoryTextPlayDirection {
+  id: string;
+  title: string;
+  logline: string;
+  tags: string[];
+  conflict: string;
+  hook: string;
+  twist: string;
+  tagline: string;
+}
+
 export interface StoryTextPlayState {
   nodeId: string | null;
+  direction: StoryTextPlayDirection | null;
   freeTurnsUsed: number;
   transcript: Array<{ role: "narration" | "player" | "anchor"; text: string }>;
 }
