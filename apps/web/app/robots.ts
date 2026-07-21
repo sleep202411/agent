@@ -23,7 +23,10 @@ import { CANONICAL_HOST } from "@/src/lib/seo";
  *   /_next/ — build artefacts (Next.js handles this internally;
  *             listing it explicitly avoids polluting crawl budget)
  *   /__legacy/ — uni-app bundle iframe entry, no canonical content
- *   /login    — auth gate, no public content
+ *   /login, /register, /forgot-password — auth gates. Since the
+ *             sign-in rewrite these three are content-free shells whose
+ *             entire body is the shared dialog, so there is nothing for
+ *             a crawler to index on any of them.
  */
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -31,7 +34,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/_next/", "/__legacy/", "/login"],
+        disallow: ["/api/", "/_next/", "/__legacy/", "/login", "/register", "/forgot-password"],
       },
       // Explicit AI-engine allow list. The wildcard above already
       // allows everything — these named entries are for *auditability*

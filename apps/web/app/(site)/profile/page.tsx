@@ -19,6 +19,7 @@ import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useCurrentUser } from "@/src/hooks/use-user";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { CreatorCenter } from "@/app/(site)/creators/_components/center/creator-center";
 
 export default function ProfilePage() {
@@ -26,15 +27,21 @@ export default function ProfilePage() {
   const router = useRouter();
   const locale = useLocale() as Locale;
   const { user, isLoading, isFetched } = useCurrentUser();
+  const { open: openAuthDialog } = useAuthDialog();
 
-  // Not logged in: bounce to login. Server-side gating happens in
-  // the layout; this is the client-side recovery if the cookie is
-  // gone by the time the page renders.
+  // Not logged in: ask in place. Server-side gating happens in the
+  // layout; this is the client-side recovery if the cookie is gone by
+  // the time the page renders. Signing in re-renders this page as the
+  // owner view rather than sending the user on a round trip through a
+  // login form. Declining has nowhere to stay — /profile is the
+  // signed-in surface — so it goes home.
   useEffect(() => {
-    if (isFetched && !user) {
-      router.replace(localizePath("/login", locale));
-    }
-  }, [isFetched, user, router, locale]);
+    if (!isFetched || user) return;
+    openAuthDialog({
+      mode: "stay",
+      onDismiss: () => router.replace(localizePath("/", locale)),
+    });
+  }, [isFetched, user, router, locale, openAuthDialog]);
 
   if (isLoading || !user) {
     return (

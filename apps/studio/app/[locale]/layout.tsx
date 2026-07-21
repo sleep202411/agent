@@ -75,7 +75,7 @@ export default async function LocaleLayout({
               renders the global LoginDialog, and its buildWebHref() links read
               useSiteRegion(). Nested the other way the dialog sits ABOVE this
               provider and falls back to the "global" context default — sending
-              register / forgot-password / legal links to .com on the .cn cell. */}
+              the dialog's legal links to .com on the .cn cell. */}
           <RegionProvider country={country} siteRegion={siteRegion}>
             <Providers>
               <TooltipProvider delayDuration={200}>{children}</TooltipProvider>

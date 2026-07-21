@@ -27,6 +27,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import { projectWorkspaceRoute } from "@/src/lib/studio-routes";
 import { backendApi, ApiRequestError } from "@/src/lib/api";
 import { Button } from "@/components/ui/button";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -60,17 +61,28 @@ export default function InvitePage() {
   const queryProjectId = searchParams?.get("projectId") ?? "";
   const queryWorldId = searchParams?.get("worldId") ?? "";
 
-  // Send unauthenticated visitors to /login with a redirect-back to the
-  // exact invite URL (same code / projectId / worldId) so the deep link
-  // survives the round-trip. Public-path policy means proxy.ts won't
-  // gate /invite for us, and AuthInterceptor doesn't redirect on 401
-  // for public paths either — so this page owns the redirect.
-  const redirectToLogin = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const here = `${window.location.pathname}${window.location.search}`;
-    const loginPath = localizePath("/login", locale);
-    router.replace(`${loginPath}?redirect=${encodeURIComponent(here)}`);
-  }, [router, locale]);
+  // Ask unauthenticated visitors to sign in ON this page. It used to
+  // `router.replace` to /login with the whole invite URL stuffed into
+  // `?redirect=` so the deep link survived the round trip; prompting in
+  // place means there is no round trip to survive — the code, projectId
+  // and worldId never leave the address bar. Public-path policy means
+  // proxy.ts won't gate /invite for us, and AuthInterceptor doesn't
+  // prompt on 401 for public paths either, so this page owns it.
+  //
+  // `reloadKey` is what resumes the flow: this page drives its own
+  // fetch/poll state machine rather than React Query, so signing in has
+  // to re-run the invite lookup explicitly.
+  const [reloadKey, setReloadKey] = useState(0);
+  const { open: openAuthDialog } = useAuthDialog();
+
+  const promptSignIn = useCallback(() => {
+    openAuthDialog({
+      mode: "stay",
+      onSuccess: () => setReloadKey((key) => key + 1),
+      // An invite is worthless without an account to attach it to.
+      onDismiss: () => router.replace(localizePath("/", locale)),
+    });
+  }, [openAuthDialog, router, locale]);
 
   const isUnauthorized = (err: unknown): boolean =>
     err instanceof ApiRequestError && err.status === 401;
@@ -191,7 +203,7 @@ export default function InvitePage() {
       } catch (err) {
         if (!active) return;
         if (isUnauthorized(err)) {
-          redirectToLogin();
+          promptSignIn();
           return;
         }
         setUiState("error");
@@ -201,7 +213,7 @@ export default function InvitePage() {
     return () => {
       active = false;
     };
-  }, [inviteCode, t, redirectToLogin]);
+  }, [inviteCode, t, promptSignIn, reloadKey]);
 
   // ─── Actions ────────────────────────────────────────────────────
   const handleApply = async () => {
@@ -216,7 +228,7 @@ export default function InvitePage() {
       startPolling();
     } catch (err) {
       if (isUnauthorized(err)) {
-        redirectToLogin();
+        promptSignIn();
         return;
       }
       toast.error(t("applyFailed"));

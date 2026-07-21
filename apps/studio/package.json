@@ -14,6 +14,7 @@
     "@ai-sdk/react": "^3.0.156",
     "@airwallex/components-sdk": "^1.32.0",
     "@gsap/react": "^2.1.2",
+    "@repo/auth-flow": "*",
     "@repo/experience-player-react": "*",
     "@repo/shared": "*",
     "@shadcn/react": "^0.2.1",

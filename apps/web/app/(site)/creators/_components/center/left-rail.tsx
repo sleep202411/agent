@@ -27,6 +27,7 @@ import {
   IconCertificate,
   IconCircleCheck,
   IconEdit,
+  IconLock,
   IconSchool,
   IconShieldCheck,
 } from "@tabler/icons-react";
@@ -53,10 +54,22 @@ interface CreatorLeftRailProps {
    * the whole profile, not per-field.
    */
   onEditProfile?: () => void;
+  /**
+   * Owner clicked "account & security" — parent opens the password
+   * panel. Owner-only, and absent entirely on a visitor's view of
+   * someone else's profile.
+   */
+  onOpenSecurity?: () => void;
 }
 
-export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeftRailProps) {
+export function CreatorLeftRail({
+  creator,
+  isOwner,
+  onEditProfile,
+  onOpenSecurity,
+}: CreatorLeftRailProps) {
   const t = useTranslations("creatorCenter");
+  const securityT = useTranslations("accountSecurity");
   const { data: experience } = useCreatorExperience(creator.id);
   const { data: certificates = [] } = useCreatorCertificates(creator.id);
   const joined = formatJoined(creator.joinedAt);
@@ -167,6 +180,32 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {t("certificates.railCount", { count: certificates.length })}
               </p>
+            </div>
+          </div>
+        </RailCard>
+      ) : null}
+
+      {/* Account & security. Owner-only and last in the rail: it is
+          settings, not identity, so it must not compete with the
+          profile content a visitor came to read. */}
+      {isOwner && onOpenSecurity ? (
+        <RailCard title={securityT("railHeading")}>
+          <div className="flex items-start gap-3 text-xs">
+            <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+              <IconLock className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm leading-snug text-foreground">{securityT("railBody")}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                color="muted"
+                size="sm"
+                className="mt-2 px-0"
+                onClick={onOpenSecurity}
+              >
+                {securityT("railAction")}
+              </Button>
             </div>
           </div>
         </RailCard>

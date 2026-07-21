@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCurrentUser, type CurrentUser } from "@/src/hooks/use-user";
 import { useLogout } from "@/src/hooks/use-logout";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
@@ -70,6 +71,11 @@ export function GlobalNav() {
 
   const { user } = useCurrentUser();
   const logout = useLogout();
+  // "Get started" opens the sign-in dialog over whatever the visitor is
+  // reading instead of navigating to /login and losing the page. The
+  // /login URL still exists for the proxy, deep links and the mobile
+  // WebView — it just isn't how the nav asks any more.
+  const { open: openAuthDialog } = useAuthDialog();
 
   const headerRef = useRef<HTMLElement | null>(null);
   const navListRef = useRef<HTMLUListElement | null>(null);
@@ -287,7 +293,7 @@ export function GlobalNav() {
         ) : (
           <button
             type="button"
-            onClick={() => router.push(localizePath("/login", locale))}
+            onClick={() => openAuthDialog()}
             className={navCx(
               "fd-secret-glass-wrapper fd-secret-cta-shell fd-secret-cta fd-secret-get-started"
             )}
@@ -440,7 +446,7 @@ export function GlobalNav() {
                     type="button"
                     onClick={() => {
                       closeMobile();
-                      router.push(localizePath("/login", locale));
+                      openAuthDialog();
                     }}
                     className={navCx("fd-secret-mobile-login")}
                   >
