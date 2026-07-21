@@ -35,7 +35,6 @@ export interface FrozenStoryVideoAsset {
   width: number;
   height: number;
   durationMs: number;
-  hasAudio: boolean;
   browserSafeMp4: boolean;
   url: string;
 }
@@ -628,7 +627,6 @@ function compileIntermediateRelease(
       kind: 'video' as const,
       orientationPolicy: 'single-master' as const,
       variants: landscape ? { landscape: variant } : { portrait: variant },
-      audio: video.asset.hasAudio ? ('embedded' as const) : ('none' as const),
     };
   });
   // Music ships for the NARRATIVE profile only: it is the one runtime that

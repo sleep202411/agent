@@ -75,7 +75,6 @@ function referenceVariant() {
     width: 1920,
     height: 1080,
     durationSeconds: null,
-    hasAudio: null,
     checksumSha256: CHECKSUM,
     metadata: {},
     createdAt: NOW,

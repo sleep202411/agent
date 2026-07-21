@@ -74,7 +74,6 @@ describe('canonical Story video snapshot', () => {
     durationMs: 10_000,
     width: 1920,
     height: 1080,
-    hasAudio: true,
     browserSafeMp4: true,
   };
   const empty: StoryVideoSnapshotEntry = {
@@ -88,16 +87,12 @@ describe('canonical Story video snapshot', () => {
     durationMs: null,
     width: null,
     height: null,
-    hasAudio: null,
     browserSafeMp4: null,
   };
 
   it('is order independent and includes exact playback metadata', () => {
     const hash = storyVideoSnapshotHash([selected, empty]);
     expect(storyVideoSnapshotHash([empty, selected])).toBe(hash);
-    expect(
-      storyVideoSnapshotHash([{ ...selected, hasAudio: false }, empty]),
-    ).not.toBe(hash);
     expect(
       storyVideoSnapshotHash([{ ...selected, browserSafeMp4: false }, empty]),
     ).not.toBe(hash);
@@ -423,7 +418,6 @@ function readyVideo(assetSuffix: string, variantSuffix: string, hash: string) {
         height: 1080,
         durationSeconds: 10,
         durationMs: 10_375,
-        hasAudio: true,
         checksumSha256: hash.repeat(64),
         metadata: probedMetadata,
         deletedAt: null,
@@ -508,7 +502,6 @@ function productionHarness(
     currentDurationMs: null as number | null,
     currentWidth: null as number | null,
     currentHeight: null as number | null,
-    currentHasAudio: null as boolean | null,
     currentBrowserSafeMp4: null as boolean | null,
     version: initialSelectionVersion,
     setByUserId: null as string | null,

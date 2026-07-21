@@ -571,7 +571,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         durationMs: null,
         width: null,
         height: null,
-        hasAudio: null,
         browserSafeMp4: null,
       },
     ];

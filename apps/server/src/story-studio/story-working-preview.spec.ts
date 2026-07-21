@@ -122,9 +122,8 @@ function currentPreviewSelections(draft: Draft) {
         width: 1920,
         height: 1080,
         durationSeconds: 15,
-        durationMs: 15_000,
         // Nullable on the real variant row; tests null it to model unprobed.
-        hasAudio: true as boolean | null,
+        durationMs: 15_000 as number | null,
         sizeBytes: BigInt(1_000 + index),
         metadata: { browserSafeMp4: true },
         createdAt: new Date(),
@@ -144,7 +143,6 @@ function currentPreviewSelections(draft: Draft) {
         currentDurationMs: 15_000,
         currentWidth: 1920,
         currentHeight: 1080,
-        currentHasAudio: true,
         // Boolean? in the schema; tests null it for pre-cutover selections.
         currentBrowserSafeMp4: true as boolean | null,
         version: index + 3,
@@ -360,7 +358,7 @@ describe('StoryWorkingPreviewService', () => {
     const selections = currentPreviewSelections(draft);
     const incomplete = selections[0];
     if (!incomplete) throw new Error('Fixture selection missing.');
-    incomplete.currentVariant.hasAudio = null;
+    incomplete.currentVariant.durationMs = null;
     const { service } = scopedService(draft, selections);
 
     const preview = await service.getWorkingPreview(

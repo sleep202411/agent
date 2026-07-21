@@ -130,7 +130,6 @@ interface ExactVideoVariant {
   durationMs: number;
   width: number;
   height: number;
-  hasAudio: boolean;
   browserSafeMp4: boolean;
 }
 
@@ -1136,7 +1135,6 @@ export class StoryVideoProductionService {
           currentDurationMs: media.durationMs,
           currentWidth: media.width,
           currentHeight: media.height,
-          currentHasAudio: media.hasAudio,
           currentBrowserSafeMp4: media.browserSafeMp4,
           setByUserId: current.createdByUserId,
           setAt: new Date(),
@@ -1394,8 +1392,7 @@ function exactVideoVariant(
     !variant.width ||
     variant.width <= 0 ||
     !variant.height ||
-    variant.height <= 0 ||
-    typeof variant.hasAudio !== 'boolean'
+    variant.height <= 0
   ) {
     return null;
   }
@@ -1407,7 +1404,6 @@ function exactVideoVariant(
     durationMs: variant.durationMs,
     width: variant.width,
     height: variant.height,
-    hasAudio: variant.hasAudio,
     browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
   };
 }
@@ -1519,7 +1515,6 @@ function selectionMediaData(
   currentDurationMs: number | null;
   currentWidth: number | null;
   currentHeight: number | null;
-  currentHasAudio: boolean | null;
   currentBrowserSafeMp4: boolean | null;
   version: number;
   setByUserId: string;
@@ -1534,7 +1529,6 @@ function selectionMediaData(
     currentDurationMs: media?.durationMs ?? null,
     currentWidth: media?.width ?? null,
     currentHeight: media?.height ?? null,
-    currentHasAudio: media?.hasAudio ?? null,
     currentBrowserSafeMp4: media?.browserSafeMp4 ?? null,
     version,
     setByUserId: userId,
@@ -1552,7 +1546,6 @@ function currentVideoDto(
     currentDurationMs: number | null;
     currentWidth: number | null;
     currentHeight: number | null;
-    currentHasAudio: boolean | null;
     currentBrowserSafeMp4: boolean | null;
     version: number;
     setByUserId: string | null;
@@ -1573,7 +1566,6 @@ function currentVideoDto(
     selection.currentDurationMs == null ||
     selection.currentWidth == null ||
     selection.currentHeight == null ||
-    selection.currentHasAudio == null ||
     selection.currentBrowserSafeMp4 === null ||
     !selection.setAt ||
     selection.currentAssetId !== exact.asset.id ||
@@ -1582,8 +1574,7 @@ function currentVideoDto(
     selection.currentContentType !== exact.contentType ||
     selection.currentDurationMs !== exact.durationMs ||
     selection.currentWidth !== exact.width ||
-    selection.currentHeight !== exact.height ||
-    selection.currentHasAudio !== exact.hasAudio
+    selection.currentHeight !== exact.height
   ) {
     return null;
   }
@@ -1596,7 +1587,6 @@ function currentVideoDto(
     durationMs: selection.currentDurationMs,
     width: selection.currentWidth,
     height: selection.currentHeight,
-    hasAudio: selection.currentHasAudio,
     browserSafeMp4: selection.currentBrowserSafeMp4,
     selectionVersion: selection.version,
     setByUserId: selection.setByUserId,

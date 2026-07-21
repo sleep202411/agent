@@ -251,7 +251,6 @@ const StoryVideoSnapshotNullableMediaFields = {
   durationMs: z.number().int().positive().nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
-  hasAudio: z.boolean().nullable(),
   browserSafeMp4: z.boolean().nullable(),
 } as const;
 

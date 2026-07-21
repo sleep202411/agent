@@ -88,7 +88,6 @@ const RuntimeVideoAssetSchema = z
         portrait: VideoVariantSchema.optional(),
       })
       .strict(),
-    audio: z.enum(["none", "embedded"]),
   })
   .strict()
   .superRefine(validateOrientationPolicy);
@@ -452,31 +451,15 @@ export const InteractiveFilmReleaseSchema = z
             if (clip.posterAssetId) {
               requireAsset(clip.posterAssetId, ["image"], [...clipPath, "posterAssetId"]);
             }
-            const clipAsset = media.get(clip.assetId);
-            if (clip.endBehavior.behavior === "loop-tail" && clipAsset?.kind === "video") {
-              if (clipAsset.audio !== "none") {
-                context.addIssue({
-                  code: "custom",
-                  path: [...clipPath, "endBehavior"],
-                  message:
-                    "Tail loops require a silent picture asset so dialogue is never repeated",
-                });
-              }
-            }
+            // A wait loop used to have to point at a provably silent asset.
+            // Nothing inspects media for sound any more — what the creator
+            // supplied is what plays — so only the reference is validated.
             if (clip.endBehavior.behavior === "loop") {
               requireAsset(
                 clip.endBehavior.assetId,
                 ["video"],
                 [...clipPath, "endBehavior", "assetId"]
               );
-              const loopAsset = media.get(clip.endBehavior.assetId);
-              if (loopAsset?.kind === "video" && loopAsset.audio !== "none") {
-                context.addIssue({
-                  code: "custom",
-                  path: [...clipPath, "endBehavior", "assetId"],
-                  message: "Wait-loop assets must be silent so dialogue is never repeated",
-                });
-              }
             }
           });
           if (node.presentation.posterAssetId) {

@@ -1733,7 +1733,6 @@ function serviceWith(input: {
                   width: null,
                   height: null,
                   durationMs: null,
-                  hasAudio: null,
                   browserSafeMp4: null,
                   sizeBytes: '128',
                 },

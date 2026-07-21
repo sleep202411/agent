@@ -119,7 +119,6 @@ function createFinalizeHarness() {
       durationMs: 12100,
       durationSeconds: 12,
       durationSecondsExact: 12.1,
-      hasAudio: true,
       contentType: 'video/mp4',
       fileExtension: 'mp4',
       videoCodec: 'h264',

@@ -15,6 +15,7 @@ import {
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_RENDERER_MAX_LAYER,
   ExperienceCoreCheckpointRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
@@ -49,6 +50,7 @@ import {
   IconArrowRight,
   IconPlayerPlay,
   IconRefresh,
+  IconVolumeOff,
 } from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import {
@@ -61,6 +63,7 @@ import {
   ExperienceMediaPlayer,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-media-player";
+import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
 
@@ -181,6 +184,11 @@ function ActiveExperienceRuntimePlayer({
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  // Playback always asks for sound. This flips only when a browser actually
+  // refuses audible playback, and it stays flipped for the rest of the session
+  // so later clips do not each re-run the same rejected attempt. Turning sound
+  // on is the user's call, never a decision read off the media's metadata.
+  const [soundBlocked, setSoundBlocked] = useState(false);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
@@ -274,6 +282,11 @@ function ActiveExperienceRuntimePlayer({
     rendererSlots.map(({ renderer }) => renderer),
     experienceProfile
   );
+  // The unmute affordance belongs to video playback, so it only appears while a
+  // video renderer is on stage.
+  const hasVideoRenderer = rendererSlots.some(
+    ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
+  );
 
   const emitOutcome = useCallback(
     (
@@ -302,6 +315,18 @@ function ActiveExperienceRuntimePlayer({
     [controller, run]
   );
 
+  const handleSoundBlocked = useCallback(() => setSoundBlocked(true), []);
+  // Unmute the live elements INSIDE the click, then let state follow. Leaving it
+  // to the `muted` prop and its effect would push the element write into a task
+  // after the user-activation one, which is the fragile half of Chrome's
+  // autoplay rules; doing it here means the unmute is unambiguously
+  // user-activated. The state flip still has to happen — it hides the affordance
+  // and keeps clips mounted later in the session unmuted.
+  const enableSound = useCallback(() => {
+    playbackHandlesRef.current.forEach((handle) => handle.setMuted(false));
+    setSoundBlocked(false);
+  }, []);
+
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
       if (!handle) {
@@ -309,14 +334,25 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (playbackEnabledRef.current) {
-        void handle.play().catch((error: unknown) => {
-          handle.pause();
-          void Promise.allSettled([suspendAudio()]).then(() => {
-            setRuntimeError(runtimeErrorMessage(error));
-          });
+      if (!playbackEnabledRef.current) return;
+      void handle.play().catch((error: unknown) => {
+        // Two guards, both about the gap between "a play() rejected" and "the
+        // film is broken": the rejection may belong to a handle that has since
+        // been replaced, and an interrupted play() is what a normal clip
+        // transition looks like. Either way, pausing and raising the dialog
+        // would stop a film that is playing perfectly well. The reasoning and
+        // the ordering live with the verdict, next to its tests.
+        const verdict = resolveExperiencePlaybackRejection(
+          playbackHandlesRef.current.get(instanceId),
+          handle,
+          error
+        );
+        if (verdict !== "surface") return;
+        handle.pause();
+        void Promise.allSettled([suspendAudio()]).then(() => {
+          setRuntimeError(runtimeErrorMessage(error));
         });
-      }
+      });
     },
     [suspendAudio]
   );
@@ -370,15 +406,33 @@ function ActiveExperienceRuntimePlayer({
             locale={playbackLocale}
             orientation={orientation}
             copy={copy}
+            muted={soundBlocked}
             onTimelineTimeMs={advanceTimeline}
             onOutcome={emitOutcome}
             onRuntimeError={setRuntimeError}
             onPlaybackHandle={registerPlaybackHandle}
+            onSoundBlocked={handleSoundBlocked}
           />
         ))
       ) : (
         <div className="absolute inset-0 bg-black" />
       )}
+
+      {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
+        // Renderer overlays stack on the manifest's own `renderer.layer` as a raw
+        // zIndex — choice and checkpoint compile to 100 — so a Tailwind z-* on
+        // this button puts it BEHIND the overlay it most needs to sit next to.
+        // Stack above the widest band any manifest may declare instead.
+        <div
+          className="absolute top-0 right-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
+        >
+          <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
+            <IconVolumeOff className="size-4" aria-hidden="true" />
+            {copy.video.unmute}
+          </button>
+        </div>
+      ) : null}
 
       {scene && started && !endingId ? (
         <ExperienceSpatialLayer
@@ -495,10 +549,12 @@ function CoreRenderer({
   locale,
   orientation,
   copy,
+  muted,
   onTimelineTimeMs,
   onOutcome,
   onRuntimeError,
   onPlaybackHandle,
+  onSoundBlocked,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -508,6 +564,7 @@ function CoreRenderer({
   locale: string;
   orientation: ExperienceOrientation;
   copy: ExperiencePlayerCopy;
+  muted: boolean;
   onTimelineTimeMs: (timeMs: number) => void;
   onOutcome: (
     instanceId: string,
@@ -516,6 +573,7 @@ function CoreRenderer({
   ) => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  onSoundBlocked: () => void;
 }) {
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
     return (
@@ -524,10 +582,12 @@ function CoreRenderer({
         renderer={renderer}
         orientation={orientation}
         copy={copy}
+        muted={muted}
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
         onPlaybackHandle={onPlaybackHandle}
+        onSoundBlocked={onSoundBlocked}
       />
     );
   }
@@ -683,19 +743,23 @@ function CoreVideoRenderer({
   renderer,
   orientation,
   copy,
+  muted,
   onTimelineTimeMs,
   onCompleted,
   onRuntimeError,
   onPlaybackHandle,
+  onSoundBlocked,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   orientation: ExperienceOrientation;
   copy: ExperiencePlayerCopy;
+  muted: boolean;
   onTimelineTimeMs: (timeMs: number) => void;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  onSoundBlocked: () => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
@@ -815,7 +879,9 @@ function CoreVideoRenderer({
       source={{ src: media.variant.uri, type: media.variant.mediaType }}
       title={copy.videoLabel(renderer.instanceId)}
       autoPlay={false}
-      muted={media.asset.audioMode === "none"}
+      // Never metadata-driven: a clip is played with sound and only muted once
+      // the browser has actually refused it (see onSoundBlocked).
+      muted={muted}
       loop={terminalMode?.kind === "loop"}
       durationSeconds={media.variant.durationMs / 1_000}
       clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
@@ -825,6 +891,7 @@ function CoreVideoRenderer({
       onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
       onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
       onPlaybackHandle={registerPlaybackHandle}
+      onSoundBlocked={onSoundBlocked}
       playbackIdentity={playbackIdentity}
       copy={copy.video}
     />

@@ -46,6 +46,12 @@ function runtimeFixture(input: {
   rendererKind?: "text" | "video";
   overlayKind?: "choice" | "checkpoint";
   videoFit?: "cover" | "contain" | "native";
+  /**
+   * Reproduces a manifest that was already published to the CDN, back when
+   * Build still emitted the retired `audioMode` key. Those artifacts are
+   * immutable, so the current player must keep parsing them.
+   */
+  retiredAudioMode?: "none" | "embedded";
 }) {
   const rendererKind = input.rendererKind ?? "text";
   const videoFit = input.videoFit ?? "cover";
@@ -149,7 +155,7 @@ function runtimeFixture(input: {
                   durationMs: 5_000,
                 },
               ],
-              audioMode: "none",
+              ...(input.retiredAudioMode ? { audioMode: input.retiredAudioMode } : {}),
             },
           ]
         : []),
@@ -348,6 +354,32 @@ describe("ExperiencePlayer core.text", () => {
     expect(html).toContain("aspect-ratio:1920 / 1080");
     expect(html).toContain("/video.mp4");
   });
+
+  it.each(["none", "embedded"] as const)(
+    'still plays a published manifest that carries the retired audioMode "%s"',
+    (retiredAudioMode) => {
+      const html = renderToStaticMarkup(
+        <ExperiencePlayer
+          runtime={runtimeFixture({
+            completion: "passive",
+            rendererKind: "video",
+            retiredAudioMode,
+          })}
+          locale="en-US"
+          copy={copy}
+          randomSeed={`core-video-legacy-${retiredAudioMode}-test`}
+        />
+      );
+
+      // The manifest parses (no invalid-manifest alert) and the clip is staged.
+      expect(html).not.toContain(copy.invalidManifest);
+      expect(html).toContain("/video.mp4");
+      // Nothing pre-emptively mutes the clip, so the unmute affordance — which
+      // appears only after a browser actually refuses audible playback — is
+      // absent no matter what the retired flag says.
+      expect(html).not.toContain(copy.video.unmute);
+    }
+  );
 
   it.each(["choice", "checkpoint"] as const)(
     "keeps an initially-open text %s behind the start boundary",

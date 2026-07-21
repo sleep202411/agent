@@ -680,7 +680,6 @@ export interface StoryCurrentVideoDto {
   durationMs: number;
   width: number;
   height: number;
-  hasAudio: boolean;
   browserSafeMp4: boolean;
   selectionVersion: number;
   setByUserId: string | null;
@@ -811,7 +810,6 @@ export interface FrozenStoryAssetDto {
   width: number | null;
   height: number | null;
   durationMs: number | null;
-  hasAudio: boolean | null;
   browserSafeMp4: boolean | null;
   sizeBytes: string | null;
 }

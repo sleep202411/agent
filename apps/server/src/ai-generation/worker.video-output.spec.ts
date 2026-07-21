@@ -34,7 +34,6 @@ describe('AiGenerationWorkerService video output truth', () => {
           durationMs: 8375,
           durationSeconds: 8,
           durationSecondsExact: 8.375,
-          hasAudio: false,
           contentType: 'video/mp4',
           fileExtension: 'mp4',
           videoCodec: 'h264',
@@ -114,7 +113,6 @@ describe('AiGenerationWorkerService video output truth', () => {
         height: 1080,
         durationMs: 8375,
         durationSeconds: 8,
-        hasAudio: false,
         videoMetadata: {
           videoCodec: 'h264',
           audioCodecs: [],

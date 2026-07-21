@@ -292,7 +292,6 @@ export class StoryVideoUploadFinalizeWorkerService
         height: technical.height,
         durationMs: technical.durationMs,
         durationSeconds: technical.durationSeconds,
-        hasAudio: technical.hasAudio,
         checksumSha256: technical.checksumSha256,
         metadata: {
           source: 'direct_upload',
