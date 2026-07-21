@@ -7134,7 +7134,14 @@ model StoryVideoBuildClip {
   width                     Int?
   height                    Int?
   browserSafeMp4            Boolean  @map("browser_safe_mp4")
-  hasAudio                  Boolean  @map("has_audio")
+  /// RETIRED, being removed in three releases — see
+  /// `prisma/RETIRE-HAS-AUDIO-RUNBOOK.md`. Optional here because the step 1
+  /// migration in this same commit drops the column's NOT NULL: the datamodel
+  /// has to describe the database it now runs against, or the next
+  /// `prisma migrate dev` generates a drift repair that puts the NOT NULL back.
+  /// Still written by this release's code; step 2 stops writing it and step 3
+  /// drops the column.
+  hasAudio                  Boolean? @map("has_audio")
   rank                      Int      @default(0)
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
