@@ -19,9 +19,8 @@ describe('ensureOriginalMediaPlacement', () => {
         kind: MediaAssetVariantKind;
         status: MediaAssetVariantStatus;
         durationMs: number | null;
-        hasAudio: boolean | null;
       };
-      update: { durationMs?: number | null; hasAudio?: boolean | null };
+      update: { durationMs?: number | null };
     };
     type CreatePlacementArg = {
       data: {
@@ -62,7 +61,6 @@ describe('ensureOriginalMediaPlacement', () => {
       width: 1024,
       height: 1024,
       durationMs: 8375,
-      hasAudio: true,
       checksumSha256: 'a'.repeat(64),
     });
 
@@ -79,9 +77,7 @@ describe('ensureOriginalMediaPlacement', () => {
     expect(upsertArg.create.kind).toBe(MediaAssetVariantKind.original);
     expect(upsertArg.create.status).toBe(MediaAssetVariantStatus.ready);
     expect(upsertArg.create.durationMs).toBe(8375);
-    expect(upsertArg.create.hasAudio).toBe(true);
     expect(upsertArg.update.durationMs).toBe(8375);
-    expect(upsertArg.update.hasAudio).toBe(true);
 
     const createArg = createPlacement.mock.calls[0]?.[0];
     if (!createArg) throw new Error('placement create call missing');

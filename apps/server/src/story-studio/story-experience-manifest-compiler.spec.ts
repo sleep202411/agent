@@ -56,7 +56,6 @@ function release(): InteractiveFilmRelease {
             durationSeconds: 7,
           },
         },
-        audio: 'embedded',
       },
     ],
     nodes: [

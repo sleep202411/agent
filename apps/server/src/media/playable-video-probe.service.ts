@@ -52,7 +52,6 @@ export interface PlayableVideoProbeResult {
   /** Legacy display/API field; never use it to reconstruct durationMs. */
   durationSeconds: number;
   durationSecondsExact: number;
-  hasAudio: boolean;
   contentType: 'video/mp4' | 'video/webm' | 'video/quicktime';
   fileExtension: 'mp4' | 'webm' | 'mov';
   videoCodec: string;
@@ -253,7 +252,6 @@ export function parsePlayableVideoFfprobeOutput(
     durationMs: Math.max(1, Math.round(durationSecondsExact * 1_000)),
     durationSeconds: Math.max(1, Math.round(durationSecondsExact)),
     durationSecondsExact,
-    hasAudio: streams.some((candidate) => candidate.codec_type === 'audio'),
     contentType: isBrowserSafeMp4Container
       ? 'video/mp4'
       : isWebm

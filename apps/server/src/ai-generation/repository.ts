@@ -213,7 +213,6 @@ export interface CreateAiOutputAssetInput {
   height?: number;
   durationMs?: number;
   durationSeconds?: number;
-  hasAudio?: boolean;
   videoMetadata?: {
     videoCodec: string;
     audioCodecs: string[];
@@ -860,7 +859,6 @@ export class AiGenerationRepository {
           height: existing.height,
           durationMs: input.durationMs ?? null,
           durationSeconds: existing.durationSeconds,
-          hasAudio: input.hasAudio ?? null,
           checksumSha256: existing.checksumSha256,
           metadata,
         }),
@@ -910,7 +908,6 @@ export class AiGenerationRepository {
           height: input.height ?? null,
           durationMs: input.durationMs ?? null,
           durationSeconds: input.durationSeconds ?? null,
-          hasAudio: input.hasAudio ?? null,
           checksumSha256: input.checksumSha256,
           metadata,
         });
@@ -956,7 +953,6 @@ export class AiGenerationRepository {
             height: asset.height,
             durationMs: input.durationMs ?? null,
             durationSeconds: asset.durationSeconds,
-            hasAudio: input.hasAudio ?? null,
             checksumSha256: asset.checksumSha256,
             metadata,
           }),

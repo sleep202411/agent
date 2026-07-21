@@ -1635,7 +1635,6 @@ export class AiGenerationWorkerService
         height,
         durationMs,
         durationSeconds,
-        hasAudio: actualVideo?.hasAudio,
         videoMetadata: actualVideo
           ? {
               videoCodec: actualVideo.videoCodec,

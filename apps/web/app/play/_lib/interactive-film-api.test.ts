@@ -56,6 +56,12 @@ function manifestFixture() {
         assetId: "video.entry",
         kind: "video",
         orientationPolicy: "single-master",
+        // Deliberate legacy-tolerance fixture. `audioMode` is retired: Build
+        // stopped emitting it and nothing reads it. Every manifest already
+        // published to the CDN still carries it, and those artifacts are
+        // immutable, so the schema must keep ACCEPTING the key or every
+        // existing film stops parsing and stops playing. This fixture is what
+        // proves it — do not "modernize" it away.
         audioMode: "embedded",
         variants: [
           {

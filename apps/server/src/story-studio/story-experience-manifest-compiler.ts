@@ -292,12 +292,13 @@ function compileRuntimeAsset(
     });
     return null;
   }
+  // No `audioMode`: the manifest schema still tolerates the key so already
+  // published films keep parsing, but nothing emits or reads it any more.
   return {
     assetId: asset.assetId,
     kind: 'video',
     orientationPolicy: asset.orientationPolicy,
     variants,
-    audioMode: asset.audio,
   };
 }
 

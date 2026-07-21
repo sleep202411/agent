@@ -1420,7 +1420,6 @@ function projectStoryVideoWorkbench(
       durationMs: video?.durationMs ?? null,
       width: video?.width ?? null,
       height: video?.height ?? null,
-      hasAudio: video?.hasAudio ?? null,
       browserSafeMp4: video?.browserSafeMp4 ?? null,
     };
   });
@@ -1448,7 +1447,6 @@ function selectionCurrentVideo(
     selection.currentWidth === null ||
     selection.currentHeight === null ||
     !selection.currentContentType ||
-    selection.currentHasAudio === null ||
     selection.currentBrowserSafeMp4 === null ||
     !selection.setAt
   ) {
@@ -1463,7 +1461,6 @@ function selectionCurrentVideo(
     durationMs: selection.currentDurationMs,
     width: selection.currentWidth,
     height: selection.currentHeight,
-    hasAudio: selection.currentHasAudio,
     browserSafeMp4: selection.currentBrowserSafeMp4,
     selectionVersion: selection.version,
     setByUserId: selection.setByUserId,

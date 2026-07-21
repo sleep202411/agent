@@ -235,7 +235,7 @@
               "variants": { "$ref": "#/$defs/__schema23" },
               "audioMode": { "$ref": "#/$defs/__schema30" }
             },
-            "required": ["assetId", "kind", "orientationPolicy", "variants", "audioMode"],
+            "required": ["assetId", "kind", "orientationPolicy", "variants"],
             "additionalProperties": false
           },
           {

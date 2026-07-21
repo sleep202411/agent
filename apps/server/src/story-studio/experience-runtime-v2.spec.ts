@@ -219,6 +219,8 @@ function holdToLightFixture() {
         assetId: 'video.lantern',
         kind: 'video' as const,
         orientationPolicy: 'single-master' as const,
+        // Retired key. Builds no longer emit it, but every manifest already
+        // published to the CDN carries it, so the schema must keep accepting it.
         audioMode: 'none' as const,
         variants: [
           {

@@ -3156,11 +3156,20 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   }
 
   const displaySaveState = mergeSaveStates(saveState, layoutSaveState);
+  // Both hashes here were produced in THIS session, by one server version: the
+  // publish response's and the workbench projection's. Unlike the authority
+  // check below, no stored hash is involved, so the `has_audio` digest change
+  // cannot reach this comparison.
   const locallyConfirmedCurrentDraftPublished = Boolean(
     (saveState === "idle" || saveState === "saved") &&
     publication.lastSucceeded?.sourceDraftRevision === draftRevision &&
     publication.lastSucceeded.build.videoSnapshotHash === video?.snapshotHash
   );
+  // This one DOES compare a stored `story_builds.video_snapshot_hash` against a
+  // freshly computed one. Retiring `has_audio` redefined that digest, so every
+  // project published before the cutover reads as not-current until it is
+  // published again — deliberately, and truthfully; the reasoning is on
+  // `isExactCurrentStoryRelease`.
   const authorityConfirmedCurrentDraftPublished =
     (saveState === "idle" || saveState === "saved") &&
     isExactCurrentStoryRelease(currentReleaseQuery.data, {

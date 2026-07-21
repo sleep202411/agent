@@ -200,7 +200,6 @@ function frozenAsset(index: number, durationMs: number): FrozenStoryVideoAsset {
     width: 1920,
     height: 1080,
     durationMs,
-    hasAudio: index % 2 === 0,
     browserSafeMp4: true,
     url: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/asset-${index}/variants/variant-${index}/content`,
   };
@@ -682,7 +681,6 @@ describe('StoryBuildService concurrency boundaries', () => {
             durationMs: null,
             width: null,
             height: null,
-            hasAudio: null,
             browserSafeMp4: null,
           },
         ]),
@@ -832,7 +830,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       durationMs: 7_000,
       width: 1920,
       height: 1080,
-      hasAudio: true,
       browserSafeMp4: true,
     };
     const variant = {
@@ -847,7 +844,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       height: 1080,
       durationSeconds: 7,
       durationMs: 7_000,
-      hasAudio: true,
       checksumSha256: CHECKSUM,
       metadata: { browserSafeMp4: true },
       deletedAt: null,
@@ -883,7 +879,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       currentDurationMs: 7_000,
       currentWidth: 1920,
       currentHeight: 1080,
-      currentHasAudio: true,
       currentBrowserSafeMp4: true,
       currentAsset: asset,
       currentVariant: variant,
@@ -1035,7 +1030,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       durationMs: 7_000,
       width: 1920,
       height: 1080,
-      hasAudio: true,
       browserSafeMp4: true,
     });
     expect(frozenClipData).toMatchObject({
@@ -1043,7 +1037,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       sourceGenerationAttemptId: null,
       checksumSha256: CHECKSUM,
       durationMs: 7_000,
-      hasAudio: true,
       browserSafeMp4: true,
     });
     expect(frozenClipData).not.toHaveProperty('prompt');

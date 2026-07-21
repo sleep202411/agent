@@ -111,7 +111,6 @@ const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
           width: true,
           height: true,
           durationMs: true,
-          hasAudio: true,
           metadata: true,
           deletedAt: true,
         },
@@ -381,7 +380,6 @@ export class StoryBuildService {
                     variantId: source.asset.variantId,
                     checksumSha256: source.asset.checksumSha256,
                     contentType: source.asset.contentType,
-                    hasAudio: source.asset.hasAudio,
                     sizeBytes: source.asset.sizeBytes,
                     width: source.asset.width,
                     height: source.asset.height,
@@ -403,7 +401,6 @@ export class StoryBuildService {
                     durationMs: source.asset.durationMs,
                     width: source.asset.width,
                     height: source.asset.height,
-                    hasAudio: source.asset.hasAudio,
                     browserSafeMp4: source.asset.browserSafeMp4,
                     rank: clip.rank,
                   },
@@ -895,7 +892,6 @@ function videoSnapshotEntry(
     selection.currentDurationMs,
     selection.currentWidth,
     selection.currentHeight,
-    selection.currentHasAudio,
     selection.currentBrowserSafeMp4,
   ];
   const populated = mediaValues.filter((value) => value !== null).length;
@@ -917,7 +913,6 @@ function videoSnapshotEntry(
     durationMs: selection.currentDurationMs,
     width: selection.currentWidth,
     height: selection.currentHeight,
-    hasAudio: selection.currentHasAudio,
     browserSafeMp4: selection.currentBrowserSafeMp4,
   };
   const parsed = StoryVideoSnapshotEntrySchema.safeParse(candidate);
@@ -940,7 +935,6 @@ function emptyVideoSnapshotEntry(
     durationMs: null,
     width: null,
     height: null,
-    hasAudio: null,
     browserSafeMp4: null,
   });
 }
@@ -1021,13 +1015,12 @@ function prepareBuildVideo(
       variant.width === null ||
       variant.height === null ||
       durationMs === null ||
-      durationMs <= 0 ||
-      variant.hasAudio === null
+      durationMs <= 0
     ) {
       diagnostics.push(
         buildDiagnostic(
           'STORY_BUILD_VIDEO_METADATA_REQUIRED',
-          `Current video ${graphNodeId} is missing a checksum, video content type, dimensions, exact millisecond duration, or audio metadata.`,
+          `Current video ${graphNodeId} is missing a checksum, video content type, dimensions, or an exact millisecond duration.`,
           'asset',
           asset.id,
         ),
@@ -1037,8 +1030,7 @@ function prepareBuildVideo(
       entry.contentType !== variant.contentType ||
       entry.width !== variant.width ||
       entry.height !== variant.height ||
-      entry.durationMs !== durationMs ||
-      entry.hasAudio !== variant.hasAudio
+      entry.durationMs !== durationMs
     ) {
       diagnostics.push(
         buildDiagnostic(
@@ -1080,7 +1072,6 @@ function prepareBuildVideo(
           width: entry.width as number,
           height: entry.height as number,
           durationMs: entry.durationMs as number,
-          hasAudio: entry.hasAudio as boolean,
           browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
           url: storyBuildAssetDeliveryPath(
             project.id,
@@ -1214,7 +1205,6 @@ function toBuildAssetDto(row: BuildRow['assets'][number]): StoryBuildAssetDto {
     width: row.width,
     height: row.height,
     durationMs: row.durationMs,
-    hasAudio: row.hasAudio,
     browserSafeMp4: row.browserSafeMp4,
     sizeBytes: row.sizeBytes?.toString() ?? null,
   };
@@ -1380,7 +1370,6 @@ interface CurrentBuildMediaRow {
   durationMs: number | null;
   width: number | null;
   height: number | null;
-  hasAudio: boolean | null;
   browserSafeMp4: boolean | null;
   sizeBytes: bigint | null;
   asset: {
@@ -1401,7 +1390,6 @@ interface CurrentBuildMediaRow {
     durationMs: number | null;
     width: number | null;
     height: number | null;
-    hasAudio: boolean | null;
     sizeBytes: bigint | null;
     metadata: Prisma.JsonValue;
     deletedAt: Date | null;
@@ -1476,12 +1464,10 @@ function currentMediaDiagnostics(
       frozen.width <= 0 ||
       frozen.height === null ||
       frozen.height <= 0 ||
-      frozen.hasAudio === null ||
       frozen.variant.contentType !== frozen.contentType ||
       frozen.variant.durationMs !== frozen.durationMs ||
       frozen.variant.width !== frozen.width ||
       frozen.variant.height !== frozen.height ||
-      frozen.variant.hasAudio !== frozen.hasAudio ||
       (frozen.sizeBytes !== null && currentSizeBytes !== frozen.sizeBytes)
     ) {
       return [

@@ -302,7 +302,6 @@ function prepareWorkingPreviewVideo(
     selection.currentDurationMs === null ||
     selection.currentWidth === null ||
     selection.currentHeight === null ||
-    selection.currentHasAudio === null ||
     selection.currentBrowserSafeMp4 === null
   ) {
     diagnostics.push(
@@ -353,8 +352,7 @@ function prepareWorkingPreviewVideo(
       !variant.contentType.trim() ||
       variant.durationMs === null ||
       variant.width === null ||
-      variant.height === null ||
-      variant.hasAudio === null
+      variant.height === null
     ) {
       diagnostics.push(
         previewDiagnostic(
@@ -367,13 +365,22 @@ function prepareWorkingPreviewVideo(
       );
     } else {
       const durationMs = variant.durationMs;
+      // Staleness = "the frozen selection no longer describes the variant it
+      // points at". The audio flag used to be part of this comparison; it is
+      // gone and nothing replaces it, because it protected against nothing the
+      // checksum does not already catch: it was derived from the same bytes, so
+      // it could only ever change when checksumSha256 changed. (The one case it
+      // caught alone was a re-probe CORRECTING the flag on unchanged bytes —
+      // exactly the inspection we no longer perform.) The database keeps the
+      // same guarantee from the other side: the variant-invalidation trigger
+      // still nulls a selection out whenever the variant's checksum, content
+      // type, duration, dimensions or metadata change.
       if (
         variant.checksumSha256 !== selection.currentChecksumSha256 ||
         variant.contentType !== selection.currentContentType ||
         durationMs !== selection.currentDurationMs ||
         variant.width !== selection.currentWidth ||
         variant.height !== selection.currentHeight ||
-        variant.hasAudio !== selection.currentHasAudio ||
         selection.currentBrowserSafeMp4 === null
       ) {
         diagnostics.push(
@@ -424,7 +431,6 @@ function prepareWorkingPreviewVideo(
             width: variant.width,
             height: variant.height,
             durationMs,
-            hasAudio: variant.hasAudio,
             browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
             url,
           };
@@ -469,7 +475,6 @@ function workingPreviewSnapshotEntry(
     selection.currentDurationMs,
     selection.currentWidth,
     selection.currentHeight,
-    selection.currentHasAudio,
     selection.currentBrowserSafeMp4,
   ];
   const populated = mediaValues.filter((value) => value !== null).length;
@@ -490,7 +495,6 @@ function workingPreviewSnapshotEntry(
     durationMs: selection.currentDurationMs,
     width: selection.currentWidth,
     height: selection.currentHeight,
-    hasAudio: selection.currentHasAudio,
     browserSafeMp4: selection.currentBrowserSafeMp4,
   });
   return parsed.success ? parsed.data : null;
@@ -511,7 +515,6 @@ function emptyVideoSnapshotEntry(
     durationMs: null,
     width: null,
     height: null,
-    hasAudio: null,
     browserSafeMp4: null,
   });
 }
