@@ -214,7 +214,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 069bf42514ee2280acbeee9c5bce874b1c3cacf4
+    tag: 8dfa1b8c19ec72891b2a4077eaed1bdff99d1d64
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -240,7 +240,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 069bf42514ee2280acbeee9c5bce874b1c3cacf4
+    tag: 8dfa1b8c19ec72891b2a4077eaed1bdff99d1d64
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -314,7 +314,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: f80735c6e3973d7a50c6d71a61c6b8fb61eabd0b
+    tag: 8dfa1b8c19ec72891b2a4077eaed1bdff99d1d64
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
