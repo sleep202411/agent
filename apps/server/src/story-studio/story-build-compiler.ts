@@ -164,9 +164,7 @@ export function compileStoryBuild(
       return [];
     })
     .sort((left, right) => left.graphNodeId.localeCompare(right.graphNodeId));
-  includedVideos.forEach((video) =>
-    validateFrozenVideo(video, input.frameProfile, diagnostics),
-  );
+  includedVideos.forEach((video) => validateFrozenVideo(video, diagnostics));
 
   const enumeration = enumeratePaths(
     entryNodeId,
@@ -384,21 +382,19 @@ function requiredVideoNodeIds(
   return required;
 }
 
+/**
+ * Technical integrity of a frozen clip: checksum, content type, duration.
+ *
+ * Picture dimensions are deliberately NOT checked. The project frame profile
+ * is authoring intent (it drives generation and canvas framing), not a delivery
+ * contract — a 1280×720 clip carries the same 16:9 picture as 1920×1080 and
+ * plays correctly, so it must not block publication.
+ */
 function validateFrozenVideo(
   video: FrozenStoryBuildVideoInput,
-  frameProfile: StoryFrameProfile | null,
   diagnostics: StoryBuildDiagnosticDto[],
 ): void {
   const asset = video.asset;
-  // A film project pins every clip to its exact picture contract. A narrative
-  // (null-profile) project accepts the asset's native dimensions, since inline
-  // video is not a full-frame clip.
-  const expected =
-    frameProfile === null
-      ? null
-      : frameProfile === 'landscape_16_9'
-        ? { width: 1920, height: 1080 }
-        : { width: 1080, height: 1920 };
   if (!/^[a-f0-9]{64}$/.test(asset.checksumSha256)) {
     diagnostics.push(
       diagnostic(
@@ -432,20 +428,10 @@ function validateFrozenVideo(
       ),
     );
   }
-  if (
-    expected !== null &&
-    (asset.width !== expected.width || asset.height !== expected.height)
-  ) {
-    diagnostics.push(
-      diagnostic(
-        'error',
-        'STORY_BUILD_VIDEO_FRAME_MISMATCH',
-        `Current video for ${video.graphNodeId} is ${asset.width}×${asset.height}; project frame requires ${expected.width}×${expected.height}.`,
-        'asset',
-        asset.assetId,
-      ),
-    );
-  }
+  // Frame profile is authoring intent, not a delivery contract — see
+  // validateFrozenVideo's counterpart in story-build.service.ts. A clip whose
+  // pixel dimensions differ from the profile still shares the picture and
+  // plays correctly, so it no longer blocks Build.
 }
 
 function structuralReachability(

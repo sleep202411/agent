@@ -1041,25 +1041,11 @@ function prepareBuildVideo(
     }
     // A text-first (null-profile) project accepts the video's native
     // dimensions; only a film project pins clips to a fixed picture contract.
-    const expected =
-      project.frameProfile === null
-        ? null
-        : project.frameProfile === 'landscape_16_9'
-          ? { width: 1920, height: 1080 }
-          : { width: 1080, height: 1920 };
-    if (
-      expected !== null &&
-      (entry.width !== expected.width || entry.height !== expected.height)
-    ) {
-      diagnostics.push(
-        buildDiagnostic(
-          'STORY_BUILD_VIDEO_FRAME_MISMATCH',
-          `Current video ${graphNodeId} is ${entry.width}×${entry.height}; project frame requires ${expected.width}×${expected.height}.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
+    // The frame profile is an authoring intent, not a delivery contract: a
+    // 1280×720 clip is the same 16:9 picture as 1920×1080 and plays correctly.
+    // Blocking Build on exact pixel dimensions only forced creators to
+    // regenerate perfectly good footage, so the profile no longer gates
+    // publication (same call as the browser-safe-MP4 gate).
     if (!selectStoryBuildReadSource(asset, variant)) {
       diagnostics.push(
         buildDiagnostic(
