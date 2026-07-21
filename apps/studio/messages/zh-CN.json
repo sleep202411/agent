@@ -271,6 +271,7 @@
     "etaApprox": "约 {duration}",
     "failed": "失败",
     "generationFailed": "生成失败",
+    "contentPolicyBlocked": "内容未通过审核。请避免使用受版权保护的角色、真人或敏感内容，调整提示词后重试。",
     "download": "下载",
     "fullscreen": "全屏",
     "previewUnsupported": "无法预览",
