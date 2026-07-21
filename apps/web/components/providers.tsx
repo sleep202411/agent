@@ -15,6 +15,7 @@ import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-event
 import { NotificationProvider } from "@/src/lib/notifications";
 import { ConversationsProvider } from "@/src/lib/conversations/provider";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
+import { AuthDialogProvider } from "@/components/auth/auth-dialog-provider";
 
 /**
  * Lives inside StoreProvider so it can hook Redux. Opens a single
@@ -71,13 +72,18 @@ export function Providers({
       <QueryClientProvider client={queryClient}>
         <HydrationBoundary state={dehydratedState}>
           <TooltipProvider>
-            <AuthInterceptor />
-            <EntityEventsSession>
-              <NotificationProvider>
-                <ConversationsProvider>{children}</ConversationsProvider>
-              </NotificationProvider>
-            </EntityEventsSession>
-            <Toaster position="top-center" />
+            {/* AuthDialogProvider owns the app's one sign-in dialog and
+                must sit ABOVE AuthInterceptor — the 401 handler opens the
+                dialog in place instead of navigating to /login. */}
+            <AuthDialogProvider>
+              <AuthInterceptor />
+              <EntityEventsSession>
+                <NotificationProvider>
+                  <ConversationsProvider>{children}</ConversationsProvider>
+                </NotificationProvider>
+              </EntityEventsSession>
+              <Toaster position="top-center" />
+            </AuthDialogProvider>
           </TooltipProvider>
         </HydrationBoundary>
       </QueryClientProvider>

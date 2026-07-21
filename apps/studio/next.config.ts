@@ -29,8 +29,9 @@ function requiredEnv(name: string): string {
 const AURORA_TARGET = requiredEnv("AURORA_PROXY_TARGET");
 const STRIP_PREFIX = process.env.AURORA_STRIP_PREFIX === "1";
 
-// Java content backend — owns auth (/user/email/login, /user/login,
-// /user/query/user/info, /user/logout). Same prefix contract as apps/web.
+// Java content backend — owns auth (/user/new/getCode, /user/new/login,
+// /user/logout, and the authed onboarding calls the sign-in dialog makes).
+// Same prefix contract as apps/web.
 const JAVA_CONTENT = requiredEnv("JAVA_CONTENT_URL");
 
 // Java studio backend — owns the art-studio world/project APIs

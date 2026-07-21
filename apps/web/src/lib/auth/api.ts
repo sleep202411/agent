@@ -1,171 +1,19 @@
 /**
- * Java Content auth endpoints — email + phone variants.
+ * What is left of the app's own Java auth surface: ending a session.
  *
- * All requests are x-www-form-urlencoded — that's what the Java backend
- * expects for the `/user/*` auth surface, and it matches what the old
- * fizzdragon-web `userService.js` ships in production. Spring's
- * `@RequestParam` also accepts these params on the URL query string,
- * but form body is the shape we know works.
+ * Signing IN belongs to `@repo/auth-flow`, which drives Java's current
+ * contract (`/user/new/getCode` + `/user/new/login`, one auto-registering
+ * code flow) and writes the satoken cookie itself. The email/phone
+ * login / register / reset-password callers this file used to serve were
+ * deleted with the two-pane auth pages, and their endpoints
+ * (`/user/email/login`, `/user/regist`, `/user/reset/password`) are
+ * SUPERSEDED — they are not kept here as reference, because a
+ * ready-to-import function is how a retired contract gets wired back up.
  *
- * SaToken is returned via a Set-Cookie header on login / register /
- * reset, which the browser handles automatically. The response body
- * also carries the token so we can forward it across an iframe
- * postMessage to the embedding fizzdragon-web host.
- *
- * Endpoint map:
- *   Email login       POST /user/email/login           {email, pwd}
- *   Email register    POST /user/email/regist          {email, code, password, recommendationCode?}
- *   Email reset       POST /user/email/reset/password  {email, code, password}
- *   Email send code   GET  /user/email/getCode?email
- *   Phone login       POST /user/login                 {phone, pwd}
- *   Phone register    POST /user/regist                {phone, code, password, recommendationCode?}
- *   Phone reset       POST /user/reset/password        {phone, code, password}
- *   Phone send code   GET  /user/getCode?phone
+ *   Logout   GET /user/logout
  */
 
-import { backendApi, type ApiResponse } from "@/src/lib/api";
-
-export interface LoggedInUser {
-  /**
-   * Shape is whatever Java returns on `data` — we don't need a
-   * tight schema here because the embed host parses it itself.
-   * Still surface a couple of well-known fields for in-app use.
-   */
-  userId?: string | number;
-  phone?: string;
-  email?: string;
-  nickname?: string;
-  avatar?: string;
-  [key: string]: unknown;
-}
-
-export interface AuthResult {
-  /** SaToken value — used by the iframe bridge to postMessage to parent. */
-  tokenValue?: string;
-  /** Cookie/header name for SaToken (defaults to "satoken"). */
-  tokenName?: string;
-  user?: LoggedInUser;
-  /** The raw `data` from Java, in case callers need extra fields. */
-  raw: unknown;
-}
-
-function toAuthResult(data: unknown): AuthResult {
-  const d = (data ?? {}) as Record<string, unknown>;
-  const tokenInfo = (d.tokenInfo ?? {}) as { tokenName?: string; tokenValue?: string };
-  const tokenName = tokenInfo.tokenName ?? "satoken";
-
-  // Java's response body isn't consistent across endpoints — accept the
-  // shapes we've seen in the wild, plus fall back to reading Set-Cookie
-  // (matches what `fizzdragon-web/pages/studio/studio.vue` does with
-  // `getCookieValue('satoken')` after the browser stores the cookie).
-  const tokenValue =
-    tokenInfo.tokenValue ||
-    stringField(d, "token") ||
-    stringField(d, "satoken") ||
-    stringField(d, tokenName) ||
-    readCookie(tokenName);
-
-  // Likewise for the user object: sometimes wrapped in `user` / `userInfo`,
-  // sometimes the envelope's `data` field IS the user itself.
-  const user = (d.user ?? d.userInfo ?? (looksLikeUser(d) ? d : undefined)) as
-    | LoggedInUser
-    | undefined;
-
-  return { tokenValue, tokenName, user, raw: d };
-}
-
-function stringField(d: Record<string, unknown>, key: string): string | undefined {
-  const v = d[key];
-  return typeof v === "string" && v.length > 0 ? v : undefined;
-}
-
-function readCookie(name: string): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const match = document.cookie.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]+)"));
-  return match ? decodeURIComponent(match[1]) : undefined;
-}
-
-function looksLikeUser(d: Record<string, unknown>): boolean {
-  return "userId" in d || "id" in d || "phone" in d || "email" in d || "nickname" in d;
-}
-
-export async function emailLogin(params: { email: string; pwd: string }): Promise<AuthResult> {
-  const data = await backendApi.postForm<unknown>("/user/email/login", {
-    email: params.email,
-    pwd: params.pwd,
-  });
-  return toAuthResult(data);
-}
-
-export async function emailRegister(params: {
-  email: string;
-  code: string;
-  password: string;
-  recommendationCode?: string;
-}): Promise<AuthResult> {
-  const body: Record<string, string> = {
-    email: params.email,
-    code: params.code,
-    password: params.password,
-  };
-  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const data = await backendApi.postForm<unknown>("/user/email/regist", body);
-  return toAuthResult(data);
-}
-
-export async function emailResetPassword(params: {
-  email: string;
-  code: string;
-  password: string;
-}): Promise<AuthResult> {
-  const data = await backendApi.postForm<unknown>("/user/email/reset/password", params);
-  return toAuthResult(data);
-}
-
-export async function sendEmailCode(email: string): Promise<void> {
-  await backendApi.get<ApiResponse<unknown>>("/user/email/getCode", {
-    params: { email },
-  });
-}
-
-export async function phoneLogin(params: { phone: string; pwd: string }): Promise<AuthResult> {
-  const data = await backendApi.postForm<unknown>("/user/login", {
-    phone: params.phone,
-    pwd: params.pwd,
-  });
-  return toAuthResult(data);
-}
-
-export async function phoneRegister(params: {
-  phone: string;
-  code: string;
-  password: string;
-  recommendationCode?: string;
-}): Promise<AuthResult> {
-  const body: Record<string, string> = {
-    phone: params.phone,
-    code: params.code,
-    password: params.password,
-  };
-  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const data = await backendApi.postForm<unknown>("/user/regist", body);
-  return toAuthResult(data);
-}
-
-export async function phoneResetPassword(params: {
-  phone: string;
-  code: string;
-  password: string;
-}): Promise<AuthResult> {
-  const data = await backendApi.postForm<unknown>("/user/reset/password", params);
-  return toAuthResult(data);
-}
-
-export async function sendPhoneCode(phone: string): Promise<void> {
-  await backendApi.get<ApiResponse<unknown>>("/user/getCode", {
-    params: { phone },
-  });
-}
+import { backendApi } from "@/src/lib/api";
 
 export async function logout(): Promise<void> {
   await backendApi.get<unknown>("/user/logout");

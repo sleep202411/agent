@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @source "../../../packages/experience-player-react/src";
+@source "../../../packages/auth-flow/src";
 
 @custom-variant dark (&:is(.dark *));
 

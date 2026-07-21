@@ -1,17 +1,31 @@
 "use client";
 
-import type { AuthResult } from "@/src/lib/auth/api";
 import { localeFromPathname, localizePath } from "@/src/i18n/locale-url";
 
-export type AuthAction = "login" | "register" | "reset";
+/** The only part of a session this module needs: the satoken to seat. */
+export interface SessionCookie {
+  /** SaToken value from the login response body. */
+  tokenValue?: string;
+  /** Cookie name for the SaToken (defaults to "satoken"). */
+  tokenName?: string;
+}
 
 /**
- * Decide what happens after a successful auth action.
+ * Land a signed-in user on the page they were trying to reach.
  *
- * - register / reset: bounce to /login so the user signs in with the
- *   credentials they just set.
- * - login: navigate to `?redirect=<safe>` if present, else the
- *   localized homepage.
+ * Relocated 2026-07-21 from `app/(auth)/_components/` when the two-pane
+ * auth pages were deleted in favour of the shared `@repo/auth-flow`
+ * dialog. The cookie write below is UNCHANGED — the Safari race it
+ * documents is still live, and `<AuthDialogProvider>` routes its
+ * navigate-on-success path through here for exactly that reason.
+ *
+ * There used to be an `action` parameter with `register` / `reset`
+ * branches that bounced the user back to /login to sign in with the
+ * credentials they had just set. Neither is reachable any more — the
+ * one-button flow auto-registers, and password reset moved to the
+ * account-security panel — so the sole surviving behaviour is inlined
+ * here: navigate to `?redirect=<safe>` if present, else the localized
+ * homepage.
  *
  * The site is no longer embedded inside the legacy uni-app, so there
  * is no longer a parent frame to postMessage tokens to.
@@ -24,19 +38,11 @@ export type AuthAction = "login" | "register" | "reset";
  * commits the cookie first). The backend also returns the token in the response
  * body, so we write the SAME cookie synchronously here to win that race.
  */
-export function handleAuthSuccess(action: AuthAction, result: AuthResult): void {
+export function handleAuthSuccess(session: SessionCookie): void {
   if (typeof window === "undefined") return;
-  persistSessionCookie(result);
+  persistSessionCookie(session);
 
   const locale = localeFromPathname(window.location.pathname);
-
-  if (action !== "login") {
-    const base = localizePath("/login", locale);
-    const query = window.location.search;
-    window.location.assign(`${base}${query}`);
-    return;
-  }
-
   const fallback = localizePath("/", locale);
   const redirect = readRedirectParam();
   window.location.assign(resolveRedirectTarget(redirect) ?? fallback);
@@ -55,10 +61,10 @@ export function handleAuthSuccess(action: AuthAction, result: AuthResult): void 
  * The token is written raw (sa-token doesn't URL-encode it) so the value
  * matches byte-for-byte.
  */
-function persistSessionCookie(result: AuthResult): void {
-  const token = result.tokenValue;
+function persistSessionCookie(session: SessionCookie): void {
+  const token = session.tokenValue;
   if (!token) return;
-  const name = result.tokenName ?? "satoken";
+  const name = session.tokenName ?? "satoken";
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   const maxAge = 60 * 60 * 24 * 30; // 30d, refreshed on every login
   document.cookie = `${name}=${token}; Path=/${sessionCookieDomain()}; Max-Age=${maxAge}; SameSite=Lax${secure}`;

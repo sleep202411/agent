@@ -17,10 +17,18 @@ export function getWebBaseUrl(siteRegion: SiteRegion): string {
   return WEB_BASE_BY_REGION[siteRegion];
 }
 
-/** Legacy web-app paths studio links out to (auth + legal pages). */
+/**
+ * Legacy web-app paths studio links out to.
+ *
+ * `register` and `forgot-password` are gone as LINKS, not as features: the
+ * shared sign-in dialog (`@repo/auth-flow`) registers in place on the code
+ * path and runs the whole password reset itself, from its password step —
+ * studio speaks the same `/user/(email/)reset/password` endpoints through
+ * its own `/user/*` rewrite, so sending a user to another domain for either
+ * one would be a round trip that buys nothing. Only the legal pages, which
+ * genuinely live in the web app, are still linked out.
+ */
 export const WEB_PATHS = {
-  register: "/register",
-  forgotPassword: "/forgot-password",
   terms: "/terms-of-service",
   privacy: "/privacy-policy",
 } as const;

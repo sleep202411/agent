@@ -60,6 +60,7 @@ import { CreatorHero } from "./hero";
 import { CreatorLeftRail } from "./left-rail";
 import { CreatorTabBar, CREATOR_TAB_ORDER, CREATOR_SECTION_ID, type CreatorTabId } from "./tab-bar";
 import { CreateServiceDialog } from "./dialogs/create-service-dialog";
+import { AccountSecurityDialog } from "./dialogs/account-security-dialog";
 import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
 import { CertificatesTab } from "./tabs/certificates-tab";
@@ -143,6 +144,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
   const { data: userInfo } = useUserInfo();
   const { mutate: doGetReferralCode, isPending: referralPending } = useReferralCode();
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const [referralOpen, setReferralOpen] = useState(false);
   const [referralLink, setReferralLink] = useState("");
   const [referralQrDataUrl, setReferralQrDataUrl] = useState("");
@@ -233,6 +235,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
           creator={creator}
           isOwner={isOwner}
           onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
+          onOpenSecurity={isOwner ? () => setSecurityOpen(true) : undefined}
         />
         <main className="min-w-0">
           {/* Anchor menu. Sticky removed 2026-06-03 — the floating glass nav
@@ -283,6 +286,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
             onOpenChange={setEditProfileOpen}
             userInfo={userInfo ?? null}
           />
+          <AccountSecurityDialog open={securityOpen} onOpenChange={setSecurityOpen} />
           <Dialog open={referralOpen} onOpenChange={setReferralOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
