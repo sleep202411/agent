@@ -271,6 +271,7 @@
     "etaApprox": "~{duration}",
     "failed": "Failed",
     "generationFailed": "Generation failed",
+    "contentPolicyBlocked": "This request was blocked by content moderation. Avoid copyrighted characters, real people, or sensitive content, then adjust the prompt and try again.",
     "download": "Download",
     "fullscreen": "Fullscreen",
     "previewUnsupported": "Preview unavailable",

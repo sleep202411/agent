@@ -1,4 +1,8 @@
 import type { AiJobError } from '../../types';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 
 interface BytePlusHttpErrorBody {
   error?: {
@@ -64,6 +68,14 @@ export function mapBytePlusHttpError(
       'PROVIDER_5XX',
       `BytePlus ModelArk HTTP ${status}: ${raw.slice(0, 500)}`,
       'The generation provider is temporarily unavailable.',
+      raw,
+    );
+  }
+  if (isContentPolicyViolation(raw)) {
+    return bytePlusError(
+      'PROVIDER_CONTENT_FILTER',
+      `BytePlus ModelArk HTTP ${status} (content policy): ${raw.slice(0, 500)}`,
+      CONTENT_POLICY_USER_MESSAGE,
       raw,
     );
   }

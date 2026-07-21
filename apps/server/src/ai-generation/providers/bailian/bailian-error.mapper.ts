@@ -1,4 +1,8 @@
 import type { AiJobError } from '../../types';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 
 export class BailianProviderError extends Error {
   constructor(public readonly payload: AiJobError) {
@@ -53,6 +57,14 @@ export function mapBailianHttpError(
       'PROVIDER_5XX',
       message,
       'The generation provider is temporarily unavailable.',
+      raw,
+    );
+  }
+  if (isContentPolicyViolation(raw)) {
+    return bailianError(
+      'PROVIDER_CONTENT_FILTER',
+      `${message} (content policy)`,
+      CONTENT_POLICY_USER_MESSAGE,
       raw,
     );
   }

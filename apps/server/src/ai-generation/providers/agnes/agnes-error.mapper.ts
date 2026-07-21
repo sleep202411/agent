@@ -1,4 +1,8 @@
 import type { AiJobError } from '../../types';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 
 export class AgnesProviderError extends Error {
   constructor(public readonly payload: AiJobError) {
@@ -52,6 +56,14 @@ export function mapAgnesHttpError(
       'PROVIDER_5XX',
       `Agnes AI HTTP ${status}: ${raw.slice(0, 500)}`,
       'The generation provider is temporarily unavailable.',
+      raw,
+    );
+  }
+  if (isContentPolicyViolation(raw)) {
+    return agnesError(
+      'PROVIDER_CONTENT_FILTER',
+      `Agnes AI HTTP ${status} (content policy): ${raw.slice(0, 500)}`,
+      CONTENT_POLICY_USER_MESSAGE,
       raw,
     );
   }

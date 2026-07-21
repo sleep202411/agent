@@ -14,6 +14,10 @@ import type { AiGenerationMode, AiJobError } from '../../types';
 import { FalCatalogService } from './fal-catalog.service';
 import { FalClient } from './fal-client';
 import { FalConfigService } from './fal-config.service';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 import { falError, mapFalUnknownError } from './fal-error.mapper';
 import { mapFalProviderRequest } from './fal-request.mapper';
 import type {
@@ -633,6 +637,21 @@ export class FalProviderAdapter implements ProviderAdapter {
     body: unknown,
   ): AiJobError {
     const isRetryable = status === 429 || status >= 500;
+    // A moderation refusal is a non-retryable 4xx, but "check the inputs" is the
+    // wrong instruction — the inputs are well-formed, the content was rejected
+    // (e.g. gpt-image-2 flags copyrighted characters / real people). Split it
+    // out so the client can say the true thing; the moderation signal lives in
+    // the body, which fal returns as a parsed object here.
+    if (!isRetryable && isContentPolicyViolation(body)) {
+      return {
+        code: 'PROVIDER_CONTENT_FILTER',
+        message: `fal.ai HTTP ${status} (content policy) for ${runtime.endpointId}/${requestId}: ${JSON.stringify(body).slice(0, 1000)}`,
+        userMessage: CONTENT_POLICY_USER_MESSAGE,
+        raw: body,
+        retryable: false,
+        createdAt: new Date().toISOString(),
+      };
+    }
     return {
       code:
         status === 429
