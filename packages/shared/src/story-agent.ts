@@ -267,6 +267,17 @@ export const StoryAgentGraphChoiceSchema = z
   .strict();
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
 
+/**
+ * A scene's background-music binding, named by the audio MediaAsset the creator
+ * uploaded. The agent never authors one — it has no media to name — but the
+ * node schema is `.strict()` and `story_graph.put_node` replaces a node
+ * wholesale, so the field has to be expressible or a patch that echoes a node
+ * back would be rejected outright. The executor is what actually protects a
+ * creator's binding: an incoming node that omits `music` keeps the existing one.
+ */
+export const StoryAgentNodeMusicSchema = z.object({ mediaAssetId: z.uuid() }).strict();
+export type StoryAgentNodeMusic = z.infer<typeof StoryAgentNodeMusicSchema>;
+
 export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -275,6 +286,7 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
       clipKey: StoryAgentClipKeySchema,
       name: z.string().trim().max(120).optional(),
       description: z.string().trim().max(4_000).optional(),
+      music: StoryAgentNodeMusicSchema.optional(),
       exit: z.discriminatedUnion("kind", [
         z
           .object({
@@ -311,6 +323,7 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
       nodeId: StoryAgentStableIdSchema,
       title: StoryAgentLocalizedTextSchema.optional(),
       body: StoryAgentTextBodyLocalizedTextSchema,
+      music: StoryAgentNodeMusicSchema.optional(),
       exit: z.discriminatedUnion("kind", [
         z
           .object({

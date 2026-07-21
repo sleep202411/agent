@@ -38,6 +38,8 @@ const REVISION_ID = '0197f4a2-0800-7000-8000-000000000005';
 const ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
 const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
 const CHECKSUM = 'a'.repeat(64);
+const THEME_ASSET_ID = '0197f4a2-0800-7000-8000-000000000008';
+const ECHO_ASSET_ID = '0197f4a2-0800-7000-8000-000000000009';
 
 function simpleDraft() {
   return LockableInteractiveStoryDraftContentSchema.parse({
@@ -202,6 +204,11 @@ function frozenAsset(index: number, durationMs: number): FrozenStoryVideoAsset {
     browserSafeMp4: true,
     url: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/asset-${index}/variants/variant-${index}/content`,
   };
+}
+
+/** The ordinary public media URL a bound track resolves to. */
+function musicUrl(mediaAssetId: string): string {
+  return `https://media.example.com/workspace/audio/${mediaAssetId}.mp3`;
 }
 
 function compilerInput(
@@ -420,6 +427,108 @@ describe('compileStoryBuild', () => {
       durationMinMs: 12_000,
       durationMaxMs: 14_000,
     });
+  });
+
+  /**
+   * Music must cost a story that has none exactly nothing — the manifest is the
+   * published artifact, so a byte of drift here is a byte of drift in every
+   * release that predates the feature.
+   */
+  it('leaves a story without music byte-identical', () => {
+    const withoutInput = compileStoryBuild(
+      compilerInput(choiceDraft(), { format: 'text_adventure' }),
+    );
+    const withEmptyInput = compileStoryBuild(
+      compilerInput(choiceDraft(), {
+        format: 'text_adventure',
+        musicUrls: new Map(),
+      }),
+    );
+
+    expect(JSON.stringify(withEmptyInput.runtime)).toBe(
+      JSON.stringify(withoutInput.runtime),
+    );
+    expect(JSON.stringify(withoutInput.runtime)).not.toContain('music');
+  });
+
+  it('references the same plain media URL from every scene bound to one track', () => {
+    const draft = choiceDraft();
+    // One theme returning on two scenes plus a second track: three bindings,
+    // two files, and no `assets` entry for either.
+    draft.graph.nodes[0].music = { mediaAssetId: THEME_ASSET_ID };
+    draft.graph.nodes[1].music = { mediaAssetId: THEME_ASSET_ID };
+    draft.graph.nodes[2].music = { mediaAssetId: ECHO_ASSET_ID };
+
+    const compiled = compileStoryBuild(
+      compilerInput(draft, {
+        format: 'text_adventure',
+        musicUrls: new Map([
+          [THEME_ASSET_ID, musicUrl(THEME_ASSET_ID)],
+          [ECHO_ASSET_ID, musicUrl(ECHO_ASSET_ID)],
+        ]),
+      }),
+    );
+
+    expect(compiled.diagnostics).toEqual([]);
+    expect(
+      (compiled.runtime?.assets ?? []).some((asset) => asset.kind === 'audio'),
+    ).toBe(false);
+    expect(
+      (compiled.runtime?.graph.nodes ?? []).map((node) => [
+        node.sceneId,
+        node.kind === 'scene' ? node.music : undefined,
+      ]),
+    ).toEqual([
+      [
+        'clip.echo',
+        { trackId: `audio:${ECHO_ASSET_ID}`, url: musicUrl(ECHO_ASSET_ID) },
+      ],
+      [
+        'clip.start',
+        { trackId: `audio:${THEME_ASSET_ID}`, url: musicUrl(THEME_ASSET_ID) },
+      ],
+      [
+        'clip.truth',
+        { trackId: `audio:${THEME_ASSET_ID}`, url: musicUrl(THEME_ASSET_ID) },
+      ],
+    ]);
+  });
+
+  /**
+   * The whole point of the plain-reference design: a bed whose asset is gone is
+   * silence on that scene. There is no diagnostic, no severity, no publish gate
+   * — the story still plays.
+   */
+  it('publishes a binding whose asset no longer resolves as silence, not a diagnostic', () => {
+    const draft = choiceDraft();
+    draft.graph.nodes[0].music = { mediaAssetId: THEME_ASSET_ID };
+
+    const compiled = compileStoryBuild(
+      compilerInput(draft, { format: 'text_adventure', musicUrls: new Map() }),
+    );
+
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.runtime).not.toBeNull();
+    expect(JSON.stringify(compiled.runtime)).not.toContain('music');
+  });
+
+  /**
+   * The cinematic player reads no scene music, so a film Build must not ship,
+   * review or pay for audio nobody can hear.
+   */
+  it('emits no music at all for a cinematic build, bound or not', () => {
+    const draft = choiceDraft();
+    const unbound = compileStoryBuild(compilerInput(choiceDraft()));
+    draft.graph.nodes[0].music = { mediaAssetId: THEME_ASSET_ID };
+
+    const bound = compileStoryBuild(
+      compilerInput(draft, {
+        musicUrls: new Map([[THEME_ASSET_ID, musicUrl(THEME_ASSET_ID)]]),
+      }),
+    );
+
+    expect(bound.diagnostics).toEqual([]);
+    expect(JSON.stringify(bound.runtime)).toBe(JSON.stringify(unbound.runtime));
   });
 });
 

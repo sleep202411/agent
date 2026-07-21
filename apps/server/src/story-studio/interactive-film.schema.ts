@@ -173,6 +173,24 @@ const StoryEndingExitSchema = z
   })
   .strict();
 
+/**
+ * The music track a node asks for, named by the workspace audio MediaAsset the
+ * creator attached.
+ *
+ * Optional and additive: a node without it changes nothing about the music, and
+ * every revision authored before music parses unchanged. Binding one asset to
+ * several nodes is normal — that is how a theme returns.
+ *
+ * Nothing downstream may FAIL on this binding. Whether the asset still exists,
+ * belongs to the workspace and is audio is answered at compile time by simply
+ * resolving a URL: no URL, no music on that scene. Losing a video breaks the
+ * story; losing a bed only means silence, so publishing never blocks on it.
+ */
+export const StoryNodeMusicSchema = z
+  .object({ mediaAssetId: z.string().uuid() })
+  .strict();
+export type StoryNodeMusic = z.infer<typeof StoryNodeMusicSchema>;
+
 const StoryClipGraphNodeSchema = z
   .object({
     kind: z.literal('clip'),
@@ -183,6 +201,7 @@ const StoryClipGraphNodeSchema = z
     // Optional so drafts authored before the field parse unchanged.
     name: z.string().trim().max(120).optional(),
     description: z.string().trim().max(4_000).optional(),
+    music: StoryNodeMusicSchema.optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
@@ -198,6 +217,7 @@ const StoryTextGraphNodeSchema = z
     nodeId: StoryStableIdSchema,
     title: DraftLocalizedTextSchema.optional(),
     body: StoryTextBodyLocalizedTextSchema,
+    music: StoryNodeMusicSchema.optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,

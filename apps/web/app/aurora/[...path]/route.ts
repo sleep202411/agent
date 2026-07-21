@@ -47,6 +47,15 @@ function forwardedRequestHeaders(request: NextRequest, upstream: URL): Headers {
   headers.set("x-forwarded-prefix", "/aurora");
   headers.set("x-forwarded-upstream-host", upstream.host);
 
+  // `x-forwarded-for` is passed through untouched, deliberately. Every deployed
+  // topology routes /aurora/* straight to the server through its own ingress
+  // (deploy/helm/fizzdragon/templates/ingress.yaml, `-aurora-ingress`), so this
+  // handler is only ever on the path under `next dev` — where the one peer is
+  // loopback and there is nothing to add. An appended hop would also land at the
+  // TAIL of the chain while the server reads its HEAD (`requestActor` in
+  // apps/server/src/story-studio/story-text-play.controller.ts), so it could not
+  // identify a caller even where it did run.
+
   return headers;
 }
 

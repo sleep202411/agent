@@ -28,6 +28,7 @@ export const UploadKindSchema = z.enum([
   'ai_reference_image',
   'ai_reference_video',
   'ai_reference_audio',
+  'story_music_audio',
 ]);
 export type UploadKind = z.infer<typeof UploadKindSchema>;
 

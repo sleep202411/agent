@@ -66,6 +66,12 @@ export interface StoryBuildCompilerInput {
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
   videos: StoryBuildVideoInput[];
+  /**
+   * Playable URL per bound music MediaAsset id — a plain public media URL, not
+   * a frozen build asset. A binding missing from this map simply gets no music,
+   * which is why nothing here can ever produce a diagnostic.
+   */
+  musicUrls?: ReadonlyMap<string, string>;
   diagnostics?: StoryBuildDiagnosticDto[];
 }
 
@@ -93,11 +99,6 @@ export function compileStoryBuild(
   const diagnostics = [...(input.diagnostics ?? [])];
   const nodes = new Map(
     input.draft.graph.nodes.map((node) => [node.nodeId, node]),
-  );
-  const clipNodeByKey = new Map(
-    input.draft.graph.nodes.flatMap((node) =>
-      node.kind === 'clip' ? [[node.clipKey, node] as const] : [],
-    ),
   );
   const videos = new Map<string, StoryBuildVideoInput>();
   input.videos.forEach((video) => {
@@ -140,12 +141,7 @@ export function compileStoryBuild(
   );
   detectStructuralCycles(entryNodeId, nodes, selection, diagnostics);
 
-  const requiredGraphNodeIds = requiredVideoNodeIds(
-    selection,
-    nodes,
-    clipNodeByKey,
-    diagnostics,
-  );
+  const requiredGraphNodeIds = requiredVideoNodeIds(selection, nodes);
   const includedVideos = [...requiredGraphNodeIds]
     .flatMap((graphNodeId) => {
       const video = videos.get(graphNodeId);
@@ -170,7 +166,6 @@ export function compileStoryBuild(
     entryNodeId,
     nodes,
     videos,
-    clipNodeByKey,
     selection,
     diagnostics,
   );
@@ -220,7 +215,6 @@ export function compileStoryBuild(
       selection,
       nodes,
       videos,
-      clipNodeByKey,
       includedVideos,
     );
     const release = InteractiveFilmReleaseSchema.safeParse(releaseCandidate);
@@ -365,14 +359,6 @@ function requiredVideoNodeIds(
     string,
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
-  clipNodeByKey: ReadonlyMap<
-    string,
-    Extract<
-      InteractiveStoryDraftContent['graph']['nodes'][number],
-      { kind: 'clip' }
-    >
-  >,
-  diagnostics: StoryBuildDiagnosticDto[],
 ): Set<string> {
   const required = new Set<string>();
   [...selection].forEach((nodeId) => {
@@ -505,13 +491,6 @@ function enumeratePaths(
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
-  clipNodeByKey: ReadonlyMap<
-    string,
-    Extract<
-      InteractiveStoryDraftContent['graph']['nodes'][number],
-      { kind: 'clip' }
-    >
-  >,
   selection: ReadonlySet<string>,
   diagnostics: StoryBuildDiagnosticDto[],
 ): { paths: EnumeratedPath[]; ambiguousPathCount: number } {
@@ -625,13 +604,6 @@ function compileIntermediateRelease(
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
-  clipNodeByKey: ReadonlyMap<
-    string,
-    Extract<
-      InteractiveStoryDraftContent['graph']['nodes'][number],
-      { kind: 'clip' }
-    >
-  >,
   includedVideos: FrozenStoryBuildVideoInput[],
 ): InteractiveFilmRelease {
   // A film project pins every clip to its project-wide orientation. A narrative
@@ -659,6 +631,21 @@ function compileIntermediateRelease(
       audio: video.asset.hasAudio ? ('embedded' as const) : ('none' as const),
     };
   });
+  // Music ships for the NARRATIVE profile only: it is the one runtime that
+  // reads a scene's bed. The cinematic player never looks at it, so emitting it
+  // there would cost bandwidth and review surface for something no player can
+  // hear — a cinematic Build is byte-identical with and without bindings.
+  const musicReference = (
+    node: InteractiveStoryDraftContent['graph']['nodes'][number],
+  ) => {
+    if (input.format === 'interactive_film' || !node.music) return {};
+    const url = input.musicUrls?.get(node.music.mediaAssetId);
+    // No resolvable URL — deleted, blocked, or another workspace's asset — is
+    // silence on this scene, never a diagnostic and never a failed Build.
+    return url
+      ? { music: { trackId: storyMusicTrackId(node.music.mediaAssetId), url } }
+      : {};
+  };
   const runtimeNodes: InteractiveFilmRelease['nodes'] = [];
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
@@ -666,6 +653,7 @@ function compileIntermediateRelease(
     if (node.kind === 'text') {
       runtimeNodes.push({
         nodeId: node.nodeId,
+        ...musicReference(node),
         presentation: {
           kind: 'text',
           ...(hasNonEmptyLocalizedText(node.title)
@@ -678,7 +666,7 @@ function compileIntermediateRelease(
               : 'passive',
         },
         overlays: [],
-        exit: compileExit(node, clipNodeByKey),
+        exit: compileExit(node),
       });
       return;
     }
@@ -686,6 +674,7 @@ function compileIntermediateRelease(
     if (!video) return;
     runtimeNodes.push({
       nodeId: node.nodeId,
+      ...musicReference(node),
       presentation: {
         kind: 'video',
         sequence: [
@@ -700,7 +689,7 @@ function compileIntermediateRelease(
         fit: input.frameProfile === null ? 'native' : 'cover',
       },
       overlays: [],
-      exit: compileExit(node, clipNodeByKey),
+      exit: compileExit(node),
     });
   });
   const locales = collectInteractiveStoryRuntimeLocales(
@@ -736,13 +725,6 @@ function hasNonEmptyLocalizedText(
 
 function compileExit(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
-  clipNodeByKey: ReadonlyMap<
-    string,
-    Extract<
-      InteractiveStoryDraftContent['graph']['nodes'][number],
-      { kind: 'clip' }
-    >
-  >,
 ): InteractiveFilmRelease['nodes'][number]['exit'] {
   const exit = node.exit;
   if (exit.kind === 'ending') return exit;
@@ -799,6 +781,21 @@ function clipNodeById(
 
 export function storyRuntimeAssetId(clipKey: string): string {
   return `video:${clipKey}`;
+}
+
+/**
+ * A track is identified by its MediaAsset, not by the node that plays it: the
+ * same theme bound to several scenes must carry ONE id so the player preloads
+ * and crossfades a single file. Prefixed for the same reason
+ * `storyRuntimeAssetId` prefixes with `video:`: every id a manifest publishes is
+ * namespaced by WHAT it names, so an id read out of a cue, a log line or a
+ * support ticket is self-describing and no two id spaces can be mistaken for
+ * one another. (A bare UUID would pass ExperienceStableIdSchema perfectly well —
+ * the pattern admits a digit-initial id — so validation is not what asks for
+ * this.)
+ */
+export function storyMusicTrackId(mediaAssetId: string): string {
+  return `audio:${mediaAssetId}`;
 }
 
 function nextNodeIds(

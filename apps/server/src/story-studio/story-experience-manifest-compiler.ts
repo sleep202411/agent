@@ -447,6 +447,10 @@ function compileGraphNode(
   return {
     kind: 'scene',
     sceneId: node.nodeId,
+    // Absent unless the creator bound a track: a scene that says nothing about
+    // music leaves whatever is playing alone. Passed through as the plain media
+    // reference it is — no asset entry, no integrity join.
+    ...(node.music ? { music: node.music } : {}),
     clock: isText
       ? { kind: 'none' }
       : { kind: 'renderer', rendererInstanceId: primaryInstanceId },

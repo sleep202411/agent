@@ -17,7 +17,12 @@ import {
   type StoryTextPlayTurnResult,
 } from "@/lib/story-projects-api";
 
-const FREE_TURN_LIMIT = 3;
+/**
+ * The creator playtest runs at the default pace. There is no static mode to
+ * fall back to: an authored beat is a direction marker, so every turn is
+ * narrated, exactly as a player would see it.
+ */
+const PLAYTEST_PACE = "standard" as const;
 
 type FeedEntry =
   | { id: string; kind: "anchor"; title?: string; body?: string }
@@ -124,7 +129,7 @@ export function StoryTextPlayPanel({ projectId }: { projectId: string }) {
           await turnStoryTextPlay(workspaceId, projectId, {
             state,
             action,
-            freeTurnLimit: FREE_TURN_LIMIT,
+            pace: PLAYTEST_PACE,
           })
         );
       } catch (err) {

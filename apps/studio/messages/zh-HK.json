@@ -2160,7 +2160,26 @@
         "textTitle": "場景標題",
         "textTitlePlaceholder": "為這個關鍵劇情命名",
         "textBody": "場景正文",
-        "textBodyPlaceholder": "寫下玩家在這個場景中讀到的內容…"
+        "textBodyPlaceholder": "寫下玩家在這個場景中讀到的內容…",
+        "music": {
+          "title": "場景音樂",
+          "description": "播放進入該場景時開始，直到另一個場景更換音樂為止。",
+          "empty": "尚未附加音軌",
+          "trackLabel": "音軌 {letter}",
+          "usedIn": "{count, plural, other {# 個場景}}",
+          "reuse": "重用本故事中的音軌",
+          "upload": "上傳音軌",
+          "replace": "更換音軌",
+          "remove": "移除音軌",
+          "play": "試聽音軌",
+          "stop": "停止試聽",
+          "uploading": "上傳中 · {progress}%",
+          "accepted": "MP3 或 WAV 音訊",
+          "errors": {
+            "upload": "音軌上傳失敗。",
+            "type": "僅支援附加 MP3 或 WAV 音訊。"
+          }
+        }
       },
       "conflict": {
         "description": "其他工作階段儲存了更新版本。你的本機草稿已保留；如需留存，請先匯出再捨棄。",

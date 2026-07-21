@@ -226,10 +226,18 @@ function applyOperation(input: {
       return;
     }
     case 'story_graph.put_node': {
-      const node = operation.payload.node as StoryGraphNode;
-      const existed = draft.graph.nodes.some(
-        (value) => value.nodeId === node.nodeId,
+      const incoming = operation.payload.node as StoryGraphNode;
+      const existing = draft.graph.nodes.find(
+        (value) => value.nodeId === incoming.nodeId,
       );
+      // The agent authors prose and structure; the music bed is a file a human
+      // uploaded, so it survives a wholesale replace exactly like a character's
+      // appearance images do. Without this a Copilot edit silently unbinds it.
+      const node: StoryGraphNode =
+        incoming.music === undefined && existing?.music !== undefined
+          ? { ...incoming, music: existing.music }
+          : incoming;
+      const existed = existing !== undefined;
       draft.graph.nodes = putEntity({
         values: draft.graph.nodes,
         keyOf: (value) => value.nodeId,

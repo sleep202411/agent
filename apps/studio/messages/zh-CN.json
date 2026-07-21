@@ -2160,7 +2160,26 @@
         "textTitle": "场景标题",
         "textTitlePlaceholder": "为这个关键剧情命名",
         "textBody": "场景正文",
-        "textBodyPlaceholder": "写下玩家在这个场景中读到的内容…"
+        "textBodyPlaceholder": "写下玩家在这个场景中读到的内容…",
+        "music": {
+          "title": "场景音乐",
+          "description": "播放进入该场景时开始，直到另一个场景更换音乐为止。",
+          "empty": "尚未附加音轨",
+          "trackLabel": "音轨 {letter}",
+          "usedIn": "{count, plural, other {# 个场景}}",
+          "reuse": "复用本故事中的音轨",
+          "upload": "上传音轨",
+          "replace": "更换音轨",
+          "remove": "移除音轨",
+          "play": "试听音轨",
+          "stop": "停止试听",
+          "uploading": "上传中 · {progress}%",
+          "accepted": "MP3 或 WAV 音频",
+          "errors": {
+            "upload": "音轨上传失败。",
+            "type": "仅支持附加 MP3 或 WAV 音频。"
+          }
+        }
       },
       "conflict": {
         "description": "其他会话保存了更新版本。你的本地草稿已保留；如需留存，请先导出再丢弃。",

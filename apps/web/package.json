@@ -8,7 +8,7 @@
     "start": "next start --port 9527",
     "lint": "eslint",
     "check-types": "tsc --noEmit",
-    "test:experience-player": "node --conditions=react-server --import tsx --test app/play/_lib/interactive-film-api.test.ts",
+    "test:experience-player": "node --conditions=react-server --import tsx --test \"app/play/_lib/*.test.ts\"",
     "legacy:sync": "node scripts/sync-legacy.mjs"
   },
   "dependencies": {

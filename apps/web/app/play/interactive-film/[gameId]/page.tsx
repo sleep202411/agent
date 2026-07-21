@@ -7,7 +7,7 @@ import zhHK from "@/messages/zh-HK.json";
 import { defaultLocale, isValidLocale, type Locale } from "@/src/i18n/config";
 import { ExperienceLoadError } from "../../_components/experience-load-error";
 import { ExperienceRuntimePlayer } from "../../_components/experience-runtime-player";
-import { TextExperiencePlayer } from "../../_components/text-experience-player";
+import { StoryNarrativePlayer } from "../../_components/story-narrative-player";
 import { PlayShareButton } from "./_components/play-share-button";
 import {
   getPublishedInteractiveFilm,
@@ -15,12 +15,6 @@ import {
 } from "../../_lib/interactive-film-api";
 
 type RouteProps = { params: Promise<{ gameId: string }> };
-
-const TEXT_PLAYER_COPY = {
-  "en-US": enUS.textExperiencePlayer,
-  "zh-CN": zhCN.textExperiencePlayer,
-  "zh-HK": zhHK.textExperiencePlayer,
-} satisfies Record<Locale, (typeof enUS)["textExperiencePlayer"]>;
 
 function localizeManifestTitle(
   manifest: {
@@ -90,11 +84,10 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
     if (published.manifest.metadata.experienceProfile === "narrative") {
       return (
         <main className="relative h-[100dvh] bg-black text-white">
-          <TextExperiencePlayer
+          <StoryNarrativePlayer
             gameId={gameId}
             contentVersion={published.game.currentVersion}
             title={localizeManifestTitle(published.manifest, locale)}
-            copy={TEXT_PLAYER_COPY[locale]}
           />
           <PlayShareButton
             gameId={gameId}

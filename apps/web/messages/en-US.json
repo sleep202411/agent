@@ -7647,6 +7647,17 @@
         "buildFresh": "Build a fresh run"
       }
     },
+    "errors": {
+      "sessionExpired": "This run has expired. Start a new one to keep playing.",
+      "releaseNotFound": "This story is no longer available to play.",
+      "generationFailed": "The story service could not write this turn. Please try again.",
+      "invalidAction": "This run can no longer continue. Start a new one.",
+      "actionNotAllowed": "That action isn’t available right now. Pick one of the options instead.",
+      "runAlreadyStarted": "This run is already underway. Continue it from where it is.",
+      "runNotStarted": "This run hasn’t started yet. Begin it to keep playing.",
+      "turnInFlight": "The previous turn is still playing. Wait a moment and try again.",
+      "rateLimited": "Too many requests. Wait a moment and try again."
+    },
     "setup": {
       "step": "Step {current} of {total}",
       "stage": {
@@ -7819,6 +7830,11 @@
       "endingReached": "Run ended",
       "endingReview": "Ending review",
       "playerPersonality": "Player profile",
+      "music": {
+        "mute": "Mute music",
+        "unmute": "Play music",
+        "blocked": "Your browser blocked audio. Tap to start the music."
+      },
       "pendingAriaLabel": "Story response loading",
       "pendingPhrases": {
         "fate": "Fate is answering",
@@ -8028,28 +8044,5 @@
     "valueMembershipCompute": "{days}d Studio membership",
     "valueMembershipCommunity": "{days}d community membership",
     "valueMembershipBoth": "{days}d Studio + community membership"
-  },
-  "textExperiencePlayer": {
-    "start": "Begin the story",
-    "pace": "Pace",
-    "paceBrisk": "Brisk",
-    "paceSteady": "Steady",
-    "paceLeisurely": "Leisurely",
-    "continue": "Continue",
-    "send": "Take this action",
-    "inputPlaceholder": "Say or do something…",
-    "ended": "You reached an ending",
-    "replay": "Play again",
-    "loading": "Writing…",
-    "directionsEyebrow": "Story direction",
-    "directionsTitle": "Which story will you enter?",
-    "directionsSubtitle": "Pick an angle — the narrator will build this run around it.",
-    "directionsCount": "{count} directions",
-    "directionsLoading": "Imagining ways in…",
-    "reroll": "Reroll",
-    "conflict": "Conflict",
-    "hook": "Hook",
-    "twist": "Subversion",
-    "retry": "Try again"
   }
 }

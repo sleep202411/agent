@@ -1,5 +1,38 @@
-import { StoryTextPlayService } from './story-text-play.service';
+import { generateObject } from 'ai';
+import {
+  StoryTextPlayService,
+  StoryTextPlayStateSchema,
+} from './story-text-play.service';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
+
+/**
+ * The narrator is stubbed, not skipped.
+ *
+ * Every turn between two authored beats goes through the model now — there is
+ * no static path left to walk the graph, because that was the anchor-slideshow.
+ * So the tests own the narrator's two decisions (what it writes and whether the
+ * beat `converged`) and assert what the ENGINE does with them.
+ */
+jest.mock('./story-authoring-model', () => ({
+  createStoryAuthoringModel: () => ({}),
+}));
+jest.mock('ai', () => ({ generateObject: jest.fn() }));
+
+const narrator = generateObject as unknown as jest.Mock;
+const NARRATION = '你听见铜环轻响。';
+
+function narratorConverges(converged: boolean): void {
+  narrator.mockReset();
+  narrator.mockResolvedValue({
+    object: {
+      narration: NARRATION,
+      converged,
+      suggestions: ['敲门', '绕到后院'],
+    },
+  });
+}
+
+beforeEach(() => narratorConverges(true));
 
 const USER = { userId: 'user-1' } as never;
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-00000000aa01';
@@ -137,7 +170,8 @@ describe('StoryTextPlayService static engine', () => {
     const result = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state,
       action: { kind: 'continue' },
-      freeTurnLimit: 0,
+      pace: 'standard',
+      runawayTurnGuard: 18,
     });
 
     expect(result.state.nodeId).toBe('node.gate');
@@ -155,13 +189,15 @@ describe('StoryTextPlayService static engine', () => {
     const atGate = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state,
       action: { kind: 'continue' },
-      freeTurnLimit: 0,
+      pace: 'standard',
+      runawayTurnGuard: 18,
     });
 
     const atCheckpoint = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state: atGate.state,
       action: { kind: 'choice', choiceId: 'choice.push' },
-      freeTurnLimit: 0,
+      pace: 'standard',
+      runawayTurnGuard: 18,
     });
     expect(atCheckpoint.ended).toBe(false);
     expect(atCheckpoint.state.nodeId).toBe('node.reveal');
@@ -169,7 +205,8 @@ describe('StoryTextPlayService static engine', () => {
     const result = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state: atCheckpoint.state,
       action: { kind: 'continue' },
-      freeTurnLimit: 0,
+      pace: 'standard',
+      runawayTurnGuard: 18,
     });
 
     expect(result.state.nodeId).toBe('node.truth');
@@ -182,38 +219,174 @@ describe('StoryTextPlayService static engine', () => {
     });
   });
 
+  /**
+   * The creator 试玩 carries its play state in the request body (only the public
+   * runtime holds it server-side and refuses a finished run), so a panel that
+   * replays its last turn hands back a state parked on an ending node. That run
+   * is simply over — answering it by reading `choices` off an exit that has none
+   * was a 500 on a session that had done nothing wrong.
+   */
+  it('ends the run again instead of throwing when a turn lands on an ending node', async () => {
+    const service = serviceWith(draft());
+    const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
+    const atGate = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state,
+      action: { kind: 'continue' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+    const atCheckpoint = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state: atGate.state,
+      action: { kind: 'choice', choiceId: 'choice.push' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+    const finished = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state: atCheckpoint.state,
+      action: { kind: 'continue' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+    expect(finished.ended).toBe(true);
+    expect(finished.state.nodeId).toBe('node.truth');
+
+    const afterEnd = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state: finished.state,
+      action: { kind: 'continue' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+
+    expect(afterEnd.ended).toBe(true);
+    expect(afterEnd.state.nodeId).toBe('node.truth');
+    expect(afterEnd.events.at(-1)).toMatchObject({
+      kind: 'ending',
+      endingId: 'ending.truth',
+    });
+    expect(afterEnd.events.some((event) => event.kind === 'choices')).toBe(
+      false,
+    );
+  });
+
   it('rejects an unavailable choice', async () => {
     const service = serviceWith(draft());
     const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
     const atGate = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state,
       action: { kind: 'continue' },
-      freeTurnLimit: 0,
+      pace: 'standard',
+      runawayTurnGuard: 18,
     });
 
     await expect(
       service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
         state: atGate.state,
         action: { kind: 'choice', choiceId: 'choice.secret' },
-        freeTurnLimit: 0,
+        pace: 'standard',
+        runawayTurnGuard: 18,
       }),
     ).rejects.toMatchObject({
       response: { code: 'TEXT_PLAY_CHOICE_UNAVAILABLE' },
     });
   });
 
-  it('refuses free actions in static mode', async () => {
+  it('keeps the runaway guard off the path of a beat the narrator ends itself', async () => {
     const service = serviceWith(draft());
     const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
 
-    await expect(
-      service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
-        state,
-        action: { kind: 'free', text: '砸门' },
-        freeTurnLimit: 0,
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'TEXT_PLAY_FREE_DISABLED' },
+    // A generous guard is never consulted: `converged` alone moves the story.
+    const result = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state,
+      action: { kind: 'continue' },
+      pace: 'slow',
+      runawayTurnGuard: 24,
     });
+
+    expect(result.state.nodeId).toBe('node.gate');
+    expect(result.state.freeTurnsUsed).toBe(0);
+  });
+
+  it('narrates a free action and stays put while the beat is unfinished', async () => {
+    const service = serviceWith(draft());
+    const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
+    narratorConverges(false);
+
+    const result = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state,
+      action: { kind: 'free', text: '砸门' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+
+    expect(result.state.nodeId).toBe('node.opening');
+    expect(result.state.freeTurnsUsed).toBe(1);
+    expect(result.events.at(-1)).toMatchObject({ kind: 'suggestions' });
+  });
+
+  /**
+   * A decision point never forces the player, so a run can sit at one for as
+   * long as the player likes. The turn counter is per BEAT, not per run, so
+   * lingering must stay healthy indefinitely — it used to accumulate until the
+   * state failed its own schema and the player's run died of patience.
+   */
+  it('keeps a run healthy while the player lingers at a decision point', async () => {
+    const service = serviceWith(draft());
+    const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
+    const atGate = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state,
+      action: { kind: 'continue' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+    expect(atGate.state.nodeId).toBe('node.gate');
+
+    // Far past the schema's max(100), with the narrator refusing to converge so
+    // every turn also drives the guard.
+    narratorConverges(false);
+    let current = atGate.state;
+    for (let turn = 0; turn < 150; turn += 1) {
+      current = (
+        await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+          state: current,
+          action: { kind: 'continue' },
+          pace: 'standard',
+          runawayTurnGuard: 3,
+        })
+      ).state;
+      // The state stays persistable: this is the parse the wire performs on the
+      // next turn, and the counter it carries is bounded by the guard.
+      expect(StoryTextPlayStateSchema.safeParse(current).success).toBe(true);
+      expect(current.freeTurnsUsed).toBeLessThan(3);
+    }
+
+    // And the authored exit is still exactly where it was left.
+    narratorConverges(true);
+    expect(current.nodeId).toBe('node.gate');
+    const chosen = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state: current,
+      action: { kind: 'choice', choiceId: 'choice.push' },
+      pace: 'standard',
+      runawayTurnGuard: 18,
+    });
+    expect(chosen.state.nodeId).toBe('node.reveal');
+  });
+
+  it('arrives at the next beat when the runaway guard finally trips', async () => {
+    const service = serviceWith(draft());
+    const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
+    narratorConverges(false);
+
+    // A narrator that never converges must not narrate forever: at the guard
+    // the story arrives, and it arrives as an ordinary anchor — no counter is
+    // ever shown to the player.
+    const stuck = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+      state,
+      action: { kind: 'continue' },
+      pace: 'standard',
+      runawayTurnGuard: 1,
+    });
+
+    expect(stuck.state.nodeId).toBe('node.gate');
+    expect(stuck.events.some((event) => event.kind === 'anchor')).toBe(true);
   });
 });
