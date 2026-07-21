@@ -7646,6 +7646,17 @@
         "buildFresh": "重新构建"
       }
     },
+    "errors": {
+      "sessionExpired": "本局已过期，重新开始一局即可继续。",
+      "releaseNotFound": "这个故事已经无法游玩。",
+      "generationFailed": "故事服务没能写出这一回合，请再试一次。",
+      "invalidAction": "本局无法继续，请重新开始一局。",
+      "actionNotAllowed": "当前无法执行这个动作，换一个选项试试。",
+      "runAlreadyStarted": "本局已经开始了，从当前进度继续即可。",
+      "runNotStarted": "本局还没有开始，先开始这一局再继续。",
+      "turnInFlight": "上一回合还在进行，稍等片刻再试。",
+      "rateLimited": "请求过于频繁，稍等片刻再试。"
+    },
     "setup": {
       "step": "第 {current} / {total} 步",
       "stage": {
@@ -7818,6 +7829,11 @@
       "endingReached": "本局结束",
       "endingReview": "结局复盘",
       "playerPersonality": "玩家画像",
+      "music": {
+        "mute": "关闭音乐",
+        "unmute": "播放音乐",
+        "blocked": "浏览器拦截了音频，点击以开始播放音乐。"
+      },
       "pendingAriaLabel": "故事回复加载中",
       "pendingPhrases": {
         "fate": "命运正在回应",
@@ -8027,28 +8043,5 @@
     "valueMembershipCompute": "{days} 天 Studio 会员",
     "valueMembershipCommunity": "{days} 天社区会员",
     "valueMembershipBoth": "{days} 天 Studio+社区会员"
-  },
-  "textExperiencePlayer": {
-    "start": "开始这个故事",
-    "pace": "叙事节奏",
-    "paceBrisk": "紧凑",
-    "paceSteady": "适中",
-    "paceLeisurely": "从容",
-    "continue": "继续",
-    "send": "执行这个行动",
-    "inputPlaceholder": "说点什么，或做点什么……",
-    "ended": "你抵达了一个结局",
-    "replay": "再玩一次",
-    "loading": "正在书写……",
-    "directionsEyebrow": "故事方向",
-    "directionsTitle": "你想进入哪一个故事？",
-    "directionsSubtitle": "选择一种可能，气泡龙会以它为核心构建这一局。",
-    "directionsCount": "{count} 个故事方向",
-    "directionsLoading": "气泡龙正在构思几种不同的入场方式。",
-    "reroll": "换一批",
-    "conflict": "核心冲突",
-    "hook": "视觉钩子",
-    "twist": "反差与颠覆",
-    "retry": "重试"
   }
 }

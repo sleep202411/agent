@@ -2,6 +2,7 @@ import type {
   InteractiveStoryDraftContent,
   StoryGraphChoice,
   StoryGraphNode,
+  StoryNodeMusic,
 } from "@/lib/story-projects-api";
 
 type ClipGraphNode = Extract<StoryGraphNode, { kind: "clip" }>;
@@ -20,6 +21,14 @@ const STABLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]*$/;
 const CLIP_KEY_PATTERN = /^[A-Z][A-Z0-9_-]*$/;
 const MAX_STABLE_ID_LENGTH = 120;
 const MAX_CLIP_KEY_LENGTH = 40;
+/**
+ * The exact shape `z.string().uuid()` accepts on the server (RFC 9562 plus the
+ * nil and max UUIDs). A looser client rule would let a bad id into the local
+ * draft and only surface it at save, as a raw schema rejection naming a graph
+ * path — nothing the creator who picked a track can act on.
+ */
+const MEDIA_ASSET_ID_PATTERN =
+  /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
 const MAX_CHOICES = 6;
 
 export type StoryDraftMutationErrorCode =
@@ -30,6 +39,7 @@ export type StoryDraftMutationErrorCode =
   | "INVALID_STABLE_ID"
   | "INVALID_CLIP_KEY"
   | "INVALID_LOCALE"
+  | "INVALID_MEDIA_ASSET_ID"
   | "NODE_NOT_FOUND"
   | "CLIP_NOT_FOUND"
   | "ENDING_NOT_FOUND"
@@ -217,6 +227,28 @@ export function updateTextNode(
       ? { body: { ...source.body, [normalizedLocale]: patch.body } }
       : {}),
   });
+}
+
+/**
+ * Binds (or clears) the music track that starts when play enters this scene.
+ * `null` removes the key entirely — a story with no music must serialize
+ * exactly as it did before the field existed.
+ */
+export function setNodeMusic(
+  content: InteractiveStoryDraftContent,
+  nodeId: string,
+  music: StoryNodeMusic | null
+): InteractiveStoryDraftContent {
+  const node = requireGraphNode(content, nodeId);
+  if (music === null) {
+    if (node.music === undefined) return content;
+    const withoutMusic: StoryGraphNode = { ...node };
+    delete withoutMusic.music;
+    return replaceGraphNode(content, nodeId, withoutMusic);
+  }
+  const mediaAssetId = assertMediaAssetId(music.mediaAssetId);
+  if (node.music?.mediaAssetId === mediaAssetId) return content;
+  return replaceGraphNode(content, nodeId, { ...node, music: { mediaAssetId } });
 }
 
 /**
@@ -1042,6 +1074,14 @@ function assertClipKey(value: string): string {
     !CLIP_KEY_PATTERN.test(normalized)
   ) {
     throw mutationError("INVALID_CLIP_KEY", `Invalid clip key ${value}.`);
+  }
+  return normalized;
+}
+
+function assertMediaAssetId(value: string): string {
+  const normalized = value.trim();
+  if (!MEDIA_ASSET_ID_PATTERN.test(normalized)) {
+    throw mutationError("INVALID_MEDIA_ASSET_ID", `Invalid media asset id ${value}.`);
   }
   return normalized;
 }

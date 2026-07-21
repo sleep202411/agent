@@ -2160,7 +2160,26 @@
         "textTitle": "Scene title",
         "textTitlePlaceholder": "Name this plot beat",
         "textBody": "Scene text",
-        "textBodyPlaceholder": "Write what the player reads in this scene…"
+        "textBodyPlaceholder": "Write what the player reads in this scene…",
+        "music": {
+          "title": "Scene music",
+          "description": "Starts when play enters this scene and keeps playing until another scene changes it.",
+          "empty": "No track attached",
+          "trackLabel": "Track {letter}",
+          "usedIn": "{count, plural, one {# scene} other {# scenes}}",
+          "reuse": "Reuse a track from this story",
+          "upload": "Upload track",
+          "replace": "Replace track",
+          "remove": "Remove track",
+          "play": "Preview track",
+          "stop": "Stop preview",
+          "uploading": "Uploading · {progress}%",
+          "accepted": "MP3 or WAV audio",
+          "errors": {
+            "upload": "The track could not be uploaded.",
+            "type": "Only MP3 or WAV audio can be attached."
+          }
+        }
       },
       "conflict": {
         "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",

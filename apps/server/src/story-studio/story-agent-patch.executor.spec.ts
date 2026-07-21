@@ -14,6 +14,8 @@ import {
 } from './interactive-film.schema';
 
 const ROOT_NODE_ID = '__story_root__';
+const MUSIC_ASSET_ID = '0197f4a2-0800-7000-8000-0000000000a1';
+const OTHER_MUSIC_ASSET_ID = '0197f4a2-0800-7000-8000-0000000000a2';
 
 describe('executeStoryPatch', () => {
   it('rejects hostile recursive operations with a structured error before Zod recursion', () => {
@@ -411,6 +413,67 @@ describe('executeStoryPatch', () => {
 
     expect(error.code).toBe('STORY_PATCH_INVALID_NODE_ORDER');
     expect(error.operationId).toBe(reorder.operationId);
+  });
+  /**
+   * Music is a file a human uploaded, and `put_node` replaces a node whole. If
+   * the binding did not survive a replace, asking the Copilot to reword one
+   * line would silently unbind the creator's track.
+   */
+  it("preserves a scene's music binding across an agent node replace", () => {
+    const draft = buildDraft();
+    const bound = draft.graph.nodes[1];
+    bound.music = { mediaAssetId: MUSIC_ASSET_ID };
+    const rewrite = operation(41, {
+      kind: 'story_graph.put_node',
+      payload: {
+        intent: 'replace',
+        node: {
+          kind: 'clip',
+          nodeId: 'clip:gate',
+          clipKey: 'GATE',
+          description: 'The gate groans open.',
+          exit: { kind: 'auto', nextNodeId: 'clip:ending' },
+        },
+      },
+    });
+
+    const result = executeStoryPatch({
+      draft,
+      layout: buildLayout(draft),
+      operations: [rewrite],
+    });
+
+    const replaced = requiredClip(result.draft, 'clip:gate');
+    expect(replaced.description).toBe('The gate groans open.');
+    expect(replaced.music).toEqual({ mediaAssetId: MUSIC_ASSET_ID });
+  });
+
+  it('lets an explicit binding in the patch replace the existing one', () => {
+    const draft = buildDraft();
+    draft.graph.nodes[1].music = { mediaAssetId: MUSIC_ASSET_ID };
+    const rebind = operation(42, {
+      kind: 'story_graph.put_node',
+      payload: {
+        intent: 'replace',
+        node: {
+          kind: 'clip',
+          nodeId: 'clip:gate',
+          clipKey: 'GATE',
+          music: { mediaAssetId: OTHER_MUSIC_ASSET_ID },
+          exit: { kind: 'auto', nextNodeId: 'clip:ending' },
+        },
+      },
+    });
+
+    const result = executeStoryPatch({
+      draft,
+      layout: buildLayout(draft),
+      operations: [rebind],
+    });
+
+    expect(requiredClip(result.draft, 'clip:gate').music).toEqual({
+      mediaAssetId: OTHER_MUSIC_ASSET_ID,
+    });
   });
 });
 

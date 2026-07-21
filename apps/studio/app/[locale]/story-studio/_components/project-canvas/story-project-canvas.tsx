@@ -175,6 +175,7 @@ import {
   moveChoiceOption,
   removeChoiceOption,
   setEntryNode,
+  setNodeMusic,
   updateChoiceExit,
   updateChoiceOption,
   updateEndingNode,
@@ -3493,6 +3494,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         {inspectorOpen ? (
           <StoryNodeInspector
             content={content}
+            format={project.format}
             locale={authoringLocale}
             selectedNode={focusedNode}
             clipMedia={
@@ -3517,6 +3519,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                 (current) => updateTextNode(current, nodeId, authoringLocale, patch),
                 { mergeKey: `text:${nodeId}:${Object.keys(patch).sort().join(",")}` }
               )
+            }
+            workspaceId={workspaceId}
+            onUpdateMusic={(nodeId, music) =>
+              applyGraphMutation((current) => setNodeMusic(current, nodeId, music))
             }
             showFoundation={inspectorTarget.kind === "world"}
             canEdit={canMutateCanvasLayout}

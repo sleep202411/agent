@@ -340,6 +340,13 @@ const SceneNodeSchema = z
       TextPresentationSchema,
       ExtensionPresentationSchema,
     ]),
+    /**
+     * The music bed this scene asks for on entry; absent means "unchanged".
+     * A plain media reference — `url` is the track's ordinary public media URL
+     * and it is deliberately NOT a `media` entry, because a bed that fails to
+     * load is silence, never a broken release.
+     */
+    music: z.object({ trackId: stableId, url: RuntimeUriSchema }).strict().optional(),
     overlays: z.array(OverlaySchema).default([]),
     exit: RuntimeNodeExitSchema,
   })

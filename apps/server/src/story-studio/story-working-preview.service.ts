@@ -251,6 +251,10 @@ export class StoryWorkingPreviewService {
       },
       draft: playableDraft.data,
       videos: prepared.map((item) => item.video),
+      // No `musicUrls`: music is PUBLISHED-ONLY. No creator surface plays a
+      // bed — a text_adventure playtest runs through StoryTextPlayPanel, which
+      // has no audio at all — so resolving one here would be a MediaAsset query
+      // per Preview whose result nothing can ever hear.
     });
 
     return {

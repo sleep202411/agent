@@ -7646,6 +7646,17 @@
         "buildFresh": "重新構建"
       }
     },
+    "errors": {
+      "sessionExpired": "本局已過期，重新開始一局即可繼續。",
+      "releaseNotFound": "這個故事已經無法遊玩。",
+      "generationFailed": "故事服務未能寫出這一回合，請再試一次。",
+      "invalidAction": "本局無法繼續，請重新開始一局。",
+      "actionNotAllowed": "目前無法執行這個動作，換一個選項試試。",
+      "runAlreadyStarted": "本局已經開始了，從目前進度繼續即可。",
+      "runNotStarted": "本局尚未開始，先開始這一局再繼續。",
+      "turnInFlight": "上一回合仍在進行，稍等片刻再試。",
+      "rateLimited": "請求過於頻密，稍等片刻再試。"
+    },
     "setup": {
       "step": "第 {current} / {total} 步",
       "stage": {
@@ -7818,6 +7829,11 @@
       "endingReached": "本局結束",
       "endingReview": "結局復盤",
       "playerPersonality": "玩家畫像",
+      "music": {
+        "mute": "關閉音樂",
+        "unmute": "播放音樂",
+        "blocked": "瀏覽器攔截了音訊，點擊以開始播放音樂。"
+      },
       "pendingAriaLabel": "故事回覆載入中",
       "pendingPhrases": {
         "fate": "命運正在回應",
@@ -8027,28 +8043,5 @@
     "valueMembershipCompute": "{days} 天 Studio 會員",
     "valueMembershipCommunity": "{days} 天社區會員",
     "valueMembershipBoth": "{days} 天 Studio+社區會員"
-  },
-  "textExperiencePlayer": {
-    "start": "開始這個故事",
-    "pace": "敘事節奏",
-    "paceBrisk": "緊湊",
-    "paceSteady": "適中",
-    "paceLeisurely": "從容",
-    "continue": "繼續",
-    "send": "執行這個行動",
-    "inputPlaceholder": "說點什麼，或做點什麼……",
-    "ended": "你抵達了一個結局",
-    "replay": "再玩一次",
-    "loading": "正在書寫……",
-    "directionsEyebrow": "故事方向",
-    "directionsTitle": "你想進入哪一個故事？",
-    "directionsSubtitle": "選擇一種可能，氣泡龍會以它為核心構建這一局。",
-    "directionsCount": "{count} 個故事方向",
-    "directionsLoading": "氣泡龍正在構思幾種不同的入場方式。",
-    "reroll": "換一批",
-    "conflict": "核心衝突",
-    "hook": "視覺鉤子",
-    "twist": "反差與顛覆",
-    "retry": "重試"
   }
 }

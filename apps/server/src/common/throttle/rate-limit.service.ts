@@ -68,9 +68,15 @@ export class RateLimitService {
     const remaining = Math.max(0, args.max - count);
     const resetInSec = windowStart + args.windowSec - now;
     if (count > args.max) {
+      // The guard runs before the handler, so a rejected request provably never
+      // touched anything downstream. Saying so on the wire (`code` + `retryable`,
+      // the same shape every other throttled answer uses) is what lets a client
+      // wait and repeat instead of assuming its request half-landed.
       throw new HttpException(
         {
+          code: 'RATE_LIMITED',
           message: 'Too many requests',
+          retryable: true,
           retryAfterSec: resetInSec,
         },
         HttpStatus.TOO_MANY_REQUESTS,

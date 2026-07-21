@@ -24,6 +24,7 @@ import {
   StoryTextExperienceController,
   StoryTextPlayController,
 } from './story-text-play.controller';
+import { StoryNarrativeSessionService } from './story-narrative-session.service';
 import { StoryTextPlayService } from './story-text-play.service';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { StoryVideoUploadFinalizeWorkerService } from './story-video-upload-finalize-worker.service';
@@ -64,6 +65,7 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryExperienceReleaseWorkerService,
     StoryWorkingPreviewService,
     StoryTextPlayService,
+    StoryNarrativeSessionService,
   ],
   exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
 })

@@ -9,9 +9,14 @@ import {
   deleteGraphNode,
   duplicateClipNode,
   duplicateTextNode,
+  setNodeMusic,
   updateTextNode,
   validateStoryDraftGraph,
 } from "./story-project-canvas-mutations";
+
+/** Real MediaAsset ids: the binding is validated as a UUID, exactly as on the server. */
+const THEME_ASSET_ID = "0197f4a2-0800-7000-8000-0000000000a1";
+const ECHO_ASSET_ID = "0197f4a2-0800-7000-8000-0000000000a2";
 
 describe("story project canvas mutations", () => {
   it("creates and duplicates graph-only clips", () => {
@@ -146,6 +151,51 @@ describe("story project canvas mutations", () => {
       kind: "text",
       exit: { kind: "choice", choices: [] },
     });
+  });
+
+  it("binds, re-binds and clears a scene's music without leaving the key behind", () => {
+    let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
+    content = createTextNode(content, { nodeId: "text:reprise", locale: "en-US" }).content;
+    const pristine = content;
+
+    content = setNodeMusic(content, "opening", { mediaAssetId: ` ${THEME_ASSET_ID} ` });
+    expect(content.graph.nodes[0]).toMatchObject({ music: { mediaAssetId: THEME_ASSET_ID } });
+
+    // The same theme returning on a later scene is legal and normal.
+    content = setNodeMusic(content, "text:reprise", { mediaAssetId: THEME_ASSET_ID });
+    expect(content.graph.nodes[1]).toMatchObject({ music: { mediaAssetId: THEME_ASSET_ID } });
+
+    // Re-binding the attached track is a no-op; a real change replaces it.
+    expect(setNodeMusic(content, "opening", { mediaAssetId: THEME_ASSET_ID })).toBe(content);
+    content = setNodeMusic(content, "opening", { mediaAssetId: ECHO_ASSET_ID });
+    expect(content.graph.nodes[0]).toMatchObject({ music: { mediaAssetId: ECHO_ASSET_ID } });
+
+    // Clearing removes the key entirely — a story with no music serializes
+    // exactly as it did before the field existed.
+    content = setNodeMusic(content, "opening", null);
+    content = setNodeMusic(content, "text:reprise", null);
+    expect(content).toEqual(pristine);
+    expect(Object.keys(content.graph.nodes[0]!)).not.toContain("music");
+    expect(setNodeMusic(content, "opening", null)).toBe(content);
+  });
+
+  it("rejects music bound to an unknown node or an id the server would refuse", () => {
+    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
+
+    expect(() => setNodeMusic(content, "missing", { mediaAssetId: THEME_ASSET_ID })).toThrow(
+      /Unknown graph node/
+    );
+    expect(() => setNodeMusic(content, "opening", { mediaAssetId: "   " })).toThrow(
+      /Invalid media asset id/
+    );
+    // Caught here rather than at save: the server takes a UUID and nothing else,
+    // and its rejection names a graph path the creator cannot act on.
+    expect(() => setNodeMusic(content, "opening", { mediaAssetId: "theme-a" })).toThrow(
+      /Invalid media asset id/
+    );
+    expect(() =>
+      setNodeMusic(content, "opening", { mediaAssetId: THEME_ASSET_ID.slice(0, -1) })
+    ).toThrow(/Invalid media asset id/);
   });
 });
 

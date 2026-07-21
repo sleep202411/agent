@@ -149,6 +149,21 @@ export interface StoryChoiceExit {
   choices: StoryGraphChoice[];
 }
 
+/**
+ * A scene's music binding. Attaching the same asset to several nodes is legal
+ * and normal (a theme that returns), and play emits a cue when it enters a node
+ * whose track differs from the one already playing.
+ *
+ * Publishing does NOT freeze the asset: unlike a clip, the manifest carries the
+ * track's ordinary public media URL and nothing in the integrity graph points at
+ * it. Losing a video breaks the story, losing a bed only means silence — so
+ * music must never be able to fail a build, a publish, or a run.
+ */
+export interface StoryNodeMusic {
+  /** An audio MediaAsset owned by the workspace, by its UUID. */
+  mediaAssetId: string;
+}
+
 export type StoryGraphNode =
   | {
       kind: "clip";
@@ -156,6 +171,7 @@ export type StoryGraphNode =
       clipKey: string;
       name?: string;
       description?: string;
+      music?: StoryNodeMusic;
       exit:
         | { kind: "auto"; nextNodeId: string | null }
         | StoryChoiceExit
@@ -167,6 +183,7 @@ export type StoryGraphNode =
       nodeId: string;
       title?: Record<string, string>;
       body: Record<string, string>;
+      music?: StoryNodeMusic;
       exit:
         | { kind: "auto"; nextNodeId: string | null }
         | StoryChoiceExit
@@ -1064,7 +1081,14 @@ export async function startStoryTextPlay(
 export async function turnStoryTextPlay(
   workspaceId: string,
   projectId: string,
-  input: { state: StoryTextPlayState; action: StoryTextPlayAction; freeTurnLimit?: number }
+  input: {
+    state: StoryTextPlayState;
+    action: StoryTextPlayAction;
+    /** Biases how hard the narrator pushes toward the next authored beat. */
+    pace?: "slow" | "standard" | "compact";
+    /** Runaway backstop only — normal play never reaches it. */
+    runawayTurnGuard?: number;
+  }
 ): Promise<StoryTextPlayTurnResult> {
   return api.post<StoryTextPlayTurnResult>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/text-play/turn`,

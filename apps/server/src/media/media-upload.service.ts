@@ -215,6 +215,20 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     ttlSeconds: 900,
     keySegment: 'ai-reference-audio',
   },
+  // A story's background music bed. Same formats as a reference sample but a
+  // different CHANNEL: this is playable content the creator attaches to a
+  // scene, not a generation input, and it gets its own key segment so the two
+  // never share a lifecycle. No story-domain claim step — the binding is a
+  // plain media reference, so nothing is frozen and nothing has to be verified
+  // before publish. The cap is larger because a bed runs for minutes and WAV
+  // costs roughly 10 MB per minute.
+  story_music_audio: {
+    contentTypes: REFERENCE_AUDIO_CONTENT_TYPES,
+    maxBytes: 50 * MiB,
+    assetKind: MediaAssetKind.audio,
+    ttlSeconds: 900,
+    keySegment: 'story-music-audio',
+  },
 };
 
 /** Prisma's MediaStorageProvider is the durable enum; the storage result

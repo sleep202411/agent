@@ -29,11 +29,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type {
+  CreatableStoryFormat,
   InteractiveStoryDraftContent,
   StoryGraphChoice,
   StoryGraphNode,
+  StoryNodeMusic,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
+import { collectStoryMusicTracks, StoryNodeMusicPanel } from "./story-node-music-panel";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
 import {
   StoryClipGenerationForm,
@@ -51,6 +54,8 @@ type Character = InteractiveStoryDraftContent["storyBible"]["characters"][number
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
+  /** Decides which authoring surfaces this project's runtime can actually use. */
+  format: CreatableStoryFormat;
   locale: string;
   selectedNode: StoryCanvasNode | null;
   showFoundation: boolean;
@@ -75,10 +80,14 @@ interface StoryNodeInspectorProps {
   trailerGeneration?: StoryClipGenerationFormProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
   onUpdateText: (nodeId: string, patch: { title?: string; body?: string }) => void;
+  /** Ownership scope for a track uploaded from the inspector. */
+  workspaceId: string | null;
+  onUpdateMusic: (nodeId: string, music: StoryNodeMusic | null) => void;
 }
 
 export function StoryNodeInspector({
   content,
+  format,
   locale,
   selectedNode,
   showFoundation,
@@ -99,6 +108,8 @@ export function StoryNodeInspector({
   trailerGeneration,
   onUpdateClipMeta,
   onUpdateText,
+  workspaceId,
+  onUpdateMusic,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
   const canvasData = selectedNode?.data;
@@ -169,14 +180,17 @@ export function StoryNodeInspector({
             {graphNode ? (
               <GraphNodeEditor
                 content={content}
+                format={format}
                 locale={locale}
                 node={graphNode}
                 decisionOnly={canvasData.kind === "decision"}
                 canEdit={canEdit}
                 clipMedia={clipMedia}
                 clipGeneration={clipGeneration}
+                workspaceId={workspaceId}
                 onUpdateClipMeta={onUpdateClipMeta}
                 onUpdateText={onUpdateText}
+                onUpdateMusic={onUpdateMusic}
                 onUpdateChoiceExit={onUpdateChoiceExit}
                 onAddChoice={onAddChoice}
                 onUpdateChoice={onUpdateChoice}
@@ -241,14 +255,17 @@ export function StoryNodeInspector({
 
 function GraphNodeEditor({
   content,
+  format,
   locale,
   node,
   decisionOnly,
   canEdit,
   clipMedia,
   clipGeneration,
+  workspaceId,
   onUpdateClipMeta,
   onUpdateText,
+  onUpdateMusic,
   onUpdateChoiceExit,
   onAddChoice,
   onUpdateChoice,
@@ -256,14 +273,17 @@ function GraphNodeEditor({
   onRemoveChoice,
 }: {
   content: InteractiveStoryDraftContent;
+  format: StoryNodeInspectorProps["format"];
   locale: string;
   node: StoryGraphNode;
   decisionOnly: boolean;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
   clipGeneration?: StoryClipGenerationFormProps;
+  workspaceId: StoryNodeInspectorProps["workspaceId"];
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   onUpdateText: StoryNodeInspectorProps["onUpdateText"];
+  onUpdateMusic: StoryNodeInspectorProps["onUpdateMusic"];
   onUpdateChoiceExit: StoryNodeInspectorProps["onUpdateChoiceExit"];
   onAddChoice: StoryNodeInspectorProps["onAddChoice"];
   onUpdateChoice: StoryNodeInspectorProps["onUpdateChoice"];
@@ -272,6 +292,14 @@ function GraphNodeEditor({
 }) {
   const t = useTranslations("storyStudio.canvas");
   const targetNodes = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
+  // Only the narrative runtime reads a scene's bed — the cinematic player never
+  // does, and the Build compiler drops music for that format. Offering the panel
+  // there would let a creator upload a 50 MB bed, bind it, publish, and get
+  // silence with nothing to explain it.
+  const playsMusic = format !== "interactive_film";
+  const musicTracks = collectStoryMusicTracks(content.graph.nodes, (letter) =>
+    t("inspector.music.trackLabel", { letter })
+  );
   return (
     <>
       <dl className="mt-6 space-y-3">
@@ -385,6 +413,17 @@ function GraphNodeEditor({
         ) : (
           <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
         )
+      ) : null}
+
+      {!decisionOnly && playsMusic ? (
+        <StoryNodeMusicPanel
+          key={node.nodeId}
+          music={node.music ?? null}
+          tracks={musicTracks}
+          canEdit={canEdit}
+          workspaceId={workspaceId}
+          onChange={(music) => onUpdateMusic(node.nodeId, music)}
+        />
       ) : null}
 
       {decisionOnly && node.exit.kind === "choice" ? (

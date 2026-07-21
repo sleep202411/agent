@@ -58,6 +58,7 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildVideoInput,
 } from './story-build-compiler';
+import { resolveStoryMusicUrls } from './story-music-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
@@ -187,6 +188,8 @@ interface ValidatedBuildSnapshot {
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
   videos: StoryBuildVideoInput[];
+  /** Plain public URL per bound music asset; a missing entry is silence. */
+  musicUrls: Map<string, string>;
 }
 
 @Injectable()
@@ -285,6 +288,7 @@ export class StoryBuildService {
               },
               draft: snapshot.draft.content,
               videos: snapshot.videos,
+              musicUrls: snapshot.musicUrls,
             });
             if (
               !compilation.runtime &&
@@ -869,6 +873,12 @@ async function loadValidatedBuildSnapshot(
     videoSnapshotHash,
     entries,
     videos,
+    musicUrls: await resolveStoryMusicUrls(
+      tx,
+      project.workspaceId,
+      format,
+      lockable.data,
+    ),
   };
 }
 
