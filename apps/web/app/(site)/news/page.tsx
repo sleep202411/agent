@@ -1,6 +1,5 @@
 import { headers } from "next/headers";
 import { getNewsList, getNewsTags } from "./_data/news";
-import { localizedCategories } from "./_data/categories";
 import { NewsList } from "./_components/news-list";
 import { JsonLd, buildBreadcrumbList, buildItemList, localeCanonicalUrl } from "@/src/lib/seo";
 
@@ -38,7 +37,7 @@ export default async function NewsPage() {
   return (
     <>
       <JsonLd data={[itemList, breadcrumb]} />
-      <NewsList articles={articles} categories={localizedCategories(lang)} tags={tags} />
+      <NewsList articles={articles} tags={tags} />
     </>
   );
 }
