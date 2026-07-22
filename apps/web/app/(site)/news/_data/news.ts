@@ -71,6 +71,19 @@ function isUpstreamSuccess(json: UpstreamResponse | null): boolean {
   return false;
 }
 
+// Normalize upstream tags into the rendered `{ id, label }` shape, dropping
+// entries with an empty id or label (defensive — same spirit as the mobile
+// `mapTags`). Live items carry tags from Java; static articles pass none.
+function mapTags(raw?: UpstreamTag[]): { id: string; label: string }[] {
+  const out: { id: string; label: string }[] = [];
+  for (const tag of raw ?? []) {
+    const id = (tag?.id ?? "").trim();
+    const label = (tag?.label ?? "").trim();
+    if (id && label) out.push({ id, label });
+  }
+  return out;
+}
+
 function normalizeUpstream(raw: UpstreamItem): NewsItem {
   const coverUrl = raw.coverUrl ?? "";
   const cover = coverUrl
@@ -80,6 +93,7 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
     : "";
   const isExternal = raw.kind === "external";
   const body = raw.body?.trim();
+  const tags = mapTags(raw.tags);
   return {
     id: raw.id,
     type: raw.kind ?? "news",
@@ -92,6 +106,9 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
     url: isExternal ? raw.url || undefined : undefined,
     // Present only on the detail endpoint's payload; undefined for list cards.
     ...(body ? { body } : {}),
+    // Backend-managed tags for the main-feed filter bar. Only set when at least
+    // one valid tag survives; static articles carry none (stays undefined).
+    ...(tags.length ? { tags } : {}),
     author: raw.author,
   };
 }
@@ -204,5 +221,45 @@ export async function getNewsItem(id: number, rawLang: string): Promise<NewsItem
   } catch (err) {
     console.warn(`[news] detail fetch failed id=${id}:`, err);
     return null;
+  }
+}
+
+/**
+ * Fetch the backend-managed tag list that drives the main news feed's filter
+ * bar. `GET /api/news/tags?locale=xx` → `{ code, msg, data: [{ id, label }] }`
+ * where `data` is the tag array directly (not a `.list`). Labels are already
+ * localized with zh-CN fallback and `all` sorts first when present, so this
+ * layer preserves upstream order and does not re-sort.
+ *
+ * Mirrors getNewsList's conventions: same lang normalization, envelope check,
+ * 5-minute revalidate, and TOTAL error tolerance — any failure (network,
+ * non-OK, malformed, non-array) returns `[]` and never throws. The bar simply
+ * won't render when the list is empty. Only entries whose id and label are
+ * both non-empty strings are kept.
+ */
+export async function getNewsTags(rawLang: string): Promise<{ id: string; label: string }[]> {
+  const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  const url = `${UPSTREAM_BASE}/tags?locale=${encodeURIComponent(lang)}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res.ok) {
+      console.warn(`[news] tags upstream non-OK: ${res.status} ${res.statusText}`);
+      return [];
+    }
+    const json = (await res.json().catch(() => null)) as UpstreamResponse | null;
+    // `data` is the tag array directly here — not `data.list`.
+    if (!isUpstreamSuccess(json) || !Array.isArray(json!.data)) return [];
+    const out: { id: string; label: string }[] = [];
+    for (const raw of json!.data as unknown[]) {
+      if (!raw || typeof raw !== "object") continue;
+      const tag = raw as UpstreamTag;
+      const id = typeof tag.id === "string" ? tag.id.trim() : "";
+      const label = typeof tag.label === "string" ? tag.label.trim() : "";
+      if (id && label) out.push({ id, label });
+    }
+    return out;
+  } catch (err) {
+    console.warn("[news] tags fetch failed:", err);
+    return [];
   }
 }
