@@ -2059,6 +2059,7 @@
     "subscribe": "訂閱",
     "subscribeSocialProof": "已有 {total} 萬 + 資深觀眾、投資人、創作者、院校等機構訂閱。",
     "tSubscribed": "訂閱成功！我們會把更新發送到 {email}。",
+    "tFilterFailed": "該標籤載入失敗，請重試。",
     "tInvalidEmail": "請輸入有效的電郵",
     "recent": "最新文章",
     "all": "全部文章",

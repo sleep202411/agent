@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { articleHref, formatDate } from "../_data/format";
-import { fetchNewsByTag } from "../_data/news-actions";
+import { fetchNewsByTag } from "../_data/news-client";
 import type { NewsItem } from "../_data/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,8 +65,16 @@ export function NewsList({
       return;
     }
     startTransition(async () => {
-      const next = await fetchNewsByTag(locale, tagId);
-      if (reqId === reqRef.current) setDisplayedArticles(next);
+      try {
+        const next = await fetchNewsByTag(locale, tagId);
+        if (reqId === reqRef.current) setDisplayedArticles(next);
+      } catch {
+        // A failed tag fetch — transient network, or a Server Action id mismatch
+        // when the open page is from a previous deploy — must NOT bubble to the
+        // error boundary and crash the whole page. Keep the current list; the
+        // user can retry, and a reload picks up the current build.
+        if (reqId === reqRef.current) toast.error(t("tFilterFailed"));
+      }
     });
   };
 

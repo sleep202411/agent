@@ -2060,6 +2060,7 @@
     "subscribe": "Subscribe",
     "subscribeSocialProof": "{total} super viewers, investors, creators, schools, and other institutions have subscribed.",
     "tSubscribed": "Subscribed! We'll send updates to {email}.",
+    "tFilterFailed": "Couldn't load that tag. Please try again.",
     "tInvalidEmail": "Please enter a valid email",
     "recent": "Recent blog posts",
     "all": "All blog posts",

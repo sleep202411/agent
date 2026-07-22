@@ -2059,6 +2059,7 @@
     "subscribe": "订阅",
     "subscribeSocialProof": "已有 {total} 万 + 资深观众、投资人、创作者、院校等机构订阅。",
     "tSubscribed": "订阅成功！我们会把更新发送到 {email}。",
+    "tFilterFailed": "该标签加载失败，请重试。",
     "tInvalidEmail": "请输入有效的邮箱",
     "recent": "最新文章",
     "all": "全部文章",
