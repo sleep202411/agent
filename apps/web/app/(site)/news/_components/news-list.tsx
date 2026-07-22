@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { IconArrowUpRight, IconExternalLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { articleHref, formatDate } from "../_data/format";
+import { fetchNewsByTag } from "../_data/news-actions";
 import type { NewsItem } from "../_data/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -26,24 +27,19 @@ function subscriberCountLabel(locale: string): string {
   return locale.startsWith("zh") ? String(wan) : (wan * 10_000).toLocaleString("en-US");
 }
 
-// The backend "show everything" tag has this literal id and always sorts first.
+// The "All" pill is inserted here on the frontend — the backend has no all-tag.
+// Selecting it clears the server-side `tag` filter. Sentinel id, never sent.
 const ALL_TAG_ID = "all";
 
 export function NewsList({
   articles,
-  categories = [],
-  activeCategory,
   tags = [],
 }: {
   articles: NewsItem[];
-  /** Localized pill list. Empty = no category bar. */
-  categories?: { slug: string; label: string }[];
-  /** Active category slug; undefined = the "All" / main feed. */
-  activeCategory?: string;
   /**
-   * Backend tag list for the main-feed filter bar (separate from `categories`).
-   * Empty = no tag bar. Filtering happens client-side against each item's own
-   * `tags`, so clicking never navigates or changes the URL.
+   * Backend tag list (`/api/news/tags?onlyWithNews=true`) for the filter bar.
+   * Empty = no bar. The "All" pill is prepended client-side; switching a real
+   * tag refetches the feed from the backend (`/api/news?tag=<id>`).
    */
   tags?: { id: string; label: string }[];
 }) {
@@ -52,17 +48,27 @@ export function NewsList({
   const subscriberCount = subscriberCountLabel(locale);
   const [email, setEmail] = useState("");
 
-  // Default to the "all" tag when the backend provides one, else null = show
-  // everything (and no pill appears active). These ids never touch the URL.
-  const hasAllTag = tags.some((tg) => tg.id === ALL_TAG_ID);
-  const [activeTagId, setActiveTagId] = useState<string | null>(hasAllTag ? ALL_TAG_ID : null);
+  // Default to "All". Switching a real tag calls the backend (server action)
+  // and swaps the list; "All" restores the server-rendered feed with no
+  // round-trip. `reqRef` drops stale responses so fast clicks can't race.
+  const [activeTagId, setActiveTagId] = useState<string>(ALL_TAG_ID);
+  const [displayedArticles, setDisplayedArticles] = useState<NewsItem[]>(articles);
+  const [isPending, startTransition] = useTransition();
+  const reqRef = useRef(0);
 
-  // Narrow the feed BEFORE slicing so the whole layout (featured/stacked/rest
-  // and the empty state) reflects the active tag. "all"/null shows the full set.
-  const showingAll = activeTagId === null || activeTagId === ALL_TAG_ID;
-  const displayedArticles = showingAll
-    ? articles
-    : articles.filter((a) => a.tags?.some((tg) => tg.id === activeTagId));
+  const selectTag = (tagId: string) => {
+    if (tagId === activeTagId) return;
+    setActiveTagId(tagId);
+    const reqId = ++reqRef.current;
+    if (tagId === ALL_TAG_ID) {
+      setDisplayedArticles(articles);
+      return;
+    }
+    startTransition(async () => {
+      const next = await fetchNewsByTag(locale, tagId);
+      if (reqId === reqRef.current) setDisplayedArticles(next);
+    });
+  };
 
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,40 +84,18 @@ export function NewsList({
   const featured = displayedArticles[0];
   const stacked = displayedArticles.slice(1, 4);
   const rest = displayedArticles.slice(4);
-  const activeLabel = activeCategory
-    ? (categories.find((c) => c.slug === activeCategory)?.label ?? activeCategory)
-    : null;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-[1200px] px-5 py-12 md:px-8 md:py-20">
         {/* Hero */}
         <header className="mx-auto max-w-2xl text-center">
-          {activeLabel ? (
-            <>
-              <Link
-                href="/news"
-                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                ← {t("title")}
-              </Link>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground md:text-5xl">
-                {activeLabel}
-              </h1>
-              <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
-                {t("categorySubtitle", { category: activeLabel })}
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-5xl">
-                {t("title")}
-              </h1>
-              <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
-                {t("subtitle")}
-              </p>
-            </>
-          )}
+          <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-5xl">
+            {t("title")}
+          </h1>
+          <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
+            {t("subtitle")}
+          </p>
           <form
             onSubmit={handleSubscribe}
             className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row"
@@ -135,48 +119,36 @@ export function NewsList({
           </p>
         </header>
 
-        {/* Category pills — link-driven so each category has a shareable URL */}
-        {categories.length > 0 && (
-          <nav className="mt-10 flex flex-wrap items-center justify-center gap-2">
-            <CategoryPill href="/news" active={!activeCategory}>
-              {t("categoryAll")}
-            </CategoryPill>
-            {categories.map((c) => (
-              <CategoryPill
-                key={c.slug}
-                href={`/news/category/${c.slug}`}
-                active={activeCategory === c.slug}
-              >
-                {c.label}
-              </CategoryPill>
-            ))}
-          </nav>
-        )}
-
-        {/* Tag pills — button-driven, filter the feed in-page (no navigation) */}
+        {/* Tag pills — the "All" pill is prepended client-side; switching a real
+            tag refetches the feed from the backend. No navigation, no URL change. */}
         {tags.length > 0 && (
           <nav
-            className={cn(
-              "flex flex-wrap items-center justify-center gap-2",
-              categories.length > 0 ? "mt-4" : "mt-10"
-            )}
+            className="mt-10 flex flex-wrap items-center justify-center gap-2"
+            aria-busy={isPending}
           >
+            <TagPill active={activeTagId === ALL_TAG_ID} onClick={() => selectTag(ALL_TAG_ID)}>
+              {t("categoryAll")}
+            </TagPill>
             {tags.map((tag) => (
               <TagPill
                 key={tag.id}
                 active={activeTagId === tag.id}
-                onClick={() => setActiveTagId(tag.id)}
+                onClick={() => selectTag(tag.id)}
               >
-                {tag.id === ALL_TAG_ID ? tag.label || t("categoryAll") : tag.label}
+                {tag.label}
               </TagPill>
             ))}
           </nav>
         )}
 
-        {displayedArticles.length === 0 ? (
+        {isPending && displayedArticles.length === 0 ? (
+          <div className="mt-20 flex justify-center">
+            <span className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+          </div>
+        ) : displayedArticles.length === 0 ? (
           <div className="mt-20 text-center text-sm text-muted-foreground">{t("empty")}</div>
         ) : (
-          <>
+          <div className={cn("transition-opacity", isPending && "pointer-events-none opacity-40")}>
             {/* Recent blog posts */}
             <section className="mt-16 md:mt-24">
               <h2 className="mb-8 text-lg font-bold text-foreground">{t("recent")}</h2>
@@ -201,44 +173,17 @@ export function NewsList({
                 </div>
               </section>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-// ─── Category pill ────────────────────────────────────
-
-function CategoryPill({
-  href,
-  active,
-  children,
-}: {
-  href: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "border-transparent bg-foreground text-background"
-          : "border-border bg-secondary/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
-      )}
-    >
-      {children}
-    </Link>
-  );
-}
-
 // ─── Tag pill ─────────────────────────────────────────
 //
-// Same visual as CategoryPill but a <button>: tags filter the feed in-page,
-// they don't navigate, so there is no href and no shareable URL by design.
+// A <button>: tags filter the feed by refetching from the backend, they don't
+// navigate, so there is no href and no shareable URL by design.
 
 function TagPill({
   active,

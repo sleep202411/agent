@@ -9,7 +9,6 @@
 
 import "server-only";
 import { env } from "@/src/env";
-import { getStaticArticles } from "./static-articles";
 import type { NewsItem } from "./types";
 
 const SUPPORTED_LANGS = new Set(["en-US", "zh-CN", "zh-HK"]);
@@ -32,6 +31,11 @@ const CONTENT_BASE = requireServerEnv("JAVA_CONTENT_URL").replace(/\/+$/, "");
 // `/project/list/newsad` so admin edits actually surface on the site.
 const UPSTREAM_BASE = `${CONTENT_BASE}/api/news`;
 const BANNER_HOST = env.BANNER_BASE_URL.replace(/\/+$/, "");
+
+// The "All" pill is inserted client-side — the backend has NO all-tag. This
+// sentinel id means "no server-side tag filter"; a real tag id filters via
+// `?tag=`. Kept here so the fetch layer and the client agree on the value.
+export const ALL_TAG_ID = "all";
 
 interface UpstreamTag {
   id: string;
@@ -139,17 +143,21 @@ function parseList(data: unknown): NewsItem[] {
   return out;
 }
 
-export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
+export async function getNewsList(rawLang: string, tag?: string): Promise<NewsItem[]> {
   const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  // "all"/empty → no server-side tag filter (the "All" pill is a frontend-only
+  // insert; the backend has no all-tag). A real tag id filters via `?tag=`.
+  const filterTag = tag && tag !== ALL_TAG_ID ? tag.trim() : "";
 
   // Upstream is flaky — wrap everything (network, parse, shape) so a
-  // 500 / malformed body / non-JSON response can never bubble up.
-  // Worst case we just serve the static articles (or an empty list on
-  // production .cn).
+  // 500 / malformed body / non-JSON response can never bubble up. Worst case
+  // is an empty feed, never a throw.
   // Server-side locale fallback is done by the backend via the `locale` param.
-  // pageSize=100 returns the full published set today (73); revisit with real
+  // pageSize=100 returns the full published set today; revisit with real
   // pagination if the catalogue ever outgrows that.
-  const url = `${UPSTREAM_BASE}?locale=${encodeURIComponent(lang)}&pageSize=100`;
+  const url = `${UPSTREAM_BASE}?locale=${encodeURIComponent(lang)}&pageSize=100${
+    filterTag ? `&tag=${encodeURIComponent(filterTag)}` : ""
+  }`;
   let live: NewsItem[] = [];
   console.log(`[news] fetching upstream lang=${lang} url=${url}`);
   try {
@@ -184,14 +192,9 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
     console.warn("[news] upstream fetch failed, falling back to static-only:", err);
   }
 
-  // Hardcoded marketing articles only run on staging + production .com
-  // (NEXT_PUBLIC_SITE_REGION === "global"). Production .cn (region
-  // "cn") shows the live newsapi feed only.
-  const region = process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
-  const staticArticles = region === "cn" ? [] : getStaticArticles(lang);
-  return [...staticArticles, ...live].sort(
-    (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
-  );
+  // Backend already returns published-only, ordered by publishedAt desc. Sort
+  // defensively so a backend ordering change can't scramble the feed.
+  return live.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
 }
 
 /**
@@ -239,7 +242,10 @@ export async function getNewsItem(id: number, rawLang: string): Promise<NewsItem
  */
 export async function getNewsTags(rawLang: string): Promise<{ id: string; label: string }[]> {
   const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
-  const url = `${UPSTREAM_BASE}/tags?locale=${encodeURIComponent(lang)}`;
+  // onlyWithNews=true → backend returns only tags bound to ≥1 published article,
+  // so empty tags (e.g. China with no posts yet) never show in the bar. The
+  // "All" pill is added client-side, not by this endpoint.
+  const url = `${UPSTREAM_BASE}/tags?locale=${encodeURIComponent(lang)}&onlyWithNews=true`;
   try {
     const res = await fetch(url, { next: { revalidate: 300 } });
     if (!res.ok) {
