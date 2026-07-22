@@ -163,7 +163,7 @@ function getScheme(region, variant) {
 }
 
 function readSlug() {
-  const slug = readOptionalEnv("FD_EXPO_SLUG") || "fizzdragon-mobile";
+  const slug = readOptionalEnv("FD_EXPO_SLUG") || "fizzdragon";
 
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
     throw new Error(`[mobile config] FD_EXPO_SLUG must be URL-safe, received: ${slug}`);
@@ -217,6 +217,7 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
     version: "2.0.3",
@@ -315,6 +316,10 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       appEnv,
+      eas: {
+        ...config.extra?.eas,
+        projectId: "00e1e0f0-54fd-4242-86ca-1580d53f90f0",
+      },
     },
   };
 };
