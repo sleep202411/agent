@@ -35,4 +35,11 @@ export interface NewsItem {
   author?: string;
   /** Category slug for static articles (see _data/categories.ts). Live items: undefined. */
   category?: string;
+  /**
+   * Backend-managed tags for the main-feed tag filter bar. Live items carry
+   * these from Java (`/api/news`); static articles have none (undefined). Ids
+   * are "dirty" (mixed case / prefixes) and are used only for client-side
+   * filtering against the backend tag list — never in a URL.
+   */
+  tags?: { id: string; label: string }[];
 }

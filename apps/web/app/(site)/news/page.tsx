@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { getNewsList } from "./_data/news";
+import { getNewsList, getNewsTags } from "./_data/news";
 import { localizedCategories } from "./_data/categories";
 import { NewsList } from "./_components/news-list";
 import { JsonLd, buildBreadcrumbList, buildItemList, localeCanonicalUrl } from "@/src/lib/seo";
@@ -7,7 +7,9 @@ import { JsonLd, buildBreadcrumbList, buildItemList, localeCanonicalUrl } from "
 export default async function NewsPage() {
   // proxy.ts sets x-locale on the rewritten request based on the URL prefix.
   const lang = (await headers()).get("x-locale") ?? "en-US";
-  const all = await getNewsList(lang);
+  // Fetch the feed and the backend tag list together — the tag bar filters the
+  // feed client-side, so both are needed before first paint.
+  const [all, tags] = await Promise.all([getNewsList(lang), getNewsTags(lang)]);
   // Categorized (country) articles live ONLY on their category page — keep the
   // main feed to uncategorized / live news so "All" isn't a duplicate of a category.
   const articles = all.filter((a) => !a.category);
@@ -36,7 +38,7 @@ export default async function NewsPage() {
   return (
     <>
       <JsonLd data={[itemList, breadcrumb]} />
-      <NewsList articles={articles} categories={localizedCategories(lang)} />
+      <NewsList articles={articles} categories={localizedCategories(lang)} tags={tags} />
     </>
   );
 }

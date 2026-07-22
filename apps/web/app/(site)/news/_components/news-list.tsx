@@ -26,21 +26,43 @@ function subscriberCountLabel(locale: string): string {
   return locale.startsWith("zh") ? String(wan) : (wan * 10_000).toLocaleString("en-US");
 }
 
+// The backend "show everything" tag has this literal id and always sorts first.
+const ALL_TAG_ID = "all";
+
 export function NewsList({
   articles,
   categories = [],
   activeCategory,
+  tags = [],
 }: {
   articles: NewsItem[];
   /** Localized pill list. Empty = no category bar. */
   categories?: { slug: string; label: string }[];
   /** Active category slug; undefined = the "All" / main feed. */
   activeCategory?: string;
+  /**
+   * Backend tag list for the main-feed filter bar (separate from `categories`).
+   * Empty = no tag bar. Filtering happens client-side against each item's own
+   * `tags`, so clicking never navigates or changes the URL.
+   */
+  tags?: { id: string; label: string }[];
 }) {
   const t = useTranslations("news");
   const locale = useLocale();
   const subscriberCount = subscriberCountLabel(locale);
   const [email, setEmail] = useState("");
+
+  // Default to the "all" tag when the backend provides one, else null = show
+  // everything (and no pill appears active). These ids never touch the URL.
+  const hasAllTag = tags.some((tg) => tg.id === ALL_TAG_ID);
+  const [activeTagId, setActiveTagId] = useState<string | null>(hasAllTag ? ALL_TAG_ID : null);
+
+  // Narrow the feed BEFORE slicing so the whole layout (featured/stacked/rest
+  // and the empty state) reflects the active tag. "all"/null shows the full set.
+  const showingAll = activeTagId === null || activeTagId === ALL_TAG_ID;
+  const displayedArticles = showingAll
+    ? articles
+    : articles.filter((a) => a.tags?.some((tg) => tg.id === activeTagId));
 
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,9 +75,9 @@ export function NewsList({
     setEmail("");
   };
 
-  const featured = articles[0];
-  const stacked = articles.slice(1, 4);
-  const rest = articles.slice(4);
+  const featured = displayedArticles[0];
+  const stacked = displayedArticles.slice(1, 4);
+  const rest = displayedArticles.slice(4);
   const activeLabel = activeCategory
     ? (categories.find((c) => c.slug === activeCategory)?.label ?? activeCategory)
     : null;
@@ -131,7 +153,27 @@ export function NewsList({
           </nav>
         )}
 
-        {articles.length === 0 ? (
+        {/* Tag pills — button-driven, filter the feed in-page (no navigation) */}
+        {tags.length > 0 && (
+          <nav
+            className={cn(
+              "flex flex-wrap items-center justify-center gap-2",
+              categories.length > 0 ? "mt-4" : "mt-10"
+            )}
+          >
+            {tags.map((tag) => (
+              <TagPill
+                key={tag.id}
+                active={activeTagId === tag.id}
+                onClick={() => setActiveTagId(tag.id)}
+              >
+                {tag.id === ALL_TAG_ID ? tag.label || t("categoryAll") : tag.label}
+              </TagPill>
+            ))}
+          </nav>
+        )}
+
+        {displayedArticles.length === 0 ? (
           <div className="mt-20 text-center text-sm text-muted-foreground">{t("empty")}</div>
         ) : (
           <>
@@ -190,6 +232,37 @@ function CategoryPill({
     >
       {children}
     </Link>
+  );
+}
+
+// ─── Tag pill ─────────────────────────────────────────
+//
+// Same visual as CategoryPill but a <button>: tags filter the feed in-page,
+// they don't navigate, so there is no href and no shareable URL by design.
+
+function TagPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "border-transparent bg-foreground text-background"
+          : "border-border bg-secondary/40 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
