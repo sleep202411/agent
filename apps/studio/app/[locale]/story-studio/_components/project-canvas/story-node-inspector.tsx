@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconArrowDown,
+  IconArrowRight,
   IconArrowUp,
   IconGitBranch,
   IconPlayerPlay,
@@ -51,6 +52,11 @@ type SceneNode = ClipNode | TextNode;
 type ChoiceExit = Extract<SceneNode["exit"], { kind: "choice" }>;
 type Ending = InteractiveStoryDraftContent["storyBible"]["endings"][number];
 type Character = InteractiveStoryDraftContent["storyBible"]["characters"][number];
+type StoryChapterTarget = {
+  id: string;
+  title: string;
+  entryNodeId: string | null;
+};
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
@@ -66,6 +72,8 @@ interface StoryNodeInspectorProps {
   onCloseNode: () => void;
   onUpdateChoiceExit: (nodeId: string, patch: Partial<Pick<ChoiceExit, "prompt">>) => void;
   onAddChoice: (nodeId: string, targetNodeId: string) => void;
+  chapterTargets?: StoryChapterTarget[];
+  onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
   onUpdateChoice: (
     nodeId: string,
     choiceId: string,
@@ -98,6 +106,8 @@ export function StoryNodeInspector({
   onCloseNode,
   onUpdateChoiceExit,
   onAddChoice,
+  chapterTargets = [],
+  onConnectChapter = () => undefined,
   onUpdateChoice,
   onMoveChoice,
   onRemoveChoice,
@@ -193,6 +203,8 @@ export function StoryNodeInspector({
                 onUpdateMusic={onUpdateMusic}
                 onUpdateChoiceExit={onUpdateChoiceExit}
                 onAddChoice={onAddChoice}
+                chapterTargets={chapterTargets}
+                onConnectChapter={onConnectChapter}
                 onUpdateChoice={onUpdateChoice}
                 onMoveChoice={onMoveChoice}
                 onRemoveChoice={onRemoveChoice}
@@ -268,6 +280,8 @@ function GraphNodeEditor({
   onUpdateMusic,
   onUpdateChoiceExit,
   onAddChoice,
+  chapterTargets,
+  onConnectChapter,
   onUpdateChoice,
   onMoveChoice,
   onRemoveChoice,
@@ -286,6 +300,8 @@ function GraphNodeEditor({
   onUpdateMusic: StoryNodeInspectorProps["onUpdateMusic"];
   onUpdateChoiceExit: StoryNodeInspectorProps["onUpdateChoiceExit"];
   onAddChoice: StoryNodeInspectorProps["onAddChoice"];
+  chapterTargets: StoryChapterTarget[];
+  onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
   onUpdateChoice: StoryNodeInspectorProps["onUpdateChoice"];
   onMoveChoice: StoryNodeInspectorProps["onMoveChoice"];
   onRemoveChoice: StoryNodeInspectorProps["onRemoveChoice"];
@@ -426,6 +442,13 @@ function GraphNodeEditor({
         />
       ) : null}
 
+      <ChapterDestinationEditor
+        node={node}
+        targets={chapterTargets}
+        canEdit={canEdit}
+        onConnect={onConnectChapter}
+      />
+
       {decisionOnly && node.exit.kind === "choice" ? (
         <ChoiceExitEditor
           nodeId={node.nodeId}
@@ -441,6 +464,76 @@ function GraphNodeEditor({
         />
       ) : null}
     </>
+  );
+}
+
+function ChapterDestinationEditor({
+  node,
+  targets,
+  canEdit,
+  onConnect,
+}: {
+  node: StoryGraphNode;
+  targets: StoryChapterTarget[];
+  canEdit: boolean;
+  onConnect: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  if (targets.length === 0 || (node.exit.kind !== "auto" && node.exit.kind !== "choice")) {
+    return null;
+  }
+  const linkedTargets = new Set(
+    node.exit.kind === "auto"
+      ? node.exit.nextNodeId
+        ? [node.exit.nextNodeId]
+        : []
+      : node.exit.choices.map((choice) => choice.nextNodeId)
+  );
+  const choiceLimitReached = node.exit.kind === "choice" && node.exit.choices.length >= 6;
+
+  return (
+    <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 place-items-center rounded-[10px] bg-white/[0.07] text-white/62">
+          <IconArrowRight className="size-3.5" />
+        </span>
+        <div>
+          <h3 className="text-xs font-semibold text-white/78">
+            {t("inspector.chapterTransitions.title")}
+          </h3>
+          <p className="mt-0.5 text-[9px] leading-4 text-white/34">
+            {t(
+              node.exit.kind === "choice"
+                ? "inspector.chapterTransitions.choiceHint"
+                : "inspector.chapterTransitions.continueHint"
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {targets.map((chapter) => {
+          const targetNodeId = chapter.entryNodeId;
+          if (!targetNodeId) return null;
+          const linked = linkedTargets.has(targetNodeId);
+          return (
+            <button
+              key={chapter.id}
+              type="button"
+              disabled={!canEdit || linked || choiceLimitReached}
+              onClick={() => onConnect(node.nodeId, targetNodeId, chapter.title)}
+              className="flex w-full items-center gap-2 rounded-xl bg-white/[0.045] px-3 py-2 text-left text-[10px] text-white/58 transition hover:bg-white/[0.09] hover:text-white disabled:cursor-default disabled:opacity-55"
+            >
+              <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
+              <span className="shrink-0 text-[9px] text-white/32">
+                {linked
+                  ? t("inspector.chapterTransitions.linked")
+                  : t("inspector.chapterTransitions.connect")}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

@@ -40,6 +40,36 @@ export interface StoryProjectionAuthorityInput {
   layoutError: boolean;
 }
 
+export interface StoryChapterProjectionPairInput {
+  targetChapterId: string | null;
+  workbenchChapterId: string | null;
+  layoutChapterId: string | null;
+  workbenchPlaceholder: boolean;
+  layoutPlaceholder: boolean;
+}
+
+/**
+ * A chapter is render-authoritative only when both canonical planes are fresh
+ * and name the same requested chapter. Keeping this check separate from query
+ * availability prevents a retained workbench from being paired with a fresh
+ * layout (or vice versa) while the URL chapter is changing.
+ */
+export function isStoryChapterProjectionPairReady({
+  targetChapterId,
+  workbenchChapterId,
+  layoutChapterId,
+  workbenchPlaceholder,
+  layoutPlaceholder,
+}: StoryChapterProjectionPairInput): boolean {
+  return Boolean(
+    targetChapterId &&
+    !workbenchPlaceholder &&
+    !layoutPlaceholder &&
+    workbenchChapterId === targetChapterId &&
+    layoutChapterId === targetChapterId
+  );
+}
+
 export function shouldFetchStoryProjection(
   hasWorkspace: boolean,
   agentAuthorityState: "checking" | "ready" | "error"
@@ -51,6 +81,7 @@ export function storyProjectionQueryKey(
   kind: "workbench" | "canvas-layout",
   workspaceId: string | null,
   projectId: string,
+  chapterId: string | null,
   authoritySnapshotKey: string | null
 ) {
   return [
@@ -58,6 +89,8 @@ export function storyProjectionQueryKey(
     kind,
     workspaceId,
     projectId,
+    "chapter",
+    chapterId ?? "default",
     "authority",
     authoritySnapshotKey ?? "unavailable",
   ] as const;
@@ -81,6 +114,7 @@ export function storyProjectionQueryOptions<TData>(input: {
   kind: "workbench" | "canvas-layout";
   workspaceId: string | null;
   projectId: string;
+  chapterId: string | null;
   authoritySnapshotKey: string | null;
   agentAuthorityState: "checking" | "ready" | "error";
   queryFn: () => Promise<TData>;
@@ -90,10 +124,13 @@ export function storyProjectionQueryOptions<TData>(input: {
       input.kind,
       input.workspaceId,
       input.projectId,
+      input.chapterId,
       input.authoritySnapshotKey
     ),
     queryFn: input.queryFn,
-    enabled: shouldFetchStoryProjection(Boolean(input.workspaceId), input.agentAuthorityState),
+    enabled:
+      shouldFetchStoryProjection(Boolean(input.workspaceId), input.agentAuthorityState) &&
+      (input.kind === "workbench" || Boolean(input.chapterId)),
     retry: false,
     placeholderData: keepPreviousData,
   } as const;

@@ -42,6 +42,7 @@ export function createStoryCanvasTools(input: {
   user: AuthUser;
   workspaceId: string;
   projectId: string;
+  chapterId: string;
   conversationId: string;
   /** Canonical conversation generation; changes after reset to prevent ABA. */
   sessionId: string;
@@ -66,6 +67,8 @@ export function createStoryCanvasTools(input: {
     .update(input.workspaceId)
     .update('\0')
     .update(input.projectId)
+    .update('\0')
+    .update(input.chapterId)
     .update('\0')
     .update(input.conversationId)
     .update('\0')
@@ -101,6 +104,7 @@ export function createStoryCanvasTools(input: {
             input.workspaceId,
             input.projectId,
             {
+              chapterId: input.chapterId,
               ...proposal,
               idempotencyKey: proposalIdempotencyKey,
               conversationId: input.conversationId,

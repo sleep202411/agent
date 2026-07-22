@@ -336,6 +336,7 @@ export class CopilotController {
             user,
             workspaceId,
             scope.projectId,
+            scope.chapterId,
           )
         : null;
       // Transient per-turn view: the current turn's document parts expand to
@@ -400,6 +401,7 @@ export class CopilotController {
               user,
               workspaceId,
               projectId: scope.projectId,
+              chapterId: scope.chapterId as string,
               conversationId,
               sessionId: claim.conversation.sessionId,
               userMessageId: claim.turn.userMessageId,
@@ -891,15 +893,28 @@ function requireConversationScope(input: {
   conversationId: string;
   mode: unknown;
   projectId: unknown;
-}): { mode: 'canvas' | 'story-canvas'; projectId: string } {
+}):
+  | { mode: 'canvas'; projectId: string; chapterId: null }
+  | { mode: 'story-canvas'; projectId: string; chapterId: string } {
   if (input.mode !== INFINITE_CANVAS_MODE && input.mode !== STORY_CANVAS_MODE) {
     throw invalidConversationScope();
   }
   const projectId = requiredCopilotProjectId(input.projectId, input.mode);
-  if (input.conversationId !== `${input.mode}:${projectId}`) {
+  if (input.mode === INFINITE_CANVAS_MODE) {
+    if (input.conversationId !== `${input.mode}:${projectId}`) {
+      throw invalidConversationScope();
+    }
+    return { mode: input.mode, projectId, chapterId: null };
+  }
+  const prefix = `${input.mode}:${projectId}:`;
+  const chapterId = input.conversationId.startsWith(prefix)
+    ? input.conversationId.slice(prefix.length)
+    : '';
+  const parsedChapterId = z.uuid().safeParse(chapterId);
+  if (!parsedChapterId.success || parsedChapterId.data !== chapterId) {
     throw invalidConversationScope();
   }
-  return { mode: input.mode, projectId };
+  return { mode: input.mode, projectId, chapterId: parsedChapterId.data };
 }
 
 function invalidConversationScope(): HttpException {
@@ -907,7 +922,7 @@ function invalidConversationScope(): HttpException {
     {
       code: 'COPILOT_CONVERSATION_SCOPE_INVALID',
       message:
-        'Copilot conversations must use the fixed canvas:<projectId> or story-canvas:<projectId> scope for their mode.',
+        'Copilot conversations must use canvas:<projectId> or story-canvas:<projectId>:<chapterId> for their mode.',
     },
     HttpStatus.BAD_REQUEST,
   );

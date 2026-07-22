@@ -11,6 +11,7 @@ import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   StoryProjectListQuerySchema,
   type InteractiveStoryDraftContent,
@@ -23,6 +24,8 @@ const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const DRAFT_ID = '0197f4a2-0800-7000-8000-000000000003';
 const REVISION_ID = '0197f4a2-0800-7000-8000-000000000004';
+const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000005';
+const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 
 function lockableDraft(): InteractiveStoryDraftContent {
@@ -60,6 +63,25 @@ function lockableDraft(): InteractiveStoryDraftContent {
       ],
     },
     productionNotes: [],
+  };
+}
+
+function multiChapterDraft(): InteractiveStoryDraftContent {
+  const first = lockableDraft();
+  return {
+    ...first,
+    graph: {
+      entryNodeId: 'node.opening',
+      nodes: [
+        ...first.graph.nodes,
+        {
+          kind: 'clip',
+          nodeId: 'node.chapter-two',
+          clipKey: 'S10',
+          exit: { kind: 'ending', endingId: 'ending.truth' },
+        },
+      ],
+    },
   };
 }
 
@@ -108,6 +130,7 @@ function draftRow(overrides: Record<string, unknown> = {}) {
 
 function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
   return {
+    storyChapterId: CHAPTER_ID,
     storyProjectId: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
@@ -122,15 +145,27 @@ function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function chapterRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CHAPTER_ID,
+    storyProjectId: PROJECT_ID,
+    title: 'Chapter 1',
+    rank: 0,
+    nodeIds: ['node.opening'],
+    entryNodeId: 'node.opening',
+    createdByUserId: USER.userId,
+    archivedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
 function summaryProject(overrides: Record<string, unknown> = {}) {
   const content = lockableDraft();
   return projectRow({
     cover: null,
-    draft: {
-      revision: 3,
-      content,
-      contentHash: canonicalJsonHash(content),
-    },
+    draft: draftRow({ content }),
     revisions: [],
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     referenceSlots: [],
@@ -265,7 +300,21 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         return Promise.resolve(project);
       },
     );
-    const { service } = serviceWith({ storyProject: { create } });
+    const tx = {
+      storyProject: {
+        create,
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+      storyChapter: {
+        create: jest
+          .fn()
+          .mockResolvedValue(chapterRow({ nodeIds: [], entryNodeId: null })),
+      },
+      storyCanvasLayout: {
+        create: jest.fn().mockResolvedValue(canvasLayoutRow()),
+      },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
 
     await expect(
       service.create(USER as never, WORKSPACE_ID, {
@@ -291,13 +340,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       (input: {
         data: {
           draft: { create: { schemaVersion: string; content: unknown } };
-          canvasLayout: {
-            create: {
-              schemaVersion: string;
-              nodePositions: unknown;
-              storyWorldNodePresent: boolean;
-            };
-          };
           writeState: { create: Record<string, never> };
         };
       }) => {
@@ -305,18 +347,22 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           schemaVersion: 'interactive-story-draft-v1',
           content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
         });
-        expect(input.data.canvasLayout.create).toMatchObject({
-          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-          nodePositions: {},
-          // Fresh projects open on the empty-canvas agent launcher; the Story
-          // World card is summoned later, not pre-seeded.
-          storyWorldNodePresent: false,
-        });
         expect(input.data.writeState).toEqual({ create: {} });
         return Promise.resolve(project);
       },
     );
-    const prisma = { storyProject: { create } };
+    const chapter = chapterRow({ nodeIds: [], entryNodeId: null });
+    const tx = {
+      storyProject: {
+        create,
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+      storyChapter: { create: jest.fn().mockResolvedValue(chapter) },
+      storyCanvasLayout: {
+        create: jest.fn().mockResolvedValue(canvasLayoutRow()),
+      },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
     const { service, workspacePermissions } = serviceWith(prisma);
 
     const result = await service.create(USER as never, WORKSPACE_ID, {
@@ -333,6 +379,26 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       WorkspaceMemberRole.editor,
     );
     expect(create).toHaveBeenCalledTimes(1);
+    expect(tx.storyChapter.create).toHaveBeenCalledWith({
+      data: {
+        storyProjectId: PROJECT_ID,
+        title: '第 1 章',
+        rank: 0,
+        nodeIds: [],
+        entryNodeId: null,
+        createdByUserId: USER.userId,
+      },
+    });
+    expect(tx.storyCanvasLayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyChapterId: CHAPTER_ID,
+        storyProjectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+        storyWorldNodePresent: false,
+      }) as unknown,
+    });
     expect(result).toMatchObject({
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
@@ -347,6 +413,8 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       latestBuild: null,
     });
     expect(Object.keys(result).sort()).toEqual([
+      'chapter',
+      'chapters',
       'draft',
       'latestBuild',
       'project',
@@ -355,31 +423,287 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ]);
   });
 
+  it('creates a real chapter together with its own empty canvas layout', async () => {
+    const created = chapterRow({
+      id: SECOND_CHAPTER_ID,
+      title: 'The Return',
+      rank: 1,
+      nodeIds: [],
+      entryNodeId: null,
+    });
+    const tx = {
+      storyChapter: {
+        count: jest.fn().mockResolvedValue(1),
+        aggregate: jest.fn().mockResolvedValue({ _max: { rank: 0 } }),
+        create: jest.fn().mockResolvedValue(created),
+      },
+      storyCanvasLayout: { create: jest.fn().mockResolvedValue({}) },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.createChapter(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        title: 'The Return',
+      }),
+    ).resolves.toMatchObject({
+      id: SECOND_CHAPTER_ID,
+      title: 'The Return',
+      rank: 1,
+      nodeCount: 0,
+    });
+    expect(tx.storyChapter.create).toHaveBeenCalledWith({
+      data: {
+        storyProjectId: PROJECT_ID,
+        title: 'The Return',
+        rank: 1,
+        nodeIds: [],
+        entryNodeId: null,
+        createdByUserId: USER.userId,
+      },
+    });
+    expect(tx.storyCanvasLayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyChapterId: SECOND_CHAPTER_ID,
+        storyProjectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        storyWorldNodePresent: false,
+      }) as unknown,
+    });
+    expect(tx.storyProject.update).toHaveBeenCalledWith({
+      where: { id: PROJECT_ID },
+      data: expect.objectContaining({ version: { increment: 1 } }) as unknown,
+    });
+  });
+
+  it('renames the latest chapter row without a chapter-version claim', async () => {
+    const current = chapterRow();
+    const renamed = chapterRow({ title: 'A New Name' });
+    const tx = {
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue(current),
+        update: jest.fn().mockResolvedValue(renamed),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.patchChapter(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+        { title: 'A New Name' },
+      ),
+    ).resolves.toMatchObject({ id: CHAPTER_ID, title: 'A New Name' });
+    expect(tx.storyChapter.update).toHaveBeenCalledWith({
+      where: { id: CHAPTER_ID },
+      data: { title: 'A New Name' },
+    });
+  });
+
+  it('merges one chapter save into the project graph without replacing another chapter', async () => {
+    const current = draftRow({ content: multiChapterDraft() });
+    const chapters = [
+      chapterRow(),
+      chapterRow({
+        id: SECOND_CHAPTER_ID,
+        title: 'Chapter 2',
+        rank: 1,
+        nodeIds: ['node.chapter-two'],
+        entryNodeId: 'node.chapter-two',
+      }),
+    ];
+    let persistedContent: unknown = null;
+    const storyDraft = {
+      findUnique: jest.fn().mockImplementation(() =>
+        Promise.resolve(
+          persistedContent
+            ? draftRow({
+                content:
+                  InteractiveStoryDraftContentSchema.parse(persistedContent),
+                revision: 4,
+              })
+            : current,
+        ),
+      ),
+      updateMany: jest
+        .fn()
+        .mockImplementation(({ data }: { data: { content: unknown } }) => {
+          persistedContent = data.content as InteractiveStoryDraftContent;
+          return Promise.resolve({ count: 1 });
+        }),
+    };
+    const tx = {
+      storyDraft,
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue(chapters),
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue(chapterRow()),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+    const editedChapter = lockableDraft();
+    editedChapter.graph.nodes = editedChapter.graph.nodes.map((node) =>
+      node.kind === 'clip' && node.nodeId === 'node.opening'
+        ? { ...node, clipKey: 'S01' }
+        : node,
+    );
+
+    const result = await service.putDraft(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+        content: editedChapter,
+        sessionId: 'chapter-save',
+      },
+      CHAPTER_ID,
+    );
+
+    const savedContent =
+      InteractiveStoryDraftContentSchema.parse(persistedContent);
+    expect(savedContent.graph.nodes.map((node) => node.nodeId)).toEqual([
+      'node.chapter-two',
+      'node.opening',
+    ]);
+    expect(
+      savedContent.graph.nodes.find(
+        (node) => node.nodeId === 'node.chapter-two',
+      ),
+    ).toEqual(multiChapterDraft().graph.nodes[1]);
+    expect(result.chapterId).toBe(CHAPTER_ID);
+    expect(result.content.graph.nodes).toHaveLength(1);
+    expect(result.content.graph.nodes[0]).toMatchObject({ clipKey: 'S01' });
+  });
+
+  it('rejects a chapter save that tries to claim another chapter scene id', async () => {
+    const chapters = [
+      chapterRow(),
+      chapterRow({
+        id: SECOND_CHAPTER_ID,
+        rank: 1,
+        nodeIds: ['node.chapter-two'],
+        entryNodeId: 'node.chapter-two',
+      }),
+    ];
+    const tx = {
+      storyDraft: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(draftRow({ content: multiChapterDraft() })),
+        updateMany: jest.fn(),
+      },
+      storyChapter: { findMany: jest.fn().mockResolvedValue(chapters) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+    const conflicting = lockableDraft();
+    conflicting.graph = {
+      entryNodeId: 'node.chapter-two',
+      nodes: [multiChapterDraft().graph.nodes[1]],
+    };
+
+    await expect(
+      service.putDraft(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: conflicting,
+          sessionId: 'chapter-save',
+        },
+        CHAPTER_ID,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moves the project entry to the next chapter when the empty first chapter is archived', async () => {
+    const secondNode = multiChapterDraft().graph.nodes[1];
+    const content: InteractiveStoryDraftContent = {
+      ...lockableDraft(),
+      graph: { entryNodeId: null, nodes: [secondNode] },
+    };
+    const first = chapterRow({ nodeIds: [], entryNodeId: null });
+    const second = chapterRow({
+      id: SECOND_CHAPTER_ID,
+      title: 'Chapter 2',
+      rank: 1,
+      nodeIds: ['node.chapter-two'],
+      entryNodeId: 'node.chapter-two',
+    });
+    const tx = {
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([first, second]),
+        update: jest.fn().mockResolvedValue({
+          ...first,
+          archivedAt: NOW,
+        }),
+      },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue(draftRow({ content })),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.archiveChapter(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+      ),
+    ).resolves.toMatchObject({ id: CHAPTER_ID });
+    expect(tx.storyDraft.update).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
+      data: expect.objectContaining({
+        content: expect.objectContaining({
+          graph: expect.objectContaining({
+            entryNodeId: 'node.chapter-two',
+          }) as unknown,
+        }) as unknown,
+        revision: { increment: 1 },
+      }) as unknown,
+    });
+  });
+
   it('returns the persisted story-world projection state with the canvas layout', async () => {
     const row = canvasLayoutRow({
       nodePositions: {},
       storyWorldNodePresent: false,
     });
     const findUnique = jest.fn().mockResolvedValue(row);
-    const prisma = { storyCanvasLayout: { findUnique } };
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      storyCanvasLayout: { findUnique },
+    };
     const { service } = serviceWith(prisma);
 
     await expect(
-      service.getCanvasLayout(USER as never, WORKSPACE_ID, PROJECT_ID),
+      service.getCanvasLayout(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+      ),
     ).resolves.toMatchObject({
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: row.nodePositions,
       storyWorldNodePresent: false,
       revision: 2,
     });
     expect(findUnique).toHaveBeenCalledWith({
-      where: {
-        storyProjectId_workspaceId: {
-          storyProjectId: PROJECT_ID,
-          workspaceId: WORKSPACE_ID,
-        },
-      },
+      where: { storyChapterId: CHAPTER_ID },
     });
   });
 
@@ -395,7 +719,10 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         findUnique: jest.fn().mockResolvedValue(saved),
       },
     };
-    const prisma = { $transaction: transactionMock(tx) };
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      $transaction: transactionMock(tx),
+    };
     const { service } = serviceWith(prisma);
 
     const result = await service.putCanvasLayout(
@@ -409,10 +736,12 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         storyWorldNodePresent: false,
         sessionId: 'canvas-session',
       },
+      CHAPTER_ID,
     );
 
     expect(tx.storyCanvasLayout.updateMany).toHaveBeenCalledWith({
       where: {
+        storyChapterId: CHAPTER_ID,
         storyProjectId: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
         revision: 2,
@@ -437,7 +766,10 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         findUnique: jest.fn(),
       },
     };
-    const prisma = { $transaction: transactionMock(tx) };
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      $transaction: transactionMock(tx),
+    };
     const { service, writeGuard } = serviceWith(prisma);
     writeGuard.assertHumanWriteAllowed.mockRejectedValueOnce(
       new HttpException(
@@ -450,13 +782,19 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     );
 
     await expect(
-      service.putCanvasLayout(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedRevision: 2,
-        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-        nodePositions: {},
-        storyWorldNodePresent: false,
-        sessionId: 'canvas-session',
-      }),
+      service.putCanvasLayout(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        {
+          expectedRevision: 2,
+          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+          nodePositions: {},
+          storyWorldNodePresent: false,
+          sessionId: 'canvas-session',
+        },
+        CHAPTER_ID,
+      ),
     ).rejects.toMatchObject({ status: 423 });
 
     expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
@@ -466,28 +804,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyCanvasLayout.updateMany).not.toHaveBeenCalled();
   });
 
-  it('returns a controlled conflict for a stored retired draft', async () => {
-    const prisma = {
-      storyDraft: {
-        findUnique: jest.fn().mockResolvedValue(
-          draftRow({
-            schemaVersion: 'interactive-film-draft-v2',
-            content: lockableDraft(),
-          }),
-        ),
-      },
-    };
-    const { service } = serviceWith(prisma);
-
-    await expect(
-      apiError(service.getDraft(USER as never, WORKSPACE_ID, PROJECT_ID)),
-    ).resolves.toMatchObject({
-      code: 'STORY_DRAFT_SCHEMA_UNSUPPORTED',
-      actualSchemaVersion: 'interactive-film-draft-v2',
-      expectedSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-    });
-  });
-
   it('rejects a retired workbench before parsing its removed fields', async () => {
     const draft = draftRow({
       schemaVersion: 'interactive-film-draft-v2',
@@ -495,9 +811,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
     const tx = {
       storyProject: {
-        findUnique: jest.fn().mockResolvedValue(summaryProject()),
+        findUnique: jest.fn().mockResolvedValue(summaryProject({ draft })),
       },
-      storyDraft: { findUnique: jest.fn().mockResolvedValue(draft) },
+      storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
       storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -518,6 +834,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const draft = draftRow();
     const tx = {
       storyDraft: { findUnique: jest.fn().mockResolvedValue(draft) },
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([chapterRow()]),
+      },
       storyRevision: {
         findUnique: jest.fn().mockResolvedValue(null),
         aggregate: jest.fn().mockResolvedValue({ _max: { number: 0 } }),
@@ -544,15 +863,18 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       content: lockableDraft(),
     });
     expect(tx.storyRevision.create).toHaveBeenCalledTimes(1);
-    expect(Object.keys(tx).sort()).toEqual(['storyDraft', 'storyRevision']);
+    expect(Object.keys(tx).sort()).toEqual([
+      'storyChapter',
+      'storyDraft',
+      'storyRevision',
+    ]);
   });
 
   it('projects every graph clip into an empty CAS summary without inventing video data', async () => {
-    const draft = draftRow();
     const project = summaryProject();
     const tx = {
       storyProject: { findUnique: jest.fn().mockResolvedValue(project) },
-      storyDraft: { findUnique: jest.fn().mockResolvedValue(draft) },
+      storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
       storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },

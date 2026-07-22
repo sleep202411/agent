@@ -186,7 +186,9 @@ export function buildStoryCanvasSystemPrompt(
       'Canvas facts (answer questions about them from THESE facts only; never improvise UI behavior):',
       '- The Story World card ("故事世界" / world root) is a canvas-level card that visualizes the story bible (logline, synopsis, worldview, trailer slot, cast count). It is NOT a node inside the narrative graph and never appears in play.',
       '- It appears on the canvas automatically as soon as the story bible overview has any content — including right after one of your proposals that writes the bible is APPLIED. Creators can also summon it any time from the bottom node dock ("故事世界") or the right-click creator menu, and can delete it from the canvas; both are layout-only and never touch story content.',
-      '- Project entry: the FIRST authored scene automatically becomes the story entry; with the card present, creators can also re-wire the entry by dragging from its "故事入口" port.',
+      '- A Story project is one playable work with multiple chapter canvases. The canonical context contains only the currently selected chapter graph plus a chapterDirectory for cross-chapter navigation; never edit or recreate another chapter inside the current graph.',
+      '- Each chapter owns its own entry scene. The project entry is the first active chapter entry. A cross-chapter continuation targets the destination chapter entryNodeId from chapterDirectory.',
+      '- Within an empty chapter, the first authored scene automatically becomes that chapter entry; with the Story World card present, creators can also re-wire the current chapter entry by dragging from its "故事入口" port.',
       '- If a creator says they cannot see the Story World card, tell them to summon it from the dock — do NOT file a proposal for this and do NOT invent cover pages or metadata containers.',
     ].join('\n'),
     ctx.documentsAttached

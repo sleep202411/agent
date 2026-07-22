@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createStoryCanvasMutationBarrier,
+  isStoryChapterProjectionPairReady,
   permitsStoryCanvasMutation,
   resolveStoryAgentAuthoringPhase,
   resolveStoryCanvasEditPolicy,
@@ -235,17 +236,59 @@ describe("Story projection authority", () => {
   });
 
   it("isolates projection cache entries by the authority head generation", () => {
-    expect(storyProjectionQueryKey("workbench", "workspace-1", "project-1", "head-a")).not.toEqual(
-      storyProjectionQueryKey("workbench", "workspace-1", "project-1", "head-b")
+    expect(
+      storyProjectionQueryKey("workbench", "workspace-1", "project-1", "chapter-1", "head-a")
+    ).not.toEqual(
+      storyProjectionQueryKey("workbench", "workspace-1", "project-1", "chapter-1", "head-b")
     );
-    expect(storyProjectionQueryKey("canvas-layout", "workspace-1", "project-1", null)).toEqual([
+    expect(
+      storyProjectionQueryKey("canvas-layout", "workspace-1", "project-1", "chapter-1", null)
+    ).toEqual([
       "story-studio",
       "canvas-layout",
       "workspace-1",
       "project-1",
+      "chapter",
+      "chapter-1",
       "authority",
       "unavailable",
     ]);
+  });
+
+  it("accepts only a fresh workbench and layout pair for the same target chapter", () => {
+    const matching = {
+      targetChapterId: "chapter-2",
+      workbenchChapterId: "chapter-2",
+      layoutChapterId: "chapter-2",
+      workbenchPlaceholder: false,
+      layoutPlaceholder: false,
+    };
+
+    expect(isStoryChapterProjectionPairReady(matching)).toBe(true);
+    expect(
+      isStoryChapterProjectionPairReady({
+        ...matching,
+        workbenchChapterId: "chapter-1",
+      })
+    ).toBe(false);
+    expect(
+      isStoryChapterProjectionPairReady({
+        ...matching,
+        layoutChapterId: "chapter-1",
+      })
+    ).toBe(false);
+    expect(
+      isStoryChapterProjectionPairReady({
+        ...matching,
+        workbenchPlaceholder: true,
+      })
+    ).toBe(false);
+    expect(
+      isStoryChapterProjectionPairReady({
+        ...matching,
+        layoutPlaceholder: true,
+      })
+    ).toBe(false);
   });
 
   it("fails closed when any fresh authority read fails", () => {

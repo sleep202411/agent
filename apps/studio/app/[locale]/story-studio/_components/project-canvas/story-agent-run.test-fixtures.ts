@@ -8,6 +8,7 @@ export const STORY_AGENT_TEST_WORKSPACE_ID = "00000000-0000-4000-8000-0000000000
 export const STORY_AGENT_TEST_PROJECT_ID = "00000000-0000-4000-8000-000000000002";
 export const STORY_AGENT_TEST_OTHER_PROJECT_ID = "00000000-0000-4000-8000-000000000003";
 export const STORY_AGENT_TEST_RUN_ID = "00000000-0000-4000-8000-000000000004";
+export const STORY_AGENT_TEST_CHAPTER_ID = "00000000-0000-4000-8000-000000000006";
 
 const CREATED_AT = "2026-07-18T12:00:00.000Z";
 const CONFIRMED_AT = "2026-07-18T12:00:01.000Z";
@@ -31,6 +32,7 @@ export function storyAgentRunFixture(
     status,
     workspaceId: STORY_AGENT_TEST_WORKSPACE_ID,
     projectId: STORY_AGENT_TEST_PROJECT_ID,
+    chapterId: STORY_AGENT_TEST_CHAPTER_ID,
     initiator: { id: "user-1", displayName: "Isaac" },
     confirmedByUserId: applying || succeeded ? "user-1" : null,
     cancelledByUserId: cancelled ? "user-1" : null,

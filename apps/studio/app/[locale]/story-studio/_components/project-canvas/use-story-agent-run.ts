@@ -112,23 +112,39 @@ interface StoryAgentRunMutationVariables {
   attempt: number;
 }
 
-export function storyAgentRunQueryKey(workspaceId: string | null, projectId: string) {
-  return ["story-studio", "agent-run", workspaceId, projectId] as const;
+export function storyAgentRunQueryKey(
+  workspaceId: string | null,
+  projectId: string,
+  chapterId: string | null
+) {
+  return ["story-studio", "agent-run", workspaceId, projectId, chapterId ?? "default"] as const;
 }
 
-export function storyAgentUndoableRunQueryKey(workspaceId: string | null, projectId: string) {
-  return ["story-studio", "agent-run-undoable", workspaceId, projectId] as const;
+export function storyAgentUndoableRunQueryKey(
+  workspaceId: string | null,
+  projectId: string,
+  chapterId: string | null
+) {
+  return [
+    "story-studio",
+    "agent-run-undoable",
+    workspaceId,
+    projectId,
+    chapterId ?? "default",
+  ] as const;
 }
 
 export function useStoryAgentRun({
   workspaceId,
   projectId,
+  chapterId,
 }: {
   workspaceId: string | null;
   projectId: string;
+  chapterId: string | null;
 }) {
   const queryClient = useQueryClient();
-  const scopeKey = `${workspaceId ?? "no-workspace"}:${projectId}`;
+  const scopeKey = `${workspaceId ?? "no-workspace"}:${projectId}:${chapterId ?? "default"}`;
   const activeScopeRef = useRef(scopeKey);
   const latchGenerationRef = useRef(0);
   const authorityGenerationRef = useRef(0);
@@ -142,12 +158,12 @@ export function useStoryAgentRun({
     useState<ScopedStoryAgentProjectionTarget | null>(null);
   const [actionError, setActionError] = useState<ScopedStoryAgentRunActionError | null>(null);
   const queryKey = useMemo(
-    () => storyAgentRunQueryKey(workspaceId, projectId),
-    [projectId, workspaceId]
+    () => storyAgentRunQueryKey(workspaceId, projectId, chapterId),
+    [chapterId, projectId, workspaceId]
   );
   const undoableQueryKey = useMemo(
-    () => storyAgentUndoableRunQueryKey(workspaceId, projectId),
-    [projectId, workspaceId]
+    () => storyAgentUndoableRunQueryKey(workspaceId, projectId, chapterId),
+    [chapterId, projectId, workspaceId]
   );
   const query = useQuery({
     queryKey,
@@ -158,7 +174,12 @@ export function useStoryAgentRun({
       const latchGeneration = latchGenerationRef.current;
       const authorityGeneration = authorityGenerationRef.current;
       return {
-        run: await getLatestStoryAgentRun(workspaceId as string, projectId, signal),
+        run: await getLatestStoryAgentRun(
+          workspaceId as string,
+          projectId,
+          chapterId ?? undefined,
+          signal
+        ),
         latchGeneration,
         authorityGeneration,
       };
@@ -184,7 +205,8 @@ export function useStoryAgentRun({
   });
   const undoableQuery = useQuery({
     queryKey: undoableQueryKey,
-    queryFn: ({ signal }) => getUndoableStoryAgentRun(workspaceId as string, projectId, signal),
+    queryFn: ({ signal }) =>
+      getUndoableStoryAgentRun(workspaceId as string, projectId, chapterId ?? undefined, signal),
     enabled: Boolean(workspaceId),
     retry: 1,
     refetchOnWindowFocus: true,
@@ -295,10 +317,10 @@ export function useStoryAgentRun({
       queryKey: ["story-studio", "current-release", workspaceId, projectId],
     });
     void queryClient.invalidateQueries({
-      queryKey: storyAgentUndoableRunQueryKey(workspaceId, projectId),
+      queryKey: storyAgentUndoableRunQueryKey(workspaceId, projectId, chapterId),
       exact: true,
     });
-  }, [projectId, queryClient, workspaceId]);
+  }, [chapterId, projectId, queryClient, workspaceId]);
 
   const latchProjectionTarget = useCallback(
     (run: StoryAgentRunDto) => {
@@ -415,8 +437,16 @@ export function useStoryAgentRun({
         ) {
           return;
         }
-        if (parsedRun.data.status === "applying") latchApplyingRun(parsedRun.data.id);
-        observeTerminalRun(parsedRun.data);
+        const run = parsedRun.data;
+        const belongsToSelectedChapter = chapterId === null || run.chapterId === chapterId;
+        if (run.status === "applying") latchApplyingRun(run.id);
+        if (belongsToSelectedChapter) {
+          observeTerminalRun(run);
+        } else if (isTerminalStoryAgentRun(run)) {
+          // Draft revision and shared Story World data are project-wide even
+          // though this run's proposal card belongs to another chapter.
+          refreshProjectState();
+        }
         void refresh().catch(() => {
           // The canonical query owns and exposes this failure through
           // `authorityState`; realtime delivery must never reject globally.
@@ -427,8 +457,10 @@ export function useStoryAgentRun({
   }, [
     latchApplyingRun,
     observeTerminalRun,
+    chapterId,
     projectId,
     refresh,
+    refreshProjectState,
     requireFreshAuthorityRead,
     workspaceId,
   ]);

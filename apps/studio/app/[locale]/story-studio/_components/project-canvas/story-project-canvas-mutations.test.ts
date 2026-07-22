@@ -86,6 +86,41 @@ describe("story project canvas mutations", () => {
     });
   });
 
+  it("writes explicit cross-chapter continuations without admitting arbitrary missing targets", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "chapter-one-ending",
+      body: "The first chapter closes.",
+    }).content;
+
+    expect(() =>
+      connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening")
+    ).toThrow(/Unknown target node/);
+
+    content = connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening", {
+      allowExternalTarget: true,
+    });
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: { kind: "auto", nextNodeId: "chapter-two-opening" },
+    });
+
+    content = convertSceneExitToChoice(content, "chapter-one-ending", "en-US");
+    content = addChoiceOption(content, "chapter-one-ending", "chapter-two-opening", "en-US", {
+      label: "Enter Chapter 2",
+      allowExternalTarget: true,
+    }).content;
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: {
+        kind: "choice",
+        choices: [
+          {
+            label: { "en-US": "Enter Chapter 2" },
+            nextNodeId: "chapter-two-opening",
+          },
+        ],
+      },
+    });
+  });
+
   it("requires text body copy only when validating a playable graph", () => {
     let content = createTextNode(draft(), {
       nodeId: "text:opening",

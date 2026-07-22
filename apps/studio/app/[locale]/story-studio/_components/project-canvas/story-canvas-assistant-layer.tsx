@@ -24,8 +24,9 @@ const ASSISTANT_COLUMN_WIDTH_CLASS = "w-[clamp(360px,30vw,460px)]";
  */
 export function StoryCanvasAssistantLayer({
   projectId,
+  chapterId,
   workspaceId,
-  hasNodes,
+  showProjectLauncher,
   open,
   onOpenChange,
   agentRunController,
@@ -33,15 +34,16 @@ export function StoryCanvasAssistantLayer({
   children,
 }: {
   projectId: string;
+  chapterId: string;
   workspaceId: string;
-  hasNodes: boolean;
+  showProjectLauncher: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentRunController: StoryAgentRunController;
   canManageAgentRuns?: boolean;
   children?: ReactNode;
 }) {
-  const session = useStoryCanvasAssistantSession({ projectId, workspaceId });
+  const session = useStoryCanvasAssistantSession({ projectId, chapterId, workspaceId });
 
   // Auto-open exactly once per distinct recovered message. The preserved turn
   // stays set until the creator retries or discards it, so keying on the
@@ -60,7 +62,7 @@ export function StoryCanvasAssistantLayer({
     <div className="flex h-full w-full">
       <div className="relative h-full min-w-0 flex-1">
         {children}
-        {!hasNodes && !open ? (
+        {showProjectLauncher && !open ? (
           // The empty-state launcher never shifts for the left inspector: that
           // panel is a floating overlay, so the launcher keeps its place.
           <StoryCanvasAgentLauncher

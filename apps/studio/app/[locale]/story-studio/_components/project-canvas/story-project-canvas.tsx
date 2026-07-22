@@ -86,6 +86,8 @@ import {
   canvasLayoutRevisionConflict,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
+  archiveStoryChapter,
+  createStoryChapter,
   createStoryClipVideoGeneration,
   createStoryTrailerVideoGeneration,
   draftRevisionConflict,
@@ -95,7 +97,9 @@ import {
   putStoryClipCurrentVideo,
   putStoryCanvasLayout,
   putStoryDraft,
+  reorderStoryChapters,
   storyApiErrorMessage,
+  updateStoryChapter,
   waitForStoryClipVideoUploadFinalization,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
@@ -142,6 +146,8 @@ import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { StoryAgentRunAura } from "./story-agent-run-aura";
 import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
+import { isStoryCanvasProjectBootstrap } from "./story-canvas-empty-state";
+import { StoryChapterRail } from "./story-chapter-rail";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
   coordinateStoryCanvasNavigation,
@@ -153,6 +159,7 @@ import {
 } from "./story-canvas-leave-guard";
 import {
   createStoryCanvasMutationBarrier,
+  isStoryChapterProjectionPairReady,
   resolveStoryAgentAuthoringPhase,
   resolveStoryCanvasEditPolicy,
   resolveStoryCanvasProjectionSurface,
@@ -291,18 +298,34 @@ function StoryCanvasReactFlow({
   return <CanvasReactFlow {...props} onInteractionStart={handleInteractionStart} />;
 }
 
-export function StoryProjectCanvas({ projectId }: { projectId: string }) {
+export function StoryProjectCanvas({
+  projectId,
+  requestedChapterId,
+}: {
+  projectId: string;
+  requestedChapterId?: string;
+}) {
   const { activeWorkspace } = useWorkspace();
+  // The XYFlow store belongs to the project shell, not to an individual
+  // chapter. Chapter projections are swapped inside the mounted shell so a
+  // query-param navigation cannot tear down the viewport and flash the cold
+  // loading surface.
   const scopeKey = `${activeWorkspace?.id ?? "no-workspace"}:${projectId}`;
 
   return (
     <ReactFlowProvider key={scopeKey}>
-      <StoryProjectCanvasInner projectId={projectId} />
+      <StoryProjectCanvasInner projectId={projectId} requestedChapterId={requestedChapterId} />
     </ReactFlowProvider>
   );
 }
 
-function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
+function StoryProjectCanvasInner({
+  projectId,
+  requestedChapterId,
+}: {
+  projectId: string;
+  requestedChapterId?: string;
+}) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
@@ -314,14 +337,22 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
-  const agentRunController = useStoryAgentRun({ workspaceId, projectId });
+  const agentRunController = useStoryAgentRun({
+    workspaceId,
+    projectId,
+    chapterId: requestedChapterId ?? null,
+  });
   const agentApplying = agentRunController.applying;
   const agentAuthorityReady = agentRunController.authorityState === "ready";
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
+  const [contentChapterId, setContentChapterId] = useState<string | null>(null);
   const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
     CLOSED_STORY_CANVAS_INSPECTOR
   );
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [chapterRailOpen, setChapterRailOpen] = useState(true);
+  const [chapterCreatePending, setChapterCreatePending] = useState(false);
+  const [chapterMutationPendingId, setChapterMutationPendingId] = useState<string | null>(null);
   const [agentTakeoverAction, setAgentTakeoverAction] = useState<"confirm" | "undo" | null>(null);
   const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
   const focusedNodeId = storyCanvasInspectorNodeId(inspectorTarget);
@@ -341,9 +372,10 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
   // Optimistic Story World presence while a layout write is in flight; the
   // authoritative layout projection re-syncs it on adoption.
-  const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverride] = useState<
-    boolean | null
-  >(null);
+  const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverrideState] = useState<{
+    chapterId: string;
+    value: boolean;
+  } | null>(null);
   const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
   const [productionError, setProductionError] = useState<string | null>(null);
   const [clipGenerationRequest, setClipGenerationRequest] =
@@ -391,6 +423,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const [history] = useState(() => new StoryCanvasHistory());
   const [, setHistoryVersion] = useState(0);
   const hydratedRef = useRef(false);
+  const hydratedChapterIdRef = useRef<string | null>(null);
   const revisionRef = useRef(0);
   const savedSignatureRef = useRef("");
   const latestContentRef = useRef<InteractiveStoryDraftContent | null>(null);
@@ -417,6 +450,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
   const saveSettledWaitersRef = useRef(new Set<() => void>());
   const draftSnapshotBarrierRef = useRef(false);
   const layoutHydratedRef = useRef(false);
+  const layoutHydratedChapterIdRef = useRef<string | null>(null);
   const layoutRevisionRef = useRef(0);
   const layoutSavedSignatureRef = useRef("");
   const layoutConflictRef = useRef<CanvasLayoutRevisionConflict | null>(null);
@@ -543,40 +577,49 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
         "workbench",
         workspaceId,
         projectId,
+        requestedChapterId ?? null,
         agentRunController.authoritySnapshotKey
       ),
-    [agentRunController.authoritySnapshotKey, projectId, workspaceId]
-  );
-  const layoutQueryKey = useMemo(
-    () =>
-      storyProjectionQueryKey(
-        "canvas-layout",
-        workspaceId,
-        projectId,
-        agentRunController.authoritySnapshotKey
-      ),
-    [agentRunController.authoritySnapshotKey, projectId, workspaceId]
+    [agentRunController.authoritySnapshotKey, projectId, requestedChapterId, workspaceId]
   );
   const workbenchQuery = useQuery({
     ...storyProjectionQueryOptions({
       kind: "workbench",
       workspaceId,
       projectId,
+      chapterId: requestedChapterId ?? null,
       authoritySnapshotKey: agentRunController.authoritySnapshotKey,
       agentAuthorityState: agentRunController.authorityState,
-      queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
+      queryFn: () => getStoryWorkbench(workspaceId as string, projectId, requestedChapterId),
     }),
     refetchInterval: (query) => (workbenchHasActiveGeneration(query.state.data) ? 2_000 : false),
   });
+  // Prefer the URL target over kept-previous workbench data. Otherwise the
+  // layout query remains pinned to the old chapter until the workbench read
+  // finishes, extending the transition and allowing mismatched projections.
+  const resolvedChapterId = requestedChapterId ?? workbenchQuery.data?.chapter.id ?? null;
+  const layoutQueryKey = useMemo(
+    () =>
+      storyProjectionQueryKey(
+        "canvas-layout",
+        workspaceId,
+        projectId,
+        resolvedChapterId,
+        agentRunController.authoritySnapshotKey
+      ),
+    [agentRunController.authoritySnapshotKey, projectId, resolvedChapterId, workspaceId]
+  );
   const refetchWorkbench = workbenchQuery.refetch;
   const layoutQuery = useQuery(
     storyProjectionQueryOptions({
       kind: "canvas-layout",
       workspaceId,
       projectId,
+      chapterId: resolvedChapterId,
       authoritySnapshotKey: agentRunController.authoritySnapshotKey,
       agentAuthorityState: agentRunController.authorityState,
-      queryFn: () => getStoryCanvasLayout(workspaceId as string, projectId),
+      queryFn: () =>
+        getStoryCanvasLayout(workspaceId as string, projectId, resolvedChapterId as string),
     })
   );
   /**
@@ -585,7 +628,14 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
    * longer unmounts the canvas: `placeholderData: keepPreviousData` keeps the
    * previous projection snapshot rendering across authority-key rotations.
    */
-  const projectionAuthority = resolveStoryProjectionAuthority({
+  const projectionPairReady = isStoryChapterProjectionPairReady({
+    targetChapterId: resolvedChapterId,
+    workbenchChapterId: workbenchQuery.data?.chapter.id ?? null,
+    layoutChapterId: layoutQuery.data?.chapterId ?? null,
+    workbenchPlaceholder: workbenchQuery.isPlaceholderData,
+    layoutPlaceholder: layoutQuery.isPlaceholderData,
+  });
+  const rawProjectionAuthority = resolveStoryProjectionAuthority({
     hasWorkspace: Boolean(workspaceId),
     agentAuthorityState: agentRunController.authorityState,
     workbenchFetchedAfterMount: workbenchQuery.isFetchedAfterMount,
@@ -593,20 +643,54 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     layoutFetchedAfterMount: layoutQuery.isFetchedAfterMount,
     layoutError: layoutQuery.isError,
   });
+  // `isFetchedAfterMount` is observer-level state and can remain true while a
+  // chapter key changes. The pair check is the stricter write fence: the old
+  // chapter may keep rendering, but no mutation can cross the transition.
+  const projectionAuthority =
+    rawProjectionAuthority === "ready" && !projectionPairReady
+      ? ("checking" as const)
+      : rawProjectionAuthority;
   // `keepPreviousData` carries the previous snapshot through the PENDING window
   // of a rotated key, but a failed fresh read drops `data` to undefined. The
   // canvas must keep rendering its last snapshot through that failure too
   // (writes stay latched via `projectionAuthority` "unavailable"), so retain
   // the last defined projections for every render-side consumer.
-  const workbenchProjection = useLastDefinedData(workbenchQuery.data);
-  const layoutProjection = useLastDefinedData(layoutQuery.data);
+  const projectionPairCandidate = useMemo(
+    () =>
+      projectionPairReady && workbenchQuery.data && layoutQuery.data
+        ? {
+            chapterId: resolvedChapterId as string,
+            workbench: workbenchQuery.data,
+            layout: layoutQuery.data,
+          }
+        : undefined,
+    [layoutQuery.data, projectionPairReady, resolvedChapterId, workbenchQuery.data]
+  );
+  const projectionPair = useLastDefinedData(projectionPairCandidate);
+  const workbenchProjection = projectionPair?.workbench;
+  const layoutProjection = projectionPair?.layout;
+  const activeProjectionChapterId = projectionPair?.chapterId ?? null;
+  const setStoryWorldNodePresentOverride = useCallback(
+    (value: boolean | null) => {
+      setStoryWorldNodePresentOverrideState(
+        value === null || activeProjectionChapterId === null
+          ? null
+          : { chapterId: activeProjectionChapterId, value }
+      );
+    },
+    [activeProjectionChapterId]
+  );
   // The Story World card presence is layout-owned (layout v2): legacy projects
   // (and any layout that predates the flag) keep the card; fresh projects start
   // without it so the empty-canvas agent launcher (idea + director skills) can
   // own the first-open experience. The card is summoned from the creator
   // menu/dock and deletable like any canvas projection.
   const storyWorldNodePresent =
-    storyWorldNodePresentOverride ?? layoutProjection?.storyWorldNodePresent ?? true;
+    (storyWorldNodePresentOverride?.chapterId === activeProjectionChapterId
+      ? storyWorldNodePresentOverride.value
+      : null) ??
+    layoutProjection?.storyWorldNodePresent ??
+    true;
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -630,10 +714,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [queryClient, workbenchQueryKey, workspaceId]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!workbenchProjection) return;
     const workbench = workbenchProjection;
-    if (hydratedRef.current) {
+    const chapterChanged = hydratedChapterIdRef.current !== workbench.chapter.id;
+    if (hydratedRef.current && !chapterChanged) {
       if (workbench.draft.revision <= revisionRef.current || conflictRef.current) return;
       const latest = latestContentRef.current;
       const hasLocalChanges = Boolean(
@@ -643,13 +728,42 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       );
       if (hasLocalChanges) return;
     }
+    if (chapterChanged) {
+      // Navigation is leave-guarded, so these queues should already be clean.
+      // Reset them defensively because revisions are chapter-local and two
+      // chapters may legitimately both be at revision zero.
+      if (saveDebounceTimerRef.current !== null) {
+        window.clearTimeout(saveDebounceTimerRef.current);
+        saveDebounceTimerRef.current = null;
+      }
+      if (saveRetryTimerRef.current !== null) {
+        window.clearTimeout(saveRetryTimerRef.current);
+        saveRetryTimerRef.current = null;
+      }
+      finalFlushGenerationRef.current += 1;
+      finalFlushActiveRef.current = false;
+      saveRetryAttemptRef.current = 0;
+      inFlightSignatureRef.current = null;
+      inFlightContentRef.current = null;
+      queuedContentRef.current = null;
+      recoveryContentRef.current = null;
+      conflictRef.current = null;
+      setConflict(null);
+      setSaveError(null);
+      setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+      setCreatorMenu(null);
+      setPendingCompletionDrop(null);
+      setGenerationRecipes({});
+    }
     hydratedRef.current = true;
+    hydratedChapterIdRef.current = workbench.chapter.id;
     revisionRef.current = workbench.draft.revision;
     setDraftRevision(workbench.draft.revision);
     savedSignatureRef.current = canonicalJsonString(workbench.draft.content);
     latestContentRef.current = workbench.draft.content;
     history.clear();
     setHistoryVersion((current) => current + 1);
+    setContentChapterId(workbench.chapter.id);
     setContent(workbench.draft.content);
     setSaveState("idle");
   }, [history, workbenchProjection]);
@@ -697,7 +811,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const persist = useCallback(
     async (next: InteractiveStoryDraftContent, options: PersistDraftOptions = {}) => {
-      if (!workspaceId || conflictRef.current || disposedRef.current) return;
+      if (!workspaceId || !resolvedChapterId || conflictRef.current || disposedRef.current) return;
       if (agentApplying || !agentAuthorityReady) {
         recoveryContentRef.current = next;
         if (!disposedRef.current) setSaveState("dirty");
@@ -733,7 +847,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       let requestFailed = false;
       let failure: unknown = null;
       try {
-        const saved = await putStoryDraft(workspaceId, projectId, {
+        const saved = await putStoryDraft(workspaceId, projectId, resolvedChapterId, {
           expectedRevision: revisionRef.current,
           content: next,
           sessionId,
@@ -812,6 +926,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       commonT,
       notifySaveSettled,
       projectId,
+      resolvedChapterId,
       scheduleSaveRetry,
       sessionId,
       workspaceId,
@@ -937,6 +1052,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     (keepalive: boolean) => {
       if (
         !workspaceId ||
+        !resolvedChapterId ||
         agentApplying ||
         !agentAuthorityReady ||
         conflictRef.current ||
@@ -966,6 +1082,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           return await putStoryDraft(
             workspaceId,
             projectId,
+            resolvedChapterId,
             { expectedRevision: expected, content: next, sessionId },
             keepalive ? { keepalive: true } : undefined
           );
@@ -1050,6 +1167,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       clearSaveRetry,
       commonT,
       projectId,
+      resolvedChapterId,
       scheduleSaveRetry,
       sessionId,
       workspaceId,
@@ -1171,8 +1289,40 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     canvasNodesRef.current = canvasNodes;
   }, [canvasNodes]);
 
-  useEffect(() => {
-    if (!model || !layoutProjection) return;
+  useLayoutEffect(() => {
+    if (
+      !model ||
+      !layoutProjection ||
+      !workbenchProjection ||
+      contentChapterId !== workbenchProjection.chapter.id ||
+      layoutProjection.chapterId !== workbenchProjection.chapter.id
+    ) {
+      return;
+    }
+    const chapterChanged = layoutHydratedChapterIdRef.current !== workbenchProjection.chapter.id;
+    if (chapterChanged) {
+      if (layoutRetryTimerRef.current !== null) {
+        window.clearTimeout(layoutRetryTimerRef.current);
+        layoutRetryTimerRef.current = null;
+      }
+      finalLayoutFlushGenerationRef.current += 1;
+      finalLayoutFlushActiveRef.current = false;
+      layoutRetryAttemptRef.current = 0;
+      layoutHydratedRef.current = false;
+      layoutConflictRef.current = null;
+      latestDesiredLayoutRef.current = null;
+      recoveryLayoutRef.current = null;
+      pendingNodePositionsRef.current.clear();
+      pendingCanvasSelectionRef.current = null;
+      requestedCanvasFocusRef.current = null;
+      latestCanvasSelectionRef.current = [];
+      hasFittedInitialCanvasRef.current = false;
+      setLayoutConflict(null);
+      setLayoutSaveError(null);
+      setStoryWorldNodePresentOverride(null);
+      setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+      layoutHydratedChapterIdRef.current = workbenchProjection.chapter.id;
+    }
     const authoritativeLayout: StoryCanvasLayoutPayload = {
       nodePositions: layoutProjection.nodePositions,
       storyWorldNodePresent: layoutProjection.storyWorldNodePresent,
@@ -1271,7 +1421,16 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     }
-  }, [history, layoutProjection, model, setCanvasNodes, storyWorldNodePresent]);
+  }, [
+    contentChapterId,
+    history,
+    layoutProjection,
+    model,
+    setCanvasNodes,
+    storyWorldNodePresent,
+    setStoryWorldNodePresentOverride,
+    workbenchProjection,
+  ]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1316,7 +1475,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
 
   const persistLayout = useCallback(
     async (next: StoryCanvasLayoutPayload, options: PersistLayoutOptions = {}) => {
-      if (!workspaceId || layoutConflictRef.current) return;
+      if (!workspaceId || !resolvedChapterId || layoutConflictRef.current) return;
       const signature = layoutPayloadSignature(next);
       if (!options.preserveDesired) latestDesiredLayoutRef.current = next;
       if (agentApplying || !agentAuthorityReady) {
@@ -1349,7 +1508,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       let requestConflicted = false;
       let failure: unknown = null;
       try {
-        const saved = await putStoryCanvasLayout(workspaceId, projectId, {
+        const saved = await putStoryCanvasLayout(workspaceId, projectId, resolvedChapterId, {
           expectedRevision: layoutRevisionRef.current,
           nodePositions: next.nodePositions,
           storyWorldNodePresent: next.storyWorldNodePresent,
@@ -1418,6 +1577,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       commonT,
       notifyLayoutSaveSettled,
       projectId,
+      resolvedChapterId,
       scheduleLayoutSaveRetry,
       sessionId,
       workspaceId,
@@ -1535,6 +1695,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     (keepalive: boolean) => {
       if (
         !workspaceId ||
+        !resolvedChapterId ||
         agentApplying ||
         !agentAuthorityReady ||
         layoutConflictRef.current ||
@@ -1578,6 +1739,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       void putStoryCanvasLayout(
         workspaceId,
         projectId,
+        resolvedChapterId,
         {
           expectedRevision,
           nodePositions: next.nodePositions,
@@ -1626,6 +1788,7 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       commonT,
       layoutQueryKey,
       projectId,
+      resolvedChapterId,
       queryClient,
       scheduleLayoutSaveRetry,
       sessionId,
@@ -2346,7 +2509,13 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
       setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     },
-    [closeCreatorMenu, mutationBarrier, readHistorySnapshot, setCanvasNodes]
+    [
+      closeCreatorMenu,
+      mutationBarrier,
+      readHistorySnapshot,
+      setCanvasNodes,
+      setStoryWorldNodePresentOverride,
+    ]
   );
 
   // Re-apply the deterministic layout (BFS story lanes + evenly-spaced cast
@@ -2893,6 +3062,25 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     );
   };
 
+  const connectChapterTarget = (nodeId: string, targetNodeId: string, title: string) => {
+    applyGraphMutation((current) => {
+      const source = current.graph.nodes.find((node) => node.nodeId === nodeId);
+      if (!source) return current;
+      if (source.exit.kind === "choice") {
+        return addChoiceOption(current, nodeId, targetNodeId, authoringLocale, {
+          label: title,
+          allowExternalTarget: true,
+        }).content;
+      }
+      if (source.exit.kind === "auto") {
+        return connectSceneContinuation(current, nodeId, targetNodeId, {
+          allowExternalTarget: true,
+        });
+      }
+      return current;
+    });
+  };
+
   const updateChoice = (
     nodeId: string,
     choiceId: string,
@@ -3045,6 +3233,118 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     [requestStoryCanvasNavigation, router]
   );
 
+  const navigateToChapter = useCallback(
+    (chapterId: string) => {
+      if (chapterId === resolvedChapterId) return;
+      requestStoryCanvasNavigation(null, () => {
+        router.push(
+          `/story-studio/projects/${encodeURIComponent(projectId)}/canvas?chapter=${encodeURIComponent(chapterId)}`
+        );
+      });
+    },
+    [projectId, requestStoryCanvasNavigation, resolvedChapterId, router]
+  );
+
+  const createChapter = async (title: string): Promise<boolean> => {
+    if (!workspaceId || !workbenchProjection || chapterCreatePending || !canEdit) return false;
+    setChapterCreatePending(true);
+    try {
+      const chapter = await createStoryChapter(workspaceId, projectId, { title });
+      navigateToChapter(chapter.id);
+      return true;
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("chapters.createError")));
+      return false;
+    } finally {
+      if (!disposedRef.current) setChapterCreatePending(false);
+    }
+  };
+
+  const renameChapter = async (
+    chapter: StoryWorkbench["chapters"][number],
+    title: string
+  ): Promise<boolean> => {
+    if (!workspaceId || chapterMutationPendingId || !canEdit) return false;
+    setChapterMutationPendingId(chapter.id);
+    try {
+      await updateStoryChapter(workspaceId, projectId, chapter.id, {
+        title,
+      });
+      await refetchWorkbench();
+      return true;
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("chapters.updateError")));
+      return false;
+    } finally {
+      if (!disposedRef.current) setChapterMutationPendingId(null);
+    }
+  };
+
+  const moveChapter = async (
+    chapter: StoryWorkbench["chapters"][number],
+    direction: -1 | 1
+  ): Promise<boolean> => {
+    if (!workspaceId || !workbenchProjection || chapterMutationPendingId || !canEdit) {
+      return false;
+    }
+    const currentIndex = workbenchProjection.chapters.findIndex(
+      (candidate) => candidate.id === chapter.id
+    );
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= workbenchProjection.chapters.length) {
+      return false;
+    }
+    const chapterIds = workbenchProjection.chapters.map((candidate) => candidate.id);
+    [chapterIds[currentIndex], chapterIds[targetIndex]] = [
+      chapterIds[targetIndex] as string,
+      chapterIds[currentIndex] as string,
+    ];
+    setChapterMutationPendingId(chapter.id);
+    try {
+      await reorderStoryChapters(workspaceId, projectId, {
+        expectedProjectVersion: workbenchProjection.project.projectVersion,
+        chapterIds,
+      });
+      await refetchWorkbench();
+      return true;
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("chapters.reorderError")));
+      return false;
+    } finally {
+      if (!disposedRef.current) setChapterMutationPendingId(null);
+    }
+  };
+
+  const archiveChapter = async (chapter: StoryWorkbench["chapters"][number]): Promise<boolean> => {
+    if (!workspaceId || !workbenchProjection || chapterMutationPendingId || !canEdit) {
+      return false;
+    }
+    if (chapter.id === resolvedChapterId && readLeaveRisk().blocked) {
+      toast.error(t("chapters.saveBeforeArchive"));
+      return false;
+    }
+    const nextChapter = workbenchProjection.chapters.find(
+      (candidate) => candidate.id !== chapter.id
+    );
+    setChapterMutationPendingId(chapter.id);
+    try {
+      await archiveStoryChapter(workspaceId, projectId, chapter.id);
+      if (chapter.id === resolvedChapterId && nextChapter) {
+        router.push(
+          `/story-studio/projects/${encodeURIComponent(projectId)}/canvas?chapter=${encodeURIComponent(nextChapter.id)}`
+        );
+      } else {
+        await refetchWorkbench();
+      }
+      return true;
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("chapters.archiveError")));
+      return false;
+    } finally {
+      if (!disposedRef.current) setChapterMutationPendingId(null);
+    }
+  };
+
   const exportFullCanvasRecovery = useCallback(() => {
     const risk = readLeaveRisk();
     if (!risk.blocked) {
@@ -3129,7 +3429,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     workbenchProjection !== undefined && layoutProjection !== undefined
   );
   if (workspaceLoading || projectionSurface === "loading") return <CanvasLoading />;
-  if (projectionSurface === "error" || !workspaceId || !project || !content || !model) {
+  if (
+    projectionSurface === "error" ||
+    !workspaceId ||
+    !workbenchProjection ||
+    !layoutProjection ||
+    !project ||
+    !content ||
+    !model
+  ) {
     return (
       <>
         <CanvasError
@@ -3192,13 +3500,18 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
     agentRunController.authorityState === "error" ||
     agentPhase === "unavailable" ||
     (agentPhase === "reconciling" && (workbenchQuery.isError || layoutQuery.isError));
+  const chapterRailVisible = chapterRailOpen && !inspectorOpen;
+  const showProjectLauncher = isStoryCanvasProjectBootstrap(
+    workbenchProjection.chapters,
+    workbenchProjection.chapter.id
+  );
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
       <StoryCanvasAssistantLayer
-        key={`${workspaceId}:${projectId}`}
         projectId={projectId}
+        chapterId={workbenchProjection.chapter.id}
         workspaceId={workspaceId}
-        hasNodes={model.nodes.length > 0}
+        showProjectLauncher={showProjectLauncher}
         open={assistantOpen}
         onOpenChange={setAssistantOpen}
         agentRunController={canvasAgentRunController}
@@ -3281,6 +3594,15 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
           onPublish={publication.open}
           onShowFoundation={showStoryWorldInspector}
           onTidy={canEdit ? tidyCanvas : undefined}
+          chapterRailOpen={chapterRailVisible}
+          onToggleChapterRail={() => {
+            if (inspectorOpen) {
+              selectCanvasNodeExclusively(null);
+              setChapterRailOpen(true);
+              return;
+            }
+            setChapterRailOpen((current) => !current);
+          }}
           assistantOpen={assistantOpen}
           agentRunStatus={agentRunController.run?.status ?? null}
           onToggleAssistant={() => setAssistantOpen((current) => !current)}
@@ -3302,6 +3624,22 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
             if (editPolicy.canPublish) void publication.retry();
           }}
         />
+
+        {chapterRailVisible ? (
+          <StoryChapterRail
+            chapters={workbenchProjection.chapters}
+            activeChapterId={workbenchProjection.chapter.id}
+            canEdit={canEdit}
+            creating={chapterCreatePending}
+            pendingChapterId={chapterMutationPendingId}
+            onSelect={navigateToChapter}
+            onCreate={createChapter}
+            onRename={renameChapter}
+            onMove={moveChapter}
+            onArchive={archiveChapter}
+            onClose={() => setChapterRailOpen(false)}
+          />
+        ) : null}
 
         <section
           ref={canvasSectionRef}
@@ -3443,7 +3781,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                     className={cn(
                       "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
                       // Clear the full-width canvas's left inspector overlay.
-                      inspectorOpen ? "left-[452px]!" : "left-20!"
+                      inspectorOpen
+                        ? "left-[452px]!"
+                        : chapterRailVisible
+                          ? "left-[336px]!"
+                          : "left-20!"
                     )}
                     bgColor="oklch(0.24 0 0 / 0.82)"
                     maskColor="rgba(0,0,0,0.46)"
@@ -3456,7 +3798,11 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
                   className={cn(
                     "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
                     // Clear the full-width canvas's left inspector overlay.
-                    inspectorOpen ? "left-[392px]!" : "left-5!"
+                    inspectorOpen
+                      ? "left-[392px]!"
+                      : chapterRailVisible
+                        ? "left-[276px]!"
+                        : "left-5!"
                   )}
                 />
               </StoryCanvasReactFlow>
@@ -3549,6 +3895,17 @@ function StoryProjectCanvasInner({ projectId }: { projectId: string }) {
               })
             }
             onAddChoice={addChoice}
+            chapterTargets={workbenchProjection.chapters
+              .map((chapter) => ({
+                id: chapter.id,
+                title: chapter.title,
+                entryNodeId: chapter.entryNodeId,
+              }))
+              .filter(
+                (chapter) =>
+                  chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
+              )}
+            onConnectChapter={connectChapterTarget}
             onUpdateChoice={updateChoice}
             onMoveChoice={(nodeId, choiceId, direction) =>
               applyGraphMutation((current) =>
@@ -3613,6 +3970,8 @@ function CanvasHeader({
   onPublish,
   onShowFoundation,
   onTidy,
+  chapterRailOpen,
+  onToggleChapterRail,
   assistantOpen,
   agentRunStatus,
   onToggleAssistant,
@@ -3632,6 +3991,8 @@ function CanvasHeader({
   onPublish: () => void;
   onShowFoundation: () => void;
   onTidy?: () => void;
+  chapterRailOpen: boolean;
+  onToggleChapterRail: () => void;
   assistantOpen: boolean;
   agentRunStatus: StoryAgentRunStatus | null;
   onToggleAssistant: () => void;
@@ -3691,6 +4052,21 @@ function CanvasHeader({
             {t(`saveState.${saveState}`, { revision })}
           </p>
         </div>
+        <button
+          type="button"
+          aria-pressed={chapterRailOpen}
+          aria-label={t("chapters.action")}
+          onClick={onToggleChapterRail}
+          className={cn(
+            "inline-flex h-9 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+            chapterRailOpen
+              ? "bg-white/[0.14] text-white"
+              : "bg-white/[0.07] text-white/66 hover:bg-white/[0.12] hover:text-white"
+          )}
+        >
+          <IconFileText className="size-4" />
+          {t("chapters.action")}
+        </button>
       </FrostedPanel>
 
       <FrostedPanel className="pointer-events-auto flex h-12 shrink-0 items-center gap-1.5 rounded-[20px] bg-[oklch(0.205_0_0/0.72)] p-1.5 shadow-[0_14px_50px_rgba(0,0,0,0.3)] backdrop-blur-[60px]">

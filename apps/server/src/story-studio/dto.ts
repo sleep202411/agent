@@ -24,6 +24,8 @@ export const STORY_TITLE_MAX = 160;
 export const STORY_SUMMARY_MAX = 2_000;
 export const STORY_TAG_MAX = 40;
 export const STORY_TAG_COUNT_MAX = 12;
+export const STORY_CHAPTER_COUNT_MAX = 200;
+export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
   'story-canvas-layout-v2' as const;
 export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
@@ -150,6 +152,11 @@ export const StoryProjectIdParamsSchema = z
   .strict();
 export type StoryProjectIdParams = z.infer<typeof StoryProjectIdParamsSchema>;
 
+export const StoryChapterParamsSchema = z
+  .object({ projectId: StoryUuidSchema, chapterId: StoryUuidSchema })
+  .strict();
+export type StoryChapterParams = z.infer<typeof StoryChapterParamsSchema>;
+
 export const StoryRevisionParamsSchema = z
   .object({ projectId: StoryUuidSchema, revisionId: StoryUuidSchema })
   .strict();
@@ -216,7 +223,9 @@ export const StoryProjectListQuerySchema = z
   .strict();
 export type StoryProjectListQuery = z.infer<typeof StoryProjectListQuerySchema>;
 
-export const StoryWorkbenchQuerySchema = z.object({}).strict();
+export const StoryWorkbenchQuerySchema = z
+  .object({ chapterId: StoryUuidSchema.optional() })
+  .strict();
 export type StoryWorkbenchQuery = z.infer<typeof StoryWorkbenchQuerySchema>;
 
 export const StoryProjectVideoLibraryQuerySchema = z
@@ -331,6 +340,32 @@ export type ArchiveStoryProjectInput = z.infer<
   typeof ArchiveStoryProjectSchema
 >;
 
+export const CreateStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type CreateStoryChapterInput = z.infer<typeof CreateStoryChapterSchema>;
+
+export const PatchStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type PatchStoryChapterInput = z.infer<typeof PatchStoryChapterSchema>;
+
+export const ReorderStoryChaptersSchema = z
+  .object({
+    expectedProjectVersion: NonNegativeVersionSchema,
+    chapterIds: z
+      .array(StoryUuidSchema)
+      .min(1)
+      .max(STORY_CHAPTER_COUNT_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Chapter order must not contain duplicates.',
+      }),
+  })
+  .strict();
+export type ReorderStoryChaptersInput = z.infer<
+  typeof ReorderStoryChaptersSchema
+>;
+
 export const PutStoryDraftSchema = z
   .object({
     expectedRevision: NonNegativeVersionSchema,
@@ -338,7 +373,14 @@ export const PutStoryDraftSchema = z
     content: InteractiveStoryDraftContentSchema,
     sessionId: SessionIdSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => value.content.graph.nodes.length <= STORY_CHAPTER_NODE_COUNT_MAX,
+    {
+      path: ['content', 'graph', 'nodes'],
+      message: `A chapter supports at most ${STORY_CHAPTER_NODE_COUNT_MAX} nodes.`,
+    },
+  );
 export type PutStoryDraftInput = z.infer<typeof PutStoryDraftSchema>;
 
 export const PutStoryCanvasLayoutSchema = z
@@ -634,8 +676,22 @@ export interface StoryProjectSummaryDto {
   updatedAt: string;
 }
 
+export interface StoryChapterDto {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  entryNodeId: string | null;
+  nodeCount: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoryDraftDto {
   projectId: string;
+  /** Null only on project-wide immutable-revision conflict payloads. */
+  chapterId: string | null;
   format: CreatableStoryFormat;
   schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
   content: InteractiveStoryDraftContent;
@@ -649,6 +705,7 @@ export interface StoryDraftDto {
 
 export interface StoryCanvasLayoutDto {
   projectId: string;
+  chapterId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: StoryCanvasNodePositions;
   storyWorldNodePresent: boolean;
@@ -918,6 +975,8 @@ export type StoryBuildSummaryDto = Pick<
 
 export interface StoryWorkbenchDto {
   project: StoryProjectSummaryDto;
+  chapters: StoryChapterDto[];
+  chapter: StoryChapterDto;
   draft: StoryDraftDto;
   video: {
     snapshotHash: string;

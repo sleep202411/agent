@@ -47,12 +47,17 @@ type StoryCanvasPendingTurn = CopilotPendingTurn<
 
 export function useStoryCanvasAssistantSession({
   projectId,
+  chapterId,
   workspaceId,
 }: {
   projectId: string;
+  chapterId: string;
   workspaceId: string;
 }) {
-  const conversationId = useMemo(() => `story-canvas:${projectId}`, [projectId]);
+  const conversationId = useMemo(
+    () => `story-canvas:${projectId}:${chapterId}`,
+    [chapterId, projectId]
+  );
   const { user } = useAuth();
   const authenticatedUserId = user?.id == null ? null : String(user.id);
   const recoveryScope = useMemo<CopilotPendingTurnScope | null>(
@@ -152,6 +157,26 @@ export function useStoryCanvasAssistantSession({
     stop: stopChat,
     clearError,
   } = chat;
+  const handledErrorRef = useRef<Error | undefined>(undefined);
+
+  // `useChat` creates a new chat instance when its id changes. Stop the
+  // previous instance explicitly and clear chapter-local composer state while
+  // keeping the surrounding canvas/assistant column mounted.
+  const previousChatScopeRef = useRef({ conversationId, stop: stopChat });
+  useEffect(() => {
+    const previous = previousChatScopeRef.current;
+    if (previous.conversationId !== conversationId) {
+      void previous.stop();
+      setDraft("");
+      setSelectedSkillKey(null);
+      setAttachment(null);
+      setAttachmentError(null);
+      setAttachmentUploading(false);
+      handledErrorRef.current = undefined;
+      clearError();
+    }
+    previousChatScopeRef.current = { conversationId, stop: stopChat };
+  }, [clearError, conversationId, stopChat]);
 
   const requestContext = useMemo<StoryCanvasChatRequestContext>(
     () => ({
@@ -198,7 +223,6 @@ export function useStoryCanvasAssistantSession({
   });
   const streamError = copilotStreamErrorDetails(error);
   const retryHistory = history.retry;
-  const handledErrorRef = useRef<Error | undefined>(undefined);
   useEffect(() => {
     if (!error || handledErrorRef.current === error) return;
     handledErrorRef.current = error;

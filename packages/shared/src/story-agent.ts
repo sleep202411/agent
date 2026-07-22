@@ -651,6 +651,7 @@ export const StoryAgentRunDtoSchema = z
     status: StoryAgentRunStatusSchema,
     workspaceId: StoryAgentUuidSchema,
     projectId: StoryAgentUuidSchema,
+    chapterId: StoryAgentUuidSchema,
     initiator: StoryAgentInitiatorSchema,
     confirmedByUserId: StoryAgentActorIdSchema.nullable(),
     cancelledByUserId: StoryAgentActorIdSchema.nullable(),

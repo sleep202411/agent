@@ -17,6 +17,7 @@ import { useLastDefinedData } from "./use-last-defined-data";
 type AgentAuthorityState = "checking" | "ready" | "error";
 
 interface HarnessProps {
+  chapterId?: string;
   snapshotKey: string | null;
   agentAuthorityState: AgentAuthorityState;
   queryFn: () => Promise<string>;
@@ -30,12 +31,18 @@ interface HarnessProps {
  * `storyProjectionQueryOptions` (placeholderData: keepPreviousData) feeding the
  * authority, surface, and edit-policy resolvers.
  */
-function Harness({ snapshotKey, agentAuthorityState, queryFn }: HarnessProps) {
+function Harness({
+  chapterId = "chapter-1",
+  snapshotKey,
+  agentAuthorityState,
+  queryFn,
+}: HarnessProps) {
   const query = useQuery(
     storyProjectionQueryOptions({
       kind: "workbench",
       workspaceId: "workspace-1",
       projectId: "project-1",
+      chapterId,
       authoritySnapshotKey: snapshotKey,
       agentAuthorityState,
       queryFn,
@@ -173,6 +180,45 @@ describe("Story projection queries under authority-key rotation", () => {
       await flush();
     });
     expect(value()).toBe("projection-v2");
+    expect(authority()).toBe("ready");
+    expect(writable()).toBe(true);
+  });
+
+  it("keeps the canvas mounted while the chapter query key rotates", async () => {
+    await render({
+      chapterId: "chapter-1",
+      snapshotKey: "run-1:proposed:authority-0",
+      agentAuthorityState: "ready",
+      queryFn: async () => {
+        fetchCount += 1;
+        return "chapter-1-projection";
+      },
+    });
+    await act(async () => flush());
+    expect(value()).toBe("chapter-1-projection");
+    expect(writable()).toBe(true);
+
+    const secondChapter = deferred<string>();
+    await render({
+      chapterId: "chapter-2",
+      snapshotKey: "run-1:proposed:authority-0",
+      agentAuthorityState: "ready",
+      queryFn: () => {
+        fetchCount += 1;
+        return secondChapter.promise;
+      },
+    });
+
+    expect(value()).toBe("chapter-1-projection");
+    expect(surface()).toBe("canvas");
+    expect(authority()).toBe("checking");
+    expect(writable()).toBe(false);
+
+    await act(async () => {
+      secondChapter.resolve("chapter-2-projection");
+      await flush();
+    });
+    expect(value()).toBe("chapter-2-projection");
     expect(authority()).toBe("ready");
     expect(writable()).toBe(true);
   });

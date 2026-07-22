@@ -406,6 +406,7 @@ export function updateCheckpointTarget(
 export interface AddChoiceOptionOptions {
   choiceId?: string;
   label?: string;
+  allowExternalTarget?: boolean;
 }
 
 export function addChoiceOption(
@@ -416,7 +417,8 @@ export function addChoiceOption(
   options: AddChoiceOptionOptions = {}
 ): StoryNodeCreationResult<StoryGraphChoice> {
   const source = requireChoiceScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
+  if (options.allowExternalTarget) assertStableId(targetNodeId);
+  else requireTargetNode(content, targetNodeId);
   const normalizedLocale = assertLocale(locale);
   if (source.exit.choices.length >= MAX_CHOICES) {
     throw mutationError(
@@ -529,10 +531,12 @@ export function disconnectChoiceTarget(
 export function connectSceneContinuation(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
-  targetNodeId: string
+  targetNodeId: string,
+  options: { allowExternalTarget?: boolean } = {}
 ): InteractiveStoryDraftContent {
   const source = requireScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
+  if (options.allowExternalTarget) assertStableId(targetNodeId);
+  else requireTargetNode(content, targetNodeId);
   if (source.exit.kind !== "auto") {
     throw mutationError(
       "SOURCE_EXIT_KIND_MISMATCH",

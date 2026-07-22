@@ -124,6 +124,7 @@ export interface StoryAgentAuthoringContext {
 
 export const CreateStoryAgentBriefInputSchema = z
   .object({
+    chapterId: z.uuid(),
     title: z.string().trim().min(1).max(160),
     summary: z.string().trim().min(1).max(4_000),
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
@@ -179,6 +180,7 @@ interface ClaimedRunRow {
 export interface StoryAgentAuthoringJob {
   runId: string;
   projectId: string;
+  chapterId: string;
   workspaceId: string;
   /**
    * The project's creation profile. text_adventure stories are pure written
@@ -219,11 +221,25 @@ interface CanonicalAuthoringState {
     frameProfile: string | null;
     defaultLocale: string;
   };
+  chapter: {
+    id: string;
+    title: string;
+    nodeIds: string[];
+    entryNodeId: string | null;
+    isFirst: boolean;
+  };
+  chapterDirectory: Array<{
+    id: string;
+    title: string;
+    entryNodeId: string | null;
+  }>;
   draftRow: {
     revision: number;
     schemaVersion: string;
     contentHash: string;
     content: InteractiveStoryDraftContent;
+    globalContentHash: string;
+    globalContent: InteractiveStoryDraftContent;
   };
   layoutRow: {
     revision: number;
@@ -258,6 +274,7 @@ export class StoryAgentRunService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
+    chapterId: string,
   ): Promise<StoryAgentAuthoringContext> {
     await this.requireScopedProject(
       user,
@@ -269,9 +286,16 @@ export class StoryAgentRunService {
       this.prisma,
       workspaceId,
       projectId,
+      chapterId,
     );
     const context = canonicalJsonString({
       project: state.project,
+      chapter: {
+        id: state.chapter.id,
+        title: state.chapter.title,
+        entryNodeId: state.chapter.entryNodeId,
+      },
+      chapterDirectory: state.chapterDirectory,
       draft: {
         schemaVersion: state.draftRow.schemaVersion,
         content: state.draftRow.content,
@@ -351,6 +375,7 @@ export class StoryAgentRunService {
                 requestedInput.initiatedBySessionId ?? undefined,
             };
         const input = CreateStoryAgentBriefInputSchema.parse({
+          chapterId: requestedInput.chapterId,
           ...authoritative.proposal,
           idempotencyKey: requestedInput.idempotencyKey,
           ...(requestedInput.conversationId
@@ -363,6 +388,7 @@ export class StoryAgentRunService {
         const fingerprint = canonicalJsonHash({
           kind: 'apply-brief',
           projectId,
+          chapterId: input.chapterId,
           initiatedByUserId: user.userId,
           title: input.title,
           summary: input.summary,
@@ -409,7 +435,12 @@ export class StoryAgentRunService {
         // Enqueue-time canonical read: validates the project is authorable and
         // records provisional base revisions. The authoritative base is re-read
         // and re-pinned when authoring completes.
-        const state = await this.loadCanonicalState(tx, workspaceId, projectId);
+        const state = await this.loadCanonicalState(
+          tx,
+          workspaceId,
+          projectId,
+          input.chapterId,
+        );
         const dispatches: StoryAgentRealtimeDispatch[] = [];
         dispatches.push(
           ...(await this.expireDueProposalsForProject(
@@ -456,6 +487,7 @@ export class StoryAgentRunService {
         const created = await tx.storyAgentRun.create({
           data: {
             storyProjectId: projectId,
+            storyChapterId: input.chapterId,
             workspaceId,
             kind: StoryAgentRunKind.apply,
             status: StoryAgentRunStatus.authoring,
@@ -507,6 +539,7 @@ export class StoryAgentRunService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
+    chapterId?: string,
   ): Promise<StoryAgentRunDto | null> {
     await this.requireScopedProject(
       user,
@@ -517,11 +550,17 @@ export class StoryAgentRunService {
         allowArchived: true,
       },
     );
+    const resolvedChapterId = await this.resolveActiveChapterId(
+      this.prisma,
+      projectId,
+      chapterId,
+    );
     const now = await databaseNow(this.prisma);
     const head = await this.findCanonicalRunHead(
       this.prisma,
       workspaceId,
       projectId,
+      resolvedChapterId,
       now,
     );
     return head ? this.toDto(head) : null;
@@ -557,6 +596,7 @@ export class StoryAgentRunService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
+    chapterId?: string,
   ): Promise<StoryAgentRunDto | null> {
     await this.requireScopedProject(
       user,
@@ -569,6 +609,7 @@ export class StoryAgentRunService {
       this.prisma,
       workspaceId,
       projectId,
+      chapterId,
       { allowArchived: true },
     );
     const run = await this.findUndoableApplyHead(
@@ -633,12 +674,18 @@ export class StoryAgentRunService {
         tx,
         workspaceId,
         projectId,
+        run.storyChapterId,
         run.id,
         writeState.databaseNow,
       );
 
       const proposal = this.parseFullProposal(run.proposal);
-      const state = await this.loadCanonicalState(tx, workspaceId, projectId);
+      const state = await this.loadCanonicalState(
+        tx,
+        workspaceId,
+        projectId,
+        run.storyChapterId,
+      );
       if (
         state.draftRow.revision !== proposal.baseDraftRevision ||
         state.draftRow.contentHash !== proposal.baseContentHash ||
@@ -749,6 +796,7 @@ export class StoryAgentRunService {
         tx,
         workspaceId,
         projectId,
+        current.storyChapterId,
         current.id,
         writeState.databaseNow,
       );
@@ -853,7 +901,12 @@ export class StoryAgentRunService {
         this.assertProjectHasNoActiveRun(writeState);
         const dispatches: StoryAgentRealtimeDispatch[] = [];
         await this.writeGuard.assertAgentClaimAllowed(tx, projectId);
-        const state = await this.loadCanonicalState(tx, workspaceId, projectId);
+        const state = await this.loadCanonicalState(
+          tx,
+          workspaceId,
+          projectId,
+          source.storyChapterId,
+        );
         // The data head, not the latest lifecycle event, owns Undo authority.
         // Cancelled, stale, failed, and no-op proposal records never wrote the
         // draft/layout and therefore cannot invalidate an otherwise exact
@@ -893,6 +946,7 @@ export class StoryAgentRunService {
         const created = await tx.storyAgentRun.create({
           data: {
             storyProjectId: projectId,
+            storyChapterId: source.storyChapterId,
             workspaceId,
             kind: StoryAgentRunKind.undo,
             status: StoryAgentRunStatus.applying,
@@ -1069,6 +1123,7 @@ export class StoryAgentRunService {
           tx,
           run.workspaceId,
           run.storyProjectId,
+          run.storyChapterId,
         );
       } catch (error) {
         return this.finishClaimedTerminal(tx, run, 'failed', {
@@ -1171,16 +1226,56 @@ export class StoryAgentRunService {
       }
 
       if (draftChanged) {
+        if (nextDraft.graph.nodes.length > STORY_AGENT_MAX_RUN_NODE_IDS) {
+          return this.finishClaimedTerminal(tx, run, 'failed', {
+            code: 'STORY_CHAPTER_NODE_LIMIT_EXCEEDED',
+            detail: `A chapter can contain at most ${STORY_AGENT_MAX_RUN_NODE_IDS} scenes.`,
+          });
+        }
+        const previousChapterNodeIds = new Set(state.chapter.nodeIds);
+        const otherChapterNodeIds = new Set(
+          state.draftRow.globalContent.graph.nodes.flatMap((node) =>
+            previousChapterNodeIds.has(node.nodeId) ? [] : [node.nodeId],
+          ),
+        );
+        const collision = nextDraft.graph.nodes.find((node) =>
+          otherChapterNodeIds.has(node.nodeId),
+        );
+        if (collision) {
+          return this.finishClaimedTerminal(tx, run, 'failed', {
+            code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
+            detail: `Scene ${collision.nodeId} already belongs to another chapter.`,
+          });
+        }
+        const nextChapterNodeIds = nextDraft.graph.nodes.map(
+          (node) => node.nodeId,
+        );
+        const mergedGlobalDraft = InteractiveStoryDraftContentSchema.parse({
+          storyBible: nextDraft.storyBible,
+          graph: {
+            entryNodeId: state.chapter.isFirst
+              ? nextDraft.graph.entryNodeId
+              : state.draftRow.globalContent.graph.entryNodeId,
+            nodes: [
+              ...state.draftRow.globalContent.graph.nodes.filter(
+                (node) => !previousChapterNodeIds.has(node.nodeId),
+              ),
+              ...nextDraft.graph.nodes,
+            ],
+          },
+          productionNotes: nextDraft.productionNotes,
+        });
+        const mergedGlobalDraftHash = canonicalJsonHash(mergedGlobalDraft);
         const updatedDraft = await tx.storyDraft.updateMany({
           where: {
             storyProjectId: run.storyProjectId,
             revision: state.draftRow.revision,
-            contentHash: state.draftRow.contentHash,
+            contentHash: state.draftRow.globalContentHash,
           },
           data: {
             schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-            content: nextDraft as unknown as Prisma.InputJsonObject,
-            contentHash: afterDraftHash,
+            content: mergedGlobalDraft as unknown as Prisma.InputJsonObject,
+            contentHash: mergedGlobalDraftHash,
             revision: { increment: 1 },
             updatedByUserId: run.confirmedByUserId,
             updatedBySessionId: null,
@@ -1189,10 +1284,18 @@ export class StoryAgentRunService {
         if (updatedDraft.count !== 1) {
           throw new StoryAgentCasLostError('draft');
         }
+        await tx.storyChapter.update({
+          where: { id: run.storyChapterId },
+          data: {
+            nodeIds: nextChapterNodeIds,
+            entryNodeId: nextDraft.graph.entryNodeId,
+          },
+        });
       }
       if (layoutChanged) {
         const updatedLayout = await tx.storyCanvasLayout.updateMany({
           where: {
+            storyChapterId: run.storyChapterId,
             storyProjectId: run.storyProjectId,
             workspaceId: run.workspaceId,
             revision: state.layoutRow.revision,
@@ -1413,6 +1516,7 @@ export class StoryAgentRunService {
         this.prisma,
         run.workspaceId,
         run.storyProjectId,
+        run.storyChapterId,
       );
     } catch (error) {
       await this.failAuthoring(runId, workerId, {
@@ -1423,6 +1527,12 @@ export class StoryAgentRunService {
     }
     const contextJson = canonicalJsonString({
       project: state.project,
+      chapter: {
+        id: state.chapter.id,
+        title: state.chapter.title,
+        entryNodeId: state.chapter.entryNodeId,
+      },
+      chapterDirectory: state.chapterDirectory,
       draft: {
         schemaVersion: state.draftRow.schemaVersion,
         content: draftContentForAuthoring(state.draftRow.content),
@@ -1475,6 +1585,7 @@ export class StoryAgentRunService {
       job: {
         runId: run.id,
         projectId: run.storyProjectId,
+        chapterId: run.storyChapterId,
         workspaceId: run.workspaceId,
         format: state.project.format,
         brief: briefResult.data,
@@ -1531,6 +1642,7 @@ export class StoryAgentRunService {
           tx,
           run.workspaceId,
           run.storyProjectId,
+          run.storyChapterId,
         );
         if (
           state.draftRow.revision !== input.authoredAgainst.draftRevision ||
@@ -2146,6 +2258,7 @@ export class StoryAgentRunService {
     db: PrismaService | Prisma.TransactionClient,
     workspaceId: string,
     projectId: string,
+    chapterId?: string,
     options: { allowArchived?: boolean } = {},
   ): Promise<CanonicalAuthoringState> {
     const project = await db.storyProject.findFirst({
@@ -2164,11 +2277,31 @@ export class StoryAgentRunService {
         frameProfile: true,
         defaultLocale: true,
         draft: true,
-        canvasLayout: true,
+        chapters: {
+          where: { archivedAt: null },
+          orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            title: true,
+            nodeIds: true,
+            entryNodeId: true,
+            canvasLayout: true,
+          },
+        },
       },
     });
     if (!project) throwProjectNotFound();
-    if (!project.draft || !project.canvasLayout) {
+    const chapter = chapterId
+      ? project.chapters.find((candidate) => candidate.id === chapterId)
+      : project.chapters[0];
+    if (!chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'Story chapter not found.',
+      });
+    }
+    const canvasLayout = chapter.canvasLayout;
+    if (!project.draft || !canvasLayout) {
       throw new InternalServerErrorException({
         code: 'STORY_AGENT_CANONICAL_STATE_MISSING',
         message: 'The story project is missing its canonical draft or layout.',
@@ -2210,16 +2343,15 @@ export class StoryAgentRunService {
         'The stored story draft does not match its canonical content hash.',
       );
     }
-    if (
-      project.canvasLayout.schemaVersion !== STORY_CANVAS_LAYOUT_SCHEMA_VERSION
-    ) {
+    assertCanonicalChapterPartition(draft.data, project.chapters);
+    if (canvasLayout.schemaVersion !== STORY_CANVAS_LAYOUT_SCHEMA_VERSION) {
       throw canonicalStateCorrupt(
         'STORY_AGENT_LAYOUT_SCHEMA_UNSUPPORTED',
         'The stored story canvas layout uses an unsupported schema.',
       );
     }
     const positions = StoryCanvasNodePositionsSchema.safeParse(
-      project.canvasLayout.nodePositions,
+      canvasLayout.nodePositions,
     );
     if (!positions.success) {
       throw canonicalStateCorrupt(
@@ -2227,6 +2359,17 @@ export class StoryAgentRunService {
         positions.error.message,
       );
     }
+    const chapterNodeIds = jsonStringArray(chapter.nodeIds);
+    const chapterNodeIdSet = new Set(chapterNodeIds);
+    const chapterContent = InteractiveStoryDraftContentSchema.parse({
+      ...draft.data,
+      graph: {
+        entryNodeId: chapter.entryNodeId,
+        nodes: draft.data.graph.nodes.filter((node) =>
+          chapterNodeIdSet.has(node.nodeId),
+        ),
+      },
+    });
     return {
       project: {
         id: project.id,
@@ -2236,21 +2379,60 @@ export class StoryAgentRunService {
         frameProfile: project.frameProfile,
         defaultLocale: project.defaultLocale,
       },
+      chapter: {
+        id: chapter.id,
+        title: chapter.title,
+        nodeIds: chapterNodeIds,
+        entryNodeId: chapter.entryNodeId,
+        isFirst: project.chapters[0]?.id === chapter.id,
+      },
+      chapterDirectory: project.chapters.map((candidate) => ({
+        id: candidate.id,
+        title: candidate.title,
+        entryNodeId: candidate.entryNodeId,
+      })),
       draftRow: {
         revision: project.draft.revision,
         schemaVersion: project.draft.schemaVersion,
-        contentHash: project.draft.contentHash,
-        content: draft.data,
+        contentHash: canonicalJsonHash(chapterContent),
+        content: chapterContent,
+        globalContentHash: project.draft.contentHash,
+        globalContent: draft.data,
       },
       layoutRow: {
-        revision: project.canvasLayout.revision,
-        schemaVersion: project.canvasLayout.schemaVersion,
+        revision: canvasLayout.revision,
+        schemaVersion: canvasLayout.schemaVersion,
         layout: {
           nodePositions: positions.data,
-          storyWorldNodePresent: project.canvasLayout.storyWorldNodePresent,
+          storyWorldNodePresent: canvasLayout.storyWorldNodePresent,
         },
       },
     };
+  }
+
+  private async resolveActiveChapterId(
+    db: PrismaService | Prisma.TransactionClient,
+    projectId: string,
+    requestedChapterId?: string,
+  ): Promise<string> {
+    const chapter = await db.storyChapter.findFirst({
+      where: {
+        ...(requestedChapterId ? { id: requestedChapterId } : {}),
+        storyProjectId: projectId,
+        archivedAt: null,
+      },
+      orderBy: requestedChapterId
+        ? undefined
+        : [{ rank: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    if (!chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'Story chapter not found.',
+      });
+    }
+    return chapter.id;
   }
 
   private async requireScopedProject(
@@ -2328,6 +2510,7 @@ export class StoryAgentRunService {
     db: PrismaService | Prisma.TransactionClient,
     workspaceId: string,
     projectId: string,
+    chapterId: string,
     now: Date,
   ): Promise<RunWithActiveLock | null> {
     const applying = await db.storyAgentRun.findFirst({
@@ -2345,6 +2528,7 @@ export class StoryAgentRunService {
       where: {
         workspaceId,
         storyProjectId: projectId,
+        storyChapterId: chapterId,
         status: StoryAgentRunStatus.authoring,
         expiresAt: { gt: now },
       },
@@ -2357,6 +2541,7 @@ export class StoryAgentRunService {
       where: {
         workspaceId,
         storyProjectId: projectId,
+        storyChapterId: chapterId,
         status: StoryAgentRunStatus.proposed,
         expiresAt: { gt: now },
       },
@@ -2369,6 +2554,7 @@ export class StoryAgentRunService {
       where: {
         workspaceId,
         storyProjectId: projectId,
+        storyChapterId: chapterId,
         status: {
           notIn: [StoryAgentRunStatus.proposed, StoryAgentRunStatus.authoring],
         },
@@ -2388,6 +2574,7 @@ export class StoryAgentRunService {
       where: {
         workspaceId,
         storyProjectId: projectId,
+        storyChapterId: state.chapter.id,
         kind: StoryAgentRunKind.apply,
         status: StoryAgentRunStatus.succeeded,
         resultDraftRevision: state.draftRow.revision,
@@ -2411,6 +2598,7 @@ export class StoryAgentRunService {
     tx: Prisma.TransactionClient,
     workspaceId: string,
     projectId: string,
+    chapterId: string,
     requestedRunId: string,
     now: Date,
   ): Promise<void> {
@@ -2418,6 +2606,7 @@ export class StoryAgentRunService {
       tx,
       workspaceId,
       projectId,
+      chapterId,
       now,
     );
     if (
@@ -2500,6 +2689,7 @@ export class StoryAgentRunService {
       status: row.status,
       workspaceId: row.workspaceId,
       projectId: row.storyProjectId,
+      chapterId: row.storyChapterId,
       initiator: { id: row.initiatedByUserId },
       confirmedByUserId: row.confirmedByUserId,
       cancelledByUserId: row.cancelledByUserId,
@@ -2722,11 +2912,60 @@ function restoredGraphNodeIds(draft: InteractiveStoryDraftContent): string[] {
 function jsonStringArray(value: Prisma.JsonValue): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw canonicalStateCorrupt(
-      'STORY_AGENT_RUN_NODE_IDS_CORRUPT',
-      'Story Agent affected and created node ids must be string arrays.',
+      'STORY_AGENT_NODE_IDS_CORRUPT',
+      'Story node ids must be stored as a string array.',
     );
   }
   return value as string[];
+}
+
+function assertCanonicalChapterPartition(
+  content: InteractiveStoryDraftContent,
+  chapters: Array<{
+    id: string;
+    nodeIds: Prisma.JsonValue;
+    entryNodeId: string | null;
+  }>,
+): void {
+  const graphNodeIds = new Set(content.graph.nodes.map((node) => node.nodeId));
+  const ownerByNodeId = new Map<string, string>();
+  for (const chapter of chapters) {
+    const chapterNodeIds = jsonStringArray(chapter.nodeIds);
+    const localNodeIds = new Set<string>();
+    for (const nodeId of chapterNodeIds) {
+      if (
+        localNodeIds.has(nodeId) ||
+        ownerByNodeId.has(nodeId) ||
+        !graphNodeIds.has(nodeId)
+      ) {
+        throw canonicalStateCorrupt(
+          'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
+          `Scene ${nodeId} has invalid chapter ownership.`,
+        );
+      }
+      localNodeIds.add(nodeId);
+      ownerByNodeId.set(nodeId, chapter.id);
+    }
+    if (
+      (chapterNodeIds.length === 0 && chapter.entryNodeId !== null) ||
+      (chapterNodeIds.length > 0 &&
+        (!chapter.entryNodeId || !localNodeIds.has(chapter.entryNodeId)))
+    ) {
+      throw canonicalStateCorrupt(
+        'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
+        `Chapter ${chapter.id} has an invalid entry scene.`,
+      );
+    }
+  }
+  if (
+    ownerByNodeId.size !== graphNodeIds.size ||
+    content.graph.entryNodeId !== (chapters[0]?.entryNodeId ?? null)
+  ) {
+    throw canonicalStateCorrupt(
+      'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
+      'The story graph does not match its active chapter structure.',
+    );
+  }
 }
 
 function uniqueSorted(values: string[]): string[] {

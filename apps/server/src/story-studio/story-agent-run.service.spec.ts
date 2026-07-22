@@ -26,6 +26,7 @@ const USER = { userId: 'user-1' };
 const CONFIRMING_EDITOR = { userId: 'editor-2' };
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
+const CHAPTER_ID = '0197f4a2-0800-7000-8000-00000000000c';
 const RUN_ID = '0197f4a2-0800-7000-8000-000000000003';
 const OTHER_RUN_ID = '0197f4a2-0800-7000-8000-000000000004';
 const OPERATION_ID = '0197f4a2-0800-7000-8000-000000000005';
@@ -47,7 +48,7 @@ const AUTHORING_SNAPSHOT = {
 const BRIEF_TEXT =
   'Open the story bible with a premise about a dream that remembers its author.';
 const DOCUMENT_ID = '0197f4a2-0800-7000-8000-00000000000d';
-const BRIEF_CONVERSATION_ID = `story-canvas:${PROJECT_ID}`;
+const BRIEF_CONVERSATION_ID = `story-canvas:${PROJECT_ID}:${CHAPTER_ID}`;
 
 const changedOverviewOperation = {
   operationId: OPERATION_ID,
@@ -487,7 +488,7 @@ describe('StoryAgentRunService', () => {
     const { service } = serviceWith(tx);
 
     await expect(
-      service.getAuthoringContext(USER, WORKSPACE_ID, PROJECT_ID),
+      service.getAuthoringContext(USER, WORKSPACE_ID, PROJECT_ID, CHAPTER_ID),
     ).resolves.toEqual({
       prompt: expect.stringContaining('"schemaVersion"'),
       snapshot: AUTHORING_SNAPSHOT,
@@ -496,6 +497,7 @@ describe('StoryAgentRunService', () => {
       USER,
       WORKSPACE_ID,
       PROJECT_ID,
+      CHAPTER_ID,
     );
     expect(result.prompt).not.toContain('"revision"');
     expect(result.prompt).not.toContain(AUTHORING_SNAPSHOT.draftContentHash);
@@ -1082,6 +1084,9 @@ describe('StoryAgentRunService', () => {
     };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ id: CHAPTER_ID }),
+      },
       storyAgentRun,
     };
     const { service } = serviceWith(tx);
@@ -1127,6 +1132,9 @@ describe('StoryAgentRunService', () => {
     };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ id: CHAPTER_ID }),
+      },
       storyAgentRun,
     };
     const { service } = serviceWith(tx);
@@ -1586,6 +1594,9 @@ function serviceWith(
     ),
     $queryRaw: (tx.$queryRaw ?? jest.fn()) as jest.Mock,
     storyProject: (tx.storyProject ?? {}) as Record<string, unknown>,
+    storyChapter: (tx.storyChapter ?? {}) as Record<string, unknown>,
+    storyCanvasLayout: (tx.storyCanvasLayout ?? {}) as Record<string, unknown>,
+    storyDraft: (tx.storyDraft ?? {}) as Record<string, unknown>,
     storyAgentRun: (tx.storyAgentRun ?? {}) as Record<string, unknown>,
     copilotDocument: (tx.copilotDocument ?? {}) as Record<string, unknown>,
   };
@@ -1716,17 +1727,26 @@ function canonicalProjectRow() {
       content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
       contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
     },
-    canvasLayout: {
-      revision: 3,
-      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-      nodePositions: {},
-      storyWorldNodePresent: true,
-    },
+    chapters: [
+      {
+        id: CHAPTER_ID,
+        title: 'Chapter 1',
+        nodeIds: [],
+        entryNodeId: null,
+        canvasLayout: {
+          revision: 3,
+          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+          nodePositions: {},
+          storyWorldNodePresent: true,
+        },
+      },
+    ],
   };
 }
 
 function briefInput(overrides: Record<string, unknown> = {}) {
   return {
+    chapterId: CHAPTER_ID,
     title: 'A remembered dream',
     summary: 'Establish the premise.',
     brief: BRIEF_TEXT,
@@ -1748,6 +1768,7 @@ function briefFingerprint(overrides: Record<string, unknown> = {}): string {
   return canonicalJsonHash({
     kind: 'apply-brief',
     projectId: PROJECT_ID,
+    chapterId: CHAPTER_ID,
     initiatedByUserId: USER.userId,
     title: 'A remembered dream',
     summary: 'Establish the premise.',
@@ -1802,6 +1823,7 @@ function runRow(overrides: Record<string, unknown> = {}) {
   return {
     id: RUN_ID,
     storyProjectId: PROJECT_ID,
+    storyChapterId: CHAPTER_ID,
     workspaceId: WORKSPACE_ID,
     kind: StoryAgentRunKind.apply,
     status: StoryAgentRunStatus.proposed,

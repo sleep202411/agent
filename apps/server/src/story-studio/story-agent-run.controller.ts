@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../auth';
@@ -21,9 +22,13 @@ const StoryAgentProjectParamsSchema = z
 const StoryAgentRunParamsSchema = z
   .object({ projectId: StoryUuidSchema, runId: StoryUuidSchema })
   .strict();
+const StoryAgentRunScopeQuerySchema = z
+  .object({ chapterId: StoryUuidSchema.optional() })
+  .strict();
 
 type StoryAgentProjectParams = z.infer<typeof StoryAgentProjectParamsSchema>;
 type StoryAgentRunParams = z.infer<typeof StoryAgentRunParamsSchema>;
+type StoryAgentRunScopeQuery = z.infer<typeof StoryAgentRunScopeQuerySchema>;
 
 @Controller('story-projects/:projectId/agent-runs')
 export class StoryAgentRunController {
@@ -44,6 +49,8 @@ export class StoryAgentRunController {
     workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentProjectParamsSchema))
     params: StoryAgentProjectParams,
+    @Query(new ZodValidationPipe(StoryAgentRunScopeQuerySchema))
+    query: StoryAgentRunScopeQuery,
   ) {
     return {
       code: 200,
@@ -51,6 +58,7 @@ export class StoryAgentRunController {
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
+        query.chapterId,
       ),
     };
   }
@@ -66,6 +74,8 @@ export class StoryAgentRunController {
     workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentProjectParamsSchema))
     params: StoryAgentProjectParams,
+    @Query(new ZodValidationPipe(StoryAgentRunScopeQuerySchema))
+    query: StoryAgentRunScopeQuery,
   ) {
     return {
       code: 200,
@@ -73,6 +83,7 @@ export class StoryAgentRunController {
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
+        query.chapterId,
       ),
     };
   }

@@ -17,28 +17,36 @@ import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   ArchiveStoryProjectSchema,
+  CreateStoryChapterSchema,
   CreateStoryProjectSchema,
   LockStoryRevisionSchema,
   PatchStoryProjectSchema,
+  PatchStoryChapterSchema,
   PutStoryCanvasLayoutSchema,
   PutStoryDraftSchema,
   StoryProjectIdParamsSchema,
+  StoryChapterParamsSchema,
   StoryProjectListQuerySchema,
   StoryRevisionListQuerySchema,
   StoryRevisionParamsSchema,
   StoryUuidSchema,
   StoryWorkbenchQuerySchema,
+  ReorderStoryChaptersSchema,
   type ArchiveStoryProjectInput,
+  type CreateStoryChapterInput,
   type CreateStoryProjectInput,
   type LockStoryRevisionInput,
   type PatchStoryProjectInput,
+  type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
   type StoryProjectIdParams,
+  type StoryChapterParams,
   type StoryProjectListQuery,
   type StoryRevisionListQuery,
   type StoryRevisionParams,
   type StoryWorkbenchQuery,
+  type ReorderStoryChaptersInput,
 } from './dto';
 import { StoryProjectsService } from './story-projects.service';
 
@@ -77,6 +85,160 @@ export class StoryProjectsController {
     };
   }
 
+  @Post(':projectId/chapters')
+  @HttpCode(HttpStatus.CREATED)
+  async createChapter(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(CreateStoryChapterSchema))
+    body: CreateStoryChapterInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.createChapter(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Patch(':projectId/chapters/:chapterId')
+  async patchChapter(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+    @Body(new ZodValidationPipe(PatchStoryChapterSchema))
+    body: PatchStoryChapterInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.patchChapter(
+        user,
+        workspaceId,
+        params.projectId,
+        params.chapterId,
+        body,
+      ),
+    };
+  }
+
+  @Put(':projectId/chapters/order')
+  async reorderChapters(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(ReorderStoryChaptersSchema))
+    body: ReorderStoryChaptersInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.reorderChapters(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Post(':projectId/chapters/:chapterId/archive')
+  async archiveChapter(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.archiveChapter(
+        user,
+        workspaceId,
+        params.projectId,
+        params.chapterId,
+      ),
+    };
+  }
+
+  @Put(':projectId/chapters/:chapterId/draft')
+  async putChapterDraft(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+    @Body(new ZodValidationPipe(PutStoryDraftSchema))
+    body: PutStoryDraftInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.putDraft(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+        params.chapterId,
+      ),
+    };
+  }
+
+  @Get(':projectId/chapters/:chapterId/canvas-layout')
+  async getChapterCanvasLayout(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.getCanvasLayout(
+        user,
+        workspaceId,
+        params.projectId,
+        params.chapterId,
+      ),
+    };
+  }
+
+  @Put(':projectId/chapters/:chapterId/canvas-layout')
+  async putChapterCanvasLayout(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+    @Body(new ZodValidationPipe(PutStoryCanvasLayoutSchema))
+    body: PutStoryCanvasLayoutInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.putCanvasLayout(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+        params.chapterId,
+      ),
+    };
+  }
+
   @Get(':projectId/workbench')
   async workbench(
     @CurrentUser() user: AuthUser,
@@ -95,88 +257,6 @@ export class StoryProjectsController {
         workspaceId,
         params.projectId,
         query,
-      ),
-    };
-  }
-
-  @Get(':projectId/draft')
-  async getDraft(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.getDraft(
-        user,
-        workspaceId,
-        params.projectId,
-      ),
-    };
-  }
-
-  @Put(':projectId/draft')
-  async putDraft(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PutStoryDraftSchema))
-    body: PutStoryDraftInput,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.putDraft(
-        user,
-        workspaceId,
-        params.projectId,
-        body,
-      ),
-    };
-  }
-
-  @Get(':projectId/canvas-layout')
-  async getCanvasLayout(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.getCanvasLayout(
-        user,
-        workspaceId,
-        params.projectId,
-      ),
-    };
-  }
-
-  @Put(':projectId/canvas-layout')
-  async putCanvasLayout(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PutStoryCanvasLayoutSchema))
-    body: PutStoryCanvasLayoutInput,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.putCanvasLayout(
-        user,
-        workspaceId,
-        params.projectId,
-        body,
       ),
     };
   }

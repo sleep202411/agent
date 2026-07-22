@@ -6460,7 +6460,8 @@ model StoryProject {
   cover                            MediaAsset?                            @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                          StoryProjectMember[]
   draft                            StoryDraft?
-  canvasLayout                     StoryCanvasLayout?
+  chapters                         StoryChapter[]
+  canvasLayouts                    StoryCanvasLayout[]
   writeState                       StoryProjectWriteState?
   agentRuns                        StoryAgentRun[]
   revisions                        StoryRevision[]
@@ -6509,6 +6510,7 @@ model StoryProjectWriteState {
 model StoryAgentRun {
   id                   String              @id @default(uuid(7)) @db.Uuid
   storyProjectId       String              @map("story_project_id") @db.Uuid
+  storyChapterId       String              @map("story_chapter_id") @db.Uuid
   workspaceId          String              @map("workspace_id") @db.Uuid
   kind                 StoryAgentRunKind   @default(apply)
   status               StoryAgentRunStatus @default(proposed)
@@ -6564,11 +6566,13 @@ model StoryAgentRun {
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project          StoryProject            @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  chapter          StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
   activeWriteState StoryProjectWriteState? @relation("StoryProjectActiveAgentRun")
   revertsRun       StoryAgentRun?          @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
   undoRuns         StoryAgentRun[]         @relation("StoryAgentRunUndo")
 
   @@unique([id, storyProjectId], map: "story_agent_runs_id_project_unique")
+  @@index([storyChapterId, status, createdAt(sort: Desc)], map: "story_agent_runs_chapter_status_recent_idx")
   @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_agent_runs_project_status_recent_idx")
   @@index([storyProjectId, kind, status, resultDraftRevision, resultLayoutRevision, completedAt(sort: Desc), id(sort: Desc)], map: "story_agent_runs_undo_head_idx")
   @@index([status, expiresAt, id], map: "story_agent_runs_proposal_expiry_idx")
@@ -6629,7 +6633,29 @@ model StoryVideoUploadSession {
   @@map("story_video_upload_sessions")
 }
 
+model StoryChapter {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId  String    @map("story_project_id") @db.Uuid
+  title           String    @db.VarChar(160)
+  rank            Int
+  nodeIds         Json      @default("[]") @map("node_ids") @db.JsonB
+  entryNodeId     String?   @map("entry_node_id") @db.VarChar(120)
+  createdByUserId String    @map("created_by_user_id") @db.VarChar(64)
+  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project      StoryProject       @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  canvasLayout StoryCanvasLayout?
+  agentRuns    StoryAgentRun[]
+
+  @@unique([id, storyProjectId], map: "story_chapters_id_project_unique")
+  @@index([storyProjectId, rank], map: "story_chapters_project_rank_idx")
+  @@map("story_chapters")
+}
+
 model StoryCanvasLayout {
+  storyChapterId        String   @id @map("story_chapter_id") @db.Uuid
   storyProjectId        String   @map("story_project_id") @db.Uuid
   workspaceId           String   @map("workspace_id") @db.Uuid
   schemaVersion         String   @default("story-canvas-layout-v2") @map("schema_version") @db.VarChar(64)
@@ -6641,9 +6667,11 @@ model StoryCanvasLayout {
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  chapter StoryChapter @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade, map: "story_canvas_layouts_chapter_project_fkey")
   project StoryProject @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
 
-  @@id([storyProjectId, workspaceId])
+  @@unique([storyChapterId, storyProjectId], map: "story_canvas_layouts_chapter_project_unique")
+  @@index([storyProjectId, updatedAt(sort: Desc)], map: "story_canvas_layouts_project_recent_idx")
   @@index([workspaceId, updatedAt(sort: Desc)], map: "story_canvas_layouts_workspace_recent_idx")
   @@map("story_canvas_layouts")
 }

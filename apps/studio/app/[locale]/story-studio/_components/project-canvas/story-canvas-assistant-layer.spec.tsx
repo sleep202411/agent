@@ -55,13 +55,18 @@ describe("Story Canvas assistant layer", () => {
     container.remove();
   });
 
-  async function renderLayer(open: boolean, onOpenChange: (open: boolean) => void) {
+  async function renderLayer(
+    open: boolean,
+    onOpenChange: (open: boolean) => void,
+    showProjectLauncher = false
+  ) {
     await act(async () => {
       root.render(
         <StoryCanvasAssistantLayer
           projectId="0198c1de-9d33-7c66-a06f-3f3ffe1f3b30"
+          chapterId="0198c1de-9d33-7c66-a06f-3f3ffe1f3b32"
           workspaceId="0198c1de-9d33-7c66-a06f-3f3ffe1f3b31"
-          hasNodes
+          showProjectLauncher={showProjectLauncher}
           open={open}
           onOpenChange={onOpenChange}
           agentRunController={{ applying: false } as StoryAgentRunController}
@@ -109,6 +114,16 @@ describe("Story Canvas assistant layer", () => {
 
     await renderLayer(false, onOpenChange);
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the welcome launcher only for project bootstrap", async () => {
+    const onOpenChange = vi.fn();
+
+    await renderLayer(false, onOpenChange, true);
+    expect(container.querySelector("[data-launcher]")).not.toBeNull();
+
+    await renderLayer(false, onOpenChange, false);
+    expect(container.querySelector("[data-launcher]")).toBeNull();
   });
 
   // Regression: an in-flight chat stream lives in this layer's session, and

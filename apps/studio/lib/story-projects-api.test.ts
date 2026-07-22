@@ -14,6 +14,7 @@ vi.mock("@/lib/api", () => ({
 import { api } from "@/lib/api";
 import { storyAgentRunFixture } from "@/app/[locale]/story-studio/_components/project-canvas/story-agent-run.test-fixtures";
 import {
+  archiveStoryChapter,
   cancelStoryVideoGeneration,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
@@ -30,6 +31,7 @@ import {
   putStoryTrailerCurrentVideo,
   retryStoryAgentRunAuthoring,
   retryStoryVideoGeneration,
+  updateStoryChapter,
   type StoryClipVideoFinalization,
   type CreatableStoryFormat,
   type StoryProjectSummary,
@@ -110,12 +112,36 @@ describe("current-draft Story production routes", () => {
     });
   });
 
+  it("renames a chapter without sending a chapter-version token", async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({ id: "chapter-1" });
+
+    await updateStoryChapter("workspace-1", "project-1", "chapter-1", {
+      title: "A New Name",
+    });
+
+    expect(api.patch).toHaveBeenCalledWith("/aurora/story-projects/project-1/chapters/chapter-1", {
+      data: { title: "A New Name" },
+      headers: { "x-fizz-workspace-id": "workspace-1" },
+    });
+  });
+
+  it("archives a chapter without sending a request body", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ id: "chapter-1" });
+
+    await archiveStoryChapter("workspace-1", "project-1", "chapter-1");
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/archive",
+      { headers: { "x-fizz-workspace-id": "workspace-1" } }
+    );
+  });
+
   it("reads the independent Story Agent Undo data head without replacing /active", async () => {
     vi.mocked(api.get).mockResolvedValueOnce(null);
     const controller = new AbortController();
 
     await expect(
-      getUndoableStoryAgentRun("workspace-1", "project / one", controller.signal)
+      getUndoableStoryAgentRun("workspace-1", "project / one", undefined, controller.signal)
     ).resolves.toBeNull();
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project%20%2F%20one/agent-runs/undoable",
@@ -172,6 +198,7 @@ describe("current-draft Story production routes", () => {
     await putStoryCanvasLayout(
       "workspace-1",
       "project-1",
+      "chapter-1",
       {
         expectedRevision: 7,
         nodePositions: { "clip:opening": { x: 120, y: 240 } },
@@ -182,7 +209,7 @@ describe("current-draft Story production routes", () => {
     );
 
     expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/canvas-layout",
+      "/aurora/story-projects/project-1/chapters/chapter-1/canvas-layout",
       expect.objectContaining({
         keepalive: true,
         data: expect.objectContaining({

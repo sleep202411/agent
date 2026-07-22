@@ -28,21 +28,26 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+  STORY_CHAPTER_COUNT_MAX,
   STORY_WORLD_CANVAS_NODE_ID,
   StoryCanvasNodePositionsSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
+  type CreateStoryChapterInput,
   type CreateStoryProjectInput,
   type CursorPageDto,
+  type InteractiveStoryDraftContent,
   type StoryBuildDiagnosticDto,
   type StoryBuildSummaryDto,
   type StoryVideoTechnicalCheckDto,
   type LockStoryRevisionInput,
   type MediaAssetSummaryDto,
   type PatchStoryProjectInput,
+  type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
   type StoryCapability,
+  type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryDraftDto,
   type StoryProjectListQuery,
@@ -55,6 +60,7 @@ import {
   type StoryVideoGenerationDto,
   type StoryWorkbenchDto,
   type StoryWorkbenchQuery,
+  type ReorderStoryChaptersInput,
 } from './dto';
 import {
   StoryVideoRecipeSnapshotSchema,
@@ -79,7 +85,7 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
       variants: { include: { placements: true } },
     },
   },
-  draft: { select: { revision: true, contentHash: true, content: true } },
+  draft: true,
   revisions: { orderBy: [{ number: 'desc' }, { id: 'desc' }], take: 1 },
   members: {
     where: {
@@ -201,52 +207,67 @@ export class StoryProjectsService {
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
     );
-    const project = await this.prisma.storyProject.create({
-      data: {
-        workspaceId,
-        format: input.format,
-        frameProfile: input.frameProfile ?? null,
-        status: StoryProjectStatus.active,
-        visibility: input.visibility,
-        title: input.title,
-        summary: input.summary,
-        defaultLocale: input.defaultLocale,
-        sourceIpId: input.sourceIpId,
-        createdByUserId: user.userId,
-        members: {
-          create: {
-            userId: user.userId,
-            role: StoryProjectMemberRole.owner,
-            status: StoryProjectMemberStatus.active,
-            grantedByUserId: user.userId,
+    const { project, chapter } = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.storyProject.create({
+        data: {
+          workspaceId,
+          format: input.format,
+          frameProfile: input.frameProfile ?? null,
+          status: StoryProjectStatus.active,
+          visibility: input.visibility,
+          title: input.title,
+          summary: input.summary,
+          defaultLocale: input.defaultLocale,
+          sourceIpId: input.sourceIpId,
+          createdByUserId: user.userId,
+          members: {
+            create: {
+              userId: user.userId,
+              role: StoryProjectMemberRole.owner,
+              status: StoryProjectMemberStatus.active,
+              grantedByUserId: user.userId,
+            },
           },
-        },
-        draft: {
-          create: {
-            schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-            content:
-              EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
-            contentHash,
-            updatedByUserId: user.userId,
+          draft: {
+            create: {
+              schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+              content:
+                EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
+              contentHash,
+              updatedByUserId: user.userId,
+            },
           },
+          writeState: { create: {} },
         },
-        canvasLayout: {
-          create: {
-            schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-            nodePositions: {},
-            // A fresh project opens on the empty-canvas agent launcher (idea +
-            // director skills); the Story World card is summoned later, not
-            // pre-seeded.
-            storyWorldNodePresent: false,
-            updatedByUserId: user.userId,
-          },
+      });
+      const chapter = await tx.storyChapter.create({
+        data: {
+          storyProjectId: project.id,
+          title: defaultStoryChapterTitle(input.defaultLocale, 1),
+          rank: 0,
+          nodeIds: [],
+          entryNodeId: null,
+          createdByUserId: user.userId,
         },
-        writeState: { create: {} },
-      },
-      include: {
-        ...PROJECT_SUMMARY_INCLUDE,
-        draft: true,
-      },
+      });
+      await tx.storyCanvasLayout.create({
+        data: {
+          storyChapterId: chapter.id,
+          storyProjectId: project.id,
+          workspaceId,
+          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+          nodePositions: {},
+          // A fresh project opens on the empty-canvas agent launcher (idea +
+          // director skills); the Story World card is summoned later, not
+          // pre-seeded.
+          storyWorldNodePresent: false,
+          updatedByUserId: user.userId,
+        },
+      });
+      return {
+        project: await this.loadProjectSummary(project.id, tx),
+        chapter,
+      };
     });
 
     if (!project.draft) {
@@ -258,7 +279,9 @@ export class StoryProjectsService {
 
     return {
       project: this.toProjectSummary(project, user.userId),
-      draft: this.toDraft(project.draft, project),
+      chapters: [this.toChapter(chapter)],
+      chapter: this.toChapter(chapter),
+      draft: this.toChapterDraft(project.draft, project, chapter),
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
         clips: [],
@@ -449,24 +472,249 @@ export class StoryProjectsService {
     return this.toProjectSummary(row, user.userId);
   }
 
-  async getDraft(
+  async createChapter(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-  ): Promise<StoryDraftDto> {
-    const access = await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
-    this.requireSupportedStoryFormat(access.project.format);
-    const draft = await this.prisma.storyDraft.findUnique({
-      where: { storyProjectId: projectId },
+    input: CreateStoryChapterInput,
+  ): Promise<StoryChapterDto> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const chapter = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const [count, latest] = await Promise.all([
+        tx.storyChapter.count({
+          where: { storyProjectId: projectId, archivedAt: null },
+        }),
+        tx.storyChapter.aggregate({
+          where: { storyProjectId: projectId },
+          _max: { rank: true },
+        }),
+      ]);
+      if (count >= STORY_CHAPTER_COUNT_MAX) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_LIMIT_REACHED',
+          message: `A story project supports at most ${STORY_CHAPTER_COUNT_MAX} chapters.`,
+        });
+      }
+      const rank = (latest._max.rank ?? -1) + 1;
+      const created = await tx.storyChapter.create({
+        data: {
+          storyProjectId: projectId,
+          title: input.title,
+          rank,
+          nodeIds: [],
+          entryNodeId: null,
+          createdByUserId: user.userId,
+        },
+      });
+      await Promise.all([
+        tx.storyCanvasLayout.create({
+          data: {
+            storyChapterId: created.id,
+            storyProjectId: projectId,
+            workspaceId,
+            schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+            nodePositions: {},
+            storyWorldNodePresent: false,
+            updatedByUserId: user.userId,
+          },
+        }),
+        tx.storyProject.update({
+          where: { id: projectId },
+          data: { version: { increment: 1 }, updatedAt: new Date() },
+        }),
+      ]);
+      return created;
     });
-    if (!draft) throwDraftNotFound();
-    return this.toDraft(draft, access.project);
+    return this.toChapter(chapter);
+  }
+
+  async patchChapter(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    input: PatchStoryChapterInput,
+  ): Promise<StoryChapterDto> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const chapter = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await this.loadActiveChapter(projectId, chapterId, tx);
+      const saved = await tx.storyChapter.update({
+        where: { id: chapterId },
+        data: { title: input.title },
+      });
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { version: { increment: 1 }, updatedAt: new Date() },
+      });
+      return saved;
+    });
+    return this.toChapter(chapter);
+  }
+
+  async reorderChapters(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    input: ReorderStoryChaptersInput,
+  ): Promise<StoryChapterDto[]> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const reordered = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const projectClaim = await tx.storyProject.updateMany({
+        where: {
+          id: projectId,
+          workspaceId,
+          status: StoryProjectStatus.active,
+          version: input.expectedProjectVersion,
+        },
+        data: { version: { increment: 1 }, updatedAt: new Date() },
+      });
+      if (projectClaim.count !== 1) return null;
+
+      const chapters = await tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      });
+      const existingIds = chapters.map((chapter) => chapter.id).sort();
+      const requestedIds = [...input.chapterIds].sort();
+      if (
+        existingIds.length !== requestedIds.length ||
+        existingIds.some((id, index) => id !== requestedIds[index])
+      ) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_ORDER_INCOMPLETE',
+          message:
+            'Chapter order must contain every active chapter exactly once.',
+        });
+      }
+
+      const rankOffset =
+        Math.max(0, ...chapters.map((chapter) => chapter.rank)) +
+        chapters.length +
+        1;
+      await tx.storyChapter.updateMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        data: { rank: { increment: rankOffset } },
+      });
+      await Promise.all(
+        input.chapterIds.map((id, rank) =>
+          tx.storyChapter.update({
+            where: { id },
+            data: { rank },
+          }),
+        ),
+      );
+      const firstChapter = chapters.find(
+        (chapter) => chapter.id === input.chapterIds[0],
+      );
+      const draft = await tx.storyDraft.findUnique({
+        where: { storyProjectId: projectId },
+      });
+      if (draft && firstChapter) {
+        const content = parseDraftContent(draft.content, 'STORY_DRAFT_CORRUPT');
+        if (content.graph.entryNodeId !== firstChapter.entryNodeId) {
+          const reorderedContent = {
+            ...content,
+            graph: { ...content.graph, entryNodeId: firstChapter.entryNodeId },
+          };
+          await tx.storyDraft.update({
+            where: { storyProjectId: projectId },
+            data: {
+              content: reorderedContent as Prisma.InputJsonObject,
+              contentHash: canonicalJsonHash(reorderedContent),
+              revision: { increment: 1 },
+              updatedByUserId: user.userId,
+            },
+          });
+        }
+      }
+      return tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      });
+    });
+    if (!reordered) {
+      return this.throwProjectVersionConflict(
+        workspaceId,
+        projectId,
+        input.expectedProjectVersion,
+      );
+    }
+    return reordered.map((chapter) => this.toChapter(chapter));
+  }
+
+  async archiveChapter(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+  ): Promise<StoryChapterDto> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const archived = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const chapters = await tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      });
+      const chapter = chapters.find((candidate) => candidate.id === chapterId);
+      if (!chapter) throwChapterNotFound();
+      if (chapters.length === 1) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_LAST_ACTIVE',
+          message: 'A story project must keep at least one active chapter.',
+        });
+      }
+      if (stringArray(chapter.nodeIds).length > 0) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_NOT_EMPTY',
+          message: 'Move or delete every scene before archiving this chapter.',
+        });
+      }
+      const result = await tx.storyChapter.update({
+        where: { id: chapterId },
+        data: { archivedAt: new Date() },
+      });
+      if (chapters[0]?.id === chapterId) {
+        const nextFirstChapter = chapters.find(
+          (candidate) => candidate.id !== chapterId,
+        );
+        const draft = await tx.storyDraft.findUnique({
+          where: { storyProjectId: projectId },
+        });
+        if (draft && nextFirstChapter) {
+          const content = parseDraftContent(
+            draft.content,
+            'STORY_DRAFT_CORRUPT',
+          );
+          if (content.graph.entryNodeId !== nextFirstChapter.entryNodeId) {
+            const nextContent = {
+              ...content,
+              graph: {
+                ...content.graph,
+                entryNodeId: nextFirstChapter.entryNodeId,
+              },
+            };
+            await tx.storyDraft.update({
+              where: { storyProjectId: projectId },
+              data: {
+                content: nextContent as Prisma.InputJsonObject,
+                contentHash: canonicalJsonHash(nextContent),
+                revision: { increment: 1 },
+                updatedByUserId: user.userId,
+              },
+            });
+          }
+        }
+      }
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { version: { increment: 1 }, updatedAt: new Date() },
+      });
+      return result;
+    });
+    return this.toChapter(archived);
   }
 
   async putDraft(
@@ -474,6 +722,7 @@ export class StoryProjectsService {
     workspaceId: string,
     projectId: string,
     input: PutStoryDraftInput,
+    chapterId: string,
   ): Promise<StoryDraftDto> {
     const access = await this.requireScopedProject(
       user,
@@ -482,14 +731,18 @@ export class StoryProjectsService {
       'story.edit',
     );
     this.requireSupportedStoryFormat(access.project.format);
-    const contentHash = canonicalJsonHash(input.content);
-
     const saved = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const current = await tx.storyDraft.findUnique({
-        where: { storyProjectId: projectId },
-      });
+      const [current, chapters] = await Promise.all([
+        tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+        tx.storyChapter.findMany({
+          where: { storyProjectId: projectId, archivedAt: null },
+          orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+        }),
+      ]);
       if (!current || current.revision !== input.expectedRevision) return null;
+      const chapter = chapters.find((candidate) => candidate.id === chapterId);
+      if (!chapter) throwChapterNotFound();
 
       const currentActualHash = canonicalJsonHash(current.content);
       if (currentActualHash !== current.contentHash) {
@@ -500,14 +753,62 @@ export class StoryProjectsService {
           actualHash: currentActualHash,
         });
       }
+      const currentContent = parseDraftContent(
+        current.content,
+        'STORY_DRAFT_CORRUPT',
+      );
+      assertActiveChapterGraphPartition(currentContent, chapters);
+      const previousChapterNodeIds = new Set(stringArray(chapter.nodeIds));
+      const nextChapterNodeIds = input.content.graph.nodes.map(
+        (node) => node.nodeId,
+      );
+      const otherChapterNodeIds = new Set(
+        chapters.flatMap((candidate) =>
+          candidate.id === chapter.id ? [] : stringArray(candidate.nodeIds),
+        ),
+      );
+      const collision = nextChapterNodeIds.find((nodeId) =>
+        otherChapterNodeIds.has(nodeId),
+      );
+      if (collision) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
+          message: `Scene ${collision} already belongs to another chapter.`,
+          nodeId: collision,
+        });
+      }
+
+      const mergedContent = InteractiveStoryDraftContentSchema.parse({
+        storyBible: input.content.storyBible,
+        graph: {
+          entryNodeId:
+            chapters[0]?.id === chapter.id
+              ? input.content.graph.entryNodeId
+              : currentContent.graph.entryNodeId,
+          nodes: [
+            ...currentContent.graph.nodes.filter(
+              (node) => !previousChapterNodeIds.has(node.nodeId),
+            ),
+            ...input.content.graph.nodes,
+          ],
+        },
+        productionNotes: input.content.productionNotes,
+      });
+      const contentHash = canonicalJsonHash(mergedContent);
+      const membershipUnchanged = arraysEqual(
+        stringArray(chapter.nodeIds),
+        nextChapterNodeIds,
+      );
       // Autosave, navigation flush and retry may legitimately converge on the
       // same canonical payload. Treat that as an idempotent read of the saved
       // head: revisions represent content changes, not transport attempts.
       if (
         current.schemaVersion === input.schemaVersion &&
-        current.contentHash === contentHash
+        current.contentHash === contentHash &&
+        membershipUnchanged &&
+        chapter.entryNodeId === input.content.graph.entryNodeId
       ) {
-        return current;
+        return { draft: current, chapter };
       }
 
       const claimed = await tx.storyDraft.updateMany({
@@ -517,7 +818,7 @@ export class StoryProjectsService {
         },
         data: {
           schemaVersion: input.schemaVersion,
-          content: input.content as Prisma.InputJsonObject,
+          content: mergedContent as Prisma.InputJsonObject,
           contentHash,
           revision: { increment: 1 },
           updatedByUserId: user.userId,
@@ -526,11 +827,23 @@ export class StoryProjectsService {
       });
       if (claimed.count !== 1) return null;
 
+      await tx.storyChapter.update({
+        where: { id: chapter.id },
+        data: {
+          nodeIds: nextChapterNodeIds,
+          entryNodeId: input.content.graph.entryNodeId,
+        },
+      });
+
       await tx.storyProject.update({
         where: { id: projectId },
         data: { updatedAt: new Date() },
       });
-      return tx.storyDraft.findUnique({ where: { storyProjectId: projectId } });
+      const [draft, savedChapter] = await Promise.all([
+        tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+        tx.storyChapter.findUnique({ where: { id: chapter.id } }),
+      ]);
+      return draft && savedChapter ? { draft, chapter: savedChapter } : null;
     });
 
     if (!saved) {
@@ -538,15 +851,17 @@ export class StoryProjectsService {
         projectId,
         input.expectedRevision,
         access.project,
+        chapterId,
       );
     }
-    return this.toDraft(saved, access.project);
+    return this.toChapterDraft(saved.draft, access.project, saved.chapter);
   }
 
   async getCanvasLayout(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
+    chapterId: string,
   ): Promise<StoryCanvasLayoutDto> {
     await this.requireScopedProject(
       user,
@@ -555,10 +870,9 @@ export class StoryProjectsService {
       'story.read',
       { allowArchived: true },
     );
+    const chapter = await this.loadActiveChapter(projectId, chapterId);
     const layout = await this.prisma.storyCanvasLayout.findUnique({
-      where: {
-        storyProjectId_workspaceId: { storyProjectId: projectId, workspaceId },
-      },
+      where: { storyChapterId: chapter.id },
     });
     if (!layout) throwCanvasLayoutNotFound();
     return this.toCanvasLayout(layout);
@@ -569,13 +883,16 @@ export class StoryProjectsService {
     workspaceId: string,
     projectId: string,
     input: PutStoryCanvasLayoutInput,
+    chapterId: string,
   ): Promise<StoryCanvasLayoutDto> {
     await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const chapter = await this.loadActiveChapter(projectId, chapterId);
 
     const layout = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const claimed = await tx.storyCanvasLayout.updateMany({
         where: {
+          storyChapterId: chapter.id,
           storyProjectId: projectId,
           workspaceId,
           revision: input.expectedRevision,
@@ -592,18 +909,14 @@ export class StoryProjectsService {
       if (claimed.count !== 1) return null;
 
       return tx.storyCanvasLayout.findUnique({
-        where: {
-          storyProjectId_workspaceId: {
-            storyProjectId: projectId,
-            workspaceId,
-          },
-        },
+        where: { storyChapterId: chapter.id },
       });
     });
     if (!layout) {
       return this.throwCanvasLayoutConflict(
         workspaceId,
         projectId,
+        chapter.id,
         input.expectedRevision,
       );
     }
@@ -696,9 +1009,18 @@ export class StoryProjectsService {
         const result = await this.prisma.$transaction(
           async (tx) => {
             await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-            const draft = await tx.storyDraft.findUnique({
-              where: { storyProjectId: projectId },
-            });
+            const [draft, chapters] = await Promise.all([
+              tx.storyDraft.findUnique({
+                where: { storyProjectId: projectId },
+              }),
+              tx.storyChapter.findMany({
+                where: {
+                  storyProjectId: projectId,
+                  archivedAt: null,
+                },
+                orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+              }),
+            ]);
             if (!draft) return { kind: 'missing' } as const;
             if (draft.revision !== input.expectedDraftRevision) {
               return { kind: 'conflict', draft } as const;
@@ -718,6 +1040,12 @@ export class StoryProjectsService {
                 actualHash,
               });
             }
+
+            const canonicalContent = parseDraftContent(
+              draft.content,
+              'STORY_DRAFT_CORRUPT',
+            );
+            assertActiveChapterGraphPartition(canonicalContent, chapters);
 
             const lockable = createLockableInteractiveStoryDraftContentSchema(
               access.project.defaultLocale,
@@ -807,9 +1135,8 @@ export class StoryProjectsService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
-    _query: StoryWorkbenchQuery,
+    query: StoryWorkbenchQuery,
   ): Promise<StoryWorkbenchDto> {
-    void _query;
     const access = await this.requireScopedProject(
       user,
       workspaceId,
@@ -819,72 +1146,103 @@ export class StoryProjectsService {
     );
     this.requireSupportedStoryFormat(access.project.format);
 
-    const { project, draft, video, references, latestBuild } =
-      await this.prisma.$transaction(
-        async (tx) => {
-          const [project, draft, selections, references, latestBuild] =
-            await Promise.all([
-              this.loadProjectSummary(projectId, tx),
-              tx.storyDraft.findUnique({
-                where: { storyProjectId: projectId },
-              }),
-              tx.storyVideoSelection.findMany({
-                where: { storyProjectId: projectId },
-                include: STORY_VIDEO_SELECTION_INCLUDE,
-              }),
-              tx.storyReferenceSlot.findMany({
-                where: { storyProjectId: projectId, archivedAt: null },
-                orderBy: [{ rank: 'asc' }, { id: 'asc' }],
-                include: STORY_REFERENCE_INCLUDE,
-              }),
-              tx.storyBuild.findFirst({
-                where: { storyProjectId: projectId },
-                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-                include: {
-                  experiencePublication: {
-                    select: {
-                      status: true,
-                      gameId: true,
-                      contentVersion: true,
-                      manifestUrl: true,
-                      publishedAt: true,
-                      mediaAuthorizedAt: true,
-                      mediaAuthorizationRevokedAt: true,
-                      authorityIsCurrent: true,
-                      authorityGameExists: true,
-                      authorityCurrentVersion: true,
-                      authorityCheckedAt: true,
-                      lastErrorCode: true,
-                      lastErrorDetail: true,
-                    },
+    const {
+      project,
+      chapters,
+      chapter,
+      draft,
+      video,
+      references,
+      latestBuild,
+    } = await this.prisma.$transaction(
+      async (tx) => {
+        const [project, chapters, selections, references, latestBuild] =
+          await Promise.all([
+            this.loadProjectSummary(projectId, tx),
+            tx.storyChapter.findMany({
+              where: {
+                storyProjectId: projectId,
+                archivedAt: null,
+              },
+              orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+            }),
+            tx.storyVideoSelection.findMany({
+              where: { storyProjectId: projectId },
+              include: STORY_VIDEO_SELECTION_INCLUDE,
+            }),
+            tx.storyReferenceSlot.findMany({
+              where: { storyProjectId: projectId, archivedAt: null },
+              orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+              include: STORY_REFERENCE_INCLUDE,
+            }),
+            tx.storyBuild.findFirst({
+              where: { storyProjectId: projectId },
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+              include: {
+                experiencePublication: {
+                  select: {
+                    status: true,
+                    gameId: true,
+                    contentVersion: true,
+                    manifestUrl: true,
+                    publishedAt: true,
+                    mediaAuthorizedAt: true,
+                    mediaAuthorizationRevokedAt: true,
+                    authorityIsCurrent: true,
+                    authorityGameExists: true,
+                    authorityCurrentVersion: true,
+                    authorityCheckedAt: true,
+                    lastErrorCode: true,
+                    lastErrorDetail: true,
                   },
                 },
-              }),
-            ]);
-          if (!draft) throwDraftNotFound();
-          if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
-            throw unsupportedStorySchema('draft', draft.schemaVersion);
-          }
-          const content = parseDraftContent(
-            draft.content,
-            'STORY_DRAFT_CORRUPT',
-          );
-          return {
-            project,
-            draft,
-            video: projectStoryVideoWorkbench(content, selections),
-            references: references.map((slot) => this.toStoryReference(slot)),
-            latestBuild: latestBuild
-              ? this.toStoryBuildSummary(latestBuild)
-              : null,
-          };
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-      );
+              },
+            }),
+          ]);
+        const draft = project.draft;
+        if (!draft) throwDraftNotFound();
+        const chapter = query.chapterId
+          ? chapters.find((candidate) => candidate.id === query.chapterId)
+          : chapters[0];
+        if (!chapter) throwChapterNotFound();
+        if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
+          throw unsupportedStorySchema('draft', draft.schemaVersion);
+        }
+        const projectContent = parseDraftContent(
+          draft.content,
+          'STORY_DRAFT_CORRUPT',
+        );
+        assertActiveChapterGraphPartition(projectContent, chapters);
+        const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
+        const chapterContent = {
+          ...projectContent,
+          graph: {
+            entryNodeId: chapter.entryNodeId,
+            nodes: projectContent.graph.nodes.filter((node) =>
+              chapterNodeIds.has(node.nodeId),
+            ),
+          },
+        };
+        return {
+          project,
+          chapters,
+          chapter,
+          draft,
+          video: projectStoryVideoWorkbench(chapterContent, selections),
+          references: references.map((slot) => this.toStoryReference(slot)),
+          latestBuild: latestBuild
+            ? this.toStoryBuildSummary(latestBuild)
+            : null,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     return {
       project: this.toProjectSummary(project, user.userId),
-      draft: this.toDraft(draft, project),
+      chapters: chapters.map((item) => this.toChapter(item)),
+      chapter: this.toChapter(chapter),
+      draft: this.toChapterDraft(draft, project, chapter),
       video,
       references,
       latestBuild,
@@ -908,6 +1266,22 @@ export class StoryProjectsService {
       throw new NotFoundException(PROJECT_NOT_FOUND);
     }
     return access;
+  }
+
+  private async loadActiveChapter(
+    projectId: string,
+    chapterId: string,
+    client: Pick<Prisma.TransactionClient, 'storyChapter'> = this.prisma,
+  ) {
+    const chapter = await client.storyChapter.findFirst({
+      where: {
+        id: chapterId,
+        storyProjectId: projectId,
+        archivedAt: null,
+      },
+    });
+    if (!chapter) throwChapterNotFound();
+    return chapter;
   }
 
   private requireSupportedStoryFormat(
@@ -965,25 +1339,40 @@ export class StoryProjectsService {
     projectId: string,
     expectedRevision: number,
     project: { id: string; format: StoryFormat },
+    chapterId: string,
   ): Promise<never> {
-    const current = await this.prisma.storyDraft.findUnique({
-      where: { storyProjectId: projectId },
-    });
+    const [current, chapter] = await Promise.all([
+      this.prisma.storyDraft.findUnique({
+        where: { storyProjectId: projectId },
+      }),
+      this.loadActiveChapter(projectId, chapterId),
+    ]);
     if (!current) throwDraftNotFound();
-    throwDraftConflict(expectedRevision, current, project);
+    throw new ConflictException({
+      code: 'DRAFT_REVISION_CONFLICT',
+      message: 'The story draft changed. Refresh it before saving again.',
+      expectedRevision,
+      actualRevision: current.revision,
+      current: this.toChapterDraft(current, project, chapter),
+    });
   }
 
   private async throwCanvasLayoutConflict(
     workspaceId: string,
     projectId: string,
+    chapterId: string,
     expectedRevision: number,
   ): Promise<never> {
     const current = await this.prisma.storyCanvasLayout.findUnique({
-      where: {
-        storyProjectId_workspaceId: { storyProjectId: projectId, workspaceId },
-      },
+      where: { storyChapterId: chapterId },
     });
-    if (!current) throwCanvasLayoutNotFound();
+    if (
+      !current ||
+      current.storyProjectId !== projectId ||
+      current.workspaceId !== workspaceId
+    ) {
+      throwCanvasLayoutNotFound();
+    }
     throw new ConflictException({
       code: 'CANVAS_LAYOUT_REVISION_CONFLICT',
       message: 'The canvas layout changed. Refresh it before saving again.',
@@ -1064,7 +1453,31 @@ export class StoryProjectsService {
     };
   }
 
-  private toDraft(
+  private toChapter(row: {
+    id: string;
+    storyProjectId: string;
+    title: string;
+    rank: number;
+    nodeIds: Prisma.JsonValue;
+    entryNodeId: string | null;
+    createdByUserId: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): StoryChapterDto {
+    return {
+      id: row.id,
+      projectId: row.storyProjectId,
+      title: row.title,
+      rank: row.rank,
+      entryNodeId: row.entryNodeId,
+      nodeCount: stringArray(row.nodeIds).length,
+      createdByUserId: row.createdByUserId,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private toChapterDraft(
     row: {
       storyProjectId: string;
       schemaVersion: string;
@@ -1077,18 +1490,37 @@ export class StoryProjectsService {
       updatedAt: Date;
     },
     project: { id: string; format: StoryFormat },
+    chapter: {
+      id: string;
+      nodeIds: Prisma.JsonValue;
+      entryNodeId: string | null;
+    },
   ): StoryDraftDto {
     this.requireSupportedStoryFormat(project.format);
     if (row.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       throw unsupportedStorySchema('draft', row.schemaVersion);
     }
-    const content = parseDraftContent(row.content, 'STORY_DRAFT_CORRUPT');
+    const projectContent = parseDraftContent(
+      row.content,
+      'STORY_DRAFT_CORRUPT',
+    );
+    const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
+    const content = {
+      ...projectContent,
+      graph: {
+        entryNodeId: chapter.entryNodeId,
+        nodes: projectContent.graph.nodes.filter((node) =>
+          chapterNodeIds.has(node.nodeId),
+        ),
+      },
+    };
     return {
       projectId: row.storyProjectId,
+      chapterId: chapter.id,
       format: project.format,
       schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
       content,
-      contentHash: row.contentHash,
+      contentHash: canonicalJsonHash(content),
       revision: row.revision,
       updatedByUserId: row.updatedByUserId,
       updatedBySessionId: row.updatedBySessionId,
@@ -1098,6 +1530,7 @@ export class StoryProjectsService {
   }
 
   private toCanvasLayout(row: {
+    storyChapterId: string;
     storyProjectId: string;
     schemaVersion: string;
     nodePositions: Prisma.JsonValue;
@@ -1131,6 +1564,7 @@ export class StoryProjectsService {
     }
     return {
       projectId: row.storyProjectId,
+      chapterId: row.storyChapterId,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: nodePositions.data,
       storyWorldNodePresent: row.storyWorldNodePresent,
@@ -1312,6 +1746,19 @@ function throwDraftNotFound(): never {
   });
 }
 
+function throwChapterNotFound(): never {
+  throw new NotFoundException({
+    code: 'STORY_CHAPTER_NOT_FOUND',
+    message: 'Story chapter not found.',
+  });
+}
+
+function defaultStoryChapterTitle(locale: string, chapterNumber: number) {
+  return locale.trim().toLowerCase().startsWith('zh')
+    ? `第 ${chapterNumber} 章`
+    : `Chapter ${chapterNumber}`;
+}
+
 function throwCanvasLayoutNotFound(): never {
   throw new NotFoundException({
     code: 'STORY_CANVAS_LAYOUT_NOT_FOUND',
@@ -1351,6 +1798,7 @@ function throwDraftConflict(
   const content = parseDraftContent(current.content, 'STORY_DRAFT_CORRUPT');
   const dto: StoryDraftDto = {
     projectId: current.storyProjectId,
+    chapterId: null,
     format: project.format,
     schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     content,
@@ -1368,6 +1816,16 @@ function throwDraftConflict(
     actualRevision: current.revision,
     current: dto,
   });
+}
+
+function arraysEqual(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function toMediaAsset(row: StoryMediaAssetRow): MediaAssetSummaryDto {
@@ -1589,6 +2047,74 @@ function stringArray(value: Prisma.JsonValue): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function assertActiveChapterGraphPartition(
+  content: InteractiveStoryDraftContent,
+  chapters: Array<{
+    id: string;
+    nodeIds: Prisma.JsonValue;
+    entryNodeId: string | null;
+  }>,
+): void {
+  const issues: string[] = [];
+  const graphNodeIds = new Set(content.graph.nodes.map((node) => node.nodeId));
+  const ownerByNodeId = new Map<string, string>();
+
+  if (chapters.length === 0) issues.push('The project has no active chapter.');
+  for (const chapter of chapters) {
+    const nodeIds = stringArray(chapter.nodeIds);
+    if (
+      !Array.isArray(chapter.nodeIds) ||
+      nodeIds.length !== chapter.nodeIds.length
+    ) {
+      issues.push(`Chapter ${chapter.id} has invalid scene membership data.`);
+    }
+    const localNodeIds = new Set<string>();
+    for (const nodeId of nodeIds) {
+      if (localNodeIds.has(nodeId)) {
+        issues.push(
+          `Scene ${nodeId} is repeated inside chapter ${chapter.id}.`,
+        );
+      }
+      localNodeIds.add(nodeId);
+      const owner = ownerByNodeId.get(nodeId);
+      if (owner && owner !== chapter.id) {
+        issues.push(
+          `Scene ${nodeId} belongs to both ${owner} and ${chapter.id}.`,
+        );
+      } else {
+        ownerByNodeId.set(nodeId, chapter.id);
+      }
+      if (!graphNodeIds.has(nodeId)) {
+        issues.push(`Chapter ${chapter.id} owns missing scene ${nodeId}.`);
+      }
+    }
+    if (
+      (nodeIds.length === 0 && chapter.entryNodeId !== null) ||
+      (nodeIds.length > 0 &&
+        (!chapter.entryNodeId || !localNodeIds.has(chapter.entryNodeId)))
+    ) {
+      issues.push(`Chapter ${chapter.id} has an invalid entry scene.`);
+    }
+  }
+
+  for (const nodeId of graphNodeIds) {
+    if (!ownerByNodeId.has(nodeId)) {
+      issues.push(`Scene ${nodeId} does not belong to an active chapter.`);
+    }
+  }
+  if (chapters[0] && content.graph.entryNodeId !== chapters[0].entryNodeId) {
+    issues.push('The project entry scene does not match its first chapter.');
+  }
+  if (issues.length > 0) {
+    throw new ConflictException({
+      code: 'STORY_CHAPTER_GRAPH_PARTITION_INVALID',
+      message:
+        'The story graph and chapter structure are inconsistent. Repair the chapter structure before continuing.',
+      issues: issues.slice(0, 50),
+    });
+  }
 }
 
 function jsonRecordOrNull(

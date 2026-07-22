@@ -62,9 +62,10 @@ describe("Story Canvas assistant session", () => {
   let root: Root;
   let session: StoryCanvasAssistantSession | null;
 
-  function Harness() {
+  function Harness({ chapterId = "chapter-a" }: { chapterId?: string }) {
     session = useStoryCanvasAssistantSession({
       projectId: "project-a",
+      chapterId,
       workspaceId: "workspace-a",
     });
     return null;
@@ -122,7 +123,7 @@ describe("Story Canvas assistant session", () => {
       historyResponse.resolve(
         new Response(
           JSON.stringify({
-            conversationId: "story-canvas:project-a",
+            conversationId: "story-canvas:project-a:chapter-a",
             messages: persistedMessages,
             selectedSkillKeys: [STORY_DIRECTING_SKILL_KEY.HALFTONE_COLLAGE],
             revision: 2,
@@ -149,13 +150,51 @@ describe("Story Canvas assistant session", () => {
     });
   });
 
+  it("changes assistant scope without remounting the surrounding canvas", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const chapterId = url.includes("chapter-b") ? "chapter-b" : "chapter-a";
+      return Promise.resolve(
+        Response.json({
+          conversationId: `story-canvas:project-a:${chapterId}`,
+          messages: [],
+          selectedSkillKeys: [],
+          revision: 0,
+          sessionId: null,
+          status: "ready",
+          resetAvailable: true,
+        })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => {
+      root.render(<Harness chapterId="chapter-a" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => session!.setDraft("Chapter A only"));
+    expect(session!.draft).toBe("Chapter A only");
+
+    await act(async () => {
+      root.render(<Harness chapterId="chapter-b" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(session!.conversationId).toBe("story-canvas:project-a:chapter-b");
+    expect(session!.draft).toBe("");
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed without clearing the draft when recovery storage is unavailable", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() =>
         Promise.resolve(
           Response.json({
-            conversationId: "story-canvas:project-a",
+            conversationId: "story-canvas:project-a:chapter-a",
             messages: [],
             selectedSkillKeys: [],
             revision: 0,
@@ -192,7 +231,7 @@ describe("Story Canvas assistant session", () => {
       vi.fn(() =>
         Promise.resolve(
           Response.json({
-            conversationId: "story-canvas:project-a",
+            conversationId: "story-canvas:project-a:chapter-a",
             messages: [],
             selectedSkillKeys: [],
             revision: 0,
@@ -230,7 +269,7 @@ describe("Story Canvas assistant session", () => {
   it("persists an ambiguous turn with its exact Skill across unmount and reload", async () => {
     const readyEmpty = () =>
       Response.json({
-        conversationId: "story-canvas:project-a",
+        conversationId: "story-canvas:project-a:chapter-a",
         messages: [],
         selectedSkillKeys: [],
         revision: 0,
@@ -284,7 +323,7 @@ describe("Story Canvas assistant session", () => {
       vi.fn(() =>
         Promise.resolve(
           Response.json({
-            conversationId: "story-canvas:project-a",
+            conversationId: "story-canvas:project-a:chapter-a",
             messages: [],
             selectedSkillKeys: [],
             revision: 0,
@@ -323,7 +362,7 @@ describe("Story Canvas assistant session", () => {
     const readyEnvelope = (messages: StoryCanvasUIMessage[], revision: number) =>
       new Response(
         JSON.stringify({
-          conversationId: "story-canvas:project-a",
+          conversationId: "story-canvas:project-a:chapter-a",
           messages,
           selectedSkillKeys: [],
           revision,
@@ -405,7 +444,7 @@ describe("Story Canvas assistant session", () => {
     const readyEnvelope = (messages: StoryCanvasUIMessage[], revision: number) =>
       new Response(
         JSON.stringify({
-          conversationId: "story-canvas:project-a",
+          conversationId: "story-canvas:project-a:chapter-a",
           messages,
           selectedSkillKeys: [],
           revision,
@@ -467,7 +506,7 @@ describe("Story Canvas assistant session", () => {
     ) =>
       new Response(
         JSON.stringify({
-          conversationId: "story-canvas:project-a",
+          conversationId: "story-canvas:project-a:chapter-a",
           messages,
           selectedSkillKeys: [],
           revision,
@@ -529,7 +568,7 @@ describe("Story Canvas assistant session", () => {
     ) =>
       new Response(
         JSON.stringify({
-          conversationId: "story-canvas:project-a",
+          conversationId: "story-canvas:project-a:chapter-a",
           messages,
           selectedSkillKeys: [],
           revision,
@@ -593,7 +632,7 @@ describe("Story Canvas assistant session", () => {
   it("resets every local recovery surface only after authoritative reset reload", async () => {
     const readyEnvelope = (messages: StoryCanvasUIMessage[], revision = 0) =>
       Response.json({
-        conversationId: "story-canvas:project-a",
+        conversationId: "story-canvas:project-a:chapter-a",
         messages,
         selectedSkillKeys: [],
         revision,
@@ -606,7 +645,7 @@ describe("Story Canvas assistant session", () => {
       .mockResolvedValueOnce(readyEnvelope([]))
       .mockResolvedValueOnce(readyEnvelope([]))
       .mockResolvedValueOnce(
-        Response.json({ conversationId: "story-canvas:project-a", reset: true })
+        Response.json({ conversationId: "story-canvas:project-a:chapter-a", reset: true })
       )
       .mockResolvedValueOnce(readyEnvelope([]));
     vi.stubGlobal("fetch", fetchMock);
@@ -661,7 +700,7 @@ describe("Story Canvas assistant session", () => {
       }
       return Promise.resolve(
         Response.json({
-          conversationId: "story-canvas:project-a",
+          conversationId: "story-canvas:project-a:chapter-a",
           messages: [],
           selectedSkillKeys: [],
           revision: 0,
@@ -703,7 +742,7 @@ describe("Story Canvas assistant session", () => {
     const uploadInit = uploadCall![1] as RequestInit;
     expect(uploadInit.method).toBe("POST");
     const form = uploadInit.body as FormData;
-    expect(form.get("conversationId")).toBe("story-canvas:project-a");
+    expect(form.get("conversationId")).toBe("story-canvas:project-a:chapter-a");
     expect(form.get("projectId")).toBe("project-a");
     expect(form.get("mode")).toBe("story-canvas");
     expect((form.get("file") as File).name).toBe("script.txt");
@@ -846,7 +885,7 @@ describe("Story Canvas assistant session", () => {
   it("preserves every local recovery surface when authoritative reset reload fails", async () => {
     const readyEnvelope = () =>
       Response.json({
-        conversationId: "story-canvas:project-a",
+        conversationId: "story-canvas:project-a:chapter-a",
         messages: [],
         selectedSkillKeys: [],
         revision: 0,
@@ -859,7 +898,7 @@ describe("Story Canvas assistant session", () => {
       .mockResolvedValueOnce(readyEnvelope())
       .mockResolvedValueOnce(readyEnvelope())
       .mockResolvedValueOnce(
-        Response.json({ conversationId: "story-canvas:project-a", reset: true })
+        Response.json({ conversationId: "story-canvas:project-a:chapter-a", reset: true })
       )
       .mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
     vi.stubGlobal("fetch", fetchMock);

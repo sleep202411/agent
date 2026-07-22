@@ -22,6 +22,7 @@ import {
   type StoryAgentRunController,
 } from "./use-story-agent-run";
 import {
+  STORY_AGENT_TEST_CHAPTER_ID,
   STORY_AGENT_TEST_OTHER_PROJECT_ID,
   STORY_AGENT_TEST_PROJECT_ID,
   STORY_AGENT_TEST_RUN_ID,
@@ -61,6 +62,7 @@ describe("useStoryAgentRun", () => {
     controller = useStoryAgentRun({
       workspaceId: harnessWorkspaceId,
       projectId: harnessProjectId,
+      chapterId: STORY_AGENT_TEST_CHAPTER_ID,
     });
     return (
       <span
@@ -126,7 +128,11 @@ describe("useStoryAgentRun", () => {
   it("does not treat a cached run as authority before this mount completes its canonical GET", async () => {
     const cached = storyAgentRunFixture("succeeded");
     queryClient.setQueryData(
-      storyAgentRunQueryKey(STORY_AGENT_TEST_WORKSPACE_ID, STORY_AGENT_TEST_PROJECT_ID),
+      storyAgentRunQueryKey(
+        STORY_AGENT_TEST_WORKSPACE_ID,
+        STORY_AGENT_TEST_PROJECT_ID,
+        STORY_AGENT_TEST_CHAPTER_ID
+      ),
       { run: cached, latchGeneration: 0, authorityGeneration: 0 }
     );
     const pending = deferred<StoryAgentRunDto | null>();
@@ -145,7 +151,11 @@ describe("useStoryAgentRun", () => {
   it("does not authorize a cached undoable head before this observer fetches it", async () => {
     const cachedUndoable = storyAgentRunFixture("succeeded");
     queryClient.setQueryData(
-      storyAgentUndoableRunQueryKey(STORY_AGENT_TEST_WORKSPACE_ID, STORY_AGENT_TEST_PROJECT_ID),
+      storyAgentUndoableRunQueryKey(
+        STORY_AGENT_TEST_WORKSPACE_ID,
+        STORY_AGENT_TEST_PROJECT_ID,
+        STORY_AGENT_TEST_CHAPTER_ID
+      ),
       cachedUndoable
     );
     const pendingUndoable = deferred<StoryAgentRunDto | null>();
@@ -238,6 +248,7 @@ describe("useStoryAgentRun", () => {
     expect(getLatestStoryAgentRun).toHaveBeenCalledWith(
       STORY_AGENT_TEST_WORKSPACE_ID,
       STORY_AGENT_TEST_PROJECT_ID,
+      STORY_AGENT_TEST_CHAPTER_ID,
       expect.any(AbortSignal)
     );
     expect(realtime.subscribe).toHaveBeenCalledTimes(1);
@@ -338,7 +349,8 @@ describe("useStoryAgentRun", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: storyAgentUndoableRunQueryKey(
         STORY_AGENT_TEST_WORKSPACE_ID,
-        STORY_AGENT_TEST_PROJECT_ID
+        STORY_AGENT_TEST_PROJECT_ID,
+        STORY_AGENT_TEST_CHAPTER_ID
       ),
       exact: true,
     });
@@ -763,23 +775,33 @@ describe("useStoryAgentRun", () => {
 describe("storyAgentRunQueryKey", () => {
   it("isolates cache state by both workspace and Story project", () => {
     expect(
-      storyAgentRunQueryKey(STORY_AGENT_TEST_WORKSPACE_ID, STORY_AGENT_TEST_PROJECT_ID)
+      storyAgentRunQueryKey(
+        STORY_AGENT_TEST_WORKSPACE_ID,
+        STORY_AGENT_TEST_PROJECT_ID,
+        STORY_AGENT_TEST_CHAPTER_ID
+      )
     ).toEqual([
       "story-studio",
       "agent-run",
       STORY_AGENT_TEST_WORKSPACE_ID,
       STORY_AGENT_TEST_PROJECT_ID,
+      STORY_AGENT_TEST_CHAPTER_ID,
     ]);
   });
 
   it("isolates undoable authority by workspace and Story project", () => {
     expect(
-      storyAgentUndoableRunQueryKey(STORY_AGENT_TEST_WORKSPACE_ID, STORY_AGENT_TEST_PROJECT_ID)
+      storyAgentUndoableRunQueryKey(
+        STORY_AGENT_TEST_WORKSPACE_ID,
+        STORY_AGENT_TEST_PROJECT_ID,
+        STORY_AGENT_TEST_CHAPTER_ID
+      )
     ).toEqual([
       "story-studio",
       "agent-run-undoable",
       STORY_AGENT_TEST_WORKSPACE_ID,
       STORY_AGENT_TEST_PROJECT_ID,
+      STORY_AGENT_TEST_CHAPTER_ID,
     ]);
   });
 });

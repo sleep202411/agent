@@ -217,6 +217,7 @@ export interface InteractiveStoryDraftContent {
 
 export interface StoryDraft {
   projectId: string;
+  chapterId: string | null;
   format: CreatableStoryFormat;
   schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
   content: InteractiveStoryDraftContent;
@@ -235,6 +236,7 @@ export interface StoryCanvasPosition {
 
 export interface StoryCanvasLayout {
   projectId: string;
+  chapterId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: Record<string, StoryCanvasPosition>;
   storyWorldNodePresent: boolean;
@@ -587,6 +589,8 @@ export interface StoryReview {
 
 export interface StoryWorkbench {
   project: StoryProjectSummary;
+  chapters: StoryChapter[];
+  chapter: StoryChapter;
   draft: StoryDraft;
   video: {
     snapshotHash: string;
@@ -595,6 +599,18 @@ export interface StoryWorkbench {
   };
   references: StoryReferenceSlot[];
   latestBuild: StoryBuildSummary | null;
+}
+
+export interface StoryChapter {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  entryNodeId: string | null;
+  nodeCount: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type StoryAgentRun = StoryAgentRunDto;
@@ -758,11 +774,13 @@ export async function waitForStoryClipVideoUploadFinalization(
 
 export async function getStoryWorkbench(
   workspaceId: string,
-  projectId: string
+  projectId: string,
+  chapterId?: string
 ): Promise<StoryWorkbench> {
   const workbench = await api.get<StoryWorkbench>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
+      params: chapterId ? { chapterId } : undefined,
       headers: storyWorkspaceHeaders(workspaceId),
     }
   );
@@ -773,18 +791,58 @@ export async function getStoryWorkbench(
   return workbench;
 }
 
-export async function getStoryDraft(workspaceId: string, projectId: string): Promise<StoryDraft> {
-  return api.get<StoryDraft>(`/aurora/story-projects/${encodeURIComponent(projectId)}/draft`, {
-    headers: storyWorkspaceHeaders(workspaceId),
-  });
+export async function createStoryChapter(
+  workspaceId: string,
+  projectId: string,
+  input: { title: string }
+): Promise<StoryChapter> {
+  return api.post<StoryChapter>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters`,
+    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function updateStoryChapter(
+  workspaceId: string,
+  projectId: string,
+  chapterId: string,
+  input: { title: string }
+): Promise<StoryChapter> {
+  return api.patch<StoryChapter>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}`,
+    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function reorderStoryChapters(
+  workspaceId: string,
+  projectId: string,
+  input: { expectedProjectVersion: number; chapterIds: string[] }
+): Promise<StoryChapter[]> {
+  return api.put<StoryChapter[]>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/order`,
+    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+  );
+}
+
+export async function archiveStoryChapter(
+  workspaceId: string,
+  projectId: string,
+  chapterId: string
+): Promise<StoryChapter> {
+  return api.post<StoryChapter>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/archive`,
+    { headers: storyWorkspaceHeaders(workspaceId) }
+  );
 }
 
 export async function getStoryCanvasLayout(
   workspaceId: string,
-  projectId: string
+  projectId: string,
+  chapterId: string
 ): Promise<StoryCanvasLayout> {
   return api.get<StoryCanvasLayout>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/canvas-layout`,
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
 }
@@ -792,10 +850,11 @@ export async function getStoryCanvasLayout(
 export async function getLatestStoryAgentRun(
   workspaceId: string,
   projectId: string,
+  chapterId?: string,
   signal?: AbortSignal
 ): Promise<StoryAgentRun | null> {
   const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/active`,
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/active${chapterId ? `?chapterId=${encodeURIComponent(chapterId)}` : ""}`,
     { headers: storyWorkspaceHeaders(workspaceId), signal }
   );
   return value === null ? null : StoryAgentRunDtoSchema.parse(value);
@@ -804,10 +863,11 @@ export async function getLatestStoryAgentRun(
 export async function getUndoableStoryAgentRun(
   workspaceId: string,
   projectId: string,
+  chapterId?: string,
   signal?: AbortSignal
 ): Promise<StoryAgentRun | null> {
   const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/undoable`,
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/undoable${chapterId ? `?chapterId=${encodeURIComponent(chapterId)}` : ""}`,
     { headers: storyWorkspaceHeaders(workspaceId), signal }
   );
   return value === null ? null : StoryAgentRunDtoSchema.parse(value);
@@ -890,6 +950,7 @@ export async function undoStoryAgentRun(
 export async function putStoryCanvasLayout(
   workspaceId: string,
   projectId: string,
+  chapterId: string,
   input: {
     expectedRevision: number;
     nodePositions: Record<string, StoryCanvasPosition>;
@@ -899,7 +960,7 @@ export async function putStoryCanvasLayout(
   request?: Pick<RequestInit, "keepalive">
 ): Promise<StoryCanvasLayout> {
   return api.put<StoryCanvasLayout>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/canvas-layout`,
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
     {
       data: { schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION, ...input },
       headers: storyWorkspaceHeaders(workspaceId),
@@ -941,6 +1002,7 @@ export async function archiveStoryProject(
 export async function putStoryDraft(
   workspaceId: string,
   projectId: string,
+  chapterId: string,
   input: {
     expectedRevision: number;
     content: InteractiveStoryDraftContent;
@@ -948,11 +1010,14 @@ export async function putStoryDraft(
   },
   request?: Pick<RequestInit, "keepalive">
 ): Promise<StoryDraft> {
-  return api.put<StoryDraft>(`/aurora/story-projects/${encodeURIComponent(projectId)}/draft`, {
-    data: { schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION, ...input },
-    headers: storyWorkspaceHeaders(workspaceId),
-    ...request,
-  });
+  return api.put<StoryDraft>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/draft`,
+    {
+      data: { schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION, ...input },
+      headers: storyWorkspaceHeaders(workspaceId),
+      ...request,
+    }
+  );
 }
 
 export async function createStoryBuild(
