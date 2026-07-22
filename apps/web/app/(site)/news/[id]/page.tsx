@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getNewsList } from "../_data/news";
+import { getNewsItem, getNewsList } from "../_data/news";
 import { NewsDetail, NewsNotFound } from "../_components/news-detail";
 import { JsonLd, buildArticle, buildBreadcrumbList, localeCanonicalUrl } from "@/src/lib/seo";
 
@@ -8,8 +8,12 @@ export default async function NewsDetailPage(props: { params: Promise<{ id: stri
   const { id } = await props.params;
   const numId = Number(id);
   const lang = (await headers()).get("x-locale") ?? "en-US";
-  const all = await getNewsList(lang);
-  const item = all.find((a) => a.id === numId);
+  // The detail endpoint carries the full body; the list does not. Fetch both:
+  // the single item for its body, the list for the "more news" rail (and as the
+  // source of truth for our hardcoded static articles, which have no detail
+  // endpoint). Prefer the live detail; fall back to the list card by id.
+  const [detail, all] = await Promise.all([getNewsItem(numId, lang), getNewsList(lang)]);
+  const item = detail ?? all.find((a) => a.id === numId);
 
   if (!item) {
     return <NewsNotFound />;

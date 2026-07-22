@@ -47,6 +47,10 @@ interface UpstreamItem {
   author?: string;
   publishedAt?: string;
   tags?: UpstreamTag[];
+  // Only the DETAIL endpoint (`/api/news/:id`) carries the full article body;
+  // the list endpoint omits it. This is why the detail page must fetch the
+  // single item rather than reuse a list card (which only has `summary`).
+  body?: string;
 }
 
 // Upstream is in flux: legacy shape uses `code: 200` for success; the
@@ -75,6 +79,7 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
       : `${BANNER_HOST}/${coverUrl.replace(/^\/+/, "")}`
     : "";
   const isExternal = raw.kind === "external";
+  const body = raw.body?.trim();
   return {
     id: raw.id,
     type: raw.kind ?? "news",
@@ -85,6 +90,9 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
     isExternal,
     // External items jump to `url`; internal articles route to /news/:id.
     url: isExternal ? raw.url || undefined : undefined,
+    // Present only on the detail endpoint's payload; undefined for list cards.
+    ...(body ? { body } : {}),
+    author: raw.author,
   };
 }
 
@@ -167,4 +175,34 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
   return [...staticArticles, ...live].sort(
     (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
   );
+}
+
+/**
+ * Fetch a single live article WITH its body from the detail endpoint
+ * `GET /api/news/:id` — the list endpoint omits the body, so a detail page that
+ * reuses a list card can only ever show the summary. Returns null when the id
+ * is not a live article (unknown id, unpublished, or an upstream failure); the
+ * caller falls back to the static-article set for our hardcoded posts.
+ */
+export async function getNewsItem(id: number, rawLang: string): Promise<NewsItem | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  const url = `${UPSTREAM_BASE}/${id}?locale=${encodeURIComponent(lang)}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res.ok) {
+      console.warn(`[news] detail upstream non-OK id=${id}: ${res.status}`);
+      return null;
+    }
+    const json = (await res.json().catch(() => null)) as UpstreamResponse | null;
+    if (!isUpstreamSuccess(json) || !json!.data) return null;
+    // The detail payload is the item object directly under `data` (not a list).
+    const raw = json!.data as UpstreamItem;
+    if (!raw || typeof raw !== "object" || typeof raw.id !== "number") return null;
+    if (!raw.title || raw.title.trim() === "") return null;
+    return normalizeUpstream(raw);
+  } catch (err) {
+    console.warn(`[news] detail fetch failed id=${id}:`, err);
+    return null;
+  }
 }

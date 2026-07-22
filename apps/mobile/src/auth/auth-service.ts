@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { appEnv, resolveAssetUrl } from "@/config";
 import { api, type ApiResponse } from "@/lib/api-client";
 
@@ -38,17 +40,53 @@ function readCookie(name: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
-function normalizeToken(data: Record<string, unknown>): AuthToken | undefined {
-  const tokenInfo = (data.tokenInfo ?? {}) as Record<string, unknown>;
-  const tokenName = stringField(tokenInfo, "tokenName") ?? "satoken";
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/** Match studio/web auth: Java may put the token on `data`, on the envelope root, or only in Set-Cookie. */
+function readSessionToken(data: unknown, envelope: unknown): AuthToken | undefined {
+  const payload = objectRecord(data);
+  const root = objectRecord(envelope);
+  const payloadInfo = objectRecord(payload.tokenInfo);
+  const rootInfo = objectRecord(root.tokenInfo);
+  const tokenName =
+    stringField(payloadInfo, "tokenName") ??
+    stringField(payload, "tokenName") ??
+    stringField(rootInfo, "tokenName") ??
+    stringField(root, "tokenName") ??
+    "satoken";
   const tokenValue =
-    stringField(tokenInfo, "tokenValue") ??
-    stringField(data, "token") ??
-    stringField(data, "satoken") ??
-    stringField(data, tokenName) ??
+    stringField(payloadInfo, "tokenValue") ??
+    stringField(payload, "tokenValue") ??
+    stringField(payload, "token") ??
+    stringField(payload, "satoken") ??
+    stringField(payload, tokenName) ??
+    stringField(rootInfo, "tokenValue") ??
+    stringField(root, "tokenValue") ??
+    stringField(root, "token") ??
+    stringField(root, "satoken") ??
+    stringField(root, tokenName) ??
     readCookie(tokenName);
 
   return tokenValue ? { tokenName, tokenValue } : undefined;
+}
+
+/** Web dev runs on localhost — backend Set-Cookie uses prod domains the browser rejects. */
+function persistSessionCookie(token: AuthToken) {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  const maxAge = 60 * 60 * 24 * 30;
+  const host = window.location.hostname;
+  const domain =
+    host === "localhost" || /^[\d.]+$/.test(host)
+      ? ""
+      : `; Domain=.${host.split(".").slice(-2).join(".")}`;
+
+  document.cookie = `${token.tokenName}=${token.tokenValue}; Path=/${domain}; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 function normalizeUser(raw: unknown): AuthUser | undefined {
@@ -62,13 +100,19 @@ function normalizeUser(raw: unknown): AuthUser | undefined {
   };
 }
 
-function toAuthResult(data: unknown): AuthResult {
-  const record = (data ?? {}) as Record<string, unknown>;
-  const wrappedUser = record.user ?? record.userInfo ?? record.info;
+function toAuthResult(envelope: unknown): AuthResult {
+  const root = objectRecord(envelope);
+  const payload = root.data ?? root.info ?? root.path ?? root;
+  const payloadRecord = objectRecord(payload);
+  const wrappedUser = payloadRecord.user ?? payloadRecord.userInfo ?? payloadRecord.info;
+  const token = readSessionToken(payload, root);
+
+  if (token) persistSessionCookie(token);
+
   return {
-    raw: record,
-    token: normalizeToken(record),
-    user: normalizeUser(wrappedUser ?? (looksLikeUser(record) ? record : undefined)),
+    raw: root,
+    token,
+    user: normalizeUser(wrappedUser ?? (looksLikeUser(payloadRecord) ? payloadRecord : undefined)),
   };
 }
 
@@ -77,19 +121,27 @@ function isEmailIdentifier(identifier: string) {
 }
 
 export async function emailLogin(params: { email: string; pwd: string }) {
-  const data = await api.postForm<unknown>("/user/email/login", {
-    email: params.email,
-    pwd: params.pwd,
-  });
-  return toAuthResult(data);
+  const envelope = await api.postForm<ApiResponse<unknown>>(
+    "/user/email/login",
+    {
+      email: params.email,
+      pwd: params.pwd,
+    },
+    { raw: true }
+  );
+  return toAuthResult(envelope);
 }
 
 export async function phoneLogin(params: { phone: string; pwd: string }) {
-  const data = await api.postForm<unknown>("/user/login", {
-    phone: params.phone,
-    pwd: params.pwd,
-  });
-  return toAuthResult(data);
+  const envelope = await api.postForm<ApiResponse<unknown>>(
+    "/user/login",
+    {
+      phone: params.phone,
+      pwd: params.pwd,
+    },
+    { raw: true }
+  );
+  return toAuthResult(envelope);
 }
 
 export async function getCurrentUser(token?: AuthToken) {
@@ -162,8 +214,10 @@ export async function emailRegister(params: {
     password: params.password,
   };
   if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const data = await api.postForm<unknown>("/user/email/regist", body);
-  return toAuthResult(data);
+  const envelope = await api.postForm<ApiResponse<unknown>>("/user/email/regist", body, {
+    raw: true,
+  });
+  return toAuthResult(envelope);
 }
 
 export async function phoneRegister(params: {
@@ -178,8 +232,8 @@ export async function phoneRegister(params: {
     phone: params.phone,
   };
   if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const data = await api.postForm<unknown>("/user/regist", body);
-  return toAuthResult(data);
+  const envelope = await api.postForm<ApiResponse<unknown>>("/user/regist", body, { raw: true });
+  return toAuthResult(envelope);
 }
 
 /** Send a registration verification code to a phone (CN) or email (global). */

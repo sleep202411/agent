@@ -31,6 +31,31 @@ function getTargetUrl(request: Request, params: RouteParams) {
   return targetUrl;
 }
 
+function rewriteSetCookieForLocalhost(cookie: string) {
+  // Java sets Domain=.fizzdragon.com — browsers reject that on localhost:8081.
+  return cookie.replace(/;\s*Domain=[^;]*/gi, "");
+}
+
+function applyProxyResponseHeaders(source: Headers, request: Request) {
+  const headers = new Headers(source);
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+
+  const requestHost = new URL(request.url).hostname;
+  const isLocalhost = requestHost === "localhost" || /^[\d.]+$/.test(requestHost);
+  if (!isLocalhost) return headers;
+
+  const setCookies = typeof source.getSetCookie === "function" ? source.getSetCookie() : [];
+  if (setCookies.length > 0) {
+    headers.delete("set-cookie");
+    for (const cookie of setCookies) {
+      headers.append("Set-Cookie", rewriteSetCookieForLocalhost(cookie));
+    }
+  }
+
+  return headers;
+}
+
 function getProxyHeaders(request: Request) {
   const headers = new Headers(request.headers);
   headers.delete("host");
@@ -56,12 +81,9 @@ async function proxy(request: Request, params: RouteParams) {
     method: request.method,
     redirect: "manual",
   });
-  const headers = new Headers(response.headers);
-  headers.delete("content-encoding");
-  headers.delete("content-length");
 
   return new Response(response.body, {
-    headers,
+    headers: applyProxyResponseHeaders(response.headers, request),
     status: response.status,
     statusText: response.statusText,
   });

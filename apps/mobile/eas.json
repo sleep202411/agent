@@ -20,6 +20,18 @@
         "FD_APP_REGION": "cn"
       }
     },
+    "development-global-simulator": {
+      "extends": "development-global",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "development-cn-simulator": {
+      "extends": "development-cn",
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview-global": {
       "distribution": "internal",
       "env": {
