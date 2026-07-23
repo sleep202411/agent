@@ -638,6 +638,15 @@ const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerat
   video: ["multimodal_to_video", "image_to_video", "first_last_frame_to_video", "video_to_video"],
 };
 
+/**
+ * Product defaults for newly-created blank cards. Canonical model ids are
+ * stable catalog identities; an unavailable or inaccessible preferred model
+ * falls through to the capability-based policy below.
+ */
+const CANVAS_PREFERRED_MODEL_ID: Partial<Record<FizzAiJobType, string>> = {
+  video: "seedance-2-0",
+};
+
 /** New blank canvas cards should start in reference-friendly modes. */
 export function canvasDefaultMode(model: FizzAiModel | undefined): string | undefined {
   const modes = model?.generationModes ?? [];
@@ -940,6 +949,12 @@ export function canvasDefaultModel(
   const models = (catalog?.models ?? []).filter(
     (model) => model.type === modality && isFizzAiModelUsable(model)
   );
+  const preferredModelId = CANVAS_PREFERRED_MODEL_ID[modality];
+  const preferred = preferredModelId
+    ? models.find((model) => model.id === preferredModelId)
+    : undefined;
+  if (preferred) return preferred;
+
   const priority = CANVAS_DEFAULT_MODE_PRIORITY[modality];
   return (
     models.find((model) => priority.some((mode) => model.generationModes?.includes(mode))) ??
