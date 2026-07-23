@@ -40,7 +40,7 @@ import {
   OutputStorageService,
   type OutputStorageResult,
 } from '../infra/storage/storage.types';
-import { MediaAssetProviderSyncService } from './providers/byteplus/assets/media-asset-provider-sync.service';
+import { MediaAssetReadinessService } from '../media/media-asset-readiness.service';
 import {
   PlayableVideoProbeService,
   type PlayableVideoProbeResult,
@@ -139,7 +139,7 @@ export class AiGenerationWorkerService
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly documents: DocumentsService,
-    private readonly mediaAssetProviderSync: MediaAssetProviderSyncService,
+    private readonly mediaAssetReadiness: MediaAssetReadinessService,
     private readonly videoProbe: PlayableVideoProbeService,
   ) {}
 
@@ -1647,9 +1647,7 @@ export class AiGenerationWorkerService
         contentHash,
         safetyFlags: raw.safetyFlags,
       });
-      if (outputType === 'image') {
-        void this.enqueueProviderImageCheck(assetId);
-      }
+      void this.mediaAssetReadiness.enqueueAutomaticChecks(assetId);
       out.push({
         // Short app-generated ID. Idempotent recovery on retry is via
         // `(jobId, outputIndex)` unique + repository.replaceOutputs
@@ -1679,18 +1677,6 @@ export class AiGenerationWorkerService
       });
     }
     return out;
-  }
-
-  private async enqueueProviderImageCheck(assetId: string): Promise<void> {
-    try {
-      await this.mediaAssetProviderSync.enqueueImageAssetRegistration(assetId);
-    } catch (err) {
-      this.logger.warn(
-        `failed to enqueue provider image check for asset=${assetId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
   }
 
   /**

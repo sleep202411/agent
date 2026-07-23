@@ -3,22 +3,22 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
+import { MEDIA_ASSET_READINESS_CAPABILITY, type MediaAssetReadinessResult } from "@repo/shared";
 import { IconLayoutGrid, IconMusic, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import {
-  getMediaProviderAssetStatuses,
-  mediaProviderAssetKeys,
-  type MediaProviderAssetStatus,
-} from "@/lib/media-provider-assets";
+  getMediaAssetReadinessStatuses,
+  mediaAssetReadinessKeys,
+} from "@/lib/media-asset-readiness";
 import { Icon720 } from "./panorama-viewer";
 import {
-  MediaProviderStatusChip,
-  mediaProviderStatusState,
-  type MediaProviderStatusState,
-} from "./media-provider-status-chip";
+  MediaAssetReadinessChip,
+  mediaAssetReadinessState,
+  type MediaAssetReadinessState,
+} from "./media-asset-readiness";
 
 /** dataTransfer type carrying a dragged library asset to the canvas. */
 export const ASSET_DRAG_MIME = "application/x-fizz-asset";
@@ -31,21 +31,25 @@ const TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" }[] = [
   { id: "uploaded", labelKey: "uploaded" },
 ];
 
+const SEEDANCE_REFERENCE_CAPABILITY = MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference;
+
 function AssetThumb({
   asset,
-  providerStatus,
-  providerFallback,
+  readinessStatus,
+  readinessFallback,
   floating = false,
 }: {
   asset: CanvasAsset;
-  providerStatus?: MediaProviderAssetStatus;
-  providerFallback: MediaProviderStatusState | null;
+  readinessStatus?: MediaAssetReadinessResult;
+  readinessFallback: MediaAssetReadinessState | null;
   floating?: boolean;
 }) {
   const t = useTranslations("canvasNodes");
   const title = asset.name ?? asset.prompt ?? undefined;
   const state =
-    asset.kind === "image" ? mediaProviderStatusState(providerStatus, providerFallback) : null;
+    asset.kind === "image" || asset.kind === "video"
+      ? mediaAssetReadinessState(readinessStatus, readinessFallback)
+      : null;
   return (
     <div
       title={title}
@@ -86,7 +90,7 @@ function AssetThumb({
             <Icon720 className="size-2.5" /> 720°
           </span>
         )}
-        <MediaProviderStatusChip state={state} />
+        <MediaAssetReadinessChip capability={SEEDANCE_REFERENCE_CAPABILITY} state={state} />
       </div>
       <div className="min-w-0 px-2 py-1.5">
         <p className="truncate text-[11px] leading-tight text-white/75">
@@ -130,8 +134,8 @@ function EmptyState({
 
 /**
  * The project's persistent asset library — a slide-in drawer over the canvas.
- * Generated and uploaded image assets are provider-checked at the MediaAsset
- * layer; the UI only reflects that server state.
+ * Generated and uploaded image/video assets expose capability-specific readiness at
+ * the MediaAsset layer; the UI only reflects that server state.
  */
 export function AssetLibrary({
   open,
@@ -163,13 +167,13 @@ export function AssetLibrary({
   const statusAssetIds = useMemo(
     () =>
       filteredAssets
-        .filter((asset) => asset.kind === "image" && asset.mediaAssetId)
+        .filter((asset) => (asset.kind === "image" || asset.kind === "video") && asset.mediaAssetId)
         .map((asset) => asset.mediaAssetId as string),
     [filteredAssets]
   );
   const statusQuery = useQuery({
-    queryKey: mediaProviderAssetKeys.statuses(statusAssetIds),
-    queryFn: () => getMediaProviderAssetStatuses(statusAssetIds),
+    queryKey: mediaAssetReadinessKeys.statuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
+    queryFn: () => getMediaAssetReadinessStatuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
     enabled: open && statusAssetIds.length > 0,
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -203,12 +207,14 @@ export function AssetLibrary({
         <AssetThumb
           key={asset.id}
           asset={asset}
-          providerStatus={asset.mediaAssetId ? statusQuery.data?.[asset.mediaAssetId] : undefined}
-          providerFallback={
-            asset.kind === "image" && asset.mediaAssetId
+          readinessStatus={asset.mediaAssetId ? statusQuery.data?.[asset.mediaAssetId] : undefined}
+          readinessFallback={
+            (asset.kind === "image" || asset.kind === "video") && asset.mediaAssetId
               ? statusQuery.isError
                 ? { kind: "unavailable" }
-                : { kind: "pending" }
+                : statusQuery.isPending
+                  ? null
+                  : { kind: "not_requested" }
               : null
           }
           floating={floating}

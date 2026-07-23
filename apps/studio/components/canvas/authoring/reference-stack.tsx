@@ -11,11 +11,12 @@ import {
   IconX,
   type Icon,
 } from "@tabler/icons-react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import type {
   FizzAiReferenceFieldConstraints,
   FizzAiReferenceKind,
 } from "@/lib/canvas-authoring/generation-api";
-import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { MediaAssetReadinessChipForAsset } from "./media-asset-readiness";
 import { ReferenceMediaHoverPreview, mediaHoverPreviewPosition } from "@/lib/prompt-mentions";
 
 export type CardReference = {
@@ -96,9 +97,12 @@ function ReferenceTile({
             </span>
           </div>
         )}
-        {refItem.kind === "image" && refItem.assetId && !refItem.uploading ? (
-          <MediaProviderStatusChipForAsset
+        {(refItem.kind === "image" || refItem.kind === "video") &&
+        refItem.assetId &&
+        !refItem.uploading ? (
+          <MediaAssetReadinessChipForAsset
             mediaAssetId={refItem.assetId}
+            capability={MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference}
             compact
             className="top-1 left-1 right-auto"
           />

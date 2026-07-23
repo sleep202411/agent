@@ -17,6 +17,10 @@
  * + a row in UPLOAD_KIND_POLICY (media-upload.service). The client never
  * picks the storage key, the content-type allowlist, or the cap.
  */
+import {
+  MEDIA_ASSET_READINESS_CAPABILITIES,
+  type MediaAssetReadinessResult,
+} from '@repo/shared';
 import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
@@ -109,22 +113,31 @@ export interface ConfirmUploadResponseDto {
   url: string | null;
 }
 
-export const MediaProviderAssetStatusRequestSchema = z.object({
+const MediaAssetReadinessCapabilitySchema = z.enum(
+  MEDIA_ASSET_READINESS_CAPABILITIES,
+);
+
+export const MediaAssetReadinessStatusRequestSchema = z.object({
+  capability: MediaAssetReadinessCapabilitySchema,
   assetIds: z.array(z.string().uuid()).max(100),
 });
-export type MediaProviderAssetStatusRequestDto = z.infer<
-  typeof MediaProviderAssetStatusRequestSchema
+export type MediaAssetReadinessStatusRequestDto = z.infer<
+  typeof MediaAssetReadinessStatusRequestSchema
 >;
 
-export interface MediaProviderAssetStatusDto {
-  assetId: string;
-  status: string;
-  statusReason?: string | null;
-  updatedAt: string;
+export interface MediaAssetReadinessStatusResponseDto {
+  assets: MediaAssetReadinessResult[];
 }
 
-export interface MediaProviderAssetStatusResponseDto {
-  assets: MediaProviderAssetStatusDto[];
+export const MediaAssetReadinessCheckRequestSchema = z.object({
+  capability: MediaAssetReadinessCapabilitySchema,
+});
+export type MediaAssetReadinessCheckRequestDto = z.infer<
+  typeof MediaAssetReadinessCheckRequestSchema
+>;
+
+export interface MediaAssetReadinessCheckResponseDto {
+  asset: MediaAssetReadinessResult;
 }
 
 export const MediaAssetAccessParamsSchema = z.object({

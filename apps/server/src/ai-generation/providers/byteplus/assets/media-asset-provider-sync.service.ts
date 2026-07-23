@@ -14,8 +14,7 @@ import {
   AiProviderExternalAssetStatus,
   MediaAssetKind,
   MediaAssetStatus,
-  WorkspaceMemberStatus,
-  type Prisma,
+  Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../../../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../../../../infra/storage/media-asset-url-resolver.service';
@@ -26,6 +25,7 @@ import {
   BytePlusAssetsClient,
   redactAssetRecord,
   type BytePlusAssetRecord,
+  type BytePlusAssetType,
 } from './byteplus-assets-client';
 import { BytePlusAssetsConfigService } from './byteplus-assets-config.service';
 
@@ -41,6 +41,16 @@ const CREATE_ASSET_LIMITER = { max: 100, duration: 60_000 };
 const BACKPRESSURE_WARN_DEPTH = 500;
 const REGISTER_PRIORITY_FOREGROUND = 1;
 const STATUS_QUERY_LIMIT = 100;
+const PROVIDER_ASSET_TYPE_BY_KIND: Partial<
+  Record<MediaAssetKind, BytePlusAssetType>
+> = {
+  [MediaAssetKind.image]: 'Image',
+  [MediaAssetKind.video]: 'Video',
+};
+const SUPPORTED_MEDIA_KINDS = [
+  MediaAssetKind.image,
+  MediaAssetKind.video,
+] as const;
 
 type MediaAssetsJobData =
   | { op: 'register'; mirrorId: string }
@@ -85,6 +95,10 @@ export class MediaAssetProviderSyncService
     private readonly urls: MediaAssetUrlResolverService,
   ) {}
 
+  isEnabled(): boolean {
+    return this.configService.config.mediaAssetRegistrationEnabled;
+  }
+
   onApplicationBootstrap(): void {
     if (!this.configService.config.mediaAssetRegistrationEnabled) return;
     const connection = this.redis();
@@ -122,7 +136,7 @@ export class MediaAssetProviderSyncService
     this.connection?.disconnect();
   }
 
-  async enqueueImageAssetRegistration(
+  async enqueueAssetRegistration(
     mediaAssetId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
   ): Promise<string | null> {
@@ -133,7 +147,7 @@ export class MediaAssetProviderSyncService
         id: mediaAssetId,
         deletedAt: null,
         status: MediaAssetStatus.ready,
-        kind: MediaAssetKind.image,
+        kind: { in: [...SUPPORTED_MEDIA_KINDS] },
       },
       select: { id: true },
     });
@@ -166,56 +180,111 @@ export class MediaAssetProviderSyncService
     return mirror.id;
   }
 
-  async listStatusesForUser(
-    userId: string,
+  /**
+   * User-triggered assurance seam for the canvas. Existing work is resumed,
+   * not duplicated: pending registrations are re-kicked, processing mirrors
+   * are polled, and failed operational attempts resume from the last durable
+   * provider identity when one exists.
+   */
+  async requestAssetRegistration(
+    mediaAssetId: string,
+  ): Promise<MediaProviderAssetStatusDto | null> {
+    if (!this.configService.config.mediaAssetRegistrationEnabled) return null;
+
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: {
+        id: mediaAssetId,
+        deletedAt: null,
+        status: MediaAssetStatus.ready,
+        kind: { in: [...SUPPORTED_MEDIA_KINDS] },
+      },
+      select: { id: true },
+    });
+    if (!asset) return null;
+
+    const groupId = await this.ensureAigcMediaAssetGroup();
+    if (!groupId) return null;
+
+    let row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
+      where: {
+        mediaAssetId_providerAssetGroupId: {
+          mediaAssetId,
+          providerAssetGroupId: groupId,
+        },
+      },
+      include: MIRROR_INCLUDE,
+    });
+    if (!row) {
+      const mirrorId = await this.enqueueAssetRegistration(mediaAssetId);
+      if (!mirrorId) return null;
+      row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
+        where: { id: mirrorId },
+        include: MIRROR_INCLUDE,
+      });
+      return row
+        ? mediaProviderAssetStatusDto(row)
+        : {
+            assetId: mediaAssetId,
+            status: AiProviderExternalAssetStatus.pending,
+            statusReason: null,
+            updatedAt: new Date().toISOString(),
+          };
+    }
+
+    if (row.status === AiProviderExternalAssetStatus.failed) {
+      const failedRow = row;
+      const nextStatus = failedRow.externalAssetId
+        ? AiProviderExternalAssetStatus.processing
+        : AiProviderExternalAssetStatus.pending;
+      const processingDeadline = new Date(Date.now() + PROCESSING_DEADLINE_MS);
+      await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.aiProviderMediaAssetMirror.updateMany({
+          where: {
+            id: failedRow.id,
+            status: AiProviderExternalAssetStatus.failed,
+          },
+          data: {
+            status: nextStatus,
+            statusReason: null,
+            providerResponse: Prisma.DbNull,
+            processingDeadline,
+            lastSyncedAt: new Date(),
+          },
+        });
+        if (count === 0) return false;
+        await this.emitMediaAssetEvent(tx, failedRow, nextStatus, null);
+        return true;
+      });
+      row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
+        where: { id: failedRow.id },
+        include: MIRROR_INCLUDE,
+      });
+      if (!row) return null;
+    }
+
+    const manualBucket = Math.floor(Date.now() / 60_000);
+    if (row.status === AiProviderExternalAssetStatus.pending) {
+      await this.enqueueRegister(
+        row.id,
+        REGISTER_PRIORITY_FOREGROUND,
+        `register:${row.id}:manual:${manualBucket}`,
+      );
+    } else if (row.status === AiProviderExternalAssetStatus.processing) {
+      await this.enqueuePoll(row.id, `poll:${row.id}:manual:${manualBucket}`);
+    }
+    return mediaProviderAssetStatusDto(row);
+  }
+
+  async listStatuses(
     assetIds: string[],
   ): Promise<MediaProviderAssetStatusDto[]> {
     if (!this.configService.config.mediaAssetRegistrationEnabled) return [];
     const ids = [...new Set(assetIds)].slice(0, STATUS_QUERY_LIMIT);
     if (ids.length === 0) return [];
 
-    const accessibleAssets = await this.prisma.mediaAsset.findMany({
-      where: {
-        id: { in: ids },
-        deletedAt: null,
-        OR: [
-          { createdByUserId: userId },
-          {
-            workspace: {
-              members: {
-                some: {
-                  userId,
-                  status: WorkspaceMemberStatus.active,
-                  removedAt: null,
-                },
-              },
-            },
-          },
-        ],
-      },
-      select: {
-        id: true,
-        kind: true,
-        status: true,
-      },
-    });
-
-    const readyImageAssetIds = accessibleAssets
-      .filter(
-        (asset) =>
-          asset.kind === MediaAssetKind.image &&
-          asset.status === MediaAssetStatus.ready,
-      )
-      .map((asset) => asset.id);
-    await Promise.allSettled(
-      readyImageAssetIds.map((assetId) =>
-        this.enqueueImageAssetRegistration(assetId),
-      ),
-    );
-
     const mirrors = await this.prisma.aiProviderMediaAssetMirror.findMany({
       where: {
-        mediaAssetId: { in: accessibleAssets.map((asset) => asset.id) },
+        mediaAssetId: { in: ids },
         assetGroup: {
           provider: PROVIDER_KEY,
           groupType: AiProviderAssetGroupType.aigc,
@@ -232,27 +301,12 @@ export class MediaAssetProviderSyncService
       },
     });
 
-    const byAssetId = new Map(
-      mirrors.map((mirror) => [mirror.mediaAssetId, mirror]),
-    );
-    const now = new Date().toISOString();
-    return readyImageAssetIds.map((assetId) => {
-      const mirror = byAssetId.get(assetId);
-      if (!mirror) {
-        return {
-          assetId,
-          status: AiProviderExternalAssetStatus.pending,
-          statusReason: null,
-          updatedAt: now,
-        };
-      }
-      return {
-        assetId: mirror.mediaAssetId,
-        status: mirror.status,
-        statusReason: mirror.statusReason,
-        updatedAt: mirror.updatedAt.toISOString(),
-      };
-    });
+    return mirrors.map((mirror) => ({
+      assetId: mirror.mediaAssetId,
+      status: mirror.status,
+      statusReason: mirror.statusReason,
+      updatedAt: mirror.updatedAt.toISOString(),
+    }));
   }
 
   private async ensureAigcMediaAssetGroup(): Promise<string | null> {
@@ -320,19 +374,23 @@ export class MediaAssetProviderSyncService
   private async enqueueRegister(
     mirrorId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
+    jobId = `register:${mirrorId}:${Date.now()}`,
   ): Promise<void> {
     await this.queue().add(
       'register',
       { op: 'register', mirrorId },
-      { jobId: `register:${mirrorId}:${Date.now()}`, priority },
+      { jobId, priority },
     );
   }
 
-  private async enqueuePoll(mirrorId: string): Promise<void> {
+  private async enqueuePoll(
+    mirrorId: string,
+    jobId = `poll:${mirrorId}:${Date.now()}`,
+  ): Promise<void> {
     await this.queue().add(
       'poll',
       { op: 'poll', mirrorId },
-      { delay: POLL_DELAY_MS, jobId: `poll:${mirrorId}:${Date.now()}` },
+      { delay: POLL_DELAY_MS, jobId },
     );
   }
 
@@ -386,7 +444,8 @@ export class MediaAssetProviderSyncService
     }
 
     const url = this.urls.resolvePublicUrl(row.mediaAsset);
-    if (!url || row.mediaAsset.kind !== MediaAssetKind.image) {
+    const assetType = PROVIDER_ASSET_TYPE_BY_KIND[row.mediaAsset.kind];
+    if (!url || !assetType) {
       await this.transition(row, AiProviderExternalAssetStatus.failed, {
         statusReason: 'unresolvable_media',
       });
@@ -398,7 +457,7 @@ export class MediaAssetProviderSyncService
       const created = await this.client.createAsset({
         groupId: row.assetGroup.externalGroupId,
         url,
-        assetType: 'Image',
+        assetType,
         name: row.mediaAsset.id,
       });
       createdId = created.Id;
@@ -717,6 +776,20 @@ export class MediaAssetProviderSyncService
     }
     return this.criticalQueue;
   }
+}
+
+function mediaProviderAssetStatusDto(
+  row: Pick<
+    MirrorRow,
+    'mediaAssetId' | 'status' | 'statusReason' | 'updatedAt'
+  >,
+): MediaProviderAssetStatusDto {
+  return {
+    assetId: row.mediaAssetId,
+    status: row.status,
+    statusReason: row.statusReason,
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 function typedReasonFromCode(code: string | undefined): string {

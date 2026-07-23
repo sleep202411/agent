@@ -3,6 +3,7 @@
 import { memo, useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
   IconAlertTriangle,
   IconArrowsDiagonal,
@@ -40,7 +41,7 @@ import { MotionEditor } from "./motion-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
-import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 
@@ -198,8 +199,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
           className="block max-h-[480px] w-[280px] rounded-xl object-cover select-none"
         />
         {!upload && (
-          <MediaProviderStatusChipForAsset
+          <MediaAssetReadinessControlForAsset
             mediaAssetId={data.mediaAssetId}
+            capability={MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference}
             className="top-2 right-2 h-6 px-2 text-[10px]"
           />
         )}

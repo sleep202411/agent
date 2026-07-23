@@ -42,6 +42,9 @@ describe('AiGenerationWorkerService video output truth', () => {
         };
       }),
     };
+    const mediaAssetReadiness = {
+      enqueueAutomaticChecks: jest.fn().mockResolvedValue(undefined),
+    };
     const worker = new AiGenerationWorkerService(
       store as never,
       {} as never,
@@ -53,7 +56,7 @@ describe('AiGenerationWorkerService video output truth', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      mediaAssetReadiness as never,
       videoProbe as never,
     );
     const workerInternals = worker as unknown as {
@@ -119,6 +122,9 @@ describe('AiGenerationWorkerService video output truth', () => {
           browserSafeMp4: true,
         },
       }),
+    );
+    expect(mediaAssetReadiness.enqueueAutomaticChecks).toHaveBeenCalledWith(
+      'asset-1',
     );
     expect(outputs[0]).toMatchObject({
       width: 1920,

@@ -3,6 +3,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
   IconAlertTriangle,
   IconArrowsMaximize,
@@ -72,7 +73,7 @@ import {
   type GenerationPromptComposerPanel,
 } from "@/app/[locale]/_components/generation/generation-prompt-composer";
 import { PortPlus } from "./ports";
-import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
 
 /**
@@ -863,9 +864,10 @@ function GenerationCard({
               <p className="text-sm text-white/45">{t("resultsPlaceholder")}</p>
             </>
           )}
-          {output?.type === "image" && (
-            <MediaProviderStatusChipForAsset
+          {(output?.type === "image" || output?.type === "video") && (
+            <MediaAssetReadinessControlForAsset
               mediaAssetId={output.assetId}
+              capability={MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference}
               className="top-3 right-3 h-6 px-2 text-[10px]"
             />
           )}

@@ -3,6 +3,7 @@
 import { memo, useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
@@ -10,7 +11,7 @@ import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
-import { MediaProviderStatusChipForAsset } from "./media-provider-status-chip";
+import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 
 export type PanoramaNodeType = Node<
   { src: string; imageId?: string; mediaAssetId?: string; label?: string },
@@ -137,8 +138,9 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
             </>
           )}
           {!entered && (
-            <MediaProviderStatusChipForAsset
+            <MediaAssetReadinessControlForAsset
               mediaAssetId={data.mediaAssetId}
+              capability={MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference}
               className="top-2 right-2 h-6 px-2 text-[10px]"
             />
           )}

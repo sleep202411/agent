@@ -110,8 +110,8 @@ function serviceFixture() {
   const workspacePermissions = {
     requireWorkspaceRole: jest.fn().mockResolvedValue({}),
   };
-  const providerAssets = {
-    enqueueImageAssetRegistration: jest.fn().mockResolvedValue(undefined),
+  const readiness = {
+    enqueueAutomaticChecks: jest.fn().mockResolvedValue(undefined),
   };
   const uploadedImages = {
     probe: jest.fn().mockResolvedValue({
@@ -132,7 +132,7 @@ function serviceFixture() {
         .mockReturnValue('https://cdn.example.com/reference.png'),
     } as never,
     {} as never,
-    providerAssets as never,
+    readiness as never,
     {} as never,
     workspacePermissions as never,
     uploadedImages as never,
@@ -143,6 +143,7 @@ function serviceFixture() {
     prisma,
     createAsset,
     workspacePermissions,
+    readiness,
     tx,
     uploadedImages,
   };
@@ -227,6 +228,9 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
           checksumSha256: 'a'.repeat(64),
         }),
       }),
+    );
+    expect(fixture.readiness.enqueueAutomaticChecks).toHaveBeenCalledWith(
+      ASSET_ID,
     );
     expect(fixture.tx.mediaObjectPlacement.create).toHaveBeenCalledWith(
       expect.objectContaining({

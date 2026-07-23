@@ -4,6 +4,7 @@ import { BytePlusAssetsClient } from './byteplus-assets-client';
 import { BytePlusAssetsConfigService } from './byteplus-assets-config.service';
 import { CharacterProviderSyncService } from './character-provider-sync.service';
 import { MediaAssetProviderSyncService } from './media-asset-provider-sync.service';
+import { SeedanceMediaAssetReadinessAdapter } from './seedance-media-asset-readiness.adapter';
 
 /**
  * ModelArk ASSETS plane: signed Action API client plus provider sync for
@@ -18,12 +19,14 @@ import { MediaAssetProviderSyncService } from './media-asset-provider-sync.servi
     BytePlusAssetsClient,
     CharacterProviderSyncService,
     MediaAssetProviderSyncService,
+    SeedanceMediaAssetReadinessAdapter,
   ],
   exports: [
     BytePlusAssetsConfigService,
     BytePlusAssetsClient,
     CharacterProviderSyncService,
     MediaAssetProviderSyncService,
+    SeedanceMediaAssetReadinessAdapter,
   ],
 })
 export class BytePlusAssetsModule {}

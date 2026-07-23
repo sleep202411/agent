@@ -1160,14 +1160,25 @@
       "untitled": "Untitled asset",
       "close": "Close assets",
       "searchPlaceholder": "Search assets",
-      "providerStatusApproved": "Safety checked",
-      "providerStatusApprovedTitle": "Image has completed the Seedance generation safety check",
-      "providerStatusChecking": "Safety check",
-      "providerStatusCheckingTitle": "Running the Seedance generation safety check",
-      "providerStatusFailed": "Check failed",
-      "providerStatusFailedTitle": "Image did not pass the Seedance generation safety check",
-      "providerStatusUnavailable": "Unavailable",
-      "providerStatusUnavailableTitle": "Seedance asset registration is unavailable",
+      "readiness": {
+        "missingAsset": "Save the asset before checking readiness.",
+        "seedance": {
+          "approved": "Seedance ready",
+          "approvedTitle": "Media is ready for Seedance generation",
+          "checking": "Checking Seedance",
+          "checkingTitle": "Preparing and checking this media for Seedance generation",
+          "failed": "Seedance check failed",
+          "failedTitle": "Media is not ready for Seedance generation",
+          "notRequested": "Not checked",
+          "notRequestedTitle": "Seedance readiness has not been checked",
+          "unavailable": "Unavailable",
+          "unavailableTitle": "Seedance readiness checking is unavailable",
+          "action": "Check for Seedance",
+          "retryAction": "Retry Seedance",
+          "started": "Seedance readiness check started.",
+          "alreadyPassed": "This media is already ready for Seedance."
+        }
+      },
       "tab": {
         "myCreations": "My Creations",
         "uploaded": "Uploaded"

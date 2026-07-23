@@ -3,6 +3,7 @@
 import { memo, useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { Node, NodeProps } from "@xyflow/react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
   IconAlertTriangle,
   IconDownload,
@@ -22,6 +23,7 @@ import { PortPlus } from "./ports";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
+import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 
 export type MediaAssetNodeData = {
   src: string;
@@ -155,6 +157,13 @@ function MediaAssetNodeComponent({
             <audio src={src} controls className="nodrag h-8 w-full [color-scheme:dark]" />
           </div>
         )}
+        {kind === "video" && !upload ? (
+          <MediaAssetReadinessControlForAsset
+            mediaAssetId={data.mediaAssetId}
+            capability={MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference}
+            className="top-2 right-2 h-6 px-2 text-[10px]"
+          />
+        ) : null}
         {uploading ? (
           <>
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/50">

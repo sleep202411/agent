@@ -1160,14 +1160,25 @@
       "untitled": "未命名素材",
       "close": "關閉素材庫",
       "searchPlaceholder": "搜尋素材",
-      "providerStatusApproved": "安全檢查通過",
-      "providerStatusApprovedTitle": "圖片已完成 Seedance 生成安全檢查",
-      "providerStatusChecking": "安全檢查中",
-      "providerStatusCheckingTitle": "正在進行 Seedance 生成安全檢查",
-      "providerStatusFailed": "檢查未通過",
-      "providerStatusFailedTitle": "圖片未通過 Seedance 生成安全檢查",
-      "providerStatusUnavailable": "不可用",
-      "providerStatusUnavailableTitle": "Seedance 資產註冊不可用",
+      "readiness": {
+        "missingAsset": "請先儲存素材，再檢查就緒狀態。",
+        "seedance": {
+          "approved": "Seedance 已就緒",
+          "approvedTitle": "素材已可用於 Seedance 生成",
+          "checking": "Seedance 檢查中",
+          "checkingTitle": "正在為 Seedance 生成準備並檢查該素材",
+          "failed": "Seedance 檢查失敗",
+          "failedTitle": "素材尚不可用於 Seedance 生成",
+          "notRequested": "未檢查",
+          "notRequestedTitle": "尚未檢查 Seedance 就緒狀態",
+          "unavailable": "不可用",
+          "unavailableTitle": "Seedance 就緒檢查目前不可用",
+          "action": "檢查 Seedance",
+          "retryAction": "重新檢查 Seedance",
+          "started": "Seedance 就緒檢查已開始。",
+          "alreadyPassed": "該素材已可用於 Seedance。"
+        }
+      },
       "tab": {
         "myCreations": "我的創作",
         "uploaded": "已上載"
