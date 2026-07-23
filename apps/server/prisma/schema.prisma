@@ -5736,6 +5736,7 @@ model MediaAsset {
   storyVideoGenerationAttemptReferences StoryVideoGenerationAttemptReference[] @relation("StoryVideoGenerationAttemptReferenceAsset")
   storyVideoSelectionCurrentVideos      StoryVideoSelection[]                  @relation("StoryVideoSelectionCurrentAsset")
   storyBuildAssets                      StoryBuildAsset[]                      @relation("StoryBuildAssetMedia")
+  storyCandidateAssets                  StoryCandidateAsset[]                  @relation("StoryCandidateAssetMedia")
   moderationCases                       MediaModerationCase[]
   moderationActions                     MediaModerationAction[]
   processingJobs                        MediaProcessingJob[]
@@ -6460,6 +6461,7 @@ model StoryProject {
   cover                            MediaAsset?                            @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                          StoryProjectMember[]
   draft                            StoryDraft?
+  productionCanvas                 StoryProductionCanvas?
   chapters                         StoryChapter[]
   canvasLayouts                    StoryCanvasLayout[]
   writeState                       StoryProjectWriteState?
@@ -6475,6 +6477,7 @@ model StoryProject {
   videoGenerationAttemptReferences StoryVideoGenerationAttemptReference[]
   videoBuildClips                  StoryVideoBuildClip[]
   storyBuildAssets                 StoryBuildAsset[]
+  candidateAssets                  StoryCandidateAsset[]
   videoUploadSessions              StoryVideoUploadSession[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
@@ -6710,6 +6713,41 @@ model StoryDraft {
   project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
 
   @@map("story_drafts")
+}
+
+/// One project-wide media-authoring canvas shared by every chapter and story
+/// node. Entering from a clip carries navigation context only; the graph stays
+/// common so references, generated assets and visual continuity are reusable.
+model StoryProductionCanvas {
+  storyProjectId     String   @id @map("story_project_id") @db.Uuid
+  schemaVersion      String   @default("story-production-canvas-v2") @map("schema_version") @db.VarChar(64)
+  content            Json     @default("{\"nodes\":[],\"edges\":[],\"assets\":[],\"groups\":[]}") @db.JsonB
+  updatedByUserId    String   @map("updated_by_user_id") @db.VarChar(64)
+  updatedBySessionId String?  @map("updated_by_session_id") @db.VarChar(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+
+  @@map("story_production_canvases")
+}
+
+/// Project-level curation of durable media produced on the Story content
+/// creation canvas. Membership is independent from canvas layout and groups;
+/// Story nodes bind the durable mediaAssetId, never a canvas node id.
+model StoryCandidateAsset {
+  storyProjectId String   @map("story_project_id") @db.Uuid
+  mediaAssetId   String   @map("media_asset_id") @db.Uuid
+  addedByUserId  String   @map("added_by_user_id") @db.VarChar(64)
+  addedAt        DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  asset   MediaAsset   @relation("StoryCandidateAssetMedia", fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@id([storyProjectId, mediaAssetId])
+  @@index([storyProjectId, addedAt(sort: Desc)], map: "story_candidate_assets_project_recent_idx")
+  @@index([mediaAssetId], map: "story_candidate_assets_media_idx")
+  @@map("story_candidate_assets")
 }
 
 model StoryRevision {
