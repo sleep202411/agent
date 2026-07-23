@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AssetEvent } from "@repo/shared";
 import type { StoryAgentRunDto, StoryAgentRunRealtimeEvent } from "@repo/shared/story-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssetsRealtimeHandlers } from "@/app/[locale]/canvas/_lib/assets-realtime";
+import type { AssetsRealtimeHandlers } from "@/lib/canvas-authoring/assets-realtime";
 import {
   cancelStoryAgentRun,
   confirmStoryAgentRun,
@@ -37,7 +37,7 @@ const realtime = vi.hoisted(() => ({
   getKernel: vi.fn(),
 }));
 
-vi.mock("@/app/[locale]/canvas/_lib/assets-realtime-kernel", () => ({
+vi.mock("@/lib/canvas-authoring/assets-realtime-kernel", () => ({
   getAssetsRealtimeKernel: realtime.getKernel,
 }));
 

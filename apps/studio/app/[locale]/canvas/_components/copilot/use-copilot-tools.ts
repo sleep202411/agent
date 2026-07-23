@@ -13,22 +13,22 @@
  */
 import { useCallback } from "react";
 import { useReactFlow, type Node } from "@xyflow/react";
-import { useCanvasGraphContext } from "@/lib/collab/canvas-graph-context";
-import { useAiCatalog, usableModelsByModality } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
-import { useGeneration } from "@/app/[locale]/canvas/_lib/use-canvas-generation";
+import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
+import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
 import {
   connectNodes,
   removeEdgeById,
   removeNodeCascade,
-} from "@/app/[locale]/canvas/_lib/canvas-wiring";
+} from "@/lib/canvas-authoring/canvas-wiring";
 import {
   canvasDefaultMode,
   canvasDefaultModel,
   defaultSettingsForModel,
   mergeCompatibleSettings,
   type ModelSettings,
-} from "@/app/[locale]/canvas/_lib/generation-api";
-import type { GenerationNodeData } from "@/app/[locale]/canvas/_components/generation-card";
+} from "@/lib/canvas-authoring/generation-api";
+import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 
 const MAX_DIGEST_NODES = 40;
 const MAX_DIGEST_MODELS = 60;

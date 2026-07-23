@@ -7,9 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import {
-  StoryClipGenerationForm,
-  type StoryClipGenerationFormProps,
-} from "./story-clip-generation-form";
+  StoryVideoGenerationForm,
+  type StoryVideoGenerationFormProps,
+} from "./story-video-generation-form";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
 
@@ -18,7 +18,7 @@ interface StoryWorldLibraryProps {
   canEdit: boolean;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
   onClose: () => void;
-  trailerGeneration?: StoryClipGenerationFormProps;
+  trailerGeneration?: StoryVideoGenerationFormProps;
 }
 
 export function StoryWorldLibrary({
@@ -67,7 +67,7 @@ export function StoryWorldLibrary({
 function StoryWorldTrailerSection({
   trailerGeneration,
 }: {
-  trailerGeneration: StoryClipGenerationFormProps;
+  trailerGeneration: StoryVideoGenerationFormProps;
 }) {
   const t = useTranslations("storyStudio.canvas");
   const [open, setOpen] = useState(false);
@@ -98,7 +98,7 @@ function StoryWorldTrailerSection({
         <div className="mt-3">
           <p className="text-[10px] leading-4 text-white/36">{t("trailer.description")}</p>
           <div className="mt-3">
-            <StoryClipGenerationForm {...trailerGeneration} subject="trailer" />
+            <StoryVideoGenerationForm {...trailerGeneration} />
           </div>
         </div>
       ) : null}

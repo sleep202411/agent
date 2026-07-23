@@ -15,25 +15,29 @@ import { api } from "@/lib/api";
 import { storyAgentRunFixture } from "@/app/[locale]/story-studio/_components/project-canvas/story-agent-run.test-fixtures";
 import {
   archiveStoryChapter,
-  cancelStoryVideoGeneration,
+  addStoryCandidateAsset,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
   createStoryProject,
-  createStoryClipVideoGeneration,
   createStoryTrailerVideoGeneration,
   getStoryExperienceCurrentRelease,
+  getStoryCandidateAssets,
+  getStoryProductionCanvas,
   getUndoableStoryAgentRun,
   getStoryClipVideoUploadFinalization,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
+  putStoryProductionCanvas,
   putStoryClipCurrentVideo,
   putStoryTrailerCurrentVideo,
+  removeStoryCandidateAsset,
   retryStoryAgentRunAuthoring,
-  retryStoryVideoGeneration,
   updateStoryChapter,
   type StoryClipVideoFinalization,
+  type StoryCandidateAsset,
   type CreatableStoryFormat,
+  type StoryProductionCanvas,
   type StoryProjectSummary,
   type StoryVideoLibraryItem,
   waitForStoryClipVideoUploadFinalization,
@@ -221,43 +225,114 @@ describe("current-draft Story production routes", () => {
     );
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it("reads and writes the project-wide production canvas independently of chapters", async () => {
+    const content = {
+      nodes: [
+        {
+          id: "note-1",
+          type: "note",
+          position: { x: 10, y: 20 },
+          data: { text: "Continuity" },
+        },
+        {
+          id: "note-2",
+          type: "note",
+          position: { x: 280, y: 20 },
+          data: { text: "Lighting reference" },
+        },
+      ],
+      edges: [],
+      assets: [],
+      groups: [{ id: "opening", nodeIds: ["note-1", "note-2"], color: "slate" }],
+    } satisfies StoryProductionCanvas["content"];
+    const controller = new AbortController();
+    const response = productionCanvas("project / one", content);
+    vi.mocked(api.get).mockResolvedValueOnce(response);
+    vi.mocked(api.put).mockResolvedValueOnce(response);
+
+    await getStoryProductionCanvas("workspace-1", "project / one", controller.signal);
+    await putStoryProductionCanvas("workspace-1", "project / one", content, "session-1", {
+      keepalive: true,
+    });
+
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/production-canvas",
+      {
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        signal: controller.signal,
+      }
+    );
+    expect(api.put).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/production-canvas",
+      {
+        data: {
+          schemaVersion: "story-production-canvas-v2",
+          content,
+          sessionId: "session-1",
+        },
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        keepalive: true,
+      }
+    );
   });
 
-  it("starts one generation from the exact saved draft revision", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ id: "generation-1" });
-
-    await createStoryClipVideoGeneration(
-      "workspace-1",
-      "project-1",
-      "clip-1",
-      {
-        expectedDraftRevision: 18,
-        expectedSelectionVersion: 3,
-        prompt: "Slower camera",
-        modelId: "seedance-2",
-        mode: "multimodal_to_video",
-        durationMs: 10_000,
-        references: [],
-      },
-      "idempotency-1"
-    );
-
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/clips/clip-1/generations",
-      expect.objectContaining({
-        data: {
-          expectedDraftRevision: 18,
-          expectedSelectionVersion: 3,
-          prompt: "Slower camera",
-          modelId: "seedance-2",
-          mode: "multimodal_to_video",
-          durationMs: 10_000,
-          references: [],
-        },
+  it("rejects a production canvas response with dangling graph references", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(
+      productionCanvas("project-1", {
+        nodes: [],
+        edges: [
+          {
+            id: "edge-1",
+            source: "missing-source",
+            target: "missing-target",
+          },
+        ],
+        assets: [],
+        groups: [],
       })
     );
+
+    await expect(getStoryProductionCanvas("workspace-1", "project-1")).rejects.toThrow(
+      "invalid production canvas"
+    );
+  });
+
+  it("lists, adds, and removes project candidate assets by durable media id", async () => {
+    const candidate = candidateAsset();
+    const controller = new AbortController();
+    vi.mocked(api.get).mockResolvedValueOnce([candidate]);
+    vi.mocked(api.put).mockResolvedValueOnce(candidate);
+    vi.mocked(api.delete).mockResolvedValueOnce({ mediaAssetId: candidate.asset.id });
+
+    await expect(
+      getStoryCandidateAssets("workspace-1", "project / one", controller.signal)
+    ).resolves.toEqual([candidate]);
+    await expect(
+      addStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
+    ).resolves.toEqual(candidate);
+    await expect(
+      removeStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
+    ).resolves.toEqual({ mediaAssetId: candidate.asset.id });
+
+    const path =
+      "/aurora/story-projects/project%20%2F%20one/candidate-assets/00000000-0000-4000-8000-000000000011";
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/candidate-assets",
+      {
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        signal: controller.signal,
+      }
+    );
+    expect(api.put).toHaveBeenCalledWith(path, {
+      headers: { "x-fizz-workspace-id": "workspace-1" },
+    });
+    expect(api.delete).toHaveBeenCalledWith(path, {
+      headers: { "x-fizz-workspace-id": "workspace-1" },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("binds one current video with both authoring revisions", async () => {
@@ -281,6 +356,23 @@ describe("current-draft Story production routes", () => {
         },
         headers: { "x-fizz-workspace-id": "workspace-1" },
       }
+    );
+  });
+
+  it("rejects a candidate video without a fully reusable original variant", async () => {
+    const candidate = candidateAsset();
+    vi.mocked(api.get).mockResolvedValueOnce([
+      {
+        ...candidate,
+        videoVariant: {
+          ...candidate.videoVariant!,
+          durationSeconds: 0,
+        },
+      },
+    ]);
+
+    await expect(getStoryCandidateAssets("workspace-1", "project-1")).rejects.toThrow(
+      "invalid candidate asset"
     );
   });
 
@@ -435,42 +527,6 @@ describe("current-draft Story production routes", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("cancels and retries a generation using its optimistic version", async () => {
-    vi.mocked(api.post).mockResolvedValue({ id: "generation-1" });
-
-    await cancelStoryVideoGeneration("workspace-1", "project-1", "generation / one", {
-      expectedGenerationVersion: 4,
-    });
-    await retryStoryVideoGeneration(
-      "workspace-1",
-      "project-1",
-      "generation / one",
-      {
-        expectedGenerationVersion: 5,
-        expectedSelectionVersion: 6,
-        target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
-      },
-      "idempotency-retry"
-    );
-
-    expect(api.post).toHaveBeenNthCalledWith(
-      1,
-      "/aurora/story-projects/project-1/generations/generation%20%2F%20one/cancel",
-      expect.objectContaining({ data: { expectedGenerationVersion: 4 } })
-    );
-    expect(api.post).toHaveBeenNthCalledWith(
-      2,
-      "/aurora/story-projects/project-1/generations/generation%20%2F%20one/retry",
-      expect.objectContaining({
-        data: {
-          expectedGenerationVersion: 5,
-          expectedSelectionVersion: 6,
-          target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
-        },
-      })
-    );
-  });
-
   it("uses the dedicated trailer generation and current-video routes", async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ id: "trailer-generation-1" });
     vi.mocked(api.put).mockResolvedValueOnce({ id: "trailer-1" });
@@ -607,6 +663,49 @@ function videoLibraryItem(): StoryVideoLibraryItem {
     durationSeconds: 12,
     checksumSha256: "variant-checksum",
     createdAt: "2026-07-15T12:00:00.000Z",
+  };
+}
+
+function candidateAsset(): StoryCandidateAsset {
+  return {
+    asset: {
+      id: "00000000-0000-4000-8000-000000000011",
+      kind: "video",
+      status: "ready",
+      moderationStatus: "approved",
+      contentType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: "asset-checksum",
+      previewUrl: "https://example.test/candidate.mp4",
+    },
+    videoVariant: {
+      id: "00000000-0000-4000-8000-000000000012",
+      variantKey: "original",
+      contentType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: "a".repeat(64),
+    },
+    addedByUserId: "user-1",
+    addedAt: "2026-07-23T12:00:00.000Z",
+  };
+}
+
+function productionCanvas(
+  projectId: string,
+  content: StoryProductionCanvas["content"]
+): StoryProductionCanvas {
+  return {
+    projectId,
+    schemaVersion: "story-production-canvas-v2",
+    content,
+    updatedByUserId: "user-1",
+    updatedBySessionId: "session-1",
+    createdAt: "2026-07-23T12:00:00.000Z",
+    updatedAt: "2026-07-23T12:00:00.000Z",
   };
 }
 

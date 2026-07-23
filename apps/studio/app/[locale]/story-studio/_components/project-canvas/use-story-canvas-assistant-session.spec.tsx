@@ -693,7 +693,8 @@ describe("Story Canvas assistant session", () => {
   };
 
   function routedFetch(documentResponse: () => Response) {
-    return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+    return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/aurora/copilot/documents")) {
         return Promise.resolve(documentResponse());

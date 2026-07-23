@@ -25,7 +25,7 @@ import {
   listFizzAiJobs,
   type FizzAiJobType,
   type FizzAiJobView,
-} from "@/app/[locale]/canvas/_lib/generation-api";
+} from "@/lib/canvas-authoring/generation-api";
 import { EmptyState, PageHeader, Panel, StatCard, TeamBadge } from "../_components/settings-ui";
 
 interface WalletLedgerData {

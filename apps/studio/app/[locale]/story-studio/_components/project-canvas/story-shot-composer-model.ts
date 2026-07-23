@@ -3,7 +3,7 @@ import {
   schemaFields,
   type FizzAiCatalog,
   type FizzAiModel,
-} from "@/app/[locale]/canvas/_lib/generation-api";
+} from "@/lib/canvas-authoring/generation-api";
 import type {
   StoryReferenceKind,
   StoryReferenceSlot,

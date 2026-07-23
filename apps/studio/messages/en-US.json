@@ -994,7 +994,27 @@
     "redo": "Redo",
     "openError": "Couldn't open this canvas — check the link or your access.",
     "emptyReadOnly": "This canvas is empty.",
-    "activityLog": "Activity"
+    "activityLog": "Activity",
+    "groups": {
+      "group": "Group",
+      "label": "Group",
+      "dragLabel": "Drag group with {count} nodes",
+      "color": "Group background",
+      "colors": {
+        "slate": "Slate",
+        "red": "Red",
+        "orange": "Orange",
+        "amber": "Amber",
+        "green": "Green",
+        "cyan": "Cyan",
+        "blue": "Blue",
+        "indigo": "Indigo",
+        "pink": "Pink"
+      },
+      "ungroup": "Ungroup",
+      "removeNode": "Remove from group",
+      "shortcut": "Ctrl/⌘ G"
+    }
   },
   "canvasControls": {
     "comment": "Comment",
@@ -1165,6 +1185,12 @@
     "selectModel": "Select model",
     "settings": "Settings",
     "generate": "Generate",
+    "expandedComposer": {
+      "expand": "Expand composer",
+      "collapse": "Return to compact composer",
+      "imageTitle": "Image generation",
+      "videoTitle": "Video generation"
+    },
     "cancelGeneration": "Cancel generation",
     "run": "Run",
     "count": "Count",
@@ -2181,6 +2207,51 @@
           "error": "The reference image could not be uploaded."
         }
       },
+      "productionCanvas": {
+        "title": "Creation canvas",
+        "identity": "Story Studio · Content creation",
+        "groupDropHint": "Release to add to this group",
+        "workspaceLabel": "Project creation canvas, opened from {title}",
+        "backToChapter": "Back to chapter canvas",
+        "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
+        "loadError": "The creation canvas could not be opened.",
+        "retry": "Try again",
+        "assets": {
+          "description": "Browse and drag reusable project media onto the canvas."
+        },
+        "candidates": {
+          "title": "Candidate assets",
+          "description": "Curate the media that Story nodes can reuse.",
+          "open": "Open candidate assets",
+          "close": "Close candidate assets",
+          "add": "Add to candidate assets",
+          "remove": "Remove from candidate assets",
+          "filterLabel": "Filter candidate assets",
+          "filters": {
+            "all": "All",
+            "image": "Images",
+            "video": "Videos",
+            "audio": "Audio"
+          },
+          "empty": "No candidate assets",
+          "emptyFilter": "Nothing in this category",
+          "emptyDescription": "Select a finished media node and add it from the floating toolbar.",
+          "loadError": "Candidate assets could not be loaded.",
+          "actionError": "The candidate asset could not be updated.",
+          "retry": "Try again",
+          "assetLabel": {
+            "image": "Image {index}",
+            "video": "Video {index}",
+            "audio": "Audio {index}"
+          }
+        },
+        "status": {
+          "loading": "Loading",
+          "saving": "Saving…",
+          "saved": "Saved",
+          "error": "Save failed"
+        }
+      },
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
@@ -2191,6 +2262,16 @@
           "preview": "Current video for {title}",
           "empty": "No video selected",
           "emptyDescription": "Add the playable video for this story clip.",
+          "candidates": "Candidate videos",
+          "candidateDescription": "Choose a curated video from the shared creation canvas.",
+          "candidateEmpty": "No candidate videos yet",
+          "candidateEmptyDescription": "Add finished videos to Candidate assets on the creation canvas.",
+          "candidateUse": "Use this video",
+          "candidateUsing": "Applying…",
+          "candidateSelected": "Current",
+          "candidateUnavailable": "This video is still preparing its playable original.",
+          "candidateLoadError": "Candidate videos could not be loaded.",
+          "candidateRetry": "Try again",
           "upload": "Upload local video",
           "replace": "Replace from device",
           "uploading": "Uploading · {progress}%",
@@ -2201,10 +2282,17 @@
           "unknownDimensions": "Unknown size",
           "unknownDuration": "Unknown duration",
           "errors": {
+            "candidate": "This candidate video could not be applied.",
             "upload": "The video could not be uploaded."
           },
           "tabUpload": "Upload",
-          "tabGenerate": "AI generate"
+          "tabProduction": "Creation canvas"
+        },
+        "productionCanvas": {
+          "title": "Creation canvas",
+          "description": "Open the project's shared media canvas. Assets and generation lineage stay reusable across every chapter.",
+          "action": "Enter creation canvas",
+          "hint": "You will return to this exact chapter position."
         },
         "exit": "Next step",
         "production": "Production status",

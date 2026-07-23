@@ -82,13 +82,13 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
+import { StoryStudioCanvasBackdrop } from "./story-studio-canvas-backdrop";
 import {
   canvasLayoutRevisionConflict,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
   archiveStoryChapter,
   createStoryChapter,
-  createStoryClipVideoGeneration,
   createStoryTrailerVideoGeneration,
   draftRevisionConflict,
   getStoryCanvasLayout,
@@ -104,6 +104,7 @@ import {
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveStoryDraftContent,
+  type StoryCandidateAsset,
   type StoryVideoGeneration,
   type StoryVideoLibraryItem,
   type StoryCanvasPosition,
@@ -200,9 +201,14 @@ import {
   type StoryNodeCreationMenuPlacement,
 } from "./story-node-creator-model";
 import type { StoryClipMediaUploadState } from "./story-clip-media-panel";
+import {
+  StoryProductionCanvasWorkspace,
+  type StoryProductionCanvasContext,
+} from "./story-production-canvas-workspace";
+import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector } from "./story-node-inspector";
 import { StoryPublicationDialog } from "./story-publication-dialog";
-import { type StoryClipGenerationFormProps } from "./story-clip-generation-form";
+import { type StoryVideoGenerationFormProps } from "./story-video-generation-form";
 import {
   StoryProductionActionGate,
   StorySubmissionKeyRegistry,
@@ -238,14 +244,7 @@ type PersistLayoutOptions = {
 type CommitContentOptions = {
   mergeKey?: string;
 };
-type StoryClipGenerationRequest = {
-  requestId: string;
-  graphNodeId: string;
-  expectedSelectionVersion: number;
-  recipe: StoryVideoGenerationRecipeInput;
-  recipeFingerprint: string;
-};
-type StoryGenerationRecipeRecord = {
+type StoryGenerationRecipeDraft = {
   recipe: StoryVideoGenerationRecipeInput;
   dirty: boolean;
 };
@@ -351,6 +350,9 @@ function StoryProjectCanvasInner({
   );
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [chapterRailOpen, setChapterRailOpen] = useState(true);
+  const [productionCanvasSession, setProductionCanvasSession] =
+    useState<StoryProductionCanvasContext | null>(null);
+  const closeProductionCanvasWorkspace = useCallback(() => setProductionCanvasSession(null), []);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
   const [chapterMutationPendingId, setChapterMutationPendingId] = useState<string | null>(null);
   const [agentTakeoverAction, setAgentTakeoverAction] = useState<"confirm" | "undo" | null>(null);
@@ -376,31 +378,15 @@ function StoryProjectCanvasInner({
     chapterId: string;
     value: boolean;
   } | null>(null);
-  const [productionPendingKey, setProductionPendingKey] = useState<string | null>(null);
-  const [productionError, setProductionError] = useState<string | null>(null);
-  const [clipGenerationRequest, setClipGenerationRequest] =
-    useState<StoryClipGenerationRequest | null>(null);
-  const [generationRecipes, setGenerationRecipes] = useState<
-    Record<string, StoryGenerationRecipeRecord>
-  >({});
+  const [trailerGenerationRecipe, setTrailerGenerationRecipe] =
+    useState<StoryGenerationRecipeDraft>(() => ({
+      recipe: emptyStoryGenerationRecipe(),
+      dirty: false,
+    }));
   const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
   const [pendingLeaveRisk, setPendingLeaveRisk] = useState<StoryCanvasLeaveRisk | null>(null);
   const [recoveryExported, setRecoveryExported] = useState(false);
-  const [productionActionGate] = useState(() => new StoryProductionActionGate());
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
-  const [productionSubmissionKeys] = useState(
-    () =>
-      new StorySubmissionKeyRegistry(
-        `story-clip:${workspaceId ?? "no-workspace"}:${projectId}`,
-        () => {
-          try {
-            return globalThis.window?.sessionStorage ?? null;
-          } catch {
-            return null;
-          }
-        }
-      )
-  );
   const [trailerPendingKey, setTrailerPendingKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
   const [trailerActionGate] = useState(() => new StoryProductionActionGate());
@@ -479,10 +465,8 @@ function StoryProjectCanvasInner({
   const agentTakeoverPendingRef = useRef(false);
 
   useLayoutEffect(() => {
-    hasDirtyGenerationRecipeRef.current = Object.values(generationRecipes).some(
-      (record) => record.dirty
-    );
-  }, [generationRecipes]);
+    hasDirtyGenerationRecipeRef.current = trailerGenerationRecipe.dirty;
+  }, [trailerGenerationRecipe.dirty]);
 
   useLayoutEffect(() => {
     currentHistoryEntryRef.current = {
@@ -753,7 +737,10 @@ function StoryProjectCanvasInner({
       setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
       setCreatorMenu(null);
       setPendingCompletionDrop(null);
-      setGenerationRecipes({});
+      setTrailerGenerationRecipe({
+        recipe: emptyStoryGenerationRecipe(),
+        dirty: false,
+      });
     }
     hydratedRef.current = true;
     hydratedChapterIdRef.current = workbench.chapter.id;
@@ -1270,6 +1257,11 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
+  const candidateAssets = useStoryCandidateAssets({
+    workspaceId,
+    projectId,
+    canEdit: canMutateCanvasLayout,
+  });
   useLayoutEffect(() => {
     mutationBarrier.update({
       canEditContent: canEdit,
@@ -1995,171 +1987,30 @@ function StoryProjectCanvasInner({
   const focusedClipVideo =
     focusedNode?.data.kind === "clip" ? (focusedNode.data.clipVideo ?? null) : null;
   const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
-  const focusedRecipeKey = focusedGraphNodeId ? `clip:${focusedGraphNodeId}` : null;
-  const focusedRecipe = focusedRecipeKey
-    ? (generationRecipes[focusedRecipeKey]?.recipe ?? emptyStoryGenerationRecipe())
-    : null;
-
-  const updateGenerationRecipe = useCallback(
-    (key: string, recipe: StoryVideoGenerationRecipeInput) => {
-      if (!mutationBarrier.permits("production")) return;
-      setGenerationRecipes((current) => ({
-        ...current,
-        [key]: { recipe, dirty: true },
-      }));
-    },
-    [mutationBarrier]
-  );
-
-  const confirmSubmittedRecipe = useCallback((key: string, fingerprint: string) => {
-    setGenerationRecipes((current) => {
-      const record = current[key];
-      if (!record || canonicalJsonString(record.recipe) !== fingerprint) return current;
-      return { ...current, [key]: { ...record, dirty: false } };
-    });
-  }, []);
-
-  const refreshProduction = useCallback(async () => {
-    await workbenchQuery.refetch();
-  }, [workbenchQuery]);
-
-  const runProductionAction = useCallback(
-    async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
-      if (!mutationBarrier.permits("production")) return false;
-      if (!productionActionGate.tryAcquire()) return false;
-      setProductionPendingKey(key);
-      setProductionError(null);
-      try {
-        await action();
-        await refreshProduction();
-        return true;
-      } catch (error) {
-        setProductionError(storyApiErrorMessage(error, t("production.errors.action")));
-        try {
-          // The server may have accepted part of the video-plane operation
-          // before a later validation fails. Refresh the authoritative state.
-          await refreshProduction();
-        } catch {
-          // Keep the actionable generation error; refresh remains available.
-        }
-        return false;
-      } finally {
-        productionActionGate.release();
-        setProductionPendingKey(null);
-      }
-    },
-    [mutationBarrier, productionActionGate, refreshProduction, t]
-  );
-
-  const generateSelectedClip = useCallback(
-    (recipe: StoryVideoGenerationRecipeInput) => {
-      if (!mutationBarrier.permits("production") || !focusedGraphNodeId || !focusedRecipeKey) {
-        return;
-      }
-      setClipGenerationRequest({
-        requestId: globalThis.crypto.randomUUID(),
-        graphNodeId: focusedGraphNodeId,
-        expectedSelectionVersion: focusedClipVideo?.selectionVersion ?? 0,
-        recipe: { ...recipe, references: [...recipe.references] },
-        recipeFingerprint: canonicalJsonString(recipe),
-      });
-    },
-    [focusedClipVideo?.selectionVersion, focusedGraphNodeId, focusedRecipeKey, mutationBarrier]
-  );
-
-  useEffect(() => {
-    if (!clipGenerationRequest) return;
-    const request = clipGenerationRequest;
-    let active = true;
-
-    if (!canManageClipMedia || !workspaceId) {
-      queueMicrotask(() => {
-        if (!active) return;
-        setClipGenerationRequest((current) =>
-          current?.requestId === request.requestId ? null : current
-        );
-      });
-      return () => {
-        active = false;
-      };
-    }
-
-    const slot = `clip:create:${request.graphNodeId}`;
-    queueMicrotask(() => {
-      if (!active) return;
-      void runProductionAction("generate", () =>
-        withSavedDraftSnapshot(async (expectedDraftRevision) => {
-          const fingerprint = canonicalJsonString({
-            graphNodeId: request.graphNodeId,
-            expectedDraftRevision,
-            expectedSelectionVersion: request.expectedSelectionVersion,
-            recipe: request.recipe,
-          });
-          const idempotencyKey = await productionSubmissionKeys.keyFor(slot, fingerprint, () =>
-            globalThis.crypto.randomUUID()
-          );
-          const generation = await createStoryClipVideoGeneration(
-            workspaceId,
-            projectId,
-            request.graphNodeId,
-            {
-              expectedDraftRevision,
-              expectedSelectionVersion: request.expectedSelectionVersion,
-              ...request.recipe,
-            },
-            idempotencyKey
-          );
-          await productionSubmissionKeys.confirm(slot, fingerprint);
-          confirmSubmittedRecipe(`clip:${request.graphNodeId}`, request.recipeFingerprint);
-          return generation;
-        })
-      ).finally(() => {
-        if (!active) return;
-        setClipGenerationRequest((current) =>
-          current?.requestId === request.requestId ? null : current
-        );
-      });
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [
-    canManageClipMedia,
-    clipGenerationRequest,
-    confirmSubmittedRecipe,
-    productionSubmissionKeys,
-    projectId,
-    runProductionAction,
-    withSavedDraftSnapshot,
-    workspaceId,
-  ]);
-
-  const clipGenerationActive = isActiveVideoGeneration(focusedClipVideo?.generation);
-  const productionDisabledReason = !project?.capabilities.includes("story.generate")
-    ? t("production.disabled.permission")
-    : !canManageClipMedia
-      ? t("readOnly")
-      : clipGenerationActive
-        ? t("production.disabled.generating")
-        : null;
   const bindClipVideo = useCallback(
     async (graphNodeId: string, expectedSelectionVersion: number, item: StoryVideoLibraryItem) => {
       if (!workspaceId || !mutationBarrier.permits("production")) {
         throw new Error(t("production.errors.action"));
       }
-      const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
-        putStoryClipCurrentVideo(workspaceId, projectId, graphNodeId, {
-          expectedDraftRevision,
-          expectedSelectionVersion,
-          assetId: item.asset.id,
-          variantId: item.variantId,
-        })
-      );
-      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
-        projectConfirmedClipCurrentVideo(current, confirmedClip)
-      );
-      void refetchWorkbench();
+      try {
+        const confirmedClip = await withSavedDraftSnapshot((expectedDraftRevision) =>
+          putStoryClipCurrentVideo(workspaceId, projectId, graphNodeId, {
+            expectedDraftRevision,
+            expectedSelectionVersion,
+            assetId: item.asset.id,
+            variantId: item.variantId,
+          })
+        );
+        queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
+          projectConfirmedClipCurrentVideo(current, confirmedClip)
+        );
+        void refetchWorkbench();
+      } catch (error) {
+        // A stale selection/draft token is recoverable only after refreshing
+        // the authoritative clip summary. Keep the upstream error for the UI.
+        await refetchWorkbench();
+        throw error;
+      }
     },
     [
       mutationBarrier,
@@ -2171,6 +2022,25 @@ function StoryProjectCanvasInner({
       workbenchQueryKey,
       workspaceId,
     ]
+  );
+  const selectCandidateClipVideo = useCallback(
+    async (candidate: StoryCandidateAsset) => {
+      if (!focusedGraphNodeId || !candidate.videoVariant?.checksumSha256) {
+        throw new Error(t("inspector.media.candidateUnavailable"));
+      }
+      await bindClipVideo(focusedGraphNodeId, focusedClipVideo?.selectionVersion ?? 0, {
+        asset: candidate.asset,
+        variantId: candidate.videoVariant.id,
+        variantKey: candidate.videoVariant.variantKey,
+        contentType: candidate.videoVariant.contentType,
+        width: candidate.videoVariant.width,
+        height: candidate.videoVariant.height,
+        durationSeconds: candidate.videoVariant.durationSeconds,
+        checksumSha256: candidate.videoVariant.checksumSha256,
+        createdAt: candidate.addedAt,
+      });
+    },
+    [bindClipVideo, focusedClipVideo?.selectionVersion, focusedGraphNodeId, t]
   );
   const uploadSelectedClipVideo = useCallback(
     async (
@@ -2242,26 +2112,6 @@ function StoryProjectCanvasInner({
       workspaceId,
     ]
   );
-  // AI generation lives in the node inspector's "generate" tab. The clip's
-  // library reuse stays on the upload tab (clipMedia), so the generation form
-  // intentionally omits videoLibrary here.
-  const clipGeneration: StoryClipGenerationFormProps | null =
-    focusedNode?.data.kind === "clip" && focusedGraphNodeId && focusedRecipe
-      ? {
-          recipe: focusedRecipe,
-          references,
-          readOnly: !canManageClipMedia,
-          canGenerate: productionDisabledReason === null,
-          disabledReason: productionDisabledReason,
-          pendingKey: productionPendingKey ?? (clipGenerationActive ? "generate" : null),
-          error: productionError ?? storyGenerationError(focusedClipVideo?.generation),
-          onRecipeChange: (next) => updateGenerationRecipe(focusedRecipeKey!, next),
-          onGenerate: generateSelectedClip,
-          referenceUpload: workspaceId
-            ? { workspaceId, projectId, refresh: refetchWorkbench }
-            : null,
-        }
-      : null;
   // Trailer production lives inside the Story Bible panel as a secondary action,
   // so it is scoped to the world inspector rather than a focused root node.
   const worldInspectorOpen = inspectorTarget.kind === "world";
@@ -2298,8 +2148,19 @@ function StoryProjectCanvasInner({
   );
 
   const canGenerateTrailer = canManageClipMedia;
-  const trailerRecipe =
-    generationRecipes[TRAILER_RECIPE_KEY]?.recipe ?? emptyStoryGenerationRecipe();
+  const updateTrailerGenerationRecipe = useCallback(
+    (recipe: StoryVideoGenerationRecipeInput) => {
+      if (!mutationBarrier.permits("production")) return;
+      setTrailerGenerationRecipe({ recipe, dirty: true });
+    },
+    [mutationBarrier]
+  );
+  const confirmSubmittedTrailerRecipe = useCallback((fingerprint: string) => {
+    setTrailerGenerationRecipe((current) =>
+      canonicalJsonString(current.recipe) === fingerprint ? { ...current, dirty: false } : current
+    );
+  }, []);
+  const trailerRecipe = trailerGenerationRecipe.recipe;
 
   const generateTrailer = useCallback(
     (recipe: StoryVideoGenerationRecipeInput) => {
@@ -2326,12 +2187,12 @@ function StoryProjectCanvasInner({
           idempotencyKey
         );
         await trailerSubmissionKeys.confirm(slot, fingerprint);
-        confirmSubmittedRecipe(TRAILER_RECIPE_KEY, recipeFingerprint);
+        confirmSubmittedTrailerRecipe(recipeFingerprint);
         return generation;
       });
     },
     [
-      confirmSubmittedRecipe,
+      confirmSubmittedTrailerRecipe,
       mutationBarrier,
       projectId,
       runTrailerAction,
@@ -2349,10 +2210,9 @@ function StoryProjectCanvasInner({
       : trailerGenerationActive
         ? t("production.disabled.generating")
         : null;
-  const trailerGeneration: StoryClipGenerationFormProps | null =
+  const trailerGeneration: StoryVideoGenerationFormProps | null =
     worldInspectorOpen && selectedTrailer
       ? {
-          subject: "trailer",
           recipe: trailerRecipe,
           references,
           readOnly: !canGenerateTrailer,
@@ -2360,7 +2220,7 @@ function StoryProjectCanvasInner({
           disabledReason: trailerDisabledReason,
           pendingKey: trailerPendingKey ?? (trailerGenerationActive ? "generate" : null),
           error: trailerError ?? storyGenerationError(selectedTrailer.generation),
-          onRecipeChange: (next) => updateGenerationRecipe(TRAILER_RECIPE_KEY, next),
+          onRecipeChange: updateTrailerGenerationRecipe,
           onGenerate: generateTrailer,
           referenceUpload: workspaceId
             ? { workspaceId, projectId, refresh: refetchWorkbench }
@@ -2571,7 +2431,7 @@ function StoryProjectCanvasInner({
   }, [history, mutationBarrier, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   useCanvasHistoryShortcuts({
-    enabled: canMutateCanvasLayout,
+    enabled: canMutateCanvasLayout && !productionCanvasSession,
     undo: undoStoryCanvas,
     redo: redoStoryCanvas,
   });
@@ -3359,13 +3219,10 @@ function StoryProjectCanvasInner({
     const layout = risk.planes.includes("layout")
       ? (recoveryLayoutRef.current ?? latestDesiredLayoutRef.current)
       : null;
-    const dirtyGenerationRecipes = risk.planes.includes("generation")
-      ? Object.fromEntries(
-          Object.entries(generationRecipes)
-            .filter(([, record]) => record.dirty)
-            .map(([key, record]) => [key, record.recipe])
-        )
-      : null;
+    const dirtyGenerationRecipes =
+      risk.planes.includes("generation") && trailerGenerationRecipe.dirty
+        ? { [TRAILER_RECIPE_KEY]: trailerGenerationRecipe.recipe }
+        : null;
 
     downloadJsonArtifact(`fizzdragon-story-canvas-recovery-${projectId}.json`, {
       artifactType: "fizzdragon.story-canvas-recovery",
@@ -3392,7 +3249,7 @@ function StoryProjectCanvasInner({
     });
     setPendingLeaveRisk(risk);
     setRecoveryExported(true);
-  }, [generationRecipes, projectId, readLeaveRisk, workspaceId]);
+  }, [projectId, readLeaveRisk, trailerGenerationRecipe, workspaceId]);
 
   const discardRecoveryAndLeave = useCallback(() => {
     const resume = pendingLeaveActionRef.current;
@@ -3463,6 +3320,18 @@ function StoryProjectCanvasInner({
     );
   }
 
+  const openProductionCanvas = (nodeTitle: string) => {
+    if (productionCanvasSession) return;
+    setProductionCanvasSession({
+      projectId,
+      workspaceId,
+      nodeTitle,
+      sessionId,
+      canEdit: canMutateCanvasLayout,
+      canGenerate: canMutateCanvasLayout && canManageClipMedia,
+    });
+  };
+
   const displaySaveState = mergeSaveStates(saveState, layoutSaveState);
   // Both hashes here were produced in THIS session, by one server version: the
   // publish response's and the workbench projection's. Unlike the authority
@@ -3518,6 +3387,7 @@ function StoryProjectCanvasInner({
         canManageAgentRuns={Boolean(
           project.status === "active" && project.capabilities.includes("story.edit")
         )}
+        suspended={Boolean(productionCanvasSession)}
       >
         {/* The takeover aura frames ONLY the canvas column — the assistant
             panel stays outside the glow. */}
@@ -3657,16 +3527,7 @@ function StoryProjectCanvasInner({
             openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
           }}
         >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0"
-            style={{
-              backgroundColor: "oklch(0.18 0 0)",
-              backgroundImage:
-                "radial-gradient(circle, rgb(255 255 255 / 0.13) 1px, transparent 1.2px)",
-              backgroundSize: "20px 20px",
-            }}
-          />
+          <StoryStudioCanvasBackdrop />
           <MediaHoverPreviewProvider>
             <StoryCanvasFocusContext.Provider value={focusedNodeId}>
               <StoryCanvasReactFlow
@@ -3744,6 +3605,12 @@ function StoryProjectCanvasInner({
                   // Explicit click is the ONLY path that opens the node inspector.
                   requestedCanvasFocusRef.current = outcome.nodeId;
                   setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
+                }}
+                onNodeDoubleClick={(event, node) => {
+                  if (node.data.kind !== "clip") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openProductionCanvas(node.data.title);
                 }}
                 onPaneClick={() => {
                   selectCanvasNodeExclusively(null);
@@ -3858,11 +3725,24 @@ function StoryProjectCanvasInner({
                     clip: focusedClipVideo ?? null,
                     canEdit: canManageClipMedia,
                     disabledReason: clipMediaDisabledReason,
+                    candidateAssets: candidateAssets.items,
+                    candidateAssetsLoading: candidateAssets.loading,
+                    candidateAssetsError: candidateAssets.failed
+                      ? candidateAssets.error || t("inspector.media.candidateLoadError")
+                      : null,
+                    onRetryCandidates: () => void candidateAssets.refresh(),
+                    onSelectCandidate: selectCandidateClipVideo,
                     onUpload: uploadSelectedClipVideo,
                   }
                 : undefined
             }
-            clipGeneration={clipGeneration ?? undefined}
+            productionCanvas={
+              focusedNode?.data.kind === "clip" && focusedGraphNodeId
+                ? {
+                    onOpen: () => openProductionCanvas(focusedNode.data.title),
+                  }
+                : undefined
+            }
             trailerGeneration={trailerGeneration ?? undefined}
             onUpdateClipMeta={(nodeId, patch) =>
               applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
@@ -3951,6 +3831,13 @@ function StoryProjectCanvasInner({
           />
         ) : null}
       </StoryCanvasAssistantLayer>
+      {productionCanvasSession ? (
+        <StoryProductionCanvasWorkspace
+          context={productionCanvasSession}
+          candidates={candidateAssets}
+          onClose={closeProductionCanvasWorkspace}
+        />
+      ) : null}
     </main>
   );
 }

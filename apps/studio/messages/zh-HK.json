@@ -994,7 +994,27 @@
     "redo": "重做",
     "openError": "無法開啟此畫布 — 請檢查連結或你的存取權限。",
     "emptyReadOnly": "此畫布為空。",
-    "activityLog": "動態"
+    "activityLog": "動態",
+    "groups": {
+      "group": "打組",
+      "label": "群組",
+      "dragLabel": "拖動群組，共 {count} 個節點",
+      "color": "群組背景色",
+      "colors": {
+        "slate": "灰色",
+        "red": "紅色",
+        "orange": "橙色",
+        "amber": "黃色",
+        "green": "綠色",
+        "cyan": "青色",
+        "blue": "藍色",
+        "indigo": "靛藍色",
+        "pink": "粉色"
+      },
+      "ungroup": "解組",
+      "removeNode": "移出群組",
+      "shortcut": "Ctrl/⌘ G"
+    }
   },
   "canvasControls": {
     "comment": "評論",
@@ -1165,6 +1185,12 @@
     "selectModel": "選擇模型",
     "settings": "設定",
     "generate": "生成",
+    "expandedComposer": {
+      "expand": "展開生成面板",
+      "collapse": "返回精簡面板",
+      "imageTitle": "圖像生成",
+      "videoTitle": "影片生成"
+    },
     "cancelGeneration": "取消生成",
     "run": "執行",
     "count": "數量",
@@ -2181,6 +2207,51 @@
           "error": "參考圖上載失敗。"
         }
       },
+      "productionCanvas": {
+        "title": "創作畫布",
+        "identity": "Story Studio · 內容創作",
+        "groupDropHint": "放開以加入此分組",
+        "workspaceLabel": "項目創作畫布，從「{title}」進入",
+        "backToChapter": "返回章節畫布",
+        "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
+        "loadError": "無法開啟創作畫布。",
+        "retry": "重試",
+        "assets": {
+          "description": "瀏覽項目素材，並將可重用媒體拖入畫布。"
+        },
+        "candidates": {
+          "title": "候選素材",
+          "description": "整理可供故事節點直接重用的媒體。",
+          "open": "開啟候選素材",
+          "close": "關閉候選素材",
+          "add": "加入候選素材",
+          "remove": "從候選素材移除",
+          "filterLabel": "篩選候選素材",
+          "filters": {
+            "all": "全部",
+            "image": "圖片",
+            "video": "影片",
+            "audio": "音訊"
+          },
+          "empty": "尚未有候選素材",
+          "emptyFilter": "此分類暫無素材",
+          "emptyDescription": "選取已完成的媒體節點，透過浮動工具列加入。",
+          "loadError": "無法載入候選素材。",
+          "actionError": "無法更新候選素材。",
+          "retry": "重試",
+          "assetLabel": {
+            "image": "圖片 {index}",
+            "video": "影片 {index}",
+            "audio": "音訊 {index}"
+          }
+        },
+        "status": {
+          "loading": "正在載入",
+          "saving": "正在儲存…",
+          "saved": "已儲存",
+          "error": "儲存失敗"
+        }
+      },
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
@@ -2191,6 +2262,16 @@
           "preview": "{title} 的目前影片",
           "empty": "尚未選擇影片",
           "emptyDescription": "為這個故事片段加入可播放的影片。",
+          "candidates": "候選影片",
+          "candidateDescription": "從項目共用創作畫布整理出的素材中選擇。",
+          "candidateEmpty": "尚未有候選影片",
+          "candidateEmptyDescription": "請先在創作畫布中將成片加入候選素材。",
+          "candidateUse": "使用此影片",
+          "candidateUsing": "正在套用…",
+          "candidateSelected": "目前使用",
+          "candidateUnavailable": "此影片仍在準備可播放的原始版本。",
+          "candidateLoadError": "無法載入候選影片。",
+          "candidateRetry": "重試",
           "upload": "上載本機影片",
           "replace": "從本機取代",
           "uploading": "正在上載 · {progress}%",
@@ -2201,10 +2282,17 @@
           "unknownDimensions": "尺寸未知",
           "unknownDuration": "時長未知",
           "errors": {
+            "candidate": "無法套用此候選影片。",
             "upload": "無法上載此影片。"
           },
           "tabUpload": "影片上載",
-          "tabGenerate": "AI 生成"
+          "tabProduction": "創作畫布"
+        },
+        "productionCanvas": {
+          "title": "創作畫布",
+          "description": "開啟整個項目共用的媒體創作畫布，素材與生成鏈路可跨章節重用。",
+          "action": "進入創作畫布",
+          "hint": "返回後會回到目前章節位置。"
         },
         "exit": "後續走向",
         "production": "製作狀態",

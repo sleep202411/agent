@@ -40,9 +40,10 @@ import type { StoryCanvasNode } from "./story-project-canvas-model";
 import { collectStoryMusicTracks, StoryNodeMusicPanel } from "./story-node-music-panel";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
 import {
-  StoryClipGenerationForm,
-  type StoryClipGenerationFormProps,
-} from "./story-clip-generation-form";
+  StoryProductionCanvasEntry,
+  type StoryProductionCanvasEntryProps,
+} from "./story-production-canvas-entry";
+import type { StoryVideoGenerationFormProps } from "./story-video-generation-form";
 import { StoryWorldLibrary } from "./story-world-library";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -84,8 +85,8 @@ interface StoryNodeInspectorProps {
   onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
-  clipGeneration?: StoryClipGenerationFormProps;
-  trailerGeneration?: StoryClipGenerationFormProps;
+  productionCanvas?: StoryProductionCanvasEntryProps;
+  trailerGeneration?: StoryVideoGenerationFormProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
   onUpdateText: (nodeId: string, patch: { title?: string; body?: string }) => void;
   /** Ownership scope for a track uploaded from the inspector. */
@@ -114,7 +115,7 @@ export function StoryNodeInspector({
   onUpdateEnding,
   onDeleteSelected,
   clipMedia,
-  clipGeneration,
+  productionCanvas,
   trailerGeneration,
   onUpdateClipMeta,
   onUpdateText,
@@ -196,7 +197,7 @@ export function StoryNodeInspector({
                 decisionOnly={canvasData.kind === "decision"}
                 canEdit={canEdit}
                 clipMedia={clipMedia}
-                clipGeneration={clipGeneration}
+                productionCanvas={productionCanvas}
                 workspaceId={workspaceId}
                 onUpdateClipMeta={onUpdateClipMeta}
                 onUpdateText={onUpdateText}
@@ -273,7 +274,7 @@ function GraphNodeEditor({
   decisionOnly,
   canEdit,
   clipMedia,
-  clipGeneration,
+  productionCanvas,
   workspaceId,
   onUpdateClipMeta,
   onUpdateText,
@@ -293,7 +294,7 @@ function GraphNodeEditor({
   decisionOnly: boolean;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
-  clipGeneration?: StoryClipGenerationFormProps;
+  productionCanvas?: StoryProductionCanvasEntryProps;
   workspaceId: StoryNodeInspectorProps["workspaceId"];
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   onUpdateText: StoryNodeInspectorProps["onUpdateText"];
@@ -405,7 +406,7 @@ function GraphNodeEditor({
       ) : null}
 
       {node.kind === "clip" && !decisionOnly && clipMedia ? (
-        clipGeneration ? (
+        productionCanvas ? (
           <Tabs
             key={clipMedia.clip?.graphNodeId ?? node.nodeId}
             defaultValue="upload"
@@ -415,15 +416,15 @@ function GraphNodeEditor({
               <TabsTrigger value="upload" className="flex-1">
                 {t("inspector.media.tabUpload")}
               </TabsTrigger>
-              <TabsTrigger value="generate" className="flex-1">
-                {t("inspector.media.tabGenerate")}
+              <TabsTrigger value="production" className="flex-1">
+                {t("inspector.media.tabProduction")}
               </TabsTrigger>
             </TabsList>
             <TabsContent value="upload">
               <StoryClipMediaPanel {...clipMedia} />
             </TabsContent>
-            <TabsContent value="generate">
-              <StoryClipGenerationForm {...clipGeneration} />
+            <TabsContent value="production">
+              <StoryProductionCanvasEntry {...productionCanvas} />
             </TabsContent>
           </Tabs>
         ) : (
@@ -939,6 +940,7 @@ function CharacterImagesEditor({
               ) : null}
             </div>
             <ImageLabelInput
+              key={image.label}
               label={image.label}
               index={index}
               canEdit={canEdit}
@@ -1007,14 +1009,6 @@ function CharacterVoiceEditor({
   const waveRef = useRef<HTMLButtonElement>(null);
   const voice = character.voice;
   const peaks = useVoiceWaveformPeaks(voice?.url ?? null);
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, []);
 
   const stopProgressLoop = () => {
     if (rafRef.current !== null) {
@@ -1123,6 +1117,14 @@ function CharacterVoiceEditor({
       if (inputRef.current) inputRef.current.value = "";
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
 
   return (
     <section aria-labelledby="story-character-voice-title">
@@ -1244,7 +1246,6 @@ function ImageLabelInput({
 }) {
   const t = useTranslations("storyStudio.canvas.world.characters");
   const [draft, setDraft] = useState(label);
-  useEffect(() => setDraft(label), [label]);
 
   const commit = () => {
     const normalized = draft.trim().slice(0, MAX_IMAGE_LABEL_LENGTH);
@@ -1305,10 +1306,9 @@ const FALLBACK_WAVEFORM_PEAKS = Array.from(
  * (CORS, unsupported codec, no Web Audio) leaves the fallback bars in place.
  */
 function useVoiceWaveformPeaks(url: string | null): number[] | null {
-  const [peaks, setPeaks] = useState<number[] | null>(null);
+  const [result, setResult] = useState<{ url: string; peaks: number[] } | null>(null);
 
   useEffect(() => {
-    setPeaks(null);
     if (!url) return;
     let cancelled = false;
     void (async () => {
@@ -1337,7 +1337,9 @@ function useVoiceWaveformPeaks(url: string | null): number[] | null {
             raw.push(peak);
           }
           const highest = Math.max(...raw, 0.001);
-          if (!cancelled) setPeaks(raw.map((value) => value / highest));
+          if (!cancelled) {
+            setResult({ url, peaks: raw.map((value) => value / highest) });
+          }
         } finally {
           void context.close();
         }
@@ -1350,7 +1352,7 @@ function useVoiceWaveformPeaks(url: string | null): number[] | null {
     };
   }, [url]);
 
-  return peaks;
+  return result?.url === url ? result.peaks : null;
 }
 
 /** Default look name = the file name stem, falling back to a numbered ref. */

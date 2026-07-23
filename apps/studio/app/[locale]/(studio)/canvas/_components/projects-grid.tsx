@@ -40,7 +40,7 @@ import {
   type ProjectRef,
 } from "@/lib/collab/projects-api";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 
 function timeAgo(input: string | number, t: ReturnType<typeof useTranslations>): string {
   const ms = typeof input === "number" ? input : Date.parse(input);

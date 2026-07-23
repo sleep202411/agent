@@ -31,6 +31,7 @@ export function StoryCanvasAssistantLayer({
   onOpenChange,
   agentRunController,
   canManageAgentRuns = false,
+  suspended = false,
   children,
 }: {
   projectId: string;
@@ -41,6 +42,8 @@ export function StoryCanvasAssistantLayer({
   onOpenChange: (open: boolean) => void;
   agentRunController: StoryAgentRunController;
   canManageAgentRuns?: boolean;
+  /** Keeps this canvas mounted while a deeper authoring canvas is active. */
+  suspended?: boolean;
   children?: ReactNode;
 }) {
   const session = useStoryCanvasAssistantSession({ projectId, chapterId, workspaceId });
@@ -59,7 +62,14 @@ export function StoryCanvasAssistantLayer({
   }, [onOpenChange, open, session.recoveredMessage]);
 
   return (
-    <div className="flex h-full w-full">
+    <div
+      aria-hidden={suspended ? true : undefined}
+      inert={suspended ? true : undefined}
+      className={cn(
+        "flex h-full w-full origin-center transition-[opacity,transform] duration-300 ease-out",
+        suspended && "pointer-events-none scale-[0.985] opacity-0"
+      )}
+    >
       <div className="relative h-full min-w-0 flex-1">
         {children}
         {showProjectLauncher && !open ? (

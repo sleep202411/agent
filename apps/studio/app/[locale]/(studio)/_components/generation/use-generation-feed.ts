@@ -16,8 +16,8 @@ import {
   type FizzAiJobType,
   type FizzAiJobView,
   type FizzAiSubmitJobInput,
-} from "@/app/[locale]/canvas/_lib/generation-api";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+} from "@/lib/canvas-authoring/generation-api";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { charactersKeys } from "@/app/[locale]/(studio)/characters/_lib/use-characters";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";

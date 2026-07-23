@@ -8,8 +8,12 @@ import { cn } from "@/lib/utils";
 import { useDocumentComments } from "@/lib/collab/use-comments";
 import type { CommentThreadDto } from "@/lib/collab/comments-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
-import { FLOATING_PANEL } from "./node-toolbar";
-import { CommentsContext, useComments, type CommentsContextValue } from "./comments-context";
+import { FLOATING_PANEL } from "@/components/canvas/authoring/node-toolbar";
+import {
+  CommentsContext,
+  useComments,
+  type CommentsContextValue,
+} from "@/components/canvas/authoring/comments-context";
 
 function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): string {
   const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
@@ -49,6 +53,7 @@ export function CommentsProvider({
   }
 
   const value: CommentsContextValue = {
+    enabled: true,
     activeNodeId,
     toggle: (nodeId) => setActiveNodeId((cur) => (cur === nodeId ? null : nodeId)),
     close: () => setActiveNodeId(null),

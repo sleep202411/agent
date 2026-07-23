@@ -7,7 +7,7 @@ import {
   type StoryAgentRunDto,
   type StoryAgentRunStatus,
 } from "@repo/shared/story-agent";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import {
   cancelStoryAgentRun,
   confirmStoryAgentRun,

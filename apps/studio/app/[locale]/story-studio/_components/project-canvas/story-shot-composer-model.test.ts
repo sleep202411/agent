@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FizzAiCatalog, FizzAiModel } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiCatalog, FizzAiModel } from "@/lib/canvas-authoring/generation-api";
 import type {
   StoryReferenceKind,
   StoryReferenceSlot,
