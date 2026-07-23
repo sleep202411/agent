@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
+import { useEvent } from "expo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -517,7 +518,7 @@ export default function IpDetailScreen() {
         <View style={[styles.backdrop, playing && styles.backdropPlaying]}>
           {playing ? (
             <View style={[styles.videoBox, { top: insets.top + 44 }]}>
-              <InlineVideo url={playing.url} />
+              <InlineVideo key={playing.url} url={playing.url} />
             </View>
           ) : (
             <>
@@ -747,18 +748,39 @@ export default function IpDetailScreen() {
 }
 
 function InlineVideo({ url }: { url: string }) {
+  const t = useTranslations();
   // Native player (expo-video) — autoplays, native controls incl. a fullscreen
   // button; the parent box already insets below the status bar.
   const player = useVideoPlayer(url, (instance) => {
     instance.play();
   });
+  const { status } = useEvent(player, "statusChange", { status: player.status });
+  // `idle`/`loading` cover first open + mid-playback rebuffer; hide once
+  // frames are ready. Playback errors stay on the native player UI.
+  const showLoading = status === "idle" || status === "loading";
+
   return (
-    <VideoView
-      style={StyleSheet.absoluteFill}
-      player={player}
-      contentFit="contain"
-      nativeControls
-    />
+    <View style={StyleSheet.absoluteFill}>
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        contentFit="contain"
+        nativeControls
+      />
+      {showLoading ? (
+        <View
+          accessibilityLabel={t("ipDetail.videoLoading")}
+          accessibilityRole="progressbar"
+          pointerEvents="none"
+          style={styles.videoStatusOverlay}
+        >
+          <ActivityIndicator color="#FFFFFF" />
+          <ThemedText type="small" style={styles.videoStatusText}>
+            {t("ipDetail.videoLoading")}
+          </ThemedText>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -947,6 +969,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  videoStatusOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.two,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  videoStatusText: {
+    color: "#FFFFFF",
+    textAlign: "center",
+    paddingHorizontal: Spacing.five,
   },
   topBar: {
     flexDirection: "row",

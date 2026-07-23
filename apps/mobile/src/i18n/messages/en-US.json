@@ -320,6 +320,7 @@
   "mine.guestBody": "Sign in to see your works, IPs, and crews.",
   "ipDetail.close": "Close",
   "ipDetail.trailer": "Trailer",
+  "ipDetail.videoLoading": "Loading video…",
   "report.moreActions": "More options",
   "report.reportAction": "Report content",
   "ipDetail.blockAction": "Block this work",

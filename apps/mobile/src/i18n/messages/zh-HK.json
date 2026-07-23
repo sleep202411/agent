@@ -320,6 +320,7 @@
   "mine.guestBody": "登入後查看你的作品、IP 與劇組。",
   "ipDetail.close": "關閉",
   "ipDetail.trailer": "推廣片",
+  "ipDetail.videoLoading": "影片載入中…",
   "report.moreActions": "更多操作",
   "report.reportAction": "舉報內容",
   "ipDetail.blockAction": "屏蔽該作品",
