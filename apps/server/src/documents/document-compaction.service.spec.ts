@@ -6,6 +6,7 @@ const CANVAS_SCHEMA = {
   meta: 'map',
   nodes: 'map',
   edges: 'map',
+  groups: 'map',
   assets: 'map',
 } as const;
 
@@ -36,9 +37,9 @@ function buildOps(count: number): OpRow[] {
 function expectedSnapshot(count: number): Record<string, unknown> {
   const meta: Record<string, number> = {};
   for (let i = 1; i <= count; i += 1) meta[`k${i}`] = i;
-  // The canvas root schema declares meta/nodes/edges/assets; unused roots
+  // The canvas root schema declares meta/nodes/edges/groups/assets; unused roots
   // materialize as empty maps.
-  return { meta, nodes: {}, edges: {}, assets: {} };
+  return { meta, nodes: {}, edges: {}, groups: {}, assets: {} };
 }
 
 interface DocState {

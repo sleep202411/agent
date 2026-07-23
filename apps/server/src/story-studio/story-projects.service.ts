@@ -7,6 +7,10 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetStatus,
+  MediaAssetVariantStatus,
   Prisma,
   StoryFormat,
   StoryProjectMemberRole,
@@ -27,10 +31,13 @@ import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
+  EMPTY_STORY_PRODUCTION_CANVAS_CONTENT,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
   STORY_WORLD_CANVAS_NODE_ID,
   StoryCanvasNodePositionsSchema,
+  StoryProductionCanvasContentSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
   type CreateStoryChapterInput,
@@ -46,9 +53,12 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
+  type PutStoryProductionCanvasInput,
   type StoryCapability,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
+  type StoryCandidateAssetDto,
+  type StoryProductionCanvasDto,
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
@@ -174,6 +184,36 @@ type StoryMediaAssetRow = Prisma.MediaAssetGetPayload<{
   };
 }>;
 
+const STORY_CANDIDATE_ASSET_INCLUDE =
+  Prisma.validator<Prisma.StoryCandidateAssetInclude>()({
+    asset: {
+      include: {
+        placements: true,
+        variants: {
+          where: {
+            variantKey: 'original',
+            status: MediaAssetVariantStatus.ready,
+            contentType: { startsWith: 'video/' },
+            checksumSha256: { not: null },
+            width: { gt: 0 },
+            height: { gt: 0 },
+            durationMs: { gt: 0 },
+            deletedAt: null,
+          },
+          take: 1,
+          include: { placements: true },
+          orderBy: [{ variantKey: 'asc' }, { id: 'asc' }],
+        },
+      },
+    },
+  });
+
+type StoryCandidateAssetRow = Prisma.StoryCandidateAssetGetPayload<{
+  include: typeof STORY_CANDIDATE_ASSET_INCLUDE;
+}>;
+
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+
 interface ProjectCursor {
   id: string;
   updatedAt: string;
@@ -234,6 +274,14 @@ export class StoryProjectsService {
               content:
                 EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
               contentHash,
+              updatedByUserId: user.userId,
+            },
+          },
+          productionCanvas: {
+            create: {
+              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+              content:
+                EMPTY_STORY_PRODUCTION_CANVAS_CONTENT as Prisma.InputJsonObject,
               updatedByUserId: user.userId,
             },
           },
@@ -923,6 +971,175 @@ export class StoryProjectsService {
     return this.toCanvasLayout(layout);
   }
 
+  async getProductionCanvas(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+  ): Promise<StoryProductionCanvasDto> {
+    await this.requireScopedProject(
+      user,
+      workspaceId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    const canvas = await this.prisma.storyProductionCanvas.findUnique({
+      where: { storyProjectId: projectId },
+    });
+    if (!canvas) throwProductionCanvasNotFound();
+    return this.toProductionCanvas(canvas);
+  }
+
+  async putProductionCanvas(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    input: PutStoryProductionCanvasInput,
+  ): Promise<StoryProductionCanvasDto> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+
+    const canvas = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const updated = await tx.storyProductionCanvas.update({
+        where: { storyProjectId: projectId },
+        data: {
+          schemaVersion: input.schemaVersion,
+          content: input.content as Prisma.InputJsonObject,
+          updatedByUserId: user.userId,
+          updatedBySessionId: input.sessionId,
+        },
+      });
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { updatedAt: new Date() },
+      });
+      return updated;
+    });
+
+    return this.toProductionCanvas(canvas);
+  }
+
+  async listCandidateAssets(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+  ): Promise<StoryCandidateAssetDto[]> {
+    await this.requireScopedProject(
+      user,
+      workspaceId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    const rows = await this.prisma.storyCandidateAsset.findMany({
+      where: {
+        storyProjectId: projectId,
+        asset: {
+          is: {
+            status: MediaAssetStatus.ready,
+            moderationStatus: { not: MediaAssetModerationStatus.blocked },
+            deletedAt: null,
+            kind: {
+              in: [
+                MediaAssetKind.image,
+                MediaAssetKind.video,
+                MediaAssetKind.audio,
+              ],
+            },
+          },
+        },
+      },
+      include: STORY_CANDIDATE_ASSET_INCLUDE,
+      orderBy: [{ addedAt: 'desc' }, { mediaAssetId: 'desc' }],
+    });
+    return rows.map(toCandidateAsset);
+  }
+
+  async addCandidateAsset(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    mediaAssetId: string,
+  ): Promise<StoryCandidateAssetDto> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+
+    const candidate = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const asset = await tx.mediaAsset.findFirst({
+        where: {
+          id: mediaAssetId,
+          workspaceId,
+          status: MediaAssetStatus.ready,
+          moderationStatus: { not: MediaAssetModerationStatus.blocked },
+          deletedAt: null,
+          kind: {
+            in: [
+              MediaAssetKind.image,
+              MediaAssetKind.video,
+              MediaAssetKind.audio,
+            ],
+          },
+        },
+      });
+      if (!asset) {
+        throw new UnprocessableEntityException({
+          code: 'STORY_CANDIDATE_ASSET_INVALID',
+          message:
+            'Candidate media must be a ready image, video, or audio asset in this project workspace.',
+        });
+      }
+      await tx.storyCandidateAsset.upsert({
+        where: {
+          storyProjectId_mediaAssetId: {
+            storyProjectId: projectId,
+            mediaAssetId,
+          },
+        },
+        create: {
+          storyProjectId: projectId,
+          mediaAssetId,
+          addedByUserId: user.userId,
+        },
+        update: {},
+      });
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { updatedAt: new Date() },
+      });
+      return tx.storyCandidateAsset.findUniqueOrThrow({
+        where: {
+          storyProjectId_mediaAssetId: {
+            storyProjectId: projectId,
+            mediaAssetId,
+          },
+        },
+        include: STORY_CANDIDATE_ASSET_INCLUDE,
+      });
+    });
+
+    return toCandidateAsset(candidate);
+  }
+
+  async removeCandidateAsset(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    mediaAssetId: string,
+  ): Promise<{ mediaAssetId: string }> {
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await tx.storyCandidateAsset.deleteMany({
+        where: { storyProjectId: projectId, mediaAssetId },
+      });
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { updatedAt: new Date() },
+      });
+    });
+    return { mediaAssetId };
+  }
+
   async listRevisions(
     user: AuthUser,
     workspaceId: string,
@@ -1576,6 +1793,36 @@ export class StoryProjectsService {
     };
   }
 
+  private toProductionCanvas(row: {
+    storyProjectId: string;
+    schemaVersion: string;
+    content: Prisma.JsonValue;
+    updatedByUserId: string;
+    updatedBySessionId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): StoryProductionCanvasDto {
+    if (row.schemaVersion !== STORY_PRODUCTION_CANVAS_SCHEMA_VERSION) {
+      throw corruptData(
+        'STORY_PRODUCTION_CANVAS_SCHEMA_UNSUPPORTED',
+        'production canvas schema',
+      );
+    }
+    const content = StoryProductionCanvasContentSchema.safeParse(row.content);
+    if (!content.success) {
+      throw corruptData('STORY_PRODUCTION_CANVAS_CORRUPT', 'production canvas');
+    }
+    return {
+      projectId: row.storyProjectId,
+      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+      content: content.data,
+      updatedByUserId: row.updatedByUserId,
+      updatedBySessionId: row.updatedBySessionId,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
   private toRevisionSummary(row: {
     id: string;
     number: number;
@@ -1766,6 +2013,13 @@ function throwCanvasLayoutNotFound(): never {
   });
 }
 
+function throwProductionCanvasNotFound(): never {
+  throw new NotFoundException({
+    code: 'STORY_PRODUCTION_CANVAS_NOT_FOUND',
+    message: 'Story production canvas not found.',
+  });
+}
+
 function throwRevisionNotFound(): never {
   throw new NotFoundException({
     code: 'STORY_REVISION_NOT_FOUND',
@@ -1841,6 +2095,53 @@ function toMediaAsset(row: StoryMediaAssetRow): MediaAssetSummaryDto {
     checksumSha256: row.checksumSha256,
     previewUrl: resolveMediaPublicUrl(row),
   };
+}
+
+function toCandidateAsset(row: StoryCandidateAssetRow): StoryCandidateAssetDto {
+  const videoVariant =
+    row.asset.kind === MediaAssetKind.video
+      ? (row.asset.variants.find(isReusableCandidateVideoVariant) ?? null)
+      : null;
+  return {
+    asset: toMediaAsset(row.asset),
+    videoVariant: videoVariant
+      ? {
+          id: videoVariant.id,
+          variantKey: videoVariant.variantKey,
+          contentType: videoVariant.contentType,
+          width: videoVariant.width,
+          height: videoVariant.height,
+          durationSeconds:
+            videoVariant.durationSeconds ??
+            Math.max(1, Math.ceil(videoVariant.durationMs / 1_000)),
+          checksumSha256: videoVariant.checksumSha256,
+        }
+      : null,
+    addedByUserId: row.addedByUserId,
+    addedAt: row.addedAt.toISOString(),
+  };
+}
+
+function isReusableCandidateVideoVariant(
+  variant: StoryCandidateAssetRow['asset']['variants'][number],
+): variant is StoryCandidateAssetRow['asset']['variants'][number] & {
+  width: number;
+  height: number;
+  durationMs: number;
+  checksumSha256: string;
+} {
+  return (
+    variant.variantKey === 'original' &&
+    variant.status === MediaAssetVariantStatus.ready &&
+    variant.deletedAt === null &&
+    variant.contentType.toLowerCase().startsWith('video/') &&
+    Boolean(
+      variant.checksumSha256 && SHA256_PATTERN.test(variant.checksumSha256),
+    ) &&
+    Boolean(variant.width && variant.width > 0) &&
+    Boolean(variant.height && variant.height > 0) &&
+    Boolean(variant.durationMs && variant.durationMs > 0)
+  );
 }
 
 function projectStoryVideoWorkbench(

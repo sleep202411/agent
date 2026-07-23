@@ -43,7 +43,6 @@ import { StoryProjectWriteGuardService } from './story-project-write-guard.servi
 import {
   StoryVideoRecipeSnapshotSchema,
   type CancelStoryVideoGenerationInput,
-  type CreateStoryClipVideoGenerationInput,
   type CreateStoryTrailerVideoGenerationInput,
   type PutStoryClipVideoSelectionInput,
   type PutStoryTrailerVideoSelectionInput,
@@ -95,7 +94,7 @@ type MediaAssetRow = Prisma.MediaAssetGetPayload<{
 }>;
 
 type DirectRecipeInput = Pick<
-  CreateStoryClipVideoGenerationInput,
+  CreateStoryTrailerVideoGenerationInput,
   'prompt' | 'modelId' | 'mode' | 'durationMs' | 'references' | 'seed'
 >;
 
@@ -146,26 +145,6 @@ export class StoryVideoProductionService {
     private readonly assetUrls: MediaAssetUrlResolverService,
     private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
-
-  async createClipGeneration(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    graphNodeId: string,
-    input: CreateStoryClipVideoGenerationInput,
-    idempotencyKey: string,
-  ): Promise<StoryVideoGenerationDto> {
-    return this.createGeneration(user, workspaceId, projectId, {
-      target: {
-        kind: 'clip',
-        graphNodeId,
-        expectedDraftRevision: input.expectedDraftRevision,
-      },
-      expectedSelectionVersion: input.expectedSelectionVersion,
-      recipe: input,
-      idempotencyKey,
-    });
-  }
 
   async createTrailerGeneration(
     user: AuthUser,
@@ -333,18 +312,10 @@ export class StoryVideoProductionService {
 
     const snapshot = parseRecipeSnapshot(previous.recipeSnapshot);
     const previousTarget = targetFromSelection(previous.selection);
-    assertRetryTarget(previousTarget, input.target);
-    const target: VideoTarget =
-      input.target.kind === 'clip'
-        ? {
-            kind: 'clip',
-            graphNodeId: input.target.graphNodeId,
-            expectedDraftRevision: input.target.expectedDraftRevision,
-          }
-        : { kind: 'trailer' };
+    assertTrailerRetryTarget(previousTarget);
 
     return this.createGeneration(user, workspaceId, projectId, {
-      target,
+      target: { kind: 'trailer' },
       expectedSelectionVersion: input.expectedSelectionVersion,
       recipe: {
         prompt: snapshot.prompt,
@@ -1627,19 +1598,14 @@ function targetFromSelection(selection: {
     : { kind: 'trailer' };
 }
 
-function assertRetryTarget(
+function assertTrailerRetryTarget(
   actual: StoryVideoGenerationDto['target'],
-  requested: RetryStoryVideoGenerationInput['target'],
 ): void {
-  if (
-    actual.kind !== requested.kind ||
-    (actual.kind === 'clip' &&
-      requested.kind === 'clip' &&
-      actual.graphNodeId !== requested.graphNodeId)
-  ) {
+  if (actual.kind !== 'trailer') {
     throw new ConflictException({
       code: 'STORY_RETRY_TARGET_MISMATCH',
-      message: 'A generation can retry only for its original video target.',
+      message:
+        'Clip-direct generation has been retired. Only trailer generations can retry.',
     });
   }
 }

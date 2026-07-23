@@ -27,6 +27,7 @@ const ROOT_SCHEMAS: Partial<Record<PlatformDocumentType, DocumentRootSchema>> =
       meta: 'map',
       nodes: 'map',
       edges: 'map',
+      groups: 'map',
       // Shared asset library (generated + uploaded media), keyed by asset id.
       // MUST match the client's CANVAS_ROOT_SCHEMA.
       assets: 'map',

@@ -1,5 +1,9 @@
 import { ConflictException, HttpException } from '@nestjs/common';
 import {
+  MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetStatus,
+  MediaAssetVariantStatus,
   StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
@@ -13,6 +17,7 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   StoryProjectListQuerySchema,
   type InteractiveStoryDraftContent,
 } from './dto';
@@ -26,6 +31,8 @@ const DRAFT_ID = '0197f4a2-0800-7000-8000-000000000003';
 const REVISION_ID = '0197f4a2-0800-7000-8000-000000000004';
 const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000005';
 const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
+const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000007';
+const MEDIA_VARIANT_ID = '0197f4a2-0800-7000-8000-000000000008';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 
 function lockableDraft(): InteractiveStoryDraftContent {
@@ -141,6 +148,79 @@ function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
     updatedBySessionId: 'canvas-session',
     createdAt: NOW,
     updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function productionCanvasRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyProjectId: PROJECT_ID,
+    schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+    content: { nodes: [], edges: [], assets: [], groups: [] },
+    updatedByUserId: USER.userId,
+    updatedBySessionId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function candidateAssetRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyProjectId: PROJECT_ID,
+    mediaAssetId: MEDIA_ASSET_ID,
+    addedByUserId: USER.userId,
+    addedAt: NOW,
+    asset: {
+      id: MEDIA_ASSET_ID,
+      kind: MediaAssetKind.video,
+      storageProvider: 'external_url',
+      workspaceId: WORKSPACE_ID,
+      bucket: null,
+      region: null,
+      objectKey: null,
+      externalUrl: 'https://media.example/candidate.mp4',
+      contentType: 'video/mp4',
+      sizeBytes: BigInt(1024),
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: 'asset-checksum',
+      visibility: 'public',
+      status: MediaAssetStatus.ready,
+      source: 'generated',
+      moderationStatus: MediaAssetModerationStatus.approved,
+      moderationReason: null,
+      moderatedByAdminId: null,
+      moderatedAt: null,
+      metadata: {},
+      createdByUserId: USER.userId,
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+      placements: [],
+      variants: [
+        {
+          id: MEDIA_VARIANT_ID,
+          assetId: MEDIA_ASSET_ID,
+          variantKey: 'original',
+          kind: 'original',
+          status: MediaAssetVariantStatus.ready,
+          contentType: 'video/mp4',
+          sizeBytes: BigInt(1024),
+          width: 1920,
+          height: 1080,
+          durationSeconds: 12,
+          durationMs: 12_000,
+          checksumSha256: 'a'.repeat(64),
+          metadata: {},
+          createdAt: NOW,
+          updatedAt: NOW,
+          deletedAt: null,
+          placements: [],
+        },
+      ],
+    },
     ...overrides,
   };
 }
@@ -284,6 +364,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           format: StoryFormat;
           frameProfile: unknown;
           draft: { create: { schemaVersion: string; content: unknown } };
+          productionCanvas: {
+            create: { schemaVersion: string; content: unknown };
+          };
         };
       }) => {
         expect(input.data).toMatchObject({
@@ -292,6 +375,12 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
             create: {
               schemaVersion: 'interactive-story-draft-v1',
               content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+            },
+          },
+          productionCanvas: {
+            create: {
+              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+              content: { nodes: [], edges: [], assets: [], groups: [] },
             },
           },
         });
@@ -340,12 +429,19 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       (input: {
         data: {
           draft: { create: { schemaVersion: string; content: unknown } };
+          productionCanvas: {
+            create: { schemaVersion: string; content: unknown };
+          };
           writeState: { create: Record<string, never> };
         };
       }) => {
         expect(input.data.draft.create).toMatchObject({
           schemaVersion: 'interactive-story-draft-v1',
           content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        });
+        expect(input.data.productionCanvas.create).toMatchObject({
+          schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+          content: { nodes: [], edges: [], assets: [], groups: [] },
         });
         expect(input.data.writeState).toEqual({ create: {} });
         return Promise.resolve(project);
@@ -421,6 +517,248 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       'references',
       'video',
     ]);
+  });
+
+  it('loads the one project-owned production canvas with read permission', async () => {
+    const row = productionCanvasRow();
+    const findUnique = jest.fn().mockResolvedValue(row);
+    const { service, permissions } = serviceWith({
+      storyProductionCanvas: { findUnique },
+    });
+
+    await expect(
+      service.getProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID),
+    ).resolves.toEqual({
+      projectId: PROJECT_ID,
+      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+      content: { nodes: [], edges: [], assets: [], groups: [] },
+      updatedByUserId: USER.userId,
+      updatedBySessionId: null,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    });
+    expect(permissions.requireProject).toHaveBeenCalledWith(
+      USER.userId,
+      PROJECT_ID,
+      'story.read',
+      { allowArchived: true },
+    );
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
+    });
+  });
+
+  it('persists production canvas content with last-write-wins semantics', async () => {
+    const content = {
+      nodes: [
+        {
+          id: 'note-1',
+          type: 'note' as const,
+          position: { x: 10, y: 20 },
+          data: { text: 'continuity notes' },
+        },
+        {
+          id: 'note-2',
+          type: 'note' as const,
+          position: { x: 360, y: 20 },
+          data: { text: 'camera notes' },
+        },
+      ],
+      edges: [],
+      assets: [],
+      groups: [
+        {
+          id: 'group-1',
+          nodeIds: ['note-1', 'note-2'],
+          color: 'blue' as const,
+        },
+      ],
+    };
+    const updated = productionCanvasRow({
+      content,
+      updatedBySessionId: 'canvas-session',
+    });
+    const tx = {
+      storyProductionCanvas: {
+        update: jest.fn().mockResolvedValue(updated),
+      },
+      storyProject: {
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const { service, writeGuard } = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    await expect(
+      service.putProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+        content,
+        sessionId: 'canvas-session',
+      }),
+    ).resolves.toMatchObject({ projectId: PROJECT_ID, content });
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyProductionCanvas.update).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
+      data: {
+        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+        content,
+        updatedByUserId: USER.userId,
+        updatedBySessionId: 'canvas-session',
+      },
+    });
+  });
+
+  it('curates durable workspace media independently from canvas layout', async () => {
+    const candidate = candidateAssetRow();
+    const listFindMany = jest.fn().mockResolvedValue([candidate]);
+    const listHarness = serviceWith({
+      storyCandidateAsset: { findMany: listFindMany },
+    });
+
+    const listed = await listHarness.service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.asset).toMatchObject({
+      id: MEDIA_ASSET_ID,
+      kind: 'video',
+      previewUrl: 'https://media.example/candidate.mp4',
+    });
+    expect(listed[0]?.videoVariant).toMatchObject({
+      id: MEDIA_VARIANT_ID,
+      variantKey: 'original',
+      checksumSha256: 'a'.repeat(64),
+    });
+    expect(listFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          storyProjectId: PROJECT_ID,
+          asset: {
+            is: {
+              status: MediaAssetStatus.ready,
+              moderationStatus: {
+                not: MediaAssetModerationStatus.blocked,
+              },
+              deletedAt: null,
+              kind: {
+                in: [
+                  MediaAssetKind.image,
+                  MediaAssetKind.video,
+                  MediaAssetKind.audio,
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue(candidate.asset),
+      },
+      storyCandidateAsset: {
+        upsert: jest.fn().mockResolvedValue({}),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(candidate),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      storyProject: {
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const mutationHarness = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    await expect(
+      mutationHarness.service.addCandidateAsset(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        MEDIA_ASSET_ID,
+      ),
+    ).resolves.toMatchObject({ asset: { id: MEDIA_ASSET_ID } });
+    await expect(
+      mutationHarness.service.removeCandidateAsset(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        MEDIA_ASSET_ID,
+      ),
+    ).resolves.toEqual({ mediaAssetId: MEDIA_ASSET_ID });
+    expect(tx.storyCandidateAsset.upsert).toHaveBeenCalledWith({
+      where: {
+        storyProjectId_mediaAssetId: {
+          storyProjectId: PROJECT_ID,
+          mediaAssetId: MEDIA_ASSET_ID,
+        },
+      },
+      create: {
+        storyProjectId: PROJECT_ID,
+        mediaAssetId: MEDIA_ASSET_ID,
+        addedByUserId: USER.userId,
+      },
+      update: {},
+    });
+    expect(tx.storyCandidateAsset.deleteMany).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: PROJECT_ID,
+        mediaAssetId: MEDIA_ASSET_ID,
+      },
+    });
+  });
+
+  it('does not expose an incomplete video variant as clip-bindable', async () => {
+    const candidate = candidateAssetRow();
+    candidate.asset.variants[0].durationMs = 0;
+    const { service } = serviceWith({
+      storyCandidateAsset: {
+        findMany: jest.fn().mockResolvedValue([candidate]),
+      },
+    });
+
+    const result = await service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.asset.id).toBe(MEDIA_ASSET_ID);
+    expect(result[0]?.videoVariant).toBeNull();
+  });
+
+  it('derives candidate display seconds from exact millisecond metadata', async () => {
+    const source = candidateAssetRow();
+    const candidate = {
+      ...source,
+      asset: {
+        ...source.asset,
+        variants: source.asset.variants.map((variant) => ({
+          ...variant,
+          durationSeconds: null,
+        })),
+      },
+    };
+    const { service } = serviceWith({
+      storyCandidateAsset: {
+        findMany: jest.fn().mockResolvedValue([candidate]),
+      },
+    });
+
+    const result = await service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(result[0]?.videoVariant?.durationSeconds).toBe(12);
   });
 
   it('creates a real chapter together with its own empty canvas layout', async () => {

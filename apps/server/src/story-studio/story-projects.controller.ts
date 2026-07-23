@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -24,8 +25,10 @@ import {
   PatchStoryChapterSchema,
   PutStoryCanvasLayoutSchema,
   PutStoryDraftSchema,
+  PutStoryProductionCanvasSchema,
   StoryProjectIdParamsSchema,
   StoryChapterParamsSchema,
+  StoryCandidateAssetParamsSchema,
   StoryProjectListQuerySchema,
   StoryRevisionListQuerySchema,
   StoryRevisionParamsSchema,
@@ -40,8 +43,10 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
+  type PutStoryProductionCanvasInput,
   type StoryProjectIdParams,
   type StoryChapterParams,
+  type StoryCandidateAssetParams,
   type StoryProjectListQuery,
   type StoryRevisionListQuery,
   type StoryRevisionParams,
@@ -235,6 +240,106 @@ export class StoryProjectsController {
         params.projectId,
         body,
         params.chapterId,
+      ),
+    };
+  }
+
+  @Get(':projectId/production-canvas')
+  async getProductionCanvas(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.getProductionCanvas(
+        user,
+        workspaceId,
+        params.projectId,
+      ),
+    };
+  }
+
+  @Put(':projectId/production-canvas')
+  async putProductionCanvas(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PutStoryProductionCanvasSchema))
+    body: PutStoryProductionCanvasInput,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.putProductionCanvas(
+        user,
+        workspaceId,
+        params.projectId,
+        body,
+      ),
+    };
+  }
+
+  @Get(':projectId/candidate-assets')
+  async listCandidateAssets(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.listCandidateAssets(
+        user,
+        workspaceId,
+        params.projectId,
+      ),
+    };
+  }
+
+  @Put(':projectId/candidate-assets/:mediaAssetId')
+  async addCandidateAsset(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryCandidateAssetParamsSchema))
+    params: StoryCandidateAssetParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.addCandidateAsset(
+        user,
+        workspaceId,
+        params.projectId,
+        params.mediaAssetId,
+      ),
+    };
+  }
+
+  @Delete(':projectId/candidate-assets/:mediaAssetId')
+  async removeCandidateAsset(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryCandidateAssetParamsSchema))
+    params: StoryCandidateAssetParams,
+  ) {
+    const workspaceId = requiredWorkspaceId(workspaceHeader);
+    return {
+      code: 200,
+      data: await this.storyProjects.removeCandidateAsset(
+        user,
+        workspaceId,
+        params.projectId,
+        params.mediaAssetId,
       ),
     };
   }

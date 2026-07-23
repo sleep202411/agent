@@ -15,8 +15,14 @@ import {
   type StoryReferenceReviewDecision,
   type StoryReferenceSlotSpec,
 } from './interactive-film.schema';
+import {
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+  StoryProductionCanvasContentSchema,
+  type StoryProductionCanvasContent,
+} from './story-production-canvas.schema';
 
 export * from './interactive-film.schema';
+export * from './story-production-canvas.schema';
 
 /** Product-level Story Studio contracts shared by cinematic and narrative profiles. */
 
@@ -151,6 +157,16 @@ export const StoryProjectIdParamsSchema = z
   .object({ projectId: StoryUuidSchema })
   .strict();
 export type StoryProjectIdParams = z.infer<typeof StoryProjectIdParamsSchema>;
+
+export const StoryCandidateAssetParamsSchema = z
+  .object({
+    projectId: StoryUuidSchema,
+    mediaAssetId: StoryUuidSchema,
+  })
+  .strict();
+export type StoryCandidateAssetParams = z.infer<
+  typeof StoryCandidateAssetParamsSchema
+>;
 
 export const StoryChapterParamsSchema = z
   .object({ projectId: StoryUuidSchema, chapterId: StoryUuidSchema })
@@ -411,6 +427,17 @@ export type PutStoryCanvasLayoutInput = z.infer<
   typeof PutStoryCanvasLayoutSchema
 >;
 
+export const PutStoryProductionCanvasSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_PRODUCTION_CANVAS_SCHEMA_VERSION),
+    content: StoryProductionCanvasContentSchema,
+    sessionId: SessionIdSchema,
+  })
+  .strict();
+export type PutStoryProductionCanvasInput = z.infer<
+  typeof PutStoryProductionCanvasSchema
+>;
+
 export const LockStoryRevisionSchema = z
   .object({
     expectedDraftRevision: NonNegativeVersionSchema,
@@ -605,6 +632,23 @@ export interface MediaAssetSummaryDto {
   previewUrl: string | null;
 }
 
+export interface StoryCandidateAssetVideoVariantDto {
+  id: string;
+  variantKey: string;
+  contentType: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  checksumSha256: string | null;
+}
+
+export interface StoryCandidateAssetDto {
+  asset: MediaAssetSummaryDto;
+  videoVariant: StoryCandidateAssetVideoVariantDto | null;
+  addedByUserId: string;
+  addedAt: string;
+}
+
 export interface StoryProjectVideoLibraryItemDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
@@ -710,6 +754,16 @@ export interface StoryCanvasLayoutDto {
   nodePositions: StoryCanvasNodePositions;
   storyWorldNodePresent: boolean;
   revision: number;
+  updatedByUserId: string;
+  updatedBySessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoryProductionCanvasDto {
+  projectId: string;
+  schemaVersion: typeof STORY_PRODUCTION_CANVAS_SCHEMA_VERSION;
+  content: StoryProductionCanvasContent;
   updatedByUserId: string;
   updatedBySessionId: string | null;
   createdAt: string;

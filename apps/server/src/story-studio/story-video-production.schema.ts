@@ -106,18 +106,6 @@ function validateReferencePlan(
   }
 }
 
-export const CreateStoryClipVideoGenerationSchema = z
-  .object({
-    expectedDraftRevision: z.number().int().nonnegative(),
-    expectedSelectionVersion: z.number().int().nonnegative(),
-    ...StoryVideoRecipeInputFields,
-  })
-  .strict()
-  .superRefine(validateReferencePlan);
-export type CreateStoryClipVideoGenerationInput = z.infer<
-  typeof CreateStoryClipVideoGenerationSchema
->;
-
 export const CreateStoryTrailerVideoGenerationSchema = z
   .object({
     expectedSelectionVersion: z.number().int().nonnegative(),
@@ -140,16 +128,6 @@ export const RetryStoryVideoGenerationSchema = z
   .object({
     expectedGenerationVersion: z.number().int().nonnegative(),
     expectedSelectionVersion: z.number().int().nonnegative(),
-    target: z.discriminatedUnion('kind', [
-      z
-        .object({
-          kind: z.literal('clip'),
-          graphNodeId: z.string().trim().min(1).max(128),
-          expectedDraftRevision: z.number().int().nonnegative(),
-        })
-        .strict(),
-      z.object({ kind: z.literal('trailer') }).strict(),
-    ]),
   })
   .strict();
 export type RetryStoryVideoGenerationInput = z.infer<

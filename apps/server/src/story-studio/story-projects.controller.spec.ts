@@ -4,6 +4,7 @@ const USER = { userId: 'user-1' };
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000003';
+const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000004';
 
 describe('StoryProjectsController chapters', () => {
   it('creates a chapter inside the tenant-scoped project', async () => {
@@ -118,6 +119,91 @@ describe('StoryProjectsController chapters', () => {
       WORKSPACE_ID,
       PROJECT_ID,
       CHAPTER_ID,
+    );
+  });
+
+  it('reads the project-wide production canvas without chapter context', async () => {
+    const canvas = {
+      projectId: PROJECT_ID,
+      schemaVersion: 'story-production-canvas-v2',
+      content: { nodes: [], edges: [], assets: [], groups: [] },
+    };
+    const service = {
+      getProductionCanvas: jest.fn().mockResolvedValue(canvas),
+    };
+    const controller = new StoryProjectsController(service as never);
+
+    await expect(
+      controller.getProductionCanvas(USER as never, WORKSPACE_ID, {
+        projectId: PROJECT_ID,
+      }),
+    ).resolves.toEqual({ code: 200, data: canvas });
+    expect(service.getProductionCanvas).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+  });
+
+  it('persists the complete project-wide production canvas document', async () => {
+    const body = {
+      schemaVersion: 'story-production-canvas-v2' as const,
+      content: { nodes: [], edges: [], assets: [], groups: [] },
+      sessionId: 'session-1',
+    };
+    const service = {
+      putProductionCanvas: jest.fn().mockResolvedValue({
+        projectId: PROJECT_ID,
+        ...body,
+      }),
+    };
+    const controller = new StoryProjectsController(service as never);
+
+    await controller.putProductionCanvas(
+      USER as never,
+      WORKSPACE_ID,
+      { projectId: PROJECT_ID },
+      body,
+    );
+    expect(service.putProductionCanvas).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      body,
+    );
+  });
+
+  it('adds and removes candidate media at project scope', async () => {
+    const candidate = { asset: { id: MEDIA_ASSET_ID, kind: 'video' } };
+    const service = {
+      addCandidateAsset: jest.fn().mockResolvedValue(candidate),
+      removeCandidateAsset: jest
+        .fn()
+        .mockResolvedValue({ mediaAssetId: MEDIA_ASSET_ID }),
+    };
+    const controller = new StoryProjectsController(service as never);
+    const params = { projectId: PROJECT_ID, mediaAssetId: MEDIA_ASSET_ID };
+
+    await expect(
+      controller.addCandidateAsset(USER as never, WORKSPACE_ID, params),
+    ).resolves.toEqual({ code: 200, data: candidate });
+    await expect(
+      controller.removeCandidateAsset(USER as never, WORKSPACE_ID, params),
+    ).resolves.toEqual({
+      code: 200,
+      data: { mediaAssetId: MEDIA_ASSET_ID },
+    });
+    expect(service.addCandidateAsset).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      MEDIA_ASSET_ID,
+    );
+    expect(service.removeCandidateAsset).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      MEDIA_ASSET_ID,
     );
   });
 });

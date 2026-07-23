@@ -22,11 +22,9 @@ import {
 import { StoryVideoProductionService } from './story-video-production.service';
 import {
   CancelStoryVideoGenerationSchema,
-  CreateStoryClipVideoGenerationSchema,
   PutStoryClipVideoSelectionSchema,
   RetryStoryVideoGenerationSchema,
   type CancelStoryVideoGenerationInput,
-  type CreateStoryClipVideoGenerationInput,
   type PutStoryClipVideoSelectionInput,
   type RetryStoryVideoGenerationInput,
 } from './story-video-production.schema';
@@ -34,32 +32,6 @@ import {
 @Controller('story-projects')
 export class StoryVideoProductionController {
   constructor(private readonly production: StoryVideoProductionService) {}
-
-  @Post(':projectId/clips/:graphNodeId/generations')
-  @HttpCode(HttpStatus.CREATED)
-  async createGeneration(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Headers('idempotency-key')
-    idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryClipVideoParamsSchema))
-    params: StoryClipVideoParams,
-    @Body(new ZodValidationPipe(CreateStoryClipVideoGenerationSchema))
-    body: CreateStoryClipVideoGenerationInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.createClipGeneration(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.graphNodeId,
-        body,
-        requiredIdempotencyKey(idempotencyHeader),
-      ),
-    };
-  }
 
   @Get(':projectId/generations/:generationId')
   async getGeneration(

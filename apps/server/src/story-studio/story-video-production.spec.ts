@@ -1,8 +1,9 @@
 import { StoryVideoGenerationAttemptStatus } from '@prisma/client';
 import { StoryVideoProductionService } from './story-video-production.service';
 import {
-  CreateStoryClipVideoGenerationSchema,
+  CreateStoryTrailerVideoGenerationSchema,
   PutStoryClipVideoSelectionSchema,
+  RetryStoryVideoGenerationSchema,
   StoryVideoSnapshotEntrySchema,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
@@ -15,11 +16,10 @@ const SELECTION_ID = '0197f4a2-0800-7000-8000-000000000003';
 const GENERATION_A_ID = '0197f4a2-0800-7000-8000-000000000004';
 const GENERATION_B_ID = '0197f4a2-0800-7000-8000-000000000005';
 
-describe('direct Story video request schemas', () => {
-  it('accepts one complete clip recipe without a stored director card', () => {
+describe('Story video request schemas', () => {
+  it('accepts one complete trailer recipe without a stored director card', () => {
     expect(
-      CreateStoryClipVideoGenerationSchema.parse({
-        expectedDraftRevision: 4,
+      CreateStoryTrailerVideoGenerationSchema.parse({
         expectedSelectionVersion: 2,
         prompt: 'Follow the protagonist through the moon gate.',
         modelId: 'seedance-2-0',
@@ -28,7 +28,6 @@ describe('direct Story video request schemas', () => {
         references: [],
       }),
     ).toEqual({
-      expectedDraftRevision: 4,
       expectedSelectionVersion: 2,
       prompt: 'Follow the protagonist through the moon gate.',
       modelId: 'seedance-2-0',
@@ -48,8 +47,7 @@ describe('direct Story video request schemas', () => {
       }).success,
     ).toBe(false);
     expect(
-      CreateStoryClipVideoGenerationSchema.safeParse({
-        expectedDraftRevision: 4,
+      CreateStoryTrailerVideoGenerationSchema.safeParse({
         expectedSelectionVersion: 2,
         prompt: 'A direct prompt.',
         modelId: 'seedance-2-0',
@@ -57,6 +55,29 @@ describe('direct Story video request schemas', () => {
         durationMs: 10_000,
         references: [],
         retiredRecipeEnvelope: { title: 'retired' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects retrying a retired clip-direct generation path', () => {
+    expect(
+      RetryStoryVideoGenerationSchema.parse({
+        expectedGenerationVersion: 1,
+        expectedSelectionVersion: 2,
+      }),
+    ).toEqual({
+      expectedGenerationVersion: 1,
+      expectedSelectionVersion: 2,
+    });
+    expect(
+      RetryStoryVideoGenerationSchema.safeParse({
+        expectedGenerationVersion: 1,
+        expectedSelectionVersion: 2,
+        target: {
+          kind: 'clip',
+          graphNodeId: 'scene-opening',
+          expectedDraftRevision: 4,
+        },
       }).success,
     ).toBe(false);
   });
