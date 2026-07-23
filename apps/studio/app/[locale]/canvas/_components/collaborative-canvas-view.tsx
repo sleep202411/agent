@@ -26,7 +26,7 @@ import { CopilotPanel } from "./copilot/copilot-panel";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
-const CREATIVE_UPLOAD_KINDS = ["image"] as const;
+const CREATIVE_UPLOAD_KINDS = ["image", "video"] as const;
 
 function toCanvasUser(user: AuthUser | null, guestName: string): CanvasUser | null {
   if (!user) return null;

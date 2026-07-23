@@ -64,14 +64,34 @@ const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly UploadMe
   "generate-video": ["image", "video", "audio"],
 };
 
-function mediaKind(file: File, accepted: ReadonlySet<UploadMediaKind>): UploadMediaKind | null {
-  const kind = file.type.startsWith("image/")
-    ? "image"
-    : file.type.startsWith("video/")
-      ? "video"
-      : file.type.startsWith("audio/")
-        ? "audio"
-        : null;
+const UPLOAD_CONTENT_TYPES: Record<UploadMediaKind, readonly string[]> = {
+  image: ["image/jpeg", "image/png", "image/webp"],
+  video: ["video/mp4", "video/quicktime"],
+  audio: ["audio/mpeg", "audio/wav", "audio/x-wav"],
+};
+
+const UPLOAD_KIND_BY_EXTENSION: Record<string, UploadMediaKind> = {
+  jpg: "image",
+  jpeg: "image",
+  png: "image",
+  webp: "image",
+  mp4: "video",
+  mov: "video",
+  mp3: "audio",
+  wav: "audio",
+};
+
+export function canvasUploadMediaKind(
+  file: Pick<File, "name" | "type">,
+  accepted: ReadonlySet<UploadMediaKind>
+): UploadMediaKind | null {
+  const contentType = file.type.trim().toLowerCase();
+  const kind =
+    (Object.entries(UPLOAD_CONTENT_TYPES).find(([, types]) => types.includes(contentType))?.[0] as
+      | UploadMediaKind
+      | undefined) ??
+    UPLOAD_KIND_BY_EXTENSION[file.name.split(".").pop()?.toLowerCase() ?? ""] ??
+    null;
   return kind && accepted.has(kind) ? kind : null;
 }
 
@@ -87,8 +107,8 @@ function nodeTypeForMedia(kind: UploadMediaKind) {
   return "image";
 }
 
-function acceptedFileTypes(kinds: readonly UploadMediaKind[]): string {
-  return kinds.map((kind) => `${kind}/*`).join(",");
+export function canvasAcceptedFileTypes(kinds: readonly UploadMediaKind[]): string {
+  return kinds.flatMap((kind) => UPLOAD_CONTENT_TYPES[kind]).join(",");
 }
 
 /**
@@ -378,7 +398,7 @@ export function useMediaAuthoringCanvas({
     (files: File[], base: { x: number; y: number }) => {
       const ids: string[] = [];
       files.forEach((file, index) => {
-        const kind = mediaKind(file, acceptedKinds);
+        const kind = canvasUploadMediaKind(file, acceptedKinds);
         if (!kind) return;
         const id = crypto.randomUUID();
         const objectUrl = URL.createObjectURL(file);
@@ -405,7 +425,7 @@ export function useMediaAuthoringCanvas({
   const retryUpload = useCallback(
     (id: string) => {
       const entry = uploadStore.get(id);
-      const kind = entry ? mediaKind(entry.file, acceptedKinds) : null;
+      const kind = entry ? canvasUploadMediaKind(entry.file, acceptedKinds) : null;
       if (!entry || !kind) return;
       uploadStore.begin(id, {
         ...entry,
@@ -591,7 +611,7 @@ export function useMediaAuthoringCanvas({
         return;
       }
       const files = Array.from(event.dataTransfer.files).filter((file) =>
-        Boolean(mediaKind(file, acceptedKinds))
+        Boolean(canvasUploadMediaKind(file, acceptedKinds))
       );
       if (files.length > 0) addFiles(files, position);
     },
@@ -600,7 +620,7 @@ export function useMediaAuthoringCanvas({
   const onPickFiles = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []).filter((file) =>
-        Boolean(mediaKind(file, acceptedKinds))
+        Boolean(canvasUploadMediaKind(file, acceptedKinds))
       );
       event.target.value = "";
       if (files.length === 0) return;
@@ -795,7 +815,7 @@ export function useMediaAuthoringCanvas({
     containerRef,
     screenToFlowPosition,
     fileInputRef,
-    acceptedFileTypes: acceptedFileTypes(uploadKinds),
+    acceptedFileTypes: canvasAcceptedFileTypes(uploadKinds),
     uploadContextValue,
     onDragOver,
     onDrop,
