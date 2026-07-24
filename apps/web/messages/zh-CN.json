@@ -5307,25 +5307,29 @@
       }
     },
     "pillars": {
-      "eyebrow": "三种切入方式",
+      "eyebrow": "四种切入方式",
       "titleLine1": "一个平台。",
-      "titleLine2": "做内容、组团队、找观众。",
-      "subtitle": "无论你是想做故事、想找搭档一起做、还是想追下一部好 IP——FizzDragon 三件事都覆盖。",
+      "titleLine2": "创作、组队、发行、变现。",
+      "subtitle": "用 AI 创作与制作，组建剧组，把作品推到渠道触达观众，再通过付费、授权与周边把 IP 变成收入——全在 FizzDragon。",
       "items": {
-        "make": {
+        "create": {
           "title": "做",
           "body": "AI Agent 帮你写脚本、画分镜、配音、渲染每一帧。你来导演，它们来执行。",
           "cta": "开新项目"
         },
         "connect": {
           "title": "组",
-          "body": "找编剧、画师、配音、导演。组一支 crew，分工协作，一起把项目做出来。",
+          "body": "找编剧、画师、导演，组一支 crew，一起把项目做出来。",
           "cta": "浏览 Crew"
         },
-        "show": {
-          "title": "传",
-          "body": "发布剧集、聚集观众、接受 backer。IP Plaza 是故事和粉丝相遇的地方。",
-          "cta": "进入 IP Plaza"
+        "distribute": {
+          "title": "发行",
+          "body": "把成片推到渠道，触达更多观众。在 IP广场 上架，让故事被看见。",
+          "cta": "进入IP广场"
+        },
+        "monetize": {
+          "title": "变现",
+          "body": "付费解锁、内容授权、周边衍生。把故事 IP 变成持续收入。"
         }
       }
     },
@@ -5554,6 +5558,10 @@
         "sgtech": {
           "title": "SGTech Impact Award",
           "body": "2026 获奖团队"
+        },
+        "accenture": {
+          "title": "Accenture",
+          "body": "合格的 AI 解决方案合作伙伴"
         }
       }
     }

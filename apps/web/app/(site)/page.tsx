@@ -5,8 +5,8 @@ import { motion } from "motion/react";
 import {
   IconArrowRight,
   IconBook2,
-  IconBuildingStore,
   IconClock,
+  IconCurrencyDollar,
   IconUsersGroup,
   IconWand,
   IconLayoutGrid,
@@ -80,13 +80,13 @@ const TOOLKIT_TILES = [
   },
 ] as const;
 
-// Three pillars — Make / Connect / Show. Each maps to a destination
-// route so the CTA on the pillar card delivers the user into the
-// right product surface (workspace / crews directory / IP Plaza).
+// Four pillars — Create / Connect / Distribute / Monetize. Each maps to a
+// destination so the card CTA lands in the right product surface.
 const PILLARS = [
-  { key: "make", icon: IconSparkles, href: "/login" },
+  { key: "create", icon: IconSparkles, href: "/login" },
   { key: "connect", icon: IconUsersGroup, href: "/crews" },
-  { key: "show", icon: IconBuildingStore, href: "/ips" },
+  { key: "distribute", icon: IconWorld, href: "/ips" },
+  { key: "monetize", icon: IconCurrencyDollar, href: null },
 ] as const;
 
 export default function HomePage() {
@@ -107,12 +107,9 @@ export default function HomePage() {
 
         <MadeWithFizz />
 
-        {/* ─── Three Pillars: Make / Connect / Show ─────────────────────── */}
-        {/* Anchored at the top of the page so visitors immediately see
-            FizzDragon spans more than the AI tool — each pillar is a
-            different way to be on the platform, with its own destination
-            CTA. Order matches user-journey flow: make a thing → find
-            people to make it with → show it to an audience. */}
+        {/* ─── Four Pillars: Create / Connect / Distribute / Monetize ─── */}
+        {/* Journey flow: create → find a crew → distribute to channels →
+            monetize the IP. */}
         <section className="relative border-t border-border/40 px-6 py-32">
           <div className="mx-auto max-w-6xl">
             <SectionHeader
@@ -127,7 +124,7 @@ export default function HomePage() {
               subtitle={t("pillars.subtitle")}
             />
 
-            <div className="mt-20 grid gap-5 md:grid-cols-3">
+            <div className="mt-20 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {PILLARS.map((pillar, i) => (
                 <motion.div
                   key={pillar.key}
@@ -135,7 +132,7 @@ export default function HomePage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-80px" }}
                   transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.08 }}
-                  className="group relative flex flex-col rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-8 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
+                  className="group relative flex h-full flex-col rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-6 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
                 >
                   <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
                     <pillar.icon className="size-5" />
@@ -146,13 +143,19 @@ export default function HomePage() {
                   <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground sm:text-base">
                     {t(`pillars.items.${pillar.key}.body`)}
                   </p>
-                  <Link
-                    href={localizePath(pillar.href, locale)}
-                    className="mt-6 inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground transition-colors group-hover:text-primary"
-                  >
-                    {t(`pillars.items.${pillar.key}.cta`)}
-                    <IconArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-                  </Link>
+                  {pillar.href ? (
+                    <Link
+                      href={localizePath(pillar.href, locale)}
+                      className="mt-6 inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground transition-colors group-hover:text-primary"
+                    >
+                      {t(`pillars.items.${pillar.key}.cta`)}
+                      <IconArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  ) : (
+                    // Keep CTA row height so cards without a link still
+                    // align with siblings that have an arrow.
+                    <div className="mt-6 h-5" aria-hidden />
+                  )}
                 </motion.div>
               ))}
             </div>

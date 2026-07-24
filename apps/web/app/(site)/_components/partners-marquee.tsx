@@ -41,7 +41,9 @@ interface Partner {
 }
 
 type Highlight = Pick<Partner, "slug" | "ext"> & {
-  key: "nvidia" | "microsoft" | "alibaba" | "sgtech";
+  key: "nvidia" | "microsoft" | "alibaba" | "sgtech" | "accenture";
+  /** Extra display scale for wordmarks that still look small in the badge. */
+  scale?: number;
 };
 
 const HIGHLIGHTS: Highlight[] = [
@@ -49,6 +51,7 @@ const HIGHLIGHTS: Highlight[] = [
   { key: "microsoft", slug: "microsoft", ext: "svg" },
   { key: "alibaba", slug: "alibaba", ext: "svg" },
   { key: "sgtech", slug: "sgtech", ext: "png" },
+  { key: "accenture", slug: "accenture", ext: "png", scale: 1.65 },
 ];
 
 /**
@@ -71,6 +74,7 @@ const PARTNERS: Partner[] = [
   { slug: "alibaba-cloud", name: "Alibaba Cloud", ext: "png" },
   { slug: "cyberport", name: "Cyberport", ext: "png" },
   { slug: "sgtech", name: "SGTech", ext: "png" },
+  { slug: "accenture", name: "Accenture", ext: "png" },
   { slug: "block71", name: "BLOCK71 (NUS Enterprise)", ext: "png" },
   { slug: "ipos-international", name: "IPOS International", ext: "png" },
   { slug: "acm", name: "ACM (Association for Computing Machinery)", ext: "png" },
@@ -165,7 +169,7 @@ export function PartnersMarquee() {
           {t("partners.subtitle")}
         </p>
 
-        <div className="mx-auto mt-12 grid max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto mt-12 grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {HIGHLIGHTS.map((item) => (
             <HighlightCard key={item.key} item={item} />
           ))}
@@ -196,12 +200,13 @@ function HighlightCard({ item }: { item: Highlight }) {
   return (
     <article className="group flex min-h-[136px] flex-col items-center justify-center rounded-2xl border border-border/50 bg-card/55 p-4 text-center backdrop-blur-sm transition-colors hover:border-border hover:bg-card/75">
       <div className="flex h-10 items-center justify-center">
-        <span className="inline-flex h-9 w-[150px] max-w-full items-center justify-center rounded-lg bg-white px-3 py-2 shadow-sm">
+        <span className="inline-flex h-9 w-[150px] max-w-full items-center justify-center overflow-hidden rounded-lg bg-white px-3 py-2 shadow-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/logos/${item.slug}.${item.ext}`}
             alt={title}
             className="max-h-full max-w-full object-contain"
+            style={item.scale ? { transform: `scale(${item.scale})` } : undefined}
             loading="lazy"
           />
         </span>
