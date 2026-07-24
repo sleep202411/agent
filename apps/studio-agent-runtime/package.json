@@ -1,0 +1,38 @@
+{
+  "name": "studio-agent-runtime",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node dist/build-workflows.js",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "dev:control": "tsx watch src/worker-control.ts",
+    "dev:activities": "tsx watch src/worker-activities.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "start:control": "node dist/worker-control.js",
+    "start:activities": "node dist/worker-activities.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/alibaba": "1.0.17",
+    "@repo/shared": "*",
+    "@temporalio/activity": "1.21.0",
+    "@temporalio/client": "1.21.0",
+    "@temporalio/common": "1.21.0",
+    "@temporalio/worker": "1.21.0",
+    "@temporalio/workflow": "1.21.0",
+    "ai": "6.0.154",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "1.21.0",
+    "@types/node": "^22.10.7",
+    "eslint": "^9.18.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=20.3.0"
+  }
+}
