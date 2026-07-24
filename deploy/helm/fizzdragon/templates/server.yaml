@@ -64,6 +64,98 @@ spec:
           env:
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ required "studioAgentRuntime.temporal.address is required" .Values.studioAgentRuntime.temporal.address | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ required "studioAgentRuntime.temporal.namespace is required" .Values.studioAgentRuntime.temporal.namespace | quote }}
+            - name: TEMPORAL_TLS_MODE
+              value: {{ required "studioAgentRuntime.temporal.tlsMode is required" .Values.studioAgentRuntime.temporal.tlsMode | quote }}
+            {{- with .Values.studioAgentRuntime.temporal.serverName }}
+            - name: TEMPORAL_SERVER_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            - name: STUDIO_AGENT_CONTROL_TASK_QUEUE
+              value: "studio-agent-control-v1"
+            - name: STUDIO_AGENT_ACTIVITY_TASK_QUEUE
+              value: "studio-agent-activities-v1"
+            - name: STUDIO_AGENT_WORKER_DEPLOYMENT_NAME
+              value: {{ required "studioAgentRuntime.temporal.workerDeploymentName is required" .Values.studioAgentRuntime.temporal.workerDeploymentName | quote }}
+            - name: STUDIO_AGENT_RELEASE
+              value: {{ required "studioAgentRuntime.release is required" .Values.studioAgentRuntime.release | quote }}
+            - name: STUDIO_AGENT_TEMPORAL_CONNECT_TIMEOUT_MS
+              value: {{ .Values.studioAgentRuntime.temporal.connectTimeoutMs | quote }}
+            - name: STUDIO_AGENT_TEMPORAL_HEALTH_PROBE_INTERVAL_MS
+              value: {{ .Values.studioAgentRuntime.temporal.healthProbeIntervalMs | quote }}
+            - name: STUDIO_AGENT_TEMPORAL_RECONNECT_MIN_DELAY_MS
+              value: {{ .Values.studioAgentRuntime.temporal.reconnectMinDelayMs | quote }}
+            - name: STUDIO_AGENT_TEMPORAL_RECONNECT_MAX_DELAY_MS
+              value: {{ .Values.studioAgentRuntime.temporal.reconnectMaxDelayMs | quote }}
+            - name: STUDIO_AGENT_TEMPORAL_POLLER_STALE_MS
+              value: {{ .Values.studioAgentRuntime.temporal.pollerStaleMs | quote }}
+            - name: STUDIO_AGENT_MODEL_PROVIDER
+              value: "alibaba"
+            - name: STUDIO_AGENT_MODEL
+              value: {{ .Values.studioAgentRuntime.model.textId | quote }}
+            - name: STUDIO_AGENT_VISION_MODEL
+              value: {{ .Values.studioAgentRuntime.model.visionId | quote }}
+            - name: STUDIO_AGENT_MODEL_TIMEOUT_MS
+              value: {{ .Values.studioAgentRuntime.model.timeoutMs | quote }}
+            - name: STUDIO_AGENT_MODEL_MAX_OUTPUT_TOKENS
+              value: {{ .Values.studioAgentRuntime.model.maxOutputTokens | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_CHILD_DEPTH
+              value: {{ .Values.studioAgentRuntime.budget.maxChildDepth | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_CHILD_RUNS
+              value: {{ .Values.studioAgentRuntime.budget.maxChildRuns | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_CONCURRENT_CHILD_RUNS
+              value: {{ .Values.studioAgentRuntime.budget.maxConcurrentChildRuns | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_RUN
+              value: {{ .Values.studioAgentRuntime.budget.maxModelStepsPerRun | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT
+              value: {{ .Values.studioAgentRuntime.budget.maxModelStepsPerRoot | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS
+              value: {{ .Values.studioAgentRuntime.budget.maxTotalTokenUnits | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_CONTEXT_BYTES_PER_STEP
+              value: {{ .Values.studioAgentRuntime.budget.maxContextBytesPerStep | quote }}
+            - name: STUDIO_AGENT_BUDGET_IMAGE_TOKEN_RESERVE_UNITS
+              value: {{ .Values.studioAgentRuntime.budget.imageTokenReserveUnits | quote }}
+            - name: STUDIO_AGENT_BUDGET_MIN_OUTPUT_TOKEN_UNITS_PER_STEP
+              value: {{ .Values.studioAgentRuntime.budget.minOutputTokenUnitsPerStep | quote }}
+            - name: STUDIO_AGENT_BUDGET_WALL_TIME_MS
+              value: {{ .Values.studioAgentRuntime.budget.wallTimeMs | quote }}
+            - name: STUDIO_AGENT_ADMISSION_LEASE_MS
+              value: {{ .Values.studioAgentRuntime.admission.leaseMs | quote }}
+            - name: STUDIO_AGENT_ADMISSION_RECONCILE_INTERVAL_MS
+              value: {{ .Values.studioAgentRuntime.admission.reconcileIntervalMs | quote }}
+            - name: STUDIO_AGENT_ADMISSION_RECONCILE_BATCH_SIZE
+              value: {{ .Values.studioAgentRuntime.admission.reconcileBatchSize | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_ACTIVE_ROOT_RUNS_GLOBAL
+              value: {{ .Values.studioAgentRuntime.admission.maxActiveRootRuns.global | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_ACTIVE_ROOT_RUNS_PER_WORKSPACE
+              value: {{ .Values.studioAgentRuntime.admission.maxActiveRootRuns.perWorkspace | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_ACTIVE_ROOT_RUNS_PER_USER
+              value: {{ .Values.studioAgentRuntime.admission.maxActiveRootRuns.perUser | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_GLOBAL
+              value: {{ .Values.studioAgentRuntime.admission.maxReservedTokenUnits.global | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_PER_WORKSPACE
+              value: {{ .Values.studioAgentRuntime.admission.maxReservedTokenUnits.perWorkspace | quote }}
+            - name: STUDIO_AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_PER_USER
+              value: {{ .Values.studioAgentRuntime.admission.maxReservedTokenUnits.perUser | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_TTL_MS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.ttlMs | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_POLL_INTERVAL_MS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.pollIntervalMs | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_BATCH_SIZE
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.batchSize | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_DISCOVERY_BATCH_SIZE
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.discoveryBatchSize | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_LEASE_MS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.leaseMs | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_MAX_ATTEMPTS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.maxAttempts | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_RETRY_BASE_MS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.retryBaseMs | quote }}
+            - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_RETRY_MAX_MS
+              value: {{ .Values.studioAgentRuntime.attachmentCleanup.retryMaxMs | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
@@ -71,6 +163,10 @@ spec:
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
+            - secretRef:
+                name: {{ .Values.studioAgentTemporalSecrets.projectedName }}
+            - secretRef:
+                name: {{ .Values.studioAgentGatewaySecrets.projectedName }}
           {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
@@ -81,6 +177,12 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+            - name: studio-agent-temporal-secrets
+              mountPath: /mnt/studio-agent-temporal-secrets
+              readOnly: true
+            - name: studio-agent-gateway-secrets
+              mountPath: /mnt/studio-agent-gateway-secrets
+              readOnly: true
           {{- end }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
@@ -123,6 +225,18 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
         {{- end }}
+        - name: studio-agent-temporal-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-studio-agent-temporal-kv
+        - name: studio-agent-gateway-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-studio-agent-gateway-kv
       {{- end }}
       {{- with .Values.server.nodeSelector }}
       nodeSelector:

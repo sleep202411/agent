@@ -1,0 +1,136 @@
+{{- $runtime := .Values.studioAgentRuntime -}}
+{{- $policy := $runtime.networkPolicy -}}
+{{- if not $policy.enabled -}}
+{{- fail "studioAgentRuntime.networkPolicy.enabled must be true" -}}
+{{- end -}}
+{{- if empty $policy.dns.namespaceSelector -}}
+{{- fail "studioAgentRuntime.networkPolicy.dns.namespaceSelector must explicitly identify the cluster DNS namespace" -}}
+{{- end -}}
+{{- if empty $policy.dns.podSelector -}}
+{{- fail "studioAgentRuntime.networkPolicy.dns.podSelector must explicitly identify the cluster DNS pods" -}}
+{{- end -}}
+{{- if empty $policy.temporal.cidrs -}}
+{{- fail "studioAgentRuntime.networkPolicy.temporal.cidrs must list the exact Temporal endpoint CIDRs" -}}
+{{- end -}}
+{{- if empty $policy.model.cidrs -}}
+{{- fail "studioAgentRuntime.networkPolicy.model.cidrs must list the exact model-provider endpoint CIDRs" -}}
+{{- end -}}
+{{- $forbiddenCidrs := list "0.0.0.0/0" "::/0" "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" -}}
+{{- range $cidr := concat $policy.temporal.cidrs $policy.model.cidrs -}}
+{{- if has $cidr $forbiddenCidrs -}}
+{{- fail (printf "studioAgentRuntime NetworkPolicy forbids broad egress CIDR %s; provide the narrow endpoint/provider ranges" $cidr) -}}
+{{- end -}}
+{{- end -}}
+{{- $denyCtx := merge (dict "component" "studio-agent-runtime-egress-deny") . -}}
+{{- $controlCtx := merge (dict "component" "studio-agent-control-egress") . -}}
+{{- $activitiesCtx := merge (dict "component" "studio-agent-activities-egress") . -}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fizzdragon.componentName" $denyCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $denyCtx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "fizzdragon.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      fizzdragon.com/studio-agent-runtime: "true"
+  policyTypes:
+    - Egress
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fizzdragon.componentName" $controlCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $controlCtx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "fizzdragon.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      fizzdragon.com/studio-agent-runtime: "true"
+      fizzdragon.com/studio-agent-role: control
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.podSelector | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: {{ $policy.dns.port }}
+        - protocol: TCP
+          port: {{ $policy.dns.port }}
+    - to:
+        {{- range $cidr := $policy.temporal.cidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $policy.temporal.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fizzdragon.componentName" $activitiesCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $activitiesCtx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "fizzdragon.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      fizzdragon.com/studio-agent-runtime: "true"
+      fizzdragon.com/studio-agent-role: activities
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.podSelector | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: {{ $policy.dns.port }}
+        - protocol: TCP
+          port: {{ $policy.dns.port }}
+    - to:
+        {{- range $cidr := $policy.temporal.cidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $policy.temporal.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "fizzdragon.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: server
+      ports:
+        - protocol: TCP
+          port: {{ $policy.gateway.port }}
+    - to:
+        {{- range $cidr := $policy.model.cidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $policy.model.port }}

@@ -258,3 +258,15 @@ agentWorker:
     maxReplicas: 2
     # Aliyun community Redis is plaintext :6379.
     enableTLS: "false"
+
+studioAgentRuntime:
+  # Requires the CN Temporal endpoint plus the three out-of-band runtime
+  # Secrets documented in values.yaml; the chart fails to render without them.
+  image:
+    tag: set-at-deploy
+  release: set-at-deploy
+  model:
+    baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # CN has one untainted node; remove the .com worker-pool placement.
+  nodeSelector: null
+  tolerations: null

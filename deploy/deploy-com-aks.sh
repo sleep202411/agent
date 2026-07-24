@@ -40,13 +40,17 @@ svc_spec() {
     admin-ui) echo "fizzdragon-admin-ui:apps/admin-ui/Dockerfile:.adminUi" ;;
     server)   echo "fizzdragon-server:apps/server/Dockerfile:.server" ;;
     agent)    echo "fizzdragon-agent:apps/agent/Dockerfile:.agent,.agentWorker" ;;
+    # Temporal execution plane (control + activities workers share one image).
+    # Not in `all`: built explicitly when the runtime image needs a new revision
+    # explicitly (`$0 studio-agent-runtime`) before flipping the rollout on.
+    studio-agent-runtime) echo "fizzdragon-studio-agent-runtime:apps/studio-agent-runtime/Dockerfile:.studioAgentRuntime.image" ;;
     *)        return 1 ;;
   esac
 }
 
 # --- args -----------------------------------------------------------------
 if [ "$#" -eq 0 ]; then
-  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent)" >&2
+  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime)" >&2
   exit 2
 fi
 if [ "$1" = "all" ]; then
