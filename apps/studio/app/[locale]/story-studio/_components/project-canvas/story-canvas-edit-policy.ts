@@ -1,5 +1,4 @@
 import { keepPreviousData } from "@tanstack/react-query";
-import type { StoryAgentRunStatus } from "@repo/shared/story-agent";
 
 /**
  * Capability checks that are true before transient canvas state is applied.
@@ -14,26 +13,17 @@ export interface StoryCanvasBasePermissions {
   canPublish: boolean;
 }
 
+export type StoryProjectionReadinessState = "loading" | "ready" | "unavailable";
+
 export interface StoryCanvasEditPolicyInput {
   basePermissions: StoryCanvasBasePermissions;
+  projectionReadiness: StoryProjectionReadinessState;
   hasDraftConflict: boolean;
   hasLayoutConflict: boolean;
-  agentPhase: StoryAgentAuthoringPhase;
 }
 
-export type StoryAgentAuthoringPhase =
-  | "checking"
-  | "ready"
-  | "takeover-pending"
-  | "applying"
-  | "reconciling"
-  | "unavailable";
-
-export type StoryProjectionAuthorityState = "checking" | "ready" | "unavailable";
-
-export interface StoryProjectionAuthorityInput {
+export interface StoryProjectionReadinessInput {
   hasWorkspace: boolean;
-  agentAuthorityState: "checking" | "ready" | "error";
   workbenchFetchedAfterMount: boolean;
   workbenchError: boolean;
   layoutFetchedAfterMount: boolean;
@@ -70,53 +60,52 @@ export function isStoryChapterProjectionPairReady({
   );
 }
 
-export function shouldFetchStoryProjection(
-  hasWorkspace: boolean,
-  agentAuthorityState: "checking" | "ready" | "error"
-): boolean {
-  return hasWorkspace && agentAuthorityState === "ready";
+export function shouldFetchStoryProjection(hasWorkspace: boolean): boolean {
+  return hasWorkspace;
 }
 
 export function storyProjectionQueryKey(
   kind: "workbench" | "canvas-layout",
   workspaceId: string | null,
   projectId: string,
-  chapterId: string | null,
-  authoritySnapshotKey: string | null
+  chapterId: string | null
 ) {
-  return [
-    "story-studio",
-    kind,
-    workspaceId,
-    projectId,
-    "chapter",
-    chapterId ?? "default",
-    "authority",
-    authoritySnapshotKey ?? "unavailable",
-  ] as const;
+  return ["story-studio", kind, workspaceId, projectId, "chapter", chapterId ?? "default"] as const;
 }
 
 /**
- * Shared configuration for the two canonical projection queries (workbench and
- * canvas layout).
+ * Matches any canonical projection query (workbench or canvas-layout, any
+ * chapter) for a project. Used to invalidate the canvas when an out-of-band
+ * mutation (e.g. a Studio Agent applied change-set) bumps the draft revision,
+ * so it refetches instead of showing stale draft/layout. Matched on projectId
+ * (globally unique) rather than workspaceId to stay robust to a null-vs-string
+ * workspace key.
+ */
+export function matchesStoryProjectionQueryKey(
+  queryKey: readonly unknown[],
+  projectId: string
+): boolean {
+  return (
+    queryKey[0] === "story-studio" &&
+    (queryKey[1] === "workbench" || queryKey[1] === "canvas-layout") &&
+    queryKey[3] === projectId
+  );
+}
+
+/**
+ * Shared configuration for the two canonical projection queries.
  *
- * `placeholderData: keepPreviousData` is load-bearing: the query key embeds the
- * authority snapshot, so every run-head transition or realtime-gap recovery
- * mints a new key. The previous projection snapshot must KEEP RENDERING while
- * the fresh read is in flight — unmounting the canvas for a refetch resets the
- * XYFlow viewport, kills the assistant layer (aborting any in-flight chat
- * stream), and drops composer drafts. Write safety is not carried by blanking
- * the screen: the rotated key resets `isFetchedAfterMount`, which keeps
- * `resolveStoryProjectionAuthority` in "checking" and therefore keeps every
- * mutation latched until the fresh read lands.
+ * `placeholderData: keepPreviousData` keeps the mounted canvas, viewport,
+ * assistant stream, and local composer state stable while a chapter key
+ * changes. The previous chapter may render during that transition, but
+ * `isStoryChapterProjectionPairReady` keeps mutations closed until both
+ * canonical planes name the requested chapter.
  */
 export function storyProjectionQueryOptions<TData>(input: {
   kind: "workbench" | "canvas-layout";
   workspaceId: string | null;
   projectId: string;
   chapterId: string | null;
-  authoritySnapshotKey: string | null;
-  agentAuthorityState: "checking" | "ready" | "error";
   queryFn: () => Promise<TData>;
 }) {
   return {
@@ -124,12 +113,11 @@ export function storyProjectionQueryOptions<TData>(input: {
       input.kind,
       input.workspaceId,
       input.projectId,
-      input.chapterId,
-      input.authoritySnapshotKey
+      input.chapterId
     ),
     queryFn: input.queryFn,
     enabled:
-      shouldFetchStoryProjection(Boolean(input.workspaceId), input.agentAuthorityState) &&
+      shouldFetchStoryProjection(Boolean(input.workspaceId)) &&
       (input.kind === "workbench" || Boolean(input.chapterId)),
     retry: false,
     placeholderData: keepPreviousData,
@@ -137,110 +125,43 @@ export function storyProjectionQueryOptions<TData>(input: {
 }
 
 /**
- * The active-run head is the serialization point for Agent commits. Project
- * projections must be fetched only after that head is current, and neither an
- * old TanStack cache entry nor a failed fresh read may authorize editing.
+ * Resolves whether the two server-owned projections can authorize a mutation.
+ * This is independent of any assistant run: draft/layout revision CAS remains
+ * the write authority, while the client merely requires one canonical read
+ * from each observer before editing.
  */
-export function resolveStoryProjectionAuthority({
+export function resolveStoryProjectionReadiness({
   hasWorkspace,
-  agentAuthorityState,
   workbenchFetchedAfterMount,
   workbenchError,
   layoutFetchedAfterMount,
   layoutError,
-}: StoryProjectionAuthorityInput): StoryProjectionAuthorityState {
-  if (!hasWorkspace || agentAuthorityState === "error") return "unavailable";
-  if (agentAuthorityState !== "ready") return "checking";
-  if (!workbenchFetchedAfterMount || !layoutFetchedAfterMount) return "checking";
+}: StoryProjectionReadinessInput): StoryProjectionReadinessState {
+  if (!hasWorkspace) return "unavailable";
+  if (!workbenchFetchedAfterMount || !layoutFetchedAfterMount) return "loading";
   if (workbenchError || layoutError) return "unavailable";
   return "ready";
-}
-
-/**
- * Folds the combined projection authority into the fail-closed authority input
- * of `resolveStoryAgentAuthoringPhase`. This is the write gate that replaced
- * the old render gate: while a rotated authority key is refetching
- * ("checking"), the canvas keeps rendering its previous snapshot but every
- * mutation stays latched; a failed fresh read ("unavailable") latches writes
- * the same way an active-run authority error always has.
- */
-export function resolveStoryCanvasWriteAuthority(
-  projectionAuthority: StoryProjectionAuthorityState
-): "checking" | "ready" | "error" {
-  if (projectionAuthority === "ready") return "ready";
-  return projectionAuthority === "checking" ? "checking" : "error";
 }
 
 export type StoryCanvasProjectionSurface = "loading" | "error" | "canvas";
 
 /**
- * Rendering is deliberately decoupled from write authority. The full-screen
- * loading/error surfaces are reserved for a true cold start with nothing to
- * show; once any projection snapshot exists (including the kept-previous
- * snapshot under a rotated authority key) the canvas subtree must stay mounted
- * so the viewport, assistant chat stream, and composer drafts survive refetch
- * cycles. Stale data may render — it may never be written over, which
- * `resolveStoryCanvasWriteAuthority` enforces separately.
+ * Full-screen loading/error surfaces are reserved for a cold start. Once a
+ * projection exists, it remains mounted through chapter transitions and failed
+ * refreshes so the viewport and local UI state do not flash or reset.
  */
 export function resolveStoryCanvasProjectionSurface(
-  projectionAuthority: StoryProjectionAuthorityState,
+  projectionReadiness: StoryProjectionReadinessState,
   hasProjectionData: boolean
 ): StoryCanvasProjectionSurface {
   if (hasProjectionData) return "canvas";
-  if (projectionAuthority === "unavailable") return "error";
-  return projectionAuthority === "ready" ? "canvas" : "loading";
-}
-
-export interface StoryAgentAuthoringPhaseInput {
-  authorityState: "checking" | "ready" | "error";
-  takeoverPending: boolean;
-  applying: boolean;
-  runStatus: StoryAgentRunStatus | null;
-  resultDraftRevision: number | null;
-  resultLayoutRevision: number | null;
-  draftRevision: number;
-  layoutRevision: number | null;
-  hasConflict: boolean;
-}
-
-/**
- * Converts transport, lock and projection state into one fail-closed phase.
- * A terminal Agent run is not editable until both canonical projections have
- * reached the revisions committed by that run.
- */
-export function resolveStoryAgentAuthoringPhase({
-  authorityState,
-  takeoverPending,
-  applying,
-  runStatus,
-  resultDraftRevision,
-  resultLayoutRevision,
-  draftRevision,
-  layoutRevision,
-  hasConflict,
-}: StoryAgentAuthoringPhaseInput): StoryAgentAuthoringPhase {
-  if (takeoverPending) return "takeover-pending";
-  if (applying) return "applying";
-  if (authorityState === "checking") return "checking";
-  if (authorityState === "error") return "unavailable";
-
-  const resultReconciled =
-    runStatus !== "succeeded" ||
-    (resultDraftRevision !== null &&
-      resultLayoutRevision !== null &&
-      draftRevision >= resultDraftRevision &&
-      layoutRevision !== null &&
-      layoutRevision >= resultLayoutRevision);
-  if (!resultReconciled && !hasConflict) return "reconciling";
-  return "ready";
+  if (projectionReadiness === "unavailable") return "error";
+  return projectionReadiness === "ready" ? "canvas" : "loading";
 }
 
 export type StoryCanvasReadOnlyReason =
-  | "agent-checking"
-  | "agent-takeover-pending"
-  | "agent-applying"
-  | "agent-reconciling"
-  | "agent-unavailable"
+  | "projection-loading"
+  | "projection-unavailable"
   | "draft-conflict"
   | "layout-conflict"
   | "permission"
@@ -256,26 +177,22 @@ export interface StoryCanvasEditPolicy {
 }
 
 /**
- * Mutable, commit-time authority used by canvas event handlers.
+ * Mutable, commit-time policy used by canvas event handlers.
  *
- * XYFlow may finish a drag/delete/connect callback after a realtime Agent lock
- * has already committed a new React render. Event-handler closures are
- * therefore presentation state, not write authority. Every final human
- * mutation reads this ref-backed snapshot immediately before touching local
- * draft/layout state.
+ * XYFlow may finish a drag/delete/connect callback after a new React render.
+ * Every final mutation therefore reads this ref-backed snapshot immediately
+ * before touching local draft/layout state.
  */
 export interface StoryCanvasMutationBarrierState {
   canEditContent: boolean;
   canEditLayout: boolean;
   canManageProduction: boolean;
-  takeoverPending: boolean;
 }
 
 export type StoryCanvasMutationScope = "content" | "layout" | "production";
 
 export interface StoryCanvasMutationBarrier {
   update: (state: StoryCanvasMutationBarrierState) => void;
-  setTakeoverPending: (pending: boolean) => void;
   permits: (scope: StoryCanvasMutationScope) => boolean;
 }
 
@@ -283,28 +200,23 @@ export function permitsStoryCanvasMutation(
   state: StoryCanvasMutationBarrierState,
   scope: StoryCanvasMutationScope
 ): boolean {
-  if (state.takeoverPending) return false;
   if (scope === "content") return state.canEditContent;
   if (scope === "layout") return state.canEditLayout;
   return state.canManageProduction;
 }
 
-/** Stable event-handler authority whose internals are updated after each commit. */
+/** Stable event-handler policy whose internals are updated after each commit. */
 export function createStoryCanvasMutationBarrier(
   initial: StoryCanvasMutationBarrierState = {
     canEditContent: false,
     canEditLayout: false,
     canManageProduction: false,
-    takeoverPending: false,
   }
 ): StoryCanvasMutationBarrier {
   let current = { ...initial };
   return {
     update(state) {
       current = { ...state };
-    },
-    setTakeoverPending(pending) {
-      current = { ...current, takeoverPending: pending };
     },
     permits(scope) {
       return permitsStoryCanvasMutation(current, scope);
@@ -313,34 +225,31 @@ export function createStoryCanvasMutationBarrier(
 }
 
 /**
- * Resolves every authoring gate from one state snapshot.
- *
- * A proposal is deliberately non-locking: the confirmation path is
- * responsible for flushing local writes and performing its revision CAS.
- * The client remains fail-closed while the authoritative lock head is loading,
- * a takeover request is flushing, the Agent is applying, or the resulting
- * draft/layout revisions are reconciling. Preview is read-only and remains
- * available throughout.
+ * Resolves every authoring gate from project capabilities, canonical
+ * projection readiness, and revision conflicts. Assistants operate through
+ * their own capability/approval/event pipeline and never become canvas write
+ * authority.
  */
 export function resolveStoryCanvasEditPolicy({
   basePermissions,
+  projectionReadiness,
   hasDraftConflict,
   hasLayoutConflict,
-  agentPhase,
 }: StoryCanvasEditPolicyInput): StoryCanvasEditPolicy {
-  const agentBlocksWrites = agentPhase !== "ready";
-
-  const canEditContent = basePermissions.canEditContent && !hasDraftConflict && !agentBlocksWrites;
+  const projectionReady = projectionReadiness === "ready";
+  const canEditContent = basePermissions.canEditContent && projectionReady && !hasDraftConflict;
   const canEditLayout =
-    basePermissions.canEditLayout && !hasDraftConflict && !hasLayoutConflict && !agentBlocksWrites;
+    basePermissions.canEditLayout && projectionReady && !hasDraftConflict && !hasLayoutConflict;
   const canManageProduction =
-    basePermissions.canManageProduction && !hasDraftConflict && !agentBlocksWrites;
+    basePermissions.canManageProduction && projectionReady && !hasDraftConflict;
   const canPreview = basePermissions.canPreview;
-  const canPublish = basePermissions.canPublish && !hasDraftConflict && !agentBlocksWrites;
+  const canPublish = basePermissions.canPublish && projectionReady && !hasDraftConflict;
 
   let readOnlyReason: StoryCanvasReadOnlyReason = null;
-  if (agentPhase !== "ready") {
-    readOnlyReason = `agent-${agentPhase}`;
+  if (projectionReadiness === "loading") {
+    readOnlyReason = "projection-loading";
+  } else if (projectionReadiness === "unavailable") {
+    readOnlyReason = "projection-unavailable";
   } else if (hasDraftConflict) {
     readOnlyReason = "draft-conflict";
   } else if (!basePermissions.canEditContent) {

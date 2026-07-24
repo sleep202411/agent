@@ -1,5 +1,4 @@
 import { api, ApiRequestError } from "@/lib/api";
-import { StoryAgentRunDtoSchema, type StoryAgentRunDto } from "@repo/shared/story-agent";
 import {
   CANVAS_GROUP_COLORS,
   DEFAULT_CANVAS_GROUP_COLOR,
@@ -556,8 +555,6 @@ export interface StoryChapter {
   updatedAt: string;
 }
 
-export type StoryAgentRun = StoryAgentRunDto;
-
 export interface CreateStoryProjectInput {
   format: CreatableStoryFormat;
   // Film-only: required for interactive_film, omitted for text_adventure.
@@ -864,106 +861,6 @@ export async function removeStoryCandidateAsset(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
     { headers: storyWorkspaceHeaders(workspaceId) }
   );
-}
-
-export async function getLatestStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  chapterId?: string,
-  signal?: AbortSignal
-): Promise<StoryAgentRun | null> {
-  const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/active${chapterId ? `?chapterId=${encodeURIComponent(chapterId)}` : ""}`,
-    { headers: storyWorkspaceHeaders(workspaceId), signal }
-  );
-  return value === null ? null : StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function getUndoableStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  chapterId?: string,
-  signal?: AbortSignal
-): Promise<StoryAgentRun | null> {
-  const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/undoable${chapterId ? `?chapterId=${encodeURIComponent(chapterId)}` : ""}`,
-    { headers: storyWorkspaceHeaders(workspaceId), signal }
-  );
-  return value === null ? null : StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function getStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  runId: string
-): Promise<StoryAgentRun> {
-  const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
-  );
-  return StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function confirmStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  runId: string,
-  idempotencyKey: string
-): Promise<StoryAgentRun> {
-  const value = await api.post<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/confirm`,
-    {
-      data: {},
-      headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
-    }
-  );
-  return StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function cancelStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  runId: string
-): Promise<StoryAgentRun> {
-  const value = await api.post<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/cancel`,
-    {
-      data: {},
-      headers: storyWorkspaceHeaders(workspaceId),
-    }
-  );
-  return StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function retryStoryAgentRunAuthoring(
-  workspaceId: string,
-  projectId: string,
-  runId: string
-): Promise<StoryAgentRun> {
-  const value = await api.post<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/retry-authoring`,
-    {
-      data: {},
-      headers: storyWorkspaceHeaders(workspaceId),
-    }
-  );
-  return StoryAgentRunDtoSchema.parse(value);
-}
-
-export async function undoStoryAgentRun(
-  workspaceId: string,
-  projectId: string,
-  runId: string,
-  idempotencyKey: string
-): Promise<StoryAgentRun> {
-  const value = await api.post<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}/undo`,
-    {
-      data: {},
-      headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
-    }
-  );
-  return StoryAgentRunDtoSchema.parse(value);
 }
 
 export async function putStoryCanvasLayout(

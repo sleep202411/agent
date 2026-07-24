@@ -52,7 +52,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { StoryAgentRunStatus } from "@repo/shared/story-agent";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { useWorkspace } from "@/app/_components/workspace-context";
@@ -147,9 +146,7 @@ import {
 } from "./story-canvas-layout-retry";
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
-import { StoryAgentRunAura } from "./story-agent-run-aura";
 import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
-import { isStoryCanvasProjectBootstrap } from "./story-canvas-empty-state";
 import { StoryChapterDropdown } from "./story-chapter-dropdown";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
@@ -163,11 +160,9 @@ import {
 import {
   createStoryCanvasMutationBarrier,
   isStoryChapterProjectionPairReady,
-  resolveStoryAgentAuthoringPhase,
   resolveStoryCanvasEditPolicy,
   resolveStoryCanvasProjectionSurface,
-  resolveStoryCanvasWriteAuthority,
-  resolveStoryProjectionAuthority,
+  resolveStoryProjectionReadiness,
   storyProjectionQueryKey,
   storyProjectionQueryOptions,
 } from "./story-canvas-edit-policy";
@@ -219,8 +214,6 @@ import {
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
-import { useStoryAgentRun } from "./use-story-agent-run";
-import { useStoryAgentNodeReveal } from "./use-story-agent-node-reveal";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type FoundationField = "logline" | "synopsis" | "worldview";
@@ -333,13 +326,6 @@ function StoryProjectCanvasInner({
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
-  const agentRunController = useStoryAgentRun({
-    workspaceId,
-    projectId,
-    chapterId: requestedChapterId ?? null,
-  });
-  const agentApplying = agentRunController.applying;
-  const agentAuthorityReady = agentRunController.authorityState === "ready";
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
   const [contentChapterId, setContentChapterId] = useState<string | null>(null);
   const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
@@ -352,7 +338,6 @@ function StoryProjectCanvasInner({
   const closeProductionCanvasWorkspace = useCallback(() => setProductionCanvasSession(null), []);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
   const [chapterMutationPendingId, setChapterMutationPendingId] = useState<string | null>(null);
-  const [agentTakeoverAction, setAgentTakeoverAction] = useState<"confirm" | "undo" | null>(null);
   const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
   const focusedNodeId = storyCanvasInspectorNodeId(inspectorTarget);
   const inspectorOpen = inspectorTarget.kind !== "closed";
@@ -367,9 +352,7 @@ function StoryProjectCanvasInner({
   const [conflict, setConflict] = useState<DraftRevisionConflict | null>(null);
   const [layoutConflict, setLayoutConflict] = useState<CanvasLayoutRevisionConflict | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
-  const [appliedLayoutRevision, setAppliedLayoutRevision] = useState<number | null>(null);
   const [, setLayoutSaveState] = useState<SaveState>("idle");
-  const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
   // Optimistic Story World presence while a layout write is in flight; the
   // authoritative layout projection re-syncs it on adoption.
   const [storyWorldNodePresentOverride, setStoryWorldNodePresentOverrideState] = useState<{
@@ -420,7 +403,6 @@ function StoryProjectCanvasInner({
   const layoutSavedSignatureRef = useRef("");
   const layoutConflictRef = useRef<CanvasLayoutRevisionConflict | null>(null);
   const layoutSaveInFlightRef = useRef(false);
-  const layoutSaveSettledWaitersRef = useRef(new Set<() => void>());
   const latestDesiredLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
   const recoveryLayoutRef = useRef<StoryCanvasLayoutPayload | null>(null);
   const layoutRetryTimerRef = useRef<number | null>(null);
@@ -440,7 +422,6 @@ function StoryProjectCanvasInner({
   // Set true once a node actually moves during a drag; consumed by onNodeClick
   // so the pointer-up that ends a drag can never open the inspector.
   const didDragNodeRef = useRef(false);
-  const agentTakeoverPendingRef = useRef(false);
 
   useLayoutEffect(() => {
     currentHistoryEntryRef.current = {
@@ -524,15 +505,8 @@ function StoryProjectCanvasInner({
   }, [reconcileCanvasFocus]);
 
   const workbenchQueryKey = useMemo(
-    () =>
-      storyProjectionQueryKey(
-        "workbench",
-        workspaceId,
-        projectId,
-        requestedChapterId ?? null,
-        agentRunController.authoritySnapshotKey
-      ),
-    [agentRunController.authoritySnapshotKey, projectId, requestedChapterId, workspaceId]
+    () => storyProjectionQueryKey("workbench", workspaceId, projectId, requestedChapterId ?? null),
+    [projectId, requestedChapterId, workspaceId]
   );
   const workbenchQuery = useQuery({
     ...storyProjectionQueryOptions({
@@ -540,8 +514,6 @@ function StoryProjectCanvasInner({
       workspaceId,
       projectId,
       chapterId: requestedChapterId ?? null,
-      authoritySnapshotKey: agentRunController.authoritySnapshotKey,
-      agentAuthorityState: agentRunController.authorityState,
       queryFn: () => getStoryWorkbench(workspaceId as string, projectId, requestedChapterId),
     }),
   });
@@ -550,15 +522,8 @@ function StoryProjectCanvasInner({
   // finishes, extending the transition and allowing mismatched projections.
   const resolvedChapterId = requestedChapterId ?? workbenchQuery.data?.chapter.id ?? null;
   const layoutQueryKey = useMemo(
-    () =>
-      storyProjectionQueryKey(
-        "canvas-layout",
-        workspaceId,
-        projectId,
-        resolvedChapterId,
-        agentRunController.authoritySnapshotKey
-      ),
-    [agentRunController.authoritySnapshotKey, projectId, resolvedChapterId, workspaceId]
+    () => storyProjectionQueryKey("canvas-layout", workspaceId, projectId, resolvedChapterId),
+    [projectId, resolvedChapterId, workspaceId]
   );
   const refetchWorkbench = workbenchQuery.refetch;
   const layoutQuery = useQuery(
@@ -567,17 +532,14 @@ function StoryProjectCanvasInner({
       workspaceId,
       projectId,
       chapterId: resolvedChapterId,
-      authoritySnapshotKey: agentRunController.authoritySnapshotKey,
-      agentAuthorityState: agentRunController.authorityState,
       queryFn: () =>
         getStoryCanvasLayout(workspaceId as string, projectId, resolvedChapterId as string),
     })
   );
   /**
-   * "checking" here means a fresh authoritative read is in flight (or has not
-   * started). It latches every write through the edit policy below, but it no
-   * longer unmounts the canvas: `placeholderData: keepPreviousData` keeps the
-   * previous projection snapshot rendering across authority-key rotations.
+   * The two canonical projections are chapter-scoped and may resolve at
+   * different times. Keep the previous pair mounted during navigation, but do
+   * not authorize mutations until both reads name the requested chapter.
    */
   const projectionPairReady = isStoryChapterProjectionPairReady({
     targetChapterId: resolvedChapterId,
@@ -586,9 +548,8 @@ function StoryProjectCanvasInner({
     workbenchPlaceholder: workbenchQuery.isPlaceholderData,
     layoutPlaceholder: layoutQuery.isPlaceholderData,
   });
-  const rawProjectionAuthority = resolveStoryProjectionAuthority({
+  const rawProjectionReadiness = resolveStoryProjectionReadiness({
     hasWorkspace: Boolean(workspaceId),
-    agentAuthorityState: agentRunController.authorityState,
     workbenchFetchedAfterMount: workbenchQuery.isFetchedAfterMount,
     workbenchError: workbenchQuery.isError,
     layoutFetchedAfterMount: layoutQuery.isFetchedAfterMount,
@@ -597,14 +558,14 @@ function StoryProjectCanvasInner({
   // `isFetchedAfterMount` is observer-level state and can remain true while a
   // chapter key changes. The pair check is the stricter write fence: the old
   // chapter may keep rendering, but no mutation can cross the transition.
-  const projectionAuthority =
-    rawProjectionAuthority === "ready" && !projectionPairReady
-      ? ("checking" as const)
-      : rawProjectionAuthority;
+  const projectionReadiness =
+    rawProjectionReadiness === "ready" && !projectionPairReady
+      ? ("loading" as const)
+      : rawProjectionReadiness;
   // `keepPreviousData` carries the previous snapshot through the PENDING window
   // of a rotated key, but a failed fresh read drops `data` to undefined. The
   // canvas must keep rendering its last snapshot through that failure too
-  // (writes stay latched via `projectionAuthority` "unavailable"), so retain
+  // (writes stay latched via `projectionReadiness` "unavailable"), so retain
   // the last defined projections for every render-side consumer.
   const projectionPairCandidate = useMemo(
     () =>
@@ -740,8 +701,6 @@ function StoryProjectCanvasInner({
   const scheduleSaveRetry = useCallback(() => {
     if (
       disposedRef.current ||
-      agentApplying ||
-      !agentAuthorityReady ||
       saveRetryTimerRef.current !== null ||
       conflictRef.current ||
       !recoveryContentRef.current
@@ -757,16 +716,11 @@ function StoryProjectCanvasInner({
         void persistRef.current(recovery);
       }
     }, delay);
-  }, [agentApplying, agentAuthorityReady]);
+  }, []);
 
   const persist = useCallback(
     async (next: InteractiveStoryDraftContent, options: PersistDraftOptions = {}) => {
       if (!workspaceId || !resolvedChapterId || conflictRef.current || disposedRef.current) return;
-      if (agentApplying || !agentAuthorityReady) {
-        recoveryContentRef.current = next;
-        if (!disposedRef.current) setSaveState("dirty");
-        return;
-      }
       const signature = canonicalJsonString(next);
       if (draftSnapshotBarrierRef.current && !options.bypassSnapshotBarrier) {
         queuedContentRef.current = next;
@@ -880,8 +834,6 @@ function StoryProjectCanvasInner({
       scheduleSaveRetry,
       sessionId,
       workspaceId,
-      agentApplying,
-      agentAuthorityReady,
     ]
   );
 
@@ -958,14 +910,6 @@ function StoryProjectCanvasInner({
     latestContentRef.current = content;
     if (!content || !hydratedRef.current || conflict) return;
     const signature = canonicalJsonString(content);
-    if (agentApplying || !agentAuthorityReady) {
-      if (signature !== savedSignatureRef.current) {
-        recoveryContentRef.current = content;
-        queuedContentRef.current = null;
-        setSaveState("dirty");
-      }
-      return;
-    }
     if (saveInFlightRef.current) {
       const matchesInFlight = signature === inFlightSignatureRef.current;
       setSaveState(matchesInFlight ? "saving" : "dirty");
@@ -996,15 +940,13 @@ function StoryProjectCanvasInner({
         saveDebounceTimerRef.current = null;
       }
     };
-  }, [agentApplying, agentAuthorityReady, clearSaveRetry, conflict, content, scheduleSaveRetry]);
+  }, [clearSaveRetry, conflict, content, scheduleSaveRetry]);
 
   const flushDraftBeforeLeaving = useCallback(
     (keepalive: boolean) => {
       if (
         !workspaceId ||
         !resolvedChapterId ||
-        agentApplying ||
-        !agentAuthorityReady ||
         conflictRef.current ||
         finalFlushActiveRef.current ||
         !latestContentRef.current
@@ -1111,8 +1053,6 @@ function StoryProjectCanvasInner({
       })();
     },
     [
-      agentApplying,
-      agentAuthorityReady,
       cacheSavedDraft,
       clearSaveRetry,
       commonT,
@@ -1165,41 +1105,6 @@ function StoryProjectCanvasInner({
       projectionCopy.ending,
     ]
   );
-  const projectionTarget = agentRunController.projectionTarget;
-  const acknowledgeProjectionTarget = agentRunController.acknowledgeProjectionTarget;
-  const projectionTargetReconciled = Boolean(
-    projectionTarget?.resultDraftRevision !== null &&
-    projectionTarget?.resultLayoutRevision !== null &&
-    projectionTarget?.resultDraftRevision !== undefined &&
-    projectionTarget?.resultLayoutRevision !== undefined &&
-    draftRevision >= projectionTarget.resultDraftRevision &&
-    appliedLayoutRevision !== null &&
-    appliedLayoutRevision >= projectionTarget.resultLayoutRevision
-  );
-  const agentPhase = resolveStoryAgentAuthoringPhase({
-    // Write authority spans the run head AND both projection reads: while a
-    // rotated authority key refetches, the canvas keeps rendering its previous
-    // snapshot, so this phase — not an unmount — is what holds writes closed.
-    authorityState: resolveStoryCanvasWriteAuthority(projectionAuthority),
-    takeoverPending: agentTakeoverAction !== null,
-    applying: agentApplying,
-    runStatus: projectionTarget ? "succeeded" : null,
-    resultDraftRevision: projectionTarget?.resultDraftRevision ?? null,
-    resultLayoutRevision: projectionTarget?.resultLayoutRevision ?? null,
-    draftRevision,
-    layoutRevision: appliedLayoutRevision,
-    hasConflict: Boolean(conflict || layoutConflict),
-  });
-  useEffect(() => {
-    if (!projectionTarget || !projectionTargetReconciled) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) acknowledgeProjectionTarget(projectionTarget.id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [acknowledgeProjectionTarget, projectionTarget, projectionTargetReconciled]);
   const editPolicy = resolveStoryCanvasEditPolicy({
     basePermissions: {
       canEditContent: Boolean(
@@ -1214,9 +1119,9 @@ function StoryProjectCanvasInner({
       canPreview: true,
       canPublish: true,
     },
+    projectionReadiness,
     hasDraftConflict: Boolean(conflict),
     hasLayoutConflict: Boolean(layoutConflict),
-    agentPhase,
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
@@ -1344,7 +1249,6 @@ function StoryProjectCanvasInner({
       canEditContent: canEdit,
       canEditLayout: canMutateCanvasLayout,
       canManageProduction: editPolicy.canManageProduction,
-      takeoverPending: agentTakeoverPendingRef.current,
     });
   }, [canEdit, canMutateCanvasLayout, editPolicy.canManageProduction, mutationBarrier]);
   const canManageClipMedia = editPolicy.canManageProduction;
@@ -1434,7 +1338,6 @@ function StoryProjectCanvasInner({
       latestCanvasSelectionRef.current = [];
       hasFittedInitialCanvasRef.current = false;
       setLayoutConflict(null);
-      setLayoutSaveError(null);
       setStoryWorldNodePresentOverride(null);
       setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
       layoutHydratedChapterIdRef.current = workbenchProjection.chapter.id;
@@ -1487,7 +1390,6 @@ function StoryProjectCanvasInner({
       const initialLayout = canvasLayoutPayload(initialNodes, storyWorldNodePresent);
       layoutHydratedRef.current = true;
       layoutRevisionRef.current = layoutProjection.revision;
-      setAppliedLayoutRevision(layoutProjection.revision);
       latestDesiredLayoutRef.current = initialLayout;
       layoutSavedSignatureRef.current = layoutPayloadSignature(initialLayout);
       setLayoutSaveState("idle");
@@ -1498,9 +1400,7 @@ function StoryProjectCanvasInner({
     }
     if (shouldAdoptAuthoritativeLayout) {
       layoutRevisionRef.current = layoutProjection.revision;
-      setAppliedLayoutRevision(layoutProjection.revision);
       setStoryWorldNodePresentOverride(layoutProjection.storyWorldNodePresent);
-      setLayoutSaveError(null);
       setLayoutSaveState("idle");
       history.clear();
       setHistoryVersion((current) => current + 1);
@@ -1556,22 +1456,9 @@ function StoryProjectCanvasInner({
     if (resetAttempts) layoutRetryAttemptRef.current = 0;
   }, []);
 
-  const notifyLayoutSaveSettled = useCallback(() => {
-    const waiters = [...layoutSaveSettledWaitersRef.current];
-    layoutSaveSettledWaitersRef.current.clear();
-    waiters.forEach((resolve) => resolve());
-  }, []);
-
-  const waitForLayoutSaveToSettle = useCallback(() => {
-    if (!layoutSaveInFlightRef.current) return Promise.resolve();
-    return new Promise<void>((resolve) => layoutSaveSettledWaitersRef.current.add(resolve));
-  }, []);
-
   const scheduleLayoutSaveRetry = useCallback(() => {
     if (
       disposedRef.current ||
-      agentApplying ||
-      !agentAuthorityReady ||
       layoutRetryTimerRef.current !== null ||
       layoutConflictRef.current ||
       !recoveryLayoutRef.current
@@ -1587,18 +1474,13 @@ function StoryProjectCanvasInner({
         void persistLayoutRef.current(recovery, { preserveDesired: true });
       }
     }, delay);
-  }, [agentApplying, agentAuthorityReady]);
+  }, []);
 
   const persistLayout = useCallback(
     async (next: StoryCanvasLayoutPayload, options: PersistLayoutOptions = {}) => {
       if (!workspaceId || !resolvedChapterId || layoutConflictRef.current) return;
       const signature = layoutPayloadSignature(next);
       if (!options.preserveDesired) latestDesiredLayoutRef.current = next;
-      if (agentApplying || !agentAuthorityReady) {
-        recoveryLayoutRef.current = next;
-        setLayoutSaveState("dirty");
-        return;
-      }
       if (layoutSaveInFlightRef.current) {
         return;
       }
@@ -1610,7 +1492,6 @@ function StoryProjectCanvasInner({
       if (signature === layoutSavedSignatureRef.current) {
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
-        setLayoutSaveError(null);
         setLayoutSaveState((current) => (current === "idle" ? "idle" : "saved"));
         return;
       }
@@ -1619,7 +1500,6 @@ function StoryProjectCanvasInner({
       recoveryLayoutRef.current = next;
       layoutSaveInFlightRef.current = true;
       setLayoutSaveState("saving");
-      setLayoutSaveError(null);
       let requestFailed = false;
       let requestConflicted = false;
       let failure: unknown = null;
@@ -1631,7 +1511,6 @@ function StoryProjectCanvasInner({
           sessionId,
         });
         layoutRevisionRef.current = saved.revision;
-        setAppliedLayoutRevision(saved.revision);
         layoutSavedSignatureRef.current = signature;
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
@@ -1643,11 +1522,9 @@ function StoryProjectCanvasInner({
         );
         if (nextConflict && confirmsOwnWrite) {
           layoutRevisionRef.current = nextConflict.current.revision;
-          setAppliedLayoutRevision(nextConflict.current.revision);
           layoutSavedSignatureRef.current = signature;
           recoveryLayoutRef.current = null;
           clearLayoutSaveRetry(true);
-          setLayoutSaveError(null);
           setLayoutSaveState("saved");
         } else if (nextConflict) {
           failure = error;
@@ -1664,7 +1541,6 @@ function StoryProjectCanvasInner({
           requestFailed = true;
           recoveryLayoutRef.current = next;
           setLayoutSaveState("error");
-          setLayoutSaveError(storyApiErrorMessage(error, commonT("errors.generic")));
         }
       } finally {
         layoutSaveInFlightRef.current = false;
@@ -1681,17 +1557,12 @@ function StoryProjectCanvasInner({
             }
           }
         }
-        notifyLayoutSaveSettled();
       }
 
       if (failure && options.propagateError) throw failure;
     },
     [
-      agentApplying,
-      agentAuthorityReady,
       clearLayoutSaveRetry,
-      commonT,
-      notifyLayoutSaveSettled,
       projectId,
       resolvedChapterId,
       scheduleLayoutSaveRetry,
@@ -1705,7 +1576,7 @@ function StoryProjectCanvasInner({
   }, [persistLayout]);
 
   useEffect(() => {
-    if (agentApplying || !agentAuthorityReady || layoutConflictRef.current) return;
+    if (layoutConflictRef.current) return;
     const desired = unsavedDesiredLayout(
       latestDesiredLayoutRef.current,
       layoutSavedSignatureRef.current
@@ -1713,7 +1584,7 @@ function StoryProjectCanvasInner({
     if (!desired) return;
     recoveryLayoutRef.current = desired;
     scheduleLayoutSaveRetry();
-  }, [agentApplying, agentAuthorityReady, scheduleLayoutSaveRetry]);
+  }, [scheduleLayoutSaveRetry]);
 
   useEffect(() => () => clearLayoutSaveRetry(), [clearLayoutSaveRetry]);
 
@@ -1811,8 +1682,6 @@ function StoryProjectCanvasInner({
       if (
         !workspaceId ||
         !resolvedChapterId ||
-        agentApplying ||
-        !agentAuthorityReady ||
         layoutConflictRef.current ||
         layoutSaveInFlightRef.current ||
         finalLayoutFlushActiveRef.current
@@ -1844,8 +1713,6 @@ function StoryProjectCanvasInner({
         clearLayoutSaveRetry(true);
         queryClient.setQueryData(layoutQueryKey, saved);
         if (!disposedRef.current) {
-          setAppliedLayoutRevision(saved.revision);
-          setLayoutSaveError(null);
           setLayoutSaveState("saved");
         }
         return true;
@@ -1887,7 +1754,6 @@ function StoryProjectCanvasInner({
             return;
           }
           setLayoutSaveState("error");
-          setLayoutSaveError(storyApiErrorMessage(error, commonT("errors.generic")));
           scheduleLayoutSaveRetry();
         })
         .finally(() => {
@@ -1897,10 +1763,7 @@ function StoryProjectCanvasInner({
         });
     },
     [
-      agentApplying,
-      agentAuthorityReady,
       clearLayoutSaveRetry,
-      commonT,
       layoutQueryKey,
       projectId,
       resolvedChapterId,
@@ -1984,124 +1847,6 @@ function StoryProjectCanvasInner({
     flushLayoutBeforeLeaving,
     readLeaveRisk,
   ]);
-
-  const flushAuthoringBeforeAgentRun = useCallback(async () => {
-    if (!workspaceId || conflictRef.current || layoutConflictRef.current) {
-      throw new Error(saveError ?? layoutSaveError ?? commonT("errors.generic"));
-    }
-
-    if (saveDebounceTimerRef.current !== null) {
-      window.clearTimeout(saveDebounceTimerRef.current);
-      saveDebounceTimerRef.current = null;
-    }
-    clearSaveRetry();
-    clearLayoutSaveRetry();
-
-    while (saveInFlightRef.current) await waitForSaveToSettle();
-    const draft = latestContentRef.current;
-    if (!draft) throw new Error(commonT("errors.generic"));
-    await persistRef.current(draft, { propagateError: true });
-    if (conflictRef.current || savedSignatureRef.current !== canonicalJsonString(draft)) {
-      throw new Error(saveError ?? commonT("errors.generic"));
-    }
-
-    while (layoutSaveInFlightRef.current) await waitForLayoutSaveToSettle();
-    const layout = latestDesiredLayoutRef.current;
-    if (layout) {
-      await persistLayoutRef.current(layout, {
-        preserveDesired: true,
-        propagateError: true,
-      });
-      if (
-        layoutConflictRef.current ||
-        layoutSavedSignatureRef.current !== layoutPayloadSignature(layout)
-      ) {
-        throw new Error(layoutSaveError ?? commonT("errors.generic"));
-      }
-    }
-  }, [
-    clearLayoutSaveRetry,
-    clearSaveRetry,
-    commonT,
-    layoutSaveError,
-    saveError,
-    waitForLayoutSaveToSettle,
-    waitForSaveToSettle,
-    workspaceId,
-  ]);
-
-  const canvasAgentRunController = {
-    ...agentRunController,
-    applying:
-      agentPhase === "takeover-pending" ||
-      agentPhase === "applying" ||
-      agentPhase === "reconciling",
-    actionPending: agentTakeoverAction !== null || agentRunController.actionPending,
-    pendingAction: agentTakeoverAction ?? agentRunController.pendingAction,
-    cancel: async (runId: string) => {
-      if (agentTakeoverPendingRef.current) {
-        throw new Error("A Story Agent takeover is already in progress.");
-      }
-      return agentRunController.cancel(runId);
-    },
-    confirm: async (runId: string) => {
-      if (agentTakeoverPendingRef.current) {
-        throw new Error("A Story Agent takeover is already in progress.");
-      }
-      agentTakeoverPendingRef.current = true;
-      mutationBarrier.setTakeoverPending(true);
-      setAgentTakeoverAction("confirm");
-      try {
-        await flushAuthoringBeforeAgentRun();
-        return await agentRunController.confirm(runId);
-      } catch (error) {
-        await agentRunController.refresh().catch(() => undefined);
-        throw error;
-      } finally {
-        agentTakeoverPendingRef.current = false;
-        mutationBarrier.setTakeoverPending(false);
-        setAgentTakeoverAction(null);
-      }
-    },
-    undo: async (runId: string) => {
-      if (agentTakeoverPendingRef.current) {
-        throw new Error("A Story Agent takeover is already in progress.");
-      }
-      agentTakeoverPendingRef.current = true;
-      mutationBarrier.setTakeoverPending(true);
-      setAgentTakeoverAction("undo");
-      try {
-        await flushAuthoringBeforeAgentRun();
-        return await agentRunController.undo(runId);
-      } catch (error) {
-        await agentRunController.refresh().catch(() => undefined);
-        throw error;
-      } finally {
-        agentTakeoverPendingRef.current = false;
-        mutationBarrier.setTakeoverPending(false);
-        setAgentTakeoverAction(null);
-      }
-    },
-  };
-
-  useEffect(() => {
-    if (!agentApplying && agentAuthorityReady) return;
-    if (saveDebounceTimerRef.current !== null) {
-      window.clearTimeout(saveDebounceTimerRef.current);
-      saveDebounceTimerRef.current = null;
-    }
-    clearSaveRetry();
-    clearLayoutSaveRetry();
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setCreatorMenu(null);
-      setPendingCompletionDrop(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentApplying, agentAuthorityReady, clearLayoutSaveRetry, clearSaveRetry]);
 
   const focusedNode = useMemo(
     () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
@@ -2264,19 +2009,6 @@ function StoryProjectCanvasInner({
       }),
     [canvasNodes, focusedNodeId]
   );
-  const canvasProjectionReconciled = useMemo(() => {
-    if (!model || model.nodes.length !== canvasNodes.length) return false;
-    const canvasNodeIds = new Set(canvasNodes.map((node) => node.id));
-    return model.nodes.every((node) => canvasNodeIds.has(node.id));
-  }, [canvasNodes, model]);
-  useStoryAgentNodeReveal({
-    run: projectionTarget ?? agentRunController.run,
-    draftRevision,
-    layoutRevision: appliedLayoutRevision,
-    projectionReconciled: canvasProjectionReconciled,
-    renderedNodeCount: canvasNodes.length,
-    scopeRef: canvasSectionRef,
-  });
   const displayEdges = useMemo(
     () =>
       model?.edges.map((edge) => {
@@ -3053,7 +2785,6 @@ function StoryProjectCanvasInner({
     latestDesiredLayoutRef.current = latestLayout;
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
-    setAppliedLayoutRevision(layoutConflict.current.revision);
     layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
     queryClient.setQueryData(layoutQueryKey, layoutConflict.current);
     setStoryWorldNodePresentOverride(layoutConflict.current.storyWorldNodePresent);
@@ -3073,7 +2804,6 @@ function StoryProjectCanvasInner({
     setInspectorTarget((current) => reconcileStoryCanvasInspectorTarget(current, selectedNodeIds));
     setCanvasNodes(latestNodes);
     setLayoutConflict(null);
-    setLayoutSaveError(null);
     setLayoutSaveState("idle");
   };
 
@@ -3277,14 +3007,12 @@ function StoryProjectCanvasInner({
     />
   );
 
-  // Full-screen surfaces are reserved for a true cold start. Authority-key
-  // rotations (run head transitions, realtime reconnects, refetch cycles) keep
-  // the previous snapshot mounted — the XYFlow viewport, the assistant layer
-  // with any in-flight chat stream, and composer drafts all survive — while
-  // `projectionAuthority` "checking"/"unavailable" latches writes via the edit
-  // policy above.
+  // Full-screen surfaces are reserved for a true cold start. Canonical
+  // projection refetches keep the previous snapshot mounted so the XYFlow
+  // viewport and any in-flight assistant stream survive, while readiness
+  // latches writes through the edit policy above.
   const projectionSurface = resolveStoryCanvasProjectionSurface(
-    projectionAuthority,
+    projectionReadiness,
     workbenchProjection !== undefined && layoutProjection !== undefined
   );
   if (workspaceLoading || projectionSurface === "loading") return <CanvasLoading />;
@@ -3301,20 +3029,13 @@ function StoryProjectCanvasInner({
       <>
         <CanvasError
           message={storyApiErrorMessage(
-            workbenchQuery.error ?? layoutQuery.error ?? agentRunController.authorityError,
+            workbenchQuery.error ?? layoutQuery.error,
             commonT("errors.generic")
           )}
           onBackNavigate={guardBackNavigation}
           onRetry={() => {
-            if (agentRunController.authorityState === "ready") {
-              void workbenchQuery.refetch();
-              void layoutQuery.refetch();
-              return;
-            }
-            // Projection queries are enabled only after the active-run head is
-            // fresh. Retrying them concurrently would reopen the mount race this
-            // boundary intentionally closes.
-            void agentRunController.refresh().catch(() => undefined);
+            void workbenchQuery.refetch();
+            void layoutQuery.refetch();
           }}
         />
         {leaveDialog}
@@ -3353,92 +3074,16 @@ function StoryProjectCanvasInner({
       draftRevision,
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
-  const agentStatusMessage =
-    agentPhase === "checking"
-      ? t("emptyAgent.agentRun.checkingCurrent")
-      : agentPhase === "takeover-pending"
-        ? t("emptyAgent.agentRun.takingOver")
-        : agentPhase === "applying"
-          ? t("emptyAgent.agentRun.applying")
-          : agentPhase === "reconciling"
-            ? t("emptyAgent.agentRun.reconciling")
-            : agentPhase === "unavailable"
-              ? t("emptyAgent.agentRun.currentUnavailable")
-              : null;
-  const agentStatusCanRetry =
-    agentRunController.authorityState === "error" ||
-    agentPhase === "unavailable" ||
-    (agentPhase === "reconciling" && (workbenchQuery.isError || layoutQuery.isError));
-  const showProjectLauncher = isStoryCanvasProjectBootstrap(
-    workbenchProjection.chapters,
-    workbenchProjection.chapter.id
-  );
   return (
     <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
       <StoryCanvasAssistantLayer
         projectId={projectId}
         chapterId={workbenchProjection.chapter.id}
         workspaceId={workspaceId}
-        showProjectLauncher={showProjectLauncher}
         open={assistantOpen}
         onOpenChange={setAssistantOpen}
-        agentRunController={canvasAgentRunController}
-        canManageAgentRuns={Boolean(
-          project.status === "active" && project.capabilities.includes("story.edit")
-        )}
         suspended={Boolean(productionCanvasSession)}
       >
-        {/* The takeover aura frames ONLY the canvas column — the assistant
-            panel stays outside the glow. */}
-        <StoryAgentRunAura
-          active={
-            agentPhase === "takeover-pending" ||
-            agentPhase === "applying" ||
-            agentPhase === "reconciling"
-          }
-        />
-        {agentStatusMessage ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className={cn(
-              "absolute top-[4.75rem] left-1/2 z-[100] flex -translate-x-1/2 items-center gap-2 rounded-full bg-[oklch(0.18_0_0/0.94)] px-3.5 py-2 text-[11px] font-medium text-white/76 shadow-[0_14px_42px_rgba(0,0,0,0.42)] backdrop-blur-2xl",
-              agentStatusCanRetry ? "pointer-events-auto" : "pointer-events-none"
-            )}
-          >
-            {agentRunController.authorityState === "error" || agentPhase === "unavailable" ? (
-              <IconAlertTriangle className="size-3.5 text-[#ff9b9e]" stroke={1.8} />
-            ) : agentPhase === "applying" ? (
-              <IconSparkles className="size-3.5 text-[#9d8cff]" stroke={1.8} />
-            ) : (
-              <IconLoader2 className="size-3.5 animate-spin text-[#9d8cff]" stroke={1.8} />
-            )}
-            {agentStatusMessage}
-            {agentStatusCanRetry ? (
-              <button
-                type="button"
-                className="ml-1 rounded-full bg-white/[0.09] px-2 py-1 text-[10px] font-semibold text-white/72 transition hover:bg-white/[0.15] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-                onClick={() => {
-                  void agentRunController.refresh().catch(() => undefined);
-                  // A failed projection read now surfaces here (the canvas keeps
-                  // rendering its previous snapshot instead of unmounting into
-                  // the full-screen error), so retry must also re-issue it.
-                  if (
-                    workbenchQuery.isError ||
-                    layoutQuery.isError ||
-                    agentPhase === "reconciling" ||
-                    projectionTarget
-                  ) {
-                    void workbenchQuery.refetch();
-                    void layoutQuery.refetch();
-                  }
-                }}
-              >
-                {t("emptyAgent.agentRun.retry")}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
         <CanvasHeader
           title={project.title}
           canEdit={canEdit}
@@ -3452,9 +3097,7 @@ function StoryProjectCanvasInner({
             editPolicy.canPublish && publication.canPublish && !currentReleaseQuery.isLoading
           }
           publishDisabledReason={
-            currentReleaseQuery.isLoading
-              ? t("publish.statusChecking")
-              : (agentStatusMessage ?? publication.disabledReason)
+            currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
           }
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
@@ -3476,7 +3119,6 @@ function StoryProjectCanvasInner({
             />
           }
           assistantOpen={assistantOpen}
-          agentRunStatus={agentRunController.run?.status ?? null}
           onToggleAssistant={() => setAssistantOpen((current) => !current)}
           onBackNavigate={guardBackNavigation}
         />
@@ -3487,7 +3129,7 @@ function StoryProjectCanvasInner({
           state={publication.state}
           draftRevision={draftRevision}
           canMutate={editPolicy.canPublish}
-          disabledReason={agentStatusMessage ?? publication.disabledReason}
+          disabledReason={publication.disabledReason}
           onClose={publication.close}
           onConfirm={() => {
             if (editPolicy.canPublish) void publication.confirm();
@@ -3499,11 +3141,8 @@ function StoryProjectCanvasInner({
 
         <section
           ref={canvasSectionRef}
-          // The left inspector is a floating overlay (below): the canvas keeps
-          // its full width whether the inspector is open or not, so opening it
-          // never resizes the React Flow container or jumps the viewport. Only
-          // the RIGHT assistant rail (StoryCanvasAssistantLayer) squeezes the
-          // page, which is intended.
+          // Inspectors and StoryOS are floating overlays: opening either one
+          // never resizes the React Flow container or changes its viewport.
           className="absolute inset-0"
           onDoubleClick={(event) => {
             if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
@@ -3828,7 +3467,6 @@ function CanvasHeader({
   onOpenMediaCreation,
   chapterControl,
   assistantOpen,
-  agentRunStatus,
   onToggleAssistant,
   onBackNavigate,
 }: {
@@ -3844,7 +3482,6 @@ function CanvasHeader({
   onOpenMediaCreation: () => void;
   chapterControl: ReactNode;
   assistantOpen: boolean;
-  agentRunStatus: StoryAgentRunStatus | null;
   onToggleAssistant: () => void;
   onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
 }) {
@@ -3894,11 +3531,6 @@ function CanvasHeader({
         <button
           type="button"
           aria-pressed={assistantOpen}
-          aria-label={
-            agentRunStatus === "proposed"
-              ? `${t("assistant.action")}: ${t("emptyAgent.agentRun.proposal")}`
-              : undefined
-          }
           onClick={onToggleAssistant}
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
@@ -3909,12 +3541,6 @@ function CanvasHeader({
         >
           <IconSparkles className="size-4" />
           {t("assistant.action")}
-          {agentRunStatus === "proposed" ? (
-            <span
-              aria-hidden="true"
-              className="size-1.5 rounded-full bg-[#9d8cff] shadow-[0_0_10px_rgba(157,140,255,0.88)]"
-            />
-          ) : null}
         </button>
         <button
           type="button"

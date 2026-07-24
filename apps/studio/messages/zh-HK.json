@@ -1855,132 +1855,135 @@
       "assistant": {
         "action": "StoryOS"
       },
-      "emptyAgent": {
-        "title": "讓每個選擇，改寫故事",
-        "description": "和StoryOS 說說你的故事，或選擇一種創作 Skill 來確定第一次對話的方向。",
-        "assistantTitle": "StoryOS",
-        "close": "關閉StoryOS",
-        "inputLabel": "向StoryOS 傳送訊息",
-        "placeholder": "描述你想創作的故事、情緒或玩家體驗……",
-        "panelPlaceholder": "繼續完善這個故事……",
-        "panelEmpty": "描述你想要創作的故事或玩家體驗。",
-        "transcriptLabel": "StoryOS 對話",
-        "scrollToLatest": "捲動到最新訊息",
-        "send": "傳送訊息",
-        "stop": "停止回覆",
-        "thinking": "StoryOS 正在思考……",
-        "error": "StoryOS 暫時無法回覆。",
+      "studioAgent": {
+        "title": "StoryOS",
+        "surface": "StoryOS 助手",
+        "close": "關閉 StoryOS",
         "retry": "重試",
-        "historyLoading": "正在載入這個專案的對話……",
-        "historyError": "無法載入已有對話。為保護歷史記錄，重新載入成功前不能傳送。",
-        "retryHistory": "重新載入",
-        "recoveryStorageError": "無法為這則訊息建立安全重試記錄。草稿和參考圖均沒有改變，請檢查瀏覽器儲存空間後重試。",
-        "messagePreserved": "你的訊息已保留。重試前會先核對對話，避免重複傳送。",
-        "retryPreservedMessage": "安全重試",
-        "discardPreservedMessage": "捨棄此訊息",
-        "responseStopped": "這次回覆已停止，尚未完成。",
-        "responseFailed": "這次回覆未能完成。",
-        "rateLimited": "訊息傳送過快（每分鐘上限 {limit} 條），請於 {time} 後再試。",
-        "quotaExceeded": "已達到訊息上限（每天 {limit} 條），將於 {time} 重置。",
-        "historyLimitReached": "這段對話已達到安全歷史上限，請新增對話後繼續。",
-        "newConversation": "新增對話",
-        "newConversationTitle": "開始新對話？",
-        "newConversationDescription": "這會永久清除你在此專案中的私人StoryOS 對話，但不會修改故事畫布或其他協作者的對話。",
-        "cancelNewConversation": "保留目前對話",
-        "confirmNewConversation": "清除並新增",
-        "you": "你",
-        "skillsTitle": "選擇一種導演 Skill",
-        "activeSkill": "Skill · {name}",
-        "removeSkill": "移除{name}",
-        "attachDocument": "上載劇本或大綱（.docx、.txt、.md）",
-        "removeAttachment": "移除已附加的文件",
-        "attachedDocument": "已附加文件",
-        "attachmentUnsupported": "只支援 .docx、.txt 或 .md 檔案。",
-        "attachmentTooLarge": "文件大小不能超過 10MB。",
-        "attachmentUploadFailed": "文件上載失敗，請重新傳送。",
-        "agentRun": {
-          "proposalLabel": "故事 Agent 變更提案",
-          "proposal": "故事變更提案",
-          "undoProposal": "復原變更",
-          "preparing": "正在準備可審核的變更",
-          "preparingDetail": "Agent 正在根據目前專案驗證結構化提案。",
-          "proposalFailed": "無法產生變更提案",
-          "proposalFailedDetail": "專案資料沒有任何改變。",
-          "invalid": "Agent 回應無效",
-          "invalidDetail": "伺服器傳回的提案不符合 Story Agent 契約。",
-          "rejected": "變更請求未提交",
-          "rejectedDetail": "該變更請求在草擬開始前被拒絕，專案資料沒有任何改變。",
-          "dismissRejected": "關閉",
-          "rejections": {
-            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "本輪回覆已提交過變更請求，多餘的請求已被忽略。",
-            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "該專案的待處理提案已達上限，請先套用或放棄現有提案。",
-            "STORY_AGENT_APPLYING": "Agent 正在套用其他變更，請在完成後重新傳送請求。"
+        "dismissError": "關閉",
+        "timeline": {
+          "log": "StoryOS 對話",
+          "empty": "描述你想完善的故事、抉擇或玩家體驗。",
+          "loading": "正在載入對話……",
+          "contextCompacted": "上下文已自動壓縮",
+          "scrollToLatest": "捲動到最新進展",
+          "loadEarlier": "載入更早的對話",
+          "loadingEarlier": "正在載入更早的對話……",
+          "attachments": {
+            "unknownSize": "大小未知",
+            "status": {
+              "processing": "處理中",
+              "ready": "已就緒",
+              "failed": "失敗"
+            }
           },
-          "drafting": "正在草擬故事變更",
-          "authoring": "Agent 正在草擬此變更，畫布仍可繼續編輯。",
-          "retryAuthoring": "重試草擬",
-          "authoringErrors": {
-            "STORY_AGENT_AUTHORING_FAILED": "Agent 未能完成此變更的草擬，可重試草擬或放棄該請求。",
-            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "草擬期間故事持續發生變更，請在編輯暫停後重試。",
-            "STORY_AGENT_PROPOSAL_NO_CHANGES": "Agent 沒有發現需要修改的內容，可放棄該請求，或待故事變更後重試。",
-            "STORY_AGENT_CONTEXT_TOO_LARGE": "目前故事過大，Agent 暫時無法據此草擬變更。",
-            "STORY_AGENT_CONTENT_REJECTED": "來源素材被內容審核攔下，無法完成起草。請調整文件或指令、弱化敏感內容後再試。",
-            "generic": "草擬在產生提案前失敗了。"
-          },
-          "discard": "放棄",
-          "apply": "套用變更",
-          "applying": "Agent 正在更新專案，所有成員的編輯已鎖定。",
-          "takingOver": "正在儲存目前編輯並取得 Agent 寫入鎖……",
-          "reconciling": "Agent 變更已提交，正在同步畫布……",
-          "applied": "變更已套用",
-          "undone": "變更已復原",
-          "undo": "整體復原",
-          "stale": "套用前專案已發生變更，此提案已失效。",
-          "failed": "Agent 無法套用此提案。",
-          "cancelled": "提案已放棄",
-          "actionFailed": "Agent 操作失敗。",
-          "actionErrors": {
-            "projectScopeChanged": "操作開始時專案已切換，請檢查目前畫布後重試。",
-            "canonicalHeadChanged": "已有更新的 Agent 提案，請先審核目前提案。",
-            "runNotProposed": "此提案已不再等待處理，請重新整理查看目前狀態。",
-            "runNotRetryable": "此變更並非等待重試草擬，請重新整理查看目前狀態。",
-            "undoBlockedByActiveRun": "請先完成或放棄目前 Agent 提案，再復原之前的變更。",
-            "undoHeadChanged": "更新的專案變更已取代此復原點，請重新整理查看目前狀態。",
-            "authorityUnavailable": "暫時無法驗證目前專案狀態，請重新整理後再次復原。"
-          },
-          "showMore": "展開其餘 {count} 項",
-          "showLess": "收起",
-          "checkingCurrent": "正在確認目前提案……",
-          "currentUnavailable": "暫時無法確認目前提案",
-          "retry": "重試",
-          "historicalReadOnly": "這是較早的提案，僅供查看。",
-          "reviewOnly": "你可以審核此提案，但只有具備編輯權限的成員才能套用或放棄。",
-          "viewOnly": "僅查看",
-          "historical": "較早的提案",
-          "checking": "正在確認……",
-          "unavailable": "暫不可用",
-          "authoringStage": "步驟 {step}/{total} · {stage}",
-          "stages": {
-            "worldview": "世界觀架構師",
-            "structure": "劇情結構師",
-            "branch": "分支編排師",
-            "scene": "場景撰寫師",
-            "validate": "校驗修復師"
+          "roles": {
+            "user": "你",
+            "assistant": "StoryOS"
           }
         },
-        "skills": {
-          "symmetricalStorybook": {
-            "title": "對稱童話電影",
-            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
-            "prompt": "創作一個互動短篇:粉色山間旅館迎來一位從不摘帽的神秘住客,門童奉命查明緣由。劇情:按章節推進,每章一次關鍵選擇,讓旅館秩序更荒誕一分、真相更近一步。整體節奏:12 個節點左右,三幕結構,每幕收在一個小反轉。結局:3 個——揭開帽子、替他守密、成為下一個戴帽人,分別改寫門童與旅館的關係。"
+        "activity": {
+          "expand": "展開活動詳情",
+          "collapse": "收起活動詳情",
+          "labels": {
+            "generatingResponse": "正在生成回覆"
           },
-          "halftoneCollage": {
-            "title": "半調紙拼貼",
-            "description": "純色紙底、半調剪貼與卡紙點綴,每個選擇拼裝成一個視覺隱喻。",
-            "prompt": "創作一個互動短篇:一隻裝滿舊車票與照片的手提箱在午夜自動打開,每個剪貼物件都是一段被摺疊的記憶。劇情:主人公整理遺物時,逐漸拼出母親隱瞞一生的旅程。整體節奏:10-14 個節點,開場 2 個節點內拋出懸念,之後每 2-3 個節點一次關鍵選擇。結局:3 個——啟程、留下、把箱子重新鎖上,分別對應玩家把哪些記憶拼回、哪些撕碎。"
+          "status": {
+            "running": "進行中",
+            "succeeded": "已完成",
+            "failed": "失敗",
+            "cancelled": "已取消"
           }
         },
-        "placeholderWithSkill": "說說你的故事想法,StoryOS 將以「{skill}」的風格起草……"
+        "runStatus": {
+          "queued": "等候中",
+          "running": "正在處理",
+          "waiting_for_approval": "等待批准",
+          "waiting_for_input": "等待輸入",
+          "cancelling": "正在停止",
+          "succeeded": "已完成",
+          "failed": "失敗",
+          "cancelled": "已取消"
+        },
+        "childRuns": {
+          "group": "委派任務"
+        },
+        "composer": {
+          "input": "向 StoryOS 傳送訊息",
+          "placeholder": "讓 StoryOS 分析、規劃或修改這個故事……",
+          "stop": "停止目前任務",
+          "cancelReason": "創作者已取消目前任務。",
+          "queued": "{count} 則訊息等待處理",
+          "deliveryModeMenu": "選擇訊息處理方式",
+          "attachments": {
+            "add": "加入參考檔案",
+            "drop": "將圖片、TXT、Markdown、DOCX 或 PDF 檔案拖到這裡",
+            "remove": "移除 {fileName}",
+            "retry": "重試 {fileName}",
+            "uploading": "正在上載 · {progress}%",
+            "processing": "正在分析檔案",
+            "ready": "已就緒",
+            "failed": "上載失敗",
+            "emptyFile": "無法上載空白檔案。",
+            "unsupportedType": "只支援 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 檔案。",
+            "tooLarge": "此檔案大小不能超過 {maxSize}。",
+            "fileNameTooLong": "檔案名稱不能超過 255 個字元。"
+          },
+          "delivery": {
+            "send": {
+              "label": "傳送",
+              "description": "開始一輪新的 StoryOS 對話。"
+            },
+            "steer": {
+              "label": "立即調整",
+              "description": "在下一個安全節點為目前任務補充方向。"
+            },
+            "enqueue": {
+              "label": "排到下一則",
+              "description": "繼續目前任務，完成後再處理這則訊息。"
+            },
+            "stopAndSend": {
+              "label": "停止並傳送",
+              "description": "取消目前任務，然後用這則訊息開始新一輪。"
+            }
+          }
+        },
+        "permission": {
+          "menu": "StoryOS 操作權限",
+          "options": {
+            "ask": {
+              "label": "每次詢問",
+              "description": "執行任何會改動你資料的操作前都先請求批准。"
+            },
+            "smart": {
+              "label": "自動批准",
+              "description": "除刪除外，其餘操作都自動執行。"
+            },
+            "full": {
+              "label": "完全授權",
+              "description": "包括刪除在內的操作都自動執行；平台安全規則仍然生效。"
+            }
+          }
+        },
+        "approval": {
+          "capability": "能力",
+          "approveOnce": "僅批准一次",
+          "approveAlways": "一律允許",
+          "reject": "拒絕",
+          "status": {
+            "pending": "等待批准",
+            "approved": "已批准",
+            "denied": "已拒絕",
+            "expired": "已過期",
+            "cancelled": "已取消"
+          },
+          "risk": {
+            "low": "低風險",
+            "medium": "中等風險",
+            "high": "高風險",
+            "critical": "嚴重風險"
+          }
+        }
       },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",

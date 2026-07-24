@@ -667,51 +667,6 @@ export function rejectsStoryCastWiring(params: {
   );
 }
 
-/**
- * Resolves a presentation-only canvas projection back to its canonical Story
- * domain identifier. Synthetic decision nodes belong to their source graph
- * scene or router projection, while synthetic ending nodes belong to their Story Bible ending.
- *
- * This direction is intentional: AgentRun DTOs remain domain-only and must
- * never persist React Flow's synthetic identifiers.
- */
-export function storyDomainIdForCanvasProjection(canvasNodeId: string): string | null {
-  if (canvasNodeId === STORY_ROOT_NODE_ID) return null;
-  // Character cards are a bible projection, not an executable-graph domain id;
-  // Agent runs address graph scenes and endings, never a `character:` node.
-  if (canvasNodeId.startsWith(SYNTHETIC_CHARACTER_NODE_PREFIX)) return null;
-  if (canvasNodeId.startsWith(SYNTHETIC_DECISION_NODE_PREFIX)) {
-    return nonEmptySyntheticSource(canvasNodeId, SYNTHETIC_DECISION_NODE_PREFIX);
-  }
-  if (canvasNodeId.startsWith(SYNTHETIC_ENDING_NODE_PREFIX)) {
-    return nonEmptySyntheticSource(canvasNodeId, SYNTHETIC_ENDING_NODE_PREFIX);
-  }
-  return canvasNodeId;
-}
-
-/**
- * Projects canonical AgentRun affected/created ids onto the canvas nodes that
- * currently exist. One graph-node id may intentionally select both its scene
- * or router projection and its presentation-only decision projection.
- */
-export function projectStoryDomainIdsToCanvasNodeIds(
-  domainIds: Iterable<string>,
-  renderedCanvasNodeIds: Iterable<string>
-): string[] {
-  const domainIdSet = new Set(domainIds);
-  const projectedIds: string[] = [];
-  const seenCanvasIds = new Set<string>();
-
-  for (const canvasNodeId of renderedCanvasNodeIds) {
-    if (seenCanvasIds.has(canvasNodeId)) continue;
-    seenCanvasIds.add(canvasNodeId);
-    const domainId = storyDomainIdForCanvasProjection(canvasNodeId);
-    if (domainId !== null && domainIdSet.has(domainId)) projectedIds.push(canvasNodeId);
-  }
-
-  return projectedIds;
-}
-
 function nonEmptySyntheticSource(canvasNodeId: string, prefix: string): string | null {
   const sourceId = canvasNodeId.slice(prefix.length);
   return sourceId.length > 0 ? sourceId : null;

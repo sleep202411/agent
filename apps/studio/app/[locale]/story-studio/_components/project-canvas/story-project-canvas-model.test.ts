@@ -8,46 +8,11 @@ import {
   buildStoryCanvasModel,
   characterCanvasNodeId,
   characterIdForCanvasNode,
-  projectStoryDomainIdsToCanvasNodeIds,
   rejectsStoryCastWiring,
   STORY_ROOT_NODE_ID,
-  storyDomainIdForCanvasProjection,
   syntheticDecisionNodeId,
   syntheticEndingNodeId,
 } from "./story-project-canvas-model";
-
-describe("Story domain id canvas projection", () => {
-  it("resolves graph, choice-decision, and ending projections without exposing synthetic ids", () => {
-    expect(storyDomainIdForCanvasProjection("opening")).toBe("opening");
-    expect(storyDomainIdForCanvasProjection("__decision__:opening")).toBe("opening");
-    expect(storyDomainIdForCanvasProjection("__ending__:truth")).toBe("truth");
-    expect(storyDomainIdForCanvasProjection(STORY_ROOT_NODE_ID)).toBeNull();
-    expect(storyDomainIdForCanvasProjection("__decision__:")).toBeNull();
-    expect(storyDomainIdForCanvasProjection("__ending__:")).toBeNull();
-  });
-
-  it("maps domain ids to every rendered projection in canvas order and deduplicates ids", () => {
-    expect(
-      projectStoryDomainIdsToCanvasNodeIds(
-        ["opening", "truth"],
-        [
-          STORY_ROOT_NODE_ID,
-          "opening",
-          "__decision__:opening",
-          "unrelated",
-          "__ending__:truth",
-          "__decision__:opening",
-        ]
-      )
-    ).toEqual(["opening", "__decision__:opening", "__ending__:truth"]);
-  });
-
-  it("projects an ambiguous domain id to all rendered graph and ending views", () => {
-    expect(
-      projectStoryDomainIdsToCanvasNodeIds(["shared"], ["shared", "__ending__:shared"])
-    ).toEqual(["shared", "__ending__:shared"]);
-  });
-});
 
 describe("buildStoryCanvasModel", () => {
   it("marks every projected element deletable, the summonable Story World root included", () => {
@@ -548,11 +513,10 @@ describe("Story cast projection", () => {
     expect(model.nodes.some((node) => node.id === "character:hero")).toBe(true);
   });
 
-  it("maps character canvas ids and keeps them out of the executable-graph domain", () => {
+  it("maps character canvas ids outside the executable graph", () => {
     expect(characterCanvasNodeId("hero")).toBe("character:hero");
     expect(characterIdForCanvasNode("character:hero")).toBe("hero");
     expect(characterIdForCanvasNode("opening")).toBeNull();
-    expect(storyDomainIdForCanvasProjection("character:hero")).toBeNull();
   });
 });
 
