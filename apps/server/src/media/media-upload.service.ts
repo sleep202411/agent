@@ -2,9 +2,9 @@
  * Direct-to-storage upload pipeline — server side.
  *
  * Most generic uploads use a stateless permanent-key issue + confirm flow.
- * Reference images are stricter: the signed URL targets disposable staging,
- * confirm promotes to an unsigned final object, then hashes and fully decodes
- * those exact final bytes before creating a ready asset. Story clip videos use
+ * Server-verified images are stricter: the signed URL targets disposable
+ * staging, confirm promotes to an unsigned final object, then hashes and fully
+ * decodes those exact final bytes before creating a ready asset. Story clip videos use
  * a durable, project-scoped staging session and asynchronous finalizer.
  *
  * Generic flow, both steps authenticated:
@@ -17,7 +17,7 @@
  *      run.
  *
  *   2. confirmUpload — after the browser PUTs the bytes, the server verifies
- *      ownership and existence. Reference images additionally move to the
+ *      ownership and existence. Verified images additionally move to the
  *      unsigned final identity, stream/hash the final bytes, detect their real
  *      format and dimensions, and fully decode them before DB commit.
  *
@@ -104,6 +104,11 @@ interface UploadKindPolicy {
   ttlSeconds: number;
   /** Path segment for grep-ability in storage. */
   keySegment: string;
+  /**
+   * When present, browser-writable staging is promoted to this unsigned
+   * immutable segment and byte-probed before a MediaAsset can become ready.
+   */
+  verifiedImageFinalKeySegment?: string;
 }
 
 const MiB = 1024 * 1024;
@@ -125,6 +130,14 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+};
+
+const STUDIO_AGENT_DOCUMENT_CONTENT_TYPES: Record<string, string> = {
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'docx',
+  'application/pdf': 'pdf',
 };
 
 const VIDEO_CONTENT_TYPES: Record<string, string> = {
@@ -196,6 +209,24 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     // The signed URL can only ever overwrite disposable staging. Confirm
     // promotes to an unsigned deterministic final key before probing.
     keySegment: 'ai-reference-image-staging',
+    verifiedImageFinalKeySegment: 'ai-reference-image-final',
+  },
+  studio_agent_image: {
+    contentTypes: IMAGE_CONTENT_TYPES,
+    // Studio Agent accepts only server-decoded JPEG/PNG/WebP images. The cap
+    // bounds provider context and memory use during the streaming byte probe.
+    maxBytes: 30 * MiB,
+    assetKind: MediaAssetKind.image,
+    ttlSeconds: 900,
+    keySegment: 'studio-agent-image-staging',
+    verifiedImageFinalKeySegment: 'studio-agent-image-final',
+  },
+  studio_agent_document: {
+    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+    maxBytes: 10 * MiB,
+    assetKind: MediaAssetKind.document,
+    ttlSeconds: 900,
+    keySegment: 'studio-agent-document',
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
@@ -336,7 +367,7 @@ export class MediaUploadService {
       });
     }
 
-    // 3. Server-decided, scoped, collision-free key. Reference images receive
+    // 3. Server-decided, scoped, collision-free key. Verified images receive
     //    staging; every other generic kind receives its permanent identity.
     const storageKey = this.buildStorageKey(
       policy.keySegment,
@@ -438,14 +469,13 @@ export class MediaUploadService {
       });
     }
 
-    // Reference images are the strict exception to generic permanent-key
+    // Verified images are the strict exception to generic permanent-key
     // uploads. The browser only receives the staging key; the reusable object
     // identity is deterministic but never signed, so validation can never race
     // a later PUT that overwrites the bytes we just inspected.
-    const persistedStorageKey =
-      input.kind === 'ai_reference_image'
-        ? referenceImageFinalKey(storageKey)
-        : storageKey;
+    const persistedStorageKey = policy.verifiedImageFinalKeySegment
+      ? verifiedImageFinalKey(storageKey, policy)
+      : storageKey;
 
     // 2. Idempotency: if a live asset already exists for this exact key,
     //    return it. Confirm is safe to call twice (double-click, retry); we
@@ -478,8 +508,8 @@ export class MediaUploadService {
           message: 'the existing media asset belongs to a different scope',
         });
       }
-      if (input.kind === 'ai_reference_image') {
-        assertReadyReferenceImageLedger(existing);
+      if (policy.verifiedImageFinalKeySegment) {
+        assertReadyVerifiedImageLedger(existing);
       }
       const original = await this.prisma.$transaction((tx) =>
         ensureOriginalMediaPlacement(tx, {
@@ -498,7 +528,7 @@ export class MediaUploadService {
           metadata: {
             source: 'direct_upload',
             uploadKind: input.kind,
-            ...(input.kind === 'ai_reference_image'
+            ...(policy.verifiedImageFinalKeySegment
               ? {
                   storagePhase: 'immutable_final',
                   inspectedBy: 'server_byte_probe',
@@ -517,61 +547,60 @@ export class MediaUploadService {
       };
     }
 
-    const truth =
-      input.kind === 'ai_reference_image'
-        ? await this.finalizeReferenceImage(
-            userId,
-            storageKey,
-            persistedStorageKey,
-            input.contentType,
-            policy,
-          )
-        : await this.genericUploadTruth(userId, storageKey, input.contentType);
+    const truth = policy.verifiedImageFinalKeySegment
+      ? await this.finalizeVerifiedImage(
+          userId,
+          storageKey,
+          persistedStorageKey,
+          input.contentType,
+          input.kind,
+          policy,
+        )
+      : await this.genericUploadTruth(userId, storageKey, input.contentType);
 
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
     //    the future quota query and lifecycle.
     const { asset, variantId } = await this.prisma.$transaction(async (tx) => {
-      if (input.kind === 'ai_reference_image') {
+      if (policy.verifiedImageFinalKeySegment) {
         // `media_assets.object_key` is indexed but intentionally not globally
         // unique across all import paths. Serialize this exact final identity,
         // then re-read under the lock so two confirm requests converge onto one
         // asset without a check-then-create race.
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
-            hashtext(${`media-reference-image-confirm:${persistedStorageKey}`})::bigint
+            hashtext(${`media-verified-image-confirm:${persistedStorageKey}`})::bigint
           )
         `;
       }
-      const converged =
-        input.kind === 'ai_reference_image'
-          ? await tx.mediaAsset.findFirst({
-              where: { objectKey: persistedStorageKey, deletedAt: null },
-              select: {
-                id: true,
-                storageProvider: true,
-                bucket: true,
-                region: true,
-                objectKey: true,
-                externalUrl: true,
-                contentType: true,
-                sizeBytes: true,
-                width: true,
-                height: true,
-                durationSeconds: true,
-                checksumSha256: true,
-                workspaceId: true,
-                status: true,
-              },
-            })
-          : null;
+      const converged = policy.verifiedImageFinalKeySegment
+        ? await tx.mediaAsset.findFirst({
+            where: { objectKey: persistedStorageKey, deletedAt: null },
+            select: {
+              id: true,
+              storageProvider: true,
+              bucket: true,
+              region: true,
+              objectKey: true,
+              externalUrl: true,
+              contentType: true,
+              sizeBytes: true,
+              width: true,
+              height: true,
+              durationSeconds: true,
+              checksumSha256: true,
+              workspaceId: true,
+              status: true,
+            },
+          })
+        : null;
       if (converged && converged.workspaceId !== uploadWorkspaceId) {
         throw new ForbiddenException({
           code: 'MEDIA_ASSET_SCOPE_MISMATCH',
           message: 'the existing media asset belongs to a different scope',
         });
       }
-      if (converged) assertReadyReferenceImageLedger(converged);
+      if (converged) assertReadyVerifiedImageLedger(converged);
       const created =
         converged ??
         (await tx.mediaAsset.create({
@@ -598,13 +627,13 @@ export class MediaUploadService {
             source: MediaAssetSource.user_upload,
             createdByUserId: userId,
             workspaceId: uploadWorkspaceId,
-            metadata:
-              input.kind === 'ai_reference_image'
-                ? {
-                    storagePhase: 'immutable_final',
-                    inspectedBy: 'server_byte_probe',
-                  }
-                : {},
+            metadata: policy.verifiedImageFinalKeySegment
+              ? {
+                  uploadKind: input.kind,
+                  storagePhase: 'immutable_final',
+                  inspectedBy: 'server_byte_probe',
+                }
+              : { uploadKind: input.kind },
           },
           select: {
             id: true,
@@ -639,7 +668,7 @@ export class MediaUploadService {
         metadata: {
           source: 'direct_upload',
           uploadKind: input.kind,
-          ...(input.kind === 'ai_reference_image'
+          ...(policy.verifiedImageFinalKeySegment
             ? {
                 storagePhase: 'immutable_final',
                 inspectedBy: 'server_byte_probe',
@@ -706,11 +735,12 @@ export class MediaUploadService {
     };
   }
 
-  private async finalizeReferenceImage(
+  private async finalizeVerifiedImage(
     userId: string,
     stagingKey: string,
     finalKey: string,
     requestedContentType: string,
+    uploadKind: UploadKind,
     policy: UploadKindPolicy,
   ): Promise<ConfirmedUploadTruth> {
     // A retry after a successful promotion may find staging already deleted.
@@ -722,9 +752,10 @@ export class MediaUploadService {
       : await this.headUploadObject(userId, stagingKey);
     if (!sourceHead.exists) throw mediaObjectNotFound();
 
-    const header = requireReferenceImageHead(
+    const header = requireVerifiedImageHead(
       sourceHead,
       requestedContentType,
+      uploadKind,
       policy,
     );
     let promoted: Awaited<ReturnType<OutputStorageService['promoteObject']>>;
@@ -756,7 +787,7 @@ export class MediaUploadService {
       }
       if (error instanceof ServiceUnavailableException) throw error;
       this.logger.error(
-        `reference image promotion failed user=${userId} key=${stagingKey}: ${
+        `verified image promotion failed user=${userId} key=${stagingKey}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -910,7 +941,7 @@ interface ConfirmedUploadTruth {
   checksumSha256: string | null;
 }
 
-interface ReferenceImageHead {
+interface VerifiedImageHead {
   providerId: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
   storageProvider: MediaStorageProvider;
   bucket: string;
@@ -919,7 +950,7 @@ interface ReferenceImageHead {
   sizeBytes: number;
 }
 
-function assertReadyReferenceImageLedger(asset: {
+function assertReadyVerifiedImageLedger(asset: {
   status: MediaAssetStatus;
   storageProvider: MediaStorageProvider;
   bucket: string | null;
@@ -946,18 +977,18 @@ function assertReadyReferenceImageLedger(asset: {
     !/^[a-f0-9]{64}$/.test(asset.checksumSha256)
   ) {
     throw new ServiceUnavailableException({
-      code: 'MEDIA_REFERENCE_IMAGE_LEDGER_INCOMPLETE',
-      message:
-        'The finalized reference image is missing server-verified metadata.',
+      code: 'MEDIA_VERIFIED_IMAGE_LEDGER_INCOMPLETE',
+      message: 'The finalized image is missing server-verified metadata.',
     });
   }
 }
 
-function requireReferenceImageHead(
+function requireVerifiedImageHead(
   head: HeadObjectResult,
   requestedContentType: string,
+  uploadKind: UploadKind,
   policy: UploadKindPolicy,
-): ReferenceImageHead {
+): VerifiedImageHead {
   if (!head.exists) throw mediaObjectNotFound();
   const contentType = normalizeImageMime(head.contentType);
   const requested = normalizeImageMime(requestedContentType);
@@ -988,7 +1019,7 @@ function requireReferenceImageHead(
   if (head.sizeBytes > policy.maxBytes) {
     throw new PayloadTooLargeException({
       code: 'MEDIA_FILE_TOO_LARGE',
-      message: `file too large for ai_reference_image (max ${policy.maxBytes} bytes)`,
+      message: `file too large for ${uploadKind} (max ${policy.maxBytes} bytes)`,
     });
   }
   if (!head.bucket) {
@@ -1052,16 +1083,25 @@ function normalizeImageMime(
   return null;
 }
 
-function referenceImageFinalKey(stagingKey: string): string {
-  const marker = '/ai-reference-image-staging/';
+function verifiedImageFinalKey(
+  stagingKey: string,
+  policy: UploadKindPolicy,
+): string {
+  if (!policy.verifiedImageFinalKeySegment) {
+    throw new ServiceUnavailableException({
+      code: 'MEDIA_VERIFIED_IMAGE_POLICY_INVALID',
+      message: 'Verified image upload policy is missing a final key segment.',
+    });
+  }
+  const marker = `/${policy.keySegment}/`;
   const markerIndex = stagingKey.indexOf(marker);
   if (markerIndex < 0 || stagingKey.indexOf(marker, markerIndex + 1) >= 0) {
     throw new BadRequestException({
-      code: 'MEDIA_REFERENCE_IMAGE_STAGING_KEY_INVALID',
-      message: 'storageKey is not a valid reference-image staging key',
+      code: 'MEDIA_VERIFIED_IMAGE_STAGING_KEY_INVALID',
+      message: 'storageKey is not a valid verified-image staging key',
     });
   }
-  return `${stagingKey.slice(0, markerIndex)}/ai-reference-image-final/${stagingKey.slice(markerIndex + marker.length)}`;
+  return `${stagingKey.slice(0, markerIndex)}/${policy.verifiedImageFinalKeySegment}/${stagingKey.slice(markerIndex + marker.length)}`;
 }
 
 function mediaObjectNotFound(): NotFoundException {

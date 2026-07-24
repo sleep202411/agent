@@ -3,12 +3,12 @@
  *
  * Two steps:
  *   1. `POST /aurora/media/upload-url` — generic uploads remain stateless.
- *      AI reference images receive a disposable staging key; confirm promotes
- *      it to an unsigned final object before byte inspection. Story clips are
+ *      Server-verified images receive a disposable staging key; confirm
+ *      promotes it to an unsigned final object before byte inspection. Story clips are
  *      the durable exception and create a project-scoped upload session.
  *   2. `POST /aurora/media/confirm`    — after the PUT lands, the server
  *      verifies the bytes and only then writes an `active` MediaAsset. AI
- *      reference images are streamed back, hashed, format-probed, and fully
+ *      verified images are streamed back, hashed, format-probed, and fully
  *      decoded from immutable final storage before they become active.
  *
  * `kind` is a CLOSED enum — every upload entry point the product offers
@@ -30,6 +30,8 @@ export const UploadKindSchema = z.enum([
   'ip_banner',
   'news_cover',
   'ai_reference_image',
+  'studio_agent_image',
+  'studio_agent_document',
   'ai_reference_video',
   'ai_reference_audio',
   'story_music_audio',
@@ -60,7 +62,7 @@ export interface CreateUploadUrlResponseDto {
   method: 'PUT';
   headers: Record<string, string>;
   /**
-   * Server-decided object key. AI reference images and Story clips receive a
+   * Server-decided object key. Verified images and Story clips receive a
    * staging key; other generic uploads receive their permanent key. The client
    * echoes it verbatim to confirm and derives nothing from `uploadUrl`.
    */
@@ -88,7 +90,7 @@ export const ConfirmUploadSchema = z.object({
   /** The exact key issued by upload-url; ownership + existence are verified. */
   storageKey: z.string().trim().min(1).max(1024),
   kind: UploadKindSchema,
-  /** Re-asserted against storage metadata and, for reference images, bytes. */
+  /** Re-asserted against storage metadata and, for verified images, bytes. */
   contentType: z.string().trim().min(1).max(128),
   /** Required for story_clip_video; omitted by stateless generic uploads. */
   uploadSessionId: z.string().uuid().optional(),
@@ -104,7 +106,7 @@ export interface ConfirmUploadResponseDto {
    * so that flow returns null explicitly.
    */
   variantId: string | null;
-  /** Final immutable key for reference images; otherwise the issued key. */
+  /** Final immutable key for verified images; otherwise the issued key. */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
   /** Present for durable Story clip sessions. */
