@@ -1662,7 +1662,6 @@
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
-      "generating": "{count} 個影片生成中",
       "textFirstWithoutVideo": "文字優先 · 影片可選",
       "textFirstProgress": "文字優先故事",
       "updatedUnknown": "更新時間不可用"
@@ -1671,7 +1670,6 @@
       "references": "參考位",
       "clips": "鏡頭",
       "videos": "目前影片",
-      "generating": "生成中",
       "choices": "選擇",
       "endings": "結局",
       "graphClips": "劇情鏡頭",
@@ -1996,8 +1994,8 @@
         "root": "故事世界",
         "clip": "影像鏡頭",
         "text": "關鍵劇情",
-        "choice": "分支選擇",
-        "decision": "分支選擇",
+        "choice": "玩家選擇",
+        "decision": "玩家選擇",
         "ending": "故事結局",
         "character": "角色"
       },
@@ -2013,6 +2011,16 @@
         "newChoice": "連接新選項",
         "ending": "進入結局"
       },
+      "decisionCard": {
+        "promptPlaceholder": "玩家此刻必須決定甚麼？",
+        "defaultOption": "選項 {number}",
+        "untitledOption": "未命名選項",
+        "linkedTarget": "已連接後續",
+        "addOption": "新增選項",
+        "cancelOption": "取消新增選項",
+        "optionPlaceholder": "輸入玩家看到的選項",
+        "connectOption": "連接這個選項"
+      },
       "creator": {
         "title": "新增至故事圖",
         "description": "建立互動故事結構中的圖元素。",
@@ -2022,13 +2030,13 @@
         "textDescription": "帶有獨立後續走向或玩家選擇的關鍵劇情。",
         "character": "角色",
         "characterDescription": "隸屬於本故事世界的角色卡。",
-        "choice": "分支選擇",
+        "choice": "玩家選擇",
         "choiceDescription": "把目前鏡頭的結尾轉換成玩家選擇。",
         "choiceUnavailable": "請先選取一個影像鏡頭。",
         "ending": "故事結局",
         "endingDescription": "儲存於故事聖經中的命名結局。",
         "root": "故事世界",
-        "rootDescription": "將世界觀與宣傳片節點重新加入畫布。"
+        "rootDescription": "將故事世界節點重新加入畫布。"
       },
       "connectionCreator": {
         "title": "建立下一步",
@@ -2047,7 +2055,7 @@
         "rootSummary": "從這裡定義故事前提、世界規則、人物關係與敘事狀態。",
         "clip": "鏡頭",
         "text": "關鍵劇情",
-        "decision": "選擇",
+        "decision": "玩家選擇",
         "ending": "結局"
       },
       "foundation": {
@@ -2062,8 +2070,19 @@
       "world": {
         "eyebrow": "故事世界",
         "title": "故事設定",
-        "action": "故事設定",
         "description": "支撐每個分支的前提、角色與世界規則；修改會自動儲存到草稿。",
+        "cover": {
+          "title": "封面素材",
+          "description": "項目共用的一張圖片或一段影片，用於故事世界節點和項目列表。",
+          "empty": "尚未設定封面",
+          "unavailable": "封面預覽暫不可用",
+          "choose": "選擇素材",
+          "replace": "更換素材",
+          "remove": "移除",
+          "imageAlt": "項目封面",
+          "videoLabel": "項目封面影片",
+          "candidateLoadError": "候選素材載入失敗。"
+        },
         "characters": {
           "cardEyebrow": "角色",
           "cardUntitled": "未命名角色",
@@ -2143,59 +2162,9 @@
       "metrics": {
         "characters": "人物"
       },
-      "trailer": {
-        "eyebrow": "世界觀宣傳片",
-        "title": "宣傳片導演設計",
-        "description": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-        "node": {
-          "noVideo": "尚無宣傳片影片",
-          "videoPreview": "目前宣傳片影片預覽"
-        },
-        "production": {
-          "title": "影片製作",
-          "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-          "disabled": {
-            "permission": "請選擇影片模型。"
-          },
-          "errors": {
-            "action": "請先輸入提示詞。"
-          }
-        }
-      },
       "production": {
-        "title": "影片製作",
-        "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-        "emptyPrompt": "描述你想生成的影片。",
-        "masterPrompt": "提示詞",
-        "promptLocalHint": "配方保留在目前頁面。生成時會凍結準確的提示詞、模型、時長、模式與參考圖。",
-        "generate": "生成影片",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "請先輸入提示詞。",
-          "modelRequired": "請選擇影片模型。",
-          "referencesRequired": "請準確加入一張首幀和一張尾幀。",
-          "permission": "你沒有為此項目生成影片的權限。",
-          "generating": "此節點已有影片正在生成。"
-        },
-        "statuses": {
-          "generating": "生成中",
-          "queued": "排隊中",
-          "running": "生成中",
-          "processing": "處理中",
-          "ready": "就緒",
-          "failed": "失敗",
-          "cancelled": "已取消",
-          "superseded": "已被取代"
-        },
-        "referenceRail": {
-          "unapproved": "未批准",
-          "remove": "移除 {label}",
-          "add": "加入參考圖",
-          "addTitle": "已批准的項目參考圖"
-        },
-        "durationControl": {
-          "label": "時長",
-          "seconds": "{count}s"
+          "permission": "你沒有管理此專案影片的權限。"
         },
         "errors": {
           "action": "製作操作無法完成。"
@@ -2203,26 +2172,19 @@
         "node": {
           "noVideo": "尚無影片",
           "videoPreview": "目前影片預覽",
-          "generationFailed": "生成失敗"
-        },
-        "model": "模型",
-        "references": "參考圖",
-        "modeToggle": {
-          "label": "生成模式",
-          "multimodal": "參考圖",
-          "firstLast": "首尾幀"
-        },
-        "uploadReference": {
-          "action": "上載參考圖",
-          "uploading": "上載中 {progress}%",
-          "error": "參考圖上載失敗。"
+          "metadata": {
+            "duration": "時長",
+            "dimensions": "解析度",
+            "fileSize": "檔案大小",
+            "format": "格式"
+          }
         }
       },
       "productionCanvas": {
         "title": "創作畫布",
         "identity": "Story Studio · 內容創作",
         "groupDropHint": "放開以加入此分組",
-        "workspaceLabel": "項目創作畫布，從「{title}」進入",
+        "workspaceLabel": "項目素材創作空間",
         "backToChapter": "返回章節畫布",
         "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
         "loadError": "無法開啟創作畫布。",
@@ -2263,52 +2225,64 @@
           "error": "儲存失敗"
         }
       },
+      "candidatePicker": {
+        "title": "選擇素材",
+        "description": "從目前項目的候選素材中選擇，或上載本機檔案。",
+        "filterLabel": "篩選候選素材",
+        "filters": {
+          "all": "全部",
+          "image": "圖片",
+          "video": "影片"
+        },
+        "upload": {
+          "prompt": "拖放檔案到這裡，或從本機選擇。",
+          "hint": "可上載的檔案類型由目前素材位置決定。",
+          "release": "放開即可上載",
+          "action": "上載素材",
+          "uploading": "正在上載 · {progress}%",
+          "processing": "正在準備素材…",
+          "unsupported": "目前不支援這種檔案類型。",
+          "error": "無法上載此素材。"
+        },
+        "loading": "正在載入候選素材…",
+        "retry": "重試",
+        "empty": "沒有符合條件的候選素材",
+        "emptyDescription": "請先在創作畫布中將完成的圖片或影片加入候選素材。",
+        "assetLabel": {
+          "image": "圖片 {index}",
+          "video": "影片 {index}"
+        },
+        "selectAsset": "選擇{label}",
+        "clearAsset": "取消選擇{label}",
+        "select": "選擇",
+        "current": "目前使用",
+        "clear": "取消選擇",
+        "metadataIncomplete": "資訊不完整 · 仍可使用",
+        "selectError": "無法套用此候選素材。",
+        "clearError": "無法取消選擇目前素材。"
+      },
+      "mediaCreation": "素材創作",
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
-        "nodeId": "穩定節點 ID",
         "media": {
           "title": "目前影片",
           "description": "上載本機檔案，或重用目前工作區中的影片。",
           "preview": "{title} 的目前影片",
           "empty": "尚未選擇影片",
           "emptyDescription": "為這個故事片段加入可播放的影片。",
-          "candidates": "候選影片",
-          "candidateDescription": "從項目共用創作畫布整理出的素材中選擇。",
-          "candidateEmpty": "尚未有候選影片",
-          "candidateEmptyDescription": "請先在創作畫布中將成片加入候選素材。",
-          "candidateUse": "使用此影片",
-          "candidateUsing": "正在套用…",
-          "candidateSelected": "目前使用",
-          "candidateUnavailable": "此影片仍在準備可播放的原始版本。",
+          "candidateAction": "從候選素材中選擇",
+          "candidateActionDescription": "{count} 個候選影片",
+          "candidateUnavailable": "此影片沒有可存取的原始版本。",
           "candidateLoadError": "無法載入候選影片。",
-          "candidateRetry": "重試",
-          "upload": "上載本機影片",
-          "replace": "從本機取代",
-          "uploading": "正在上載 · {progress}%",
-          "processing": "正在處理影片…",
-          "processingDescription": "正在校驗影片並準備可播放版本。",
-          "accepted": "MP4 影片",
           "preparing": "正在準備片段媒體資料。",
           "unknownDimensions": "尺寸未知",
-          "unknownDuration": "時長未知",
-          "errors": {
-            "candidate": "無法套用此候選影片。",
-            "upload": "無法上載此影片。"
-          },
-          "tabUpload": "影片上載",
-          "tabProduction": "創作畫布"
-        },
-        "productionCanvas": {
-          "title": "創作畫布",
-          "description": "開啟整個項目共用的媒體創作畫布，素材與生成鏈路可跨章節重用。",
-          "action": "進入創作畫布",
-          "hint": "返回後會回到目前章節位置。"
+          "unknownDuration": "時長未知"
         },
         "exit": "後續走向",
         "production": "製作狀態",
         "openProduction": "開啟鏡頭製作",
-        "choices": "分支選擇",
+        "choices": "玩家選擇",
         "chapterTransitions": {
           "title": "前往其他章節",
           "continueHint": "選擇本場景結束後進入的章節開場。",
@@ -2349,8 +2323,6 @@
         "removeDecision": "移除選擇環節",
         "cancel": "取消",
         "nodeName": "名稱",
-        "nodeDescription": "描述",
-        "nodeDescriptionPlaceholder": "這個片段講甚麼？",
         "textTitle": "場景標題",
         "textTitlePlaceholder": "為這個關鍵劇情命名",
         "textBody": "場景正文",
@@ -2394,10 +2366,6 @@
           "layout": {
             "title": "畫布佈局",
             "description": "未儲存的節點位置或故事世界顯示狀態將會遺失。"
-          },
-          "generation": {
-            "title": "生成設定",
-            "description": "尚未提交的影片生成設定將會遺失。"
           }
         },
         "stay": "留在畫布",
@@ -2449,12 +2417,11 @@
     },
     "overview": {
       "productionTitle": "影片生產",
-      "productionSubtitle": "目前工作草稿的參考就緒度、影片覆蓋與活躍生成工作。",
+      "productionSubtitle": "目前工作草稿的參考就緒度與影片覆蓋。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事結構",
       "storyStructureSubtitle": "選擇、狀態與結局均以創作圖為唯一真源。",
       "videoState": "目前影片狀態",
-      "videoStateGenerating": "{count} 個鏡頭正在生成替換影片。",
       "videoStateReady": "{total} 個鏡頭中已有 {current} 個綁定目前影片。",
       "revisionTitle": "版本識別",
       "draftRevision": "草稿修訂",
@@ -2556,13 +2523,11 @@
     },
     "production": {
       "title": "鏡頭生產",
-      "subtitle": "每個故事片段的目前影片與生成狀態。",
+      "subtitle": "每個故事片段目前綁定的影片。",
       "clipCount": "{count} 個鏡頭",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以執行下一步",
       "currentDraftPromptRequired": "請在故事畫布中生成或上載影片。",
-      "generationInProgress": "替換影片正在生成中。",
-      "generationFailed": "最近一次生成失敗；此前的影片仍保持為目前影片。",
       "currentVideoReady": "目前鏡頭已綁定影片。",
       "columns": {
         "key": "編號",

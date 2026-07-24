@@ -11,20 +11,6 @@ export interface StorySubmissionStorage {
   removeItem(key: string): void;
 }
 
-export class StoryProductionActionGate {
-  private inFlight = false;
-
-  tryAcquire(): boolean {
-    if (this.inFlight) return false;
-    this.inFlight = true;
-    return true;
-  }
-
-  release(): void {
-    this.inFlight = false;
-  }
-}
-
 /** Retains an idempotency key with only the request's SHA-256 until confirmation. */
 export class StorySubmissionKeyRegistry {
   private readonly records = new Map<string, SubmissionKeyRecord>();

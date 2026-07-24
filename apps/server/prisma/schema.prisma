@@ -4795,19 +4795,18 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
-  outputs                     AiJobOutput[]
-  attempts                    AiJobAttempt[]
-  events                      AiEventOutbox[]
-  costLedger                  AiCostLedgerEntry[]
-  traceEvents                 AiProviderTraceEvent[]
-  mediaAssetUsages            MediaAssetUsage[]
-  storyReferenceVersions      StoryReferenceVersion[]
-  storyVideoGenerationAttempt StoryVideoGenerationAttempt?
-  canonicalModel              AiCanonicalModel?            @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
-  providerBinding             AiProviderModelBinding?      @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
-  workspace                   Workspace?                   @relation(fields: [workspaceId], references: [id])
-  project                     PlatformProject?             @relation(fields: [projectId], references: [id])
-  document                    PlatformDocument?            @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  outputs                AiJobOutput[]
+  attempts               AiJobAttempt[]
+  events                 AiEventOutbox[]
+  costLedger             AiCostLedgerEntry[]
+  traceEvents            AiProviderTraceEvent[]
+  mediaAssetUsages       MediaAssetUsage[]
+  storyReferenceVersions StoryReferenceVersion[]
+  canonicalModel         AiCanonicalModel?       @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
+  providerBinding        AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
+  workspace              Workspace?              @relation(fields: [workspaceId], references: [id])
+  project                PlatformProject?        @relation(fields: [projectId], references: [id])
+  document               PlatformDocument?       @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -4859,11 +4858,10 @@ model AiJobOutput {
   /// generated even after the user hides a gallery item.
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  job                         AiJob                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  asset                       MediaAsset?                  @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  mediaAssetUsages            MediaAssetUsage[]
-  storyReferenceVersions      StoryReferenceVersion[]
-  storyVideoGenerationAttempt StoryVideoGenerationAttempt?
+  job                    AiJob                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  asset                  MediaAsset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  mediaAssetUsages       MediaAssetUsage[]
+  storyReferenceVersions StoryReferenceVersion[]
 
   @@unique([jobId, outputIndex], name: "uniq_job_output_index", map: "ai_outputs_job_index_unique")
   @@index([jobId], map: "ai_outputs_job_idx")
@@ -5710,37 +5708,35 @@ model MediaAsset {
   updatedAt          DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt          DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
-  workspace                             Workspace?                             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  aiJobOutputs                          AiJobOutput[]
-  certificateImages                     UserCertificate[]                      @relation("UserCertificateImage")
-  ipCovers                              Ip[]                                   @relation("IpCoverAsset")
-  ipLocalizationCovers                  IpLocalization[]                       @relation("IpLocalizationCoverAsset")
-  ipTrailers                            Ip[]                                   @relation("IpTrailerAsset")
-  ipEpisodeCovers                       IpEpisode[]                            @relation("IpEpisodeCoverAsset")
-  ipEpisodeMedia                        IpEpisode[]                            @relation("IpEpisodeMediaAsset")
-  ipEpisodeTrailers                     IpEpisode[]                            @relation("IpEpisodeTrailerAsset")
-  ipLibraryAssets                       IpAsset[]                              @relation("IpLibraryMediaAsset")
-  ipDiscoveryImages                     IpDiscoveryRecommendation[]            @relation("IpDiscoveryImageAsset")
-  ipDiscoveryMobileImages               IpDiscoveryRecommendation[]            @relation("IpDiscoveryMobileImageAsset")
-  ipDiscoveryTrailerMedia               IpDiscoveryRecommendation[]            @relation("IpDiscoveryTrailerMediaAsset")
-  ipReportEvidence                      IpContentReport[]                      @relation("IpReportEvidenceAsset")
-  variants                              MediaAssetVariant[]
-  placements                            MediaObjectPlacement[]
-  usages                                MediaAssetUsage[]
-  characterCovers                       StudioCharacter[]                      @relation("CharacterCover")
-  characterMedia                        CharacterMedia[]
-  providerMirrors                       AiProviderMediaAssetMirror[]
-  storyProjectCovers                    StoryProject[]                         @relation("StoryProjectCover")
-  storyReferenceVersions                StoryReferenceVersion[]                @relation("StoryReferenceAsset")
-  storyVideoGenerationAttemptOutputs    StoryVideoGenerationAttempt[]          @relation("StoryVideoGenerationAttemptOutputAsset")
-  storyVideoGenerationAttemptReferences StoryVideoGenerationAttemptReference[] @relation("StoryVideoGenerationAttemptReferenceAsset")
-  storyVideoSelectionCurrentVideos      StoryVideoSelection[]                  @relation("StoryVideoSelectionCurrentAsset")
-  storyBuildAssets                      StoryBuildAsset[]                      @relation("StoryBuildAssetMedia")
-  storyCandidateAssets                  StoryCandidateAsset[]                  @relation("StoryCandidateAssetMedia")
-  moderationCases                       MediaModerationCase[]
-  moderationActions                     MediaModerationAction[]
-  processingJobs                        MediaProcessingJob[]
-  storyVideoUploadSession               StoryVideoUploadSession?
+  workspace                        Workspace?                   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  aiJobOutputs                     AiJobOutput[]
+  certificateImages                UserCertificate[]            @relation("UserCertificateImage")
+  ipCovers                         Ip[]                         @relation("IpCoverAsset")
+  ipLocalizationCovers             IpLocalization[]             @relation("IpLocalizationCoverAsset")
+  ipTrailers                       Ip[]                         @relation("IpTrailerAsset")
+  ipEpisodeCovers                  IpEpisode[]                  @relation("IpEpisodeCoverAsset")
+  ipEpisodeMedia                   IpEpisode[]                  @relation("IpEpisodeMediaAsset")
+  ipEpisodeTrailers                IpEpisode[]                  @relation("IpEpisodeTrailerAsset")
+  ipLibraryAssets                  IpAsset[]                    @relation("IpLibraryMediaAsset")
+  ipDiscoveryImages                IpDiscoveryRecommendation[]  @relation("IpDiscoveryImageAsset")
+  ipDiscoveryMobileImages          IpDiscoveryRecommendation[]  @relation("IpDiscoveryMobileImageAsset")
+  ipDiscoveryTrailerMedia          IpDiscoveryRecommendation[]  @relation("IpDiscoveryTrailerMediaAsset")
+  ipReportEvidence                 IpContentReport[]            @relation("IpReportEvidenceAsset")
+  variants                         MediaAssetVariant[]
+  placements                       MediaObjectPlacement[]
+  usages                           MediaAssetUsage[]
+  characterCovers                  StudioCharacter[]            @relation("CharacterCover")
+  characterMedia                   CharacterMedia[]
+  providerMirrors                  AiProviderMediaAssetMirror[]
+  storyProjectCovers               StoryProject[]               @relation("StoryProjectCover")
+  storyReferenceVersions           StoryReferenceVersion[]      @relation("StoryReferenceAsset")
+  storyVideoSelectionCurrentVideos StoryVideoSelection[]        @relation("StoryVideoSelectionCurrentAsset")
+  storyBuildAssets                 StoryBuildAsset[]            @relation("StoryBuildAssetMedia")
+  storyCandidateAssets             StoryCandidateAsset[]        @relation("StoryCandidateAssetMedia")
+  moderationCases                  MediaModerationCase[]
+  moderationActions                MediaModerationAction[]
+  processingJobs                   MediaProcessingJob[]
+  storyVideoUploadSession          StoryVideoUploadSession?
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
@@ -5775,16 +5771,14 @@ model MediaAssetVariant {
   updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?               @map("deleted_at") @db.Timestamptz(6)
 
-  asset                                 MediaAsset                             @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  placements                            MediaObjectPlacement[]
-  usages                                MediaAssetUsage[]
-  moderationActions                     MediaModerationAction[]
-  processingJobs                        MediaProcessingJob[]                   @relation("MediaProcessingSourceVariant")
-  storyReferenceVersions                StoryReferenceVersion[]                @relation("StoryReferenceVariant")
-  storyVideoGenerationAttemptOutputs    StoryVideoGenerationAttempt[]          @relation("StoryVideoGenerationAttemptOutputVariant")
-  storyVideoGenerationAttemptReferences StoryVideoGenerationAttemptReference[] @relation("StoryVideoGenerationAttemptReferenceVariant")
-  storyVideoSelectionCurrentVideos      StoryVideoSelection[]                  @relation("StoryVideoSelectionCurrentVariant")
-  storyBuildAssets                      StoryBuildAsset[]                      @relation("StoryBuildAssetVariant")
+  asset                            MediaAsset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  placements                       MediaObjectPlacement[]
+  usages                           MediaAssetUsage[]
+  moderationActions                MediaModerationAction[]
+  processingJobs                   MediaProcessingJob[]    @relation("MediaProcessingSourceVariant")
+  storyReferenceVersions           StoryReferenceVersion[] @relation("StoryReferenceVariant")
+  storyVideoSelectionCurrentVideos StoryVideoSelection[]   @relation("StoryVideoSelectionCurrentVariant")
+  storyBuildAssets                 StoryBuildAsset[]       @relation("StoryBuildAssetVariant")
 
   @@unique([assetId, variantKey], map: "media_asset_variants_asset_key_unique")
   @@unique([id, assetId], map: "media_asset_variants_id_asset_unique")
@@ -6406,7 +6400,6 @@ enum StoryReferenceSource {
   upload
   ai_job
   import
-  generation_frame
 }
 
 enum StoryReferenceVersionStatus {
@@ -6414,27 +6407,6 @@ enum StoryReferenceVersionStatus {
   processing
   ready
   failed
-}
-
-enum StoryVideoTargetKind {
-  clip
-  trailer
-}
-
-enum StoryVideoReferenceRole {
-  reference
-  first_frame
-  last_frame
-}
-
-enum StoryVideoGenerationAttemptStatus {
-  queued
-  running
-  processing
-  ready
-  superseded
-  failed
-  cancelled
 }
 
 model StoryProject {
@@ -6457,28 +6429,26 @@ model StoryProject {
   createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace                        Workspace                              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  cover                            MediaAsset?                            @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
-  members                          StoryProjectMember[]
-  draft                            StoryDraft?
-  productionCanvas                 StoryProductionCanvas?
-  chapters                         StoryChapter[]
-  canvasLayouts                    StoryCanvasLayout[]
-  writeState                       StoryProjectWriteState?
-  agentRuns                        StoryAgentRun[]
-  revisions                        StoryRevision[]
-  builds                           StoryBuild[]
-  experiencePublications           StoryExperiencePublication[]
-  experienceDraftReleases          StoryExperienceDraftRelease[]
-  referenceSlots                   StoryReferenceSlot[]
-  referenceVersions                StoryReferenceVersion[]
-  videoSelections                  StoryVideoSelection[]
-  videoGenerationAttempts          StoryVideoGenerationAttempt[]
-  videoGenerationAttemptReferences StoryVideoGenerationAttemptReference[]
-  videoBuildClips                  StoryVideoBuildClip[]
-  storyBuildAssets                 StoryBuildAsset[]
-  candidateAssets                  StoryCandidateAsset[]
-  videoUploadSessions              StoryVideoUploadSession[]
+  workspace               Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  cover                   MediaAsset?                   @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  members                 StoryProjectMember[]
+  draft                   StoryDraft?
+  productionCanvas        StoryProductionCanvas?
+  chapters                StoryChapter[]
+  canvasLayouts           StoryCanvasLayout[]
+  writeState              StoryProjectWriteState?
+  agentRuns               StoryAgentRun[]
+  revisions               StoryRevision[]
+  builds                  StoryBuild[]
+  experiencePublications  StoryExperiencePublication[]
+  experienceDraftReleases StoryExperienceDraftRelease[]
+  referenceSlots          StoryReferenceSlot[]
+  referenceVersions       StoryReferenceVersion[]
+  videoSelections         StoryVideoSelection[]
+  videoBuildClips         StoryVideoBuildClip[]
+  storyBuildAssets        StoryBuildAsset[]
+  candidateAssets         StoryCandidateAsset[]
+  videoUploadSessions     StoryVideoUploadSession[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, format, status, updatedAt(sort: Desc)], map: "story_projects_workspace_format_recent_idx")
@@ -6945,7 +6915,7 @@ model StoryBuildAsset {
   role           StoryAssetRole
   assetId        String         @map("asset_id") @db.Uuid
   variantId      String         @map("variant_id") @db.Uuid
-  checksumSha256 String         @map("checksum_sha256") @db.VarChar(64)
+  checksumSha256 String?        @map("checksum_sha256") @db.VarChar(64)
   contentType    String         @map("content_type") @db.VarChar(128)
   browserSafeMp4 Boolean?       @map("browser_safe_mp4")
   sizeBytes      BigInt?        @map("size_bytes")
@@ -6982,10 +6952,9 @@ model StoryReferenceSlot {
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project                     StoryProject                           @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  versions                    StoryReferenceVersion[]                @relation("StoryReferenceSlotVersions")
-  approvedVersion             StoryReferenceVersion?                 @relation("StoryApprovedReferenceVersion", fields: [approvedVersionId, id], references: [id, referenceSlotId], onDelete: NoAction)
-  generationAttemptReferences StoryVideoGenerationAttemptReference[] @relation("StoryVideoGenerationAttemptReferenceSlot")
+  project         StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  versions        StoryReferenceVersion[] @relation("StoryReferenceSlotVersions")
+  approvedVersion StoryReferenceVersion?  @relation("StoryApprovedReferenceVersion", fields: [approvedVersionId, id], references: [id, referenceSlotId], onDelete: NoAction)
 
   @@unique([storyProjectId, key], map: "story_reference_slots_project_key_unique")
   @@unique([id, storyProjectId], map: "story_reference_slots_scope_unique")
@@ -6995,40 +6964,35 @@ model StoryReferenceSlot {
 }
 
 model StoryReferenceVersion {
-  id                         String                      @id @default(uuid(7)) @db.Uuid
-  storyProjectId             String                      @map("story_project_id") @db.Uuid
-  referenceSlotId            String                      @map("reference_slot_id") @db.Uuid
-  versionNumber              Int                         @map("version_number")
-  submissionKey              String                      @unique @map("submission_key") @db.VarChar(240)
-  requestFingerprint         String                      @map("request_fingerprint") @db.VarChar(64)
-  source                     StoryReferenceSource
-  status                     StoryReferenceVersionStatus @default(pending)
-  aiJobId                    String?                     @map("ai_job_id") @db.Uuid
-  aiJobOutputId              String?                     @unique @map("ai_job_output_id")
-  sourceGenerationAttemptId  String?                     @map("source_generation_attempt_id") @db.Uuid
-  sourceFrameIndex           Int?                        @map("source_frame_index")
-  sourceOutputChecksumSha256 String?                     @map("source_output_checksum_sha256") @db.VarChar(64)
-  assetId                    String                      @map("asset_id") @db.Uuid
-  variantId                  String                      @map("variant_id") @db.Uuid
-  sourceRecipeSnapshot       Json?                       @map("source_recipe_snapshot") @db.JsonB
-  checksumSha256             String                      @map("checksum_sha256") @db.VarChar(64)
-  error                      Json?                       @db.JsonB
-  reviewRevision             Int                         @default(0) @map("review_revision")
-  createdByUserId            String                      @map("created_by_user_id") @db.VarChar(64)
-  createdAt                  DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
-  readyAt                    DateTime?                   @map("ready_at") @db.Timestamptz(6)
+  id                   String                      @id @default(uuid(7)) @db.Uuid
+  storyProjectId       String                      @map("story_project_id") @db.Uuid
+  referenceSlotId      String                      @map("reference_slot_id") @db.Uuid
+  versionNumber        Int                         @map("version_number")
+  submissionKey        String                      @unique @map("submission_key") @db.VarChar(240)
+  requestFingerprint   String                      @map("request_fingerprint") @db.VarChar(64)
+  source               StoryReferenceSource
+  status               StoryReferenceVersionStatus @default(pending)
+  aiJobId              String?                     @map("ai_job_id") @db.Uuid
+  aiJobOutputId        String?                     @unique @map("ai_job_output_id")
+  assetId              String                      @map("asset_id") @db.Uuid
+  variantId            String                      @map("variant_id") @db.Uuid
+  sourceRecipeSnapshot Json?                       @map("source_recipe_snapshot") @db.JsonB
+  checksumSha256       String                      @map("checksum_sha256") @db.VarChar(64)
+  error                Json?                       @db.JsonB
+  reviewRevision       Int                         @default(0) @map("review_revision")
+  createdByUserId      String                      @map("created_by_user_id") @db.VarChar(64)
+  createdAt            DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt              DateTime?                   @map("ready_at") @db.Timestamptz(6)
 
-  project                     StoryProject                           @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  referenceSlot               StoryReferenceSlot                     @relation("StoryReferenceSlotVersions", fields: [referenceSlotId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
-  approvedForSlot             StoryReferenceSlot?                    @relation("StoryApprovedReferenceVersion")
-  aiJob                       AiJob?                                 @relation(fields: [aiJobId], references: [id], onDelete: Restrict)
-  aiJobOutput                 AiJobOutput?                           @relation(fields: [aiJobOutputId], references: [id], onDelete: Restrict)
-  sourceGenerationAttempt     StoryVideoGenerationAttempt?           @relation("StoryReferenceVersionSourceGenerationAttempt", fields: [sourceGenerationAttemptId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  asset                       MediaAsset                             @relation("StoryReferenceAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  variant                     MediaAssetVariant                      @relation("StoryReferenceVariant", fields: [variantId, assetId], references: [id, assetId], onDelete: Restrict)
-  reviews                     StoryReferenceReview[]
-  approval                    StoryReferenceApproval?
-  generationAttemptReferences StoryVideoGenerationAttemptReference[]
+  project         StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  referenceSlot   StoryReferenceSlot      @relation("StoryReferenceSlotVersions", fields: [referenceSlotId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  approvedForSlot StoryReferenceSlot?     @relation("StoryApprovedReferenceVersion")
+  aiJob           AiJob?                  @relation(fields: [aiJobId], references: [id], onDelete: Restrict)
+  aiJobOutput     AiJobOutput?            @relation(fields: [aiJobOutputId], references: [id], onDelete: Restrict)
+  asset           MediaAsset              @relation("StoryReferenceAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  variant         MediaAssetVariant       @relation("StoryReferenceVariant", fields: [variantId, assetId], references: [id, assetId], onDelete: Restrict)
+  reviews         StoryReferenceReview[]
+  approval        StoryReferenceApproval?
 
   @@unique([referenceSlotId, versionNumber], map: "story_reference_versions_slot_number_unique")
   @@unique([id, storyProjectId], map: "story_reference_versions_scope_unique")
@@ -7036,7 +7000,6 @@ model StoryReferenceVersion {
   @@unique([id, referenceSlotId, storyProjectId], map: "story_reference_versions_slot_scope_unique")
   @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_reference_versions_project_status_idx")
   @@index([aiJobId], map: "story_reference_versions_ai_job_idx")
-  @@index([sourceGenerationAttemptId, sourceFrameIndex], map: "story_reference_versions_source_generation_frame_idx")
   @@map("story_reference_versions")
 }
 
@@ -7073,137 +7036,53 @@ model StoryReferenceApproval {
   @@map("story_reference_approvals")
 }
 
-/// Project-scoped current-video state. The target key is a graph node id for
-/// clips and the literal `trailer` for the one project trailer. This row owns
-/// only selection state; generation recipes live exclusively on attempts.
+/// Project-scoped current-video state for one canonical graph clip.
 model StoryVideoSelection {
-  id                               String               @id @default(uuid(7)) @db.Uuid
-  storyProjectId                   String               @map("story_project_id") @db.Uuid
-  targetKind                       StoryVideoTargetKind @map("target_kind")
-  targetKey                        String               @map("target_key") @db.VarChar(128)
-  currentAssetId                   String?              @map("current_asset_id") @db.Uuid
-  currentVariantId                 String?              @map("current_variant_id") @db.Uuid
-  currentSourceGenerationAttemptId String?              @map("current_source_generation_attempt_id") @db.Uuid
-  currentChecksumSha256            String?              @map("current_checksum_sha256") @db.VarChar(64)
-  currentContentType               String?              @map("current_content_type") @db.VarChar(128)
-  currentDurationMs                Int?                 @map("current_duration_ms")
-  currentWidth                     Int?                 @map("current_width")
-  currentHeight                    Int?                 @map("current_height")
-  currentBrowserSafeMp4            Boolean?             @map("current_browser_safe_mp4")
-  version                          Int                  @default(0)
-  setByUserId                      String?              @map("set_by_user_id") @db.VarChar(64)
-  setAt                            DateTime?            @map("set_at") @db.Timestamptz(6)
-  createdAt                        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId        String    @map("story_project_id") @db.Uuid
+  graphNodeId           String    @map("graph_node_id") @db.VarChar(128)
+  currentAssetId        String?   @map("current_asset_id") @db.Uuid
+  currentVariantId      String?   @map("current_variant_id") @db.Uuid
+  currentChecksumSha256 String?   @map("current_checksum_sha256") @db.VarChar(64)
+  currentContentType    String?   @map("current_content_type") @db.VarChar(128)
+  currentDurationMs     Int?      @map("current_duration_ms")
+  currentWidth          Int?      @map("current_width")
+  currentHeight         Int?      @map("current_height")
+  currentBrowserSafeMp4 Boolean?  @map("current_browser_safe_mp4")
+  version               Int       @default(0)
+  setByUserId           String?   @map("set_by_user_id") @db.VarChar(64)
+  setAt                 DateTime? @map("set_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project              StoryProject                  @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  currentAsset         MediaAsset?                   @relation("StoryVideoSelectionCurrentAsset", fields: [currentAssetId], references: [id], onDelete: NoAction)
-  currentVariant       MediaAssetVariant?            @relation("StoryVideoSelectionCurrentVariant", fields: [currentVariantId, currentAssetId], references: [id, assetId], onDelete: NoAction)
-  currentSourceAttempt StoryVideoGenerationAttempt?  @relation("StoryVideoSelectionCurrentAttempt", fields: [currentSourceGenerationAttemptId, id], references: [id, selectionId], onDelete: NoAction)
-  generationAttempts   StoryVideoGenerationAttempt[] @relation("StoryVideoSelectionAttempts")
+  project        StoryProject       @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  currentAsset   MediaAsset?        @relation("StoryVideoSelectionCurrentAsset", fields: [currentAssetId], references: [id], onDelete: NoAction)
+  currentVariant MediaAssetVariant? @relation("StoryVideoSelectionCurrentVariant", fields: [currentVariantId, currentAssetId], references: [id, assetId], onDelete: NoAction)
 
-  @@unique([storyProjectId, targetKind, targetKey], map: "story_video_selections_target_unique")
+  @@unique([storyProjectId, graphNodeId], map: "story_video_selections_graph_node_unique")
   @@unique([id, storyProjectId], map: "story_video_selections_id_project_unique")
-  @@unique([currentSourceGenerationAttemptId, id], map: "story_video_selections_current_attempt_unique")
-  @@index([storyProjectId, targetKind, updatedAt(sort: Desc)], map: "story_video_selections_project_kind_idx")
+  @@index([storyProjectId, updatedAt(sort: Desc)], map: "story_video_selections_project_updated_idx")
   @@map("story_video_selections")
 }
 
-/// Immutable record of the exact recipe accepted for one generation. Retry
-/// creates another attempt with the same recipe snapshot; it never consults a
-/// mutable draft prompt or a selected video's history.
-model StoryVideoGenerationAttempt {
-  id                       String                            @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                            @map("story_project_id") @db.Uuid
-  selectionId              String                            @map("selection_id") @db.Uuid
-  attemptNumber            Int                               @map("attempt_number")
-  submissionKey            String                            @unique @map("submission_key") @db.VarChar(240)
-  requestFingerprint       String                            @map("request_fingerprint") @db.VarChar(64)
-  status                   StoryVideoGenerationAttemptStatus @default(queued)
-  selectionVersionAtSubmit Int                               @map("selection_version_at_submit")
-  recipeSnapshot           Json                              @map("recipe_snapshot") @db.JsonB
-  aiJobId                  String                            @unique @map("ai_job_id") @db.Uuid
-  aiJobOutputId            String?                           @unique @map("ai_job_output_id")
-  outputAssetId            String?                           @map("output_asset_id") @db.Uuid
-  outputVariantId          String?                           @map("output_variant_id") @db.Uuid
-  outputChecksumSha256     String?                           @map("output_checksum_sha256") @db.VarChar(64)
-  technicalChecks          Json                              @default("[]") @map("technical_checks") @db.JsonB
-  error                    Json?                             @db.JsonB
-  version                  Int                               @default(0)
-  createdByUserId          String                            @map("created_by_user_id") @db.VarChar(64)
-  queuedAt                 DateTime?                         @map("queued_at") @db.Timestamptz(6)
-  startedAt                DateTime?                         @map("started_at") @db.Timestamptz(6)
-  readyAt                  DateTime?                         @map("ready_at") @db.Timestamptz(6)
-  cancelledAt              DateTime?                         @map("cancelled_at") @db.Timestamptz(6)
-  supersededAt             DateTime?                         @map("superseded_at") @db.Timestamptz(6)
-  completedAt              DateTime?                         @map("completed_at") @db.Timestamptz(6)
-  createdAt                DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  project                      StoryProject                           @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  selection                    StoryVideoSelection                    @relation("StoryVideoSelectionAttempts", fields: [selectionId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  currentForSelection          StoryVideoSelection?                   @relation("StoryVideoSelectionCurrentAttempt")
-  aiJob                        AiJob                                  @relation(fields: [aiJobId], references: [id], onDelete: Restrict)
-  aiJobOutput                  AiJobOutput?                           @relation(fields: [aiJobOutputId], references: [id], onDelete: Restrict)
-  outputAsset                  MediaAsset?                            @relation("StoryVideoGenerationAttemptOutputAsset", fields: [outputAssetId], references: [id], onDelete: Restrict)
-  outputVariant                MediaAssetVariant?                     @relation("StoryVideoGenerationAttemptOutputVariant", fields: [outputVariantId, outputAssetId], references: [id, assetId], onDelete: Restrict)
-  sourceFrameReferenceVersions StoryReferenceVersion[]                @relation("StoryReferenceVersionSourceGenerationAttempt")
-  references                   StoryVideoGenerationAttemptReference[]
-  buildClips                   StoryVideoBuildClip[]
-
-  @@unique([selectionId, attemptNumber], map: "story_video_generation_attempts_selection_number_unique")
-  @@unique([selectionId, selectionVersionAtSubmit], map: "story_video_generation_attempts_selection_version_unique")
-  @@unique([id, storyProjectId], map: "story_video_generation_attempts_id_project_unique")
-  @@unique([id, selectionId], map: "story_video_generation_attempts_id_selection_unique")
-  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_video_generation_attempts_project_status_idx")
-  @@index([selectionId, createdAt(sort: Desc)], map: "story_video_generation_attempts_selection_recent_idx")
-  @@map("story_video_generation_attempts")
-}
-
-model StoryVideoGenerationAttemptReference {
-  storyProjectId     String                  @map("story_project_id") @db.Uuid
-  attemptId          String                  @map("attempt_id") @db.Uuid
-  referenceSlotId    String                  @map("reference_slot_id") @db.Uuid
-  referenceVersionId String                  @map("reference_version_id") @db.Uuid
-  role               StoryVideoReferenceRole
-  position           Int
-  assetId            String                  @map("asset_id") @db.Uuid
-  variantId          String                  @map("variant_id") @db.Uuid
-  checksumSha256     String                  @map("checksum_sha256") @db.VarChar(64)
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  project          StoryProject                @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  attempt          StoryVideoGenerationAttempt @relation(fields: [attemptId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  referenceSlot    StoryReferenceSlot          @relation("StoryVideoGenerationAttemptReferenceSlot", fields: [referenceSlotId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  referenceVersion StoryReferenceVersion       @relation(fields: [referenceVersionId, referenceSlotId, storyProjectId], references: [id, referenceSlotId, storyProjectId], onDelete: Restrict)
-  asset            MediaAsset                  @relation("StoryVideoGenerationAttemptReferenceAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  variant          MediaAssetVariant           @relation("StoryVideoGenerationAttemptReferenceVariant", fields: [variantId, assetId], references: [id, assetId], onDelete: Restrict)
-
-  @@id([attemptId, role, position])
-  @@index([storyProjectId, referenceVersionId], map: "story_video_generation_attempt_references_version_idx")
-  @@map("story_video_generation_attempt_references")
-}
-
 model StoryVideoBuildClip {
-  buildId                   String   @map("build_id") @db.Uuid
-  storyProjectId            String   @map("story_project_id") @db.Uuid
-  graphNodeId               String   @map("graph_node_id") @db.VarChar(128)
-  sourceGenerationAttemptId String?  @map("source_generation_attempt_id") @db.Uuid
-  buildAssetId              String   @unique @map("build_asset_id") @db.Uuid
-  logicalKey                String   @map("logical_key") @db.VarChar(160)
-  checksumSha256            String   @map("checksum_sha256") @db.VarChar(64)
-  contentType               String   @map("content_type") @db.VarChar(128)
-  durationMs                Int      @map("duration_ms")
-  width                     Int?
-  height                    Int?
-  browserSafeMp4            Boolean  @map("browser_safe_mp4")
-  rank                      Int      @default(0)
-  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  buildId        String   @map("build_id") @db.Uuid
+  storyProjectId String   @map("story_project_id") @db.Uuid
+  graphNodeId    String   @map("graph_node_id") @db.VarChar(128)
+  buildAssetId   String   @unique @map("build_asset_id") @db.Uuid
+  logicalKey     String   @map("logical_key") @db.VarChar(160)
+  checksumSha256 String?  @map("checksum_sha256") @db.VarChar(64)
+  contentType    String   @map("content_type") @db.VarChar(128)
+  durationMs     Int?     @map("duration_ms")
+  width          Int?
+  height         Int?
+  browserSafeMp4 Boolean? @map("browser_safe_mp4")
+  rank           Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  build                   StoryBuild                   @relation(fields: [buildId], references: [id], onDelete: Cascade)
-  project                 StoryProject                 @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  sourceGenerationAttempt StoryVideoGenerationAttempt? @relation(fields: [sourceGenerationAttemptId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  buildAsset              StoryBuildAsset              @relation(fields: [buildAssetId, buildId], references: [id, buildId], onDelete: Restrict)
+  build      StoryBuild      @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  project    StoryProject    @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+  buildAsset StoryBuildAsset @relation(fields: [buildAssetId, buildId], references: [id, buildId], onDelete: Restrict)
 
   @@id([buildId, graphNodeId])
   @@unique([buildAssetId, buildId], map: "story_video_build_clips_asset_build_unique")

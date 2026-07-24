@@ -5,18 +5,16 @@ import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-vide
 describe("confirmed current video projection", () => {
   it("upserts by graph node identity", () => {
     const workbench = {
-      project: { production: { currentVideoCount: 0, generatingClipCount: 0 } },
+      project: { production: { currentVideoCount: 0 } },
       video: {
         snapshotHash: "a",
         clips: [],
-        trailer: { selectionVersion: 0, currentVideo: null, generation: null },
       },
     } as unknown as StoryWorkbench;
     const confirmed = {
       graphNodeId: "opening",
       selectionVersion: 1,
       currentVideo: { asset: { id: "asset" } },
-      generation: null,
     } as StoryClipVideoSummary;
 
     const next = projectConfirmedClipCurrentVideo(workbench, confirmed);

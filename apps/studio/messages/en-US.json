@@ -1662,7 +1662,6 @@
       "draft": "Draft",
       "noSummary": "No project summary yet.",
       "videoProgress": "{current}/{total} current videos",
-      "generating": "{count} videos generating",
       "textFirstWithoutVideo": "Text-first · video optional",
       "textFirstProgress": "Text-first story",
       "updatedUnknown": "Update time unavailable"
@@ -1671,7 +1670,6 @@
       "references": "References",
       "clips": "Clips",
       "videos": "Videos",
-      "generating": "Generating",
       "choices": "Choices",
       "endings": "Endings",
       "graphClips": "Graph clips",
@@ -1996,8 +1994,8 @@
         "root": "Story world",
         "clip": "Film clip",
         "text": "Plot beat",
-        "choice": "Branch choice",
-        "decision": "Branch choice",
+        "choice": "Player choice",
+        "decision": "Player choice",
         "ending": "Story ending",
         "character": "Character"
       },
@@ -2013,6 +2011,16 @@
         "newChoice": "Connect a new option",
         "ending": "Enter ending"
       },
+      "decisionCard": {
+        "promptPlaceholder": "What must the player decide?",
+        "defaultOption": "Option {number}",
+        "untitledOption": "Untitled option",
+        "linkedTarget": "Linked destination",
+        "addOption": "Add option",
+        "cancelOption": "Cancel adding option",
+        "optionPlaceholder": "Write the player-facing option",
+        "connectOption": "Connect this option"
+      },
       "creator": {
         "title": "Add to story graph",
         "description": "Create an element in the interactive story structure.",
@@ -2022,13 +2030,13 @@
         "textDescription": "A plot beat with its own continuation or player choice.",
         "character": "Character",
         "characterDescription": "A cast member that belongs to this story world.",
-        "choice": "Branch choice",
+        "choice": "Player choice",
         "choiceDescription": "Turn the selected clip ending into a player decision.",
         "choiceUnavailable": "Select a film clip first.",
         "ending": "Story ending",
         "endingDescription": "A named outcome stored in the story bible.",
         "root": "Story world",
-        "rootDescription": "Restore the world overview and trailer node to the canvas."
+        "rootDescription": "Restore the world overview to the canvas."
       },
       "connectionCreator": {
         "title": "Create next step",
@@ -2047,7 +2055,7 @@
         "rootSummary": "Define the premise, world rules, characters, and narrative state here.",
         "clip": "Clip",
         "text": "Plot beat",
-        "decision": "Choice",
+        "decision": "Player choice",
         "ending": "Ending"
       },
       "foundation": {
@@ -2062,8 +2070,19 @@
       "world": {
         "eyebrow": "Story World",
         "title": "Story Bible",
-        "action": "Story Bible",
         "description": "The premise, cast, and world rules that ground every branch. Changes autosave to the draft.",
+        "cover": {
+          "title": "Cover media",
+          "description": "One project-level image or video used on the Story World card and in the project library.",
+          "empty": "No cover media",
+          "unavailable": "Cover preview unavailable",
+          "choose": "Choose media",
+          "replace": "Replace media",
+          "remove": "Remove",
+          "imageAlt": "Project cover",
+          "videoLabel": "Project cover video",
+          "candidateLoadError": "Candidate media could not be loaded."
+        },
         "characters": {
           "cardEyebrow": "Character",
           "cardUntitled": "Unnamed character",
@@ -2143,59 +2162,9 @@
       "metrics": {
         "characters": "Characters"
       },
-      "trailer": {
-        "eyebrow": "World trailer",
-        "title": "Trailer direction",
-        "description": "Produce the project trailer independently from story clips and runtime paths.",
-        "node": {
-          "noVideo": "No trailer video yet",
-          "videoPreview": "Trailer video preview"
-        },
-        "production": {
-          "title": "Trailer production",
-          "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
-          "disabled": {
-            "permission": "You do not have permission to generate video for this project."
-          },
-          "errors": {
-            "action": "The trailer production action could not be completed."
-          }
-        }
-      },
       "production": {
-        "title": "Video production",
-        "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
-        "emptyPrompt": "Describe the video you want to generate.",
-        "masterPrompt": "Prompt",
-        "promptLocalHint": "This recipe stays on this page. Generate freezes the exact prompt, model, duration, mode, and references.",
-        "generate": "Generate video",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "Enter a prompt before generating.",
-          "modelRequired": "Choose a video model.",
-          "referencesRequired": "Add exactly one first frame and one last frame.",
-          "permission": "You do not have permission to generate video for this project.",
-          "generating": "A video generation is already in progress for this node."
-        },
-        "statuses": {
-          "generating": "Generating",
-          "queued": "Queued",
-          "running": "Running",
-          "processing": "Processing",
-          "ready": "Ready",
-          "failed": "Failed",
-          "cancelled": "Cancelled",
-          "superseded": "Superseded"
-        },
-        "referenceRail": {
-          "unapproved": "Unapproved",
-          "remove": "Remove {label}",
-          "add": "Add reference",
-          "addTitle": "Approved project references"
-        },
-        "durationControl": {
-          "label": "Duration",
-          "seconds": "{count}s"
+          "permission": "You do not have permission to manage video for this project."
         },
         "errors": {
           "action": "The production action could not be completed."
@@ -2203,26 +2172,19 @@
         "node": {
           "noVideo": "No video yet",
           "videoPreview": "Current video preview",
-          "generationFailed": "Generation failed"
-        },
-        "model": "Model",
-        "references": "References",
-        "modeToggle": {
-          "label": "Generation mode",
-          "multimodal": "Reference images",
-          "firstLast": "First & last frame"
-        },
-        "uploadReference": {
-          "action": "Upload reference",
-          "uploading": "Uploading {progress}%",
-          "error": "The reference image could not be uploaded."
+          "metadata": {
+            "duration": "Duration",
+            "dimensions": "Resolution",
+            "fileSize": "File size",
+            "format": "Format"
+          }
         }
       },
       "productionCanvas": {
         "title": "Creation canvas",
         "identity": "Story Studio · Content creation",
         "groupDropHint": "Release to add to this group",
-        "workspaceLabel": "Project creation canvas, opened from {title}",
+        "workspaceLabel": "Project media creation workspace",
         "backToChapter": "Back to chapter canvas",
         "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
         "loadError": "The creation canvas could not be opened.",
@@ -2263,52 +2225,64 @@
           "error": "Save failed"
         }
       },
+      "candidatePicker": {
+        "title": "Choose media",
+        "description": "Choose from this project's candidate media, or upload a local file.",
+        "filterLabel": "Filter candidate media",
+        "filters": {
+          "all": "All",
+          "image": "Images",
+          "video": "Videos"
+        },
+        "upload": {
+          "prompt": "Drag a file here, or choose one from your device.",
+          "hint": "The current media type determines which files are accepted.",
+          "release": "Release to upload",
+          "action": "Upload",
+          "uploading": "Uploading · {progress}%",
+          "processing": "Preparing media…",
+          "unsupported": "This file type is not supported here.",
+          "error": "This media could not be uploaded."
+        },
+        "loading": "Loading candidate media…",
+        "retry": "Try again",
+        "empty": "No matching candidate media",
+        "emptyDescription": "Add finished images or videos to Candidate assets on the creation canvas.",
+        "assetLabel": {
+          "image": "Image {index}",
+          "video": "Video {index}"
+        },
+        "selectAsset": "Select {label}",
+        "clearAsset": "Deselect {label}",
+        "select": "Select",
+        "current": "Current",
+        "clear": "Deselect",
+        "metadataIncomplete": "Details incomplete · still usable",
+        "selectError": "This candidate media could not be applied.",
+        "clearError": "The current media could not be deselected."
+      },
+      "mediaCreation": "Media creation",
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
-        "nodeId": "Stable node ID",
         "media": {
           "title": "Current video",
           "description": "Upload a local file or reuse a video from this workspace.",
           "preview": "Current video for {title}",
           "empty": "No video selected",
           "emptyDescription": "Add the playable video for this story clip.",
-          "candidates": "Candidate videos",
-          "candidateDescription": "Choose a curated video from the shared creation canvas.",
-          "candidateEmpty": "No candidate videos yet",
-          "candidateEmptyDescription": "Add finished videos to Candidate assets on the creation canvas.",
-          "candidateUse": "Use this video",
-          "candidateUsing": "Applying…",
-          "candidateSelected": "Current",
-          "candidateUnavailable": "This video is still preparing its playable original.",
+          "candidateAction": "Choose from Candidate assets",
+          "candidateActionDescription": "{count, plural, =0 {No candidate videos} =1 {1 candidate video} other {# candidate videos}}",
+          "candidateUnavailable": "This video has no accessible original.",
           "candidateLoadError": "Candidate videos could not be loaded.",
-          "candidateRetry": "Try again",
-          "upload": "Upload local video",
-          "replace": "Replace from device",
-          "uploading": "Uploading · {progress}%",
-          "processing": "Processing video…",
-          "processingDescription": "Checking the video and preparing it for playback.",
-          "accepted": "MP4 video",
           "preparing": "Clip media is still being prepared.",
           "unknownDimensions": "Unknown size",
-          "unknownDuration": "Unknown duration",
-          "errors": {
-            "candidate": "This candidate video could not be applied.",
-            "upload": "The video could not be uploaded."
-          },
-          "tabUpload": "Upload",
-          "tabProduction": "Creation canvas"
-        },
-        "productionCanvas": {
-          "title": "Creation canvas",
-          "description": "Open the project's shared media canvas. Assets and generation lineage stay reusable across every chapter.",
-          "action": "Enter creation canvas",
-          "hint": "You will return to this exact chapter position."
+          "unknownDuration": "Unknown duration"
         },
         "exit": "Next step",
         "production": "Production status",
         "openProduction": "Open clip production",
-        "choices": "Branch choices",
+        "choices": "Player choice",
         "chapterTransitions": {
           "title": "Continue to another chapter",
           "continueHint": "Choose the chapter whose opening scene should follow this scene.",
@@ -2349,8 +2323,6 @@
         "removeDecision": "Remove choice step",
         "cancel": "Cancel",
         "nodeName": "Name",
-        "nodeDescription": "Description",
-        "nodeDescriptionPlaceholder": "What happens in this scene?",
         "textTitle": "Scene title",
         "textTitlePlaceholder": "Name this plot beat",
         "textBody": "Scene text",
@@ -2394,10 +2366,6 @@
           "layout": {
             "title": "Canvas layout",
             "description": "Unsaved node positions or Story World visibility will be lost."
-          },
-          "generation": {
-            "title": "Generation settings",
-            "description": "Unsubmitted video generation settings will be lost."
           }
         },
         "stay": "Stay on canvas",
@@ -2449,12 +2417,11 @@
     },
     "overview": {
       "productionTitle": "Video production",
-      "productionSubtitle": "Reference readiness, current video coverage, and active generations for this working draft.",
+      "productionSubtitle": "Reference readiness and current video coverage for this working draft.",
       "draftRevisionStatus": "Working draft r{revision}",
       "storyStructureTitle": "Story structure",
       "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
       "videoState": "Current video state",
-      "videoStateGenerating": "{count} clips are generating replacement videos.",
       "videoStateReady": "{current} of {total} clips currently have a video.",
       "revisionTitle": "Version identity",
       "draftRevision": "Draft revision",
@@ -2556,13 +2523,11 @@
     },
     "production": {
       "title": "Clip production",
-      "subtitle": "Current video and generation state for every story clip.",
+      "subtitle": "Current video state for every story clip.",
       "clipCount": "{count} clips",
       "seconds": "{seconds}s",
       "noBlocker": "Ready for the next action",
       "currentDraftPromptRequired": "Generate or upload a video from the story canvas.",
-      "generationInProgress": "The replacement video is being generated.",
-      "generationFailed": "The latest generation failed; the previous video remains current.",
       "currentVideoReady": "A current video is bound to this clip.",
       "columns": {
         "key": "Key",

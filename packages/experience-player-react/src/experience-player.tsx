@@ -857,7 +857,7 @@ function CoreVideoRenderer({
       });
       return;
     }
-    const durationSeconds = media ? media.variant.durationMs / 1_000 : 0;
+    const durationSeconds = media?.variant.durationMs ? media.variant.durationMs / 1_000 : 0;
     setPlaybackState({
       rendererInstanceId: renderer.instanceId,
       sequenceIndex,
@@ -883,7 +883,7 @@ function CoreVideoRenderer({
       // the browser has actually refused it (see onSoundBlocked).
       muted={muted}
       loop={terminalMode?.kind === "loop"}
-      durationSeconds={media.variant.durationMs / 1_000}
+      durationSeconds={media.variant.durationMs ? media.variant.durationMs / 1_000 : undefined}
       clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
       poster={poster}
       fit={config.fit === "native" ? "contain" : config.fit}
@@ -912,7 +912,11 @@ function CoreVideoRenderer({
             width: "100%",
             maxWidth: media.variant.width,
             maxHeight: "100%",
-            aspectRatio: `${media.variant.width} / ${media.variant.height}`,
+            ...(media.variant.width && media.variant.height
+              ? {
+                  aspectRatio: `${media.variant.width} / ${media.variant.height}`,
+                }
+              : {}),
           }}
         >
           {player}

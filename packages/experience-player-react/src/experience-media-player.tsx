@@ -59,7 +59,7 @@ export function ExperienceMediaPlayer({
   autoPlay: boolean;
   muted: boolean;
   loop: boolean;
-  durationSeconds: number;
+  durationSeconds?: number;
   clipStartTime?: number;
   onEnd: () => void;
   onTimeUpdate: (seconds: number) => void;
@@ -344,10 +344,10 @@ function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: n
 
 function synchronizePlayerContract(
   player: MediaPlayerInstance,
-  durationSeconds: number,
+  durationSeconds: number | undefined,
   muted: boolean
 ): void {
-  player.duration = durationSeconds;
+  if (durationSeconds !== undefined) player.duration = durationSeconds;
   applyPlayerMuted(player, muted);
 }
 

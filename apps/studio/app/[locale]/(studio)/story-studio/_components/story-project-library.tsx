@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconArchive,
@@ -226,8 +226,23 @@ function StoryProjectCard({
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
   const canAdmin = project.capabilities.includes("story.admin");
-
-  const coverUrl = project.cover?.previewUrl ?? null;
+  const cover =
+    project.cover?.status === "ready" &&
+    project.cover.moderationStatus !== "blocked" &&
+    project.cover.previewUrl &&
+    (project.cover.kind === "image" || project.cover.kind === "video")
+      ? project.cover
+      : null;
+  const coverVideoRef = useRef<HTMLVideoElement>(null);
+  const playCoverPreview = () => {
+    if (!coverVideoRef.current) return;
+    void coverVideoRef.current.play().catch(() => undefined);
+  };
+  const stopCoverPreview = () => {
+    if (!coverVideoRef.current) return;
+    coverVideoRef.current.pause();
+    coverVideoRef.current.currentTime = 0;
+  };
   const isTextFirstWithoutVideo =
     project.format === "text_adventure" && project.production.clipCount === 0;
 
@@ -235,14 +250,29 @@ function StoryProjectCard({
     <div className="group relative min-w-0">
       <Link
         href={`/story-studio/projects/${project.id}/canvas`}
+        onPointerEnter={playCoverPreview}
+        onPointerLeave={stopCoverPreview}
+        onFocus={playCoverPreview}
+        onBlur={stopCoverPreview}
         className="relative block overflow-hidden rounded-[16px] bg-white/[0.05] shadow-[0_18px_42px_rgba(0,0,0,0.32)] outline-none transition duration-200 hover:-translate-y-1 hover:bg-white/[0.08] hover:shadow-[0_26px_70px_rgba(0,0,0,0.44)] focus-visible:ring-2 focus-visible:ring-white/50"
       >
         <div className="relative aspect-video overflow-hidden bg-[#171819]">
-          {coverUrl ? (
+          {cover?.kind === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element -- signed media preview URL
             <img
-              src={coverUrl}
+              src={cover.previewUrl as string}
               alt=""
+              className="size-full object-cover transition duration-500 group-hover:scale-105"
+            />
+          ) : cover?.kind === "video" ? (
+            <video
+              ref={coverVideoRef}
+              src={cover.previewUrl as string}
+              aria-label={project.title}
+              muted
+              loop
+              playsInline
+              preload="metadata"
               className="size-full object-cover transition duration-500 group-hover:scale-105"
             />
           ) : (
@@ -312,12 +342,10 @@ function StoryProjectCard({
               <span className="truncate">
                 {isTextFirstWithoutVideo
                   ? t("projects.textFirstProgress")
-                  : project.production.generatingClipCount > 0
-                    ? t("projects.generating", { count: project.production.generatingClipCount })
-                    : t("projects.videoProgress", {
-                        current: project.production.currentVideoCount,
-                        total: project.production.clipCount,
-                      })}
+                  : t("projects.videoProgress", {
+                      current: project.production.currentVideoCount,
+                      total: project.production.clipCount,
+                    })}
               </span>
               <IconArrowRight
                 className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-white/66"

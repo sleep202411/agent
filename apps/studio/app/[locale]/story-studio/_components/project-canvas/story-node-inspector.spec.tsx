@@ -79,12 +79,12 @@ describe("StoryNodeInspector optional localized fields", () => {
     const text = container.textContent ?? "";
     // Story Bible header + the story-basics foundation copy.
     expect(text).toContain("world.title");
+    expect(text).toContain("world.cover.title");
     expect(text).toContain("foundation.logline");
     // The characters live on the canvas now: no character tab/section here, and
     // no worldbuilding surfaces either.
     expect(text).not.toContain("world.tabs");
     expect(text).not.toContain("world.characters");
-    expect(text).not.toContain("trailer.title");
   });
 });
 
@@ -372,15 +372,20 @@ function inspectorProps(
     locale: "en-US",
     showFoundation: false,
     canEdit: true,
+    coverMedia: {
+      cover: null,
+      candidateAssets: [],
+      candidateAssetsLoading: false,
+      candidateAssetsError: null,
+      onRetryCandidates: vi.fn(),
+      onSelectCandidate: vi.fn(),
+      onClearSelection: vi.fn(),
+      onUpload: vi.fn(),
+    },
     onUpdateFoundation: vi.fn(),
     onUpdateCharacter: vi.fn(),
     onDeleteCharacter: vi.fn(),
     onCloseNode: vi.fn(),
-    onUpdateChoiceExit: vi.fn(),
-    onAddChoice: vi.fn(),
-    onUpdateChoice: vi.fn(),
-    onMoveChoice: vi.fn(),
-    onRemoveChoice: vi.fn(),
     onUpdateEnding,
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),

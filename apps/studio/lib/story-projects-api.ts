@@ -15,8 +15,8 @@ import {
  *
  * StoryProject is a sovereign project root. It is scoped to the active
  * workspace by the API client's x-fizz-workspace-id header and never borrows a
- * PlatformProject id. Mutable drafts use revision CAS; generation and Build
- * records capture server-owned immutable input snapshots automatically.
+ * PlatformProject id. Mutable drafts use revision CAS; Build records capture
+ * server-owned immutable input snapshots automatically.
  */
 
 export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v1" as const;
@@ -69,10 +69,10 @@ export interface StoryCandidateAsset {
     id: string;
     variantKey: string;
     contentType: string;
-    width: number;
-    height: number;
-    durationSeconds: number;
-    checksumSha256: string;
+    width: number | null;
+    height: number | null;
+    durationSeconds: number | null;
+    checksumSha256: string | null;
   } | null;
   addedByUserId: string;
   addedAt: string;
@@ -82,8 +82,8 @@ export interface StoryCandidateAsset {
  * One reusable, ready video variant from the active project's workspace.
  *
  * The asset remains the durable history record; the variant fields describe
- * the exact playable original that can be bound as a clip or trailer's current
- * video without creating another generation.
+ * the exact playable original that can be bound as a clip's current
+ * video directly.
  */
 export interface StoryVideoLibraryItem {
   asset: MediaAssetSummary;
@@ -93,7 +93,7 @@ export interface StoryVideoLibraryItem {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   createdAt: string;
 }
 
@@ -128,7 +128,6 @@ export interface StoryProjectProductionSummary {
   approvedReferenceCount: number;
   clipCount: number;
   currentVideoCount: number;
-  generatingClipCount: number;
   latestBuildStatus:
     | "queued"
     | "validating"
@@ -294,109 +293,25 @@ export interface StoryProductionCanvas {
   updatedAt: string;
 }
 
-export type StoryVideoGenerationMode = "multimodal_to_video" | "first_last_frame_to_video";
-
-export type StoryVideoGenerationReferenceRole = "reference" | "first_frame" | "last_frame";
-
-export interface StoryVideoGenerationReferenceInput {
-  referenceVersionId: string;
-  role: StoryVideoGenerationReferenceRole;
-}
-
-export interface StoryVideoGenerationRecipeInput {
-  prompt: string;
-  modelId: string;
-  mode: StoryVideoGenerationMode;
-  durationMs: number;
-  references: StoryVideoGenerationReferenceInput[];
-  seed?: string;
-}
-
-export interface StoryVideoGenerationRecipeSnapshot {
-  schemaVersion: 1;
-  prompt: string;
-  mode: StoryVideoGenerationMode;
-  durationMs: number;
-  seed: string | null;
-  model: {
-    id: string;
-    slug: string;
-    displayName: string;
-    schemaVersion: string;
-    generationModes: string[];
-  };
-  references: Array<{
-    referenceVersionId: string;
-    role: StoryVideoGenerationReferenceRole;
-    position: number;
-    assetId: string;
-    variantId: string;
-    checksumSha256: string;
-  }>;
-}
-
-export type StoryVideoGenerationStatus =
-  | "queued"
-  | "running"
-  | "processing"
-  | "ready"
-  | "failed"
-  | "cancelled"
-  | "superseded";
-
 export interface StoryCurrentVideo {
   asset: MediaAssetSummary;
   variantId: string;
-  sourceGenerationId: string | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
-  durationMs: number;
-  width: number;
-  height: number;
-  browserSafeMp4: true;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  sizeBytes: string | null;
+  browserSafeMp4: boolean | null;
   selectionVersion: number;
   setByUserId: string | null;
   setAt: string;
-}
-
-export interface StoryVideoGeneration {
-  id: string;
-  projectId: string;
-  target: { kind: "clip"; graphNodeId: string } | { kind: "trailer" };
-  number: number;
-  version: number;
-  selectionVersionAtSubmit: number;
-  aiJobId: string;
-  aiJobOutputId: string | null;
-  status: StoryVideoGenerationStatus;
-  recipeSnapshot: StoryVideoGenerationRecipeSnapshot;
-  outputAsset: MediaAssetSummary | null;
-  outputVariantId: string | null;
-  outputChecksumSha256: string | null;
-  technicalChecks: StoryVideoTechnicalCheck[];
-  error: Record<string, unknown> | null;
-  createdByUserId: string;
-  queuedAt: string | null;
-  startedAt: string | null;
-  readyAt: string | null;
-  cancelledAt: string | null;
-  supersededAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
 }
 
 export interface StoryClipVideoSummary {
   graphNodeId: string;
   selectionVersion: number;
   currentVideo: StoryCurrentVideo | null;
-  generation: StoryVideoGeneration | null;
-}
-
-export interface StoryTrailerVideoSummary {
-  selectionVersion: number;
-  currentVideo: StoryCurrentVideo | null;
-  generation: StoryVideoGeneration | null;
 }
 
 export type StoryReferenceKind =
@@ -439,12 +354,9 @@ export interface StoryReferenceVersion {
   id: string;
   slotId: string;
   number: number;
-  source: "upload" | "ai_job" | "import" | "generation_frame";
+  source: "upload" | "ai_job" | "import";
   aiJobId: string | null;
   aiJobOutputId: string | null;
-  sourceGenerationId: string | null;
-  sourceFrameIndex: number | null;
-  sourceOutputChecksumSha256: string | null;
   asset: MediaAssetSummary;
   variantId: string;
   promptSnapshot: Record<string, unknown> | null;
@@ -479,15 +391,7 @@ export interface StoryBuildDiagnostic {
   severity: "error" | "warning";
   code: string;
   message: string;
-  entityType:
-    | "revision"
-    | "clip"
-    | "reference"
-    | "generation"
-    | "choice"
-    | "ending"
-    | "asset"
-    | null;
+  entityType: "revision" | "clip" | "reference" | "choice" | "ending" | "asset" | null;
   entityId: string | null;
 }
 
@@ -504,7 +408,7 @@ export interface FrozenStoryAsset {
   logicalKey: string;
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   width: number | null;
   height: number | null;
@@ -611,19 +515,12 @@ export interface StoryWorkingPreview {
     graphNodeId: string;
     assetId: string;
     variantId: string;
-    sourceGenerationId: string | null;
     selectionVersion: number;
     selection: "current";
   }>;
 }
 export type StoryReviewDecision = "approve" | "reject" | "request_changes";
 export type StoryReviewChecklistValue = "pass" | "fail" | "na";
-
-export interface StoryVideoTechnicalCheck {
-  key: string;
-  status: "pending" | "passed" | "failed";
-  message: string | null;
-}
 
 export interface StoryReview {
   id: string;
@@ -641,7 +538,6 @@ export interface StoryWorkbench {
   draft: StoryDraft;
   video: {
     snapshotHash: string;
-    trailer: StoryTrailerVideoSummary;
     clips: StoryClipVideoSummary[];
   };
   references: StoryReferenceSlot[];
@@ -1397,43 +1293,6 @@ export async function approveStoryReferenceVersion(
   );
 }
 
-export async function getStoryTrailerVideo(
-  workspaceId: string,
-  projectId: string
-): Promise<StoryTrailerVideoSummary> {
-  return api.get<StoryTrailerVideoSummary>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function createStoryTrailerVideoGeneration(
-  workspaceId: string,
-  projectId: string,
-  input: { expectedSelectionVersion: number } & StoryVideoGenerationRecipeInput,
-  idempotencyKey: string
-): Promise<StoryVideoGeneration> {
-  return api.post<StoryVideoGeneration>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer/generations`,
-    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
-  );
-}
-
-export async function putStoryTrailerCurrentVideo(
-  workspaceId: string,
-  projectId: string,
-  input: {
-    expectedSelectionVersion: number;
-    assetId: string | null;
-    variantId: string | null;
-  }
-): Promise<StoryTrailerVideoSummary> {
-  return api.put<StoryTrailerVideoSummary>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/trailer/current-video`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
 export function storyApiErrorCode(error: unknown): string | null {
   const body = storyApiErrorBody(error);
   return typeof body?.code === "string" ? body.code : null;
@@ -1669,10 +1528,10 @@ function assertStoryCandidateAsset(value: unknown): asserts value is StoryCandid
       videoVariant.variantKey === "original" &&
       nonEmptyString(videoVariant.contentType) &&
       videoVariant.contentType.toLowerCase().startsWith("video/") &&
-      positiveInteger(videoVariant.width) &&
-      positiveInteger(videoVariant.height) &&
-      positiveNumber(videoVariant.durationSeconds) &&
-      sha256String(videoVariant.checksumSha256));
+      nullablePositiveInteger(videoVariant.width) &&
+      nullablePositiveInteger(videoVariant.height) &&
+      nullablePositiveNumber(videoVariant.durationSeconds) &&
+      nullableSha256String(videoVariant.checksumSha256));
   if (
     !assetValid ||
     !variantValid ||
@@ -1711,7 +1570,7 @@ function assertStoryVideoLibraryItem(value: unknown): asserts value is StoryVide
     !nullablePositiveInteger(item.width) ||
     !nullablePositiveInteger(item.height) ||
     !nullableNonNegativeNumber(item.durationSeconds) ||
-    !nonEmptyString(item.checksumSha256) ||
+    !nullableNonEmptyString(item.checksumSha256) ||
     !validIsoTimestamp(item.createdAt)
   ) {
     throw new Error("Story Studio API returned an invalid video library item.");
@@ -1854,11 +1713,19 @@ function nullableNonNegativeNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
 }
 
+function nullablePositiveNumber(value: unknown): value is number | null {
+  return value === null || positiveNumber(value);
+}
+
 function nullablePositiveInteger(value: unknown): value is number | null {
   return (
     value === null ||
     (typeof value === "number" && Number.isInteger(value) && Number.isFinite(value) && value > 0)
   );
+}
+
+function nullableSha256String(value: unknown): value is string | null {
+  return value === null || sha256String(value);
 }
 
 function validIsoTimestamp(value: unknown): value is string {

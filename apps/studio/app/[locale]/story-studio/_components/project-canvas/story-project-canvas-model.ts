@@ -2,8 +2,8 @@ import type { Edge, Node } from "@xyflow/react";
 import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canvas/canvas-interaction-policy";
 import type {
   StoryClipVideoSummary,
-  StoryTrailerVideoSummary,
   InteractiveStoryDraftContent,
+  MediaAssetSummary,
   StoryFrameProfile,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
@@ -15,6 +15,7 @@ interface StoryCanvasChoiceData {
   choiceId: string;
   label: string;
   targetNodeId: string;
+  targetTitle: string | null;
 }
 
 export interface StoryCanvasNodeData extends Record<string, unknown> {
@@ -34,7 +35,8 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   clipVideo?: StoryClipVideoSummary;
-  trailerVideo?: StoryTrailerVideoSummary;
+  /** Project-level image or video cover projected onto the Story World card. */
+  coverMedia?: MediaAssetSummary;
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
   rootStats?: {
@@ -112,14 +114,19 @@ export function buildStoryCanvasModel(
   // A text-first project carries no frame profile: its cards keep a neutral
   // media box and never advertise a frame contract the project doesn't have.
   frameProfile: StoryFrameProfile | null = "landscape_16_9",
-  trailer: StoryTrailerVideoSummary | null = null,
-  storyWorldNodePresent = true
+  storyWorldNodePresent = true,
+  coverMedia: MediaAssetSummary | null = null
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   // Null-profile (text-first) projects yield undefined so no card ever shows a
   // frame tag for a contract that doesn't exist.
   const frameAspectRatioOf = (profile: StoryFrameProfile | null): "16:9" | "9:16" | undefined =>
     profile === null ? undefined : profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
+  const clipOrdinalsByNodeId = new Map<string, number>();
+  let nextClipOrdinal = 0;
+  content.graph.nodes.forEach((node) => {
+    if (node.kind === "clip") clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
+  });
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
   const endingCanvasIds = new Map(
     content.storyBible.endings.map((ending) => [ending.id, syntheticEndingNodeId(ending.id)])
@@ -141,8 +148,8 @@ export function buildStoryCanvasModel(
             rootStats: {
               characters: content.storyBible.characters.length,
             },
+            coverMedia: coverMedia ?? undefined,
             frameAspectRatio: frameAspectRatioOf(frameProfile),
-            trailerVideo: trailer ?? undefined,
           },
         },
       ]
@@ -154,8 +161,14 @@ export function buildStoryCanvasModel(
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
               choiceId: choice.choiceId,
-              label: localizedText(choice.label, locale, choice.choiceId),
+              label: localizedText(choice.label, locale, ""),
               targetNodeId: choice.nextNodeId,
+              targetTitle: graphNodeDisplayTitle(
+                graphNodesById.get(choice.nextNodeId),
+                locale,
+                copy.clip,
+                clipOrdinalsByNodeId.get(choice.nextNodeId)
+              ),
             }))
           : undefined;
 
@@ -186,7 +199,7 @@ export function buildStoryCanvasModel(
             order: index * 2 + 1,
             data: {
               kind: "decision",
-              title: localizedText(node.exit.prompt, locale, node.exit.decisionId),
+              title: localizedText(node.exit.prompt, locale, ""),
               eyebrow: copy.decision ?? DEFAULT_COPY.decision!,
               nodeId: decisionNodeId,
               sourceNodeId: node.nodeId,
@@ -205,7 +218,7 @@ export function buildStoryCanvasModel(
         order: index * 2,
         data: {
           kind: "clip",
-          title: node.name?.trim() || node.clipKey,
+          title: node.name?.trim() || `${copy.clip} ${clipOrdinal}`,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
           clipKey: node.clipKey,
@@ -229,7 +242,7 @@ export function buildStoryCanvasModel(
           order: index * 2 + 1,
           data: {
             kind: "decision",
-            title: localizedText(node.exit.prompt, locale, node.exit.decisionId),
+            title: localizedText(node.exit.prompt, locale, ""),
             eyebrow: decisionLabel,
             nodeId: decisionNodeId,
             sourceNodeId: node.nodeId,
@@ -422,7 +435,7 @@ function buildConnections(
             target: choice.nextNodeId,
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",
-            label: localizedText(choice.label, locale, choice.choiceId),
+            label: localizedText(choice.label, locale, ""),
             data: {
               kind: "choice",
               sourceNodeId: node.nodeId,
@@ -592,8 +605,25 @@ function localizedText(
   return first?.[1].trim() || fallback;
 }
 
+function graphNodeDisplayTitle(
+  node: StoryGraphNode | undefined,
+  locale: string,
+  clipLabel: string,
+  clipOrdinal?: number
+): string | null {
+  if (!node) return null;
+  if (node.kind === "clip") {
+    return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
+  }
+  return localizedText(node.title, locale, "") || null;
+}
+
 export function syntheticDecisionNodeId(sourceNodeId: string): string {
   return `${SYNTHETIC_DECISION_NODE_PREFIX}${sourceNodeId}`;
+}
+
+export function isSyntheticDecisionNodeId(canvasNodeId: string): boolean {
+  return canvasNodeId.startsWith(SYNTHETIC_DECISION_NODE_PREFIX);
 }
 
 export function syntheticEndingNodeId(endingId: string): string {

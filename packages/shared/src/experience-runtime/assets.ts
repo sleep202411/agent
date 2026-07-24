@@ -33,10 +33,11 @@ const VisualVariantSchema = z
 const VideoVariantSchema = z
   .object({
     ...SourceIdentityShape,
+    sha256: ExperienceSha256Schema.optional(),
     orientation: ExperienceOrientationSchema,
-    width: PositiveIntegerSchema,
-    height: PositiveIntegerSchema,
-    durationMs: PositiveIntegerSchema,
+    width: PositiveIntegerSchema.optional(),
+    height: PositiveIntegerSchema.optional(),
+    durationMs: PositiveIntegerSchema.optional(),
     framesPerSecond: z
       .object({ numerator: PositiveIntegerSchema, denominator: PositiveIntegerSchema })
       .strict()

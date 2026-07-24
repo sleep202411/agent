@@ -68,7 +68,6 @@ function storyCanvasStatusLabel(
 export interface StoryProductionCanvasContext {
   projectId: string;
   workspaceId: string;
-  nodeTitle: string;
   sessionId: string;
   canEdit: boolean;
   canGenerate: boolean;
@@ -516,7 +515,7 @@ export function StoryProductionCanvasWorkspace({
       data-testid="story-production-canvas-workspace"
       data-story-canvas-level="production"
       role="region"
-      aria-label={t("workspaceLabel", { title: context.nodeTitle })}
+      aria-label={t("workspaceLabel")}
       className={cn(
         "absolute inset-0 z-[120] min-h-0 min-w-0 origin-center overflow-hidden transition-[opacity,transform] duration-300 ease-out",
         presented ? "scale-100 opacity-100" : "scale-[1.012] opacity-0"

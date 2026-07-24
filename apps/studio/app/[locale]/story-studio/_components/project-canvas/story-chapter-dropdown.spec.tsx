@@ -5,14 +5,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { StoryChapter } from "@/lib/story-projects-api";
-import { StoryChapterRail } from "./story-chapter-rail";
+import { StoryChapterDropdown } from "./story-chapter-dropdown";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values?.count !== undefined ? `${key}:${String(values.count)}` : key,
 }));
 
-describe("StoryChapterRail", () => {
+describe("StoryChapterDropdown", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -28,45 +28,44 @@ describe("StoryChapterRail", () => {
     container.remove();
   });
 
-  it("renders persisted chapters and exposes selection and creation", async () => {
-    const onSelect = vi.fn();
-    const onCreate = vi.fn().mockResolvedValue(true);
-    await act(async () => {
-      root.render(
-        <TooltipProvider>
-          <StoryChapterRail
-            chapters={[
-              chapter("chapter-1", "Chapter 1", 0, 7),
-              chapter("chapter-2", "Chapter 2", 1, 3),
-            ]}
-            activeChapterId="chapter-1"
-            canEdit
-            creating={false}
-            pendingChapterId={null}
-            onSelect={onSelect}
-            onCreate={onCreate}
-            onRename={async () => true}
-            onMove={async () => true}
-            onArchive={async () => true}
-            onClose={() => undefined}
-          />
-        </TooltipProvider>
-      );
+  it("anchors persisted chapters to the active chapter trigger", async () => {
+    const onOpenChange = vi.fn();
+    await renderDropdown({
+      open: false,
+      onOpenChange,
+      chapters: [chapter("chapter-1", "Chapter 1", 0, 7), chapter("chapter-2", "Chapter 2", 1, 3)],
     });
 
-    expect(container.querySelector('[role="navigation"]')?.getAttribute("aria-label")).toBe(
-      "title"
-    );
-    expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("Chapter 1");
-    expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("sceneCount:7");
-    const chapterButtons = container.querySelectorAll<HTMLElement>('[role="button"]');
-    expect(chapterButtons.length).toBeGreaterThanOrEqual(2);
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="action"]');
+    expect(trigger?.textContent).toContain("Chapter 1");
+    await act(async () => trigger?.click());
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("exposes chapter selection and creation while open", async () => {
+    const onSelect = vi.fn();
+    const onCreate = vi.fn().mockResolvedValue(true);
+    const onOpenChange = vi.fn();
+    await renderDropdown({
+      open: true,
+      onOpenChange,
+      onSelect,
+      onCreate,
+      chapters: [chapter("chapter-1", "Chapter 1", 0, 7), chapter("chapter-2", "Chapter 2", 1, 3)],
+    });
+
+    expect(document.querySelector('[role="navigation"]')?.getAttribute("aria-label")).toBe("title");
+    expect(document.querySelector('[aria-current="page"]')?.textContent).toContain("Chapter 1");
+    expect(document.querySelector('[aria-current="page"]')?.textContent).toContain("sceneCount:7");
+
+    const chapterButtons = document.querySelectorAll<HTMLElement>('[role="button"]');
     await act(async () => chapterButtons[1]?.click());
+    expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onSelect).toHaveBeenCalledWith("chapter-2");
-    const add = container.querySelector<HTMLButtonElement>('button[aria-label="add"]');
+
+    const add = document.querySelector<HTMLButtonElement>('button[aria-label="add"]');
     expect(add?.disabled).toBe(false);
     await act(async () => add?.click());
-    expect(onCreate).not.toHaveBeenCalled();
     const nameInput = document.querySelector<HTMLInputElement>("#story-create-chapter-name");
     expect(nameInput).not.toBeNull();
     await act(async () => setInputValue(nameInput as HTMLInputElement, "The Return"));
@@ -78,56 +77,46 @@ describe("StoryChapterRail", () => {
   });
 
   it("omits the unavailable creation action for read-only collaborators", async () => {
-    await act(async () => {
-      root.render(
-        <TooltipProvider>
-          <StoryChapterRail
-            chapters={[chapter("chapter-1", "Chapter 1", 0, 1)]}
-            activeChapterId="chapter-1"
-            canEdit={false}
-            creating={false}
-            pendingChapterId={null}
-            onSelect={() => undefined}
-            onCreate={async () => true}
-            onRename={async () => true}
-            onMove={async () => true}
-            onArchive={async () => true}
-            onClose={() => undefined}
-          />
-        </TooltipProvider>
-      );
-    });
-
-    expect(container.querySelector('button[aria-label="add"]')).toBeNull();
+    await renderDropdown({ open: true, canEdit: false });
+    expect(document.querySelector('button[aria-label="add"]')).toBeNull();
   });
 
   it("renders persisted names independently from historical ranks", async () => {
+    await renderDropdown({
+      open: true,
+      activeChapterId: "chapter-3",
+      chapters: [chapter("chapter-1", "Opening", 0, 1), chapter("chapter-3", "The Return", 2, 0)],
+    });
+
+    expect(document.body.textContent).toContain("Opening");
+    expect(document.body.textContent).toContain("The Return");
+  });
+
+  async function renderDropdown(
+    overrides: Partial<React.ComponentProps<typeof StoryChapterDropdown>> = {}
+  ) {
     await act(async () => {
       root.render(
         <TooltipProvider>
-          <StoryChapterRail
-            chapters={[
-              chapter("chapter-1", "Opening", 0, 1),
-              chapter("chapter-3", "The Return", 2, 0),
-            ]}
-            activeChapterId="chapter-3"
+          <StoryChapterDropdown
+            open={false}
+            chapters={[chapter("chapter-1", "Chapter 1", 0, 1)]}
+            activeChapterId="chapter-1"
             canEdit
             creating={false}
             pendingChapterId={null}
+            onOpenChange={() => undefined}
             onSelect={() => undefined}
             onCreate={async () => true}
             onRename={async () => true}
             onMove={async () => true}
             onArchive={async () => true}
-            onClose={() => undefined}
+            {...overrides}
           />
         </TooltipProvider>
       );
     });
-
-    expect(container.textContent).toContain("Opening");
-    expect(container.textContent).toContain("The Return");
-  });
+  }
 });
 
 function chapter(id: string, title: string, rank: number, nodeCount: number): StoryChapter {

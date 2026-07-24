@@ -17,7 +17,6 @@ import {
   StoryProjectMemberStatus,
   StoryProjectStatus,
   StoryRevisionSource,
-  StoryVideoGenerationAttemptStatus,
   WorkspaceMemberRole,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -46,7 +45,6 @@ import {
   type InteractiveStoryDraftContent,
   type StoryBuildDiagnosticDto,
   type StoryBuildSummaryDto,
-  type StoryVideoTechnicalCheckDto,
   type LockStoryRevisionInput,
   type MediaAssetSummaryDto,
   type PatchStoryProjectInput,
@@ -67,13 +65,11 @@ import {
   type StoryRevisionSummaryDto,
   type StoryCurrentVideoDto,
   type StoryReferenceSlotDto,
-  type StoryVideoGenerationDto,
   type StoryWorkbenchDto,
   type StoryWorkbenchQuery,
   type ReorderStoryChaptersInput,
 } from './dto';
 import {
-  StoryVideoRecipeSnapshotSchema,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
@@ -109,15 +105,9 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     select: { required: true, approvedVersionId: true },
   },
   videoSelections: {
-    where: { targetKind: 'clip' },
     select: {
-      targetKey: true,
+      graphNodeId: true,
       currentAssetId: true,
-      generationAttempts: {
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 1,
-        select: { status: true },
-      },
     },
   },
   builds: {
@@ -137,18 +127,6 @@ const STORY_VIDEO_SELECTION_INCLUDE =
       include: {
         placements: true,
         variants: { include: { placements: true } },
-      },
-    },
-    generationAttempts: {
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: 1,
-      include: {
-        outputAsset: {
-          include: {
-            placements: true,
-            variants: { include: { placements: true } },
-          },
-        },
       },
     },
   });
@@ -194,10 +172,6 @@ const STORY_CANDIDATE_ASSET_INCLUDE =
             variantKey: 'original',
             status: MediaAssetVariantStatus.ready,
             contentType: { startsWith: 'video/' },
-            checksumSha256: { not: null },
-            width: { gt: 0 },
-            height: { gt: 0 },
-            durationMs: { gt: 0 },
             deletedAt: null,
           },
           take: 1,
@@ -211,8 +185,6 @@ const STORY_CANDIDATE_ASSET_INCLUDE =
 type StoryCandidateAssetRow = Prisma.StoryCandidateAssetGetPayload<{
   include: typeof STORY_CANDIDATE_ASSET_INCLUDE;
 }>;
-
-const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 interface ProjectCursor {
   id: string;
@@ -333,11 +305,6 @@ export class StoryProjectsService {
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
         clips: [],
-        trailer: {
-          selectionVersion: 0,
-          currentVideo: null,
-          generation: null,
-        },
       },
       references: [],
       latestBuild: null,
@@ -441,6 +408,30 @@ export class StoryProjectsService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
+        const cover = await tx.mediaAsset.findFirst({
+          where: {
+            id: input.coverAssetId,
+            workspaceId,
+            status: MediaAssetStatus.ready,
+            moderationStatus: {
+              not: MediaAssetModerationStatus.blocked,
+            },
+            deletedAt: null,
+            kind: {
+              in: [MediaAssetKind.image, MediaAssetKind.video],
+            },
+          },
+          select: { id: true },
+        });
+        if (!cover) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_PROJECT_COVER_INVALID',
+            message:
+              'A project cover must be a ready image or video asset in this project workspace.',
+          });
+        }
+      }
       return tx.storyProject.updateMany({
         where: {
           id: projectId,
@@ -1623,7 +1614,7 @@ export class StoryProjectsService {
         : [],
     );
     const selections = row.videoSelections.filter((selection) =>
-      currentClipNodeIds.has(selection.targetKey),
+      currentClipNodeIds.has(selection.graphNodeId),
     );
     const approvedReferenceCount = row.referenceSlots.filter(
       (slot) => slot.approvedVersionId !== null,
@@ -1631,10 +1622,6 @@ export class StoryProjectsService {
     const currentVideoCount = selections.filter(
       (selection) => selection.currentAssetId !== null,
     ).length;
-    const generatingClipCount = selections.filter((selection) =>
-      isGenerationActive(selection.generationAttempts[0]?.status ?? null),
-    ).length;
-
     return {
       id: row.id,
       workspaceId: row.workspaceId,
@@ -1658,7 +1645,6 @@ export class StoryProjectsService {
         approvedReferenceCount,
         clipCount: draftClipCount,
         currentVideoCount,
-        generatingClipCount,
         latestBuildStatus:
           row.builds.find(
             (build) => build.sourceDraftRevision === row.draft?.revision,
@@ -1899,9 +1885,6 @@ export class StoryProjectsService {
         source: version.source,
         aiJobId: version.aiJobId,
         aiJobOutputId: version.aiJobOutputId,
-        sourceGenerationId: version.sourceGenerationAttemptId,
-        sourceFrameIndex: version.sourceFrameIndex,
-        sourceOutputChecksumSha256: version.sourceOutputChecksumSha256,
         asset: toMediaAsset(version.asset),
         variantId: version.variantId,
         sourceRecipeSnapshot: jsonRecordOrNull(version.sourceRecipeSnapshot),
@@ -2113,7 +2096,9 @@ function toCandidateAsset(row: StoryCandidateAssetRow): StoryCandidateAssetDto {
           height: videoVariant.height,
           durationSeconds:
             videoVariant.durationSeconds ??
-            Math.max(1, Math.ceil(videoVariant.durationMs / 1_000)),
+            (videoVariant.durationMs
+              ? Math.max(1, Math.ceil(videoVariant.durationMs / 1_000))
+              : null),
           checksumSha256: videoVariant.checksumSha256,
         }
       : null,
@@ -2124,23 +2109,12 @@ function toCandidateAsset(row: StoryCandidateAssetRow): StoryCandidateAssetDto {
 
 function isReusableCandidateVideoVariant(
   variant: StoryCandidateAssetRow['asset']['variants'][number],
-): variant is StoryCandidateAssetRow['asset']['variants'][number] & {
-  width: number;
-  height: number;
-  durationMs: number;
-  checksumSha256: string;
-} {
+): boolean {
   return (
     variant.variantKey === 'original' &&
     variant.status === MediaAssetVariantStatus.ready &&
     variant.deletedAt === null &&
-    variant.contentType.toLowerCase().startsWith('video/') &&
-    Boolean(
-      variant.checksumSha256 && SHA256_PATTERN.test(variant.checksumSha256),
-    ) &&
-    Boolean(variant.width && variant.width > 0) &&
-    Boolean(variant.height && variant.height > 0) &&
-    Boolean(variant.durationMs && variant.durationMs > 0)
+    variant.contentType.toLowerCase().startsWith('video/')
   );
 }
 
@@ -2148,21 +2122,17 @@ function projectStoryVideoWorkbench(
   draft: ReturnType<typeof parseDraftContent>,
   selections: StoryVideoSelectionRow[],
 ): StoryWorkbenchDto['video'] {
-  const selectionByTarget = new Map(
-    selections.map((selection) => [
-      `${selection.targetKind}:${selection.targetKey}`,
-      selection,
-    ]),
+  const selectionByNodeId = new Map(
+    selections.map((selection) => [selection.graphNodeId, selection]),
   );
   const clips = draft.graph.nodes.flatMap((node) => {
     if (node.kind !== 'clip') return [];
-    const selection = selectionByTarget.get(`clip:${node.nodeId}`) ?? null;
+    const selection = selectionByNodeId.get(node.nodeId) ?? null;
     return [
       {
         graphNodeId: node.nodeId,
         selectionVersion: selection?.version ?? 0,
         currentVideo: selectionCurrentVideo(selection),
-        generation: selectionGeneration(selection),
       },
     ];
   });
@@ -2171,7 +2141,6 @@ function projectStoryVideoWorkbench(
     return {
       graphNodeId: clip.graphNodeId,
       selectionVersion: clip.selectionVersion,
-      sourceGenerationAttemptId: video?.sourceGenerationId ?? null,
       assetId: video?.asset.id ?? null,
       variantId: video?.variantId ?? null,
       checksumSha256: video?.checksumSha256 ?? null,
@@ -2182,15 +2151,9 @@ function projectStoryVideoWorkbench(
       browserSafeMp4: video?.browserSafeMp4 ?? null,
     };
   });
-  const trailerSelection = selectionByTarget.get('trailer:trailer') ?? null;
   return {
     snapshotHash: storyVideoSnapshotHash(snapshot),
     clips,
-    trailer: {
-      selectionVersion: trailerSelection?.version ?? 0,
-      currentVideo: selectionCurrentVideo(trailerSelection),
-      generation: selectionGeneration(trailerSelection),
-    },
   };
 }
 
@@ -2201,25 +2164,26 @@ function selectionCurrentVideo(
   if (
     !selection.currentAsset ||
     !selection.currentVariantId ||
-    !selection.currentChecksumSha256 ||
-    selection.currentDurationMs === null ||
-    selection.currentWidth === null ||
-    selection.currentHeight === null ||
     !selection.currentContentType ||
-    selection.currentBrowserSafeMp4 === null ||
     !selection.setAt
   ) {
     throw corruptData('STORY_VIDEO_SELECTION_CORRUPT', 'story video selection');
   }
+  const currentVariant = selection.currentAsset.variants.find(
+    (variant) => variant.id === selection.currentVariantId,
+  );
   return {
     asset: toMediaAsset(selection.currentAsset),
     variantId: selection.currentVariantId,
-    sourceGenerationId: selection.currentSourceGenerationAttemptId,
     checksumSha256: selection.currentChecksumSha256,
     contentType: selection.currentContentType,
     durationMs: selection.currentDurationMs,
     width: selection.currentWidth,
     height: selection.currentHeight,
+    sizeBytes:
+      (
+        currentVariant?.sizeBytes ?? selection.currentAsset.sizeBytes
+      )?.toString() ?? null,
     browserSafeMp4: selection.currentBrowserSafeMp4,
     selectionVersion: selection.version,
     setByUserId: selection.setByUserId,
@@ -2235,79 +2199,6 @@ function exactStoryVideoContentType(value: string): string {
     );
   }
   return value;
-}
-
-function selectionGeneration(
-  selection: StoryVideoSelectionRow | null,
-): StoryVideoGenerationDto | null {
-  const generation = selection?.generationAttempts[0];
-  if (!selection || !generation) return null;
-  const recipe = StoryVideoRecipeSnapshotSchema.safeParse(
-    generation.recipeSnapshot,
-  );
-  if (!recipe.success) {
-    throw corruptData(
-      'STORY_VIDEO_GENERATION_CORRUPT',
-      'story video generation recipe',
-    );
-  }
-  return {
-    id: generation.id,
-    projectId: generation.storyProjectId,
-    target:
-      selection.targetKind === 'clip'
-        ? { kind: 'clip', graphNodeId: selection.targetKey }
-        : { kind: 'trailer' },
-    number: generation.attemptNumber,
-    version: generation.version,
-    selectionVersionAtSubmit: generation.selectionVersionAtSubmit,
-    aiJobId: generation.aiJobId,
-    aiJobOutputId: generation.aiJobOutputId,
-    status: generation.status,
-    recipeSnapshot: recipe.data,
-    outputAsset: generation.outputAsset
-      ? toMediaAsset(generation.outputAsset)
-      : null,
-    outputVariantId: generation.outputVariantId,
-    outputChecksumSha256: generation.outputChecksumSha256,
-    technicalChecks: technicalCheckDtos(generation.technicalChecks),
-    error: jsonRecordOrNull(generation.error),
-    createdByUserId: generation.createdByUserId,
-    queuedAt: generation.queuedAt?.toISOString() ?? null,
-    startedAt: generation.startedAt?.toISOString() ?? null,
-    readyAt: generation.readyAt?.toISOString() ?? null,
-    cancelledAt: generation.cancelledAt?.toISOString() ?? null,
-    supersededAt: generation.supersededAt?.toISOString() ?? null,
-    completedAt: generation.completedAt?.toISOString() ?? null,
-    createdAt: generation.createdAt.toISOString(),
-    updatedAt: generation.updatedAt.toISOString(),
-  };
-}
-
-function technicalCheckDtos(
-  value: Prisma.JsonValue,
-): StoryVideoTechnicalCheckDto[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-    const check = item as Record<string, unknown>;
-    if (
-      typeof check.key !== 'string' ||
-      (check.status !== 'pending' &&
-        check.status !== 'passed' &&
-        check.status !== 'failed') ||
-      (check.message !== null && typeof check.message !== 'string')
-    ) {
-      return [];
-    }
-    return [
-      {
-        key: check.key,
-        status: check.status,
-        message: check.message,
-      },
-    ];
-  });
 }
 
 function parseDraftContent(
@@ -2431,16 +2322,6 @@ function buildDiagnostics(value: Prisma.JsonValue): StoryBuildDiagnosticDto[] {
   return value.filter(
     isStoryBuildDiagnostic,
   ) as unknown as StoryBuildDiagnosticDto[];
-}
-
-function isGenerationActive(
-  status: StoryVideoGenerationAttemptStatus | null,
-): boolean {
-  return (
-    status === StoryVideoGenerationAttemptStatus.queued ||
-    status === StoryVideoGenerationAttemptStatus.running ||
-    status === StoryVideoGenerationAttemptStatus.processing
-  );
 }
 
 function isStoryBuildDiagnostic(

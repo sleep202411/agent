@@ -19,7 +19,6 @@ import {
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
   createStoryProject,
-  createStoryTrailerVideoGeneration,
   getStoryExperienceCurrentRelease,
   getStoryCandidateAssets,
   getStoryProductionCanvas,
@@ -30,7 +29,6 @@ import {
   putStoryCanvasLayout,
   putStoryProductionCanvas,
   putStoryClipCurrentVideo,
-  putStoryTrailerCurrentVideo,
   removeStoryCandidateAsset,
   retryStoryAgentRunAuthoring,
   updateStoryChapter,
@@ -359,21 +357,23 @@ describe("current-draft Story production routes", () => {
     );
   });
 
-  it("rejects a candidate video without a fully reusable original variant", async () => {
+  it("accepts a candidate video whose advisory duration is absent", async () => {
     const candidate = candidateAsset();
     vi.mocked(api.get).mockResolvedValueOnce([
       {
         ...candidate,
         videoVariant: {
           ...candidate.videoVariant!,
-          durationSeconds: 0,
+          durationSeconds: null,
         },
       },
     ]);
 
-    await expect(getStoryCandidateAssets("workspace-1", "project-1")).rejects.toThrow(
-      "invalid candidate asset"
-    );
+    await expect(getStoryCandidateAssets("workspace-1", "project-1")).resolves.toEqual([
+      expect.objectContaining({
+        videoVariant: expect.objectContaining({ durationSeconds: null }),
+      }),
+    ]);
   });
 
   it("starts abortable asynchronous clip-video finalization", async () => {
@@ -527,47 +527,6 @@ describe("current-draft Story production routes", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("uses the dedicated trailer generation and current-video routes", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ id: "trailer-generation-1" });
-    vi.mocked(api.put).mockResolvedValueOnce({ id: "trailer-1" });
-
-    await createStoryTrailerVideoGeneration(
-      "workspace-1",
-      "project-1",
-      {
-        expectedSelectionVersion: 2,
-        prompt: "Project trailer",
-        modelId: "seedance-2",
-        mode: "multimodal_to_video",
-        durationMs: 10_000,
-        references: [],
-      },
-      "idempotency-trailer"
-    );
-    await putStoryTrailerCurrentVideo("workspace-1", "project-1", {
-      expectedSelectionVersion: 6,
-      assetId: null,
-      variantId: null,
-    });
-
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/trailer/generations",
-      expect.objectContaining({
-        data: expect.objectContaining({ expectedSelectionVersion: 2, modelId: "seedance-2" }),
-      })
-    );
-    expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/trailer/current-video",
-      expect.objectContaining({
-        data: {
-          expectedSelectionVersion: 6,
-          assetId: null,
-          variantId: null,
-        },
-      })
-    );
-  });
-
   it("loads the ephemeral working preview from the latest saved authoring head", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       draftRevision: 18,
@@ -632,7 +591,6 @@ function storyProject(format: CreatableStoryFormat): StoryProjectSummary {
       approvedReferenceCount: 0,
       clipCount: 0,
       currentVideoCount: 0,
-      generatingClipCount: 0,
       latestBuildStatus: null,
     },
     capabilities: ["story.read", "story.edit"],

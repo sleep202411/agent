@@ -323,6 +323,134 @@ async function apiError(operation: Promise<unknown>) {
 }
 
 describe('StoryProjectsService unified-story authoring boundary', () => {
+  it('accepts only a ready image or video from the project workspace as the cover', async () => {
+    const project = summaryProject({
+      cover: candidateAssetRow().asset,
+      coverAssetId: MEDIA_ASSET_ID,
+      version: 1,
+    });
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue({ id: MEDIA_ASSET_ID }),
+      },
+      storyProject: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service, writeGuard } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+    });
+
+    await expect(
+      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: MEDIA_ASSET_ID,
+      }),
+    ).resolves.toMatchObject({
+      cover: {
+        id: MEDIA_ASSET_ID,
+        kind: 'video',
+      },
+      projectVersion: 1,
+    });
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.mediaAsset.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: MEDIA_ASSET_ID,
+        workspaceId: WORKSPACE_ID,
+        status: MediaAssetStatus.ready,
+        moderationStatus: {
+          not: MediaAssetModerationStatus.blocked,
+        },
+        deletedAt: null,
+        kind: {
+          in: [MediaAssetKind.image, MediaAssetKind.video],
+        },
+      },
+      select: { id: true },
+    });
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        status: StoryProjectStatus.active,
+        version: 0,
+      },
+      data: {
+        coverAssetId: MEDIA_ASSET_ID,
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  it('rejects an invalid project cover before updating the project', async () => {
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      storyProject: {
+        updateMany: jest.fn(),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    let rejection: unknown;
+    try {
+      await service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: MEDIA_ASSET_ID,
+      });
+    } catch (error) {
+      rejection = error;
+    }
+    expect(rejection).toBeInstanceOf(HttpException);
+    if (!(rejection instanceof HttpException)) {
+      throw new Error('Expected an HTTP exception.');
+    }
+    expect(rejection.getResponse()).toMatchObject({
+      code: 'STORY_PROJECT_COVER_INVALID',
+    });
+    expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('clears a project cover without looking up a media asset', async () => {
+    const project = summaryProject({
+      cover: null,
+      coverAssetId: null,
+      version: 1,
+    });
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn(),
+      },
+      storyProject: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+    });
+
+    await expect(
+      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: null,
+      }),
+    ).resolves.toMatchObject({ cover: null, projectVersion: 1 });
+    expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
+  });
+
   it('keeps retired project formats out of the target project-list contract', async () => {
     expect(
       StoryProjectListQuerySchema.safeParse({
@@ -499,11 +627,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
         clips: [],
-        trailer: {
-          selectionVersion: 0,
-          currentVideo: null,
-          generation: null,
-        },
       },
       references: [],
       latestBuild: null,
@@ -714,9 +837,23 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
   });
 
-  it('does not expose an incomplete video variant as clip-bindable', async () => {
+  it('exposes a ready video variant even when advisory metadata is absent', async () => {
     const candidate = candidateAssetRow();
-    candidate.asset.variants[0].durationMs = 0;
+    const variant = candidate.asset.variants[0] as unknown as Omit<
+      (typeof candidate.asset.variants)[number],
+      'checksumSha256' | 'durationMs' | 'durationSeconds' | 'width' | 'height'
+    > & {
+      checksumSha256: string | null;
+      durationMs: number | null;
+      durationSeconds: number | null;
+      width: number | null;
+      height: number | null;
+    };
+    variant.checksumSha256 = null;
+    variant.durationMs = null;
+    variant.durationSeconds = null;
+    variant.width = null;
+    variant.height = null;
     const { service } = serviceWith({
       storyCandidateAsset: {
         findMany: jest.fn().mockResolvedValue([candidate]),
@@ -731,7 +868,13 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.asset.id).toBe(MEDIA_ASSET_ID);
-    expect(result[0]?.videoVariant).toBeNull();
+    expect(result[0]?.videoVariant).toMatchObject({
+      id: MEDIA_VARIANT_ID,
+      checksumSha256: null,
+      durationSeconds: null,
+      width: null,
+      height: null,
+    });
   });
 
   it('derives candidate display seconds from exact millisecond metadata', async () => {
@@ -1223,7 +1366,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       {
         graphNodeId: 'node.opening',
         selectionVersion: 0,
-        sourceGenerationAttemptId: null,
         assetId: null,
         variantId: null,
         checksumSha256: null,
@@ -1249,14 +1391,8 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           graphNodeId: 'node.opening',
           selectionVersion: 0,
           currentVideo: null,
-          generation: null,
         },
       ],
-      trailer: {
-        selectionVersion: 0,
-        currentVideo: null,
-        generation: null,
-      },
     });
     expect(result.references).toEqual([]);
     expect(result.latestBuild).toBeNull();
@@ -1276,7 +1412,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(result.production).toMatchObject({
       clipCount: 1,
       currentVideoCount: 0,
-      generatingClipCount: 0,
     });
   });
 });

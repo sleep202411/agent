@@ -1662,7 +1662,6 @@
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
-      "generating": "{count} 个视频生成中",
       "textFirstWithoutVideo": "文字优先 · 视频可选",
       "textFirstProgress": "文字优先故事",
       "updatedUnknown": "更新时间不可用"
@@ -1671,7 +1670,6 @@
       "references": "参考位",
       "clips": "镜头",
       "videos": "当前视频",
-      "generating": "生成中",
       "choices": "选择",
       "endings": "结局",
       "graphClips": "剧情镜头",
@@ -1996,8 +1994,8 @@
         "root": "故事世界",
         "clip": "影像镜头",
         "text": "关键剧情",
-        "choice": "分支选择",
-        "decision": "分支选择",
+        "choice": "玩家选择",
+        "decision": "玩家选择",
         "ending": "故事结局",
         "character": "角色"
       },
@@ -2013,6 +2011,16 @@
         "newChoice": "连接新选项",
         "ending": "进入结局"
       },
+      "decisionCard": {
+        "promptPlaceholder": "玩家此刻必须决定什么？",
+        "defaultOption": "选项 {number}",
+        "untitledOption": "未命名选项",
+        "linkedTarget": "已连接后续",
+        "addOption": "添加选项",
+        "cancelOption": "取消添加选项",
+        "optionPlaceholder": "输入玩家看到的选项",
+        "connectOption": "连接这个选项"
+      },
       "creator": {
         "title": "添加到故事图",
         "description": "创建互动故事结构中的图元素。",
@@ -2022,13 +2030,13 @@
         "textDescription": "带有独立后续走向或玩家选择的关键剧情。",
         "character": "角色",
         "characterDescription": "隶属于本故事世界的角色卡。",
-        "choice": "分支选择",
+        "choice": "玩家选择",
         "choiceDescription": "把当前镜头的结尾转换为玩家选择。",
         "choiceUnavailable": "请先选中一个影像镜头。",
         "ending": "故事结局",
         "endingDescription": "保存于故事圣经中的命名结局。",
         "root": "故事世界",
-        "rootDescription": "将世界观与宣传片节点重新添加到画布。"
+        "rootDescription": "将世界观节点重新添加到画布。"
       },
       "connectionCreator": {
         "title": "创建下一步",
@@ -2047,7 +2055,7 @@
         "rootSummary": "从这里定义故事前提、世界规则、人物关系与叙事状态。",
         "clip": "镜头",
         "text": "关键剧情",
-        "decision": "选择",
+        "decision": "玩家选择",
         "ending": "结局"
       },
       "foundation": {
@@ -2062,8 +2070,19 @@
       "world": {
         "eyebrow": "故事世界",
         "title": "故事设定",
-        "action": "故事设定",
         "description": "支撑每个分支的前提、角色与世界规则；修改会自动保存到草稿。",
+        "cover": {
+          "title": "封面素材",
+          "description": "项目共用的一张图片或一段视频，用于故事世界节点和项目列表。",
+          "empty": "尚未设置封面",
+          "unavailable": "封面预览暂不可用",
+          "choose": "选择素材",
+          "replace": "更换素材",
+          "remove": "移除",
+          "imageAlt": "项目封面",
+          "videoLabel": "项目封面视频",
+          "candidateLoadError": "候选素材加载失败。"
+        },
         "characters": {
           "cardEyebrow": "角色",
           "cardUntitled": "未命名角色",
@@ -2143,59 +2162,9 @@
       "metrics": {
         "characters": "人物"
       },
-      "trailer": {
-        "eyebrow": "世界观宣传片",
-        "title": "宣传片导演设计",
-        "description": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-        "node": {
-          "noVideo": "尚无宣传片视频",
-          "videoPreview": "当前宣传片视频预览"
-        },
-        "production": {
-          "title": "视频制作",
-          "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-          "disabled": {
-            "permission": "请选择视频模型。"
-          },
-          "errors": {
-            "action": "请先输入提示词。"
-          }
-        }
-      },
       "production": {
-        "title": "视频制作",
-        "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-        "emptyPrompt": "描述你想生成的视频。",
-        "masterPrompt": "提示词",
-        "promptLocalHint": "配方保留在当前页面。生成时会冻结准确的提示词、模型、时长、模式与参考图。",
-        "generate": "生成视频",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "请先输入提示词。",
-          "modelRequired": "请选择视频模型。",
-          "referencesRequired": "请准确添加一张首帧和一张尾帧。",
-          "permission": "你没有为此项目生成视频的权限。",
-          "generating": "此节点已有视频正在生成。"
-        },
-        "statuses": {
-          "generating": "生成中",
-          "queued": "排队中",
-          "running": "生成中",
-          "processing": "处理中",
-          "ready": "就绪",
-          "failed": "失败",
-          "cancelled": "已取消",
-          "superseded": "已被取代"
-        },
-        "referenceRail": {
-          "unapproved": "未批准",
-          "remove": "移除 {label}",
-          "add": "添加参考图",
-          "addTitle": "已批准的项目参考图"
-        },
-        "durationControl": {
-          "label": "时长",
-          "seconds": "{count}s"
+          "permission": "你没有管理此项目视频的权限。"
         },
         "errors": {
           "action": "制作操作无法完成。"
@@ -2203,26 +2172,19 @@
         "node": {
           "noVideo": "尚无视频",
           "videoPreview": "当前视频预览",
-          "generationFailed": "生成失败"
-        },
-        "model": "模型",
-        "references": "参考图",
-        "modeToggle": {
-          "label": "生成模式",
-          "multimodal": "参考图",
-          "firstLast": "首尾帧"
-        },
-        "uploadReference": {
-          "action": "上传参考图",
-          "uploading": "上传中 {progress}%",
-          "error": "参考图上传失败。"
+          "metadata": {
+            "duration": "时长",
+            "dimensions": "分辨率",
+            "fileSize": "文件大小",
+            "format": "格式"
+          }
         }
       },
       "productionCanvas": {
         "title": "创作画布",
         "identity": "Story Studio · 内容创作",
         "groupDropHint": "松开以添加到此分组",
-        "workspaceLabel": "项目创作画布，从「{title}」进入",
+        "workspaceLabel": "项目素材创作空间",
         "backToChapter": "返回章节画布",
         "closeSaveError": "无法保存最新的画布修改，请重试后再离开。",
         "loadError": "无法打开创作画布。",
@@ -2263,52 +2225,64 @@
           "error": "保存失败"
         }
       },
+      "candidatePicker": {
+        "title": "选择素材",
+        "description": "从当前项目的候选素材中选择，或上传本地文件。",
+        "filterLabel": "筛选候选素材",
+        "filters": {
+          "all": "全部",
+          "image": "图片",
+          "video": "视频"
+        },
+        "upload": {
+          "prompt": "拖拽文件到这里，或从本地选择。",
+          "hint": "可上传的文件类型由当前素材位置决定。",
+          "release": "松开即可上传",
+          "action": "上传素材",
+          "uploading": "正在上传 · {progress}%",
+          "processing": "正在准备素材…",
+          "unsupported": "当前不支持这种文件类型。",
+          "error": "无法上传此素材。"
+        },
+        "loading": "正在加载候选素材…",
+        "retry": "重试",
+        "empty": "没有符合条件的候选素材",
+        "emptyDescription": "请先在创作画布中将完成的图片或视频加入候选素材。",
+        "assetLabel": {
+          "image": "图片 {index}",
+          "video": "视频 {index}"
+        },
+        "selectAsset": "选择{label}",
+        "clearAsset": "取消选择{label}",
+        "select": "选择",
+        "current": "当前使用",
+        "clear": "取消选择",
+        "metadataIncomplete": "信息不完整 · 仍可使用",
+        "selectError": "无法应用此候选素材。",
+        "clearError": "无法取消选择当前素材。"
+      },
+      "mediaCreation": "素材创作",
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
-        "nodeId": "稳定节点 ID",
         "media": {
           "title": "当前视频",
           "description": "上传本地文件，或复用当前工作区中的视频。",
           "preview": "{title} 的当前视频",
           "empty": "尚未选择视频",
           "emptyDescription": "为这个故事片段添加可播放的视频。",
-          "candidates": "候选视频",
-          "candidateDescription": "从项目共用创作画布整理出的素材中选择。",
-          "candidateEmpty": "还没有候选视频",
-          "candidateEmptyDescription": "请先在创作画布中将成片加入候选素材。",
-          "candidateUse": "使用此视频",
-          "candidateUsing": "正在应用…",
-          "candidateSelected": "当前使用",
-          "candidateUnavailable": "此视频仍在准备可播放的原始版本。",
+          "candidateAction": "从候选素材中选择",
+          "candidateActionDescription": "{count} 个候选视频",
+          "candidateUnavailable": "此视频没有可访问的原始版本。",
           "candidateLoadError": "无法加载候选视频。",
-          "candidateRetry": "重试",
-          "upload": "上传本地视频",
-          "replace": "从本地替换",
-          "uploading": "正在上传 · {progress}%",
-          "processing": "正在处理视频…",
-          "processingDescription": "正在校验视频并准备可播放版本。",
-          "accepted": "MP4 视频",
           "preparing": "正在准备片段媒体信息。",
           "unknownDimensions": "尺寸未知",
-          "unknownDuration": "时长未知",
-          "errors": {
-            "candidate": "无法应用此候选视频。",
-            "upload": "无法上传此视频。"
-          },
-          "tabUpload": "视频上传",
-          "tabProduction": "创作画布"
-        },
-        "productionCanvas": {
-          "title": "创作画布",
-          "description": "打开整个项目共用的媒体创作画布，素材与生成链路可跨章节复用。",
-          "action": "进入创作画布",
-          "hint": "返回后会回到当前章节位置。"
+          "unknownDuration": "时长未知"
         },
         "exit": "后续走向",
         "production": "生产状态",
         "openProduction": "打开镜头生产",
-        "choices": "分支选择",
+        "choices": "玩家选择",
         "chapterTransitions": {
           "title": "前往其他章节",
           "continueHint": "选择本场景结束后进入的章节开场。",
@@ -2349,8 +2323,6 @@
         "removeDecision": "移除选择环节",
         "cancel": "取消",
         "nodeName": "名称",
-        "nodeDescription": "描述",
-        "nodeDescriptionPlaceholder": "这个片段讲什么？",
         "textTitle": "场景标题",
         "textTitlePlaceholder": "为这个关键剧情命名",
         "textBody": "场景正文",
@@ -2394,10 +2366,6 @@
           "layout": {
             "title": "画布布局",
             "description": "未保存的节点位置或故事世界显示状态将会丢失。"
-          },
-          "generation": {
-            "title": "生成设置",
-            "description": "尚未提交的视频生成设置将会丢失。"
           }
         },
         "stay": "留在画布",
@@ -2449,12 +2417,11 @@
     },
     "overview": {
       "productionTitle": "视频生产",
-      "productionSubtitle": "当前工作草稿的参考就绪度、视频覆盖与活跃生成任务。",
+      "productionSubtitle": "当前工作草稿的参考就绪度与视频覆盖。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事结构",
       "storyStructureSubtitle": "选择、状态与结局均以创作图为唯一真源。",
       "videoState": "当前视频状态",
-      "videoStateGenerating": "{count} 个镜头正在生成替换视频。",
       "videoStateReady": "{total} 个镜头中已有 {current} 个绑定当前视频。",
       "revisionTitle": "版本标识",
       "draftRevision": "草稿修订",
@@ -2556,13 +2523,11 @@
     },
     "production": {
       "title": "镜头生产",
-      "subtitle": "每个故事片段的当前视频与生成状态。",
+      "subtitle": "每个故事片段的当前视频状态。",
       "clipCount": "{count} 个镜头",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以执行下一步",
       "currentDraftPromptRequired": "请在故事画布中生成或上传视频。",
-      "generationInProgress": "替换视频正在生成中。",
-      "generationFailed": "最近一次生成失败；此前的视频仍保持为当前视频。",
       "currentVideoReady": "当前镜头已绑定视频。",
       "columns": {
         "key": "编号",

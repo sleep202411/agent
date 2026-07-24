@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { StoryVideoRecipeSnapshot } from './story-video-production.schema';
 import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -205,13 +204,6 @@ export const StoryReferenceVersionParamsSchema = z
   .strict();
 export type StoryReferenceVersionParams = z.infer<
   typeof StoryReferenceVersionParamsSchema
->;
-
-export const StoryVideoGenerationParamsSchema = z
-  .object({ projectId: StoryUuidSchema, generationId: StoryUuidSchema })
-  .strict();
-export type StoryVideoGenerationParams = z.infer<
-  typeof StoryVideoGenerationParamsSchema
 >;
 
 export const StoryBuildParamsSchema = z
@@ -657,7 +649,7 @@ export interface StoryProjectVideoLibraryItemDto {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   createdAt: string;
 }
 
@@ -694,7 +686,6 @@ export interface StoryProjectProductionSummaryDto {
   approvedReferenceCount: number;
   clipCount: number;
   currentVideoCount: number;
-  generatingClipCount: number;
   latestBuildStatus: StoryBuildStatus | null;
 }
 
@@ -776,86 +767,35 @@ export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   content: InteractiveStoryDraftContent;
 }
 
-export interface StoryVideoTechnicalCheckDto {
-  key: string;
-  status: 'pending' | 'passed' | 'failed';
-  message: string | null;
-}
-
 export interface StoryCurrentVideoDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
-  sourceGenerationId: string | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
-  durationMs: number;
-  width: number;
-  height: number;
-  browserSafeMp4: boolean;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  /** Byte length of the exact selected variant, serialized for BigInt-safe JSON. */
+  sizeBytes: string | null;
+  browserSafeMp4: boolean | null;
   selectionVersion: number;
   setByUserId: string | null;
   setAt: string;
-}
-
-export type StoryVideoGenerationStatus =
-  | 'queued'
-  | 'running'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'cancelled'
-  | 'superseded';
-
-export interface StoryVideoGenerationDto {
-  id: string;
-  projectId: string;
-  target: { kind: 'clip'; graphNodeId: string } | { kind: 'trailer' };
-  number: number;
-  version: number;
-  selectionVersionAtSubmit: number;
-  aiJobId: string;
-  aiJobOutputId: string | null;
-  status: StoryVideoGenerationStatus;
-  recipeSnapshot: StoryVideoRecipeSnapshot;
-  outputAsset: MediaAssetSummaryDto | null;
-  outputVariantId: string | null;
-  outputChecksumSha256: string | null;
-  technicalChecks: StoryVideoTechnicalCheckDto[];
-  error: Record<string, unknown> | null;
-  createdByUserId: string;
-  queuedAt: string | null;
-  startedAt: string | null;
-  readyAt: string | null;
-  cancelledAt: string | null;
-  supersededAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-}
-
-export interface StoryTrailerVideoSummaryDto {
-  selectionVersion: number;
-  currentVideo: StoryCurrentVideoDto | null;
-  generation: StoryVideoGenerationDto | null;
 }
 
 export interface StoryClipVideoSummaryDto {
   graphNodeId: string;
   selectionVersion: number;
   currentVideo: StoryCurrentVideoDto | null;
-  generation: StoryVideoGenerationDto | null;
 }
 
 export interface StoryReferenceVersionDto {
   id: string;
   slotId: string;
   number: number;
-  source: 'upload' | 'ai_job' | 'import' | 'generation_frame';
+  source: 'upload' | 'ai_job' | 'import';
   aiJobId: string | null;
   aiJobOutputId: string | null;
-  sourceGenerationId: string | null;
-  sourceFrameIndex: number | null;
-  sourceOutputChecksumSha256: string | null;
   asset: MediaAssetSummaryDto;
   variantId: string;
   sourceRecipeSnapshot: Record<string, unknown> | null;
@@ -895,7 +835,6 @@ export interface StoryBuildDiagnosticDto {
     | 'revision'
     | 'clip'
     | 'reference'
-    | 'generation'
     | 'choice'
     | 'ending'
     | 'asset'
@@ -916,7 +855,7 @@ export interface FrozenStoryAssetDto {
   logicalKey: string;
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   width: number | null;
   height: number | null;
@@ -1006,7 +945,6 @@ export interface StoryWorkingPreviewDto {
     graphNodeId: string;
     assetId: string;
     variantId: string;
-    sourceGenerationId: string | null;
     selectionVersion: number;
     selection: 'current';
   }>;
@@ -1035,7 +973,6 @@ export interface StoryWorkbenchDto {
   video: {
     snapshotHash: string;
     clips: StoryClipVideoSummaryDto[];
-    trailer: StoryTrailerVideoSummaryDto;
   };
   references: StoryReferenceSlotDto[];
   latestBuild: StoryBuildSummaryDto | null;

@@ -13,7 +13,6 @@ const cleanInput = {
   layoutDirty: false,
   layoutSaveInFlight: false,
   layoutConflict: false,
-  generationRecipeDirty: false,
 };
 
 describe("Story Canvas leave guard", () => {
@@ -34,13 +33,6 @@ describe("Story Canvas leave guard", () => {
     }
   });
 
-  it("includes unsaved generation recipes in the same decision", () => {
-    expect(resolveStoryCanvasLeaveRisk({ ...cleanInput, generationRecipeDirty: true })).toEqual({
-      blocked: true,
-      planes: ["generation"],
-    });
-  });
-
   it("prevents client navigation only when recovery work exists", () => {
     const preventDefault = vi.fn();
     const onBlocked = vi.fn();
@@ -55,12 +47,12 @@ describe("Story Canvas leave guard", () => {
     expect(onBlocked).toHaveBeenCalledWith(dirty);
   });
 
-  it("keeps a dirty generation recipe across programmatic Preview navigation", () => {
+  it("keeps a dirty layout across programmatic Preview navigation", () => {
     const navigate = vi.fn();
     const onBlocked = vi.fn();
     const dirty = resolveStoryCanvasLeaveRisk({
       ...cleanInput,
-      generationRecipeDirty: true,
+      layoutDirty: true,
     });
 
     expect(
@@ -103,7 +95,7 @@ describe("Story Canvas leave guard", () => {
     };
     const dirty = resolveStoryCanvasLeaveRisk({
       ...cleanInput,
-      generationRecipeDirty: true,
+      layoutDirty: true,
     });
 
     expect(

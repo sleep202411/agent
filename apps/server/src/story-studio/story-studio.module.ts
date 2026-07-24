@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { MediaModule } from '../media/media.module';
@@ -12,8 +11,6 @@ import { StoryVideoProductionController } from './story-video-production.control
 import { StoryVideoProductionService } from './story-video-production.service';
 import { StoryReferenceController } from './story-reference.controller';
 import { StoryReferenceService } from './story-reference.service';
-import { StoryTrailerProductionController } from './story-trailer-production.controller';
-import { StoryTrailerProductionService } from './story-trailer-production.service';
 import { StoryAccessModule } from './story-access.module';
 import { StoryProjectVideoLibraryController } from './story-project-video-library.controller';
 import { StoryProjectVideoLibraryService } from './story-project-video-library.service';
@@ -35,7 +32,6 @@ import { StoryAgentRunModule } from './story-agent-run.module';
   imports: [
     WorkspacesModule,
     StoryAccessModule,
-    AiGenerationModule,
     StorageModule,
     MediaModule,
     StoryAgentRunModule,
@@ -45,7 +41,6 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryProjectVideoLibraryController,
     StoryVideoProductionController,
     StoryReferenceController,
-    StoryTrailerProductionController,
     StoryBuildController,
     StoryWorkingPreviewController,
     StoryTextPlayController,
@@ -58,7 +53,6 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryVideoUploadFinalizeWorkerService,
     StoryVideoProductionService,
     StoryReferenceService,
-    StoryTrailerProductionService,
     StoryBuildService,
     StoryExperienceReleaseGateway,
     StoryExperienceReleaseService,
