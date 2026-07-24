@@ -5307,25 +5307,29 @@
       }
     },
     "pillars": {
-      "eyebrow": "Three ways in",
+      "eyebrow": "Four ways in",
       "titleLine1": "One platform.",
-      "titleLine2": "Make. Connect. Show.",
-      "subtitle": "Whether you're making the story, finding a crew to make it with you, or following the next great IP — FizzDragon was built for all three.",
+      "titleLine2": "Create. Connect. Distribute. Monetize.",
+      "subtitle": "Write and produce with AI, build a crew, push your work to audiences, and turn IP into revenue — end to end on FizzDragon.",
       "items": {
-        "make": {
-          "title": "Make",
+        "create": {
+          "title": "Create",
           "body": "AI agents draft your story, storyboard the shots, voice the cast, and render every frame. You direct, they execute.",
           "cta": "Start a project"
         },
         "connect": {
           "title": "Connect",
-          "body": "Find writers, artists, voice talent, and directors. Form a crew, split the work, ship the project together.",
+          "body": "Find writers, artists, and directors. Form a crew and ship together.",
           "cta": "Browse crews"
         },
-        "show": {
-          "title": "Show",
-          "body": "Publish episodes, gather an audience, accept backers. The IP Plaza is where stories find their fans.",
+        "distribute": {
+          "title": "Distribute",
+          "body": "Push finished work to channels and reach real viewers. List on the IP Plaza so your story gets found.",
           "cta": "Visit IP Plaza"
+        },
+        "monetize": {
+          "title": "Monetize",
+          "body": "Paid unlocks, licensing, and merch. Turn story IP into ongoing revenue."
         }
       }
     },
@@ -5554,6 +5558,10 @@
         "sgtech": {
           "title": "SGTech Impact Award",
           "body": "2026 Award winner"
+        },
+        "accenture": {
+          "title": "Accenture",
+          "body": "Qualified AI solution partner"
         }
       }
     }
