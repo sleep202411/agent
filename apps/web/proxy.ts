@@ -153,28 +153,22 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 307);
   }
 
-  // The in-web studio has moved to its own app. 307 rather than 308: the
-  // apex tree still exists and still serves wherever STUDIO_ORIGIN is
-  // unset, so this must not be cached as permanent by anyone who visits
-  // prod and then runs locally.
-  const legacyProjects =
-    !studioHost &&
-    (rewrittenPathname === "/projects" || rewrittenPathname.startsWith("/projects/"));
-  if (STUDIO_ORIGIN && (studioRedirect(rewrittenPathname) || legacyProjects)) {
+  // The in-web studio's /art-studio/* surface has moved to its own app; send
+  // those paths there. 307 rather than 308: the apex tree still exists and
+  // still serves wherever STUDIO_ORIGIN is unset, so this must not be cached
+  // as permanent by anyone who visits prod and then runs locally.
+  if (STUDIO_ORIGIN && studioRedirect(rewrittenPathname)) {
     return NextResponse.redirect(`${STUDIO_ORIGIN}/${matchedLocale}`, 307);
   }
 
-  // Backward compatibility for links/bookmarks created before project
-  // workspaces moved under /art-studio. next.config redirects only see
-  // the original locale-prefixed URL, so handle the localized shape here
-  // before the internal rewrite strips the locale. Only reachable while
-  // STUDIO_ORIGIN is unset — otherwise the branch above already left.
-  if (legacyProjects) {
-    const url = request.nextUrl.clone();
-    const targetPathname = rewrittenPathname === "/projects" ? "" : rewrittenPathname;
-    url.pathname = `/${matchedLocale}/art-studio${targetPathname}`;
-    return NextResponse.redirect(url, 307);
-  }
+  // Legacy /projects/<id> deep links (created before project workspaces moved
+  // under the /art-studio route tree) must keep RESOLVING on the marketing
+  // apex — never redirect them to the studio subdomain. They render in place
+  // via an internal rewrite below, so the clean /<locale>/projects/<id> URL
+  // stays put and the workspace loads where the link points.
+  const legacyProjects =
+    !studioHost &&
+    (rewrittenPathname === "/projects" || rewrittenPathname.startsWith("/projects/"));
 
   // Auth gate: protected paths without a session cookie 307 to /login
   // with the original (locale-prefixed) path stashed in `?redirect=`.
@@ -204,6 +198,11 @@ export function proxy(request: NextRequest) {
   let internalPathname = rewrittenPathname;
   if (studioHost && !rewrittenPathname.startsWith("/art-studio")) {
     internalPathname = `/art-studio${rewrittenPathname === "/" ? "" : rewrittenPathname}`;
+  } else if (legacyProjects) {
+    // Serve the apex /<locale>/projects/<id> URL from the /art-studio project
+    // route tree — a plain internal rewrite, never a redirect. The URL bar
+    // stays /<locale>/projects/<id> and the workspace renders in place.
+    internalPathname = `/art-studio${rewrittenPathname}`;
   }
 
   const headers = new Headers(request.headers);

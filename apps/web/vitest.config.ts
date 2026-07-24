@@ -17,7 +17,12 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["components/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+    include: [
+      "components/**/*.test.{ts,tsx}",
+      "src/**/*.test.{ts,tsx}",
+      // Root-level app infra (the Next.js locale/studio-routing proxy).
+      "proxy.test.ts",
+    ],
     environment: "jsdom",
   },
 });
