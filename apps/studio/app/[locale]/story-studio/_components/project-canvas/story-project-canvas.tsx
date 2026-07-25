@@ -58,6 +58,7 @@ import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
+import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
@@ -2090,6 +2091,42 @@ function StoryProjectCanvasInner({
     [storyWorldNodePresent]
   );
 
+  /**
+   * The single persistence path for every layout move — dragging and tidying
+   * alike — so the edit barrier, the undo snapshot and the no-op signature check
+   * can never drift apart between them.
+   */
+  const commitCanvasLayout = useCallback(
+    (nextNodes: StoryCanvasNode[], beforeMove: StoryCanvasHistorySnapshot | null) => {
+      if (!mutationBarrier.permits("layout")) return;
+      const nextLayout = canvasLayoutPayload(nextNodes, storyWorldNodePresent);
+      if (
+        beforeMove &&
+        layoutPositionSignature(beforeMove.nodePositions) !==
+          layoutPositionSignature(nextLayout.nodePositions)
+      ) {
+        history.capture(beforeMove);
+        refreshHistoryState();
+      }
+      if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current) return;
+      setLayoutSaveState("dirty");
+      void persistLayoutRef.current(nextLayout);
+    },
+    [history, mutationBarrier, refreshHistoryState, storyWorldNodePresent]
+  );
+
+  // Tidy reaches the store through the same commit path as a drag: positions land
+  // in the projection via `onCanvasNodesChange` (which the barrier already
+  // filters) and are persisted here, so a tidy survives a reload.
+  const tidyStoryCanvas = useCanvasTidy<StoryCanvasNode, StoryCanvasEdge>({
+    edges: canvasEdges,
+    onNodesChange: onCanvasNodesChange,
+    onTidied: useCallback(
+      (nextNodes: StoryCanvasNode[]) => commitCanvasLayout(nextNodes, readHistorySnapshot()),
+      [commitCanvasLayout, readHistorySnapshot]
+    ),
+  });
+
   const restoreHistorySnapshot = useCallback(
     (snapshot: StoryCanvasHistorySnapshot) => {
       if (!mutationBarrier.permits("layout")) return;
@@ -3183,32 +3220,15 @@ function StoryProjectCanvasInner({
                     didDragNodeRef.current = true;
                   }}
                   onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                    if (!mutationBarrier.permits("layout")) {
-                      dragStartHistorySnapshotRef.current = null;
-                      return;
-                    }
+                    const beforeDrag = dragStartHistorySnapshotRef.current;
+                    dragStartHistorySnapshotRef.current = null;
                     const movedNodes = new Map(
                       [...draggedNodes, draggedNode].map((node) => [node.id, node])
                     );
-                    const nextLayout = canvasLayoutPayload(
+                    commitCanvasLayout(
                       canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                      storyWorldNodePresent
+                      beforeDrag
                     );
-                    const positions = nextLayout.nodePositions;
-                    const beforeDrag = dragStartHistorySnapshotRef.current;
-                    dragStartHistorySnapshotRef.current = null;
-                    if (
-                      beforeDrag &&
-                      layoutPositionSignature(beforeDrag.nodePositions) !==
-                        layoutPositionSignature(positions)
-                    ) {
-                      history.capture(beforeDrag);
-                      refreshHistoryState();
-                    }
-                    if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current)
-                      return;
-                    setLayoutSaveState("dirty");
-                    void persistLayoutRef.current(nextLayout);
                   }}
                   onNodeClick={(event, node) => {
                     closeCreatorMenu();
@@ -3286,6 +3306,7 @@ function StoryProjectCanvasInner({
                   ) : null}
                   <CanvasControls
                     position="bottom-left"
+                    onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
                     className={cn(
                       "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
                       // Clear the full-width canvas's left inspector overlay.

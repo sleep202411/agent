@@ -1,6 +1,26 @@
 import type { Edge, Node } from "@xyflow/react";
 
 /**
+ * Which nodes and edges one tidy pass should lay out: the selection when a
+ * canvas opts into selection-scoped tidying and more than one node is selected,
+ * otherwise the whole canvas. Edges are narrowed to those internal to the
+ * target set so tidying part of a graph is not skewed by links leaving it.
+ */
+export function resolveCanvasTidyTargets<NodeType extends Node, EdgeType extends Edge>(
+  nodes: NodeType[],
+  edges: EdgeType[],
+  tidySelection = false
+): { nodes: NodeType[]; edges: EdgeType[] } {
+  const selected = tidySelection ? nodes.filter((node) => node.selected) : [];
+  const targetNodes = selected.length > 1 ? selected : nodes;
+  const targetIds = new Set(targetNodes.map((node) => node.id));
+  return {
+    nodes: targetNodes,
+    edges: edges.filter((edge) => targetIds.has(edge.source) && targetIds.has(edge.target)),
+  };
+}
+
+/**
  * Dependency-free layered layout shared by every authoring canvas. Nodes flow
  * left-to-right by longest-path depth and stack vertically within each column.
  */

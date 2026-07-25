@@ -6,7 +6,6 @@ import {
   type Connection,
   type Edge,
   type FinalConnectionState,
-  type FitViewOptions,
   type IsValidConnection,
   type Node,
   type OnConnectStart,
@@ -15,7 +14,7 @@ import { useTranslations } from "next-intl";
 import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
 import type { CanvasAsset, CanvasNodeShape } from "@/lib/canvas-core/types";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
-import { computeCanvasTidyLayout } from "@/components/canvas/canvas-tidy-layout";
+import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { ASSET_DRAG_MIME, ASSET_LIBRARY_WIDTH } from "@/components/canvas/authoring/asset-library";
 import { handleColor } from "@/components/canvas/authoring/port-colors";
@@ -733,35 +732,7 @@ export function useMediaAuthoringCanvas({
     },
     [graphRemoveEdge, patchNodeData]
   );
-  const tidyCanvas = useCallback(
-    (padding?: FitViewOptions["padding"]) => {
-      const canvasNodes = getNodes();
-      const selectedNodes = tidySelection ? canvasNodes.filter((node) => node.selected) : [];
-      const targetNodes = selectedNodes.length > 1 ? selectedNodes : canvasNodes;
-      const targetNodeIds = new Set(targetNodes.map((node) => node.id));
-      const targetEdges = edges.filter(
-        (edge) => targetNodeIds.has(edge.source) && targetNodeIds.has(edge.target)
-      );
-      const positions = computeCanvasTidyLayout(targetNodes, targetEdges);
-      if (positions.length === 0) return;
-      onNodesChange(
-        positions.map((position) => ({
-          type: "position" as const,
-          id: position.id,
-          position: position.position,
-          dragging: false,
-        }))
-      );
-      window.setTimeout(() => {
-        void fitView({
-          nodes: getNodes().filter((node) => targetNodeIds.has(node.id)),
-          padding: padding ?? (tidySelection ? 0.7 : 0.3),
-          duration: 280,
-        });
-      }, 60);
-    },
-    [edges, fitView, getNodes, onNodesChange, tidySelection]
-  );
+  const tidyCanvas = useCanvasTidy({ edges, onNodesChange, tidySelection });
   const onDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       if (!(event.target as HTMLElement).classList.contains("react-flow__pane")) return;

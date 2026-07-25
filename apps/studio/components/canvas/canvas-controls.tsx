@@ -2,13 +2,16 @@
 
 import { Fragment, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { Controls } from "@xyflow/react";
-import { IconHandMove, IconPointer } from "@tabler/icons-react";
+import { IconApps, IconHandMove, IconPointer } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { CanvasTool } from "./canvas-interaction-policy";
 import { useCanvasTool } from "./canvas-tool-context";
 
-type CanvasControlsProps = Omit<ComponentProps<typeof Controls>, "showInteractive">;
+type CanvasControlsProps = Omit<ComponentProps<typeof Controls>, "showInteractive"> & {
+  /** Omit to hide the button — a canvas that cannot mutate layout must not offer it. */
+  onTidy?: () => void;
+};
 
 type CanvasToolButtonsProps = {
   buttonClassName?: string;
@@ -57,10 +60,23 @@ export function CanvasToolButtons({
 }
 
 /** React Flow controls extended with honest, persistent Select and Hand tools. */
-export function CanvasControls({ children, className, ...props }: CanvasControlsProps) {
+export function CanvasControls({ children, className, onTidy, ...props }: CanvasControlsProps) {
+  const t = useTranslations("canvas");
+
   return (
     <Controls {...props} className={cn("canvas-tool-controls", className)} showInteractive={false}>
       {children}
+      {onTidy ? (
+        <button
+          type="button"
+          className="react-flow__controls-button canvas-tool-button"
+          aria-label={t("tidyCanvas")}
+          title={t("tidyCanvas")}
+          onClick={() => onTidy()}
+        >
+          <IconApps className="canvas-tool-icon size-4" stroke={1.8} />
+        </button>
+      ) : null}
       <CanvasToolButtons
         buttonClassName="react-flow__controls-button canvas-tool-button"
         activeButtonClassName="canvas-tool-button-active"
