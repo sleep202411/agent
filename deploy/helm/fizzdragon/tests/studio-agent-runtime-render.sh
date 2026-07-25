@@ -29,11 +29,21 @@ runtime_values=(
 # history.
 if helm template fizzdragon "$chart_dir" \
   --namespace fizzdragon-test \
+  --set studioAgentRuntime.image.tag=set-at-deploy \
   >"$temporary_dir/unconfigured.yaml" 2>"$render_error"; then
   echo "Render without an immutable runtime revision must fail." >&2
   exit 1
 fi
 grep -q 'image.tag must be an immutable deployment revision' "$render_error"
+
+# The committed values must be deployable as-is: a region that renders only
+# with extra --set flags is a region whose GitOps source of truth is incomplete.
+helm template fizzdragon "$chart_dir" --namespace fizzdragon-test \
+  >"$temporary_dir/committed.yaml" 2>"$render_error" || {
+  echo "The committed values must render without any --set override." >&2
+  cat "$render_error" >&2
+  exit 1
+}
 
 # Temporal's persistence must be a dedicated PostgreSQL 16 server, never the
 # application database — a region that has not provisioned one cannot deploy.
