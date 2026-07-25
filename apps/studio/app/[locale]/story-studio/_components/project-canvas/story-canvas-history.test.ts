@@ -24,11 +24,10 @@ describe("StoryCanvasHistory", () => {
 
   it("restores the complete layout state and clears redo after a new change", () => {
     const history = new StoryCanvasHistory();
-    history.capture(snapshot("before", { scene: { x: 10, y: 20 } }, true));
-    const previous = history.undo(snapshot("after", { scene: { x: 80, y: 90 } }, false));
+    history.capture(snapshot("before", { scene: { x: 10, y: 20 } }));
+    const previous = history.undo(snapshot("after", { scene: { x: 80, y: 90 } }));
 
     expect(previous?.nodePositions.scene).toEqual({ x: 10, y: 20 });
-    expect(previous?.storyWorldNodePresent).toBe(true);
     expect(history.canRedo).toBe(true);
 
     history.capture(snapshot("new branch"));
@@ -38,10 +37,9 @@ describe("StoryCanvasHistory", () => {
 
 function snapshot(
   logline: string,
-  nodePositions: StoryCanvasHistorySnapshot["nodePositions"] = {},
-  storyWorldNodePresent = true
+  nodePositions: StoryCanvasHistorySnapshot["nodePositions"] = {}
 ): StoryCanvasHistorySnapshot {
-  return { content: draft(logline), nodePositions, storyWorldNodePresent };
+  return { content: draft(logline), nodePositions };
 }
 
 function draft(logline: string): InteractiveStoryDraftContent {

@@ -5,7 +5,6 @@ import {
   deleteEndingNode,
   deleteGraphNode,
   disconnectStoryBranch,
-  setEntryNode,
 } from "./story-project-canvas-mutations";
 import { deleteStoryCharacter } from "./story-world-mutations";
 
@@ -20,10 +19,7 @@ export function deleteStoryCanvasElements(
   }
 ): InteractiveStoryDraftContent {
   const selectedNodes = uniqueById(nodes);
-  const deletableNodes = selectedNodes.filter((node) => node.data.kind !== "root");
-  // The Story World root is a layout-only projection. Its incident edge must
-  // be consumed by the node deletion request instead of being interpreted as
-  // a standalone request to clear the executable graph entry.
+  const deletableNodes = selectedNodes;
   const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
   const deletedGraphNodeIds = new Set(
     deletableNodes.flatMap((node) =>
@@ -71,7 +67,6 @@ function deleteStandaloneEdges(
     .sort((left, right) => left.id.localeCompare(right.id));
 
   return orderedEdges.reduce((next, edge) => {
-    if (edge.data.kind === "root") return setEntryNode(next, null);
     if (edge.data.kind === "continuation") {
       return disconnectStoryBranch(next, {
         kind: "continuation",

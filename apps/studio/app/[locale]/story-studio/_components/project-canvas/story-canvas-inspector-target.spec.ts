@@ -6,7 +6,7 @@ import {
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
 } from "./story-canvas-inspector-target";
-import { STORY_ROOT_NODE_ID, syntheticDecisionNodeId } from "./story-project-canvas-model";
+import { syntheticDecisionNodeId } from "./story-project-canvas-model";
 
 describe("story canvas inspector target", () => {
   it("starts and remains closed when the canvas has no selection", () => {
@@ -79,25 +79,5 @@ describe("story canvas inspector target", () => {
     expect(storyCanvasInspectorNodeId(storyNodeInspectorTarget("clip:a"))).toBe("clip:a");
     expect(storyCanvasInspectorNodeId(STORY_WORLD_INSPECTOR)).toBeNull();
     expect(storyCanvasInspectorNodeId(CLOSED_STORY_CANVAS_INSPECTOR)).toBeNull();
-  });
-
-  it("routes the mandatory Story World root to the Story Bible panel, not a node inspector", () => {
-    expect(storyNodeInspectorTarget(STORY_ROOT_NODE_ID)).toBe(STORY_WORLD_INSPECTOR);
-    expect(storyCanvasInspectorNodeId(storyNodeInspectorTarget(STORY_ROOT_NODE_ID))).toBeNull();
-  });
-
-  it("opens the Story Bible panel when the root node is explicitly clicked", () => {
-    // An explicit click names the root as the preferred node; a marquee that
-    // merely sweeps the root does not open the panel.
-    expect(
-      reconcileStoryCanvasInspectorTarget(
-        CLOSED_STORY_CANVAS_INSPECTOR,
-        [STORY_ROOT_NODE_ID],
-        STORY_ROOT_NODE_ID
-      )
-    ).toBe(STORY_WORLD_INSPECTOR);
-    expect(
-      reconcileStoryCanvasInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR, [STORY_ROOT_NODE_ID])
-    ).toEqual({ kind: "closed" });
   });
 });

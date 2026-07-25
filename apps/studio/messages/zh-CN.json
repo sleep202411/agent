@@ -1994,7 +1994,6 @@
         "conflict": "存在更新的项目状态 · 修订 {revision}"
       },
       "nodeKinds": {
-        "root": "故事世界",
         "clip": "影像镜头",
         "text": "关键剧情",
         "choice": "玩家选择",
@@ -2003,7 +2002,6 @@
         "character": "角色"
       },
       "ports": {
-        "entry": "故事入口",
         "cast": "角色成员",
         "input": "故事流入",
         "completion": "场景的下一步",
@@ -2053,9 +2051,6 @@
         "cancel": "取消"
       },
       "projection": {
-        "rootTitle": "故事世界",
-        "rootEyebrow": "世界观 Root",
-        "rootSummary": "从这里定义故事前提、世界规则、人物关系与叙事状态。",
         "clip": "镜头",
         "text": "关键剧情",
         "decision": "玩家选择",
@@ -2161,9 +2156,6 @@
             "false": "否"
           }
         }
-      },
-      "metrics": {
-        "characters": "人物"
       },
       "production": {
         "disabled": {

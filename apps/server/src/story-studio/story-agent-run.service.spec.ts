@@ -1422,12 +1422,10 @@ describe('StoryAgentRunService', () => {
       beforeDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
       beforeLayoutSnapshot: {
         nodePositions: {},
-        storyWorldNodePresent: true,
       },
       afterDraftHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
       afterLayoutHash: canonicalJsonHash({
         nodePositions: {},
-        storyWorldNodePresent: true,
       }),
     });
     const tx = {
@@ -1737,7 +1735,6 @@ function canonicalProjectRow() {
           revision: 3,
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
           nodePositions: {},
-          storyWorldNodePresent: true,
         },
       },
     ],

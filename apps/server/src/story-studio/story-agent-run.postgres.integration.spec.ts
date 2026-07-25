@@ -198,7 +198,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         workspaceId: fixture.workspaceId,
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
         nodePositions: {},
-        storyWorldNodePresent: false,
         updatedByUserId: fixture.user.userId,
       },
     });
@@ -1030,7 +1029,6 @@ async function createFixture(
       workspaceId: workspace.id,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: {},
-      storyWorldNodePresent: true,
       updatedByUserId: user.userId,
     },
   });

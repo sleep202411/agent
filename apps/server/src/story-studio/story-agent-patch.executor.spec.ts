@@ -121,7 +121,7 @@ describe('executeStoryPatch', () => {
     expect(result.draftChanged).toBe(true);
     expect(result.layoutChanged).toBe(true);
     expect(result.layout.nodePositions).not.toHaveProperty('ghost');
-    expect(result.layout.nodePositions).toHaveProperty(ROOT_NODE_ID);
+    expect(result.layout.nodePositions).not.toHaveProperty(ROOT_NODE_ID);
     expect(draft).toEqual(originalDraft);
     expect(layout).toEqual(originalLayout);
   });
@@ -623,8 +623,9 @@ function buildLayout(
   extraPositions: Record<string, { x: number; y: number }> = {},
 ): StoryAgentCanvasLayoutSnapshot {
   return {
-    storyWorldNodePresent: true,
     nodePositions: {
+      // The retired story-world root is seeded deliberately: the executor must
+      // now sweep it out like any other position with no node behind it.
       [ROOT_NODE_ID]: { x: -600, y: 0 },
       ...Object.fromEntries(
         draft.graph.nodes.map((node, index) => [

@@ -155,17 +155,11 @@ const STORY_CANVAS_READ_OUTPUT_SCHEMA: StudioAgentJsonObject = {
     },
     layout: {
       ...OBJECT_SCHEMA,
-      required: [
-        'schemaVersion',
-        'revision',
-        'nodePositions',
-        'storyWorldNodePresent',
-      ],
+      required: ['schemaVersion', 'revision', 'nodePositions'],
       properties: {
         schemaVersion: { type: 'string', minLength: 1 },
         revision: { type: 'integer', minimum: 0 },
         nodePositions: { type: 'object' },
-        storyWorldNodePresent: { type: 'boolean' },
       },
     },
     candidateAssets: {

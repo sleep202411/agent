@@ -1,21 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type {
-  InteractiveStoryDraftContent,
-  MediaAssetSummary,
-  StoryGraphNode,
-} from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
   characterCanvasNodeId,
   characterIdForCanvasNode,
   rejectsStoryCastWiring,
-  STORY_ROOT_NODE_ID,
   syntheticDecisionNodeId,
   syntheticEndingNodeId,
 } from "./story-project-canvas-model";
 
 describe("buildStoryCanvasModel", () => {
-  it("marks every projected element deletable, the summonable Story World root included", () => {
+  it("marks every projected element deletable", () => {
     const content = draft({
       entryNodeId: "decision",
       nodes: [
@@ -36,86 +31,8 @@ describe("buildStoryCanvasModel", () => {
     const model = buildStoryCanvasModel(content, "en-US");
 
     expect(Object.fromEntries(model.nodes.map((node) => [node.data.kind, node.deletable]))).toEqual(
-      { root: true, clip: true, decision: true, ending: true }
+      { clip: true, decision: true, ending: true }
     );
-  });
-
-  it("omits the Story World projection and its entry edge when the layout hides it", () => {
-    const content = draft({
-      entryNodeId: "opening",
-      nodes: [
-        clip("opening", "OPENING", { kind: "auto", nextNodeId: "arrival" }),
-        clip("arrival", "ARRIVAL", { kind: "auto", nextNodeId: null }),
-      ],
-    });
-
-    const model = buildStoryCanvasModel(content, "en-US", [], undefined, "landscape_16_9", false);
-
-    expect(model.nodes.some((node) => node.id === STORY_ROOT_NODE_ID)).toBe(false);
-    expect(model.edges.some((edge) => edge.data.kind === "root")).toBe(false);
-    expect(model.nodes.map(({ id, position }) => ({ id, position }))).toEqual([
-      { id: "opening", position: { x: 0, y: 0 } },
-      { id: "arrival", position: { x: 420, y: 0 } },
-    ]);
-    expect(content.graph.entryNodeId).toBe("opening");
-  });
-
-  it("projects the story bible root even when the executable graph is empty", () => {
-    const content = draft();
-
-    const model = buildStoryCanvasModel(content, "en-US");
-    expect(model.edges).toEqual([]);
-    expect(model.nodes).toMatchObject([
-      {
-        id: "__story_root__",
-        type: "storyCanvas",
-        dragHandle: ".canvas-node-drag-handle",
-        position: { x: 0, y: 0 },
-        data: { kind: "root", title: "Story World" },
-      },
-    ]);
-  });
-
-  it("projects the immutable project aspect ratio onto the root", () => {
-    const model = buildStoryCanvasModel(draft(), "en-US", [], undefined, "portrait_9_16");
-
-    expect(model.nodes[0]?.data).toMatchObject({
-      kind: "root",
-      frameAspectRatio: "9:16",
-    });
-  });
-
-  it("projects the project cover onto the Story World card without mutating the draft", () => {
-    const content = draft();
-    const canonicalBeforeProjection = JSON.parse(JSON.stringify(content));
-    const cover: MediaAssetSummary = {
-      id: "cover-asset",
-      kind: "video",
-      status: "ready",
-      moderationStatus: "approved",
-      contentType: "video/mp4",
-      width: 1920,
-      height: 1080,
-      durationSeconds: 8,
-      checksumSha256: "a".repeat(64),
-      previewUrl: "https://media.example/cover.mp4",
-    };
-
-    const model = buildStoryCanvasModel(
-      content,
-      "en-US",
-      [],
-      undefined,
-      "landscape_16_9",
-      true,
-      cover
-    );
-
-    expect(model.nodes[0]?.data).toMatchObject({
-      kind: "root",
-      coverMedia: cover,
-    });
-    expect(content).toEqual(canonicalBeforeProjection);
   });
 
   it("projects a linear auto route into deterministic BFS layers", () => {
@@ -146,38 +63,25 @@ describe("buildStoryCanvasModel", () => {
       }))
     ).toEqual([
       {
-        id: "__story_root__",
-        type: "storyCanvas",
-        position: { x: 0, y: 0 },
-        kind: "root",
-      },
-      {
         id: "opening",
         type: "storyCanvas",
-        position: { x: 420, y: 0 },
+        position: { x: 0, y: 0 },
         kind: "clip",
       },
       {
         id: "arrival",
         type: "storyCanvas",
-        position: { x: 840, y: 0 },
+        position: { x: 420, y: 0 },
         kind: "clip",
       },
       {
         id: "__ending__:truth",
         type: "storyCanvas",
-        position: { x: 1260, y: 0 },
+        position: { x: 840, y: 0 },
         kind: "ending",
       },
     ]);
     expect(first.edges).toMatchObject([
-      {
-        source: "__story_root__",
-        target: "opening",
-        sourceHandle: "entry",
-        targetHandle: "in",
-        data: { kind: "root" },
-      },
       {
         source: "opening",
         target: "arrival",
@@ -221,9 +125,6 @@ describe("buildStoryCanvasModel", () => {
     });
 
     const model = buildStoryCanvasModel(content, "zh-CN", [], {
-      rootTitle: "故事世界",
-      rootEyebrow: "世界观",
-      rootSummary: "故事设定",
       clip: "镜头",
       text: "关键剧情",
       decision: "玩家选择",
@@ -471,44 +372,21 @@ describe("Story cast projection", () => {
     // Character cards join the standard delete pipeline and are always deletable
     // in a pure branching tree.
     expect(cast.every((node) => node.deletable === true)).toBe(true);
-    // The cast lane sits LEFT of the root; the story-flow lane runs to its right.
-    const rootX = model.nodes.find((node) => node.id === STORY_ROOT_NODE_ID)!.position.x;
+    // The cast lane sits LEFT of the entry scene; story flow runs to its right.
     const openingX = model.nodes.find((node) => node.id === "opening")!.position.x;
-    expect(cast.every((node) => node.position.x < rootX)).toBe(true);
-    expect(openingX).toBeGreaterThan(rootX);
+    expect(cast.every((node) => node.position.x < openingX)).toBe(true);
     // A single vertical column: one shared x, distinct rows.
     expect(new Set(cast.map((node) => node.position.x)).size).toBe(1);
     expect(cast[0]!.position.y).not.toBe(cast[1]!.position.y);
   });
 
-  it("derives a non-flow membership tether from the root to each character", () => {
-    const content = draft({ characters: [character("hero", "Hero", "The lead.")] });
-    const model = buildStoryCanvasModel(content, "en-US");
-    const tethers = model.edges.filter((edge) => edge.data.kind === "membership");
-    expect(tethers).toHaveLength(1);
-    expect(tethers[0]).toMatchObject({
-      source: STORY_ROOT_NODE_ID,
-      target: "character:hero",
-      sourceHandle: "cast",
-      targetHandle: "cast-in",
-      selectable: false,
-      deletable: false,
-    });
-    // Tethers reach ONLY the root — never a clip/text/ending node.
-    expect(
-      model.edges.every(
-        (edge) => edge.data.kind !== "membership" || edge.source === STORY_ROOT_NODE_ID
-      )
-    ).toBe(true);
-  });
-
-  it("drops the membership tether when the Story World root is hidden but keeps the card", () => {
+  it("keeps character cards on the canvas with no world tether", () => {
     const content = draft({
       entryNodeId: "opening",
       nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
       characters: [character("hero", "Hero", "The lead.")],
     });
-    const model = buildStoryCanvasModel(content, "en-US", [], undefined, "landscape_16_9", false);
+    const model = buildStoryCanvasModel(content, "en-US", [], undefined, "landscape_16_9");
     expect(model.edges.some((edge) => edge.data.kind === "membership")).toBe(false);
     expect(model.nodes.some((node) => node.id === "character:hero")).toBe(true);
   });
@@ -525,9 +403,6 @@ describe("rejectsStoryCastWiring", () => {
     expect(rejectsStoryCastWiring({ sourceKind: "character", targetKind: "clip" })).toBe(true);
     expect(rejectsStoryCastWiring({ sourceKind: "clip", targetKind: "character" })).toBe(true);
     expect(
-      rejectsStoryCastWiring({ sourceKind: "root", targetKind: "clip", sourceHandle: "cast" })
-    ).toBe(true);
-    expect(
       rejectsStoryCastWiring({
         sourceKind: "clip",
         targetKind: "character",
@@ -537,14 +412,6 @@ describe("rejectsStoryCastWiring", () => {
   });
 
   it("allows ordinary story-flow connections", () => {
-    expect(
-      rejectsStoryCastWiring({
-        sourceKind: "root",
-        targetKind: "clip",
-        sourceHandle: "entry",
-        targetHandle: "in",
-      })
-    ).toBe(false);
     expect(
       rejectsStoryCastWiring({
         sourceKind: "clip",

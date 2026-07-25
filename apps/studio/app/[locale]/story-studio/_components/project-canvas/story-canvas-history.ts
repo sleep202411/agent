@@ -3,7 +3,6 @@ import type { InteractiveStoryDraftContent, StoryCanvasPosition } from "@/lib/st
 export interface StoryCanvasHistorySnapshot {
   content: InteractiveStoryDraftContent;
   nodePositions: Record<string, StoryCanvasPosition>;
-  storyWorldNodePresent: boolean;
 }
 
 interface CaptureOptions {

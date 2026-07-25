@@ -270,6 +270,208 @@ describe("StoryNodeInspector scene music", () => {
   });
 });
 
+describe("StoryNodeInspector scene exit editor", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const render = async (
+    content: InteractiveStoryDraftContent,
+    nodeId: string,
+    onSetSceneExit: ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]
+  ) => {
+    const model = buildStoryCanvasModel(content, "en-US");
+    const props = inspectorProps(content, vi.fn(), onSetSceneExit);
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, nodeId)} />
+      );
+    });
+  };
+
+  /**
+   * The whole point of converting in place: a scene that already continues
+   * somewhere keeps that destination when it becomes an interaction boundary.
+   * Dropping the target would silently dead-end the story.
+   */
+  it("carries the existing continuation into a checkpoint", async () => {
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
+    await render(draftWithMusic(), "opening", onSetSceneExit);
+
+    await click(exitButton(container, "Checkpoint"));
+
+    expect(onSetSceneExit).toHaveBeenCalledWith("opening", {
+      kind: "checkpoint",
+      nextNodeId: "second",
+    });
+  });
+
+  it("leaves a checkpoint unavailable when there is nowhere to continue to", async () => {
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
+    await render(draftWithCharacter(), "opening", onSetSceneExit);
+
+    expect(exitButton(container, "Checkpoint").disabled).toBe(true);
+    expect(exitButton(container, "Ending").disabled).toBe(true);
+  });
+
+  it("confirms before replacing a choice exit that already holds branches", async () => {
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
+    await render(draftWithChoiceBranches(), "opening", onSetSceneExit);
+
+    await click(exitButton(container, "Auto"));
+    expect(onSetSceneExit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("inspector.convertExitTitle");
+
+    const confirm = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent?.trim() === "inspector.confirmConversion"
+    );
+    await click(requiredElement(confirm ?? null, "confirm button"));
+
+    expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "auto", nextNodeId: null });
+  });
+
+  /**
+   * An ending exit has no continuation to inherit. Seeding the FIRST scene would
+   * point the finale back at the opening and hand the creator an instant cycle;
+   * the newest scene is what they just made room for.
+   */
+  it("seeds a checkpoint converted from an ending with the newest scene", async () => {
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
+    await render(draftEndingBeforeNewScene(), "finale", onSetSceneExit);
+
+    await click(exitButton(container, "Checkpoint"));
+
+    expect(onSetSceneExit).toHaveBeenCalledWith("finale", {
+      kind: "checkpoint",
+      nextNodeId: "just-added",
+    });
+  });
+
+  /**
+   * The entry marker is per chapter, so it has to be reachable from any scene —
+   * not only by dragging off a story-world card that is leaving the canvas.
+   */
+  it("promotes a scene to the chapter entry, and marks the one already holding it", async () => {
+    const onSetEntryNode = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetEntryNode"]>();
+    const content = draftWithMusic();
+    const model = buildStoryCanvasModel(content, "en-US");
+    const props = { ...inspectorProps(content, vi.fn()), onSetEntryNode };
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, "second")} />
+      );
+    });
+    const promote = entryButton(container);
+    expect(promote.disabled).toBe(false);
+    await click(promote);
+    expect(onSetEntryNode).toHaveBeenCalledWith("second");
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, "opening")} />
+      );
+    });
+    const current = entryButton(container);
+    expect(current.getAttribute("aria-current")).toBe("true");
+    expect(current.disabled).toBe(true);
+  });
+
+  it("switches straight to a choice when no branch would be destroyed", async () => {
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
+    await render(draftWithMusic(), "opening", onSetSceneExit);
+
+    await click(exitButton(container, "Choice"));
+
+    expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "choice" });
+  });
+});
+
+function draftEndingBeforeNewScene(): InteractiveStoryDraftContent {
+  return {
+    storyBible: {
+      logline: "",
+      synopsis: "",
+      worldview: "",
+      characters: [],
+      endings: [{ id: "ending:1", title: { "en-US": "Curtain" } }],
+    },
+    graph: {
+      entryNodeId: "opening",
+      nodes: [
+        {
+          kind: "clip",
+          nodeId: "opening",
+          clipKey: "OPENING",
+          exit: { kind: "auto", nextNodeId: "finale" },
+        },
+        {
+          kind: "clip",
+          nodeId: "finale",
+          clipKey: "FINALE",
+          exit: { kind: "ending", endingId: "ending:1" },
+        },
+        {
+          kind: "clip",
+          nodeId: "just-added",
+          clipKey: "JUST_ADDED",
+          exit: { kind: "ending", endingId: "ending:1" },
+        },
+      ],
+    },
+    productionNotes: [],
+  };
+}
+
+function draftWithChoiceBranches(): InteractiveStoryDraftContent {
+  return {
+    storyBible: {
+      logline: "",
+      synopsis: "",
+      worldview: "",
+      characters: [],
+      endings: [],
+    },
+    graph: {
+      entryNodeId: "opening",
+      nodes: [
+        {
+          kind: "clip",
+          nodeId: "opening",
+          clipKey: "OPENING",
+          exit: {
+            kind: "choice",
+            decisionId: "decision:1",
+            prompt: { "en-US": "Which way?" },
+            choices: [
+              { choiceId: "choice:1", label: { "en-US": "Left" }, nextNodeId: "second" },
+              { choiceId: "choice:2", label: { "en-US": "Right" }, nextNodeId: "second" },
+            ],
+          },
+        },
+        {
+          kind: "clip",
+          nodeId: "second",
+          clipKey: "SECOND",
+          exit: { kind: "auto", nextNodeId: null },
+        },
+      ],
+    },
+    productionNotes: [],
+  };
+}
+
 function draftWithoutOptionalCopy(): InteractiveStoryDraftContent {
   return {
     storyBible: {
@@ -364,9 +566,12 @@ function draftWithMusic(): InteractiveStoryDraftContent {
 
 function inspectorProps(
   content: InteractiveStoryDraftContent,
-  onUpdateEnding: ComponentProps<typeof StoryNodeInspector>["onUpdateEnding"]
+  onUpdateEnding: ComponentProps<typeof StoryNodeInspector>["onUpdateEnding"],
+  onSetSceneExit: ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"] = vi.fn()
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
+    onSetSceneExit,
+    onSetEntryNode: vi.fn(),
     content,
     format: "text_adventure",
     locale: "en-US",
@@ -404,6 +609,30 @@ function requiredNode(nodes: ReturnType<typeof buildStoryCanvasModel>["nodes"], 
 function requiredElement<T extends Element>(element: T | null, label: string): T {
   if (!element) throw new Error(`Missing ${label}`);
   return element;
+}
+
+function entryButton(container: HTMLElement): HTMLButtonElement {
+  const found = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === "inspector.entry"
+  );
+  if (!found) throw new Error("Missing entry-scene button");
+  return found;
+}
+
+function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
+  const label = `inspector.exit${kind}`;
+  const found = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === label
+  );
+  if (!found) throw new Error(`Missing exit button ${label}`);
+  return found;
+}
+
+async function click(element: HTMLElement): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+  });
 }
 
 async function input(element: HTMLTextAreaElement, value: string): Promise<void> {

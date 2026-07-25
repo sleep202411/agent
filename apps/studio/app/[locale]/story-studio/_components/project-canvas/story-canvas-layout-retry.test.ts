@@ -17,22 +17,14 @@ describe("story canvas layout retry state", () => {
     );
   });
 
-  it("treats Story World presence as part of the atomic layout payload", () => {
-    const visible = payload(layout("node", 10), true);
-    const hidden = payload(layout("node", 10), false);
-
-    expect(layoutPayloadSignature(visible)).not.toBe(layoutPayloadSignature(hidden));
-    expect(unsavedDesiredLayout(hidden, layoutPayloadSignature(visible))).toBe(hidden);
-  });
-
-  it("discards stale queued visibility after the creator returns to the recovered state", () => {
-    const hidden = payload({}, false);
-    const visible = payload({ __story_root__: { x: 10, y: 20 } }, true);
-    // Delete fails, Undo becomes the newer intent, then Redo returns to the
+  it("discards a stale queued move after the creator returns to the recovered state", () => {
+    const moved = payload(layout("node", 40));
+    const original = payload(layout("node", 10));
+    // The move fails, Undo becomes the newer intent, then Redo returns to the
     // failed payload before its retry succeeds. Only the final intent matters.
-    const latestDesired = [hidden, visible, hidden].at(-1) ?? null;
+    const latestDesired = [moved, original, moved].at(-1) ?? null;
 
-    expect(unsavedDesiredLayout(latestDesired, layoutPayloadSignature(hidden))).toBeNull();
+    expect(unsavedDesiredLayout(latestDesired, layoutPayloadSignature(moved))).toBeNull();
   });
 
   it("recognizes a lost response only when the server head matches this session and payload", () => {
@@ -40,9 +32,8 @@ describe("story canvas layout retry state", () => {
     const current = {
       projectId: "project",
       chapterId: "chapter",
-      schemaVersion: "story-canvas-layout-v2" as const,
+      schemaVersion: "story-canvas-layout-v3" as const,
       nodePositions: positions,
-      storyWorldNodePresent: true,
       revision: 4,
       updatedByUserId: "user",
       updatedBySessionId: "session",
@@ -51,31 +42,20 @@ describe("story canvas layout retry state", () => {
     };
 
     expect(
-      confirmsOwnCanvasLayoutWrite(
-        current,
-        "session",
-        layoutPayloadSignature(payload(positions, true))
-      )
+      confirmsOwnCanvasLayoutWrite(current, "session", layoutPayloadSignature(payload(positions)))
     ).toBe(true);
     expect(
       confirmsOwnCanvasLayoutWrite(
         current,
         "other-session",
-        layoutPayloadSignature(payload(positions, true))
+        layoutPayloadSignature(payload(positions))
       )
     ).toBe(false);
     expect(
       confirmsOwnCanvasLayoutWrite(
         current,
         "session",
-        layoutPayloadSignature(payload(layout("node", 20), true))
-      )
-    ).toBe(false);
-    expect(
-      confirmsOwnCanvasLayoutWrite(
-        current,
-        "session",
-        layoutPayloadSignature(payload(positions, false))
+        layoutPayloadSignature(payload(layout("node", 20)))
       )
     ).toBe(false);
   });
@@ -107,9 +87,6 @@ function layout(nodeId: string, x: number): StoryCanvasLayoutPositions {
   return { [nodeId]: { x, y: x + 1 } };
 }
 
-function payload(
-  nodePositions: StoryCanvasLayoutPositions,
-  storyWorldNodePresent: boolean
-): StoryCanvasLayoutPayload {
-  return { nodePositions, storyWorldNodePresent };
+function payload(nodePositions: StoryCanvasLayoutPositions): StoryCanvasLayoutPayload {
+  return { nodePositions };
 }

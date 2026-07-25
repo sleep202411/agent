@@ -9,7 +9,6 @@ import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
 export interface StoryAgentCanvasLayoutSnapshot {
   nodePositions: Record<string, { x: number; y: number }>;
-  storyWorldNodePresent: boolean;
 }
 
 export interface StoryPatchExecutionResult {
@@ -97,22 +96,9 @@ export function executeStoryPatch(input: {
   }
   assertAgentDraftIntegrity(parsedDraft.data);
 
-  // Establishing the story world summons its canvas card: once the patch
-  // leaves any bible overview text behind, the Story World card joins the
-  // canvas (fresh projects start without it; deleting it again is layout-only).
-  const bible = parsedDraft.data.storyBible;
-  const hasWorldFoundation =
-    bible.logline.trim() !== '' ||
-    bible.synopsis.trim() !== '' ||
-    bible.worldview.trim() !== '';
-  if (hasWorldFoundation && !layout.storyWorldNodePresent) {
-    layout.storyWorldNodePresent = true;
-  }
-
   layout.nodePositions = removeOrphanedCanvasPositions(
     layout.nodePositions,
     parsedDraft.data,
-    layout.storyWorldNodePresent,
   );
 
   return {
@@ -453,10 +439,8 @@ function draftReferencesEnding(
 function removeOrphanedCanvasPositions(
   positions: Record<string, { x: number; y: number }>,
   draft: InteractiveStoryDraftContent,
-  storyWorldNodePresent: boolean,
 ): Record<string, { x: number; y: number }> {
   const validIds = new Set<string>();
-  if (storyWorldNodePresent) validIds.add('__story_root__');
   draft.graph.nodes.forEach((node) => {
     validIds.add(node.nodeId);
     if (node.exit.kind === 'choice') {

@@ -145,7 +145,6 @@ describe("current-draft Story production routes", () => {
       {
         expectedRevision: 7,
         nodePositions: { "clip:opening": { x: 120, y: 240 } },
-        storyWorldNodePresent: false,
         sessionId: "session-1",
       },
       { keepalive: true }
@@ -157,7 +156,6 @@ describe("current-draft Story production routes", () => {
         keepalive: true,
         data: expect.objectContaining({
           expectedRevision: 7,
-          storyWorldNodePresent: false,
           sessionId: "session-1",
         }),
       })

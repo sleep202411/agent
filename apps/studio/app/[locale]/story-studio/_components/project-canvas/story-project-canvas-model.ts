@@ -3,12 +3,11 @@ import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canv
 import type {
   StoryClipVideoSummary,
   InteractiveStoryDraftContent,
-  MediaAssetSummary,
   StoryFrameProfile,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 
-type StoryCanvasNodeKind = "root" | "clip" | "text" | "decision" | "ending" | "character";
+type StoryCanvasNodeKind = "clip" | "text" | "decision" | "ending" | "character";
 type StoryCanvasExitKind = "auto" | "choice" | "checkpoint" | "ending";
 
 interface StoryCanvasChoiceData {
@@ -35,19 +34,13 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   clipVideo?: StoryClipVideoSummary;
-  /** Project-level image or video cover projected onto the Story World card. */
-  coverMedia?: MediaAssetSummary;
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
-  rootStats?: {
-    characters: number;
-  };
 }
 
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
-  | { kind: "root" }
   | { kind: "membership" }
   | { kind: "continuation" }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
@@ -80,12 +73,8 @@ const SYNTHETIC_ENDING_NODE_PREFIX = "__ending__:";
 // "character:" prefix keeps their synthetic ids from colliding with graph node
 // ids (which the membership tether and inspector map back through).
 const SYNTHETIC_CHARACTER_NODE_PREFIX = "character:";
-export const STORY_ROOT_NODE_ID = "__story_root__";
 
 export interface StoryCanvasCopy {
-  rootTitle: string;
-  rootEyebrow: string;
-  rootSummary: string;
   clip: string;
   text: string;
   decision?: string;
@@ -93,9 +82,6 @@ export interface StoryCanvasCopy {
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
-  rootTitle: "Story World",
-  rootEyebrow: "World Root",
-  rootSummary: "Define the premise, world rules, characters, and narrative state here.",
   clip: "Clip",
   text: "Text scene",
   decision: "Decision",
@@ -113,9 +99,7 @@ export function buildStoryCanvasModel(
   copy: StoryCanvasCopy = DEFAULT_COPY,
   // A text-first project carries no frame profile: its cards keep a neutral
   // media box and never advertise a frame contract the project doesn't have.
-  frameProfile: StoryFrameProfile | null = "landscape_16_9",
-  storyWorldNodePresent = true,
-  coverMedia: MediaAssetSummary | null = null
+  frameProfile: StoryFrameProfile | null = "landscape_16_9"
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   // Null-profile (text-first) projects yield undefined so no card ever shows a
   // frame tag for a contract that doesn't exist.
@@ -134,28 +118,7 @@ export function buildStoryCanvasModel(
   let clipOrdinal = 0;
   let textOrdinal = 0;
 
-  const storyWorldProjection: CanvasProjection[] = storyWorldNodePresent
-    ? [
-        {
-          id: STORY_ROOT_NODE_ID,
-          order: -1,
-          data: {
-            kind: "root",
-            title: copy.rootTitle,
-            eyebrow: copy.rootEyebrow,
-            nodeId: STORY_ROOT_NODE_ID,
-            summary: content.storyBible.logline.trim() || copy.rootSummary,
-            rootStats: {
-              characters: content.storyBible.characters.length,
-            },
-            coverMedia: coverMedia ?? undefined,
-            frameAspectRatio: frameAspectRatioOf(frameProfile),
-          },
-        },
-      ]
-    : [];
   const projections: CanvasProjection[] = [
-    ...storyWorldProjection,
     ...content.graph.nodes.flatMap<CanvasProjection>((node, index) => {
       const choices =
         node.exit.kind === "choice"
@@ -295,50 +258,17 @@ export function buildStoryCanvasModel(
     endingCanvasIds,
     locale
   );
-  if (
-    storyWorldNodePresent &&
-    content.graph.entryNodeId &&
-    graphNodesById.has(content.graph.entryNodeId)
-  ) {
-    connections.unshift({
-      order: -1,
-      edge: {
-        id: `root:${content.graph.entryNodeId}`,
-        source: STORY_ROOT_NODE_ID,
-        target: content.graph.entryNodeId,
-        sourceHandle: "entry",
-        targetHandle: "in",
-        data: { kind: "root" },
-      },
-    });
-  }
   const storyEdges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
-  const layoutSeedNodeId = storyWorldNodePresent ? STORY_ROOT_NODE_ID : content.graph.entryNodeId;
+  const layoutSeedNodeId = content.graph.entryNodeId;
   // Only story-flow projections and edges feed the layered layout; character
   // nodes are placed afterwards so the membership tethers never pull them into
   // the story-flow lane on the right.
   const positions = buildLayeredPositions(projections, storyEdges, layoutSeedNodeId);
-  seedCastLanePositions(positions, characterProjections, storyWorldNodePresent, layoutSeedNodeId);
+  seedCastLanePositions(positions, characterProjections, layoutSeedNodeId);
 
-  // Membership tethers are computed, never persisted — the same way the
-  // root→entry edge is derived. They read as "belongs to this world", not as
-  // story flow: non-selectable, non-deletable, and rendered as a muted hairline.
-  const membershipEdges: StoryCanvasEdge[] = storyWorldNodePresent
-    ? characterProjections.map((projection) => ({
-        id: `membership:${projection.id}`,
-        source: STORY_ROOT_NODE_ID,
-        target: projection.id,
-        sourceHandle: "cast",
-        targetHandle: "cast-in",
-        selectable: false,
-        deletable: false,
-        focusable: false,
-        data: { kind: "membership" },
-      }))
-    : [];
-  const edges = [...storyEdges, ...membershipEdges];
+  const edges = storyEdges;
 
   const nodes = [...projections, ...characterProjections]
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
@@ -367,12 +297,10 @@ export function buildStoryCanvasModel(
 function seedCastLanePositions(
   positions: Map<string, { x: number; y: number }>,
   characterProjections: CanvasProjection[],
-  storyWorldNodePresent: boolean,
   layoutSeedNodeId: string | null
 ): void {
   if (characterProjections.length === 0) return;
-  const anchorId = storyWorldNodePresent ? STORY_ROOT_NODE_ID : layoutSeedNodeId;
-  const anchor = (anchorId ? positions.get(anchorId) : undefined) ?? { x: 0, y: 0 };
+  const anchor = (layoutSeedNodeId ? positions.get(layoutSeedNodeId) : undefined) ?? { x: 0, y: 0 };
   const laneX = anchor.x - CAST_COLUMN_GAP;
   characterProjections.forEach((projection, index) => {
     positions.set(projection.id, {

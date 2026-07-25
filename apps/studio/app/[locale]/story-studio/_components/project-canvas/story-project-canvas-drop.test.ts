@@ -12,18 +12,6 @@ import {
 } from "./story-project-canvas-drop";
 
 describe("story canvas blank-drop connections", () => {
-  it("creates and installs a root entry clip atomically", () => {
-    const original = draft();
-    const root = canvasNode(original, "__story_root__");
-
-    const result = createConnectedSceneForBlankDrop(original, root.data, "entry", "en-US");
-
-    expect(result).not.toBeNull();
-    expect(original.graph).toEqual({ entryNodeId: null, nodes: [] });
-    expect(result!.content.graph.entryNodeId).toBe(result!.createdNodeId);
-    expect(result!.content.graph.nodes).toHaveLength(1);
-  });
-
   it("creates a clip from a film completion handle", () => {
     const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     const opening = canvasNode(content, "opening");
@@ -92,12 +80,6 @@ describe("story canvas blank-drop connections", () => {
   });
 
   it("rejects target handles, mismatched handle kinds, and ambiguous terminal exits", () => {
-    const rootPlan = resolveBlankDropConnectionPlan(
-      canvasNode(draft(), "__story_root__").data,
-      "in"
-    );
-    expect(rootPlan).toBeNull();
-
     let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     expect(
       resolveBlankDropConnectionPlan(canvasNode(content, "opening").data, "route-new")

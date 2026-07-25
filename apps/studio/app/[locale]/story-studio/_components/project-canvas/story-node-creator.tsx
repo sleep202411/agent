@@ -20,7 +20,6 @@ export type { StoryNodeCreationKind } from "./story-node-creator-model";
 interface StoryNodeCreatorProps {
   position: { left: number; top: number };
   /** Offer the Story World entry only while the card is absent from the canvas. */
-  showStoryWorld: boolean;
   onCreate: (kind: StoryNodeCreationKind) => void;
   onCancel: () => void;
 }
@@ -65,17 +64,7 @@ const CREATOR_ITEMS: CreatorItem[] = [
   },
 ];
 
-function visibleCreatorItems(showStoryWorld: boolean): CreatorItem[] {
-  return showStoryWorld ? CREATOR_ITEMS : CREATOR_ITEMS.filter((item) => item.kind !== "root");
-}
-
-export function StoryNodeDock({
-  showStoryWorld,
-  onCreate,
-}: {
-  showStoryWorld: boolean;
-  onCreate: (kind: StoryNodeCreationKind) => void;
-}) {
+export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreationKind) => void }) {
   const t = useTranslations("storyStudio.canvas");
 
   return (
@@ -84,7 +73,7 @@ export function StoryNodeDock({
       aria-label={t("addNode")}
       className="absolute bottom-5 left-1/2 z-40 flex h-12 -translate-x-1/2 items-center gap-1 rounded-[18px] bg-[oklch(0.24_0_0/0.86)] px-2 shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px] backdrop-saturate-150"
     >
-      {visibleCreatorItems(showStoryWorld).map((item) => {
+      {CREATOR_ITEMS.map((item) => {
         const ItemIcon = item.icon;
         const label = t(`creator.${item.kind}`);
         return (
@@ -109,15 +98,10 @@ export function StoryNodeDock({
   );
 }
 
-export function StoryNodeCreator({
-  position,
-  showStoryWorld,
-  onCreate,
-  onCancel,
-}: StoryNodeCreatorProps) {
+export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCreatorProps) {
   const t = useTranslations("storyStudio.canvas");
   const firstActionRef = useRef<HTMLButtonElement>(null);
-  const creatorItems = visibleCreatorItems(showStoryWorld);
+  const creatorItems = CREATOR_ITEMS;
 
   useDismiss(true, onCancel);
   useEffect(() => firstActionRef.current?.focus(), []);

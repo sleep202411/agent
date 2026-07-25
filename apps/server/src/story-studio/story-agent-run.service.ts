@@ -1303,7 +1303,6 @@ export class StoryAgentRunService {
           data: {
             schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
             nodePositions: nextLayout.nodePositions as Prisma.InputJsonObject,
-            storyWorldNodePresent: nextLayout.storyWorldNodePresent,
             revision: { increment: 1 },
             updatedByUserId: run.confirmedByUserId,
             updatedBySessionId: null,
@@ -2404,7 +2403,6 @@ export class StoryAgentRunService {
         schemaVersion: canvasLayout.schemaVersion,
         layout: {
           nodePositions: positions.data,
-          storyWorldNodePresent: canvasLayout.storyWorldNodePresent,
         },
       },
     };
@@ -2849,7 +2847,6 @@ function parseLayoutSnapshot(
   const parsed = z
     .object({
       nodePositions: StoryCanvasNodePositionsSchema,
-      storyWorldNodePresent: z.boolean(),
     })
     .strict()
     .safeParse(value);

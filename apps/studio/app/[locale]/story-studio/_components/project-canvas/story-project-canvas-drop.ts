@@ -38,10 +38,6 @@ export function resolveBlankDropConnectionPlan(
 ): BlankDropConnectionPlan | null {
   if (!sourceHandle) return null;
 
-  if (source.kind === "root") {
-    return sourceHandle === "entry" ? { kind: "entry" } : null;
-  }
-
   if (source.kind === "decision") {
     if (!source.sourceNodeId) return null;
     if (sourceHandle.startsWith("choice-new:")) {

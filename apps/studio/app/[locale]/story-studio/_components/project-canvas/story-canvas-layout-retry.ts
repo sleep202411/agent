@@ -4,7 +4,6 @@ export type StoryCanvasLayoutPositions = Record<string, StoryCanvasPosition>;
 
 export interface StoryCanvasLayoutPayload {
   nodePositions: StoryCanvasLayoutPositions;
-  storyWorldNodePresent: boolean;
 }
 
 export function layoutPositionSignature(positions: StoryCanvasLayoutPositions): string {
@@ -14,7 +13,6 @@ export function layoutPositionSignature(positions: StoryCanvasLayoutPositions): 
 export function layoutPayloadSignature(payload: StoryCanvasLayoutPayload): string {
   return JSON.stringify({
     nodePositions: canonicalNodePositions(payload.nodePositions),
-    storyWorldNodePresent: payload.storyWorldNodePresent,
   });
 }
 
@@ -34,7 +32,6 @@ export function confirmsOwnCanvasLayoutWrite(
     current.updatedBySessionId === sessionId &&
     layoutPayloadSignature({
       nodePositions: current.nodePositions,
-      storyWorldNodePresent: current.storyWorldNodePresent,
     }) === expectedSignature
   );
 }

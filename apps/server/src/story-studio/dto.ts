@@ -32,7 +32,7 @@ export const STORY_TAG_COUNT_MAX = 12;
 export const STORY_CHAPTER_COUNT_MAX = 200;
 export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
-  'story-canvas-layout-v2' as const;
+  'story-canvas-layout-v3' as const;
 export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
 export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 1_000;
 export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 1_000_000;
@@ -396,13 +396,13 @@ export const PutStoryCanvasLayoutSchema = z
     expectedRevision: NonNegativeVersionSchema,
     schemaVersion: z.literal(STORY_CANVAS_LAYOUT_SCHEMA_VERSION),
     nodePositions: StoryCanvasNodePositionsSchema,
-    storyWorldNodePresent: z.boolean(),
     sessionId: SessionIdSchema,
   })
   .strict()
   .superRefine((layout, context) => {
+    // The synthetic story-world root is gone from the canvas; a layout that
+    // still positions it is stale client state, not a layout we can store.
     if (
-      !layout.storyWorldNodePresent &&
       Object.prototype.hasOwnProperty.call(
         layout.nodePositions,
         STORY_WORLD_CANVAS_NODE_ID,
@@ -411,7 +411,7 @@ export const PutStoryCanvasLayoutSchema = z
       context.addIssue({
         code: 'custom',
         path: ['nodePositions', STORY_WORLD_CANVAS_NODE_ID],
-        message: 'A deleted story-world node cannot retain a canvas position.',
+        message: 'The story-world node no longer exists on the canvas.',
       });
     }
   });
@@ -743,7 +743,6 @@ export interface StoryCanvasLayoutDto {
   chapterId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: StoryCanvasNodePositions;
-  storyWorldNodePresent: boolean;
   revision: number;
   updatedByUserId: string;
   updatedBySessionId: string | null;

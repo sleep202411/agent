@@ -277,10 +277,6 @@ export class StoryProjectsService {
           workspaceId,
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
           nodePositions: {},
-          // A fresh project opens on the empty-canvas agent launcher (idea +
-          // director skills); the Story World card is summoned later, not
-          // pre-seeded.
-          storyWorldNodePresent: false,
           updatedByUserId: user.userId,
         },
       });
@@ -554,7 +550,6 @@ export class StoryProjectsService {
             workspaceId,
             schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
             nodePositions: {},
-            storyWorldNodePresent: false,
             updatedByUserId: user.userId,
           },
         }),
@@ -939,7 +934,6 @@ export class StoryProjectsService {
         data: {
           schemaVersion: input.schemaVersion,
           nodePositions: input.nodePositions as Prisma.InputJsonObject,
-          storyWorldNodePresent: input.storyWorldNodePresent,
           revision: { increment: 1 },
           updatedByUserId: user.userId,
           updatedBySessionId: input.sessionId,
@@ -1737,7 +1731,6 @@ export class StoryProjectsService {
     storyProjectId: string;
     schemaVersion: string;
     nodePositions: Prisma.JsonValue;
-    storyWorldNodePresent: boolean;
     revision: number;
     updatedByUserId: string;
     updatedBySessionId: string | null;
@@ -1757,7 +1750,6 @@ export class StoryProjectsService {
       throw corruptData('STORY_CANVAS_LAYOUT_CORRUPT', 'canvas layout');
     }
     if (
-      !row.storyWorldNodePresent &&
       Object.prototype.hasOwnProperty.call(
         nodePositions.data,
         STORY_WORLD_CANVAS_NODE_ID,
@@ -1770,7 +1762,6 @@ export class StoryProjectsService {
       chapterId: row.storyChapterId,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: nodePositions.data,
-      storyWorldNodePresent: row.storyWorldNodePresent,
       revision: row.revision,
       updatedByUserId: row.updatedByUserId,
       updatedBySessionId: row.updatedBySessionId,

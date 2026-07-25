@@ -259,7 +259,6 @@ export class StudioAgentStoryCapabilities {
         data: {
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
           nodePositions: result.layout.nodePositions,
-          storyWorldNodePresent: result.layout.storyWorldNodePresent,
           revision: { increment: 1 },
           updatedByUserId: context.actorId,
           updatedBySessionId: null,
@@ -542,7 +541,6 @@ async function loadCanonicalStoryState(
       revision: chapter.canvasLayout.revision,
       value: {
         nodePositions: positions.data,
-        storyWorldNodePresent: chapter.canvasLayout.storyWorldNodePresent,
       },
     },
     candidateAssets: project.candidateAssets.map(({ mediaAssetId, asset }) => ({

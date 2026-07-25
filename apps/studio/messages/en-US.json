@@ -1994,7 +1994,6 @@
         "conflict": "A newer project state exists · revision {revision}"
       },
       "nodeKinds": {
-        "root": "Story world",
         "clip": "Film clip",
         "text": "Plot beat",
         "choice": "Player choice",
@@ -2003,7 +2002,6 @@
         "character": "Character"
       },
       "ports": {
-        "entry": "Story entry",
         "cast": "Cast member",
         "input": "Incoming story flow",
         "completion": "Next step from this scene",
@@ -2053,9 +2051,6 @@
         "cancel": "Cancel"
       },
       "projection": {
-        "rootTitle": "Story World",
-        "rootEyebrow": "World Root",
-        "rootSummary": "Define the premise, world rules, characters, and narrative state here.",
         "clip": "Clip",
         "text": "Plot beat",
         "decision": "Player choice",
@@ -2161,9 +2156,6 @@
             "false": "False"
           }
         }
-      },
-      "metrics": {
-        "characters": "Characters"
       },
       "production": {
         "disabled": {

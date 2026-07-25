@@ -14,7 +14,6 @@ export interface StoryNodeCreationMenuPlacement {
 const MENU_MARGIN = 12;
 const MENU_WIDTH = 310;
 const MENU_HEIGHT = 350;
-const MENU_HEIGHT_WITH_STORY_WORLD = 418;
 const DOCK_NUDGE_STEP = 26;
 const DOCK_NUDGE_CYCLE = 6;
 
@@ -26,17 +25,15 @@ export function resolveStoryNodeCreationMenuPlacement({
   clientPosition,
   container,
   flowPosition,
-  showStoryWorld,
 }: {
   clientPosition: StoryNodeCreationPoint;
   container: { left: number; top: number; width: number; height: number };
   flowPosition: StoryNodeCreationPoint;
   /** Offer the Story World entry only while the card is absent from the canvas. */
-  showStoryWorld: boolean;
 }): StoryNodeCreationMenuPlacement {
   const localX = clientPosition.x - container.left;
   const localY = clientPosition.y - container.top;
-  const menuHeight = showStoryWorld ? MENU_HEIGHT_WITH_STORY_WORLD : MENU_HEIGHT;
+  const menuHeight = MENU_HEIGHT;
 
   return {
     left: clamp(localX, MENU_MARGIN, container.width - MENU_WIDTH - MENU_MARGIN),

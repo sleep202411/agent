@@ -141,8 +141,7 @@ function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
     storyProjectId: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-    nodePositions: { __story_root__: { x: -500, y: 120 } },
-    storyWorldNodePresent: true,
+    nodePositions: { 'clip:scene-1': { x: -500, y: 120 } },
     revision: 2,
     updatedByUserId: USER.userId,
     updatedBySessionId: 'canvas-session',
@@ -620,7 +619,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         workspaceId: WORKSPACE_ID,
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
         nodePositions: {},
-        storyWorldNodePresent: false,
       }) as unknown,
     });
     expect(result).toMatchObject({
@@ -948,7 +946,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         storyChapterId: SECOND_CHAPTER_ID,
         storyProjectId: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
-        storyWorldNodePresent: false,
       }) as unknown,
     });
     expect(tx.storyProject.update).toHaveBeenCalledWith({
@@ -1156,11 +1153,8 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
   });
 
-  it('returns the persisted story-world projection state with the canvas layout', async () => {
-    const row = canvasLayoutRow({
-      nodePositions: {},
-      storyWorldNodePresent: false,
-    });
+  it('returns the stored canvas layout for a chapter', async () => {
+    const row = canvasLayoutRow({ nodePositions: {} });
     const findUnique = jest.fn().mockResolvedValue(row);
     const prisma = {
       storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
@@ -1180,7 +1174,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       chapterId: CHAPTER_ID,
       schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
       nodePositions: row.nodePositions,
-      storyWorldNodePresent: false,
       revision: 2,
     });
     expect(findUnique).toHaveBeenCalledWith({
@@ -1188,12 +1181,8 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
   });
 
-  it('persists story-world projection deletion in the same canvas-layout CAS write', async () => {
-    const saved = canvasLayoutRow({
-      nodePositions: {},
-      storyWorldNodePresent: false,
-      revision: 3,
-    });
+  it('writes the canvas layout under compare-and-set on the revision', async () => {
+    const saved = canvasLayoutRow({ nodePositions: {}, revision: 3 });
     const tx = {
       storyCanvasLayout: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -1214,7 +1203,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         expectedRevision: 2,
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
         nodePositions: {},
-        storyWorldNodePresent: false,
         sessionId: 'canvas-session',
       },
       CHAPTER_ID,
@@ -1230,13 +1218,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       data: {
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
         nodePositions: {},
-        storyWorldNodePresent: false,
         revision: { increment: 1 },
         updatedByUserId: USER.userId,
         updatedBySessionId: 'canvas-session',
       },
     });
-    expect(result.storyWorldNodePresent).toBe(false);
     expect(result.revision).toBe(3);
   });
 
@@ -1271,7 +1257,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           expectedRevision: 2,
           schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
           nodePositions: {},
-          storyWorldNodePresent: false,
           sessionId: 'canvas-session',
         },
         CHAPTER_ID,
