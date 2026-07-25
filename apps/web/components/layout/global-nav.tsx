@@ -548,6 +548,19 @@ function SecretAccountMenu({
             <div className={navCx("fd-secret-account-toast")}>{commonT("copied")}</div>
           ) : null}
 
+          {/* Directly under the identity card: the profile is who you are, so it
+              reads with the name and avatar rather than below the wallet. */}
+          <div className={navCx("fd-secret-account-section")}>
+            <Link
+              href={localizePath("/profile", locale)}
+              className={navCx("fd-secret-account-row")}
+            >
+              <IconUser className="size-5" />
+              <span className="flex-1">{commonT("myProfile")}</span>
+              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+            </Link>
+          </div>
+
           <CommunityCreditsChip layout="row" className={navCx("fd-secret-account-wallet")} />
 
           <div className={navCx("fd-secret-account-section")}>
@@ -556,14 +569,6 @@ function SecretAccountMenu({
               className={navCx("fd-secret-account-row")}
             >
               <MobileInboxLine />
-              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
-            </Link>
-            <Link
-              href={localizePath("/profile", locale)}
-              className={navCx("fd-secret-account-row")}
-            >
-              <IconUser className="size-5" />
-              <span className="flex-1">{commonT("myProfile")}</span>
               <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
             </Link>
             <a
