@@ -727,6 +727,16 @@ export function referenceFieldsForMode(
   return all;
 }
 
+/**
+ * Positional frame roles, as opposed to prompt-addressable references. Kept
+ * separate from {@link SINGLE_REFERENCE_FIELDS} even though the two currently
+ * hold the same names: that one is about CARDINALITY (one value, not an array),
+ * this one about MEANING. A future single-valued non-frame field (`maskImage`)
+ * must stay bindable, and a future array-valued frame field must not.
+ */
+const FRAME_REFERENCE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
+
+/** Reference fields carrying ONE value rather than an array. */
 const SINGLE_REFERENCE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
 
 /** Minimal reference row for submit helpers (canvas CardReference). */
@@ -807,7 +817,7 @@ export function buildPromptReferenceBindingsForMode(
   const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
   const bindings: FizzAiReferenceBinding[] = [];
   for (const field of referenceFieldsForMode(model, mode)) {
-    if (SINGLE_REFERENCE_FIELDS.has(field.field)) continue;
+    if (FRAME_REFERENCE_FIELDS.has(field.field)) continue;
     const ready = (references?.[field.field] ?? []).filter(
       (row) => !row.uploading && /^https?:/i.test(row.url)
     );
