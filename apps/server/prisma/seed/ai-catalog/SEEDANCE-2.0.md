@@ -52,8 +52,9 @@ CN 方舟 twins exist as `doubao-seedance-2-0*` (for a future .cn cell).
 
 ## Reference inputs (multimodal_to_video)
 
-Referenced in the prompt as `Image N` / `Video N` / `Audio N` by same-type
-position in `content[]` — never by asset id.
+Referenced in the prompt as **`[Image1]` / `[Video1]` / `[Audio1]`** — bracketed,
+numbered by same-type position in `content[]`, never by asset id. (The docs' own
+demos use the bracketed form; an earlier revision of this file wrote them bare.)
 
 | Reference | Max | Formats                                     | Official limits                               | fal-era client cap kept                                  |
 | --------- | --- | ------------------------------------------- | --------------------------------------------- | -------------------------------------------------------- |
@@ -67,6 +68,55 @@ position in `content[]` — never by asset id.
 - Entries may be **`asset://<externalAssetId>`** — ModelArk private-library
   assets (character likenesses / ACR) ride the ordinary `url` slot. Provider
   pin: real_person jobs route exclusively to byteplus-modelark.
+
+## Long continuous shots (re-verified 2026-07-25, doc 2298881)
+
+The 15s ceiling means any longer continuous move is multi-segment. The official
+recipe is **NOT** frame-interpolation and **NOT** `Extend video`:
+
+> "**Generate multiple consecutive videos** — Use the **last frame of the
+> previously generated video as the first frame of the next video task**, and
+> generate multiple consecutive videos in a loop. Afterward, you can use tools
+> such as **FFmpeg** by yourself to stitch the generated multiple short videos
+> into a complete long video."
+
+So each link is the **single-first-frame** scenario (`image_to_video`, 1 image),
+chained. Paired parameter: **`return_last_frame: true`** makes ModelArk hand back
+the generated clip's own final frame, which is exact — re-deriving it locally
+(`ffmpeg -ss <dur-0.1>`) only approximates and drifts. Mapper support added
+2026-07-25 (`input.returnLastFrame === true` → `return_last_frame`).
+⬜ **Unverified for the 2.0 series specifically**: the capability table has a
+`return_last_frame` row but the per-model marks are icons, not text, so they did
+not survive extraction; the worked example in the docs uses `seedance-1-5-pro`.
+Confirm before depending on it, and keep the ffmpeg fallback.
+
+`first_last_frame_to_video` is for a **known destination** (2 images, both roles
+REQUIRED — "Two image_url objects must be provided"), e.g. a designed
+transition, not for chaining. `Extend video` / `Edit video` are separate 2.0
+multimodal capabilities (append/prepend footage, replace subjects, regional
+repaint) driven by `reference_video` + `[Video1]` prompt tokens.
+
+⚠️ Prompt reference tokens are **bracketed**: `[Image1]`, `[Video1]`, `[Audio1]`
+— the docs' own demos use that form (this file previously wrote them unbracketed
+as `Image N`).
+
+## Other verified constraints (2026-07-25)
+
+- **Task data — including the output video URL — is retained only 24 HOURS.**
+  Our worker already spools provider → blob, so nothing is lost; but any
+  external/manual flow that keeps only the ModelArk URL will find it dead.
+- **Centre-crop on ratio mismatch**: when `ratio` differs from the input image's
+  aspect, ModelArk centre-crops the image (crop on width if the image is
+  relatively taller, on height if wider; no black bars). For first+last frames
+  the **first frame wins** and the last frame is cropped to match. ⇒ Feeding
+  frames of different sizes (e.g. 1920×1080 + 1280×720) is legal but `ratio`
+  should be `adaptive`/`auto` so the frames decide.
+- Native pixel dims (16:9): 480p 864×496 · 720p 1280×720 · 1080p 1920×1080 ·
+  4k 3840×2160. (21:9: 992×432 / 1470×630 / 2206×946 / 4398×1886.)
+- Seedance 2.0 **cannot take direct uploads of reference images/videos
+  containing real human faces** — the documented route is the private asset
+  library (`asset://`), which is what our provider pin already enforces.
+- Duration `-1` = model picks the length inside 4–15s.
 
 ## Pricing
 
@@ -91,7 +141,13 @@ duration stays `5`.
 ## 4k operational caveats (flagship only)
 
 - Upstream lane limits: **15 RPM, concurrency 1** (non-4k: 600 RPM / 10),
-  and the ModelArk account is SHARED with the .cn cell. Handled by a
+  and the ModelArk account is SHARED with the .cn cell. ⚠️ **Those are the
+  ENTERPRISE figures.** Re-read 2026-07-25 against doc 2298881: the table splits
+  by account tier — non-4k **enterprise 600 RPM / concurrency 10** vs
+  **individual 180 RPM / concurrency 3**; 4k is 15 RPM / concurrency 1 for both.
+  If this account is individual-tier, the non-4k capacity tier is over-provisioned
+  by 3× and will meet upstream queueing rather than our own gate. ⬜ Confirm the
+  account tier before trusting the non-4k numbers. Handled by a
   per-resolution capacity tier (`catalogSnapshot.capacityTiers` on the
   flagship endpoint → `selectProviderCapacity` stamps `tierKey` into the
   routing snapshot → the capacity runtime buckets the 4k lane separately at

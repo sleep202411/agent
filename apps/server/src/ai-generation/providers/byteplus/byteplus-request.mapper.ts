@@ -1,3 +1,4 @@
+import { bytePlusError } from './byteplus-error.mapper';
 import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
 
 /**
@@ -5,10 +6,22 @@ import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
  * 1520757): a `content` array of typed, role-tagged parts plus top-level
  * generation params. Covers all four Seedance generation modes:
  *  - text_to_video           → text only
- *  - image_to_video          → text + first_frame
- *  - first_last_frame_to_..  → text + first_frame + last_frame
+ *  - image_to_video          → text + first_frame (exactly 1 image)
+ *  - first_last_frame_to_..  → text + first_frame + last_frame (exactly 2)
  *  - multimodal_to_video     → text + reference_image / reference_video /
- *                              reference_audio parts (全能参考)
+ *                              reference_audio parts (全能参考, 1–9 images)
+ *
+ * ⚠️ The three IMAGE scenarios are MUTUALLY EXCLUSIVE — official wording:
+ * "Image to video - first frame, image to video - first and last frames,
+ * Multimodal reference video generation (including reference image, video, and
+ * audio) are three mutually exclusive scenarios and cannot be mixed."
+ * Sending both a frame role and any reference_* part earns
+ * `InvalidParameter: first/last frame content cannot be mixed with reference
+ * media content` — so the combination is rejected HERE, before a billed
+ * provider round-trip. Callers that legitimately want both must use multimodal
+ * and name the frames in the prompt (`[Image1]` … tokens) per the docs; only
+ * frame roles guarantee pixel-exact first/last frames.
+ *
  * Reference URLs may be `asset://<externalAssetId>` — ModelArk private-library
  * assets (character likenesses) ride in the ordinary url slot; the routing pin
  * guarantees real_person jobs only ever reach this mapper.
@@ -21,6 +34,18 @@ export function mapBytePlusVideoProviderRequest(
     { type: 'text', text: stringValue(input.prompt) },
   ];
   const startUrl = mediaUrl(input.startFrame);
+  const endUrl = mediaUrl(input.endFrame);
+  const referenceImages = referenceUrls(input.referenceImages);
+  const referenceVideos = referenceUrls(input.referenceVideos);
+  const referenceAudios = referenceUrls(input.referenceAudios);
+  assertBytePlusScenarioExclusivity({
+    hasFrame: Boolean(startUrl || endUrl),
+    referenceCounts: {
+      referenceImages: referenceImages.length,
+      referenceVideos: referenceVideos.length,
+      referenceAudios: referenceAudios.length,
+    },
+  });
   if (startUrl) {
     content.push({
       type: 'image_url',
@@ -28,7 +53,6 @@ export function mapBytePlusVideoProviderRequest(
       role: 'first_frame',
     });
   }
-  const endUrl = mediaUrl(input.endFrame);
   if (endUrl) {
     content.push({
       type: 'image_url',
@@ -36,21 +60,21 @@ export function mapBytePlusVideoProviderRequest(
       role: 'last_frame',
     });
   }
-  for (const url of referenceUrls(input.referenceImages)) {
+  for (const url of referenceImages) {
     content.push({
       type: 'image_url',
       image_url: { url },
       role: 'reference_image',
     });
   }
-  for (const url of referenceUrls(input.referenceVideos)) {
+  for (const url of referenceVideos) {
     content.push({
       type: 'video_url',
       video_url: { url },
       role: 'reference_video',
     });
   }
-  for (const url of referenceUrls(input.referenceAudios)) {
+  for (const url of referenceAudios) {
     content.push({
       type: 'audio_url',
       audio_url: { url },
@@ -90,12 +114,53 @@ export function mapBytePlusVideoProviderRequest(
   if (typeof input.generateAudio === 'boolean') {
     body.generate_audio = input.generateAudio;
   }
+  // Ask ModelArk for the generated video's own last frame. That frame is the
+  // documented way to chain a long continuous shot: "Use the last frame of the
+  // previously generated video as the first frame of the next video task ...
+  // then stitch with FFmpeg" (doc 2298881). Re-deriving it locally with ffmpeg
+  // only approximates it, so callers building multi-segment shots opt in here.
+  if (input.returnLastFrame === true) body.return_last_frame = true;
   // Seed is 1.x-only (never in a 2.0 schema, so normalized input strips it);
   // kept for future 1.x-family bindings.
   const seed = Number(input.seed);
   if (Number.isInteger(seed) && seed >= 0) body.seed = seed;
 
   return body;
+}
+
+/**
+ * Guards ModelArk's mutual-exclusion rule between the three image scenarios
+ * (doc 1520757). Frame roles (`first_frame`/`last_frame`) and multimodal
+ * reference parts (`reference_image`/`reference_video`/`reference_audio`) cannot
+ * appear in one request; the provider answers HTTP 400 `InvalidParameter:
+ * first/last frame content cannot be mixed with reference media content`.
+ *
+ * Enforced server-side on purpose: the mode→field narrowing that normally keeps
+ * these apart lives in the studio composer, so ANY other caller (an MCP tool, a
+ * batch script, a stale persisted job input) would otherwise reach the provider
+ * and burn a request. The message names the documented way to get both.
+ */
+function assertBytePlusScenarioExclusivity({
+  hasFrame,
+  referenceCounts,
+}: {
+  hasFrame: boolean;
+  referenceCounts: Record<string, number>;
+}): void {
+  if (!hasFrame) return;
+  const present = Object.entries(referenceCounts)
+    .filter(([, count]) => count > 0)
+    .map(([field]) => field);
+  if (present.length === 0) return;
+  throw bytePlusError(
+    'VALIDATION_ERROR',
+    `BytePlus ModelArk rejects first/last frame content mixed with reference media: ` +
+      `startFrame/endFrame cannot be combined with ${present.join(', ')}. ` +
+      `Send frame roles alone, or drop the frames and use multimodal references ` +
+      `naming them in the prompt ([Image1] …).`,
+    'Start/end frames cannot be combined with reference images, videos or audio. ' +
+      'Remove one of them and try again.',
+  );
 }
 
 /**
