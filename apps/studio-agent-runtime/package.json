@@ -25,6 +25,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@repo/typescript-config": "*",
     "@temporalio/testing": "1.21.0",
     "@types/node": "^22.10.7",
     "eslint": "^9.18.0",
