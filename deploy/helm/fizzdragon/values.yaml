@@ -487,31 +487,115 @@ agentWorker:
       - bull:storyos-workflows:wait
       - bull:asset-images:wait
 # ---------------------------------------------------------------------------
+# Temporal — self-hosted, one cluster per region, in the application namespace.
+#
+# Self-hosted rather than Temporal Cloud because .cn runs in mainland China:
+# the worker<->frontend link is a continuous long-polling gRPC connection that
+# would cross the border, and workflow histories carry user story content, so
+# routing them offshore is a data-export problem. Running Cloud for .com and
+# self-hosting for .cn would mean two operational models for one feature.
+#
+# Persistence is a DEDICATED Postgres server, never the application database:
+# Temporal's officially tested versions top out at PostgreSQL 16 while the
+# application server runs 18, and its write load has no business sharing IOPS
+# with user-facing queries.
+# ---------------------------------------------------------------------------
+temporal:
+  image:
+    # Upstream images, mirrored into each region's own registry rather than
+    # pulled from Docker Hub: .cn cannot reach it at all, and prod should not
+    # depend on a public registry staying up. Carried under the platform
+    # registry prefix like every other component, so a region overrides
+    # image.registry once and these follow.
+    #
+    #   az acr import --name acrfizzdragoncom \
+    #     --source docker.io/temporalio/server:1.31.2 \
+    #     --image temporalio-server:1.31.2
+    repository: temporalio-server
+    tag: 1.31.2
+    adminToolsRepository: temporalio-admin-tools
+    adminToolsTag: 1.31.2
+    pullPolicy: IfNotPresent
+  # All four roles in one process. The split into separate Deployments buys
+  # per-role tuning and a smaller blast radius, neither of which pays for
+  # itself at this volume; two anti-affine replicas already survive a pod or
+  # node loss. Splitting later is a config change, not a data migration.
+  services: history,matching,frontend,worker
+  replicaCount: 2
+  frontendPort: 7233
+  membershipPort: 6933
+  # IMMUTABLE once the first server boots — the shard count is baked into the
+  # persistence layout, so changing it later means migrating all data. 512 is
+  # the standard production value; the docker-compose default of 4 is a
+  # development convenience that permanently caps throughput.
+  numHistoryShards: 512
+  namespace: fizzdragon
+  # Workflow history retention. History is the dominant storage consumer, and
+  # it grows with turn volume until this bound.
+  retention: 168h
+  database:
+    # Dedicated server, PostgreSQL 16. Empty by default: the chart refuses to
+    # render rather than invent an endpoint.
+    host: fizzdragon-temporal-pg.postgres.database.azure.com
+    port: 5432
+    user: temporal
+    name: temporal
+    visibilityName: temporal_visibility
+    # Azure and Alibaba both require TLS on managed Postgres.
+    tlsEnabled: true
+    # Deliberately small. Temporal's defaults are sized for a database it owns
+    # exclusively; these are per-replica and this server is modest.
+    maxConns: 20
+    maxIdleConns: 10
+    maxConnLifetime: 1h
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 2Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      value: worker
+      operator: Equal
+      effect: NoSchedule
+# Temporal server database credentials. The password never enters git; .com
+# projects it from Key Vault, .cn creates the Secret out-of-band with kubectl.
+temporalDatabaseSecrets:
+  projectedName: fizzdragon-temporal-db-secrets
+  mapping:
+    - kv: temporal-db-password
+      env: POSTGRES_PWD
+# ---------------------------------------------------------------------------
 # studio-agent-runtime — provider-independent Temporal execution plane.
 #
-# Disabled until a real Temporal endpoint, namespace, mTLS client identity,
-# and service token have been provisioned. Enabling with placeholders is a
-# Helm render error; the chart deliberately does not invent a Temporal server.
+# The temporal.address below must match the in-cluster Temporal Service for
+# plaintext to be permitted; any other endpoint forces mTLS. See
+# templates/studio-agent-runtime.yaml.
 # ---------------------------------------------------------------------------
 studioAgentRuntime:
   image:
     repository: fizzdragon-studio-agent-runtime
     tag: set-at-deploy
-  # Must be the immutable source/image revision, not "latest".
-  release: set-at-deploy
   internalBaseUrl: http://fizzdragon-server:3001
   temporal:
-    address: ""
-    namespace: ""
+    # The in-cluster Temporal Service this chart renders. Kept in values rather
+    # than hardcoded so a future external endpoint is a values change — but see
+    # tlsMode: pointing this anywhere else makes mTLS mandatory.
+    address: fizzdragon-temporal:7233
+    namespace: fizzdragon
     # Stable Worker Deployment name. Immutable releases are build IDs within
     # this deployment; changing it strands pinned workflow histories.
     workerDeploymentName: fizzdragon-studio-agent
     # Optional TLS hostname override. Leave empty when the endpoint certificate
     # already matches the hostname in address.
     serverName: ""
-    # Production chart permits mTLS only. Plaintext is an explicit local-dev
-    # runtime mode, never a production Helm fallback.
-    tlsMode: mtls
+    # Plaintext is permitted for exactly one address: the in-cluster Temporal
+    # Service this chart owns, whose traffic never leaves the node network.
+    # The template compares the address against the rendered Service name, so
+    # repointing at any external endpoint fails the render until this is mtls.
+    # Issuing and rotating a CA plus client certs for a ClusterIP hop buys
+    # nothing that the cluster boundary does not already provide.
+    tlsMode: disabled
     connectTimeoutMs: 5000
     healthProbeIntervalMs: 5000
     reconnectMinDelayMs: 500
@@ -537,12 +621,31 @@ studioAgentRuntime:
       podSelector:
         k8s-app: kube-dns
       port: 53
-    temporal:
-      port: 7233
-      cidrs: []
+    # Temporal needs no CIDRs: it is in-cluster, so the workers reach it by pod
+    # selection and the port comes from temporal.frontendPort.
+    # dashscope-intl.aliyuncs.com sits behind an Alibaba NLB whose addresses
+    # rotate, so this rule is structurally weak: enumerating a public provider's
+    # IPs is either stale or a maintenance treadmill. It is the best a
+    # CIDR-based policy can do — an FQDN-aware engine (Cilium) is the real fix
+    # if egress enforcement is ever turned on. Re-resolve after provider changes:
+    #   dig +short dashscope-intl.aliyuncs.com
     model:
       port: 443
-      cidrs: []
+      cidrs:
+        - 47.236.0.0/16
+        - 47.245.0.0/16
+    # The managed Postgres endpoint the Temporal server may reach. A /24 floor
+    # is enforced — this is one endpoint, not a range.
+    #
+    # fizzdragon-temporal-pg resolves into 20.205.236.0/24 today. Azure does not
+    # contract a stable address for a managed Postgres endpoint, so a failover
+    # that moves it out of this /24 breaks Temporal's egress. Re-resolve after
+    # any maintenance event:
+    #   dig +short fizzdragon-temporal-pg.postgres.database.azure.com
+    database:
+      port: 5432
+      cidrs:
+        - 20.205.236.0/24
     gateway:
       port: 3001
   # Immutable per-root-turn envelope. The server snapshots these values when

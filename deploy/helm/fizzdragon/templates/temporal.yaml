@@ -1,0 +1,307 @@
+{{- $temporal := .Values.temporal -}}
+{{- $component := "temporal" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+{{- $dbHost := required "temporal.database.host is required — Temporal needs a dedicated PostgreSQL 16 server, never the application database" $temporal.database.host -}}
+{{- $dbUser := required "temporal.database.user is required" $temporal.database.user -}}
+{{- $imageRef := printf "%s/%s:%s" .Values.image.registry $temporal.image.repository $temporal.image.tag -}}
+{{- $adminImageRef := printf "%s/%s:%s" .Values.image.registry $temporal.image.adminToolsRepository $temporal.image.adminToolsTag -}}
+{{/*
+  Temporal's officially tested PostgreSQL versions stop at 16. Pointing this at
+  a newer server is untested by upstream and has a reported initialization
+  failure on 18, which is why this is a dedicated instance rather than the
+  application database.
+*/}}
+{{- if lt (int $temporal.numHistoryShards) 1 -}}
+{{- fail "temporal.numHistoryShards must be positive" -}}
+{{- end -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+  ports:
+    - name: grpc-frontend
+      port: {{ $temporal.frontendPort }}
+      targetPort: grpc-frontend
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $temporal.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      {{- with $temporal.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $temporal.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Replicas exist to survive losing a node, not just a pod, so keep them
+      # apart. Preferred rather than required: a single-node worker pool must
+      # still schedule both rather than leaving one Pending forever.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "fizzdragon.componentSelector" $ctx | nindent 20 }}
+      containers:
+        - name: {{ $component }}
+          image: {{ $imageRef | quote }}
+          imagePullPolicy: {{ $temporal.image.pullPolicy }}
+          ports:
+            - name: grpc-frontend
+              containerPort: {{ $temporal.frontendPort }}
+            - name: membership
+              containerPort: {{ $temporal.membershipPort }}
+          env:
+            - name: DB
+              value: postgres12
+            - name: POSTGRES_SEEDS
+              value: {{ $dbHost | quote }}
+            - name: DB_PORT
+              value: {{ $temporal.database.port | quote }}
+            - name: POSTGRES_USER
+              value: {{ $dbUser | quote }}
+            - name: DBNAME
+              value: {{ $temporal.database.name | quote }}
+            - name: VISIBILITY_DBNAME
+              value: {{ $temporal.database.visibilityName | quote }}
+            - name: SQL_TLS_ENABLED
+              value: {{ $temporal.database.tlsEnabled | quote }}
+            - name: SQL_MAX_CONNS
+              value: {{ $temporal.database.maxConns | quote }}
+            - name: SQL_MAX_IDLE_CONNS
+              value: {{ $temporal.database.maxIdleConns | quote }}
+            - name: SQL_MAX_CONN_TIME
+              value: {{ $temporal.database.maxConnLifetime | quote }}
+            - name: NUM_HISTORY_SHARDS
+              value: {{ $temporal.numHistoryShards | quote }}
+            - name: SERVICES
+              value: {{ $temporal.services | quote }}
+            - name: BIND_ON_IP
+              value: "0.0.0.0"
+            # Membership is discovered through the cluster_membership table, so
+            # each replica has to advertise an address its peers can dial. The
+            # pod IP is the only one that is true for every replica.
+            - name: TEMPORAL_BROADCAST_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # The schema is installed and upgraded by the pre-sync Job below.
+            # Auto-setup would re-run schema tooling on every pod start, racing
+            # itself across replicas and on every rollout.
+            - name: SKIP_SCHEMA_SETUP
+              value: "true"
+            - name: SKIP_DB_CREATE
+              value: "true"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.temporalDatabaseSecrets.projectedName }}
+          {{- if .Values.azure.enabled }}
+          # The Key Vault CSI driver only materializes the projected Secret
+          # while a pod mounts the volume — the SecretProviderClass alone
+          # creates nothing, so envFrom above would reference a missing Secret.
+          volumeMounts:
+            - name: temporal-db-secrets
+              mountPath: /mnt/temporal-db-secrets
+              readOnly: true
+          {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: grpc-frontend
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: grpc-frontend
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml $temporal.resources | nindent 12 }}
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      volumes:
+        - name: temporal-db-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-temporal-db-kv
+      {{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  # Keep a frontend serving through node drains and voluntary disruptions.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+---
+{{/*
+  Schema install and upgrade.
+
+  Temporal only supports managed schema (`manageSchema: true`) through the
+  deprecated postgres12 plugin, so PostgreSQL 13+ requires temporal-sql-tool
+  to be run out of band. Running it as a pre-sync hook makes the upgrade path
+  the same as the install path: a server version bump that needs new schema
+  gets it before the new server starts, instead of crash-looping against a
+  schema it cannot read.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fizzdragon.componentName" (merge (dict "component" "temporal-schema") .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "temporal-schema") .) | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" (merge (dict "component" "temporal-schema") .) | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with $temporal.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $temporal.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: schema
+          image: {{ $adminImageRef | quote }}
+          imagePullPolicy: {{ $temporal.image.pullPolicy }}
+          env:
+            - name: SQL_PLUGIN
+              value: postgres12
+            - name: SQL_HOST
+              value: {{ $dbHost | quote }}
+            - name: SQL_PORT
+              value: {{ $temporal.database.port | quote }}
+            - name: SQL_USER
+              value: {{ $dbUser | quote }}
+            - name: SQL_TLS
+              value: {{ $temporal.database.tlsEnabled | quote }}
+            - name: SQL_TLS_ENABLED
+              value: {{ $temporal.database.tlsEnabled | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.temporalDatabaseSecrets.projectedName }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              export SQL_PASSWORD="$POSTGRES_PWD"
+              # setup-schema is only valid on an empty database; on every later
+              # run it fails and update-schema carries the version forward.
+              temporal-sql-tool --database {{ $temporal.database.name }} setup-schema -v 0.0 || true
+              temporal-sql-tool --database {{ $temporal.database.name }} update-schema \
+                -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+              temporal-sql-tool --database {{ $temporal.database.visibilityName }} setup-schema -v 0.0 || true
+              temporal-sql-tool --database {{ $temporal.database.visibilityName }} update-schema \
+                -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+{{/*
+  Namespace registration.
+
+  A one-time imperative step that is otherwise absent from git and forgotten on
+  a cluster rebuild. As a post-sync hook it re-runs on every release and is a
+  no-op once the namespace exists.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fizzdragon.componentName" (merge (dict "component" "temporal-namespace") .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "temporal-namespace") .) | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" (merge (dict "component" "temporal-namespace") .) | nindent 8 }}
+        fizzdragon.com/temporal-client: "true"
+    spec:
+      restartPolicy: Never
+      {{- with $temporal.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $temporal.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: namespace
+          image: {{ $adminImageRef | quote }}
+          imagePullPolicy: {{ $temporal.image.pullPolicy }}
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: {{ printf "%s:%d" (include "fizzdragon.componentName" $ctx) (int $temporal.frontendPort) | quote }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              # The frontend may still be electing when this hook fires.
+              for attempt in $(seq 1 30); do
+                if temporal operator cluster health >/dev/null 2>&1; then break; fi
+                echo "waiting for temporal frontend ($attempt/30)"
+                sleep 5
+              done
+              temporal operator namespace describe {{ $temporal.namespace }} >/dev/null 2>&1 \
+                || temporal operator namespace create \
+                     --namespace {{ $temporal.namespace }} \
+                     --retention {{ $temporal.retention }}
+              temporal operator namespace describe {{ $temporal.namespace }}
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }

@@ -41,8 +41,9 @@ svc_spec() {
     server)   echo "fizzdragon-server:apps/server/Dockerfile:.server" ;;
     agent)    echo "fizzdragon-agent:apps/agent/Dockerfile:.agent,.agentWorker" ;;
     # Temporal execution plane (control + activities workers share one image).
-    # Not in `all`: built explicitly when the runtime image needs a new revision
-    # explicitly (`$0 studio-agent-runtime`) before flipping the rollout on.
+    # Not in `all`: built explicitly (`$0 studio-agent-runtime`) when the runtime
+    # needs a new revision. The tag is also the Temporal build ID, so bumping it
+    # is what moves pinned workflow histories onto the new worker.
     studio-agent-runtime) echo "fizzdragon-studio-agent-runtime:apps/studio-agent-runtime/Dockerfile:.studioAgentRuntime.image" ;;
     *)        return 1 ;;
   esac

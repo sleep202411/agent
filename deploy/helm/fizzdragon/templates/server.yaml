@@ -1,3 +1,4 @@
+{{- $mtls := eq .Values.studioAgentRuntime.temporal.tlsMode "mtls" -}}
 {{- if .Values.server.enabled -}}
 {{- $component := "server" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
@@ -19,6 +20,9 @@ spec:
       labels:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+        # Selected by the Temporal ingress policy; without it the client is
+        # denied and every run submission fails.
+        fizzdragon.com/temporal-client: "true"
     spec:
       terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds | default 30 }}
       {{- if .Values.azure.enabled }}
@@ -81,7 +85,7 @@ spec:
             - name: STUDIO_AGENT_WORKER_DEPLOYMENT_NAME
               value: {{ required "studioAgentRuntime.temporal.workerDeploymentName is required" .Values.studioAgentRuntime.temporal.workerDeploymentName | quote }}
             - name: STUDIO_AGENT_RELEASE
-              value: {{ required "studioAgentRuntime.release is required" .Values.studioAgentRuntime.release | quote }}
+              value: {{ required "studioAgentRuntime.image.tag is required" .Values.studioAgentRuntime.image.tag | quote }}
             - name: STUDIO_AGENT_TEMPORAL_CONNECT_TIMEOUT_MS
               value: {{ .Values.studioAgentRuntime.temporal.connectTimeoutMs | quote }}
             - name: STUDIO_AGENT_TEMPORAL_HEALTH_PROBE_INTERVAL_MS
@@ -163,8 +167,10 @@ spec:
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
+            {{- if $mtls }}
             - secretRef:
                 name: {{ .Values.studioAgentTemporalSecrets.projectedName }}
+            {{- end }}
             - secretRef:
                 name: {{ .Values.studioAgentGatewaySecrets.projectedName }}
           {{- if .Values.azure.enabled }}
@@ -177,9 +183,11 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+            {{- if $mtls }}
             - name: studio-agent-temporal-secrets
               mountPath: /mnt/studio-agent-temporal-secrets
               readOnly: true
+            {{- end }}
             - name: studio-agent-gateway-secrets
               mountPath: /mnt/studio-agent-gateway-secrets
               readOnly: true
@@ -225,12 +233,14 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
         {{- end }}
+        {{- if $mtls }}
         - name: studio-agent-temporal-secrets
           csi:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-studio-agent-temporal-kv
+        {{- end }}
         - name: studio-agent-gateway-secrets
           csi:
             driver: secrets-store.csi.k8s.io

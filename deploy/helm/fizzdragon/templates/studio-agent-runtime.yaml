@@ -5,14 +5,32 @@
 {{- $modelBaseUrl := required "studioAgentRuntime.model.baseUrl is required" $runtime.model.baseUrl -}}
 {{- $textModelId := required "studioAgentRuntime.model.textId is required" $runtime.model.textId -}}
 {{- $visionModelId := required "studioAgentRuntime.model.visionId is required" $runtime.model.visionId -}}
-{{- $release := required "studioAgentRuntime.release is required" $runtime.release -}}
 {{- $imageTag := required "studioAgentRuntime.image.tag is required" $runtime.image.tag -}}
+{{/*
+  The Temporal build ID is the image tag. They were two values that had to be
+  equal, maintained apart: deploy-com-aks.sh's bump_tag() arms on `repository:`
+  and rewrites the following `tag:`, so it could never reach a sibling
+  `release:` key — the runtime was undeployable by its own deploy script.
+*/}}
+{{- $release := $imageTag -}}
 {{- $workerDeploymentName := required "studioAgentRuntime.temporal.workerDeploymentName is required" $runtime.temporal.workerDeploymentName -}}
+{{/*
+  Plaintext is permitted for exactly one endpoint: the in-cluster Temporal
+  Service this chart renders. That hop never leaves the node network, so a CA
+  plus client certs would buy nothing the cluster boundary does not already
+  give. Any other address is off-cluster by definition and must be mTLS —
+  comparing against the rendered Service name makes that impossible to get
+  wrong by editing values alone.
+*/}}
+{{- $inClusterTemporal := printf "%s:%d" (include "fizzdragon.componentName" (merge (dict "component" "temporal") $)) (int .Values.temporal.frontendPort) -}}
+{{- $mtls := eq $runtime.temporal.tlsMode "mtls" -}}
 {{- if ne $runtime.temporal.tlsMode "mtls" -}}
-{{- fail "studioAgentRuntime.temporal.tlsMode must be mtls in the production Helm chart" -}}
+{{- if ne $temporalAddress $inClusterTemporal -}}
+{{- fail (printf "studioAgentRuntime.temporal.tlsMode must be mtls for %s; plaintext is permitted only for this chart's in-cluster Temporal Service (%s)" $temporalAddress $inClusterTemporal) -}}
 {{- end -}}
-{{- if or (eq $release "set-at-deploy") (eq $imageTag "set-at-deploy") (eq $imageTag "latest") -}}
-{{- fail "studioAgentRuntime.release and image.tag must be immutable deployment revisions" -}}
+{{- end -}}
+{{- if or (eq $imageTag "set-at-deploy") (eq $imageTag "latest") -}}
+{{- fail "studioAgentRuntime.image.tag must be an immutable deployment revision; it is also the Temporal build ID that pins workflow histories" -}}
 {{- end -}}
 {{- if ne $workerDeploymentName "fizzdragon-studio-agent" -}}
 {{- fail "studioAgentRuntime.temporal.workerDeploymentName must remain fizzdragon-studio-agent for pinned workflow compatibility" -}}
@@ -59,6 +77,9 @@ spec:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         fizzdragon.com/studio-agent-runtime: "true"
         fizzdragon.com/studio-agent-role: {{ $role | quote }}
+        # Selected by the Temporal ingress policy; without it the worker cannot
+        # poll its task queue and the whole execution plane stalls silently.
+        fizzdragon.com/temporal-client: "true"
         fizzdragon.com/studio-agent-build: {{ $releaseHash | quote }}
         {{- include "fizzdragon.workloadIdentityLabels" $ | nindent 8 }}
     spec:
@@ -94,7 +115,7 @@ spec:
             - name: TEMPORAL_NAMESPACE
               value: {{ $temporalNamespace | quote }}
             - name: TEMPORAL_TLS_MODE
-              value: "mtls"
+              value: {{ $runtime.temporal.tlsMode | quote }}
             {{- with $runtime.temporal.serverName }}
             - name: TEMPORAL_SERVER_NAME
               value: {{ . | quote }}
@@ -145,8 +166,10 @@ spec:
               value: {{ $runtime.model.deltaIntervalMs | quote }}
             {{- end }}
           envFrom:
+            {{- if $mtls }}
             - secretRef:
                 name: {{ $.Values.studioAgentTemporalSecrets.projectedName }}
+            {{- end }}
             {{- if not $isControl }}
             - secretRef:
                 name: {{ $.Values.studioAgentGatewaySecrets.projectedName }}
@@ -160,9 +183,11 @@ spec:
               drop: ["ALL"]
           {{- if $.Values.azure.enabled }}
           volumeMounts:
+            {{- if $mtls }}
             - name: studio-agent-temporal-secrets
               mountPath: /mnt/studio-agent-temporal-secrets
               readOnly: true
+            {{- end }}
             {{- if not $isControl }}
             - name: studio-agent-gateway-secrets
               mountPath: /mnt/studio-agent-gateway-secrets
@@ -197,12 +222,14 @@ spec:
             failureThreshold: 3
       {{- if $.Values.azure.enabled }}
       volumes:
+        {{- if $mtls }}
         - name: studio-agent-temporal-secrets
           csi:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ $.Release.Name }}-studio-agent-temporal-kv
+        {{- end }}
         {{- if not $isControl }}
         - name: studio-agent-gateway-secrets
           csi:
