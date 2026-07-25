@@ -260,6 +260,16 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.temporalDatabaseSecrets.projectedName }}
+          {{- if .Values.azure.enabled }}
+          # This Job is a pre-sync hook, so it runs BEFORE the Deployment that
+          # would otherwise be the first pod to mount the CSI volume — and the
+          # projected Secret does not exist until something mounts it. Without
+          # this mount the hook deadlocks on its own ordering.
+          volumeMounts:
+            - name: temporal-db-secrets
+              mountPath: /mnt/temporal-db-secrets
+              readOnly: true
+          {{- end }}
           command:
             - /bin/sh
             - -ec
@@ -279,6 +289,16 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 500m, memory: 512Mi }
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      volumes:
+        - name: temporal-db-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-temporal-db-kv
+      {{- end }}
 ---
 {{/*
   Namespace registration.
