@@ -204,6 +204,51 @@ spec:
       {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
 ---
 {{/*
+  The Temporal database SecretProviderClass, ordered ahead of the schema hook.
+
+  ArgoCD runs PreSync hooks before the main sync wave, so a SecretProviderClass
+  declared as an ordinary resource does not exist yet when the schema Job tries
+  to mount it — the hook fails with "SecretProviderClass not found". Making it a
+  lower-weighted hook is what puts it in front of its only consumer; it survives
+  into the main sync for the Deployment to use.
+*/}}
+{{- if and .Values.azure.enabled .Values.temporalDatabaseSecrets.mapping }}
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: {{ .Release.Name }}-temporal-db-kv
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.labels" (merge (dict "component" "temporal-db-kv") .) | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-20"
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.azure.workloadIdentity.clientId | quote }}
+    tenantId: {{ .Values.azure.tenantId | quote }}
+    keyvaultName: {{ .Values.azure.keyVault.name | quote }}
+    objects: |
+      array:
+      {{- range .Values.temporalDatabaseSecrets.mapping }}
+        - |
+          objectName: {{ .kv }}
+          objectType: secret
+      {{- end }}
+  secretObjects:
+    - secretName: {{ .Values.temporalDatabaseSecrets.projectedName }}
+      type: Opaque
+      data:
+        {{- range .Values.temporalDatabaseSecrets.mapping }}
+        - objectName: {{ .kv }}
+          key: {{ .env }}
+        {{- end }}
+{{- end }}
+---
+{{/*
   Schema install and upgrade.
 
   Temporal only supports managed schema (`manageSchema: true`) through the
