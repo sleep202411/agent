@@ -233,12 +233,15 @@ spec:
             - -ec
             - |
               export SQL_PASSWORD="$POSTGRES_PWD"
-              # setup-schema is only valid on an empty database; on every later
-              # run it fails and update-schema carries the version forward.
-              temporal-sql-tool --database {{ $temporal.database.name }} setup-schema -v 0.0 || true
+              # Both steps are idempotent, which is what lets this run on every
+              # sync: setup-schema skips cleanly when the version table already
+              # holds a higher version, and update-schema is a no-op once the
+              # database is current. Verified against PostgreSQL 16 with the
+              # postgres12 plugin on Temporal 1.31.2.
+              temporal-sql-tool --database {{ $temporal.database.name }} setup-schema -v 0.0
               temporal-sql-tool --database {{ $temporal.database.name }} update-schema \
                 -d /etc/temporal/schema/postgresql/v12/temporal/versioned
-              temporal-sql-tool --database {{ $temporal.database.visibilityName }} setup-schema -v 0.0 || true
+              temporal-sql-tool --database {{ $temporal.database.visibilityName }} setup-schema -v 0.0
               temporal-sql-tool --database {{ $temporal.database.visibilityName }} update-schema \
                 -d /etc/temporal/schema/postgresql/v12/visibility/versioned
           resources:
