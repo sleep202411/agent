@@ -788,6 +788,16 @@ export function buildReferenceInputForMode(
  * Build the structured bindings whose labels match composer `@Image1` /
  * `@Video1` tokens. Only the active mode's ready references are bindable, using
  * the same field order as the visible reference stack.
+ *
+ * Start/end frames are deliberately NOT bindable. `[Image1]`-style tokens are a
+ * multimodal-reference feature (ModelArk doc 2298881 demos them only there); a
+ * frame is a positional role, not something the prompt addresses. Binding one
+ * also broke generation: the server materializes bindings back into
+ * `input.referenceImages`, which put the same asset under both `startFrame` and
+ * `referenceImages` and tripped the provider's frame↔reference exclusivity rule
+ * (`InvalidParameter: first/last frame content cannot be mixed with reference
+ * media content`) — every image-to-video and first/last-frame job from the
+ * canvas failed this way.
  */
 export function buildPromptReferenceBindingsForMode(
   model: FizzAiModel,
@@ -797,6 +807,7 @@ export function buildPromptReferenceBindingsForMode(
   const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
   const bindings: FizzAiReferenceBinding[] = [];
   for (const field of referenceFieldsForMode(model, mode)) {
+    if (SINGLE_REFERENCE_FIELDS.has(field.field)) continue;
     const ready = (references?.[field.field] ?? []).filter(
       (row) => !row.uploading && /^https?:/i.test(row.url)
     );
