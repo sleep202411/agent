@@ -32,6 +32,28 @@ spec:
       targetPort: grpc-frontend
       protocol: TCP
 ---
+{{/*
+  Dynamic config is not optional: the server image validates the path at boot
+  and refuses to start without it. It is also the only surface for tuning
+  Temporal's runtime behaviour (rate limits, per-namespace overrides) without a
+  new image, so it is values-driven rather than an empty file to satisfy the
+  check.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fizzdragon.componentName" (merge (dict "component" "temporal-dynamicconfig") .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "temporal-dynamicconfig") .) | nindent 4 }}
+data:
+  dynamic_config.yaml: |
+    {{- if $temporal.dynamicConfig }}
+    {{- toYaml $temporal.dynamicConfig | nindent 4 }}
+    {{- else }}
+    {}
+    {{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -120,18 +142,23 @@ spec:
               value: "true"
             - name: SKIP_DB_CREATE
               value: "true"
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: /etc/temporal/config/dynamicconfig/dynamic_config.yaml
           envFrom:
             - secretRef:
                 name: {{ .Values.temporalDatabaseSecrets.projectedName }}
-          {{- if .Values.azure.enabled }}
-          # The Key Vault CSI driver only materializes the projected Secret
-          # while a pod mounts the volume — the SecretProviderClass alone
-          # creates nothing, so envFrom above would reference a missing Secret.
           volumeMounts:
+            - name: dynamicconfig
+              mountPath: /etc/temporal/config/dynamicconfig
+              readOnly: true
+            {{- if .Values.azure.enabled }}
+            # The Key Vault CSI driver only materializes the projected Secret
+            # while a pod mounts the volume — the SecretProviderClass alone
+            # creates nothing, so envFrom above would reference a missing Secret.
             - name: temporal-db-secrets
               mountPath: /mnt/temporal-db-secrets
               readOnly: true
-          {{- end }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: grpc-frontend
@@ -148,7 +175,12 @@ spec:
             {{- toYaml $temporal.resources | nindent 12 }}
       {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
       volumes:
+        - name: dynamicconfig
+          configMap:
+            name: {{ include "fizzdragon.componentName" (merge (dict "component" "temporal-dynamicconfig") .) }}
+        {{- if .Values.azure.enabled }}
         - name: temporal-db-secrets
           csi:
             driver: secrets-store.csi.k8s.io
