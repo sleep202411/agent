@@ -8,7 +8,11 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import { computeCanvasTidyLayout, resolveCanvasTidyTargets } from "./canvas-tidy-layout";
+import {
+  computeCanvasTidyLayout,
+  resolveCanvasTidyTargets,
+  type CanvasNodeHeightEstimate,
+} from "./canvas-tidy-layout";
 
 /**
  * React Flow wiring for {@link computeCanvasTidyLayout}, shared by every
@@ -24,6 +28,7 @@ export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edg
   onNodesChange,
   tidySelection = false,
   onTidied,
+  estimateHeight,
 }: {
   edges: EdgeType[];
   onNodesChange: (changes: NodeChange<NodeType>[]) => void;
@@ -36,6 +41,12 @@ export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edg
    * no tidy at all.
    */
   onTidied?: (nodes: NodeType[]) => void;
+  /**
+   * Height to reserve for a node React Flow has not measured yet. Supply it on
+   * any canvas whose cards differ in height, or a tall unmeasured card lands
+   * under the one above it.
+   */
+  estimateHeight?: CanvasNodeHeightEstimate;
 }) {
   const { fitView, getNodes } = useReactFlow<NodeType, EdgeType>();
 
@@ -43,7 +54,7 @@ export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edg
     (padding?: FitViewOptions["padding"]) => {
       const target = resolveCanvasTidyTargets(getNodes(), edges, tidySelection);
       const targetNodeIds = new Set(target.nodes.map((node) => node.id));
-      const positions = computeCanvasTidyLayout(target.nodes, target.edges);
+      const positions = computeCanvasTidyLayout(target.nodes, target.edges, estimateHeight);
       if (positions.length === 0) return;
       onNodesChange(
         positions.map((position) => ({
@@ -72,6 +83,6 @@ export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edg
         });
       }, 60);
     },
-    [edges, fitView, getNodes, onNodesChange, onTidied, tidySelection]
+    [edges, estimateHeight, fitView, getNodes, onNodesChange, onTidied, tidySelection]
   );
 }

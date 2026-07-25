@@ -62,22 +62,24 @@ describe("buildStoryCanvasModel", () => {
         kind: data.kind,
       }))
     ).toEqual([
+      // Each column is centred on y = 0, so its y is minus half the card's own
+      // height: a clip is 236 tall, an ending 132.
       {
         id: "opening",
         type: "storyCanvas",
-        position: { x: 0, y: 0 },
+        position: { x: 0, y: -118 },
         kind: "clip",
       },
       {
         id: "arrival",
         type: "storyCanvas",
-        position: { x: 420, y: 0 },
+        position: { x: 420, y: -118 },
         kind: "clip",
       },
       {
         id: "__ending__:truth",
         type: "storyCanvas",
-        position: { x: 840, y: 0 },
+        position: { x: 840, y: -66 },
         kind: "ending",
       },
     ]);

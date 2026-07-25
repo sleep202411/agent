@@ -44,11 +44,12 @@ describe("computeCanvasTidyLayout", () => {
     ];
     const edges = [edge("source", "image"), edge("image", "video"), edge("source", "sibling")];
 
+    // Every column is centred on y = 0: -90+180/2, -194+388/2, -150+300/2.
     expect(computeCanvasTidyLayout(nodes, edges)).toEqual([
-      { id: "source", position: { x: 0, y: 0 } },
-      { id: "image", position: { x: 400, y: 0 } },
-      { id: "sibling", position: { x: 400, y: 288 } },
-      { id: "video", position: { x: 760, y: 0 } },
+      { id: "source", position: { x: 0, y: -90 } },
+      { id: "image", position: { x: 400, y: -194 } },
+      { id: "sibling", position: { x: 400, y: 94 } },
+      { id: "video", position: { x: 760, y: -150 } },
     ]);
   });
 
@@ -59,11 +60,53 @@ describe("computeCanvasTidyLayout", () => {
         [edge("missing", "two")]
       )
     ).toEqual([
-      { id: "one", position: { x: 0, y: 0 } },
-      { id: "two", position: { x: 0, y: 248 } },
+      { id: "one", position: { x: 0, y: -224 } },
+      { id: "two", position: { x: 0, y: 24 } },
     ]);
   });
+
+  /**
+   * Regression: unmeasured nodes all fell back to one height, so a tall card —
+   * a three-option decision is nearly twice a clip — landed under the card above
+   * it. The default layout runs before React Flow measures anything, which is
+   * exactly when this happens.
+   */
+  it("stacks unmeasured nodes by the caller's estimate instead of one flat height", () => {
+    const nodes = [unmeasured("tall"), unmeasured("short")];
+
+    const flat = computeCanvasTidyLayout(nodes, []);
+    const estimated = computeCanvasTidyLayout(nodes, [], (n) => (n.id === "tall" ? 400 : 120));
+
+    // Without an estimate both advance by the same fallback.
+    expect(flat[1]!.position.y - flat[0]!.position.y).toBe(248);
+    // With one, the short card clears the tall card's full height.
+    expect(estimated[1]!.position.y - estimated[0]!.position.y).toBe(448);
+  });
+
+  it("centres every column on one shared axis", () => {
+    const nodes = [node("head", 280, 200), node("a", 280, 200), node("b", 280, 200)];
+    const positions = computeCanvasTidyLayout(nodes, [edge("head", "a"), edge("head", "b")]);
+    const mid = (id: string, height: number) =>
+      positions.find((p) => p.id === id)!.position.y + height / 2;
+
+    expect(mid("head", 200)).toBe(0);
+    expect((mid("a", 200) + mid("b", 200)) / 2).toBe(0);
+  });
+
+  it("prefers a real measurement over the estimate", () => {
+    const positions = computeCanvasTidyLayout(
+      [node("a", 280, 300), unmeasured("b")],
+      [],
+      () => 999
+    );
+
+    expect(positions[1]!.position.y - positions[0]!.position.y).toBe(348);
+  });
 });
+
+function unmeasured(id: string): Node {
+  return { id, position: { x: 0, y: 0 }, data: {} };
+}
 
 function node(id: string, width: number, height: number): Node {
   return {

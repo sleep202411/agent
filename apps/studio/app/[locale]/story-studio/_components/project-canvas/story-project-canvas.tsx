@@ -116,6 +116,7 @@ import {
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
+  estimateStoryNodeHeight,
   characterCanvasNodeId,
   rejectsStoryCastWiring,
   syntheticDecisionNodeId,
@@ -2060,6 +2061,7 @@ function StoryProjectCanvasInner({
   // in the projection via `onCanvasNodesChange` (which the barrier already
   // filters) and are persisted here, so a tidy survives a reload.
   const tidyStoryCanvas = useCanvasTidy<StoryCanvasNode, StoryCanvasEdge>({
+    estimateHeight: (node) => estimateStoryNodeHeight((node as StoryCanvasNode).data),
     edges: canvasEdges,
     onNodesChange: onCanvasNodesChange,
     onTidied: useCallback(

@@ -482,14 +482,48 @@ function buildLayeredPositions(
   const positions = new Map<string, { x: number; y: number }>();
   idsByLayer.forEach((ids, layer) => {
     ids.sort(byProjectionOrder);
+    // Advance by each card's own height. A uniform row gap silently buried the
+    // bottom of every tall card — a decision with three options is nearly twice
+    // a clip — and the default layout runs before React Flow can measure, so the
+    // estimate has to come from the projection itself.
+    // Every column is centred on one shared horizontal axis: a two-card column
+    // and a nine-card column read as one balanced band instead of both hanging
+    // from the top. Centring uses real card heights, so a tall decision card
+    // still clears its neighbour.
+    const heights = ids.map((id) => estimateStoryNodeHeight(projectionById.get(id)!.data));
+    const total = heights.reduce((sum, height) => sum + height, 0) + ROW_GAP * (ids.length - 1);
+    let y = -total / 2;
     ids.forEach((id, row) => {
-      positions.set(id, {
-        x: layer * COLUMN_GAP,
-        y: (row - (ids.length - 1) / 2) * ROW_GAP,
-      });
+      positions.set(id, { x: layer * COLUMN_GAP, y: normalizeZero(Math.round(y)) });
+      y += heights[row]! + ROW_GAP;
     });
   });
   return positions;
+}
+
+/** `Math.round(-0)` is `-0`, which is not `0` to a deep-equality check. */
+function normalizeZero(value: number): number {
+  return value === 0 ? 0 : value;
+}
+
+/**
+ * Rendered height of a story card, by kind. Deliberately generous: a gap that is
+ * slightly too big only looks airy, while one that is too small overlaps.
+ */
+export function estimateStoryNodeHeight(data: StoryCanvasNodeData): number {
+  switch (data.kind) {
+    case "decision":
+      // Prompt + one row per option + the "add option" affordance.
+      return 168 + (data.choices?.length ?? 0) * 54 + 56;
+    case "ending":
+      return 132;
+    case "character":
+      return 120;
+    case "text":
+      return 240;
+    default:
+      return 236;
+  }
 }
 
 function indexClips(

@@ -21,12 +21,26 @@ export function resolveCanvasTidyTargets<NodeType extends Node, EdgeType extends
 }
 
 /**
+ * Height to reserve for a node React Flow has not measured yet.
+ *
+ * A canvas whose cards differ wildly in height — a three-option decision card is
+ * roughly twice a clip card — must supply its own estimate, or every unmeasured
+ * tall card overlaps the one beneath it.
+ */
+export type CanvasNodeHeightEstimate = (node: Node) => number;
+
+const DEFAULT_UNMEASURED_HEIGHT = 200;
+const ROW_GAP = 48;
+
+/**
  * Dependency-free layered layout shared by every authoring canvas. Nodes flow
- * left-to-right by longest-path depth and stack vertically within each column.
+ * left-to-right by longest-path depth and stack vertically within each column,
+ * advancing by each node's real height so cards never overlap.
  */
 export function computeCanvasTidyLayout(
   nodes: Node[],
-  edges: Edge[]
+  edges: Edge[],
+  estimateHeight?: CanvasNodeHeightEstimate
 ): { id: string; position: { x: number; y: number } }[] {
   if (nodes.length === 0) return [];
   const ids = new Set(nodes.map((node) => node.id));
@@ -55,14 +69,22 @@ export function computeCanvasTidyLayout(
   for (const column of [...columns.keys()].sort((a, b) => a - b)) {
     const columnNodes = columns.get(column) ?? [];
     const columnWidth = Math.max(...columnNodes.map((node) => node.measured?.width ?? 280));
-    let y = 0;
-    for (const node of columnNodes) {
+    const heights = columnNodes.map(
+      (node) => node.measured?.height ?? estimateHeight?.(node) ?? DEFAULT_UNMEASURED_HEIGHT
+    );
+    // Columns share one horizontal centreline. Top-aligning them left a short
+    // column stranded at the top of a tall neighbour, which reads as a mistake
+    // on any graph whose branches differ in length.
+    const total = heights.reduce((sum, height) => sum + height, 0) + ROW_GAP * (heights.length - 1);
+    let y = -total / 2;
+    columnNodes.forEach((node, row) => {
+      const rounded = Math.round(y);
       positions.push({
         id: node.id,
-        position: { x: Math.round(x), y: Math.round(y) },
+        position: { x: Math.round(x), y: rounded === 0 ? 0 : rounded },
       });
-      y += (node.measured?.height ?? 200) + 48;
-    }
+      y += heights[row]! + ROW_GAP;
+    });
     x += columnWidth + 80;
   }
   return positions;
