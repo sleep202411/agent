@@ -33,7 +33,6 @@ const ORIGINAL_VARIANT_BASE_WHERE = {
 const ORIGINAL_VARIANT_WHERE = {
   ...ORIGINAL_VARIANT_BASE_WHERE,
   status: MediaAssetVariantStatus.ready,
-  checksumSha256: { not: null },
 } satisfies Prisma.MediaAssetVariantWhereInput;
 
 const ORIGINAL_VARIANT_PLACEMENTS_INCLUDE = {
@@ -421,7 +420,7 @@ function toVideoLibraryItem(
   row: VideoLibraryAssetRow,
 ): StoryProjectVideoLibraryItemDto {
   const variant = row.variants[0];
-  if (!variant?.checksumSha256) {
+  if (!variant || !variant.contentType.toLowerCase().startsWith('video/')) {
     throw new InternalServerErrorException({
       code: 'STORY_VIDEO_LIBRARY_ASSET_INVALID',
       message: 'A reusable video is missing its ready original variant.',

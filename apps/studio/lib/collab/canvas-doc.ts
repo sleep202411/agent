@@ -1,4 +1,19 @@
 import * as Y from "yjs";
+import type {
+  CanvasAsset,
+  CanvasEdgeShape,
+  CanvasGroup,
+  CanvasNodeShape,
+} from "@/lib/canvas-core/types";
+import { CANVAS_GROUP_COLORS, DEFAULT_CANVAS_GROUP_COLOR } from "@/lib/canvas-core/types";
+import { reconcileCanvasGroups } from "@/lib/canvas-core/canvas-groups";
+
+export type {
+  CanvasAsset,
+  CanvasEdgeShape,
+  CanvasGroup,
+  CanvasNodeShape,
+} from "@/lib/canvas-core/types";
 
 /**
  * Canvas graph <-> Yjs schema + conversion (pure; no React, no browser).
@@ -11,51 +26,13 @@ import * as Y from "yjs";
  *              data: Y.Map<field, json>, // field-level merge (prompt vs settings)
  *              width?: number, height?: number }
  *   edges: Y.Map<edgeId, Y.Map>  — { id, source, target, sourceHandle?, targetHandle? }
+ *   groups: Y.Map<groupId, CanvasGroup> — visual grouping metadata; bounds stay derived
  *
  * Node `data` field VALUES are stored as plain JSON (settings/generation/etc are
  * coarse last-write-wins within a field); positions and per-field data edits
  * merge. This is the v1 granularity — deeper nesting can come later without a
  * wire change (it's all inside the opaque CRDT).
  */
-
-export interface CanvasNodeShape {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: Record<string, unknown>;
-  width?: number;
-  height?: number;
-}
-
-export interface CanvasEdgeShape {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-}
-
-/**
- * A project library asset — a persistent inventory entry that survives deleting
- * the card it came from. Always carries a durable storage `url` (generated
- * outputs + SAS uploads) so every collaborator can resolve it; stored as a flat
- * JSON value in the synced `assets` map (add/remove only — no field merge).
- */
-export interface CanvasAsset {
-  id: string;
-  mediaAssetId?: string;
-  kind: "image" | "video" | "audio";
-  source: "generated" | "uploaded";
-  url: string;
-  width?: number;
-  height?: number;
-  /** User-editable display name. Prompt remains the generation/source text. */
-  name?: string;
-  prompt?: string;
-  /** Equirectangular 360° panorama — placed/rendered as a panorama, not a flat image. */
-  panorama?: boolean;
-  createdAt: number;
-}
 
 export function nodesMap(doc: Y.Doc): Y.Map<Y.Map<unknown>> {
   return doc.getMap<Y.Map<unknown>>("nodes");
@@ -68,6 +45,9 @@ export function metaMap(doc: Y.Doc): Y.Map<unknown> {
 }
 export function assetsMap(doc: Y.Doc): Y.Map<CanvasAsset> {
   return doc.getMap<CanvasAsset>("assets");
+}
+export function groupsMap(doc: Y.Doc): Y.Map<CanvasGroup> {
+  return doc.getMap<CanvasGroup>("groups");
 }
 
 // ── read (Y → plain) ────────────────────────────────────────────────────────
@@ -132,6 +112,21 @@ export function readAllEdges(doc: Y.Doc): CanvasEdgeShape[] {
     }
   });
   return out;
+}
+
+export function readAllGroups(doc: Y.Doc): CanvasGroup[] {
+  const out: CanvasGroup[] = [];
+  groupsMap(doc).forEach((value, groupId) => {
+    if (!value || typeof value !== "object") return;
+    const nodeIds = Array.isArray(value.nodeIds)
+      ? [...new Set(value.nodeIds.filter((nodeId): nodeId is string => typeof nodeId === "string"))]
+      : [];
+    const color = CANVAS_GROUP_COLORS.includes(value.color)
+      ? value.color
+      : DEFAULT_CANVAS_GROUP_COLOR;
+    out.push({ id: groupId, nodeIds, color });
+  });
+  return out.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 // ── write (plain → Y) ───────────────────────────────────────────────────────
@@ -219,6 +214,7 @@ export function patchNodeData(doc: Y.Doc, id: string, patch: Record<string, unkn
 
 export function removeNode(doc: Y.Doc, id: string): void {
   nodesMap(doc).delete(id);
+  writeCanvasGroups(doc, reconcileCanvasGroups(readAllGroups(doc), nodesMap(doc).keys()));
 }
 
 /** Create or fully replace an edge (in place — preserves Y.Map identity). */
@@ -240,6 +236,29 @@ export function writeEdge(doc: Y.Doc, edge: CanvasEdgeShape): void {
 
 export function removeEdge(doc: Y.Doc, id: string): void {
   edgesMap(doc).delete(id);
+}
+
+export function writeCanvasGroups(doc: Y.Doc, groups: readonly CanvasGroup[]): void {
+  const map = groupsMap(doc);
+  const next = new Map(groups.map((group) => [group.id, group] as const));
+  for (const groupId of [...map.keys()]) {
+    if (!next.has(groupId)) map.delete(groupId);
+  }
+  next.forEach((group, groupId) => {
+    const current = map.get(groupId);
+    if (
+      current?.color === group.color &&
+      current.nodeIds.length === group.nodeIds.length &&
+      current.nodeIds.every((nodeId, index) => nodeId === group.nodeIds[index])
+    ) {
+      return;
+    }
+    map.set(groupId, {
+      id: groupId,
+      nodeIds: [...group.nodeIds],
+      color: group.color,
+    });
+  });
 }
 
 // ── assets (shared library) ──────────────────────────────────────────────────
@@ -323,6 +342,7 @@ export function reconcileCanvasToUpdate(
 ): void {
   let nodes: CanvasNodeShape[] = [];
   let edges: CanvasEdgeShape[] = [];
+  let groups: CanvasGroup[] = [];
   let meta: Record<string, unknown> = {};
   if (targetBytes && targetBytes.byteLength > 0) {
     const tmp = new Y.Doc();
@@ -330,12 +350,16 @@ export function reconcileCanvasToUpdate(
       Y.applyUpdate(tmp, targetBytes);
       nodes = readAllNodes(tmp);
       edges = readAllEdges(tmp);
+      groups = reconcileCanvasGroups(
+        readAllGroups(tmp),
+        nodes.map((node) => node.id)
+      );
       meta = metaMap(tmp).toJSON() as Record<string, unknown>;
     } finally {
       tmp.destroy();
     }
   }
-  // Restore reverts canvas CONTENT (nodes/edges/meta). The asset library is a
+  // Restore reverts canvas CONTENT (nodes/edges/groups/meta). The asset library is a
   // cumulative inventory of everything generated/uploaded — restoring an old
   // version must NOT wipe assets made since it, so `assets` is left untouched.
   doc.transact(() => {
@@ -348,6 +372,8 @@ export function reconcileCanvasToUpdate(
     const keepEdges = new Set(edges.map((e) => e.id));
     for (const id of [...em.keys()]) if (!keepEdges.has(id)) removeEdge(doc, id);
     for (const edge of edges) writeEdge(doc, edge);
+
+    writeCanvasGroups(doc, groups);
 
     const mm = metaMap(doc);
     const keepMeta = new Set(Object.keys(meta));

@@ -7,7 +7,7 @@ import { IconReceipt } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cancelSubscription, getMyEntitlement } from "@/lib/billing";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Panel } from "./settings-ui";
 

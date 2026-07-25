@@ -994,7 +994,27 @@
     "redo": "重做",
     "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
     "emptyReadOnly": "此画布为空。",
-    "activityLog": "动态"
+    "activityLog": "动态",
+    "groups": {
+      "group": "打组",
+      "label": "分组",
+      "dragLabel": "拖动分组，共 {count} 个节点",
+      "color": "分组背景色",
+      "colors": {
+        "slate": "灰色",
+        "red": "红色",
+        "orange": "橙色",
+        "amber": "黄色",
+        "green": "绿色",
+        "cyan": "青色",
+        "blue": "蓝色",
+        "indigo": "靛蓝色",
+        "pink": "粉色"
+      },
+      "ungroup": "解组",
+      "removeNode": "移出分组",
+      "shortcut": "Ctrl/⌘ G"
+    }
   },
   "canvasControls": {
     "comment": "评论",
@@ -1140,14 +1160,25 @@
       "untitled": "未命名素材",
       "close": "关闭素材库",
       "searchPlaceholder": "搜索素材",
-      "providerStatusApproved": "安全检查通过",
-      "providerStatusApprovedTitle": "图片已完成 Seedance 生成安全检查",
-      "providerStatusChecking": "安全检查中",
-      "providerStatusCheckingTitle": "正在进行 Seedance 生成安全检查",
-      "providerStatusFailed": "检查未通过",
-      "providerStatusFailedTitle": "图片未通过 Seedance 生成安全检查",
-      "providerStatusUnavailable": "不可用",
-      "providerStatusUnavailableTitle": "Seedance 资产注册不可用",
+      "readiness": {
+        "missingAsset": "请先保存素材，再检查就绪状态。",
+        "seedance": {
+          "approved": "Seedance 已就绪",
+          "approvedTitle": "素材已可用于 Seedance 生成",
+          "checking": "Seedance 检查中",
+          "checkingTitle": "正在为 Seedance 生成准备并检查该素材",
+          "failed": "Seedance 检查失败",
+          "failedTitle": "素材尚不可用于 Seedance 生成",
+          "notRequested": "未检查",
+          "notRequestedTitle": "尚未检查 Seedance 就绪状态",
+          "unavailable": "不可用",
+          "unavailableTitle": "Seedance 就绪检查当前不可用",
+          "action": "检查 Seedance",
+          "retryAction": "重新检查 Seedance",
+          "started": "Seedance 就绪检查已开始。",
+          "alreadyPassed": "该素材已可用于 Seedance。"
+        }
+      },
       "tab": {
         "myCreations": "我的创作",
         "uploaded": "已上传"
@@ -1165,6 +1196,12 @@
     "selectModel": "选择模型",
     "settings": "设置",
     "generate": "生成",
+    "expandedComposer": {
+      "expand": "展开生成面板",
+      "collapse": "返回紧凑面板",
+      "imageTitle": "图像生成",
+      "videoTitle": "视频生成"
+    },
     "cancelGeneration": "取消生成",
     "run": "运行",
     "count": "数量",
@@ -1625,7 +1662,6 @@
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
-      "generating": "{count} 个视频生成中",
       "textFirstWithoutVideo": "文字优先 · 视频可选",
       "textFirstProgress": "文字优先故事",
       "updatedUnknown": "更新时间不可用"
@@ -1634,7 +1670,6 @@
       "references": "参考位",
       "clips": "镜头",
       "videos": "当前视频",
-      "generating": "生成中",
       "choices": "选择",
       "endings": "结局",
       "graphClips": "剧情镜头",
@@ -1711,6 +1746,32 @@
     "canvas": {
       "back": "返回 Story Studio",
       "mode": "故事画布",
+      "chapters": {
+        "action": "章节",
+        "title": "章节",
+        "sceneCount": "{count} 个场景",
+        "add": "新增章节",
+        "createTitle": "新增章节",
+        "createDescription": "请先为新章节命名，再进入它的画布。",
+        "createConfirm": "新增章节",
+        "createError": "无法创建章节。",
+        "menu": "{title} 的更多操作",
+        "rename": "重命名",
+        "nameLabel": "章节名称",
+        "namePlaceholder": "输入章节名称",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "archive": "归档",
+        "archiveTitle": "归档章节？",
+        "archiveDescription": "{title} 将从当前故事结构中移除。只有空章节可以归档。",
+        "archiveConfirm": "归档章节",
+        "cancel": "取消",
+        "updateError": "无法保存章节名称。",
+        "reorderError": "无法保存章节顺序。",
+        "archiveError": "无法归档章节。",
+        "saveBeforeArchive": "请先保存或放弃当前章节的修改，再将其归档。",
+        "close": "关闭章节导航"
+      },
       "publish": {
         "action": "发布",
         "actionPending": "正在发布…",
@@ -1794,132 +1855,135 @@
       "assistant": {
         "action": "StoryOS"
       },
-      "emptyAgent": {
-        "title": "让每个选择，改写故事",
-        "description": "和StoryOS 说说你的故事，或选择一种创作 Skill 来确定第一次对话的方向。",
-        "assistantTitle": "StoryOS",
-        "close": "关闭StoryOS",
-        "inputLabel": "向StoryOS 发送消息",
-        "placeholder": "描述你想创作的故事、情绪或玩家体验……",
-        "panelPlaceholder": "继续完善这个故事……",
-        "panelEmpty": "描述你想要创作的故事或玩家体验。",
-        "transcriptLabel": "StoryOS 对话",
-        "scrollToLatest": "滚动到最新消息",
-        "send": "发送消息",
-        "stop": "停止回复",
-        "thinking": "StoryOS 正在思考……",
-        "error": "StoryOS 暂时无法回复。",
+      "studioAgent": {
+        "title": "StoryOS",
+        "surface": "StoryOS 助手",
+        "close": "关闭 StoryOS",
         "retry": "重试",
-        "historyLoading": "正在载入这个项目的对话……",
-        "historyError": "无法载入已有对话。为保护历史记录，重新载入成功前不能发送。",
-        "retryHistory": "重新载入",
-        "recoveryStorageError": "无法为这条消息建立安全重试记录。草稿和参考图均未发生变化，请检查浏览器存储后重试。",
-        "messagePreserved": "你的消息已保留。重试前会先核对对话，避免重复发送。",
-        "retryPreservedMessage": "安全重试",
-        "discardPreservedMessage": "放弃此消息",
-        "responseStopped": "这次回复已停止，尚未完成。",
-        "responseFailed": "这次回复未能完成。",
-        "rateLimited": "消息发送过快（每分钟上限 {limit} 条），请在 {time} 后再试。",
-        "quotaExceeded": "已达到消息上限（每天 {limit} 条），将于 {time} 重置。",
-        "historyLimitReached": "这段对话已达到安全历史上限，请新建对话后继续。",
-        "newConversation": "新建对话",
-        "newConversationTitle": "开始新对话？",
-        "newConversationDescription": "这会永久清除你在此项目中的私人StoryOS 对话，但不会修改故事画布或其他协作者的对话。",
-        "cancelNewConversation": "保留当前对话",
-        "confirmNewConversation": "清除并新建",
-        "you": "你",
-        "skillsTitle": "选择一种导演 Skill",
-        "activeSkill": "Skill · {name}",
-        "removeSkill": "移除{name}",
-        "attachDocument": "上传剧本或大纲（.docx、.txt、.md）",
-        "removeAttachment": "移除已附加的文档",
-        "attachedDocument": "已附加文档",
-        "attachmentUnsupported": "仅支持 .docx、.txt 或 .md 文件。",
-        "attachmentTooLarge": "文档大小不能超过 10MB。",
-        "attachmentUploadFailed": "文档上传失败，请重新发送。",
-        "agentRun": {
-          "proposalLabel": "故事 Agent 变更提案",
-          "proposal": "故事变更提案",
-          "undoProposal": "撤销变更",
-          "preparing": "正在准备可审核的变更",
-          "preparingDetail": "Agent 正在根据当前项目验证结构化提案。",
-          "proposalFailed": "无法生成变更提案",
-          "proposalFailedDetail": "项目数据未发生任何改变。",
-          "invalid": "Agent 响应无效",
-          "invalidDetail": "服务端返回的提案不符合 Story Agent 契约。",
-          "rejected": "变更请求未提交",
-          "rejectedDetail": "该变更请求在起草开始前被拒绝，项目数据未发生任何改变。",
-          "dismissRejected": "关闭",
-          "rejections": {
-            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "本轮回复已提交过变更请求，多余的请求已被忽略。",
-            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "该项目的待处理提案已达上限，请先应用或放弃现有提案。",
-            "STORY_AGENT_APPLYING": "Agent 正在应用其他变更，请在完成后重新发送请求。"
+        "dismissError": "关闭",
+        "timeline": {
+          "log": "StoryOS 对话",
+          "empty": "描述你想完善的故事、抉择或玩家体验。",
+          "loading": "正在载入对话……",
+          "contextCompacted": "上下文已自动压缩",
+          "scrollToLatest": "滚动到最新进展",
+          "loadEarlier": "载入更早的对话",
+          "loadingEarlier": "正在载入更早的对话……",
+          "attachments": {
+            "unknownSize": "大小未知",
+            "status": {
+              "processing": "处理中",
+              "ready": "已就绪",
+              "failed": "失败"
+            }
           },
-          "drafting": "正在起草故事变更",
-          "authoring": "Agent 正在起草此变更，画布仍可继续编辑。",
-          "retryAuthoring": "重试起草",
-          "authoringErrors": {
-            "STORY_AGENT_AUTHORING_FAILED": "Agent 未能完成此变更的起草，可重试起草或放弃该请求。",
-            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "起草期间故事持续发生变化，请在编辑暂停后重试。",
-            "STORY_AGENT_PROPOSAL_NO_CHANGES": "Agent 没有发现需要修改的内容，可放弃该请求，或待故事变化后重试。",
-            "STORY_AGENT_CONTEXT_TOO_LARGE": "当前故事过大，Agent 暂时无法基于它起草变更。",
-            "STORY_AGENT_CONTENT_REJECTED": "源材料被内容审核拦下，无法完成起草。请调整文档或指令、弱化敏感内容后再试。",
-            "generic": "起草在生成提案前失败了。"
-          },
-          "discard": "放弃",
-          "apply": "应用变更",
-          "applying": "Agent 正在更新项目，所有成员的编辑已锁定。",
-          "takingOver": "正在保存当前编辑并获取 Agent 写锁……",
-          "reconciling": "Agent 变更已提交，正在同步画布……",
-          "applied": "变更已应用",
-          "undone": "变更已撤销",
-          "undo": "整体撤销",
-          "stale": "应用前项目已发生变化，此提案已失效。",
-          "failed": "Agent 无法应用此提案。",
-          "cancelled": "提案已放弃",
-          "actionFailed": "Agent 操作失败。",
-          "actionErrors": {
-            "projectScopeChanged": "操作开始时项目已切换，请检查当前画布后重试。",
-            "canonicalHeadChanged": "已有更新的 Agent 提案，请先审核当前提案。",
-            "runNotProposed": "此提案已不再等待处理，请刷新查看当前状态。",
-            "runNotRetryable": "此变更不在等待重试起草，请刷新查看当前状态。",
-            "undoBlockedByActiveRun": "请先完成或放弃当前 Agent 提案，再撤销之前的变更。",
-            "undoHeadChanged": "更新的项目变更已替换此撤销点，请刷新查看当前状态。",
-            "authorityUnavailable": "暂时无法验证当前项目状态，请刷新后再次撤销。"
-          },
-          "showMore": "展开其余 {count} 项",
-          "showLess": "收起",
-          "checkingCurrent": "正在确认当前提案……",
-          "currentUnavailable": "暂时无法确认当前提案",
-          "retry": "重试",
-          "historicalReadOnly": "这是较早的提案，仅供查看。",
-          "reviewOnly": "你可以审核此提案，但只有具备编辑权限的成员才能应用或放弃。",
-          "viewOnly": "仅查看",
-          "historical": "较早的提案",
-          "checking": "正在确认……",
-          "unavailable": "暂不可用",
-          "authoringStage": "步骤 {step}/{total} · {stage}",
-          "stages": {
-            "worldview": "世界观架构师",
-            "structure": "剧情结构师",
-            "branch": "分支编排师",
-            "scene": "场景撰写师",
-            "validate": "校验修复师"
+          "roles": {
+            "user": "你",
+            "assistant": "StoryOS"
           }
         },
-        "skills": {
-          "symmetricalStorybook": {
-            "title": "对称童话电影",
-            "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。",
-            "prompt": "创作一个互动短篇:粉色山间旅馆迎来一位从不摘帽的神秘住客,门童奉命查明缘由。剧情:按章节推进,每章一次关键选择,让旅馆秩序更荒诞一分、真相更近一步。整体节奏:12 个节点左右,三幕结构,每幕收在一个小反转。结局:3 个——揭开帽子、替他守密、成为下一个戴帽人,分别改写门童与旅馆的关系。"
+        "activity": {
+          "expand": "展开活动详情",
+          "collapse": "收起活动详情",
+          "labels": {
+            "generatingResponse": "正在生成回复"
           },
-          "halftoneCollage": {
-            "title": "半调纸拼贴",
-            "description": "纯色纸底、半调剪贴与卡纸点缀,每个选择拼装成一个视觉隐喻。",
-            "prompt": "创作一个互动短篇:一只装满旧车票与照片的手提箱在午夜自动打开,每个剪贴物件都是一段被折叠的记忆。剧情:主人公整理遗物时,逐渐拼出母亲隐瞒一生的旅程。整体节奏:10-14 个节点,开场 2 个节点内抛出悬念,之后每 2-3 个节点一次关键选择。结局:3 个——启程、留下、把箱子重新锁上,分别对应玩家把哪些记忆拼回、哪些撕碎。"
+          "status": {
+            "running": "进行中",
+            "succeeded": "已完成",
+            "failed": "失败",
+            "cancelled": "已取消"
           }
         },
-        "placeholderWithSkill": "说说你的故事想法,StoryOS 将以「{skill}」的风格起草……"
+        "runStatus": {
+          "queued": "等待中",
+          "running": "正在处理",
+          "waiting_for_approval": "等待批准",
+          "waiting_for_input": "等待输入",
+          "cancelling": "正在停止",
+          "succeeded": "已完成",
+          "failed": "失败",
+          "cancelled": "已取消"
+        },
+        "childRuns": {
+          "group": "委派任务"
+        },
+        "composer": {
+          "input": "向 StoryOS 发送消息",
+          "placeholder": "让 StoryOS 分析、规划或修改这个故事……",
+          "stop": "停止当前任务",
+          "cancelReason": "创作者已取消当前任务。",
+          "queued": "{count} 条消息等待处理",
+          "deliveryModeMenu": "选择消息处理方式",
+          "attachments": {
+            "add": "添加参考文件",
+            "drop": "将图片、TXT、Markdown、DOCX 或 PDF 文件拖到这里",
+            "remove": "移除 {fileName}",
+            "retry": "重试 {fileName}",
+            "uploading": "正在上传 · {progress}%",
+            "processing": "正在分析文件",
+            "ready": "已就绪",
+            "failed": "上传失败",
+            "emptyFile": "无法上传空文件。",
+            "unsupportedType": "仅支持 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 文件。",
+            "tooLarge": "此文件大小不能超过 {maxSize}。",
+            "fileNameTooLong": "文件名不能超过 255 个字符。"
+          },
+          "delivery": {
+            "send": {
+              "label": "发送",
+              "description": "开始一轮新的 StoryOS 对话。"
+            },
+            "steer": {
+              "label": "立即调整",
+              "description": "在下一个安全节点为当前任务补充方向。"
+            },
+            "enqueue": {
+              "label": "排到下一条",
+              "description": "继续当前任务，完成后再处理这条消息。"
+            },
+            "stopAndSend": {
+              "label": "停止并发送",
+              "description": "取消当前任务，然后用这条消息开始新一轮。"
+            }
+          }
+        },
+        "permission": {
+          "menu": "StoryOS 操作权限",
+          "options": {
+            "ask": {
+              "label": "每次询问",
+              "description": "执行任何会改动你数据的操作前都先请求批准。"
+            },
+            "smart": {
+              "label": "自动批准",
+              "description": "除删除外，其余操作都自动执行。"
+            },
+            "full": {
+              "label": "完全授权",
+              "description": "包括删除在内的操作都自动执行；平台安全规则仍然生效。"
+            }
+          }
+        },
+        "approval": {
+          "capability": "能力",
+          "approveOnce": "仅批准一次",
+          "approveAlways": "始终允许",
+          "reject": "拒绝",
+          "status": {
+            "pending": "等待批准",
+            "approved": "已批准",
+            "denied": "已拒绝",
+            "expired": "已过期",
+            "cancelled": "已取消"
+          },
+          "risk": {
+            "low": "低风险",
+            "medium": "中等风险",
+            "high": "高风险",
+            "critical": "严重风险"
+          }
+        }
       },
       "saveState": {
         "idle": "可编辑草稿 · 修订 {revision}",
@@ -1933,8 +1997,8 @@
         "root": "故事世界",
         "clip": "影像镜头",
         "text": "关键剧情",
-        "choice": "分支选择",
-        "decision": "分支选择",
+        "choice": "玩家选择",
+        "decision": "玩家选择",
         "ending": "故事结局",
         "character": "角色"
       },
@@ -1950,6 +2014,16 @@
         "newChoice": "连接新选项",
         "ending": "进入结局"
       },
+      "decisionCard": {
+        "promptPlaceholder": "玩家此刻必须决定什么？",
+        "defaultOption": "选项 {number}",
+        "untitledOption": "未命名选项",
+        "linkedTarget": "已连接后续",
+        "addOption": "添加选项",
+        "cancelOption": "取消添加选项",
+        "optionPlaceholder": "输入玩家看到的选项",
+        "connectOption": "连接这个选项"
+      },
       "creator": {
         "title": "添加到故事图",
         "description": "创建互动故事结构中的图元素。",
@@ -1959,13 +2033,13 @@
         "textDescription": "带有独立后续走向或玩家选择的关键剧情。",
         "character": "角色",
         "characterDescription": "隶属于本故事世界的角色卡。",
-        "choice": "分支选择",
+        "choice": "玩家选择",
         "choiceDescription": "把当前镜头的结尾转换为玩家选择。",
         "choiceUnavailable": "请先选中一个影像镜头。",
         "ending": "故事结局",
         "endingDescription": "保存于故事圣经中的命名结局。",
         "root": "故事世界",
-        "rootDescription": "将世界观与宣传片节点重新添加到画布。"
+        "rootDescription": "将世界观节点重新添加到画布。"
       },
       "connectionCreator": {
         "title": "创建下一步",
@@ -1984,7 +2058,7 @@
         "rootSummary": "从这里定义故事前提、世界规则、人物关系与叙事状态。",
         "clip": "镜头",
         "text": "关键剧情",
-        "decision": "选择",
+        "decision": "玩家选择",
         "ending": "结局"
       },
       "foundation": {
@@ -1999,8 +2073,19 @@
       "world": {
         "eyebrow": "故事世界",
         "title": "故事设定",
-        "action": "故事设定",
         "description": "支撑每个分支的前提、角色与世界规则；修改会自动保存到草稿。",
+        "cover": {
+          "title": "封面素材",
+          "description": "项目共用的一张图片或一段视频，用于故事世界节点和项目列表。",
+          "empty": "尚未设置封面",
+          "unavailable": "封面预览暂不可用",
+          "choose": "选择素材",
+          "replace": "更换素材",
+          "remove": "移除",
+          "imageAlt": "项目封面",
+          "videoLabel": "项目封面视频",
+          "candidateLoadError": "候选素材加载失败。"
+        },
         "characters": {
           "cardEyebrow": "角色",
           "cardUntitled": "未命名角色",
@@ -2080,59 +2165,9 @@
       "metrics": {
         "characters": "人物"
       },
-      "trailer": {
-        "eyebrow": "世界观宣传片",
-        "title": "宣传片导演设计",
-        "description": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-        "node": {
-          "noVideo": "尚无宣传片视频",
-          "videoPreview": "当前宣传片视频预览"
-        },
-        "production": {
-          "title": "视频制作",
-          "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-          "disabled": {
-            "permission": "请选择视频模型。"
-          },
-          "errors": {
-            "action": "请先输入提示词。"
-          }
-        }
-      },
       "production": {
-        "title": "视频制作",
-        "localRecipeDescription": "生成配方只保留在当前页面，并仅在点击生成时冻结；它不会写入故事草稿。",
-        "emptyPrompt": "描述你想生成的视频。",
-        "masterPrompt": "提示词",
-        "promptLocalHint": "配方保留在当前页面。生成时会冻结准确的提示词、模型、时长、模式与参考图。",
-        "generate": "生成视频",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "请先输入提示词。",
-          "modelRequired": "请选择视频模型。",
-          "referencesRequired": "请准确添加一张首帧和一张尾帧。",
-          "permission": "你没有为此项目生成视频的权限。",
-          "generating": "此节点已有视频正在生成。"
-        },
-        "statuses": {
-          "generating": "生成中",
-          "queued": "排队中",
-          "running": "生成中",
-          "processing": "处理中",
-          "ready": "就绪",
-          "failed": "失败",
-          "cancelled": "已取消",
-          "superseded": "已被取代"
-        },
-        "referenceRail": {
-          "unapproved": "未批准",
-          "remove": "移除 {label}",
-          "add": "添加参考图",
-          "addTitle": "已批准的项目参考图"
-        },
-        "durationControl": {
-          "label": "时长",
-          "seconds": "{count}s"
+          "permission": "你没有管理此项目视频的权限。"
         },
         "errors": {
           "action": "制作操作无法完成。"
@@ -2140,50 +2175,124 @@
         "node": {
           "noVideo": "尚无视频",
           "videoPreview": "当前视频预览",
-          "generationFailed": "生成失败"
-        },
-        "model": "模型",
-        "references": "参考图",
-        "modeToggle": {
-          "label": "生成模式",
-          "multimodal": "参考图",
-          "firstLast": "首尾帧"
-        },
-        "uploadReference": {
-          "action": "上传参考图",
-          "uploading": "上传中 {progress}%",
-          "error": "参考图上传失败。"
+          "metadata": {
+            "duration": "时长",
+            "dimensions": "分辨率",
+            "fileSize": "文件大小",
+            "format": "格式"
+          }
         }
       },
+      "productionCanvas": {
+        "title": "创作画布",
+        "identity": "Story Studio · 内容创作",
+        "groupDropHint": "松开以添加到此分组",
+        "workspaceLabel": "项目素材创作空间",
+        "backToChapter": "返回章节画布",
+        "closeSaveError": "无法保存最新的画布修改，请重试后再离开。",
+        "loadError": "无法打开创作画布。",
+        "retry": "重试",
+        "assets": {
+          "description": "浏览项目素材，并将可复用媒体拖入画布。"
+        },
+        "candidates": {
+          "title": "候选素材",
+          "description": "整理可供故事节点直接复用的媒体。",
+          "open": "打开候选素材",
+          "close": "关闭候选素材",
+          "add": "添加到候选素材",
+          "remove": "从候选素材中移除",
+          "filterLabel": "筛选候选素材",
+          "filters": {
+            "all": "全部",
+            "image": "图片",
+            "video": "视频",
+            "audio": "音频"
+          },
+          "empty": "还没有候选素材",
+          "emptyFilter": "此分类暂无素材",
+          "emptyDescription": "选中已完成的媒体节点，通过浮动工具栏添加。",
+          "loadError": "无法加载候选素材。",
+          "actionError": "无法更新候选素材。",
+          "retry": "重试",
+          "assetLabel": {
+            "image": "图片 {index}",
+            "video": "视频 {index}",
+            "audio": "音频 {index}"
+          }
+        },
+        "status": {
+          "loading": "正在加载",
+          "saving": "正在保存…",
+          "saved": "已保存",
+          "error": "保存失败"
+        }
+      },
+      "candidatePicker": {
+        "title": "选择素材",
+        "description": "从当前项目的候选素材中选择，或上传本地文件。",
+        "filterLabel": "筛选候选素材",
+        "filters": {
+          "all": "全部",
+          "image": "图片",
+          "video": "视频"
+        },
+        "upload": {
+          "prompt": "拖拽文件到这里，或从本地选择。",
+          "hint": "可上传的文件类型由当前素材位置决定。",
+          "release": "松开即可上传",
+          "action": "上传素材",
+          "uploading": "正在上传 · {progress}%",
+          "processing": "正在准备素材…",
+          "unsupported": "当前不支持这种文件类型。",
+          "error": "无法上传此素材。"
+        },
+        "loading": "正在加载候选素材…",
+        "retry": "重试",
+        "empty": "没有符合条件的候选素材",
+        "emptyDescription": "请先在创作画布中将完成的图片或视频加入候选素材。",
+        "assetLabel": {
+          "image": "图片 {index}",
+          "video": "视频 {index}"
+        },
+        "selectAsset": "选择{label}",
+        "clearAsset": "取消选择{label}",
+        "select": "选择",
+        "current": "当前使用",
+        "clear": "取消选择",
+        "metadataIncomplete": "信息不完整 · 仍可使用",
+        "selectError": "无法应用此候选素材。",
+        "clearError": "无法取消选择当前素材。"
+      },
+      "mediaCreation": "素材创作",
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
-        "nodeId": "稳定节点 ID",
         "media": {
           "title": "当前视频",
           "description": "上传本地文件，或复用当前工作区中的视频。",
           "preview": "{title} 的当前视频",
           "empty": "尚未选择视频",
           "emptyDescription": "为这个故事片段添加可播放的视频。",
-          "upload": "上传本地视频",
-          "replace": "从本地替换",
-          "uploading": "正在上传 · {progress}%",
-          "processing": "正在处理视频…",
-          "processingDescription": "正在校验视频并准备可播放版本。",
-          "accepted": "MP4 视频",
+          "candidateAction": "从候选素材中选择",
+          "candidateActionDescription": "{count} 个候选视频",
+          "candidateUnavailable": "此视频没有可访问的原始版本。",
+          "candidateLoadError": "无法加载候选视频。",
           "preparing": "正在准备片段媒体信息。",
           "unknownDimensions": "尺寸未知",
-          "unknownDuration": "时长未知",
-          "errors": {
-            "upload": "无法上传此视频。"
-          },
-          "tabUpload": "视频上传",
-          "tabGenerate": "AI 生成"
+          "unknownDuration": "时长未知"
         },
         "exit": "后续走向",
         "production": "生产状态",
         "openProduction": "打开镜头生产",
-        "choices": "分支选择",
+        "choices": "玩家选择",
+        "chapterTransitions": {
+          "title": "前往其他章节",
+          "continueHint": "选择本场景结束后进入的章节开场。",
+          "choiceHint": "新增一个进入其他章节的玩家选项。",
+          "connect": "连接",
+          "linked": "已连接"
+        },
         "entry": "入口场景",
         "exitAuto": "继续到场景",
         "exitChoice": "玩家选择",
@@ -2217,8 +2326,6 @@
         "removeDecision": "移除选择环节",
         "cancel": "取消",
         "nodeName": "名称",
-        "nodeDescription": "描述",
-        "nodeDescriptionPlaceholder": "这个片段讲什么？",
         "textTitle": "场景标题",
         "textTitlePlaceholder": "为这个关键剧情命名",
         "textBody": "场景正文",
@@ -2262,10 +2369,6 @@
           "layout": {
             "title": "画布布局",
             "description": "未保存的节点位置或故事世界显示状态将会丢失。"
-          },
-          "generation": {
-            "title": "生成设置",
-            "description": "尚未提交的视频生成设置将会丢失。"
           }
         },
         "stay": "留在画布",
@@ -2317,12 +2420,11 @@
     },
     "overview": {
       "productionTitle": "视频生产",
-      "productionSubtitle": "当前工作草稿的参考就绪度、视频覆盖与活跃生成任务。",
+      "productionSubtitle": "当前工作草稿的参考就绪度与视频覆盖。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事结构",
       "storyStructureSubtitle": "选择、状态与结局均以创作图为唯一真源。",
       "videoState": "当前视频状态",
-      "videoStateGenerating": "{count} 个镜头正在生成替换视频。",
       "videoStateReady": "{total} 个镜头中已有 {current} 个绑定当前视频。",
       "revisionTitle": "版本标识",
       "draftRevision": "草稿修订",
@@ -2424,13 +2526,11 @@
     },
     "production": {
       "title": "镜头生产",
-      "subtitle": "每个故事片段的当前视频与生成状态。",
+      "subtitle": "每个故事片段的当前视频状态。",
       "clipCount": "{count} 个镜头",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以执行下一步",
       "currentDraftPromptRequired": "请在故事画布中生成或上传视频。",
-      "generationInProgress": "替换视频正在生成中。",
-      "generationFailed": "最近一次生成失败；此前的视频仍保持为当前视频。",
       "currentVideoReady": "当前镜头已绑定视频。",
       "columns": {
         "key": "编号",

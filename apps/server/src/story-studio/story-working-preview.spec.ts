@@ -133,11 +133,9 @@ function currentPreviewSelections(draft: Draft) {
       return {
         id: uuidAt(500 + index),
         storyProjectId: PROJECT_ID,
-        targetKind: 'clip',
-        targetKey: node.nodeId,
+        graphNodeId: node.nodeId,
         currentAssetId: assetId,
         currentVariantId: variantId,
-        currentSourceGenerationAttemptId: uuidAt(700 + index),
         currentChecksumSha256: checksum,
         currentContentType: 'video/mp4',
         currentDurationMs: 15_000,
@@ -268,8 +266,7 @@ describe('StoryWorkingPreviewService', () => {
         {
           where: {
             storyProjectId: string;
-            targetKind: string;
-            targetKey: { in: string[] };
+            graphNodeId: { in: string[] };
           };
           include: unknown;
         },
@@ -278,8 +275,7 @@ describe('StoryWorkingPreviewService', () => {
     const query = calls[0]?.[0];
     expect(query?.where).toEqual({
       storyProjectId: PROJECT_ID,
-      targetKind: 'clip',
-      targetKey: {
+      graphNodeId: {
         in: draft.graph.nodes
           .filter((node) => node.kind === 'clip')
           .map((node) => node.nodeId),
@@ -343,17 +339,17 @@ describe('StoryWorkingPreviewService', () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
-          entityId: missing.targetKey,
+          entityId: missing.graphNodeId,
         }),
         expect.objectContaining({
           code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
-          entityId: missing.targetKey,
+          entityId: missing.graphNodeId,
         }),
       ]),
     );
   });
 
-  it('does not synthesize missing probed variant metadata', async () => {
+  it('keeps Preview playable and warns when probed variant metadata is missing', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const selections = currentPreviewSelections(draft);
     const incomplete = selections[0];
@@ -367,10 +363,11 @@ describe('StoryWorkingPreviewService', () => {
       PROJECT_ID,
     );
 
-    expect(preview.runtime).toBeNull();
+    expect(preview.runtime).not.toBeNull();
     expect(preview.diagnostics).toContainEqual(
       expect.objectContaining({
-        code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISSING',
+        severity: 'warning',
+        code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_INCOMPLETE',
         entityId: incomplete.currentAssetId,
       }),
     );
@@ -402,7 +399,7 @@ describe('StoryWorkingPreviewService', () => {
     );
   });
 
-  it('rejects a selection snapshot that differs from its exact persisted variant', async () => {
+  it('keeps Preview playable when advisory selection metadata differs', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const selections = currentPreviewSelections(draft);
     const mismatched = selections[0];
@@ -416,16 +413,17 @@ describe('StoryWorkingPreviewService', () => {
       PROJECT_ID,
     );
 
-    expect(preview.runtime).toBeNull();
+    expect(preview.runtime).not.toBeNull();
     expect(preview.diagnostics).toContainEqual(
       expect.objectContaining({
+        severity: 'warning',
         code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISMATCH',
         entityId: mismatched.currentAssetId,
       }),
     );
   });
 
-  it('turns a partial pre-cutover selection into controlled diagnostics instead of throwing', async () => {
+  it('accepts a selection whose advisory browser-safety flag is absent', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const selections = currentPreviewSelections(draft);
     const partial = selections[0];
@@ -438,19 +436,12 @@ describe('StoryWorkingPreviewService', () => {
       WORKSPACE_ID,
       PROJECT_ID,
     );
-    expect(preview).toMatchObject({
-      runtime: null,
-      videoSnapshotHash: null,
-    });
-    expect(preview.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-        }),
-        expect.objectContaining({
-          code: 'STORY_WORKING_PREVIEW_VIDEO_SNAPSHOT_INVALID',
-        }),
-      ]),
+    expect(preview.runtime).not.toBeNull();
+    expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(preview.diagnostics).not.toContainEqual(
+      expect.objectContaining({
+        code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
+      }),
     );
   });
 

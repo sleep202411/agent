@@ -190,13 +190,12 @@ export class StoryWorkingPreviewService {
         : await tx.storyVideoSelection.findMany({
             where: {
               storyProjectId: projectId,
-              targetKind: 'clip',
-              targetKey: { in: clipNodes.map((node) => node.nodeId) },
+              graphNodeId: { in: clipNodes.map((node) => node.nodeId) },
             },
             include: WORKING_PREVIEW_SELECTION_INCLUDE,
           });
     const selectionByNodeId = new Map(
-      selections.map((selection) => [selection.targetKey, selection]),
+      selections.map((selection) => [selection.graphNodeId, selection]),
     );
     const prepared = clipNodes.map((node) =>
       prepareWorkingPreviewVideo(
@@ -297,18 +296,13 @@ function prepareWorkingPreviewVideo(
     );
   } else if (
     !selection.currentVariantId ||
-    !selection.currentChecksumSha256 ||
-    !selection.currentContentType?.trim() ||
-    selection.currentDurationMs === null ||
-    selection.currentWidth === null ||
-    selection.currentHeight === null ||
-    selection.currentBrowserSafeMp4 === null
+    !selection.currentContentType?.trim()
   ) {
     diagnostics.push(
       previewDiagnostic(
         'error',
         'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-        `Graph clip ${graphNodeId} current selection is missing frozen video identity or metadata.`,
+        `Graph clip ${graphNodeId} current selection is missing its video identity.`,
         'clip',
         graphNodeId,
       ),
@@ -347,94 +341,92 @@ function prepareWorkingPreviewVideo(
           source.id,
         ),
       );
-    } else if (
-      !variant.checksumSha256 ||
-      !variant.contentType.trim() ||
-      variant.durationMs === null ||
-      variant.width === null ||
-      variant.height === null
-    ) {
+    } else if (!variant.contentType.toLowerCase().startsWith('video/')) {
       diagnostics.push(
         previewDiagnostic(
           'error',
-          'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISSING',
-          `Graph clip ${graphNodeId} current video variant is missing probed playback metadata.`,
+          'STORY_WORKING_PREVIEW_OUTPUT_CONTENT_TYPE_INVALID',
+          `Graph clip ${graphNodeId} current variant is not video media.`,
           'asset',
           source.id,
         ),
       );
     } else {
-      const durationMs = variant.durationMs;
-      // Staleness = "the frozen selection no longer describes the variant it
-      // points at". The audio flag used to be part of this comparison; it is
-      // gone and nothing replaces it, because it protected against nothing the
-      // checksum does not already catch: it was derived from the same bytes, so
-      // it could only ever change when checksumSha256 changed. (The one case it
-      // caught alone was a re-probe CORRECTING the flag on unchanged bytes —
-      // exactly the inspection we no longer perform.) The database keeps the
-      // same guarantee from the other side: the variant-invalidation trigger
-      // still nulls a selection out whenever the variant's checksum, content
-      // type, duration, dimensions or metadata change.
       if (
         variant.checksumSha256 !== selection.currentChecksumSha256 ||
         variant.contentType !== selection.currentContentType ||
-        durationMs !== selection.currentDurationMs ||
+        variant.durationMs !== selection.currentDurationMs ||
         variant.width !== selection.currentWidth ||
-        variant.height !== selection.currentHeight ||
-        selection.currentBrowserSafeMp4 === null
+        variant.height !== selection.currentHeight
       ) {
         diagnostics.push(
           previewDiagnostic(
-            'error',
+            'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISMATCH',
-            `Graph clip ${graphNodeId} current selection no longer matches the exact probed video variant.`,
+            `Graph clip ${graphNodeId} technical metadata changed after selection; the latest metadata will be used.`,
+            'asset',
+            source.id,
+          ),
+        );
+      }
+      if (
+        !variant.checksumSha256 ||
+        variant.durationMs === null ||
+        variant.width === null ||
+        variant.height === null ||
+        !isBrowserSafeMp4Metadata(variant.metadata)
+      ) {
+        diagnostics.push(
+          previewDiagnostic(
+            'warning',
+            'STORY_WORKING_PREVIEW_OUTPUT_METADATA_INCOMPLETE',
+            `Graph clip ${graphNodeId} has incomplete technical metadata; browser playback remains available.`,
+            'asset',
+            source.id,
+          ),
+        );
+      }
+      let url: string | null = null;
+      try {
+        url = assetUrls.resolveVariant(source, variant.variantKey);
+      } catch {
+        // Missing delivery configuration is reported as a Preview diagnostic;
+        // it must never escape as a process-level playback failure.
+      }
+      if (!url) {
+        diagnostics.push(
+          previewDiagnostic(
+            'error',
+            'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
+            `Graph clip ${graphNodeId} current video variant has no resolvable playback URL.`,
             'asset',
             source.id,
           ),
         );
       } else {
-        let url: string | null = null;
-        try {
-          url = assetUrls.resolveVariant(source, variant.variantKey);
-        } catch {
-          // Missing delivery configuration is reported as a Preview diagnostic;
-          // it must never escape as a process-level playback failure.
-        }
-        if (!url) {
+        if (source.moderationStatus !== MediaAssetModerationStatus.approved) {
           diagnostics.push(
             previewDiagnostic(
-              'error',
-              'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
-              `Graph clip ${graphNodeId} current video variant has no resolvable playback URL.`,
+              'warning',
+              'STORY_WORKING_PREVIEW_MODERATION_PENDING',
+              `Graph clip ${graphNodeId} current video has not completed moderation review.`,
               'asset',
               source.id,
             ),
           );
-        } else {
-          if (source.moderationStatus !== MediaAssetModerationStatus.approved) {
-            diagnostics.push(
-              previewDiagnostic(
-                'warning',
-                'STORY_WORKING_PREVIEW_MODERATION_PENDING',
-                `Graph clip ${graphNodeId} current video has not completed moderation review.`,
-                'asset',
-                source.id,
-              ),
-            );
-          }
-          asset = {
-            assetId: source.id,
-            variantId: variant.id,
-            checksumSha256: variant.checksumSha256,
-            contentType: variant.contentType,
-            sizeBytes: variant.sizeBytes,
-            width: variant.width,
-            height: variant.height,
-            durationMs,
-            browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
-            url,
-          };
         }
+        asset = {
+          assetId: source.id,
+          variantId: variant.id,
+          checksumSha256: variant.checksumSha256,
+          contentType: variant.contentType,
+          sizeBytes: variant.sizeBytes,
+          width: variant.width,
+          height: variant.height,
+          durationMs: variant.durationMs,
+          browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
+          url,
+        };
       }
     }
   }
@@ -442,7 +434,6 @@ function prepareWorkingPreviewVideo(
   return {
     video: {
       graphNodeId,
-      sourceGenerationId: selection?.currentSourceGenerationAttemptId ?? null,
       selectionVersion: selection?.version ?? 0,
       asset,
       eligibilityDiagnostics: diagnostics,
@@ -453,7 +444,6 @@ function prepareWorkingPreviewVideo(
             graphNodeId,
             assetId: selection.currentAssetId,
             variantId: selection.currentVariantId,
-            sourceGenerationId: selection.currentSourceGenerationAttemptId,
             selectionVersion: selection.version,
             selection: 'current',
           }
@@ -467,27 +457,12 @@ function workingPreviewSnapshotEntry(
   selection: WorkingPreviewSelection | null,
 ): StoryVideoSnapshotEntry | null {
   if (!selection) return emptyVideoSnapshotEntry(graphNodeId, 0);
-  const mediaValues = [
-    selection.currentAssetId,
-    selection.currentVariantId,
-    selection.currentChecksumSha256,
-    selection.currentContentType,
-    selection.currentDurationMs,
-    selection.currentWidth,
-    selection.currentHeight,
-    selection.currentBrowserSafeMp4,
-  ];
-  const populated = mediaValues.filter((value) => value !== null).length;
-  if (populated === 0) {
-    return selection.currentSourceGenerationAttemptId === null
-      ? emptyVideoSnapshotEntry(graphNodeId, selection.version)
-      : null;
+  if (selection.currentAssetId === null) {
+    return emptyVideoSnapshotEntry(graphNodeId, selection.version);
   }
-  if (populated !== mediaValues.length) return null;
   const parsed = StoryVideoSnapshotEntrySchema.safeParse({
     graphNodeId,
     selectionVersion: selection.version,
-    sourceGenerationAttemptId: selection.currentSourceGenerationAttemptId,
     assetId: selection.currentAssetId,
     variantId: selection.currentVariantId,
     checksumSha256: selection.currentChecksumSha256,
@@ -507,7 +482,6 @@ function emptyVideoSnapshotEntry(
   return StoryVideoSnapshotEntrySchema.parse({
     graphNodeId,
     selectionVersion,
-    sourceGenerationAttemptId: null,
     assetId: null,
     variantId: null,
     checksumSha256: null,

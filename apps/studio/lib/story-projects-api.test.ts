@@ -12,26 +12,27 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { api } from "@/lib/api";
-import { storyAgentRunFixture } from "@/app/[locale]/story-studio/_components/project-canvas/story-agent-run.test-fixtures";
 import {
-  cancelStoryVideoGeneration,
+  archiveStoryChapter,
+  addStoryCandidateAsset,
   cancelStoryClipVideoUpload,
   completeStoryClipVideoUpload,
   createStoryProject,
-  createStoryClipVideoGeneration,
-  createStoryTrailerVideoGeneration,
   getStoryExperienceCurrentRelease,
-  getUndoableStoryAgentRun,
+  getStoryCandidateAssets,
+  getStoryProductionCanvas,
   getStoryClipVideoUploadFinalization,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
+  putStoryProductionCanvas,
   putStoryClipCurrentVideo,
-  putStoryTrailerCurrentVideo,
-  retryStoryAgentRunAuthoring,
-  retryStoryVideoGeneration,
+  removeStoryCandidateAsset,
+  updateStoryChapter,
   type StoryClipVideoFinalization,
+  type StoryCandidateAsset,
   type CreatableStoryFormat,
+  type StoryProductionCanvas,
   type StoryProjectSummary,
   type StoryVideoLibraryItem,
   waitForStoryClipVideoUploadFinalization,
@@ -110,60 +111,28 @@ describe("current-draft Story production routes", () => {
     });
   });
 
-  it("reads the independent Story Agent Undo data head without replacing /active", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(null);
-    const controller = new AbortController();
+  it("renames a chapter without sending a chapter-version token", async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({ id: "chapter-1" });
 
-    await expect(
-      getUndoableStoryAgentRun("workspace-1", "project / one", controller.signal)
-    ).resolves.toBeNull();
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/agent-runs/undoable",
-      {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        signal: controller.signal,
-      }
-    );
-  });
+    await updateStoryChapter("workspace-1", "project-1", "chapter-1", {
+      title: "A New Name",
+    });
 
-  it("re-arms drafting through the retry-authoring lifecycle route", async () => {
-    const authoring = storyAgentRunFixture("authoring");
-    vi.mocked(api.post).mockResolvedValueOnce(authoring);
-
-    await expect(
-      retryStoryAgentRunAuthoring("workspace-1", "project / one", "run / one")
-    ).resolves.toMatchObject({ id: authoring.id, status: "authoring" });
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/agent-runs/run%20%2F%20one/retry-authoring",
-      {
-        data: {},
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-      }
-    );
-  });
-
-  it("propagates a non-retryable retry-authoring conflict verbatim", async () => {
-    vi.mocked(api.post).mockRejectedValueOnce(
-      Object.assign(new Error("The run is not retryable."), {
-        status: 409,
-        code: "STORY_AGENT_RUN_NOT_RETRYABLE",
-      })
-    );
-
-    await expect(
-      retryStoryAgentRunAuthoring("workspace-1", "project-1", "run-1")
-    ).rejects.toMatchObject({
-      status: 409,
-      code: "STORY_AGENT_RUN_NOT_RETRYABLE",
+    expect(api.patch).toHaveBeenCalledWith("/aurora/story-projects/project-1/chapters/chapter-1", {
+      data: { title: "A New Name" },
+      headers: { "x-fizz-workspace-id": "workspace-1" },
     });
   });
 
-  it("rejects a retry-authoring response that violates the run contract", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ ok: true });
+  it("archives a chapter without sending a request body", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ id: "chapter-1" });
 
-    await expect(
-      retryStoryAgentRunAuthoring("workspace-1", "project-1", "run-1")
-    ).rejects.toThrow();
+    await archiveStoryChapter("workspace-1", "project-1", "chapter-1");
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/archive",
+      { headers: { "x-fizz-workspace-id": "workspace-1" } }
+    );
   });
 
   it("forwards keepalive for the final canvas-layout pagehide flush", async () => {
@@ -172,6 +141,7 @@ describe("current-draft Story production routes", () => {
     await putStoryCanvasLayout(
       "workspace-1",
       "project-1",
+      "chapter-1",
       {
         expectedRevision: 7,
         nodePositions: { "clip:opening": { x: 120, y: 240 } },
@@ -182,7 +152,7 @@ describe("current-draft Story production routes", () => {
     );
 
     expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/canvas-layout",
+      "/aurora/story-projects/project-1/chapters/chapter-1/canvas-layout",
       expect.objectContaining({
         keepalive: true,
         data: expect.objectContaining({
@@ -194,43 +164,114 @@ describe("current-draft Story production routes", () => {
     );
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it("reads and writes the project-wide production canvas independently of chapters", async () => {
+    const content = {
+      nodes: [
+        {
+          id: "note-1",
+          type: "note",
+          position: { x: 10, y: 20 },
+          data: { text: "Continuity" },
+        },
+        {
+          id: "note-2",
+          type: "note",
+          position: { x: 280, y: 20 },
+          data: { text: "Lighting reference" },
+        },
+      ],
+      edges: [],
+      assets: [],
+      groups: [{ id: "opening", nodeIds: ["note-1", "note-2"], color: "slate" }],
+    } satisfies StoryProductionCanvas["content"];
+    const controller = new AbortController();
+    const response = productionCanvas("project / one", content);
+    vi.mocked(api.get).mockResolvedValueOnce(response);
+    vi.mocked(api.put).mockResolvedValueOnce(response);
+
+    await getStoryProductionCanvas("workspace-1", "project / one", controller.signal);
+    await putStoryProductionCanvas("workspace-1", "project / one", content, "session-1", {
+      keepalive: true,
+    });
+
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/production-canvas",
+      {
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        signal: controller.signal,
+      }
+    );
+    expect(api.put).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/production-canvas",
+      {
+        data: {
+          schemaVersion: "story-production-canvas-v2",
+          content,
+          sessionId: "session-1",
+        },
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        keepalive: true,
+      }
+    );
   });
 
-  it("starts one generation from the exact saved draft revision", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ id: "generation-1" });
-
-    await createStoryClipVideoGeneration(
-      "workspace-1",
-      "project-1",
-      "clip-1",
-      {
-        expectedDraftRevision: 18,
-        expectedSelectionVersion: 3,
-        prompt: "Slower camera",
-        modelId: "seedance-2",
-        mode: "multimodal_to_video",
-        durationMs: 10_000,
-        references: [],
-      },
-      "idempotency-1"
-    );
-
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/clips/clip-1/generations",
-      expect.objectContaining({
-        data: {
-          expectedDraftRevision: 18,
-          expectedSelectionVersion: 3,
-          prompt: "Slower camera",
-          modelId: "seedance-2",
-          mode: "multimodal_to_video",
-          durationMs: 10_000,
-          references: [],
-        },
+  it("rejects a production canvas response with dangling graph references", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(
+      productionCanvas("project-1", {
+        nodes: [],
+        edges: [
+          {
+            id: "edge-1",
+            source: "missing-source",
+            target: "missing-target",
+          },
+        ],
+        assets: [],
+        groups: [],
       })
     );
+
+    await expect(getStoryProductionCanvas("workspace-1", "project-1")).rejects.toThrow(
+      "invalid production canvas"
+    );
+  });
+
+  it("lists, adds, and removes project candidate assets by durable media id", async () => {
+    const candidate = candidateAsset();
+    const controller = new AbortController();
+    vi.mocked(api.get).mockResolvedValueOnce([candidate]);
+    vi.mocked(api.put).mockResolvedValueOnce(candidate);
+    vi.mocked(api.delete).mockResolvedValueOnce({ mediaAssetId: candidate.asset.id });
+
+    await expect(
+      getStoryCandidateAssets("workspace-1", "project / one", controller.signal)
+    ).resolves.toEqual([candidate]);
+    await expect(
+      addStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
+    ).resolves.toEqual(candidate);
+    await expect(
+      removeStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
+    ).resolves.toEqual({ mediaAssetId: candidate.asset.id });
+
+    const path =
+      "/aurora/story-projects/project%20%2F%20one/candidate-assets/00000000-0000-4000-8000-000000000011";
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%20%2F%20one/candidate-assets",
+      {
+        headers: { "x-fizz-workspace-id": "workspace-1" },
+        signal: controller.signal,
+      }
+    );
+    expect(api.put).toHaveBeenCalledWith(path, {
+      headers: { "x-fizz-workspace-id": "workspace-1" },
+    });
+    expect(api.delete).toHaveBeenCalledWith(path, {
+      headers: { "x-fizz-workspace-id": "workspace-1" },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("binds one current video with both authoring revisions", async () => {
@@ -255,6 +296,25 @@ describe("current-draft Story production routes", () => {
         headers: { "x-fizz-workspace-id": "workspace-1" },
       }
     );
+  });
+
+  it("accepts a candidate video whose advisory duration is absent", async () => {
+    const candidate = candidateAsset();
+    vi.mocked(api.get).mockResolvedValueOnce([
+      {
+        ...candidate,
+        videoVariant: {
+          ...candidate.videoVariant!,
+          durationSeconds: null,
+        },
+      },
+    ]);
+
+    await expect(getStoryCandidateAssets("workspace-1", "project-1")).resolves.toEqual([
+      expect.objectContaining({
+        videoVariant: expect.objectContaining({ durationSeconds: null }),
+      }),
+    ]);
   });
 
   it("starts abortable asynchronous clip-video finalization", async () => {
@@ -408,83 +468,6 @@ describe("current-draft Story production routes", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("cancels and retries a generation using its optimistic version", async () => {
-    vi.mocked(api.post).mockResolvedValue({ id: "generation-1" });
-
-    await cancelStoryVideoGeneration("workspace-1", "project-1", "generation / one", {
-      expectedGenerationVersion: 4,
-    });
-    await retryStoryVideoGeneration(
-      "workspace-1",
-      "project-1",
-      "generation / one",
-      {
-        expectedGenerationVersion: 5,
-        expectedSelectionVersion: 6,
-        target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
-      },
-      "idempotency-retry"
-    );
-
-    expect(api.post).toHaveBeenNthCalledWith(
-      1,
-      "/aurora/story-projects/project-1/generations/generation%20%2F%20one/cancel",
-      expect.objectContaining({ data: { expectedGenerationVersion: 4 } })
-    );
-    expect(api.post).toHaveBeenNthCalledWith(
-      2,
-      "/aurora/story-projects/project-1/generations/generation%20%2F%20one/retry",
-      expect.objectContaining({
-        data: {
-          expectedGenerationVersion: 5,
-          expectedSelectionVersion: 6,
-          target: { kind: "clip", graphNodeId: "clip-1", expectedDraftRevision: 18 },
-        },
-      })
-    );
-  });
-
-  it("uses the dedicated trailer generation and current-video routes", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ id: "trailer-generation-1" });
-    vi.mocked(api.put).mockResolvedValueOnce({ id: "trailer-1" });
-
-    await createStoryTrailerVideoGeneration(
-      "workspace-1",
-      "project-1",
-      {
-        expectedSelectionVersion: 2,
-        prompt: "Project trailer",
-        modelId: "seedance-2",
-        mode: "multimodal_to_video",
-        durationMs: 10_000,
-        references: [],
-      },
-      "idempotency-trailer"
-    );
-    await putStoryTrailerCurrentVideo("workspace-1", "project-1", {
-      expectedSelectionVersion: 6,
-      assetId: null,
-      variantId: null,
-    });
-
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/trailer/generations",
-      expect.objectContaining({
-        data: expect.objectContaining({ expectedSelectionVersion: 2, modelId: "seedance-2" }),
-      })
-    );
-    expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project-1/trailer/current-video",
-      expect.objectContaining({
-        data: {
-          expectedSelectionVersion: 6,
-          assetId: null,
-          variantId: null,
-        },
-      })
-    );
-  });
-
   it("loads the ephemeral working preview from the latest saved authoring head", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       draftRevision: 18,
@@ -549,7 +532,6 @@ function storyProject(format: CreatableStoryFormat): StoryProjectSummary {
       approvedReferenceCount: 0,
       clipCount: 0,
       currentVideoCount: 0,
-      generatingClipCount: 0,
       latestBuildStatus: null,
     },
     capabilities: ["story.read", "story.edit"],
@@ -580,6 +562,49 @@ function videoLibraryItem(): StoryVideoLibraryItem {
     durationSeconds: 12,
     checksumSha256: "variant-checksum",
     createdAt: "2026-07-15T12:00:00.000Z",
+  };
+}
+
+function candidateAsset(): StoryCandidateAsset {
+  return {
+    asset: {
+      id: "00000000-0000-4000-8000-000000000011",
+      kind: "video",
+      status: "ready",
+      moderationStatus: "approved",
+      contentType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: "asset-checksum",
+      previewUrl: "https://example.test/candidate.mp4",
+    },
+    videoVariant: {
+      id: "00000000-0000-4000-8000-000000000012",
+      variantKey: "original",
+      contentType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: "a".repeat(64),
+    },
+    addedByUserId: "user-1",
+    addedAt: "2026-07-23T12:00:00.000Z",
+  };
+}
+
+function productionCanvas(
+  projectId: string,
+  content: StoryProductionCanvas["content"]
+): StoryProductionCanvas {
+  return {
+    projectId,
+    schemaVersion: "story-production-canvas-v2",
+    content,
+    updatedByUserId: "user-1",
+    updatedBySessionId: "session-1",
+    createdAt: "2026-07-23T12:00:00.000Z",
+    updatedAt: "2026-07-23T12:00:00.000Z",
   };
 }
 

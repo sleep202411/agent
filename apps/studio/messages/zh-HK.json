@@ -994,7 +994,27 @@
     "redo": "重做",
     "openError": "無法開啟此畫布 — 請檢查連結或你的存取權限。",
     "emptyReadOnly": "此畫布為空。",
-    "activityLog": "動態"
+    "activityLog": "動態",
+    "groups": {
+      "group": "打組",
+      "label": "群組",
+      "dragLabel": "拖動群組，共 {count} 個節點",
+      "color": "群組背景色",
+      "colors": {
+        "slate": "灰色",
+        "red": "紅色",
+        "orange": "橙色",
+        "amber": "黃色",
+        "green": "綠色",
+        "cyan": "青色",
+        "blue": "藍色",
+        "indigo": "靛藍色",
+        "pink": "粉色"
+      },
+      "ungroup": "解組",
+      "removeNode": "移出群組",
+      "shortcut": "Ctrl/⌘ G"
+    }
   },
   "canvasControls": {
     "comment": "評論",
@@ -1140,14 +1160,25 @@
       "untitled": "未命名素材",
       "close": "關閉素材庫",
       "searchPlaceholder": "搜尋素材",
-      "providerStatusApproved": "安全檢查通過",
-      "providerStatusApprovedTitle": "圖片已完成 Seedance 生成安全檢查",
-      "providerStatusChecking": "安全檢查中",
-      "providerStatusCheckingTitle": "正在進行 Seedance 生成安全檢查",
-      "providerStatusFailed": "檢查未通過",
-      "providerStatusFailedTitle": "圖片未通過 Seedance 生成安全檢查",
-      "providerStatusUnavailable": "不可用",
-      "providerStatusUnavailableTitle": "Seedance 資產註冊不可用",
+      "readiness": {
+        "missingAsset": "請先儲存素材，再檢查就緒狀態。",
+        "seedance": {
+          "approved": "Seedance 已就緒",
+          "approvedTitle": "素材已可用於 Seedance 生成",
+          "checking": "Seedance 檢查中",
+          "checkingTitle": "正在為 Seedance 生成準備並檢查該素材",
+          "failed": "Seedance 檢查失敗",
+          "failedTitle": "素材尚不可用於 Seedance 生成",
+          "notRequested": "未檢查",
+          "notRequestedTitle": "尚未檢查 Seedance 就緒狀態",
+          "unavailable": "不可用",
+          "unavailableTitle": "Seedance 就緒檢查目前不可用",
+          "action": "檢查 Seedance",
+          "retryAction": "重新檢查 Seedance",
+          "started": "Seedance 就緒檢查已開始。",
+          "alreadyPassed": "該素材已可用於 Seedance。"
+        }
+      },
       "tab": {
         "myCreations": "我的創作",
         "uploaded": "已上載"
@@ -1165,6 +1196,12 @@
     "selectModel": "選擇模型",
     "settings": "設定",
     "generate": "生成",
+    "expandedComposer": {
+      "expand": "展開生成面板",
+      "collapse": "返回精簡面板",
+      "imageTitle": "圖像生成",
+      "videoTitle": "影片生成"
+    },
     "cancelGeneration": "取消生成",
     "run": "執行",
     "count": "數量",
@@ -1625,7 +1662,6 @@
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
-      "generating": "{count} 個影片生成中",
       "textFirstWithoutVideo": "文字優先 · 影片可選",
       "textFirstProgress": "文字優先故事",
       "updatedUnknown": "更新時間不可用"
@@ -1634,7 +1670,6 @@
       "references": "參考位",
       "clips": "鏡頭",
       "videos": "目前影片",
-      "generating": "生成中",
       "choices": "選擇",
       "endings": "結局",
       "graphClips": "劇情鏡頭",
@@ -1711,6 +1746,32 @@
     "canvas": {
       "back": "返回 Story Studio",
       "mode": "故事畫布",
+      "chapters": {
+        "action": "章節",
+        "title": "章節",
+        "sceneCount": "{count} 個場景",
+        "add": "新增章節",
+        "createTitle": "新增章節",
+        "createDescription": "請先為新章節命名，再進入它的畫布。",
+        "createConfirm": "新增章節",
+        "createError": "無法建立章節。",
+        "menu": "{title} 的更多操作",
+        "rename": "重新命名",
+        "nameLabel": "章節名稱",
+        "namePlaceholder": "輸入章節名稱",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "archive": "封存",
+        "archiveTitle": "封存章節？",
+        "archiveDescription": "{title} 將從目前故事結構中移除。只有空章節可以封存。",
+        "archiveConfirm": "封存章節",
+        "cancel": "取消",
+        "updateError": "無法儲存章節名稱。",
+        "reorderError": "無法儲存章節順序。",
+        "archiveError": "無法封存章節。",
+        "saveBeforeArchive": "請先儲存或放棄目前章節的修改，再將其封存。",
+        "close": "關閉章節導覽"
+      },
       "publish": {
         "action": "發佈",
         "actionPending": "正在發佈…",
@@ -1794,132 +1855,135 @@
       "assistant": {
         "action": "StoryOS"
       },
-      "emptyAgent": {
-        "title": "讓每個選擇，改寫故事",
-        "description": "和StoryOS 說說你的故事，或選擇一種創作 Skill 來確定第一次對話的方向。",
-        "assistantTitle": "StoryOS",
-        "close": "關閉StoryOS",
-        "inputLabel": "向StoryOS 傳送訊息",
-        "placeholder": "描述你想創作的故事、情緒或玩家體驗……",
-        "panelPlaceholder": "繼續完善這個故事……",
-        "panelEmpty": "描述你想要創作的故事或玩家體驗。",
-        "transcriptLabel": "StoryOS 對話",
-        "scrollToLatest": "捲動到最新訊息",
-        "send": "傳送訊息",
-        "stop": "停止回覆",
-        "thinking": "StoryOS 正在思考……",
-        "error": "StoryOS 暫時無法回覆。",
+      "studioAgent": {
+        "title": "StoryOS",
+        "surface": "StoryOS 助手",
+        "close": "關閉 StoryOS",
         "retry": "重試",
-        "historyLoading": "正在載入這個專案的對話……",
-        "historyError": "無法載入已有對話。為保護歷史記錄，重新載入成功前不能傳送。",
-        "retryHistory": "重新載入",
-        "recoveryStorageError": "無法為這則訊息建立安全重試記錄。草稿和參考圖均沒有改變，請檢查瀏覽器儲存空間後重試。",
-        "messagePreserved": "你的訊息已保留。重試前會先核對對話，避免重複傳送。",
-        "retryPreservedMessage": "安全重試",
-        "discardPreservedMessage": "捨棄此訊息",
-        "responseStopped": "這次回覆已停止，尚未完成。",
-        "responseFailed": "這次回覆未能完成。",
-        "rateLimited": "訊息傳送過快（每分鐘上限 {limit} 條），請於 {time} 後再試。",
-        "quotaExceeded": "已達到訊息上限（每天 {limit} 條），將於 {time} 重置。",
-        "historyLimitReached": "這段對話已達到安全歷史上限，請新增對話後繼續。",
-        "newConversation": "新增對話",
-        "newConversationTitle": "開始新對話？",
-        "newConversationDescription": "這會永久清除你在此專案中的私人StoryOS 對話，但不會修改故事畫布或其他協作者的對話。",
-        "cancelNewConversation": "保留目前對話",
-        "confirmNewConversation": "清除並新增",
-        "you": "你",
-        "skillsTitle": "選擇一種導演 Skill",
-        "activeSkill": "Skill · {name}",
-        "removeSkill": "移除{name}",
-        "attachDocument": "上載劇本或大綱（.docx、.txt、.md）",
-        "removeAttachment": "移除已附加的文件",
-        "attachedDocument": "已附加文件",
-        "attachmentUnsupported": "只支援 .docx、.txt 或 .md 檔案。",
-        "attachmentTooLarge": "文件大小不能超過 10MB。",
-        "attachmentUploadFailed": "文件上載失敗，請重新傳送。",
-        "agentRun": {
-          "proposalLabel": "故事 Agent 變更提案",
-          "proposal": "故事變更提案",
-          "undoProposal": "復原變更",
-          "preparing": "正在準備可審核的變更",
-          "preparingDetail": "Agent 正在根據目前專案驗證結構化提案。",
-          "proposalFailed": "無法產生變更提案",
-          "proposalFailedDetail": "專案資料沒有任何改變。",
-          "invalid": "Agent 回應無效",
-          "invalidDetail": "伺服器傳回的提案不符合 Story Agent 契約。",
-          "rejected": "變更請求未提交",
-          "rejectedDetail": "該變更請求在草擬開始前被拒絕，專案資料沒有任何改變。",
-          "dismissRejected": "關閉",
-          "rejections": {
-            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "本輪回覆已提交過變更請求，多餘的請求已被忽略。",
-            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "該專案的待處理提案已達上限，請先套用或放棄現有提案。",
-            "STORY_AGENT_APPLYING": "Agent 正在套用其他變更，請在完成後重新傳送請求。"
+        "dismissError": "關閉",
+        "timeline": {
+          "log": "StoryOS 對話",
+          "empty": "描述你想完善的故事、抉擇或玩家體驗。",
+          "loading": "正在載入對話……",
+          "contextCompacted": "上下文已自動壓縮",
+          "scrollToLatest": "捲動到最新進展",
+          "loadEarlier": "載入更早的對話",
+          "loadingEarlier": "正在載入更早的對話……",
+          "attachments": {
+            "unknownSize": "大小未知",
+            "status": {
+              "processing": "處理中",
+              "ready": "已就緒",
+              "failed": "失敗"
+            }
           },
-          "drafting": "正在草擬故事變更",
-          "authoring": "Agent 正在草擬此變更，畫布仍可繼續編輯。",
-          "retryAuthoring": "重試草擬",
-          "authoringErrors": {
-            "STORY_AGENT_AUTHORING_FAILED": "Agent 未能完成此變更的草擬，可重試草擬或放棄該請求。",
-            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "草擬期間故事持續發生變更，請在編輯暫停後重試。",
-            "STORY_AGENT_PROPOSAL_NO_CHANGES": "Agent 沒有發現需要修改的內容，可放棄該請求，或待故事變更後重試。",
-            "STORY_AGENT_CONTEXT_TOO_LARGE": "目前故事過大，Agent 暫時無法據此草擬變更。",
-            "STORY_AGENT_CONTENT_REJECTED": "來源素材被內容審核攔下，無法完成起草。請調整文件或指令、弱化敏感內容後再試。",
-            "generic": "草擬在產生提案前失敗了。"
-          },
-          "discard": "放棄",
-          "apply": "套用變更",
-          "applying": "Agent 正在更新專案，所有成員的編輯已鎖定。",
-          "takingOver": "正在儲存目前編輯並取得 Agent 寫入鎖……",
-          "reconciling": "Agent 變更已提交，正在同步畫布……",
-          "applied": "變更已套用",
-          "undone": "變更已復原",
-          "undo": "整體復原",
-          "stale": "套用前專案已發生變更，此提案已失效。",
-          "failed": "Agent 無法套用此提案。",
-          "cancelled": "提案已放棄",
-          "actionFailed": "Agent 操作失敗。",
-          "actionErrors": {
-            "projectScopeChanged": "操作開始時專案已切換，請檢查目前畫布後重試。",
-            "canonicalHeadChanged": "已有更新的 Agent 提案，請先審核目前提案。",
-            "runNotProposed": "此提案已不再等待處理，請重新整理查看目前狀態。",
-            "runNotRetryable": "此變更並非等待重試草擬，請重新整理查看目前狀態。",
-            "undoBlockedByActiveRun": "請先完成或放棄目前 Agent 提案，再復原之前的變更。",
-            "undoHeadChanged": "更新的專案變更已取代此復原點，請重新整理查看目前狀態。",
-            "authorityUnavailable": "暫時無法驗證目前專案狀態，請重新整理後再次復原。"
-          },
-          "showMore": "展開其餘 {count} 項",
-          "showLess": "收起",
-          "checkingCurrent": "正在確認目前提案……",
-          "currentUnavailable": "暫時無法確認目前提案",
-          "retry": "重試",
-          "historicalReadOnly": "這是較早的提案，僅供查看。",
-          "reviewOnly": "你可以審核此提案，但只有具備編輯權限的成員才能套用或放棄。",
-          "viewOnly": "僅查看",
-          "historical": "較早的提案",
-          "checking": "正在確認……",
-          "unavailable": "暫不可用",
-          "authoringStage": "步驟 {step}/{total} · {stage}",
-          "stages": {
-            "worldview": "世界觀架構師",
-            "structure": "劇情結構師",
-            "branch": "分支編排師",
-            "scene": "場景撰寫師",
-            "validate": "校驗修復師"
+          "roles": {
+            "user": "你",
+            "assistant": "StoryOS"
           }
         },
-        "skills": {
-          "symmetricalStorybook": {
-            "title": "對稱童話電影",
-            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
-            "prompt": "創作一個互動短篇:粉色山間旅館迎來一位從不摘帽的神秘住客,門童奉命查明緣由。劇情:按章節推進,每章一次關鍵選擇,讓旅館秩序更荒誕一分、真相更近一步。整體節奏:12 個節點左右,三幕結構,每幕收在一個小反轉。結局:3 個——揭開帽子、替他守密、成為下一個戴帽人,分別改寫門童與旅館的關係。"
+        "activity": {
+          "expand": "展開活動詳情",
+          "collapse": "收起活動詳情",
+          "labels": {
+            "generatingResponse": "正在生成回覆"
           },
-          "halftoneCollage": {
-            "title": "半調紙拼貼",
-            "description": "純色紙底、半調剪貼與卡紙點綴,每個選擇拼裝成一個視覺隱喻。",
-            "prompt": "創作一個互動短篇:一隻裝滿舊車票與照片的手提箱在午夜自動打開,每個剪貼物件都是一段被摺疊的記憶。劇情:主人公整理遺物時,逐漸拼出母親隱瞞一生的旅程。整體節奏:10-14 個節點,開場 2 個節點內拋出懸念,之後每 2-3 個節點一次關鍵選擇。結局:3 個——啟程、留下、把箱子重新鎖上,分別對應玩家把哪些記憶拼回、哪些撕碎。"
+          "status": {
+            "running": "進行中",
+            "succeeded": "已完成",
+            "failed": "失敗",
+            "cancelled": "已取消"
           }
         },
-        "placeholderWithSkill": "說說你的故事想法,StoryOS 將以「{skill}」的風格起草……"
+        "runStatus": {
+          "queued": "等候中",
+          "running": "正在處理",
+          "waiting_for_approval": "等待批准",
+          "waiting_for_input": "等待輸入",
+          "cancelling": "正在停止",
+          "succeeded": "已完成",
+          "failed": "失敗",
+          "cancelled": "已取消"
+        },
+        "childRuns": {
+          "group": "委派任務"
+        },
+        "composer": {
+          "input": "向 StoryOS 傳送訊息",
+          "placeholder": "讓 StoryOS 分析、規劃或修改這個故事……",
+          "stop": "停止目前任務",
+          "cancelReason": "創作者已取消目前任務。",
+          "queued": "{count} 則訊息等待處理",
+          "deliveryModeMenu": "選擇訊息處理方式",
+          "attachments": {
+            "add": "加入參考檔案",
+            "drop": "將圖片、TXT、Markdown、DOCX 或 PDF 檔案拖到這裡",
+            "remove": "移除 {fileName}",
+            "retry": "重試 {fileName}",
+            "uploading": "正在上載 · {progress}%",
+            "processing": "正在分析檔案",
+            "ready": "已就緒",
+            "failed": "上載失敗",
+            "emptyFile": "無法上載空白檔案。",
+            "unsupportedType": "只支援 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 檔案。",
+            "tooLarge": "此檔案大小不能超過 {maxSize}。",
+            "fileNameTooLong": "檔案名稱不能超過 255 個字元。"
+          },
+          "delivery": {
+            "send": {
+              "label": "傳送",
+              "description": "開始一輪新的 StoryOS 對話。"
+            },
+            "steer": {
+              "label": "立即調整",
+              "description": "在下一個安全節點為目前任務補充方向。"
+            },
+            "enqueue": {
+              "label": "排到下一則",
+              "description": "繼續目前任務，完成後再處理這則訊息。"
+            },
+            "stopAndSend": {
+              "label": "停止並傳送",
+              "description": "取消目前任務，然後用這則訊息開始新一輪。"
+            }
+          }
+        },
+        "permission": {
+          "menu": "StoryOS 操作權限",
+          "options": {
+            "ask": {
+              "label": "每次詢問",
+              "description": "執行任何會改動你資料的操作前都先請求批准。"
+            },
+            "smart": {
+              "label": "自動批准",
+              "description": "除刪除外，其餘操作都自動執行。"
+            },
+            "full": {
+              "label": "完全授權",
+              "description": "包括刪除在內的操作都自動執行；平台安全規則仍然生效。"
+            }
+          }
+        },
+        "approval": {
+          "capability": "能力",
+          "approveOnce": "僅批准一次",
+          "approveAlways": "一律允許",
+          "reject": "拒絕",
+          "status": {
+            "pending": "等待批准",
+            "approved": "已批准",
+            "denied": "已拒絕",
+            "expired": "已過期",
+            "cancelled": "已取消"
+          },
+          "risk": {
+            "low": "低風險",
+            "medium": "中等風險",
+            "high": "高風險",
+            "critical": "嚴重風險"
+          }
+        }
       },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",
@@ -1933,8 +1997,8 @@
         "root": "故事世界",
         "clip": "影像鏡頭",
         "text": "關鍵劇情",
-        "choice": "分支選擇",
-        "decision": "分支選擇",
+        "choice": "玩家選擇",
+        "decision": "玩家選擇",
         "ending": "故事結局",
         "character": "角色"
       },
@@ -1950,6 +2014,16 @@
         "newChoice": "連接新選項",
         "ending": "進入結局"
       },
+      "decisionCard": {
+        "promptPlaceholder": "玩家此刻必須決定甚麼？",
+        "defaultOption": "選項 {number}",
+        "untitledOption": "未命名選項",
+        "linkedTarget": "已連接後續",
+        "addOption": "新增選項",
+        "cancelOption": "取消新增選項",
+        "optionPlaceholder": "輸入玩家看到的選項",
+        "connectOption": "連接這個選項"
+      },
       "creator": {
         "title": "新增至故事圖",
         "description": "建立互動故事結構中的圖元素。",
@@ -1959,13 +2033,13 @@
         "textDescription": "帶有獨立後續走向或玩家選擇的關鍵劇情。",
         "character": "角色",
         "characterDescription": "隸屬於本故事世界的角色卡。",
-        "choice": "分支選擇",
+        "choice": "玩家選擇",
         "choiceDescription": "把目前鏡頭的結尾轉換成玩家選擇。",
         "choiceUnavailable": "請先選取一個影像鏡頭。",
         "ending": "故事結局",
         "endingDescription": "儲存於故事聖經中的命名結局。",
         "root": "故事世界",
-        "rootDescription": "將世界觀與宣傳片節點重新加入畫布。"
+        "rootDescription": "將故事世界節點重新加入畫布。"
       },
       "connectionCreator": {
         "title": "建立下一步",
@@ -1984,7 +2058,7 @@
         "rootSummary": "從這裡定義故事前提、世界規則、人物關係與敘事狀態。",
         "clip": "鏡頭",
         "text": "關鍵劇情",
-        "decision": "選擇",
+        "decision": "玩家選擇",
         "ending": "結局"
       },
       "foundation": {
@@ -1999,8 +2073,19 @@
       "world": {
         "eyebrow": "故事世界",
         "title": "故事設定",
-        "action": "故事設定",
         "description": "支撐每個分支的前提、角色與世界規則；修改會自動儲存到草稿。",
+        "cover": {
+          "title": "封面素材",
+          "description": "項目共用的一張圖片或一段影片，用於故事世界節點和項目列表。",
+          "empty": "尚未設定封面",
+          "unavailable": "封面預覽暫不可用",
+          "choose": "選擇素材",
+          "replace": "更換素材",
+          "remove": "移除",
+          "imageAlt": "項目封面",
+          "videoLabel": "項目封面影片",
+          "candidateLoadError": "候選素材載入失敗。"
+        },
         "characters": {
           "cardEyebrow": "角色",
           "cardUntitled": "未命名角色",
@@ -2080,59 +2165,9 @@
       "metrics": {
         "characters": "人物"
       },
-      "trailer": {
-        "eyebrow": "世界觀宣傳片",
-        "title": "宣傳片導演設計",
-        "description": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-        "node": {
-          "noVideo": "尚無宣傳片影片",
-          "videoPreview": "目前宣傳片影片預覽"
-        },
-        "production": {
-          "title": "影片製作",
-          "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-          "disabled": {
-            "permission": "請選擇影片模型。"
-          },
-          "errors": {
-            "action": "請先輸入提示詞。"
-          }
-        }
-      },
       "production": {
-        "title": "影片製作",
-        "localRecipeDescription": "生成配方只保留在目前頁面，並僅在點擊生成時凍結；它不會寫入故事草稿。",
-        "emptyPrompt": "描述你想生成的影片。",
-        "masterPrompt": "提示詞",
-        "promptLocalHint": "配方保留在目前頁面。生成時會凍結準確的提示詞、模型、時長、模式與參考圖。",
-        "generate": "生成影片",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "請先輸入提示詞。",
-          "modelRequired": "請選擇影片模型。",
-          "referencesRequired": "請準確加入一張首幀和一張尾幀。",
-          "permission": "你沒有為此項目生成影片的權限。",
-          "generating": "此節點已有影片正在生成。"
-        },
-        "statuses": {
-          "generating": "生成中",
-          "queued": "排隊中",
-          "running": "生成中",
-          "processing": "處理中",
-          "ready": "就緒",
-          "failed": "失敗",
-          "cancelled": "已取消",
-          "superseded": "已被取代"
-        },
-        "referenceRail": {
-          "unapproved": "未批准",
-          "remove": "移除 {label}",
-          "add": "加入參考圖",
-          "addTitle": "已批准的項目參考圖"
-        },
-        "durationControl": {
-          "label": "時長",
-          "seconds": "{count}s"
+          "permission": "你沒有管理此專案影片的權限。"
         },
         "errors": {
           "action": "製作操作無法完成。"
@@ -2140,50 +2175,124 @@
         "node": {
           "noVideo": "尚無影片",
           "videoPreview": "目前影片預覽",
-          "generationFailed": "生成失敗"
-        },
-        "model": "模型",
-        "references": "參考圖",
-        "modeToggle": {
-          "label": "生成模式",
-          "multimodal": "參考圖",
-          "firstLast": "首尾幀"
-        },
-        "uploadReference": {
-          "action": "上載參考圖",
-          "uploading": "上載中 {progress}%",
-          "error": "參考圖上載失敗。"
+          "metadata": {
+            "duration": "時長",
+            "dimensions": "解析度",
+            "fileSize": "檔案大小",
+            "format": "格式"
+          }
         }
       },
+      "productionCanvas": {
+        "title": "創作畫布",
+        "identity": "Story Studio · 內容創作",
+        "groupDropHint": "放開以加入此分組",
+        "workspaceLabel": "項目素材創作空間",
+        "backToChapter": "返回章節畫布",
+        "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
+        "loadError": "無法開啟創作畫布。",
+        "retry": "重試",
+        "assets": {
+          "description": "瀏覽項目素材，並將可重用媒體拖入畫布。"
+        },
+        "candidates": {
+          "title": "候選素材",
+          "description": "整理可供故事節點直接重用的媒體。",
+          "open": "開啟候選素材",
+          "close": "關閉候選素材",
+          "add": "加入候選素材",
+          "remove": "從候選素材移除",
+          "filterLabel": "篩選候選素材",
+          "filters": {
+            "all": "全部",
+            "image": "圖片",
+            "video": "影片",
+            "audio": "音訊"
+          },
+          "empty": "尚未有候選素材",
+          "emptyFilter": "此分類暫無素材",
+          "emptyDescription": "選取已完成的媒體節點，透過浮動工具列加入。",
+          "loadError": "無法載入候選素材。",
+          "actionError": "無法更新候選素材。",
+          "retry": "重試",
+          "assetLabel": {
+            "image": "圖片 {index}",
+            "video": "影片 {index}",
+            "audio": "音訊 {index}"
+          }
+        },
+        "status": {
+          "loading": "正在載入",
+          "saving": "正在儲存…",
+          "saved": "已儲存",
+          "error": "儲存失敗"
+        }
+      },
+      "candidatePicker": {
+        "title": "選擇素材",
+        "description": "從目前項目的候選素材中選擇，或上載本機檔案。",
+        "filterLabel": "篩選候選素材",
+        "filters": {
+          "all": "全部",
+          "image": "圖片",
+          "video": "影片"
+        },
+        "upload": {
+          "prompt": "拖放檔案到這裡，或從本機選擇。",
+          "hint": "可上載的檔案類型由目前素材位置決定。",
+          "release": "放開即可上載",
+          "action": "上載素材",
+          "uploading": "正在上載 · {progress}%",
+          "processing": "正在準備素材…",
+          "unsupported": "目前不支援這種檔案類型。",
+          "error": "無法上載此素材。"
+        },
+        "loading": "正在載入候選素材…",
+        "retry": "重試",
+        "empty": "沒有符合條件的候選素材",
+        "emptyDescription": "請先在創作畫布中將完成的圖片或影片加入候選素材。",
+        "assetLabel": {
+          "image": "圖片 {index}",
+          "video": "影片 {index}"
+        },
+        "selectAsset": "選擇{label}",
+        "clearAsset": "取消選擇{label}",
+        "select": "選擇",
+        "current": "目前使用",
+        "clear": "取消選擇",
+        "metadataIncomplete": "資訊不完整 · 仍可使用",
+        "selectError": "無法套用此候選素材。",
+        "clearError": "無法取消選擇目前素材。"
+      },
+      "mediaCreation": "素材創作",
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
-        "nodeId": "穩定節點 ID",
         "media": {
           "title": "目前影片",
           "description": "上載本機檔案，或重用目前工作區中的影片。",
           "preview": "{title} 的目前影片",
           "empty": "尚未選擇影片",
           "emptyDescription": "為這個故事片段加入可播放的影片。",
-          "upload": "上載本機影片",
-          "replace": "從本機取代",
-          "uploading": "正在上載 · {progress}%",
-          "processing": "正在處理影片…",
-          "processingDescription": "正在校驗影片並準備可播放版本。",
-          "accepted": "MP4 影片",
+          "candidateAction": "從候選素材中選擇",
+          "candidateActionDescription": "{count} 個候選影片",
+          "candidateUnavailable": "此影片沒有可存取的原始版本。",
+          "candidateLoadError": "無法載入候選影片。",
           "preparing": "正在準備片段媒體資料。",
           "unknownDimensions": "尺寸未知",
-          "unknownDuration": "時長未知",
-          "errors": {
-            "upload": "無法上載此影片。"
-          },
-          "tabUpload": "影片上載",
-          "tabGenerate": "AI 生成"
+          "unknownDuration": "時長未知"
         },
         "exit": "後續走向",
         "production": "製作狀態",
         "openProduction": "開啟鏡頭製作",
-        "choices": "分支選擇",
+        "choices": "玩家選擇",
+        "chapterTransitions": {
+          "title": "前往其他章節",
+          "continueHint": "選擇本場景結束後進入的章節開場。",
+          "choiceHint": "新增一個進入其他章節的玩家選項。",
+          "connect": "連接",
+          "linked": "已連接"
+        },
         "entry": "入口場景",
         "exitAuto": "繼續到場景",
         "exitChoice": "玩家選擇",
@@ -2217,8 +2326,6 @@
         "removeDecision": "移除選擇環節",
         "cancel": "取消",
         "nodeName": "名稱",
-        "nodeDescription": "描述",
-        "nodeDescriptionPlaceholder": "這個片段講甚麼？",
         "textTitle": "場景標題",
         "textTitlePlaceholder": "為這個關鍵劇情命名",
         "textBody": "場景正文",
@@ -2262,10 +2369,6 @@
           "layout": {
             "title": "畫布佈局",
             "description": "未儲存的節點位置或故事世界顯示狀態將會遺失。"
-          },
-          "generation": {
-            "title": "生成設定",
-            "description": "尚未提交的影片生成設定將會遺失。"
           }
         },
         "stay": "留在畫布",
@@ -2317,12 +2420,11 @@
     },
     "overview": {
       "productionTitle": "影片生產",
-      "productionSubtitle": "目前工作草稿的參考就緒度、影片覆蓋與活躍生成工作。",
+      "productionSubtitle": "目前工作草稿的參考就緒度與影片覆蓋。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事結構",
       "storyStructureSubtitle": "選擇、狀態與結局均以創作圖為唯一真源。",
       "videoState": "目前影片狀態",
-      "videoStateGenerating": "{count} 個鏡頭正在生成替換影片。",
       "videoStateReady": "{total} 個鏡頭中已有 {current} 個綁定目前影片。",
       "revisionTitle": "版本識別",
       "draftRevision": "草稿修訂",
@@ -2424,13 +2526,11 @@
     },
     "production": {
       "title": "鏡頭生產",
-      "subtitle": "每個故事片段的目前影片與生成狀態。",
+      "subtitle": "每個故事片段目前綁定的影片。",
       "clipCount": "{count} 個鏡頭",
       "seconds": "{seconds} 秒",
       "noBlocker": "可以執行下一步",
       "currentDraftPromptRequired": "請在故事畫布中生成或上載影片。",
-      "generationInProgress": "替換影片正在生成中。",
-      "generationFailed": "最近一次生成失敗；此前的影片仍保持為目前影片。",
       "currentVideoReady": "目前鏡頭已綁定影片。",
       "columns": {
         "key": "編號",

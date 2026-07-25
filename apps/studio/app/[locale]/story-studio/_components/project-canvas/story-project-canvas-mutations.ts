@@ -347,15 +347,6 @@ export function convertExitToAuto(
   });
 }
 
-export function updateChoiceExit(
-  content: InteractiveStoryDraftContent,
-  sourceNodeId: string,
-  patch: Partial<Pick<ChoiceExit, "prompt">>
-): InteractiveStoryDraftContent {
-  const source = requireChoiceScene(content, sourceNodeId);
-  return replaceChoiceExit(content, source, patch);
-}
-
 export function updateChoiceExitPrompt(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
@@ -406,6 +397,7 @@ export function updateCheckpointTarget(
 export interface AddChoiceOptionOptions {
   choiceId?: string;
   label?: string;
+  allowExternalTarget?: boolean;
 }
 
 export function addChoiceOption(
@@ -416,7 +408,8 @@ export function addChoiceOption(
   options: AddChoiceOptionOptions = {}
 ): StoryNodeCreationResult<StoryGraphChoice> {
   const source = requireChoiceScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
+  if (options.allowExternalTarget) assertStableId(targetNodeId);
+  else requireTargetNode(content, targetNodeId);
   const normalizedLocale = assertLocale(locale);
   if (source.exit.choices.length >= MAX_CHOICES) {
     throw mutationError(
@@ -444,11 +437,11 @@ export function addChoiceOption(
   };
 }
 
-export type ChoiceOptionPatch = Partial<Pick<StoryGraphChoice, "label">>;
+type ChoiceOptionPatch = Partial<Pick<StoryGraphChoice, "label">>;
 
 export type ChoiceMoveDirection = "up" | "down";
 
-export function updateChoiceOption(
+function updateChoiceOption(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
   choiceId: string,
@@ -462,6 +455,21 @@ export function updateChoiceOption(
     choices: source.exit.choices.map((candidate) =>
       candidate.choiceId === choiceId ? updated : candidate
     ),
+  });
+}
+
+export function updateChoiceOptionLabel(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  choiceId: string,
+  locale: string,
+  label: string
+): InteractiveStoryDraftContent {
+  const source = requireChoiceScene(content, sourceNodeId);
+  const choice = requireChoice(source.exit, choiceId);
+  const normalizedLocale = assertLocale(locale);
+  return updateChoiceOption(content, sourceNodeId, choiceId, {
+    label: { ...choice.label, [normalizedLocale]: label },
   });
 }
 
@@ -529,10 +537,12 @@ export function disconnectChoiceTarget(
 export function connectSceneContinuation(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
-  targetNodeId: string
+  targetNodeId: string,
+  options: { allowExternalTarget?: boolean } = {}
 ): InteractiveStoryDraftContent {
   const source = requireScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
+  if (options.allowExternalTarget) assertStableId(targetNodeId);
+  else requireTargetNode(content, targetNodeId);
   if (source.exit.kind !== "auto") {
     throw mutationError(
       "SOURCE_EXIT_KIND_MISMATCH",

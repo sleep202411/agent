@@ -29,19 +29,18 @@ const MAX_PATH_STEPS = 2_000;
 export interface FrozenStoryVideoAsset {
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   sizeBytes: bigint | null;
-  width: number;
-  height: number;
-  durationMs: number;
-  browserSafeMp4: boolean;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  browserSafeMp4: boolean | null;
   url: string;
 }
 
 export interface StoryBuildVideoInput {
   graphNodeId: string;
-  sourceGenerationId: string | null;
   selectionVersion: number;
   asset: FrozenStoryVideoAsset | null;
   eligibilityDiagnostics: StoryBuildDiagnosticDto[];
@@ -368,22 +367,23 @@ function requiredVideoNodeIds(
 }
 
 /**
- * Technical integrity of a frozen clip: checksum, content type, duration.
- *
- * Picture dimensions are deliberately NOT checked. The project frame profile
- * is authoring intent (it drives generation and canvas framing), not a delivery
- * contract — a 1280×720 clip carries the same 16:9 picture as 1920×1080 and
- * plays correctly, so it must not block publication.
+ * Only playback identity and a video MIME type are release requirements.
+ * Probe-derived metadata improves integrity reporting and path estimates, but
+ * browsers can play the original media without it, so missing values warn and
+ * never block publication.
  */
 function validateFrozenVideo(
   video: FrozenStoryBuildVideoInput,
   diagnostics: StoryBuildDiagnosticDto[],
 ): void {
   const asset = video.asset;
-  if (!/^[a-f0-9]{64}$/.test(asset.checksumSha256)) {
+  if (
+    asset.checksumSha256 !== null &&
+    !/^[a-f0-9]{64}$/.test(asset.checksumSha256)
+  ) {
     diagnostics.push(
       diagnostic(
-        'error',
+        'warning',
         'STORY_BUILD_VIDEO_CHECKSUM_INVALID',
         `Current video for ${video.graphNodeId} has no valid immutable SHA-256 checksum.`,
         'asset',
@@ -402,10 +402,13 @@ function validateFrozenVideo(
       ),
     );
   }
-  if (!Number.isInteger(asset.durationMs) || asset.durationMs <= 0) {
+  if (
+    asset.durationMs !== null &&
+    (!Number.isInteger(asset.durationMs) || asset.durationMs <= 0)
+  ) {
     diagnostics.push(
       diagnostic(
-        'error',
+        'warning',
         'STORY_BUILD_VIDEO_DURATION_INVALID',
         `Current video for ${video.graphNodeId} has invalid duration metadata.`,
         'asset',
@@ -413,10 +416,23 @@ function validateFrozenVideo(
       ),
     );
   }
-  // Frame profile is authoring intent, not a delivery contract — see
-  // validateFrozenVideo's counterpart in story-build.service.ts. A clip whose
-  // pixel dimensions differ from the profile still shares the picture and
-  // plays correctly, so it no longer blocks Build.
+  if (
+    asset.checksumSha256 === null ||
+    asset.durationMs === null ||
+    asset.width === null ||
+    asset.height === null ||
+    asset.browserSafeMp4 !== true
+  ) {
+    diagnostics.push(
+      diagnostic(
+        'warning',
+        'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
+        `Current video for ${video.graphNodeId} has incomplete technical metadata; the original video will still be published.`,
+        'asset',
+        asset.assetId,
+      ),
+    );
+  }
 }
 
 function structuralReachability(
@@ -612,15 +628,21 @@ function compileIntermediateRelease(
     const node = clipNodeById(nodes, video.graphNodeId);
     const variant = {
       sourceAssetId: video.asset.assetId,
-      sha256: video.asset.checksumSha256,
       src: video.asset.url,
-      width: video.asset.width,
-      height: video.asset.height,
-      durationSeconds: video.asset.durationMs / 1_000,
+      ...(video.asset.checksumSha256
+        ? { sha256: video.asset.checksumSha256 }
+        : {}),
+      ...(video.asset.width ? { width: video.asset.width } : {}),
+      ...(video.asset.height ? { height: video.asset.height } : {}),
+      ...(video.asset.durationMs
+        ? { durationSeconds: video.asset.durationMs / 1_000 }
+        : {}),
     };
     const landscape =
       input.frameProfile === null
-        ? video.asset.width >= video.asset.height
+        ? video.asset.width !== null && video.asset.height !== null
+          ? video.asset.width >= video.asset.height
+          : true
         : input.frameProfile === 'landscape_16_9';
     return {
       assetId: storyRuntimeAssetId(node.clipKey),

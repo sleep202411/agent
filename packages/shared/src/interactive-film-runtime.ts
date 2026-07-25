@@ -45,7 +45,10 @@ const VisualVariantSchema = z
   .strict();
 
 const VideoVariantSchema = VisualVariantSchema.extend({
-  durationSeconds: z.number().positive(),
+  sha256: sha256.optional(),
+  width: positiveInteger.optional(),
+  height: positiveInteger.optional(),
+  durationSeconds: z.number().positive().optional(),
   framesPerSecond: FramesPerSecondSchema.optional(),
   codec: z.enum(["h264", "h265", "av1"]).optional(),
 }).strict();

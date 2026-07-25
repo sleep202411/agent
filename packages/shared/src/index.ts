@@ -24,5 +24,8 @@ export * from "./interactive-film-runtime.js";
 export * from "./experience-runtime.js";
 export * from "./story-directing-skills.js";
 export * from "./story-agent.js";
+export * from "./studio-agent.js";
+export * from "./studio-agent-api.js";
 export * from "./story-authoring-pipeline.js";
 export * from "./copilot-documents.js";
+export * from "./media-asset-readiness.js";

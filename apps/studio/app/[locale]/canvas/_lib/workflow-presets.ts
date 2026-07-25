@@ -1,5 +1,5 @@
 import type { useTranslations } from "next-intl";
-import type { StudioModality } from "./use-ai-catalog";
+import type { StudioModality } from "@/lib/canvas-authoring/use-ai-catalog";
 
 /**
  * Starter-workflow presets. Each drops a pre-wired, generation-ready node graph

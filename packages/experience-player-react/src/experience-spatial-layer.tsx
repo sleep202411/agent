@@ -397,7 +397,7 @@ function createRendererContentTransforms(
     const variant =
       media.variants.find((candidate) => candidate.orientation === orientation) ??
       media.variants[0];
-    if (!variant) return;
+    if (!variant?.width || !variant.height) return;
     transforms.set(
       renderer.instanceId,
       createMediaContentTransform(
@@ -427,6 +427,7 @@ function videoSequenceClipAtTime(
       asset.variants.find((candidate) => candidate.orientation === orientation) ??
       asset.variants[0];
     if (!variant) continue;
+    if (variant.durationMs === undefined) return clip;
     if (sceneTimeMs < offset + variant.durationMs) return clip;
     offset += variant.durationMs;
   }

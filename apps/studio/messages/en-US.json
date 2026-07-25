@@ -994,7 +994,27 @@
     "redo": "Redo",
     "openError": "Couldn't open this canvas — check the link or your access.",
     "emptyReadOnly": "This canvas is empty.",
-    "activityLog": "Activity"
+    "activityLog": "Activity",
+    "groups": {
+      "group": "Group",
+      "label": "Group",
+      "dragLabel": "Drag group with {count} nodes",
+      "color": "Group background",
+      "colors": {
+        "slate": "Slate",
+        "red": "Red",
+        "orange": "Orange",
+        "amber": "Amber",
+        "green": "Green",
+        "cyan": "Cyan",
+        "blue": "Blue",
+        "indigo": "Indigo",
+        "pink": "Pink"
+      },
+      "ungroup": "Ungroup",
+      "removeNode": "Remove from group",
+      "shortcut": "Ctrl/⌘ G"
+    }
   },
   "canvasControls": {
     "comment": "Comment",
@@ -1140,14 +1160,25 @@
       "untitled": "Untitled asset",
       "close": "Close assets",
       "searchPlaceholder": "Search assets",
-      "providerStatusApproved": "Safety checked",
-      "providerStatusApprovedTitle": "Image has completed the Seedance generation safety check",
-      "providerStatusChecking": "Safety check",
-      "providerStatusCheckingTitle": "Running the Seedance generation safety check",
-      "providerStatusFailed": "Check failed",
-      "providerStatusFailedTitle": "Image did not pass the Seedance generation safety check",
-      "providerStatusUnavailable": "Unavailable",
-      "providerStatusUnavailableTitle": "Seedance asset registration is unavailable",
+      "readiness": {
+        "missingAsset": "Save the asset before checking readiness.",
+        "seedance": {
+          "approved": "Seedance ready",
+          "approvedTitle": "Media is ready for Seedance generation",
+          "checking": "Checking Seedance",
+          "checkingTitle": "Preparing and checking this media for Seedance generation",
+          "failed": "Seedance check failed",
+          "failedTitle": "Media is not ready for Seedance generation",
+          "notRequested": "Not checked",
+          "notRequestedTitle": "Seedance readiness has not been checked",
+          "unavailable": "Unavailable",
+          "unavailableTitle": "Seedance readiness checking is unavailable",
+          "action": "Check for Seedance",
+          "retryAction": "Retry Seedance",
+          "started": "Seedance readiness check started.",
+          "alreadyPassed": "This media is already ready for Seedance."
+        }
+      },
       "tab": {
         "myCreations": "My Creations",
         "uploaded": "Uploaded"
@@ -1165,6 +1196,12 @@
     "selectModel": "Select model",
     "settings": "Settings",
     "generate": "Generate",
+    "expandedComposer": {
+      "expand": "Expand composer",
+      "collapse": "Return to compact composer",
+      "imageTitle": "Image generation",
+      "videoTitle": "Video generation"
+    },
     "cancelGeneration": "Cancel generation",
     "run": "Run",
     "count": "Count",
@@ -1625,7 +1662,6 @@
       "draft": "Draft",
       "noSummary": "No project summary yet.",
       "videoProgress": "{current}/{total} current videos",
-      "generating": "{count} videos generating",
       "textFirstWithoutVideo": "Text-first · video optional",
       "textFirstProgress": "Text-first story",
       "updatedUnknown": "Update time unavailable"
@@ -1634,7 +1670,6 @@
       "references": "References",
       "clips": "Clips",
       "videos": "Videos",
-      "generating": "Generating",
       "choices": "Choices",
       "endings": "Endings",
       "graphClips": "Graph clips",
@@ -1711,6 +1746,32 @@
     "canvas": {
       "back": "Back to Story Studio",
       "mode": "Story canvas",
+      "chapters": {
+        "action": "Chapters",
+        "title": "Chapters",
+        "sceneCount": "{count, plural, one {# scene} other {# scenes}}",
+        "add": "Add chapter",
+        "createTitle": "Add chapter",
+        "createDescription": "Name the new chapter before opening its canvas.",
+        "createConfirm": "Add chapter",
+        "createError": "The chapter could not be created.",
+        "menu": "More actions for {title}",
+        "rename": "Rename",
+        "nameLabel": "Chapter name",
+        "namePlaceholder": "Enter a chapter name",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "archive": "Archive",
+        "archiveTitle": "Archive chapter?",
+        "archiveDescription": "{title} will be removed from the active story structure. Only empty chapters can be archived.",
+        "archiveConfirm": "Archive chapter",
+        "cancel": "Cancel",
+        "updateError": "The chapter name could not be saved.",
+        "reorderError": "The chapter order could not be saved.",
+        "archiveError": "The chapter could not be archived.",
+        "saveBeforeArchive": "Save or discard the current chapter changes before archiving it.",
+        "close": "Close chapters"
+      },
       "publish": {
         "action": "Publish",
         "actionPending": "Publishing…",
@@ -1794,132 +1855,135 @@
       "assistant": {
         "action": "StoryOS"
       },
-      "emptyAgent": {
-        "title": "Every choice rewrites the story",
-        "description": "Tell the StoryOS about your story, or choose a directing skill to shape the first conversation.",
-        "assistantTitle": "StoryOS",
+      "studioAgent": {
+        "title": "StoryOS",
+        "surface": "StoryOS assistant",
         "close": "Close StoryOS",
-        "inputLabel": "Message the StoryOS",
-        "placeholder": "Describe the story, feeling, or player experience you want to create…",
-        "panelPlaceholder": "Continue developing the story…",
-        "panelEmpty": "Describe the story or player experience you want to develop.",
-        "transcriptLabel": "StoryOS conversation",
-        "scrollToLatest": "Scroll to the latest message",
-        "send": "Send message",
-        "stop": "Stop response",
-        "thinking": "StoryOS is thinking…",
-        "error": "The StoryOS could not respond.",
-        "retry": "Retry",
-        "historyLoading": "Loading this project's conversation…",
-        "historyError": "The existing conversation could not be loaded. Sending stays disabled to protect its history.",
-        "retryHistory": "Load again",
-        "recoveryStorageError": "This message could not be protected for safe retry. Your draft and reference images are unchanged; check browser storage and try again.",
-        "messagePreserved": "Your message is preserved. We’ll check the conversation before retrying so it is not sent twice.",
-        "retryPreservedMessage": "Retry safely",
-        "discardPreservedMessage": "Discard message",
-        "responseStopped": "This response was stopped before completion.",
-        "responseFailed": "This response did not complete.",
-        "rateLimited": "You're sending messages too quickly ({limit}/min). Try again at {time}.",
-        "quotaExceeded": "Message limit reached ({limit}/day). Resets at {time}.",
-        "historyLimitReached": "This conversation reached its safe history limit. Start a new conversation to continue.",
-        "newConversation": "New conversation",
-        "newConversationTitle": "Start a new conversation?",
-        "newConversationDescription": "This permanently clears your private StoryOS chat for this project. It does not change the story canvas or other collaborators' chats.",
-        "cancelNewConversation": "Keep conversation",
-        "confirmNewConversation": "Clear and start new",
-        "you": "You",
-        "skillsTitle": "Choose a directing skill",
-        "activeSkill": "Skill · {name}",
-        "removeSkill": "Remove {name}",
-        "attachDocument": "Attach a script or outline (.docx, .txt, .md)",
-        "removeAttachment": "Remove attached document",
-        "attachedDocument": "Attached document",
-        "attachmentUnsupported": "Only .docx, .txt, or .md files are supported.",
-        "attachmentTooLarge": "Documents must be 10MB or smaller.",
-        "attachmentUploadFailed": "The document failed to upload. Try sending again.",
-        "agentRun": {
-          "proposalLabel": "Story Agent change proposal",
-          "proposal": "Proposed story change",
-          "undoProposal": "Undo change",
-          "preparing": "Preparing a reviewable change",
-          "preparingDetail": "The Agent is validating a structured proposal against the current project.",
-          "proposalFailed": "The proposal could not be prepared",
-          "proposalFailedDetail": "No project data was changed.",
-          "invalid": "Invalid Agent response",
-          "invalidDetail": "The server returned a proposal that does not match the Story Agent contract.",
-          "rejected": "Change request not filed",
-          "rejectedDetail": "The change request was rejected before drafting began. No project data was changed.",
-          "dismissRejected": "Dismiss",
-          "rejections": {
-            "COPILOT_STORY_PATCH_ALREADY_PROPOSED": "This reply already filed a change request, so the extra one was ignored.",
-            "STORY_AGENT_PROJECT_PROPOSAL_LIMIT_REACHED": "This project is at its open-proposal limit. Apply or discard an existing proposal first.",
-            "STORY_AGENT_APPLYING": "The Agent is applying another change right now. Send the request again after it finishes."
+        "retry": "Try again",
+        "dismissError": "Dismiss",
+        "timeline": {
+          "log": "StoryOS conversation",
+          "empty": "Describe the story, decision, or player experience you want to develop.",
+          "loading": "Loading this conversation…",
+          "contextCompacted": "Context automatically compacted",
+          "scrollToLatest": "Scroll to the latest update",
+          "loadEarlier": "Load earlier turns",
+          "loadingEarlier": "Loading earlier turns…",
+          "attachments": {
+            "unknownSize": "Size unavailable",
+            "status": {
+              "processing": "Processing",
+              "ready": "Ready",
+              "failed": "Failed"
+            }
           },
-          "drafting": "Drafting story change",
-          "authoring": "The Agent is drafting this change. The canvas stays editable.",
-          "retryAuthoring": "Retry drafting",
-          "authoringErrors": {
-            "STORY_AGENT_AUTHORING_FAILED": "The Agent could not draft this change. Retry drafting or discard the request.",
-            "STORY_AGENT_AUTHORING_BASE_UNSTABLE": "The story kept changing while the Agent was drafting. Retry when editing pauses.",
-            "STORY_AGENT_PROPOSAL_NO_CHANGES": "The Agent found nothing to change for this request. Discard it, or retry after the story changes.",
-            "STORY_AGENT_CONTEXT_TOO_LARGE": "This story is too large for the Agent to draft against right now.",
-            "STORY_AGENT_CONTENT_REJECTED": "The source material was rejected by content review, so it couldn't be drafted. Edit the document or your instructions to soften sensitive content, then try again.",
-            "generic": "Drafting failed before a proposal could be prepared."
-          },
-          "discard": "Discard",
-          "apply": "Apply changes",
-          "applying": "Agent is updating the project. Editing is locked for everyone.",
-          "takingOver": "Saving current edits and securing the Agent write lock…",
-          "reconciling": "Agent changes are committed. Syncing the canvas…",
-          "applied": "Changes applied",
-          "undone": "Changes undone",
-          "undo": "Undo all",
-          "stale": "The project changed before this proposal could be applied.",
-          "failed": "The Agent could not apply this proposal.",
-          "cancelled": "Proposal discarded",
-          "actionFailed": "The Agent action failed.",
-          "actionErrors": {
-            "projectScopeChanged": "This project changed while the action was starting. Review the current canvas and try again.",
-            "canonicalHeadChanged": "A newer Agent proposal is now current. Review it before taking action.",
-            "runNotProposed": "This proposal is no longer awaiting a decision. Refresh to see its current state.",
-            "runNotRetryable": "This change is not waiting for a drafting retry. Refresh to see its current state.",
-            "undoBlockedByActiveRun": "Finish or discard the current Agent proposal before undoing an earlier change.",
-            "undoHeadChanged": "A newer project change replaced this undo point. Refresh to review the current state.",
-            "authorityUnavailable": "The current project state could not be verified. Refresh and try Undo again."
-          },
-          "showMore": "Show {count} more",
-          "showLess": "Show less",
-          "checkingCurrent": "Checking the current proposal…",
-          "currentUnavailable": "Current proposal unavailable",
-          "retry": "Retry",
-          "historicalReadOnly": "This is an earlier proposal and is read-only.",
-          "reviewOnly": "You can review this proposal, but only editors can apply or discard it.",
-          "viewOnly": "View only",
-          "historical": "Earlier proposal",
-          "checking": "Checking…",
-          "unavailable": "Unavailable",
-          "authoringStage": "Step {step}/{total} · {stage}",
-          "stages": {
-            "worldview": "Worldbuilder",
-            "structure": "Story architect",
-            "branch": "Branch weaver",
-            "scene": "Scene writer",
-            "validate": "Integrity check"
+          "roles": {
+            "user": "You",
+            "assistant": "StoryOS"
           }
         },
-        "skills": {
-          "symmetricalStorybook": {
-            "title": "Symmetrical storybook cinema",
-            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
-            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Plot: advance in chapters, one pivotal choice per chapter, each making the hotel more absurd and the truth closer. Pacing: around 12 beats in three acts, each act closing on a small reversal. Endings: 3 — lifting the hat, keeping his secret, becoming the next hat-wearer — each rewriting the bellboy's place in the hotel."
+        "activity": {
+          "expand": "Show activity details",
+          "collapse": "Hide activity details",
+          "labels": {
+            "generatingResponse": "Generating response"
           },
-          "halftoneCollage": {
-            "title": "Halftone collage",
-            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
-            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Pacing: 10-14 beats, hook within the first 2, then a meaningful choice every 2-3 beats. Endings: 3 — departing, staying, locking the case again — each decided by which memories the player restores or tears up."
+          "status": {
+            "running": "In progress",
+            "succeeded": "Completed",
+            "failed": "Failed",
+            "cancelled": "Cancelled"
           }
         },
-        "placeholderWithSkill": "Share your story idea — StoryOS will draft it in the {skill} style…"
+        "runStatus": {
+          "queued": "Queued",
+          "running": "Working",
+          "waiting_for_approval": "Waiting for approval",
+          "waiting_for_input": "Waiting for input",
+          "cancelling": "Stopping",
+          "succeeded": "Completed",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "childRuns": {
+          "group": "Delegated tasks"
+        },
+        "composer": {
+          "input": "Message StoryOS",
+          "placeholder": "Ask StoryOS to analyze, plan, or change this story…",
+          "stop": "Stop the current run",
+          "cancelReason": "Cancelled by the creator.",
+          "queued": "{count, plural, one {# queued message} other {# queued messages}}",
+          "deliveryModeMenu": "Choose how this message is delivered",
+          "attachments": {
+            "add": "Attach reference files",
+            "drop": "Drop images, TXT, Markdown, DOCX, or PDF files here",
+            "remove": "Remove {fileName}",
+            "retry": "Retry {fileName}",
+            "uploading": "Uploading · {progress}%",
+            "processing": "Analyzing file",
+            "ready": "Ready",
+            "failed": "Upload failed",
+            "emptyFile": "Empty files cannot be uploaded.",
+            "unsupportedType": "Only JPEG, PNG, WebP, UTF-8 TXT, Markdown, DOCX, and PDF files are supported.",
+            "tooLarge": "This file must be {maxSize} or smaller.",
+            "fileNameTooLong": "The file name must be 255 characters or fewer."
+          },
+          "delivery": {
+            "send": {
+              "label": "Send",
+              "description": "Start a new StoryOS turn."
+            },
+            "steer": {
+              "label": "Steer now",
+              "description": "Give the active run new direction at its next safe boundary."
+            },
+            "enqueue": {
+              "label": "Queue next",
+              "description": "Keep the current run going and handle this message afterwards."
+            },
+            "stopAndSend": {
+              "label": "Stop and send",
+              "description": "Cancel the active run, then start a new turn with this message."
+            }
+          }
+        },
+        "permission": {
+          "menu": "StoryOS action permissions",
+          "options": {
+            "ask": {
+              "label": "Ask for approval",
+              "description": "Ask before every action that changes your data."
+            },
+            "smart": {
+              "label": "Approve for me",
+              "description": "Auto-run every action except deletions."
+            },
+            "full": {
+              "label": "Full authorization",
+              "description": "Auto-run every action, including deletions. Platform safety rules still apply."
+            }
+          }
+        },
+        "approval": {
+          "capability": "Capability",
+          "approveOnce": "Approve once",
+          "approveAlways": "Always allow",
+          "reject": "Reject",
+          "status": {
+            "pending": "Waiting for approval",
+            "approved": "Approved",
+            "denied": "Rejected",
+            "expired": "Expired",
+            "cancelled": "Cancelled"
+          },
+          "risk": {
+            "low": "Low risk",
+            "medium": "Medium risk",
+            "high": "High risk",
+            "critical": "Critical risk"
+          }
+        }
       },
       "saveState": {
         "idle": "Mutable draft · revision {revision}",
@@ -1933,8 +1997,8 @@
         "root": "Story world",
         "clip": "Film clip",
         "text": "Plot beat",
-        "choice": "Branch choice",
-        "decision": "Branch choice",
+        "choice": "Player choice",
+        "decision": "Player choice",
         "ending": "Story ending",
         "character": "Character"
       },
@@ -1950,6 +2014,16 @@
         "newChoice": "Connect a new option",
         "ending": "Enter ending"
       },
+      "decisionCard": {
+        "promptPlaceholder": "What must the player decide?",
+        "defaultOption": "Option {number}",
+        "untitledOption": "Untitled option",
+        "linkedTarget": "Linked destination",
+        "addOption": "Add option",
+        "cancelOption": "Cancel adding option",
+        "optionPlaceholder": "Write the player-facing option",
+        "connectOption": "Connect this option"
+      },
       "creator": {
         "title": "Add to story graph",
         "description": "Create an element in the interactive story structure.",
@@ -1959,13 +2033,13 @@
         "textDescription": "A plot beat with its own continuation or player choice.",
         "character": "Character",
         "characterDescription": "A cast member that belongs to this story world.",
-        "choice": "Branch choice",
+        "choice": "Player choice",
         "choiceDescription": "Turn the selected clip ending into a player decision.",
         "choiceUnavailable": "Select a film clip first.",
         "ending": "Story ending",
         "endingDescription": "A named outcome stored in the story bible.",
         "root": "Story world",
-        "rootDescription": "Restore the world overview and trailer node to the canvas."
+        "rootDescription": "Restore the world overview to the canvas."
       },
       "connectionCreator": {
         "title": "Create next step",
@@ -1984,7 +2058,7 @@
         "rootSummary": "Define the premise, world rules, characters, and narrative state here.",
         "clip": "Clip",
         "text": "Plot beat",
-        "decision": "Choice",
+        "decision": "Player choice",
         "ending": "Ending"
       },
       "foundation": {
@@ -1999,8 +2073,19 @@
       "world": {
         "eyebrow": "Story World",
         "title": "Story Bible",
-        "action": "Story Bible",
         "description": "The premise, cast, and world rules that ground every branch. Changes autosave to the draft.",
+        "cover": {
+          "title": "Cover media",
+          "description": "One project-level image or video used on the Story World card and in the project library.",
+          "empty": "No cover media",
+          "unavailable": "Cover preview unavailable",
+          "choose": "Choose media",
+          "replace": "Replace media",
+          "remove": "Remove",
+          "imageAlt": "Project cover",
+          "videoLabel": "Project cover video",
+          "candidateLoadError": "Candidate media could not be loaded."
+        },
         "characters": {
           "cardEyebrow": "Character",
           "cardUntitled": "Unnamed character",
@@ -2080,59 +2165,9 @@
       "metrics": {
         "characters": "Characters"
       },
-      "trailer": {
-        "eyebrow": "World trailer",
-        "title": "Trailer direction",
-        "description": "Produce the project trailer independently from story clips and runtime paths.",
-        "node": {
-          "noVideo": "No trailer video yet",
-          "videoPreview": "Trailer video preview"
-        },
-        "production": {
-          "title": "Trailer production",
-          "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
-          "disabled": {
-            "permission": "You do not have permission to generate video for this project."
-          },
-          "errors": {
-            "action": "The trailer production action could not be completed."
-          }
-        }
-      },
       "production": {
-        "title": "Video production",
-        "localRecipeDescription": "Recipes are local to this page and frozen only when you generate. They are not stored in the story draft.",
-        "emptyPrompt": "Describe the video you want to generate.",
-        "masterPrompt": "Prompt",
-        "promptLocalHint": "This recipe stays on this page. Generate freezes the exact prompt, model, duration, mode, and references.",
-        "generate": "Generate video",
-        "seconds": "{count}s",
         "disabled": {
-          "promptRequired": "Enter a prompt before generating.",
-          "modelRequired": "Choose a video model.",
-          "referencesRequired": "Add exactly one first frame and one last frame.",
-          "permission": "You do not have permission to generate video for this project.",
-          "generating": "A video generation is already in progress for this node."
-        },
-        "statuses": {
-          "generating": "Generating",
-          "queued": "Queued",
-          "running": "Running",
-          "processing": "Processing",
-          "ready": "Ready",
-          "failed": "Failed",
-          "cancelled": "Cancelled",
-          "superseded": "Superseded"
-        },
-        "referenceRail": {
-          "unapproved": "Unapproved",
-          "remove": "Remove {label}",
-          "add": "Add reference",
-          "addTitle": "Approved project references"
-        },
-        "durationControl": {
-          "label": "Duration",
-          "seconds": "{count}s"
+          "permission": "You do not have permission to manage video for this project."
         },
         "errors": {
           "action": "The production action could not be completed."
@@ -2140,50 +2175,124 @@
         "node": {
           "noVideo": "No video yet",
           "videoPreview": "Current video preview",
-          "generationFailed": "Generation failed"
-        },
-        "model": "Model",
-        "references": "References",
-        "modeToggle": {
-          "label": "Generation mode",
-          "multimodal": "Reference images",
-          "firstLast": "First & last frame"
-        },
-        "uploadReference": {
-          "action": "Upload reference",
-          "uploading": "Uploading {progress}%",
-          "error": "The reference image could not be uploaded."
+          "metadata": {
+            "duration": "Duration",
+            "dimensions": "Resolution",
+            "fileSize": "File size",
+            "format": "Format"
+          }
         }
       },
+      "productionCanvas": {
+        "title": "Creation canvas",
+        "identity": "Story Studio · Content creation",
+        "groupDropHint": "Release to add to this group",
+        "workspaceLabel": "Project media creation workspace",
+        "backToChapter": "Back to chapter canvas",
+        "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
+        "loadError": "The creation canvas could not be opened.",
+        "retry": "Try again",
+        "assets": {
+          "description": "Browse and drag reusable project media onto the canvas."
+        },
+        "candidates": {
+          "title": "Candidate assets",
+          "description": "Curate the media that Story nodes can reuse.",
+          "open": "Open candidate assets",
+          "close": "Close candidate assets",
+          "add": "Add to candidate assets",
+          "remove": "Remove from candidate assets",
+          "filterLabel": "Filter candidate assets",
+          "filters": {
+            "all": "All",
+            "image": "Images",
+            "video": "Videos",
+            "audio": "Audio"
+          },
+          "empty": "No candidate assets",
+          "emptyFilter": "Nothing in this category",
+          "emptyDescription": "Select a finished media node and add it from the floating toolbar.",
+          "loadError": "Candidate assets could not be loaded.",
+          "actionError": "The candidate asset could not be updated.",
+          "retry": "Try again",
+          "assetLabel": {
+            "image": "Image {index}",
+            "video": "Video {index}",
+            "audio": "Audio {index}"
+          }
+        },
+        "status": {
+          "loading": "Loading",
+          "saving": "Saving…",
+          "saved": "Saved",
+          "error": "Save failed"
+        }
+      },
+      "candidatePicker": {
+        "title": "Choose media",
+        "description": "Choose from this project's candidate media, or upload a local file.",
+        "filterLabel": "Filter candidate media",
+        "filters": {
+          "all": "All",
+          "image": "Images",
+          "video": "Videos"
+        },
+        "upload": {
+          "prompt": "Drag a file here, or choose one from your device.",
+          "hint": "The current media type determines which files are accepted.",
+          "release": "Release to upload",
+          "action": "Upload",
+          "uploading": "Uploading · {progress}%",
+          "processing": "Preparing media…",
+          "unsupported": "This file type is not supported here.",
+          "error": "This media could not be uploaded."
+        },
+        "loading": "Loading candidate media…",
+        "retry": "Try again",
+        "empty": "No matching candidate media",
+        "emptyDescription": "Add finished images or videos to Candidate assets on the creation canvas.",
+        "assetLabel": {
+          "image": "Image {index}",
+          "video": "Video {index}"
+        },
+        "selectAsset": "Select {label}",
+        "clearAsset": "Deselect {label}",
+        "select": "Select",
+        "current": "Current",
+        "clear": "Deselect",
+        "metadataIncomplete": "Details incomplete · still usable",
+        "selectError": "This candidate media could not be applied.",
+        "clearError": "The current media could not be deselected."
+      },
+      "mediaCreation": "Media creation",
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
-        "nodeId": "Stable node ID",
         "media": {
           "title": "Current video",
           "description": "Upload a local file or reuse a video from this workspace.",
           "preview": "Current video for {title}",
           "empty": "No video selected",
           "emptyDescription": "Add the playable video for this story clip.",
-          "upload": "Upload local video",
-          "replace": "Replace from device",
-          "uploading": "Uploading · {progress}%",
-          "processing": "Processing video…",
-          "processingDescription": "Checking the video and preparing it for playback.",
-          "accepted": "MP4 video",
+          "candidateAction": "Choose from Candidate assets",
+          "candidateActionDescription": "{count, plural, =0 {No candidate videos} =1 {1 candidate video} other {# candidate videos}}",
+          "candidateUnavailable": "This video has no accessible original.",
+          "candidateLoadError": "Candidate videos could not be loaded.",
           "preparing": "Clip media is still being prepared.",
           "unknownDimensions": "Unknown size",
-          "unknownDuration": "Unknown duration",
-          "errors": {
-            "upload": "The video could not be uploaded."
-          },
-          "tabUpload": "Upload",
-          "tabGenerate": "AI generate"
+          "unknownDuration": "Unknown duration"
         },
         "exit": "Next step",
         "production": "Production status",
         "openProduction": "Open clip production",
-        "choices": "Branch choices",
+        "choices": "Player choice",
+        "chapterTransitions": {
+          "title": "Continue to another chapter",
+          "continueHint": "Choose the chapter whose opening scene should follow this scene.",
+          "choiceHint": "Add a player choice that enters another chapter.",
+          "connect": "Connect",
+          "linked": "Linked"
+        },
         "entry": "Entry scene",
         "exitAuto": "Continue to scene",
         "exitChoice": "Player choice",
@@ -2217,8 +2326,6 @@
         "removeDecision": "Remove choice step",
         "cancel": "Cancel",
         "nodeName": "Name",
-        "nodeDescription": "Description",
-        "nodeDescriptionPlaceholder": "What happens in this scene?",
         "textTitle": "Scene title",
         "textTitlePlaceholder": "Name this plot beat",
         "textBody": "Scene text",
@@ -2262,10 +2369,6 @@
           "layout": {
             "title": "Canvas layout",
             "description": "Unsaved node positions or Story World visibility will be lost."
-          },
-          "generation": {
-            "title": "Generation settings",
-            "description": "Unsubmitted video generation settings will be lost."
           }
         },
         "stay": "Stay on canvas",
@@ -2317,12 +2420,11 @@
     },
     "overview": {
       "productionTitle": "Video production",
-      "productionSubtitle": "Reference readiness, current video coverage, and active generations for this working draft.",
+      "productionSubtitle": "Reference readiness and current video coverage for this working draft.",
       "draftRevisionStatus": "Working draft r{revision}",
       "storyStructureTitle": "Story structure",
       "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
       "videoState": "Current video state",
-      "videoStateGenerating": "{count} clips are generating replacement videos.",
       "videoStateReady": "{current} of {total} clips currently have a video.",
       "revisionTitle": "Version identity",
       "draftRevision": "Draft revision",
@@ -2424,13 +2526,11 @@
     },
     "production": {
       "title": "Clip production",
-      "subtitle": "Current video and generation state for every story clip.",
+      "subtitle": "Current video state for every story clip.",
       "clipCount": "{count} clips",
       "seconds": "{seconds}s",
       "noBlocker": "Ready for the next action",
       "currentDraftPromptRequired": "Generate or upload a video from the story canvas.",
-      "generationInProgress": "The replacement video is being generated.",
-      "generationFailed": "The latest generation failed; the previous video remains current.",
       "currentVideoReady": "A current video is bound to this clip.",
       "columns": {
         "key": "Key",

@@ -5,14 +5,34 @@ import * as Y from "yjs";
 import type { Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import type { Awareness } from "y-protocols/awareness";
 import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../components/canvas/canvas-interaction-policy";
+import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
+import type {
+  CanvasAsset,
+  CanvasEdgeShape,
+  CanvasGroup,
+  CanvasGroupColor,
+  CanvasNodeShape,
+} from "@/lib/canvas-core/types";
+import {
+  addNodesToCanvasGroup,
+  canvasGroupingAction,
+  groupCanvasNodes,
+  reconcileCanvasGroups,
+  removeNodesFromCanvasGroups,
+  sameCanvasGroups,
+  setCanvasGroupColor,
+  ungroupCanvasNodes,
+} from "@/lib/canvas-core/canvas-groups";
 import {
   addAssets as yAddAssets,
   assetsMap,
   edgesMap,
+  groupsMap,
   nodesMap,
   patchNodeData as yPatchNodeData,
   readAllAssets,
   readAllEdges,
+  readAllGroups,
   readAllNodes,
   readEdge,
   readNode,
@@ -24,11 +44,9 @@ import {
   removeNode as yRemoveNode,
   updateNodeDimensions,
   updateNodePosition,
+  writeCanvasGroups,
   writeEdge,
   writeNode,
-  type CanvasAsset,
-  type CanvasEdgeShape,
-  type CanvasNodeShape,
 } from "./canvas-doc";
 
 /**
@@ -53,66 +71,18 @@ import {
 const LOCAL_ORIGIN = Symbol("fizz-local-canvas-edit");
 const EDGE_TYPE = "gradient";
 
-export interface CanvasGraph {
-  nodes: Node[];
-  edges: Edge[];
-  /**
-   * Read a node's current shape straight from the Yjs doc (or a local-only
-   * overlay). Unlike `nodes` (render-derived, a commit behind), this reflects a
-   * write immediately — safe to read a node right after addNode/patchNodeData.
-   */
-  getNode: (id: string) => CanvasNodeShape | null;
-  /**
-   * Read every edge straight from the Yjs doc. Unlike `edges`
-   * (render-derived, a commit behind), this reflects writes immediately —
-   * and being referentially stable it's safe inside long-lived
-   * subscriptions/effects without re-arming them on every render.
-   */
-  getEdges: () => CanvasEdgeShape[];
-  onNodesChange: (changes: NodeChange[]) => void;
-  onEdgesChange: (changes: EdgeChange[]) => void;
-  addNode: (node: CanvasNodeShape) => void;
-  addEdge: (edge: CanvasEdgeShape) => void;
-  /** Add several nodes + edges in ONE transaction (paste / duplicate). */
-  addNodesAndEdges: (nodes: CanvasNodeShape[], edges: CanvasEdgeShape[]) => void;
-  patchNodeData: (
-    id: string,
-    patch: Record<string, unknown> | ((node: CanvasNodeShape) => Record<string, unknown>)
-  ) => void;
-  removeNode: (id: string) => void;
-  removeEdge: (id: string) => void;
-  /**
-   * Add a node rendered for THIS client only — never written to the Y.Doc nor
-   * broadcast (e.g. an image showing a local blob preview while it uploads).
-   * Promote it (durable URL) or remove it once the upload settles.
-   */
-  addLocalNode: (node: CanvasNodeShape) => void;
-  /**
-   * Move a local-only node into the shared doc with its final `data` (the
-   * durable URL), preserving its current position + measured size. Peers see it
-   * only now; the local copy is dropped so there's no duplicate.
-   */
-  promoteLocalNode: (id: string, data: Record<string, unknown>) => void;
-  /** Replace the local node selection (selection is per-client, never shared). */
-  selectNodes: (ids: string[]) => void;
-  /** The project's shared asset library (synced), newest first. */
-  assets: CanvasAsset[];
-  /** Add library assets (deduped by id); synced to every collaborator. */
-  addAssets: (assets: CanvasAsset[]) => void;
-  renameAssetsByMediaAssetId: (mediaAssetId: string, name: string) => void;
-  removeAsset: (id: string) => void;
-  removeAssetsByMediaAssetId: (mediaAssetId: string) => void;
+export interface CanvasGraph extends CanvasGraphStore {
   /**
    * Restore the canvas to a prior version's CRDT state (null/empty clears it).
    * Applied as one LOCAL_ORIGIN transaction — streams to peers + is undoable.
    */
   restoreFromUpdate: (targetBytes: Uint8Array | null) => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  undo: () => void;
-  redo: () => void;
-  /** False for viewers: every write mutator is a no-op (server enforces too). */
-  canEdit: boolean;
+  groups: CanvasGroup[];
+  toggleGroup: (nodeIds: string[]) => string | null;
+  addNodesToGroup: (groupId: string, nodeIds: string[]) => boolean;
+  removeNodesFromGroups: (nodeIds: string[]) => boolean;
+  setGroupColor: (groupId: string, color: CanvasGroupColor) => void;
+  isNodePersisted: (nodeId: string) => boolean;
 }
 
 interface NodeCacheEntry {
@@ -155,6 +125,7 @@ export function useCanvasGraph(
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [assets, setAssets] = useState<CanvasAsset[]>([]);
+  const [groups, setGroups] = useState<CanvasGroup[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
@@ -214,9 +185,10 @@ export function useCanvasGraph(
       });
     }
 
+    const documentNodes = readAllNodes(doc);
     const nextNodes: Node[] = [];
     const seenNodes = new Set<string>();
-    for (const n of readAllNodes(doc)) {
+    for (const n of documentNodes) {
       seenNodes.add(n.id);
       const localDrag = dragPositions.current.get(n.id);
       const pdrag = peerDrag.get(n.id);
@@ -319,6 +291,11 @@ export function useCanvasGraph(
 
     setNodes(nextNodes);
     setEdges(nextEdges);
+    const nextGroups = reconcileCanvasGroups(
+      readAllGroups(doc),
+      documentNodes.map((node) => node.id)
+    );
+    setGroups((current) => (sameCanvasGroups(current, nextGroups) ? current : nextGroups));
   }, [doc, awareness]);
 
   useEffect(() => {
@@ -340,16 +317,18 @@ export function useCanvasGraph(
       /* eslint-disable-next-line react-hooks/set-state-in-effect */
       rebuild();
       setAssets([]);
+      setGroups([]);
       setCanUndo(false);
       setCanRedo(false);
       return;
     }
     const nm = nodesMap(doc);
     const em = edgesMap(doc);
+    const gm = groupsMap(doc);
     const am = assetsMap(doc);
     // The asset library is a cumulative inventory, not editable canvas content —
     // generating/uploading shouldn't push an undo step, so `am` is NOT tracked.
-    const undo = new Y.UndoManager([nm, em], {
+    const undo = new Y.UndoManager([nm, em, gm], {
       trackedOrigins: new Set([LOCAL_ORIGIN]),
     });
     undoManager.current = undo;
@@ -364,6 +343,7 @@ export function useCanvasGraph(
     const handler = () => rebuild();
     nm.observeDeep(handler);
     em.observeDeep(handler);
+    gm.observe(handler);
     // Assets are flat JSON values (add/remove only) — a shallow observe on the
     // map catches every library change; derive the sorted list straight from it.
     const assetHandler = () => setAssets(readAllAssets(doc));
@@ -396,6 +376,7 @@ export function useCanvasGraph(
     return () => {
       nm.unobserveDeep(handler);
       em.unobserveDeep(handler);
+      gm.unobserve(handler);
       am.unobserve(assetHandler);
       if (awareness) awareness.off("change", onPresence);
       if (dragClearTimer.current) {
@@ -723,6 +704,73 @@ export function useCanvasGraph(
     [rebuild, awareness]
   );
 
+  const updateGroups = useCallback(
+    (update: (current: CanvasGroup[]) => CanvasGroup[]): boolean => {
+      if (!doc) return false;
+      let changed = false;
+      doc.transact(() => {
+        const current = reconcileCanvasGroups(readAllGroups(doc), nodesMap(doc).keys());
+        const next = reconcileCanvasGroups(update(current), nodesMap(doc).keys());
+        if (sameCanvasGroups(current, next)) return;
+        writeCanvasGroups(doc, next);
+        changed = true;
+      }, LOCAL_ORIGIN);
+      return changed;
+    },
+    [doc]
+  );
+
+  const toggleGroup = useCallback(
+    (nodeIds: string[]): string | null => {
+      if (!doc) return null;
+      let selectedGroupId: string | null = null;
+      const changed = updateGroups((current) => {
+        const persisted = nodeIds.filter((nodeId) => nodesMap(doc).has(nodeId));
+        const action = canvasGroupingAction(current, persisted);
+        if (!action) return current;
+        if (action.type === "ungroup") {
+          return ungroupCanvasNodes(current, action.groupId);
+        }
+        selectedGroupId = `group-${crypto.randomUUID()}`;
+        return groupCanvasNodes(current, selectedGroupId, action.nodeIds);
+      });
+      return changed ? selectedGroupId : null;
+    },
+    [doc, updateGroups]
+  );
+
+  const addNodesToGroup = useCallback(
+    (groupId: string, nodeIds: string[]): boolean => {
+      if (!doc) return false;
+      return updateGroups((current) =>
+        addNodesToCanvasGroup(
+          current,
+          groupId,
+          nodeIds.filter((nodeId) => nodesMap(doc).has(nodeId))
+        )
+      );
+    },
+    [doc, updateGroups]
+  );
+
+  const removeNodesFromGroups = useCallback(
+    (nodeIds: string[]): boolean =>
+      updateGroups((current) => removeNodesFromCanvasGroups(current, nodeIds)),
+    [updateGroups]
+  );
+
+  const setGroupColor = useCallback(
+    (groupId: string, color: CanvasGroupColor) => {
+      updateGroups((current) => setCanvasGroupColor(current, groupId, color));
+    },
+    [updateGroups]
+  );
+
+  const isNodePersisted = useCallback(
+    (nodeId: string): boolean => Boolean(doc && nodesMap(doc).has(nodeId)),
+    [doc]
+  );
+
   const restoreFromUpdate = useCallback(
     (targetBytes: Uint8Array | null) => {
       if (!doc) return;
@@ -766,6 +814,8 @@ export function useCanvasGraph(
   const undo = useCallback(() => undoManager.current?.undo(), []);
   const redo = useCallback(() => undoManager.current?.redo(), []);
   const noop = useCallback(() => {}, []);
+  const noGroupChange = useCallback(() => false, []);
+  const noGroupToggle = useCallback(() => null, []);
 
   // Read-only chokepoint: a viewer gets the same derived nodes/edges/assets and
   // local selection, but every doc-writing mutator is a no-op (the server
@@ -815,6 +865,12 @@ export function useCanvasGraph(
         promoteLocalNode: noop,
         selectNodes,
         restoreFromUpdate: noop,
+        groups,
+        toggleGroup: noGroupToggle,
+        addNodesToGroup: noGroupChange,
+        removeNodesFromGroups: noGroupChange,
+        setGroupColor: noop,
+        isNodePersisted,
         assets,
         addAssets: noop,
         renameAssetsByMediaAssetId: noop,
@@ -844,6 +900,12 @@ export function useCanvasGraph(
       promoteLocalNode,
       selectNodes,
       restoreFromUpdate,
+      groups,
+      toggleGroup,
+      addNodesToGroup,
+      removeNodesFromGroups,
+      setGroupColor,
+      isNodePersisted,
       assets,
       addAssets,
       renameAssetsByMediaAssetId,
@@ -860,6 +922,7 @@ export function useCanvasGraph(
     nodes,
     edges,
     assets,
+    groups,
     canUndo,
     canRedo,
     getNode,
@@ -876,6 +939,11 @@ export function useCanvasGraph(
     promoteLocalNode,
     selectNodes,
     restoreFromUpdate,
+    toggleGroup,
+    addNodesToGroup,
+    removeNodesFromGroups,
+    setGroupColor,
+    isNodePersisted,
     addAssets,
     renameAssetsByMediaAssetId,
     removeAsset,
@@ -883,5 +951,7 @@ export function useCanvasGraph(
     undo,
     redo,
     noop,
+    noGroupChange,
+    noGroupToggle,
   ]);
 }

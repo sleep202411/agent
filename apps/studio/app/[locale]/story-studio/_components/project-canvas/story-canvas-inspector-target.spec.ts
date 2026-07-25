@@ -6,7 +6,7 @@ import {
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
 } from "./story-canvas-inspector-target";
-import { STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
+import { STORY_ROOT_NODE_ID, syntheticDecisionNodeId } from "./story-project-canvas-model";
 
 describe("story canvas inspector target", () => {
   it("starts and remains closed when the canvas has no selection", () => {
@@ -65,6 +65,14 @@ describe("story canvas inspector target", () => {
       kind: "node",
       nodeId: "character:hero",
     });
+  });
+
+  it("keeps player-choice nodes on-canvas instead of opening an inspector", () => {
+    const decisionNodeId = syntheticDecisionNodeId("clip:a");
+    expect(storyNodeInspectorTarget(decisionNodeId)).toBe(CLOSED_STORY_CANVAS_INSPECTOR);
+    expect(
+      reconcileStoryCanvasInspectorTarget(STORY_WORLD_INSPECTOR, [decisionNodeId], decisionNodeId)
+    ).toBe(CLOSED_STORY_CANVAS_INSPECTOR);
   });
 
   it("exposes a node id only for node inspectors", () => {

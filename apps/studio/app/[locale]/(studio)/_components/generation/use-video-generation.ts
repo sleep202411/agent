@@ -13,8 +13,8 @@ import {
   type FizzAiModel,
   type FizzAiReferenceBinding,
   type ModelSettings,
-} from "@/app/[locale]/canvas/_lib/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/app/[locale]/canvas/_lib/use-ai-catalog";
+} from "@/lib/canvas-authoring/generation-api";
+import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGenerationFeed } from "./use-generation-feed";
 import { useReferenceUploads, type ReferenceUpload } from "./use-reference-uploads";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";

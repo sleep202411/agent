@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  IconArrowDown,
-  IconArrowUp,
-  IconGitBranch,
+  IconArrowRight,
   IconPlayerPlay,
   IconUpload,
   IconPlayerStop,
@@ -14,43 +12,29 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type {
   CreatableStoryFormat,
   InteractiveStoryDraftContent,
-  StoryGraphChoice,
   StoryGraphNode,
   StoryNodeMusic,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import { collectStoryMusicTracks, StoryNodeMusicPanel } from "./story-node-music-panel";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
-import {
-  StoryClipGenerationForm,
-  type StoryClipGenerationFormProps,
-} from "./story-clip-generation-form";
-import { StoryWorldLibrary } from "./story-world-library";
+import { StoryWorldLibrary, type StoryWorldCoverMediaProps } from "./story-world-library";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
-type ClipNode = Extract<StoryGraphNode, { kind: "clip" }>;
-type TextNode = Extract<StoryGraphNode, { kind: "text" }>;
-type SceneNode = ClipNode | TextNode;
-type ChoiceExit = Extract<SceneNode["exit"], { kind: "choice" }>;
 type Ending = InteractiveStoryDraftContent["storyBible"]["endings"][number];
 type Character = InteractiveStoryDraftContent["storyBible"]["characters"][number];
+type StoryChapterTarget = {
+  id: string;
+  title: string;
+  entryNodeId: string | null;
+};
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
@@ -60,24 +44,16 @@ interface StoryNodeInspectorProps {
   selectedNode: StoryCanvasNode | null;
   showFoundation: boolean;
   canEdit: boolean;
+  coverMedia: StoryWorldCoverMediaProps;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
   onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
   onDeleteCharacter: (characterId: string) => void;
   onCloseNode: () => void;
-  onUpdateChoiceExit: (nodeId: string, patch: Partial<Pick<ChoiceExit, "prompt">>) => void;
-  onAddChoice: (nodeId: string, targetNodeId: string) => void;
-  onUpdateChoice: (
-    nodeId: string,
-    choiceId: string,
-    patch: Partial<Pick<StoryGraphChoice, "label">>
-  ) => void;
-  onMoveChoice: (nodeId: string, choiceId: string, direction: "up" | "down") => void;
-  onRemoveChoice: (nodeId: string, choiceId: string) => void;
+  chapterTargets?: StoryChapterTarget[];
+  onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
   onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
-  clipGeneration?: StoryClipGenerationFormProps;
-  trailerGeneration?: StoryClipGenerationFormProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
   onUpdateText: (nodeId: string, patch: { title?: string; body?: string }) => void;
   /** Ownership scope for a track uploaded from the inspector. */
@@ -92,20 +68,16 @@ export function StoryNodeInspector({
   selectedNode,
   showFoundation,
   canEdit,
+  coverMedia,
   onUpdateFoundation,
   onUpdateCharacter,
   onDeleteCharacter,
   onCloseNode,
-  onUpdateChoiceExit,
-  onAddChoice,
-  onUpdateChoice,
-  onMoveChoice,
-  onRemoveChoice,
+  chapterTargets = [],
+  onConnectChapter = () => undefined,
   onUpdateEnding,
   onDeleteSelected,
   clipMedia,
-  clipGeneration,
-  trailerGeneration,
   onUpdateClipMeta,
   onUpdateText,
   workspaceId,
@@ -127,7 +99,7 @@ export function StoryNodeInspector({
         ) ?? null)
       : null;
 
-  if (!showFoundation && !canvasData) return null;
+  if (!showFoundation && (!canvasData || canvasData.kind === "decision")) return null;
 
   return (
     <aside className="absolute top-16 bottom-3 left-3 z-30 flex w-[368px] flex-col overflow-hidden rounded-[24px] bg-[oklch(0.205_0_0/0.72)] shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
@@ -137,9 +109,9 @@ export function StoryNodeInspector({
           <StoryWorldLibrary
             content={content}
             canEdit={canEdit}
+            coverMedia={coverMedia}
             onUpdateFoundation={onUpdateFoundation}
             onClose={onCloseNode}
-            trailerGeneration={trailerGeneration}
           />
         </div>
       ) : canvasData ? (
@@ -183,19 +155,14 @@ export function StoryNodeInspector({
                 format={format}
                 locale={locale}
                 node={graphNode}
-                decisionOnly={canvasData.kind === "decision"}
                 canEdit={canEdit}
                 clipMedia={clipMedia}
-                clipGeneration={clipGeneration}
                 workspaceId={workspaceId}
                 onUpdateClipMeta={onUpdateClipMeta}
                 onUpdateText={onUpdateText}
                 onUpdateMusic={onUpdateMusic}
-                onUpdateChoiceExit={onUpdateChoiceExit}
-                onAddChoice={onAddChoice}
-                onUpdateChoice={onUpdateChoice}
-                onMoveChoice={onMoveChoice}
-                onRemoveChoice={onRemoveChoice}
+                chapterTargets={chapterTargets}
+                onConnectChapter={onConnectChapter}
               />
             ) : null}
 
@@ -258,40 +225,29 @@ function GraphNodeEditor({
   format,
   locale,
   node,
-  decisionOnly,
   canEdit,
   clipMedia,
-  clipGeneration,
   workspaceId,
   onUpdateClipMeta,
   onUpdateText,
   onUpdateMusic,
-  onUpdateChoiceExit,
-  onAddChoice,
-  onUpdateChoice,
-  onMoveChoice,
-  onRemoveChoice,
+  chapterTargets,
+  onConnectChapter,
 }: {
   content: InteractiveStoryDraftContent;
   format: StoryNodeInspectorProps["format"];
   locale: string;
   node: StoryGraphNode;
-  decisionOnly: boolean;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
-  clipGeneration?: StoryClipGenerationFormProps;
   workspaceId: StoryNodeInspectorProps["workspaceId"];
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   onUpdateText: StoryNodeInspectorProps["onUpdateText"];
   onUpdateMusic: StoryNodeInspectorProps["onUpdateMusic"];
-  onUpdateChoiceExit: StoryNodeInspectorProps["onUpdateChoiceExit"];
-  onAddChoice: StoryNodeInspectorProps["onAddChoice"];
-  onUpdateChoice: StoryNodeInspectorProps["onUpdateChoice"];
-  onMoveChoice: StoryNodeInspectorProps["onMoveChoice"];
-  onRemoveChoice: StoryNodeInspectorProps["onRemoveChoice"];
+  chapterTargets: StoryChapterTarget[];
+  onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
 }) {
   const t = useTranslations("storyStudio.canvas");
-  const targetNodes = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
   // Only the narrative runtime reads a scene's bed — the cinematic player never
   // does, and the Build compiler drops music for that format. Offering the panel
   // there would let a creator upload a 50 MB bed, bind it, publish, and get
@@ -302,59 +258,27 @@ function GraphNodeEditor({
   );
   return (
     <>
-      <dl className="mt-6 space-y-3">
-        <InspectorRow
-          label={t("inspector.nodeId")}
-          value={decisionOnly && node.exit.kind === "choice" ? node.exit.decisionId : node.nodeId}
-          mono
-        />
-      </dl>
-
-      {node.kind === "clip" && !decisionOnly ? (
-        <div className="mt-3 space-y-3">
-          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
-            <label htmlFor="story-clip-name" className="text-[9px] font-semibold text-white/32">
-              {t("inspector.nodeName")}
-            </label>
-            <Input
-              id="story-clip-name"
-              value={node.name ?? ""}
-              disabled={!canEdit}
-              maxLength={120}
-              placeholder={node.clipKey}
-              onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
-              className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
-            />
-          </div>
-          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
-            <label
-              htmlFor="story-clip-description"
-              className="text-[9px] font-semibold text-white/32"
-            >
-              {t("inspector.nodeDescription")}
-            </label>
-            <Textarea
-              id="story-clip-description"
-              value={node.description ?? ""}
-              disabled={!canEdit}
-              maxLength={4000}
-              rows={3}
-              placeholder={t("inspector.nodeDescriptionPlaceholder")}
-              onChange={(event) =>
-                onUpdateClipMeta(node.nodeId, { description: event.target.value })
-              }
-              className="mt-1.5 resize-none rounded-lg bg-white/[0.05] px-3 text-xs"
-            />
-          </div>
-        </div>
+      {node.kind === "clip" ? (
+        <label className="mt-6 block" htmlFor="story-clip-name">
+          <span className="text-[9px] font-semibold text-white/32">{t("inspector.nodeName")}</span>
+          <Input
+            id="story-clip-name"
+            value={node.name ?? ""}
+            disabled={!canEdit}
+            maxLength={120}
+            placeholder={node.clipKey}
+            onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
+            className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
+          />
+        </label>
       ) : null}
 
-      {node.kind === "text" && !decisionOnly ? (
-        <div className="mt-3 space-y-3">
-          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
-            <label htmlFor="story-text-title" className="text-[9px] font-semibold text-white/32">
+      {node.kind === "text" ? (
+        <div className="mt-6 space-y-4">
+          <label className="block" htmlFor="story-text-title">
+            <span className="text-[9px] font-semibold text-white/32">
               {t("inspector.textTitle")}
-            </label>
+            </span>
             <Input
               id="story-text-title"
               value={localizedValue(node.title, locale)}
@@ -364,11 +288,11 @@ function GraphNodeEditor({
               onChange={(event) => onUpdateText(node.nodeId, { title: event.target.value })}
               className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
             />
-          </div>
-          <div className="rounded-xl bg-white/[0.045] px-3 py-3">
-            <label htmlFor="story-text-body" className="text-[9px] font-semibold text-white/32">
+          </label>
+          <label className="block" htmlFor="story-text-body">
+            <span className="text-[9px] font-semibold text-white/32">
               {t("inspector.textBody")}
-            </label>
+            </span>
             <Textarea
               id="story-text-body"
               value={localizedValue(node.body, locale)}
@@ -384,38 +308,15 @@ function GraphNodeEditor({
                 {t("inspector.requiredForPlayableStory")}
               </span>
             ) : null}
-          </div>
+          </label>
         </div>
       ) : null}
 
-      {node.kind === "clip" && !decisionOnly && clipMedia ? (
-        clipGeneration ? (
-          <Tabs
-            key={clipMedia.clip?.graphNodeId ?? node.nodeId}
-            defaultValue="upload"
-            className="mt-6 gap-0"
-          >
-            <TabsList className="w-full">
-              <TabsTrigger value="upload" className="flex-1">
-                {t("inspector.media.tabUpload")}
-              </TabsTrigger>
-              <TabsTrigger value="generate" className="flex-1">
-                {t("inspector.media.tabGenerate")}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="upload">
-              <StoryClipMediaPanel {...clipMedia} />
-            </TabsContent>
-            <TabsContent value="generate">
-              <StoryClipGenerationForm {...clipGeneration} />
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
-        )
+      {node.kind === "clip" && clipMedia ? (
+        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
       ) : null}
 
-      {!decisionOnly && playsMusic ? (
+      {playsMusic ? (
         <StoryNodeMusicPanel
           key={node.nodeId}
           music={node.music ?? null}
@@ -426,194 +327,83 @@ function GraphNodeEditor({
         />
       ) : null}
 
-      {decisionOnly && node.exit.kind === "choice" ? (
-        <ChoiceExitEditor
-          nodeId={node.nodeId}
-          exit={node.exit}
-          locale={locale}
-          targetNodes={targetNodes}
-          canEdit={canEdit}
-          onUpdateChoiceExit={onUpdateChoiceExit}
-          onAddChoice={onAddChoice}
-          onUpdateChoice={onUpdateChoice}
-          onMoveChoice={onMoveChoice}
-          onRemoveChoice={onRemoveChoice}
-        />
-      ) : null}
+      <ChapterDestinationEditor
+        node={node}
+        targets={chapterTargets}
+        canEdit={canEdit}
+        onConnect={onConnectChapter}
+      />
     </>
   );
 }
 
-function ChoiceExitEditor({
-  nodeId,
-  exit,
-  locale,
-  targetNodes,
+function ChapterDestinationEditor({
+  node,
+  targets,
   canEdit,
-  onUpdateChoiceExit,
-  onAddChoice,
-  onUpdateChoice,
-  onMoveChoice,
-  onRemoveChoice,
+  onConnect,
 }: {
-  nodeId: string;
-  exit: ChoiceExit;
-  locale: string;
-  targetNodes: StoryGraphNode[];
+  node: StoryGraphNode;
+  targets: StoryChapterTarget[];
   canEdit: boolean;
-  onUpdateChoiceExit: StoryNodeInspectorProps["onUpdateChoiceExit"];
-  onAddChoice: StoryNodeInspectorProps["onAddChoice"];
-  onUpdateChoice: StoryNodeInspectorProps["onUpdateChoice"];
-  onMoveChoice: StoryNodeInspectorProps["onMoveChoice"];
-  onRemoveChoice: StoryNodeInspectorProps["onRemoveChoice"];
+  onConnect: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
 }) {
   const t = useTranslations("storyStudio.canvas");
-  const [pendingRemoval, setPendingRemoval] = useState<StoryGraphChoice | null>(null);
+  if (targets.length === 0 || (node.exit.kind !== "auto" && node.exit.kind !== "choice")) {
+    return null;
+  }
+  const linkedTargets = new Set(
+    node.exit.kind === "auto"
+      ? node.exit.nextNodeId
+        ? [node.exit.nextNodeId]
+        : []
+      : node.exit.choices.map((choice) => choice.nextNodeId)
+  );
+  const choiceLimitReached = node.exit.kind === "choice" && node.exit.choices.length >= 6;
+
   return (
-    <div className="mt-6">
+    <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
       <div className="flex items-center gap-2">
-        <span className="grid size-7 place-items-center rounded-[10px] bg-[rgba(91,157,255,0.38)] text-white">
-          <IconGitBranch className="size-3.5" />
+        <span className="grid size-7 place-items-center rounded-[10px] bg-white/[0.07] text-white/62">
+          <IconArrowRight className="size-3.5" />
         </span>
-        <h3 className="text-xs font-semibold text-white/78">{t("inspector.choices")}</h3>
+        <div>
+          <h3 className="text-xs font-semibold text-white/78">
+            {t("inspector.chapterTransitions.title")}
+          </h3>
+          <p className="mt-0.5 text-[9px] leading-4 text-white/34">
+            {t(
+              node.exit.kind === "choice"
+                ? "inspector.chapterTransitions.choiceHint"
+                : "inspector.chapterTransitions.continueHint"
+            )}
+          </p>
+        </div>
       </div>
-
-      <label className="mt-4 block">
-        <span className="text-[10px] font-semibold text-white/42">
-          {t("inspector.choicePrompt")}
-        </span>
-        <Textarea
-          value={localizedValue(exit.prompt, locale)}
-          disabled={!canEdit}
-          rows={3}
-          maxLength={4_000}
-          placeholder={t("inspector.choicePromptPlaceholder")}
-          onChange={(event) =>
-            onUpdateChoiceExit(nodeId, {
-              prompt: { ...exit.prompt, [locale]: event.target.value },
-            })
-          }
-          className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
-        />
-        {!localizedValue(exit.prompt, locale).trim() ? (
-          <span className="mt-1.5 block text-[9px] text-[#e0a45c]/82">
-            {t("inspector.requiredForPlayableStory")}
-          </span>
-        ) : null}
-      </label>
-
-      <div className="mt-4 space-y-3">
-        {exit.choices.map((choice, index) => (
-          <div key={choice.choiceId} className="rounded-[16px] bg-white/[0.045] p-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold text-white/42">
-                {t("inspector.optionLabel", { number: index + 1 })}
-              </p>
-              {canEdit ? (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={index === 0}
-                    onClick={() => onMoveChoice(nodeId, choice.choiceId, "up")}
-                    className="grid size-7 place-items-center rounded-lg bg-white/[0.05] text-white/34 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-25"
-                    aria-label={t("inspector.moveChoiceUp")}
-                  >
-                    <IconArrowUp className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={index === exit.choices.length - 1}
-                    onClick={() => onMoveChoice(nodeId, choice.choiceId, "down")}
-                    className="grid size-7 place-items-center rounded-lg bg-white/[0.05] text-white/34 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-25"
-                    aria-label={t("inspector.moveChoiceDown")}
-                  >
-                    <IconArrowDown className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingRemoval(choice)}
-                    className="grid size-7 place-items-center rounded-lg bg-white/[0.05] text-white/34 transition hover:bg-white/[0.1] hover:text-[#ff9b9e]"
-                    aria-label={t("inspector.removeChoice")}
-                  >
-                    <IconTrash className="size-3.5" />
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <Input
-              value={localizedValue(choice.label, locale)}
-              maxLength={4_000}
-              disabled={!canEdit}
-              placeholder={t("inspector.optionPlaceholder")}
-              onChange={(event) =>
-                onUpdateChoice(nodeId, choice.choiceId, {
-                  label: { ...choice.label, [locale]: event.target.value },
-                })
-              }
-              className="mt-2 h-9 rounded-xl bg-black/18 px-3"
-            />
-            {!localizedValue(choice.label, locale).trim() ? (
-              <p className="mt-1.5 text-[9px] text-[#e0a45c]/82">
-                {t("inspector.requiredForPlayableStory")}
-              </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
-
-      {exit.choices.length < 2 ? (
-        <p className="mt-3 rounded-xl bg-[rgba(224,164,92,0.08)] px-3 py-2 text-[9px] leading-4 text-[#e0a45c]/82">
-          {t("inspector.choiceMinimum", { count: exit.choices.length })}
-        </p>
-      ) : null}
-
-      {canEdit && exit.choices.length < 6 && targetNodes.length > 0 ? (
-        <Button
-          type="button"
-          variant="secondary"
-          className="mt-3 w-full"
-          onClick={() => {
-            // A persisted choice needs a real target. Seed it with the first
-            // available scene; the author re-targets it by dragging the choice
-            // edge on the canvas.
-            const defaultTarget = targetNodes[0];
-            if (defaultTarget) onAddChoice(nodeId, defaultTarget.nodeId);
-          }}
-        >
-          <IconPlus className="size-4" />
-          {t("inspector.addChoice")}
-        </Button>
-      ) : null}
-
-      <Dialog
-        open={pendingRemoval !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingRemoval(null);
-        }}
-      >
-        <DialogContent className="rounded-[22px] bg-[oklch(0.22_0_0/0.96)] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] backdrop-blur-[40px]">
-          <DialogHeader>
-            <DialogTitle>{t("inspector.removeChoiceTitle")}</DialogTitle>
-            <DialogDescription>{t("inspector.removeChoiceDescription")}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="secondary">{t("inspector.cancel")}</Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (pendingRemoval) onRemoveChoice(nodeId, pendingRemoval.choiceId);
-                setPendingRemoval(null);
-              }}
+      <div className="mt-3 space-y-1.5">
+        {targets.map((chapter) => {
+          const targetNodeId = chapter.entryNodeId;
+          if (!targetNodeId) return null;
+          const linked = linkedTargets.has(targetNodeId);
+          return (
+            <button
+              key={chapter.id}
+              type="button"
+              disabled={!canEdit || linked || choiceLimitReached}
+              onClick={() => onConnect(node.nodeId, targetNodeId, chapter.title)}
+              className="flex w-full items-center gap-2 rounded-xl bg-white/[0.045] px-3 py-2 text-left text-[10px] text-white/58 transition hover:bg-white/[0.09] hover:text-white disabled:cursor-default disabled:opacity-55"
             >
-              <IconTrash className="size-4" />
-              {t("inspector.removeChoice")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+              <span className="min-w-0 flex-1 truncate">{chapter.title}</span>
+              <span className="shrink-0 text-[9px] text-white/32">
+                {linked
+                  ? t("inspector.chapterTransitions.linked")
+                  : t("inspector.chapterTransitions.connect")}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -631,7 +421,6 @@ function EndingEditor({
   const t = useTranslations("storyStudio.canvas");
   return (
     <div className="mt-6 grid gap-4">
-      <InspectorRow label={t("inspector.nodeId")} value={ending.id} mono />
       <label>
         <span className="text-[10px] font-semibold text-white/42">
           {t("inspector.endingTitle")}
@@ -846,6 +635,7 @@ function CharacterImagesEditor({
               ) : null}
             </div>
             <ImageLabelInput
+              key={image.label}
               label={image.label}
               index={index}
               canEdit={canEdit}
@@ -914,14 +704,6 @@ function CharacterVoiceEditor({
   const waveRef = useRef<HTMLButtonElement>(null);
   const voice = character.voice;
   const peaks = useVoiceWaveformPeaks(voice?.url ?? null);
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, []);
 
   const stopProgressLoop = () => {
     if (rafRef.current !== null) {
@@ -1030,6 +812,14 @@ function CharacterVoiceEditor({
       if (inputRef.current) inputRef.current.value = "";
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
 
   return (
     <section aria-labelledby="story-character-voice-title">
@@ -1151,7 +941,6 @@ function ImageLabelInput({
 }) {
   const t = useTranslations("storyStudio.canvas.world.characters");
   const [draft, setDraft] = useState(label);
-  useEffect(() => setDraft(label), [label]);
 
   const commit = () => {
     const normalized = draft.trim().slice(0, MAX_IMAGE_LABEL_LENGTH);
@@ -1212,10 +1001,9 @@ const FALLBACK_WAVEFORM_PEAKS = Array.from(
  * (CORS, unsupported codec, no Web Audio) leaves the fallback bars in place.
  */
 function useVoiceWaveformPeaks(url: string | null): number[] | null {
-  const [peaks, setPeaks] = useState<number[] | null>(null);
+  const [result, setResult] = useState<{ url: string; peaks: number[] } | null>(null);
 
   useEffect(() => {
-    setPeaks(null);
     if (!url) return;
     let cancelled = false;
     void (async () => {
@@ -1244,7 +1032,9 @@ function useVoiceWaveformPeaks(url: string | null): number[] | null {
             raw.push(peak);
           }
           const highest = Math.max(...raw, 0.001);
-          if (!cancelled) setPeaks(raw.map((value) => value / highest));
+          if (!cancelled) {
+            setResult({ url, peaks: raw.map((value) => value / highest) });
+          }
         } finally {
           void context.close();
         }
@@ -1257,7 +1047,7 @@ function useVoiceWaveformPeaks(url: string | null): number[] | null {
     };
   }, [url]);
 
-  return peaks;
+  return result?.url === url ? result.peaks : null;
 }
 
 /** Default look name = the file name stem, falling back to a numbered ref. */

@@ -21,7 +21,6 @@ import {
   StoryBuildKind,
   StoryBuildStatus,
   StoryRevisionSource,
-  StoryVideoTargetKind,
 } from '@prisma/client';
 import {
   EXPERIENCE_RUNTIME_SCHEMA_VERSION,
@@ -37,6 +36,7 @@ import { requireModerationApproval } from '../media/media-moderation-policy';
 import { canonicalJsonHash } from './canonical-json';
 import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  STORY_FRAME_PROFILE_CONTRACTS,
   StoryBuildScopeSchema,
   createLockableInteractiveStoryDraftContentSchema,
   type CancelStoryBuildInput,
@@ -162,7 +162,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 4;
+const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 5;
 
 interface BuildCursor {
   number: number;
@@ -393,7 +393,6 @@ export class StoryBuildService {
                     buildId,
                     storyProjectId: projectId,
                     graphNodeId,
-                    sourceGenerationAttemptId: source.sourceGenerationId,
                     buildAssetId: buildAsset.id,
                     logicalKey: buildAsset.logicalKey,
                     checksumSha256: source.asset.checksumSha256,
@@ -540,7 +539,7 @@ export class StoryBuildService {
     const unavailable = currentMediaDiagnostics(
       [frozen],
       requireModerationApproval(),
-    )[0];
+    ).find((diagnostic) => diagnostic.severity === 'error');
     if (unavailable) {
       if (unavailable.code === 'STORY_BUILD_ASSET_MODERATION_PENDING') {
         throw new ForbiddenException({
@@ -686,7 +685,12 @@ export class StoryBuildService {
       inputManifestHash: row.inputManifestHash,
       runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
       runtimeJson:
-        mediaDiagnostics.length > 0 || deliveryDiagnostics.length > 0
+        mediaDiagnostics.some(
+          (diagnostic) => diagnostic.severity === 'error',
+        ) ||
+        deliveryDiagnostics.some(
+          (diagnostic) => diagnostic.severity === 'error',
+        )
           ? null
           : runtime,
       runtimeHash: row.runtimeHash,
@@ -827,13 +831,12 @@ async function loadValidatedBuildSnapshot(
       : await tx.storyVideoSelection.findMany({
           where: {
             storyProjectId: projectId,
-            targetKind: StoryVideoTargetKind.clip,
-            targetKey: { in: clipNodes.map((node) => node.nodeId) },
+            graphNodeId: { in: clipNodes.map((node) => node.nodeId) },
           },
           include: BUILD_SELECTION_INCLUDE,
         });
   const selectionByNodeId = new Map(
-    selections.map((selection) => [selection.targetKey, selection]),
+    selections.map((selection) => [selection.graphNodeId, selection]),
   );
   const entries = clipNodes.map((node) =>
     videoSnapshotEntry(node.nodeId, selectionByNodeId.get(node.nodeId) ?? null),
@@ -884,30 +887,14 @@ function videoSnapshotEntry(
   selection: BuildSelectionRow | null,
 ): StoryVideoSnapshotEntry {
   if (!selection) return emptyVideoSnapshotEntry(graphNodeId, 0);
-  const mediaValues = [
-    selection.currentAssetId,
-    selection.currentVariantId,
-    selection.currentChecksumSha256,
-    selection.currentContentType,
-    selection.currentDurationMs,
-    selection.currentWidth,
-    selection.currentHeight,
-    selection.currentBrowserSafeMp4,
-  ];
-  const populated = mediaValues.filter((value) => value !== null).length;
-  if (populated === 0) {
-    if (selection.currentSourceGenerationAttemptId !== null) {
-      throw corruptSelection(graphNodeId);
-    }
+  if (selection.currentAssetId === null) {
     return emptyVideoSnapshotEntry(graphNodeId, selection.version);
   }
-  if (populated !== mediaValues.length) throw corruptSelection(graphNodeId);
   const candidate = {
     graphNodeId,
     selectionVersion: selection.version,
     assetId: selection.currentAssetId,
     variantId: selection.currentVariantId,
-    sourceGenerationAttemptId: selection.currentSourceGenerationAttemptId,
     checksumSha256: selection.currentChecksumSha256,
     contentType: selection.currentContentType,
     durationMs: selection.currentDurationMs,
@@ -929,7 +916,6 @@ function emptyVideoSnapshotEntry(
     selectionVersion,
     assetId: null,
     variantId: null,
-    sourceGenerationAttemptId: null,
     checksumSha256: null,
     contentType: null,
     durationMs: null,
@@ -953,7 +939,6 @@ function prepareBuildVideo(
   if (!entry.assetId || !entry.variantId || !selection) {
     return {
       graphNodeId,
-      sourceGenerationId: null,
       selectionVersion: entry.selectionVersion,
       asset: null,
       eligibilityDiagnostics: [],
@@ -1008,38 +993,64 @@ function prepareBuildVideo(
         `Current video ${graphNodeId}`,
       ),
     );
-    const durationMs = variant.durationMs;
-    if (
-      !variant.checksumSha256 ||
-      !variant.contentType.toLowerCase().startsWith('video/') ||
-      variant.width === null ||
-      variant.height === null ||
-      durationMs === null ||
-      durationMs <= 0
-    ) {
+    if (!variant.contentType.toLowerCase().startsWith('video/')) {
       diagnostics.push(
         buildDiagnostic(
-          'STORY_BUILD_VIDEO_METADATA_REQUIRED',
-          `Current video ${graphNodeId} is missing a checksum, video content type, dimensions, or an exact millisecond duration.`,
+          'STORY_BUILD_VIDEO_CONTENT_TYPE_INVALID',
+          `Current video ${graphNodeId} does not resolve to a video media type.`,
           'asset',
           asset.id,
         ),
       );
-    } else if (
+    }
+    if (
       entry.checksumSha256 !== variant.checksumSha256 ||
       entry.contentType !== variant.contentType ||
       entry.width !== variant.width ||
       entry.height !== variant.height ||
-      entry.durationMs !== durationMs
+      entry.durationMs !== variant.durationMs
     ) {
       diagnostics.push(
-        buildDiagnostic(
+        buildWarning(
           'STORY_BUILD_VIDEO_SELECTION_STALE',
-          `Current video ${graphNodeId} metadata no longer matches its selected variant.`,
+          `Current video ${graphNodeId} technical metadata changed after selection; the latest metadata will be used.`,
           'asset',
           asset.id,
         ),
       );
+    }
+    if (
+      !variant.checksumSha256 ||
+      variant.width === null ||
+      variant.height === null ||
+      variant.durationMs === null ||
+      variant.durationMs <= 0 ||
+      !isBrowserSafeMp4Metadata(variant.metadata)
+    ) {
+      diagnostics.push(
+        buildWarning(
+          'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
+          `Current video ${graphNodeId} has incomplete technical metadata; the original video remains publishable.`,
+          'asset',
+          asset.id,
+        ),
+      );
+    }
+    if (project.frameProfile && variant.width && variant.height) {
+      const expected = STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile];
+      if (
+        variant.width !== expected.width ||
+        variant.height !== expected.height
+      ) {
+        diagnostics.push(
+          buildWarning(
+            'STORY_BUILD_VIDEO_FRAME_PROFILE_MISMATCH',
+            `Current video ${graphNodeId} is ${variant.width}×${variant.height}; project settings recommend ${expected.width}×${expected.height}. It will still be published.`,
+            'asset',
+            asset.id,
+          ),
+        );
+      }
     }
     // A text-first (null-profile) project accepts the video's native
     // dimensions; only a film project pins clips to a fixed picture contract.
@@ -1060,18 +1071,18 @@ function prepareBuildVideo(
     }
   }
   const frozen: FrozenStoryVideoAsset | null =
-    diagnostics.length === 0 && asset && variant
+    !diagnostics.some((item) => item.severity === 'error') && asset && variant
       ? {
           assetId: asset.id,
           variantId: variant.id,
-          checksumSha256: entry.checksumSha256 as string,
-          contentType: entry.contentType as string,
+          checksumSha256: variant.checksumSha256,
+          contentType: variant.contentType,
           sizeBytes:
             variant.sizeBytes ??
             (variant.variantKey === 'original' ? asset.sizeBytes : null),
-          width: entry.width as number,
-          height: entry.height as number,
-          durationMs: entry.durationMs as number,
+          width: variant.width,
+          height: variant.height,
+          durationMs: variant.durationMs,
           browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
           url: storyBuildAssetDeliveryPath(
             project.id,
@@ -1083,7 +1094,6 @@ function prepareBuildVideo(
       : null;
   return {
     graphNodeId,
-    sourceGenerationId: selection.currentSourceGenerationAttemptId,
     selectionVersion: selection.version,
     asset: frozen,
     eligibilityDiagnostics: diagnostics,
@@ -1142,7 +1152,7 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
@@ -1365,7 +1375,7 @@ interface CurrentBuildMediaRow {
   logicalKey: string;
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   durationMs: number | null;
   width: number | null;
@@ -1441,16 +1451,6 @@ function currentMediaDiagnostics(
         ),
       ];
     }
-    if (frozen.variant.checksumSha256 !== frozen.checksumSha256) {
-      return [
-        buildDiagnostic(
-          'STORY_BUILD_ASSET_INTEGRITY_CHANGED',
-          `${label} no longer matches its frozen checksum.`,
-          'asset',
-          frozen.assetId,
-        ),
-      ];
-    }
     const currentSizeBytes =
       frozen.variant.sizeBytes ??
       (frozen.variant.variantKey === 'original'
@@ -1458,22 +1458,29 @@ function currentMediaDiagnostics(
         : null);
     if (
       !frozen.contentType.toLowerCase().startsWith('video/') ||
-      frozen.durationMs === null ||
-      frozen.durationMs <= 0 ||
-      frozen.width === null ||
-      frozen.width <= 0 ||
-      frozen.height === null ||
-      frozen.height <= 0 ||
-      frozen.variant.contentType !== frozen.contentType ||
-      frozen.variant.durationMs !== frozen.durationMs ||
-      frozen.variant.width !== frozen.width ||
-      frozen.variant.height !== frozen.height ||
-      (frozen.sizeBytes !== null && currentSizeBytes !== frozen.sizeBytes)
+      !frozen.variant.contentType.toLowerCase().startsWith('video/')
     ) {
       return [
         buildDiagnostic(
           'STORY_BUILD_ASSET_METADATA_CHANGED',
           `${label} no longer matches its frozen playback metadata.`,
+          'asset',
+          frozen.assetId,
+        ),
+      ];
+    }
+    if (
+      frozen.variant.checksumSha256 !== frozen.checksumSha256 ||
+      frozen.variant.durationMs !== frozen.durationMs ||
+      frozen.variant.width !== frozen.width ||
+      frozen.variant.height !== frozen.height ||
+      frozen.variant.contentType !== frozen.contentType ||
+      (frozen.sizeBytes !== null && currentSizeBytes !== frozen.sizeBytes)
+    ) {
+      return [
+        buildWarning(
+          'STORY_BUILD_ASSET_METADATA_CHANGED',
+          `${label} technical metadata changed after the Build was created; playback identity is unchanged.`,
           'asset',
           frozen.assetId,
         ),
@@ -1501,9 +1508,10 @@ function runtimeDeliveryDiagnostics(row: BuildRow): StoryBuildDiagnosticDto[] {
   const videoUris = parsed.data.assets.flatMap((asset) =>
     asset.kind === 'video' ? asset.variants.map((variant) => variant.uri) : [],
   );
+  const referenced = new Set(videoUris);
   if (
-    videoUris.length === row.assets.length &&
-    videoUris.every((uri) => allowed.has(uri))
+    referenced.size === allowed.size &&
+    [...referenced].every((uri) => allowed.has(uri))
   ) {
     return [];
   }
@@ -1592,6 +1600,15 @@ function buildDiagnostic(
   entityId: string | null,
 ): StoryBuildDiagnosticDto {
   return { severity: 'error', code, message, entityType, entityId };
+}
+
+function buildWarning(
+  code: string,
+  message: string,
+  entityType: StoryBuildDiagnosticDto['entityType'],
+  entityId: string | null,
+): StoryBuildDiagnosticDto {
+  return { severity: 'warning', code, message, entityType, entityId };
 }
 
 function assertCurrentBuildContract(row: {

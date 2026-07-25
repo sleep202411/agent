@@ -45,6 +45,7 @@ export const StoryTextBodyLocalizedTextSchema = z.record(
 
 export const MAX_CHARACTER_IMAGES = 6;
 export const MAX_CHARACTER_VOICE_DURATION_MS = 5_000;
+export const MAX_STORY_PROJECT_NODES = 10_000;
 
 export const MAX_CHARACTER_IMAGE_LABEL_LENGTH = 60;
 
@@ -236,7 +237,7 @@ export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
 export const InteractiveStoryGraphSchema = z
   .object({
     entryNodeId: StoryStableIdSchema.nullable(),
-    nodes: z.array(StoryGraphNodeSchema).max(500),
+    nodes: z.array(StoryGraphNodeSchema).max(MAX_STORY_PROJECT_NODES),
   })
   .strict();
 
@@ -552,7 +553,7 @@ export const PlayableInteractiveStoryDraftContentSchema =
  * Revision-lock gate. PUT /draft intentionally uses the permissive mutable
  * schema above; POST /revisions/lock parses the stored head through this one.
  * This is the immutable full-gameplay boundary for story graph and runtime
- * copy. Video selection and generation are independent from the story draft.
+ * copy. Clip video selection is independent from the story draft.
  */
 export function createLockableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,

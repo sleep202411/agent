@@ -9,12 +9,20 @@ function makeService(opts: {
     externalAssetId: string;
     characterMedia: { characterId: string; mediaAssetId: string };
   }>;
+  /** upgrade-pass active MediaAsset mirrors (uploads and generated media). */
+  mediaRows?: Array<{
+    mediaAssetId: string;
+    externalAssetId: string;
+  }>;
   /** active per-project grant character ids for the job's project. */
   grantedCharacterIds?: string[];
 }) {
   const prisma = {
     aiProviderMediaAssetMirror: {
-      findMany: jest.fn(() => []),
+      findMany: jest.fn((args: { where?: Record<string, unknown> }) => {
+        const where = args?.where ?? {};
+        return 'mediaAssetId' in where ? (opts.mediaRows ?? []) : [];
+      }),
     },
     aiProviderExternalAsset: {
       // Route by query shape, not call order: the validate pass filters on
@@ -82,6 +90,32 @@ describe('BytePlusReferencePreparer — AIGC upgrade (virtual)', () => {
     );
     expect((out.referenceImages as Array<{ url: string }>)[0].url).toBe(
       VIRTUAL_IMAGE_REF.url,
+    );
+  });
+
+  it('upgrades a video ref through the same provider-readiness seam', async () => {
+    const { service } = makeService({
+      mediaRows: [
+        {
+          mediaAssetId: 'asset-video-1',
+          externalAssetId: 'asset-video-provider-1',
+        },
+      ],
+    });
+    const video = {
+      url: 'https://cdn.example.com/reference.mp4',
+      assetId: 'asset-video-1',
+    };
+
+    const out = await service.prepareReferences(
+      { referenceVideos: [video] },
+      'user-1',
+      'proj-1',
+      'ws-1',
+    );
+
+    expect((out.referenceVideos as Array<{ url: string }>)[0].url).toBe(
+      'asset://asset-video-provider-1',
     );
   });
 

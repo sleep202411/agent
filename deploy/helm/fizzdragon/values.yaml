@@ -195,6 +195,28 @@ serverSecrets:
     # the CSI projection fails if absent. (Set in kv-fizzdragon-com 2026-06-22.)
     - kv: internal-service-token
       env: INTERNAL_SERVICE_TOKEN
+# Studio Agent's durable runtime uses three least-privilege projections.
+# Provision every
+# referenced Key Vault secret before enabling; CSI projection is fail-closed.
+studioAgentTemporalSecrets:
+  projectedName: fizzdragon-studio-agent-temporal-secrets
+  mapping:
+    - kv: temporal-client-ca
+      env: TEMPORAL_TLS_CA
+    - kv: temporal-client-cert
+      env: TEMPORAL_TLS_CERT
+    - kv: temporal-client-key
+      env: TEMPORAL_TLS_KEY
+studioAgentGatewaySecrets:
+  projectedName: fizzdragon-studio-agent-gateway-secrets
+  mapping:
+    - kv: studio-agent-runtime-token
+      env: STUDIO_AGENT_RUNTIME_TOKEN
+studioAgentModelSecrets:
+  projectedName: fizzdragon-studio-agent-model-secrets
+  mapping:
+    - kv: alibaba-api-key
+      env: ALIBABA_API_KEY
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
 # exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
@@ -219,8 +241,8 @@ web:
   env:
     SERVER_URL: http://fizzdragon-server:3001
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -246,8 +268,8 @@ studio:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
     AURORA_STRIP_PREFIX: "1"
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -289,8 +311,8 @@ adminUi:
     # (apex without it 302s to a different Sa-Token service).
     NEWS_API_BASE_URL: https://java.fizzdragon.com/content
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -371,8 +393,8 @@ server:
     LEGACY_MYSQL_PORT: "3306"
     LEGACY_MYSQL_DATABASE: fizzdragon_client
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -402,8 +424,8 @@ agent:
     # after Tier 3 upgrade 2026-05-23. See model-hardening.ts (RateLimiter).
     STORYOS_CLAUDE_MAX_CONCURRENCY: "20"
   resources:
-    requests: {cpu: 250m, memory: 1Gi}
-    limits: {cpu: 2000m, memory: 3Gi}
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: 2000m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -442,8 +464,8 @@ agentWorker:
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
   resources:
-    requests: {cpu: 500m, memory: 1Gi}
-    limits: {cpu: 1500m, memory: 3Gi}
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 1500m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -464,6 +486,232 @@ agentWorker:
     queues:
       - bull:storyos-workflows:wait
       - bull:asset-images:wait
+# ---------------------------------------------------------------------------
+# Temporal — self-hosted, one cluster per region, in the application namespace.
+#
+# Self-hosted rather than Temporal Cloud because .cn runs in mainland China:
+# the worker<->frontend link is a continuous long-polling gRPC connection that
+# would cross the border, and workflow histories carry user story content, so
+# routing them offshore is a data-export problem. Running Cloud for .com and
+# self-hosting for .cn would mean two operational models for one feature.
+#
+# Persistence is a DEDICATED Postgres server, never the application database:
+# Temporal's officially tested versions top out at PostgreSQL 16 while the
+# application server runs 18, and its write load has no business sharing IOPS
+# with user-facing queries.
+# ---------------------------------------------------------------------------
+temporal:
+  image:
+    # Upstream images, mirrored into each region's own registry rather than
+    # pulled from Docker Hub: .cn cannot reach it at all, and prod should not
+    # depend on a public registry staying up. Carried under the platform
+    # registry prefix like every other component, so a region overrides
+    # image.registry once and these follow.
+    #
+    #   az acr import --name acrfizzdragoncom \
+    #     --source docker.io/temporalio/server:1.31.2 \
+    #     --image temporalio-server:1.31.2
+    repository: temporalio-server
+    tag: 1.31.2
+    adminToolsRepository: temporalio-admin-tools
+    adminToolsTag: 1.31.2
+    pullPolicy: IfNotPresent
+  # All four roles in one process. The split into separate Deployments buys
+  # per-role tuning and a smaller blast radius, neither of which pays for
+  # itself at this volume; two anti-affine replicas already survive a pod or
+  # node loss. Splitting later is a config change, not a data migration.
+  services: history,matching,frontend,worker
+  replicaCount: 2
+  frontendPort: 7233
+  membershipPort: 6933
+  # IMMUTABLE once the first server boots — the shard count is baked into the
+  # persistence layout, so changing it later means migrating all data. 512 is
+  # the standard production value; the docker-compose default of 4 is a
+  # development convenience that permanently caps throughput.
+  numHistoryShards: 512
+  namespace: fizzdragon
+  # Workflow history retention. History is the dominant storage consumer, and
+  # it grows with turn volume until this bound.
+  retention: 168h
+  database:
+    # Dedicated server, PostgreSQL 16. Empty by default: the chart refuses to
+    # render rather than invent an endpoint.
+    host: fizzdragon-temporal-pg.postgres.database.azure.com
+    port: 5432
+    user: temporal
+    name: temporal
+    visibilityName: temporal_visibility
+    # Azure and Alibaba both require TLS on managed Postgres.
+    tlsEnabled: true
+    # Deliberately small. Temporal's defaults are sized for a database it owns
+    # exclusively; these are per-replica and this server is modest.
+    maxConns: 20
+    maxIdleConns: 10
+    maxConnLifetime: 1h
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 2Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      value: worker
+      operator: Equal
+      effect: NoSchedule
+# Temporal server database credentials. The password never enters git; .com
+# projects it from Key Vault, .cn creates the Secret out-of-band with kubectl.
+temporalDatabaseSecrets:
+  projectedName: fizzdragon-temporal-db-secrets
+  mapping:
+    - kv: temporal-db-password
+      env: POSTGRES_PWD
+# ---------------------------------------------------------------------------
+# studio-agent-runtime — provider-independent Temporal execution plane.
+#
+# The temporal.address below must match the in-cluster Temporal Service for
+# plaintext to be permitted; any other endpoint forces mTLS. See
+# templates/studio-agent-runtime.yaml.
+# ---------------------------------------------------------------------------
+studioAgentRuntime:
+  image:
+    repository: fizzdragon-studio-agent-runtime
+    tag: 6c9b64824b230ee8fcb628f52c8b08a1806edf9f
+  internalBaseUrl: http://fizzdragon-server:3001
+  temporal:
+    # The in-cluster Temporal Service this chart renders. Kept in values rather
+    # than hardcoded so a future external endpoint is a values change — but see
+    # tlsMode: pointing this anywhere else makes mTLS mandatory.
+    address: fizzdragon-temporal:7233
+    namespace: fizzdragon
+    # Stable Worker Deployment name. Immutable releases are build IDs within
+    # this deployment; changing it strands pinned workflow histories.
+    workerDeploymentName: fizzdragon-studio-agent
+    # Optional TLS hostname override. Leave empty when the endpoint certificate
+    # already matches the hostname in address.
+    serverName: ""
+    # Plaintext is permitted for exactly one address: the in-cluster Temporal
+    # Service this chart owns, whose traffic never leaves the node network.
+    # The template compares the address against the rendered Service name, so
+    # repointing at any external endpoint fails the render until this is mtls.
+    # Issuing and rotating a CA plus client certs for a ClusterIP hop buys
+    # nothing that the cluster boundary does not already provide.
+    tlsMode: disabled
+    connectTimeoutMs: 5000
+    healthProbeIntervalMs: 5000
+    reconnectMinDelayMs: 500
+    reconnectMaxDelayMs: 30000
+    pollerStaleMs: 30000
+  model:
+    baseUrl: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    textId: qwen3-max
+    visionId: qwen3-vl-plus
+    timeoutMs: 120000
+    maxOutputTokens: 8192
+    deltaBytes: 1024
+    deltaIntervalMs: 50
+  # Runtime egress is default-denied. Kubernetes NetworkPolicy cannot select a
+  # public dependency by DNS name, so operators must provide the exact
+  # environment-specific destination CIDRs. The template rejects missing or
+  # intentionally broad catch-all ranges.
+  networkPolicy:
+    enabled: true
+    dns:
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+      podSelector:
+        k8s-app: kube-dns
+      port: 53
+    # Temporal needs no CIDRs: it is in-cluster, so the workers reach it by pod
+    # selection and the port comes from temporal.frontendPort.
+    # dashscope-intl.aliyuncs.com sits behind an Alibaba NLB whose addresses
+    # rotate, so this rule is structurally weak: enumerating a public provider's
+    # IPs is either stale or a maintenance treadmill. It is the best a
+    # CIDR-based policy can do — an FQDN-aware engine (Cilium) is the real fix
+    # if egress enforcement is ever turned on. Re-resolve after provider changes:
+    #   dig +short dashscope-intl.aliyuncs.com
+    model:
+      port: 443
+      cidrs:
+        - 47.236.0.0/16
+        - 47.245.0.0/16
+    # The managed Postgres endpoint the Temporal server may reach. A /24 floor
+    # is enforced — this is one endpoint, not a range.
+    #
+    # fizzdragon-temporal-pg resolves into 20.205.236.0/24 today. Azure does not
+    # contract a stable address for a managed Postgres endpoint, so a failover
+    # that moves it out of this /24 breaks Temporal's egress. Re-resolve after
+    # any maintenance event:
+    #   dig +short fizzdragon-temporal-pg.postgres.database.azure.com
+    database:
+      port: 5432
+      cidrs:
+        - 20.205.236.0/24
+    gateway:
+      port: 3001
+  # Immutable per-root-turn envelope. The server snapshots these values when
+  # it creates or promotes a turn; child tasks share that one durable budget.
+  budget:
+    maxChildDepth: 4
+    maxChildRuns: 24
+    maxConcurrentChildRuns: 8
+    maxModelStepsPerRun: 32
+    maxModelStepsPerRoot: 128
+    maxTotalTokenUnits: 1000000
+    maxContextBytesPerStep: 2000000
+    imageTokenReserveUnits: 8192
+    minOutputTokenUnitsPerStep: 256
+    wallTimeMs: 3600000
+  # Server-side, cross-replica admission. Every accepted root reserves one
+  # complete root budget until its canonical terminal transaction.
+  admission:
+    leaseMs: 120000
+    reconcileIntervalMs: 5000
+    reconcileBatchSize: 50
+    maxActiveRootRuns:
+      global: 512
+      perWorkspace: 64
+      perUser: 4
+    maxReservedTokenUnits:
+      global: 512000000
+      perWorkspace: 64000000
+      perUser: 4000000
+  attachmentCleanup:
+    ttlMs: 86400000
+    pollIntervalMs: 30000
+    batchSize: 25
+    discoveryBatchSize: 500
+    leaseMs: 60000
+    maxAttempts: 12
+    retryBaseMs: 10000
+    retryMaxMs: 1800000
+  gatewayTimeoutMs: 30000
+  healthPort: 3010
+  metricsPort: 9464
+  shutdownGraceMs: 30000
+  shutdownForceMs: 120000
+  # Kubernetes must outlive Temporal's force-shutdown deadline.
+  terminationGracePeriodSeconds: 150
+  control:
+    replicaCount: 2
+    maxConcurrentWorkflowTasks: 64
+    maxConcurrentWorkflowPolls: 16
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+  activities:
+    replicaCount: 2
+    maxConcurrentTasks: 16
+    maxConcurrentPolls: 8
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 2000m, memory: 2Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
 # ---------------------------------------------------------------------------
 # Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
 # No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`

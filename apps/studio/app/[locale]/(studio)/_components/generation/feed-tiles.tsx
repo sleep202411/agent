@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
-import type { FizzAiJobOutput } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiJobOutput } from "@/lib/canvas-authoring/generation-api";
 import type { FeedJob } from "./use-generation-feed";
 
 /** Translator type for the "generation" namespace, threaded into the pure

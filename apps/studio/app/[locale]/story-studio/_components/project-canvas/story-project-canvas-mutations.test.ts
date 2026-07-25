@@ -9,7 +9,11 @@ import {
   deleteGraphNode,
   duplicateClipNode,
   duplicateTextNode,
+  moveChoiceOption,
+  removeChoiceOption,
   setNodeMusic,
+  updateChoiceExitPrompt,
+  updateChoiceOptionLabel,
   updateTextNode,
   validateStoryDraftGraph,
 } from "./story-project-canvas-mutations";
@@ -86,6 +90,41 @@ describe("story project canvas mutations", () => {
     });
   });
 
+  it("writes explicit cross-chapter continuations without admitting arbitrary missing targets", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "chapter-one-ending",
+      body: "The first chapter closes.",
+    }).content;
+
+    expect(() =>
+      connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening")
+    ).toThrow(/Unknown target node/);
+
+    content = connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening", {
+      allowExternalTarget: true,
+    });
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: { kind: "auto", nextNodeId: "chapter-two-opening" },
+    });
+
+    content = convertSceneExitToChoice(content, "chapter-one-ending", "en-US");
+    content = addChoiceOption(content, "chapter-one-ending", "chapter-two-opening", "en-US", {
+      label: "Enter Chapter 2",
+      allowExternalTarget: true,
+    }).content;
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: {
+        kind: "choice",
+        choices: [
+          {
+            label: { "en-US": "Enter Chapter 2" },
+            nextNodeId: "chapter-two-opening",
+          },
+        ],
+      },
+    });
+  });
+
   it("requires text body copy only when validating a playable graph", () => {
     let content = createTextNode(draft(), {
       nodeId: "text:opening",
@@ -150,6 +189,51 @@ describe("story project canvas mutations", () => {
     expect(withoutTarget.graph.nodes[0]).toMatchObject({
       kind: "text",
       exit: { kind: "choice", choices: [] },
+    });
+  });
+
+  it("edits a player choice in place without dropping other locales", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "text:choice",
+      body: "Choose.",
+    }).content;
+    content = createClipNode(content, { nodeId: "clip:left", clipKey: "LEFT" }).content;
+    content = createClipNode(content, { nodeId: "clip:right", clipKey: "RIGHT" }).content;
+    content = convertSceneExitToChoice(content, "text:choice", "en-US");
+    content = updateChoiceExitPrompt(content, "text:choice", "en-US", "Which way?");
+    content = updateChoiceExitPrompt(content, "text:choice", "zh-CN", "往哪边走？");
+    const left = addChoiceOption(content, "text:choice", "clip:left", "en-US", {
+      choiceId: "left",
+      label: "Left",
+    });
+    content = left.content;
+    content = updateChoiceOptionLabel(content, "text:choice", "left", "zh-CN", "向左");
+    content = updateChoiceOptionLabel(content, "text:choice", "left", "en-US", "Go left");
+    content = addChoiceOption(content, "text:choice", "clip:right", "en-US", {
+      choiceId: "right",
+      label: "Right",
+    }).content;
+    content = moveChoiceOption(content, "text:choice", "right", "up");
+
+    expect(content.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: {
+        kind: "choice",
+        prompt: { "en-US": "Which way?", "zh-CN": "往哪边走？" },
+        choices: [
+          { choiceId: "right" },
+          {
+            choiceId: "left",
+            label: { "en-US": "Go left", "zh-CN": "向左" },
+          },
+        ],
+      },
+    });
+
+    content = removeChoiceOption(content, "text:choice", "right");
+    expect(content.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: { kind: "choice", choices: [{ choiceId: "left" }] },
     });
   });
 

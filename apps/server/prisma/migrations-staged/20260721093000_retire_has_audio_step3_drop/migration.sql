@@ -112,7 +112,6 @@ BEGIN
     UPDATE "story_video_selections"
     SET "current_asset_id" = NULL,
         "current_variant_id" = NULL,
-        "current_source_generation_attempt_id" = NULL,
         "current_checksum_sha256" = NULL,
         "current_content_type" = NULL,
         "current_duration_ms" = NULL,
@@ -143,7 +142,6 @@ BEGIN
     UPDATE "story_video_selections"
     SET "current_asset_id" = NULL,
         "current_variant_id" = NULL,
-        "current_source_generation_attempt_id" = NULL,
         "current_checksum_sha256" = NULL,
         "current_content_type" = NULL,
         "current_duration_ms" = NULL,

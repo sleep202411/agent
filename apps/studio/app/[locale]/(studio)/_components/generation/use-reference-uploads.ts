@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FizzAiReferenceKind } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 
 /** One reference upload (in flight or landed) bound to a schema field. */

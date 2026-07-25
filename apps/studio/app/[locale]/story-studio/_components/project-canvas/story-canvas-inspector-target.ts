@@ -1,4 +1,4 @@
-import { STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
+import { isSyntheticDecisionNodeId, STORY_ROOT_NODE_ID } from "./story-project-canvas-model";
 import { nextStoryCanvasFocusedNodeId } from "./story-project-canvas-selection";
 
 export type StoryCanvasInspectorTarget =
@@ -13,6 +13,10 @@ export function storyNodeInspectorTarget(nodeId: string): StoryCanvasInspectorTa
   // The mandatory Story World root has no per-node inspector: selecting it opens
   // the Story Bible panel (world inspector) instead of a node editor.
   if (nodeId === STORY_ROOT_NODE_ID) return STORY_WORLD_INSPECTOR;
+  // Player choices are edited directly on their canvas card. Treating their
+  // synthetic projection as an inspector target would duplicate the same form
+  // in a drawer and make a simple click unexpectedly cover the canvas.
+  if (isSyntheticDecisionNodeId(nodeId)) return CLOSED_STORY_CANVAS_INSPECTOR;
   return { kind: "node", nodeId };
 }
 

@@ -8,7 +8,8 @@ import {
 const USER = { userId: 'user-1' };
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
-const CONVERSATION_ID = `story-canvas:${PROJECT_ID}`;
+const CHAPTER_ID = '0197f4a2-0800-7000-8000-00000000000c';
+const CONVERSATION_ID = `story-canvas:${PROJECT_ID}:${CHAPTER_ID}`;
 const SESSION_ID = '0197f4a2-0800-7000-8000-000000000003';
 const USER_MESSAGE_ID = 'creator-turn-1';
 const TURN = {
@@ -33,6 +34,7 @@ const proposal = {
 };
 
 type CapturedBrief = typeof proposal & {
+  chapterId: string;
   idempotencyKey: string;
   conversationId: string;
   initiatedBySessionId?: string;
@@ -111,6 +113,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -143,6 +146,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -184,6 +188,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -266,6 +271,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -312,6 +318,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -355,6 +362,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,
@@ -407,6 +415,7 @@ describe('Story Canvas Copilot tools', () => {
       user: USER,
       workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
       conversationId: CONVERSATION_ID,
       sessionId: SESSION_ID,
       userMessageId: USER_MESSAGE_ID,

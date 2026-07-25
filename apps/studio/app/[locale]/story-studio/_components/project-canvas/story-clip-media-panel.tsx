@@ -1,25 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { IconAlertTriangle, IconLoader2, IconMovie, IconUpload } from "@tabler/icons-react";
+import { useState } from "react";
+import { IconBookmark, IconChevronRight, IconLoader2, IconMovie } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
 import { StudioVideoPlayer } from "@/components/media/studio-video-player";
-import { storyApiErrorMessage, type StoryClipVideoSummary } from "@/lib/story-projects-api";
+import type { StoryCandidateAsset, StoryClipVideoSummary } from "@/lib/story-projects-api";
+import {
+  StoryCandidateAssetPickerDialog,
+  type StoryCandidateAssetUploadState,
+} from "./story-candidate-asset-picker-dialog";
 
 const CLIP_VIDEO_ACCEPT = "video/mp4,.mp4";
-
-export type StoryClipMediaUploadState =
-  | { stage: "uploading"; progress: number }
-  | { stage: "processing" };
+const CLIP_CANDIDATE_KINDS = ["video"] as const;
 
 export interface StoryClipMediaPanelProps {
   clip: StoryClipVideoSummary | null;
   canEdit: boolean;
   disabledReason?: string | null;
+  candidateAssets: StoryCandidateAsset[];
+  candidateAssetsLoading?: boolean;
+  candidateAssetsError?: string | null;
+  onRetryCandidates?: () => void;
+  onSelectCandidate: (candidate: StoryCandidateAsset) => Promise<void>;
+  onClearSelection: () => Promise<void>;
   onUpload: (
     file: File,
-    onState: (state: StoryClipMediaUploadState) => void,
+    onState: (state: StoryCandidateAssetUploadState) => void,
     signal: AbortSignal
   ) => Promise<void>;
 }
@@ -33,68 +39,28 @@ export function StoryClipMediaPanel({
   clip,
   canEdit,
   disabledReason,
+  candidateAssets,
+  candidateAssetsLoading = false,
+  candidateAssetsError = null,
+  onRetryCandidates,
+  onSelectCandidate,
+  onClearSelection,
   onUpload,
 }: StoryClipMediaPanelProps) {
   const t = useTranslations("storyStudio.canvas.inspector.media");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const uploadAbortRef = useRef<AbortController | null>(null);
-  const mountedRef = useRef(true);
-  const [uploadState, setUploadState] = useState<StoryClipMediaUploadState | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [candidatePickerOpen, setCandidatePickerOpen] = useState(false);
   const currentVideo = clip?.currentVideo ?? null;
   const previewUrl = currentVideo?.asset.previewUrl ?? null;
-  const busy = uploadState !== null;
-  // Upload is valid before this graph node has any video-plane state.
-  const disabled = !canEdit || busy;
+  const disabled = !canEdit;
   const uploadTitle = disabledReason ?? undefined;
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      uploadAbortRef.current?.abort();
-    };
-  }, []);
-
-  const uploadFile = async (file: File) => {
-    uploadAbortRef.current?.abort();
-    const controller = new AbortController();
-    uploadAbortRef.current = controller;
-    setUploadState({ stage: "uploading", progress: 0 });
-    setError(null);
-    try {
-      await onUpload(
-        file,
-        (nextState) => {
-          if (mountedRef.current && uploadAbortRef.current === controller) {
-            setUploadState(
-              nextState.stage === "uploading"
-                ? {
-                    stage: "uploading",
-                    progress: Math.min(100, Math.max(0, Math.round(nextState.progress))),
-                  }
-                : nextState
-            );
-          }
-        },
-        controller.signal
-      );
-    } catch (uploadError) {
-      if (!controller.signal.aborted && mountedRef.current) {
-        setError(storyApiErrorMessage(uploadError, t("errors.upload")));
-      }
-    } finally {
-      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
-      if (mountedRef.current) setUploadState(null);
-    }
-  };
+  const videoCandidates = candidateAssets.filter((candidate) => candidate.asset.kind === "video");
 
   const width = currentVideo?.width ?? null;
   const height = currentVideo?.height ?? null;
-  const durationSeconds = currentVideo ? currentVideo.durationMs / 1_000 : null;
+  const durationSeconds = currentVideo?.durationMs != null ? currentVideo.durationMs / 1_000 : null;
 
   return (
-    <section className="mt-6 rounded-[20px] bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+    <section className="mt-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-xs font-semibold text-white/78">{t("title")}</h3>
@@ -135,69 +101,56 @@ export function StoryClipMediaPanel({
         ) : null}
       </div>
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept={CLIP_VIDEO_ACCEPT}
-        className="hidden"
-        tabIndex={-1}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadFile(file);
-        }}
-      />
-
-      <Button
+      <button
         type="button"
-        variant="secondary"
-        size="lg"
-        disabled={disabled}
-        title={uploadTitle}
-        className="mt-3 w-full rounded-xl bg-white/[0.08]"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => setCandidatePickerOpen(true)}
+        className="mt-4 flex w-full items-center gap-3 rounded-2xl bg-white/[0.055] px-3 py-3 text-left transition hover:bg-white/[0.09] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+        aria-haspopup="dialog"
       >
-        {busy ? <IconLoader2 className="size-4 animate-spin" /> : <IconUpload className="size-4" />}
-        {uploadState?.stage === "processing"
-          ? t("processing")
-          : uploadState?.stage === "uploading"
-            ? t("uploading", { progress: uploadState.progress })
-            : currentVideo
-              ? t("replace")
-              : t("upload")}
-      </Button>
-      {uploadState?.stage === "uploading" ? (
-        <div
-          className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={uploadState.progress}
-          aria-label={t("uploading", { progress: uploadState.progress })}
-        >
-          <div
-            className="h-full rounded-full bg-white/55 transition-[width] duration-150"
-            style={{ width: `${uploadState.progress}%` }}
-          />
-        </div>
-      ) : (
-        <p
-          className="mt-1.5 text-center text-[9px] text-white/28"
-          role={uploadState?.stage === "processing" ? "status" : undefined}
-        >
-          {uploadState?.stage === "processing" ? t("processingDescription") : t("accepted")}
-        </p>
-      )}
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58">
+          {candidateAssetsLoading ? (
+            <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
+          ) : (
+            <IconBookmark className="size-4" stroke={1.8} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-semibold text-white/68">
+            {t("candidateAction")}
+          </span>
+          <span className="mt-0.5 block truncate text-[9px] text-white/32">
+            {candidateAssetsError
+              ? t("candidateLoadError")
+              : t("candidateActionDescription", { count: videoCandidates.length })}
+          </span>
+        </span>
+        <IconChevronRight className="size-4 shrink-0 text-white/28" stroke={1.8} />
+      </button>
 
-      {error ? (
-        <p
-          className="mt-3 flex items-start gap-2 rounded-xl bg-[rgba(229,34,39,0.1)] px-3 py-2 text-[10px] leading-4 text-[#ffb2b4]"
-          role="alert"
-        >
-          <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{error}</span>
-        </p>
-      ) : null}
+      <StoryCandidateAssetPickerDialog
+        open={candidatePickerOpen}
+        onOpenChange={setCandidatePickerOpen}
+        items={candidateAssets}
+        allowedKinds={CLIP_CANDIDATE_KINDS}
+        currentAssetId={currentVideo?.asset.id ?? null}
+        loading={candidateAssetsLoading}
+        error={candidateAssetsError}
+        canSelect={!disabled}
+        disabledReason={uploadTitle}
+        onRetry={onRetryCandidates}
+        isSelectable={(candidate) =>
+          Boolean(
+            candidate.asset.previewUrl &&
+            candidate.videoVariant &&
+            candidate.videoVariant.contentType.toLowerCase().startsWith("video/")
+          )
+        }
+        unavailableReason={() => t("candidateUnavailable")}
+        onSelect={onSelectCandidate}
+        onClearSelection={onClearSelection}
+        uploadAccept={CLIP_VIDEO_ACCEPT}
+        onUpload={onUpload}
+      />
     </section>
   );
 }

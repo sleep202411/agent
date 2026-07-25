@@ -8,7 +8,6 @@ import {
   StoryBuildKind,
   StoryBuildStatus,
   StoryRevisionSource,
-  StoryVideoTargetKind,
 } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -220,7 +219,6 @@ function compilerInput(
         ? [
             {
               graphNodeId: node.nodeId,
-              sourceGenerationId: null,
               selectionVersion: 1,
               asset: frozenAsset(index + 1, 5_000),
               eligibilityDiagnostics: [],
@@ -383,27 +381,25 @@ describe('compileStoryBuild', () => {
     );
   });
 
-  it('fails exact media with missing technical metadata', () => {
+  it('publishes exact media with missing technical metadata and warns', () => {
     const input = compilerInput();
     input.videos[0] = {
       ...input.videos[0],
-      asset: null,
-      eligibilityDiagnostics: [
-        {
-          severity: 'error',
-          code: 'STORY_BUILD_VIDEO_METADATA_REQUIRED',
-          message: 'Exact variant metadata is incomplete.',
-          entityType: 'asset',
-          entityId: ASSET_ID,
-        },
-      ],
+      asset: {
+        ...input.videos[0].asset!,
+        checksumSha256: null,
+        durationMs: null,
+        width: null,
+        height: null,
+        browserSafeMp4: null,
+      },
     };
 
     const result = compileStoryBuild(input);
 
-    expect(result.runtime).toBeNull();
+    expect(result.runtime).not.toBeNull();
     expect(result.diagnostics.map((item) => item.code)).toContain(
-      'STORY_BUILD_VIDEO_METADATA_REQUIRED',
+      'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
     );
   });
 
@@ -542,6 +538,84 @@ describe('StoryBuildService concurrency boundaries', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
+  it('keeps frozen media readable when only advisory metadata changed', async () => {
+    const frozen = {
+      logicalKey: 'video:START',
+      assetId: ASSET_ID,
+      variantId: VARIANT_ID,
+      checksumSha256: CHECKSUM,
+      contentType: 'video/mp4',
+      durationMs: 7_000,
+      width: 1920,
+      height: 1080,
+      browserSafeMp4: true,
+      sizeBytes: 7_000n,
+      build: {
+        status: StoryBuildStatus.ready,
+        kind: StoryBuildKind.preview,
+        scope: { kind: 'full' },
+        runtimeSchemaVersion: 2,
+        experiencePublication: null,
+      },
+      asset: {
+        id: ASSET_ID,
+        kind: MediaAssetKind.video,
+        status: MediaAssetStatus.ready,
+        moderationStatus: MediaAssetModerationStatus.approved,
+        deletedAt: null,
+        sizeBytes: 7_000n,
+        storageProvider: MediaStorageProvider.external_url,
+        bucket: null,
+        region: null,
+        objectKey: null,
+        externalUrl: 'https://cdn.example.test/video.mp4',
+        contentType: 'video/mp4',
+        placements: [],
+      },
+      variant: {
+        id: VARIANT_ID,
+        assetId: ASSET_ID,
+        variantKey: 'original',
+        status: MediaAssetVariantStatus.ready,
+        checksumSha256: 'b'.repeat(64),
+        contentType: 'video/mp4',
+        durationMs: 7_000,
+        width: 1920,
+        height: 1080,
+        sizeBytes: 7_000n,
+        metadata: { browserSafeMp4: true },
+        deletedAt: null,
+        placements: [],
+      },
+    };
+    const prisma = {
+      storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
+    };
+    storage.createReadUrl.mockResolvedValueOnce({
+      url: 'https://signed.example.test/video.mp4',
+      expiresAt: null,
+    });
+    const service = new StoryBuildService(
+      prisma as never,
+      permissions as never,
+      storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
+    );
+
+    await expect(
+      service.issueBuildAssetReadUrl(
+        user,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).resolves.toEqual({
+      url: 'https://signed.example.test/video.mp4',
+      expiresAt: null,
+    });
+  });
+
   it('takes the project write fence before materializing a Build snapshot', async () => {
     const tx = { storyBuild: { findUnique: jest.fn() } };
     const prisma = {
@@ -675,7 +749,6 @@ describe('StoryBuildService concurrency boundaries', () => {
             selectionVersion: 0,
             assetId: null,
             variantId: null,
-            sourceGenerationAttemptId: null,
             checksumSha256: null,
             contentType: null,
             durationMs: null,
@@ -824,7 +897,6 @@ describe('StoryBuildService concurrency boundaries', () => {
       selectionVersion: 4,
       assetId: ASSET_ID,
       variantId: VARIANT_ID,
-      sourceGenerationAttemptId: null,
       checksumSha256: CHECKSUM,
       contentType: 'video/mp4',
       durationMs: 7_000,
@@ -868,12 +940,10 @@ describe('StoryBuildService concurrency boundaries', () => {
     const selection = {
       id: '0197f4a2-0800-7000-8000-000000000008',
       storyProjectId: PROJECT_ID,
-      targetKind: StoryVideoTargetKind.clip,
-      targetKey: 'clip.start',
+      graphNodeId: 'clip.start',
       version: 4,
       currentAssetId: ASSET_ID,
       currentVariantId: VARIANT_ID,
-      currentSourceGenerationAttemptId: null,
       currentChecksumSha256: CHECKSUM,
       currentContentType: 'video/mp4',
       currentDurationMs: 7_000,
@@ -1034,7 +1104,6 @@ describe('StoryBuildService concurrency boundaries', () => {
     });
     expect(frozenClipData).toMatchObject({
       graphNodeId: 'clip.start',
-      sourceGenerationAttemptId: null,
       checksumSha256: CHECKSUM,
       durationMs: 7_000,
       browserSafeMp4: true,
@@ -1061,7 +1130,7 @@ describe('StoryBuildService concurrency boundaries', () => {
       user,
       WORKSPACE_ID,
       PROJECT_ID,
-      BUILD_ID,
+      result.id,
     );
     expect(stillValid.diagnostics).not.toContainEqual(
       expect.objectContaining({
@@ -1075,11 +1144,17 @@ describe('StoryBuildService concurrency boundaries', () => {
       user,
       WORKSPACE_ID,
       PROJECT_ID,
-      BUILD_ID,
+      result.id,
     );
-    expect(drifted.runtimeJson).toBeNull();
+    expect(
+      drifted.diagnostics.filter(
+        (diagnostic) => diagnostic.severity === 'error',
+      ),
+    ).toEqual([]);
+    expect(drifted.runtimeJson).not.toBeNull();
     expect(drifted.diagnostics).toContainEqual(
       expect.objectContaining({
+        severity: 'warning',
         code: 'STORY_BUILD_ASSET_METADATA_CHANGED',
         entityId: ASSET_ID,
       }),

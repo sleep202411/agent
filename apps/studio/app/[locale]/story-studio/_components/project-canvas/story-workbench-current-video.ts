@@ -1,10 +1,4 @@
-import type {
-  StoryClipVideoSummary,
-  StoryTrailerVideoSummary,
-  StoryWorkbench,
-} from "@/lib/story-projects-api";
-
-const ACTIVE_GENERATION_STATUSES = new Set(["queued", "running", "processing"]);
+import type { StoryClipVideoSummary, StoryWorkbench } from "@/lib/story-projects-api";
 
 /**
  * Projects the server-confirmed Clip summary into the existing workbench cache.
@@ -28,10 +22,6 @@ export function projectConfirmedClipCurrentVideo(
   const clips = [...workbench.video.clips];
   clips[clipIndex] = confirmedClip;
   const currentVideoCount = clips.filter((clip) => clip.currentVideo !== null).length;
-  const generatingClipCount = clips.filter(
-    (clip) => clip.generation && ACTIVE_GENERATION_STATUSES.has(clip.generation.status)
-  ).length;
-
   return {
     ...workbench,
     project: {
@@ -39,27 +29,11 @@ export function projectConfirmedClipCurrentVideo(
       production: {
         ...workbench.project.production,
         currentVideoCount,
-        generatingClipCount,
       },
     },
     video: {
       ...workbench.video,
       clips,
-    },
-  };
-}
-
-/** Projects the server-confirmed Trailer summary without disturbing Clips. */
-export function projectConfirmedTrailerCurrentVideo(
-  workbench: StoryWorkbench | undefined,
-  confirmedTrailer: StoryTrailerVideoSummary
-): StoryWorkbench | undefined {
-  if (!workbench) return workbench;
-  return {
-    ...workbench,
-    video: {
-      ...workbench.video,
-      trailer: confirmedTrailer,
     },
   };
 }

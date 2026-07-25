@@ -4,7 +4,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import { useTranslations } from "next-intl";
 import { IconAlertTriangle, IconMusic, IconPlus, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { FizzAiReferenceFieldConstraints } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiReferenceFieldConstraints } from "@/lib/canvas-authoring/generation-api";
 import { ReferenceMediaHoverPreview, mediaHoverPreviewPosition } from "@/lib/prompt-mentions";
 import type { ReferenceUpload } from "./use-reference-uploads";
 

@@ -38,8 +38,9 @@ const OTHER_WORKSPACE_ID = '019f7243-20c1-7054-a6fa-0a33da6efef2';
 const PROJECT_ID = '019f7243-20c1-7054-a6fa-0a33da6efef3';
 const OTHER_PROJECT_ID = '019f7243-20c1-7054-a6fa-0a33da6efef4';
 const SESSION_ID = '019f7243-20c1-7054-a6fa-0a33da6efef5';
+const CHAPTER_ID = '019f7243-20c1-7054-a6fa-0a33da6efef6';
 const USER_ID = 'user-1';
-const CONVERSATION_ID = `story-canvas:${PROJECT_ID}`;
+const CONVERSATION_ID = `story-canvas:${PROJECT_ID}:${CHAPTER_ID}`;
 const CANVAS_CONVERSATION_ID = `canvas:${PROJECT_ID}`;
 
 const mockedConvertToModelMessages = jest.mocked(convertToModelMessages);

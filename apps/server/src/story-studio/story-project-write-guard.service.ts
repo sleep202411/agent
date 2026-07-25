@@ -11,6 +11,7 @@ type StoryWriteTransaction = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 interface LockedWriteStateRow {
   activeAgentRunId: string | null;
+  fencingToken: bigint;
   lockedAt: Date | null;
   lockExpiresAt: Date | null;
   isLocked: boolean;
@@ -86,6 +87,7 @@ export class StoryProjectWriteGuardService {
     const rows = await tx.$queryRaw<LockedWriteStateRow[]>`
       SELECT
         "active_agent_run_id" AS "activeAgentRunId",
+        "fencing_token" AS "fencingToken",
         "locked_at" AS "lockedAt",
         "lock_expires_at" AS "lockExpiresAt",
         (
@@ -117,6 +119,38 @@ export class StoryProjectWriteGuardService {
     }
 
     return state;
+  }
+
+  /**
+   * Acquire the short, transaction-scoped mutation boundary used by the
+   * provider-independent Studio Agent runtime.
+   *
+   * Model inference and approval never run while this lock is held. A prepared
+   * action enters here only for its bounded canonical database mutation. That
+   * keeps the canvas responsive while still giving human writes, legacy-agent
+   * recovery, external release commands, and the new runtime one total order.
+   */
+  async acquireStudioAgentMutationFence(
+    tx: Prisma.TransactionClient,
+    storyProjectId: string,
+  ): Promise<{ fencingToken: bigint }> {
+    const state = await this.lockWriteState(tx, storyProjectId);
+    if (this.hasAgentWriteReservation(state)) {
+      throw new HttpException(
+        {
+          code: 'STORY_AGENT_APPLYING',
+          message:
+            'Another Story Agent mutation owns the project write boundary.',
+          storyProjectId,
+          runId: state.activeAgentRunId,
+          retryAfter: state.isLocked ? state.lockExpiresAt.toISOString() : null,
+          recoveryPending: !state.isLocked,
+        },
+        HttpStatus.LOCKED,
+      );
+    }
+    await this.assertAgentClaimAllowed(tx, storyProjectId);
+    return { fencingToken: state.fencingToken };
   }
 
   private hasAgentWriteReservation(

@@ -21,7 +21,7 @@ import {
   type StoryPublicationErrorCode,
   type StoryPublicationFlowResult,
 } from "./story-publication-flow";
-import { StorySubmissionKeyRegistry } from "./story-trailer-production-model";
+import { StorySubmissionKeyRegistry } from "./story-submission-key-registry";
 
 export type SavedDraftSnapshotRunner = <T>(
   submit: (expectedDraftRevision: number) => Promise<T>

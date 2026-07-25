@@ -8,6 +8,9 @@ import {
   StoryProjectMemberStatus,
   StoryProjectStatus,
   WorkspaceMemberRole,
+  WorkspaceMemberStatus,
+  WorkspaceStatus,
+  type Prisma,
   type StoryProject,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
@@ -147,5 +150,77 @@ export class StoryPermissionService {
     }
 
     return { project: projectRow, role, capabilities };
+  }
+
+  /**
+   * Re-check authorization on the same transaction snapshot that will mutate
+   * canonical Story state. Agent actions use this after acquiring the project
+   * write row so a concurrent membership removal cannot slip through the
+   * authorization/mutation boundary.
+   *
+   * This intentionally does not call the advisory early write guard: the
+   * caller already owns the authoritative transaction-level write fence.
+   */
+  async requireProjectInTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    storyProjectId: string,
+    capability: StoryCapability,
+  ): Promise<{
+    project: StoryProject;
+    role: StoryProjectMemberRole;
+    capabilities: StoryCapability[];
+  }> {
+    const authorization = await tx.$queryRaw<
+      Array<{
+        storyProjectMemberRole: StoryProjectMemberRole;
+      }>
+    >`
+      SELECT
+        story_member."role" AS "storyProjectMemberRole"
+      FROM "story_projects" AS project
+      INNER JOIN "workspaces" AS workspace
+        ON workspace."id" = project."workspace_id"
+      INNER JOIN "workspace_members" AS workspace_member
+        ON workspace_member."workspace_id" = workspace."id"
+        AND workspace_member."user_id" = ${userId}
+        AND workspace_member."status" = ${WorkspaceMemberStatus.active}::"WorkspaceMemberStatus"
+        AND workspace_member."removed_at" IS NULL
+      INNER JOIN "story_project_members" AS story_member
+        ON story_member."story_project_id" = project."id"
+        AND story_member."user_id" = ${userId}
+        AND story_member."status" = ${StoryProjectMemberStatus.active}::"StoryProjectMemberStatus"
+        AND story_member."removed_at" IS NULL
+      WHERE project."id" = ${storyProjectId}::uuid
+        AND project."status" = ${StoryProjectStatus.active}::"StoryProjectStatus"
+        AND workspace."status" = ${WorkspaceStatus.active}::"WorkspaceStatus"
+        AND workspace."deleted_at" IS NULL
+      FOR UPDATE OF project, workspace, workspace_member, story_member
+    `;
+    if (authorization.length !== 1) {
+      throw new NotFoundException({
+        code: 'STORY_PROJECT_NOT_FOUND',
+        message: 'Story project not found.',
+      });
+    }
+
+    const project = await tx.storyProject.findUnique({
+      where: { id: storyProjectId },
+    });
+    if (!project) {
+      throw new NotFoundException({
+        code: 'STORY_PROJECT_NOT_FOUND',
+        message: 'Story project not found.',
+      });
+    }
+    const role = authorization[0].storyProjectMemberRole;
+    const capabilities = this.capabilities(role);
+    if (!capabilities.includes(capability)) {
+      throw new ForbiddenException({
+        code: 'STORY_PERMISSION_DENIED',
+        message: 'You do not have permission to perform this story action.',
+      });
+    }
+    return { project, role, capabilities };
   }
 }

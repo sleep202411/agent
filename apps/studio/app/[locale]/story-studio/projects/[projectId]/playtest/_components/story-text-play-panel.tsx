@@ -110,7 +110,9 @@ export function StoryTextPlayPanel({ projectId }: { projectId: string }) {
   }, [absorb, projectId, t, workspaceId]);
 
   useEffect(() => {
-    if (workspaceId && !state && !busy && !error) void begin();
+    if (!workspaceId || state || busy || error) return;
+    const timer = window.setTimeout(() => void begin(), 0);
+    return () => window.clearTimeout(timer);
   }, [begin, busy, error, state, workspaceId]);
 
   useEffect(() => {

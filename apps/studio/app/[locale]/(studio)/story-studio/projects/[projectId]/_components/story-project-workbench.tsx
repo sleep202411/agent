@@ -215,7 +215,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               {t("overview.draftRevisionStatus", { revision: workbench.draft.revision })}
             </span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <OverviewMetric
               icon={IconPhoto}
               label={t("metrics.references")}
@@ -230,11 +230,6 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               icon={IconCheck}
               label={t("metrics.videos")}
               value={`${production.currentVideoCount}/${production.clipCount}`}
-            />
-            <OverviewMetric
-              icon={IconAlertTriangle}
-              label={t("metrics.generating")}
-              value={String(production.generatingClipCount)}
             />
           </div>
         </FrostedPanel>
@@ -287,22 +282,19 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
 
 function CurrentVideoState({ production }: { production: StoryProjectProductionSummary }) {
   const t = useTranslations("storyStudio");
-  const generating = production.generatingClipCount > 0;
   return (
     <FrostedPanel className="p-5">
       <div className="flex items-start gap-3">
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.055] text-white/62">
-          {generating ? <IconSparkles className="size-4" /> : <IconCheck className="size-4" />}
+          <IconCheck className="size-4" />
         </div>
         <div>
           <h2 className="text-sm font-semibold text-white">{t("overview.videoState")}</h2>
           <p className="mt-1.5 text-xs leading-5 text-white/46">
-            {generating
-              ? t("overview.videoStateGenerating", { count: production.generatingClipCount })
-              : t("overview.videoStateReady", {
-                  current: production.currentVideoCount,
-                  total: production.clipCount,
-                })}
+            {t("overview.videoStateReady", {
+              current: production.currentVideoCount,
+              total: production.clipCount,
+            })}
           </p>
         </div>
       </div>
@@ -488,28 +480,10 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
           <div className="divide-y divide-white/[0.045]">
             {clipNodes.map((node) => {
               const clip = videos.get(node.nodeId);
-              const generationStatus = clip?.generation?.status;
-              const generationActive =
-                generationStatus === "queued" ||
-                generationStatus === "running" ||
-                generationStatus === "processing";
-              const generationError = clip?.generation?.error?.message;
-              const status = generationActive
-                ? generationStatus
-                : generationStatus === "failed"
-                  ? "failed"
-                  : clip?.currentVideo
-                    ? "ready"
-                    : "draft";
-              const statusDetail = generationActive
-                ? t("production.generationInProgress")
-                : generationStatus === "failed"
-                  ? typeof generationError === "string" && generationError.trim()
-                    ? generationError
-                    : t("production.generationFailed")
-                  : clip?.currentVideo
-                    ? t("production.currentVideoReady")
-                    : t("production.currentDraftPromptRequired");
+              const status = clip?.currentVideo ? "ready" : "draft";
+              const statusDetail = clip?.currentVideo
+                ? t("production.currentVideoReady")
+                : t("production.currentDraftPromptRequired");
               return (
                 <div
                   key={node.nodeId}
@@ -523,7 +497,7 @@ function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
                     <p className="mt-1 truncate text-[10px] text-white/26">{node.nodeId}</p>
                   </div>
                   <span className="text-xs tabular-nums text-white/46">
-                    {clip?.currentVideo
+                    {clip?.currentVideo?.durationMs != null
                       ? t("production.seconds", { seconds: clip.currentVideo.durationMs / 1000 })
                       : "—"}
                   </span>

@@ -24,8 +24,13 @@ describe('StoryExperienceReleaseWorkerService', () => {
         reconciliationLeaseOwner: expect.any(String),
         reconciliationAttemptCount: { increment: 1 },
         lastReconciliationAttemptAt: expect.any(Date),
+        lastReconciliationErrorCode: null,
+        lastReconciliationErrorDetail: null,
+        lastReconciliationErrorAt: null,
       }),
     });
+    const claim = prisma.storyExperiencePublication.updateMany.mock.calls[0][0];
+    expect(claim.data).not.toHaveProperty('authorityCheckedAt');
     expect(releases.reconcileProjectCurrent).toHaveBeenCalledWith(
       PROJECT_ID,
       PROJECT_ID,
@@ -132,10 +137,13 @@ function workerPrisma(input: {
         .mockReturnValueOnce([candidate])
         .mockReturnValueOnce([claimed]),
       updateMany: jest.fn(
-        (_args: {
+        (args: {
           where?: Record<string, unknown>;
           data: Record<string, unknown>;
-        }) => ({ count: 1 }),
+        }) => {
+          void args;
+          return { count: 1 };
+        },
       ),
     },
   };

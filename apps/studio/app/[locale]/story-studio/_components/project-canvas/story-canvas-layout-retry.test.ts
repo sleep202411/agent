@@ -39,6 +39,7 @@ describe("story canvas layout retry state", () => {
     const positions = layout("node", 10);
     const current = {
       projectId: "project",
+      chapterId: "chapter",
       schemaVersion: "story-canvas-layout-v2" as const,
       nodePositions: positions,
       storyWorldNodePresent: true,

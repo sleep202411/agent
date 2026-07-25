@@ -5,54 +5,37 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  resolveStoryAgentAuthoringPhase,
   resolveStoryCanvasEditPolicy,
   resolveStoryCanvasProjectionSurface,
-  resolveStoryCanvasWriteAuthority,
-  resolveStoryProjectionAuthority,
+  resolveStoryProjectionReadiness,
   storyProjectionQueryOptions,
 } from "./story-canvas-edit-policy";
 import { useLastDefinedData } from "./use-last-defined-data";
 
-type AgentAuthorityState = "checking" | "ready" | "error";
-
 interface HarnessProps {
-  snapshotKey: string | null;
-  agentAuthorityState: AgentAuthorityState;
+  chapterId?: string;
   queryFn: () => Promise<string>;
 }
 
-/**
- * Integration regression for the projection query architecture: rotating the
- * authority snapshot key must refetch WITHOUT blanking the previously rendered
- * snapshot, while `resolveStoryProjectionAuthority` re-latches writes until the
- * fresh read lands. This exercises the exact pieces the Story canvas composes:
- * `storyProjectionQueryOptions` (placeholderData: keepPreviousData) feeding the
- * authority, surface, and edit-policy resolvers.
- */
-function Harness({ snapshotKey, agentAuthorityState, queryFn }: HarnessProps) {
+function Harness({ chapterId = "chapter-1", queryFn }: HarnessProps) {
   const query = useQuery(
     storyProjectionQueryOptions({
       kind: "workbench",
       workspaceId: "workspace-1",
       projectId: "project-1",
-      authoritySnapshotKey: snapshotKey,
-      agentAuthorityState,
+      chapterId,
       queryFn,
     })
   );
-  // Same composition as the Story canvas: `keepPreviousData` covers the
-  // pending window of a rotated key; retention covers a failed fresh read.
   const projection = useLastDefinedData(query.data);
-  const authority = resolveStoryProjectionAuthority({
+  const readiness = resolveStoryProjectionReadiness({
     hasWorkspace: true,
-    agentAuthorityState,
     workbenchFetchedAfterMount: query.isFetchedAfterMount,
     workbenchError: query.isError,
     layoutFetchedAfterMount: query.isFetchedAfterMount,
     layoutError: query.isError,
   });
-  const surface = resolveStoryCanvasProjectionSurface(authority, projection !== undefined);
+  const surface = resolveStoryCanvasProjectionSurface(readiness, projection !== undefined);
   const editPolicy = resolveStoryCanvasEditPolicy({
     basePermissions: {
       canEditContent: true,
@@ -61,24 +44,15 @@ function Harness({ snapshotKey, agentAuthorityState, queryFn }: HarnessProps) {
       canPreview: true,
       canPublish: true,
     },
+    projectionReadiness: readiness,
     hasDraftConflict: false,
     hasLayoutConflict: false,
-    agentPhase: resolveStoryAgentAuthoringPhase({
-      authorityState: resolveStoryCanvasWriteAuthority(authority),
-      takeoverPending: false,
-      applying: false,
-      runStatus: null,
-      resultDraftRevision: null,
-      resultLayoutRevision: null,
-      draftRevision: 0,
-      layoutRevision: 0,
-      hasConflict: false,
-    }),
   });
+
   return (
     <span
       data-value={projection ?? "none"}
-      data-authority={authority}
+      data-readiness={readiness}
       data-surface={surface}
       data-writable={String(
         editPolicy.canEditContent && editPolicy.canEditLayout && editPolicy.canManageProduction
@@ -87,7 +61,7 @@ function Harness({ snapshotKey, agentAuthorityState, queryFn }: HarnessProps) {
   );
 }
 
-describe("Story projection queries under authority-key rotation", () => {
+describe("Story projection query lifecycle", () => {
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
@@ -110,11 +84,9 @@ describe("Story projection queries under authority-key rotation", () => {
     container.remove();
   });
 
-  it("shows the loading surface on a cold start and opens writes after the first read", async () => {
+  it("loads directly on cold start and opens writes after the canonical read", async () => {
     const first = deferred<string>();
     await render({
-      snapshotKey: "run-1:proposed:authority-0",
-      agentAuthorityState: "ready",
       queryFn: () => {
         fetchCount += 1;
         return first.promise;
@@ -123,7 +95,7 @@ describe("Story projection queries under authority-key rotation", () => {
 
     expect(value()).toBe("none");
     expect(surface()).toBe("loading");
-    expect(authority()).toBe("checking");
+    expect(readiness()).toBe("loading");
     expect(writable()).toBe(false);
 
     await act(async () => {
@@ -132,86 +104,49 @@ describe("Story projection queries under authority-key rotation", () => {
     });
     expect(value()).toBe("projection-v1");
     expect(surface()).toBe("canvas");
-    expect(authority()).toBe("ready");
+    expect(readiness()).toBe("ready");
     expect(writable()).toBe(true);
     expect(fetchCount).toBe(1);
   });
 
-  it("keeps the previous snapshot rendering across a key rotation while writes are latched", async () => {
+  it("keeps the previous chapter mounted while the next chapter loads", async () => {
     await render({
-      snapshotKey: "run-1:proposed:authority-0",
-      agentAuthorityState: "ready",
+      chapterId: "chapter-1",
       queryFn: async () => {
         fetchCount += 1;
-        return "projection-v1";
+        return "chapter-1-projection";
       },
     });
     await act(async () => flush());
-    expect(value()).toBe("projection-v1");
+    expect(value()).toBe("chapter-1-projection");
     expect(writable()).toBe(true);
 
-    // Run head transition rotates the authority key: the fresh read is in
-    // flight, the previous data must keep rendering, and writes must close.
-    const second = deferred<string>();
+    const secondChapter = deferred<string>();
     await render({
-      snapshotKey: "run-1:succeeded:authority-0",
-      agentAuthorityState: "ready",
+      chapterId: "chapter-2",
       queryFn: () => {
         fetchCount += 1;
-        return second.promise;
+        return secondChapter.promise;
       },
     });
 
-    expect(value()).toBe("projection-v1");
+    expect(value()).toBe("chapter-1-projection");
     expect(surface()).toBe("canvas");
-    expect(authority()).toBe("checking");
+    expect(readiness()).toBe("loading");
     expect(writable()).toBe(false);
-    expect(fetchCount).toBe(2);
 
     await act(async () => {
-      second.resolve("projection-v2");
+      secondChapter.resolve("chapter-2-projection");
       await flush();
     });
-    expect(value()).toBe("projection-v2");
-    expect(authority()).toBe("ready");
+    expect(value()).toBe("chapter-2-projection");
+    expect(readiness()).toBe("ready");
     expect(writable()).toBe(true);
   });
 
-  it("keeps rendering through a lost-authority window (null key) without fetching it", async () => {
+  it("keeps stale content visible but closes writes after a failed chapter read", async () => {
     await render({
-      snapshotKey: "run-1:proposed:authority-0",
-      agentAuthorityState: "ready",
-      queryFn: async () => {
-        fetchCount += 1;
-        return "projection-v1";
-      },
-    });
-    await act(async () => flush());
-    expect(value()).toBe("projection-v1");
-
-    // Realtime disconnect: the snapshot key passes through null and the
-    // projection query is disabled until a post-disconnect canonical GET.
-    await render({
-      snapshotKey: null,
-      agentAuthorityState: "checking",
-      queryFn: async () => {
-        fetchCount += 1;
-        return "must-not-fetch";
-      },
-    });
-    await act(async () => flush());
-
-    expect(value()).toBe("projection-v1");
-    expect(surface()).toBe("canvas");
-    expect(authority()).toBe("checking");
-    expect(writable()).toBe(false);
-    expect(fetchCount).toBe(1);
-  });
-
-  it("fails closed on a failed fresh read while the previous snapshot stays mounted", async () => {
-    await render({
-      snapshotKey: "run-1:proposed:authority-0",
-      agentAuthorityState: "ready",
+      chapterId: "chapter-1",
       queryFn: async () => {
         fetchCount += 1;
         return "projection-v1";
@@ -220,8 +155,7 @@ describe("Story projection queries under authority-key rotation", () => {
     await act(async () => flush());
 
     await render({
-      snapshotKey: "run-1:proposed:authority-1",
-      agentAuthorityState: "ready",
+      chapterId: "chapter-2",
       queryFn: async () => {
         fetchCount += 1;
         throw new Error("Fresh read failed");
@@ -234,7 +168,7 @@ describe("Story projection queries under authority-key rotation", () => {
 
     expect(value()).toBe("projection-v1");
     expect(surface()).toBe("canvas");
-    expect(authority()).toBe("unavailable");
+    expect(readiness()).toBe("unavailable");
     expect(writable()).toBe(false);
   });
 
@@ -261,8 +195,8 @@ describe("Story projection queries under authority-key rotation", () => {
     return attribute("data-value");
   }
 
-  function authority(): string {
-    return attribute("data-authority");
+  function readiness(): string {
+    return attribute("data-readiness");
   }
 
   function surface(): string {

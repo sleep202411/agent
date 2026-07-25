@@ -269,13 +269,17 @@ function compileRuntimeAsset(
             {
               variantId: visualVariantId(asset, identity, orientation),
               sourceAssetId: variant.sourceAssetId,
-              sha256: variant.sha256,
               uri: variant.src,
               mediaType: identity.mediaType,
               orientation: orientation as 'landscape' | 'portrait',
-              width: variant.width,
-              height: variant.height,
-              durationMs: Math.round(variant.durationSeconds * 1_000),
+              ...(variant.sha256 ? { sha256: variant.sha256 } : {}),
+              ...(variant.width ? { width: variant.width } : {}),
+              ...(variant.height ? { height: variant.height } : {}),
+              ...(variant.durationSeconds
+                ? {
+                    durationMs: Math.round(variant.durationSeconds * 1_000),
+                  }
+                : {}),
               ...(variant.framesPerSecond
                 ? { framesPerSecond: variant.framesPerSecond }
                 : {}),

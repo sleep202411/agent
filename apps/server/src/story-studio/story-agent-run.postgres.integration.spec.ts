@@ -94,6 +94,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       fixture.workspaceId,
       fixture.projectId,
       {
+        chapterId: fixture.chapterId,
         title: 'Stale generated proposal',
         summary: 'This document was authored against the prior story head.',
         brief: 'Replace the premise with the Agent-authored logline.',
@@ -161,6 +162,89 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         },
       }),
     ).resolves.toBe(0);
+  });
+
+  it('applies an Agent change to one chapter without replacing scenes owned by another chapter', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const secondNodeId = 'chapter-two-scene';
+    const projectContent = InteractiveStoryDraftContentSchema.parse({
+      ...EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      graph: {
+        entryNodeId: null,
+        nodes: [
+          {
+            kind: 'text',
+            nodeId: secondNodeId,
+            body: { 'en-US': 'The second chapter waits beyond the gate.' },
+            exit: { kind: 'auto', nextNodeId: null },
+          },
+        ],
+      },
+    });
+    const secondChapter = await prisma.storyChapter.create({
+      data: {
+        storyProjectId: fixture.projectId,
+        title: 'Chapter 2',
+        rank: 1,
+        nodeIds: [secondNodeId],
+        entryNodeId: secondNodeId,
+        createdByUserId: fixture.user.userId,
+      },
+    });
+    await prisma.storyCanvasLayout.create({
+      data: {
+        storyChapterId: secondChapter.id,
+        storyProjectId: fixture.projectId,
+        workspaceId: fixture.workspaceId,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+        storyWorldNodePresent: false,
+        updatedByUserId: fixture.user.userId,
+      },
+    });
+    await prisma.storyDraft.update({
+      where: { storyProjectId: fixture.projectId },
+      data: {
+        content: projectContent as Prisma.InputJsonObject,
+        contentHash: canonicalJsonHash(projectContent),
+        revision: { increment: 1 },
+      },
+    });
+
+    const proposal = await fixture.authorProposal(
+      'chapter-isolation',
+      'The first chapter remembers the second.',
+    );
+    await fixture.service.confirm(
+      fixture.user,
+      fixture.workspaceId,
+      fixture.projectId,
+      proposal.id,
+      `${fixture.prefix}:confirm:chapter-isolation`,
+    );
+    const workerId = `${fixture.prefix}:worker:chapter-isolation`;
+    expect(await fixture.service.claimApplyingRuns(workerId, 1)).toEqual([
+      { id: proposal.id },
+    ]);
+    await fixture.service.executeClaimedRun(proposal.id, workerId);
+
+    const saved = await prisma.storyDraft.findUniqueOrThrow({
+      where: { storyProjectId: fixture.projectId },
+    });
+    const savedContent = InteractiveStoryDraftContentSchema.parse(
+      saved.content,
+    );
+    expect(savedContent.storyBible.logline).toBe(
+      'The first chapter remembers the second.',
+    );
+    expect(savedContent.graph.nodes).toContainEqual(
+      expect.objectContaining({ nodeId: secondNodeId }),
+    );
+    await expect(
+      prisma.storyChapter.findUniqueOrThrow({
+        where: { id: secondChapter.id },
+      }),
+    ).resolves.toMatchObject({ nodeIds: [secondNodeId] });
   });
 
   it('reads the canonical Undo head after the project is archived', async () => {
@@ -754,6 +838,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       prisma.storyAgentRun.create({
         data: {
           storyProjectId: existing.storyProjectId,
+          storyChapterId: existing.storyChapterId,
           workspaceId: existing.workspaceId,
           kind: StoryAgentRunKind.apply,
           status: StoryAgentRunStatus.proposed,
@@ -925,15 +1010,28 @@ async function createFixture(
           updatedByUserId: user.userId,
         },
       },
-      canvasLayout: {
-        create: {
-          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-          nodePositions: {},
-          storyWorldNodePresent: true,
-          updatedByUserId: user.userId,
-        },
-      },
       writeState: { create: {} },
+    },
+  });
+  const chapter = await prisma.storyChapter.create({
+    data: {
+      storyProjectId: project.id,
+      title: 'Chapter 1',
+      rank: 0,
+      nodeIds: [],
+      entryNodeId: null,
+      createdByUserId: user.userId,
+    },
+  });
+  await prisma.storyCanvasLayout.create({
+    data: {
+      storyChapterId: chapter.id,
+      storyProjectId: project.id,
+      workspaceId: workspace.id,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: {},
+      storyWorldNodePresent: true,
+      updatedByUserId: user.userId,
     },
   });
   const permissions = {
@@ -975,6 +1073,7 @@ async function createFixture(
     user,
     workspaceId: workspace.id,
     projectId: project.id,
+    chapterId: chapter.id,
     service,
     /**
      * Drive the full authoring pipeline to a reviewable proposal: file the
@@ -987,6 +1086,7 @@ async function createFixture(
         workspace.id,
         project.id,
         {
+          chapterId: chapter.id,
           title: `Proposal ${suffix}`,
           summary: `Set the ${suffix} premise.`,
           brief: `Set the story bible logline to: ${logline}`,

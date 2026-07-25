@@ -22,6 +22,11 @@ export interface ConnectedSceneDropResult {
   createdNodeId: string;
 }
 
+export interface ConnectedSceneDropOptions {
+  sceneKind?: "clip" | "text";
+  newChoiceLabel?: string;
+}
+
 /**
  * Resolves only blank-canvas drops with one unambiguous compatible node kind.
  * Scene completion drops are resolved here only after the contextual
@@ -39,7 +44,7 @@ export function resolveBlankDropConnectionPlan(
 
   if (source.kind === "decision") {
     if (!source.sourceNodeId) return null;
-    if (sourceHandle === "choice-new") {
+    if (sourceHandle.startsWith("choice-new:")) {
       return { kind: "new-choice", sourceNodeId: source.sourceNodeId };
     }
     const choiceMatch = sourceHandle.match(/^choice:(.+)$/u);
@@ -67,13 +72,13 @@ export function createConnectedSceneForBlankDrop(
   source: BlankDropSource,
   sourceHandle: string | null,
   locale: string,
-  sceneKind: "clip" | "text" = "clip"
+  options: ConnectedSceneDropOptions = {}
 ): ConnectedSceneDropResult | null {
   const plan = resolveBlankDropConnectionPlan(source, sourceHandle);
   if (!plan) return null;
 
   const created =
-    sceneKind === "text" ? createTextNode(content, { locale }) : createClipNode(content);
+    options.sceneKind === "text" ? createTextNode(content, { locale }) : createClipNode(content);
   const createdNodeId = created.created.nodeId;
   let next = created.content;
 
@@ -82,7 +87,9 @@ export function createConnectedSceneForBlankDrop(
   } else if (plan.kind === "scene-continuation") {
     next = connectSceneContinuation(next, plan.sourceNodeId, createdNodeId);
   } else if (plan.kind === "new-choice") {
-    next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale).content;
+    next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale, {
+      label: options.newChoiceLabel,
+    }).content;
   } else if (plan.kind === "existing-choice") {
     next = connectChoiceTarget(next, plan.sourceNodeId, plan.choiceId, createdNodeId);
   }

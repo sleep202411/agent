@@ -4,10 +4,18 @@ import { useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/collab/canvas-doc";
+import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
-import { defaultMode, defaultSettingsForModel, isFizzAiModelUsable } from "./generation-api";
-import { useAiCatalog, usableModelsByModality, type StudioModality } from "./use-ai-catalog";
+import {
+  defaultMode,
+  defaultSettingsForModel,
+  isFizzAiModelUsable,
+} from "@/lib/canvas-authoring/generation-api";
+import {
+  useAiCatalog,
+  usableModelsByModality,
+  type StudioModality,
+} from "@/lib/canvas-authoring/use-ai-catalog";
 import type { WorkflowPreset } from "./workflow-presets";
 
 /**

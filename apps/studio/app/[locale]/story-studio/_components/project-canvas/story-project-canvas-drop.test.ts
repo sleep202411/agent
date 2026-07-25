@@ -38,13 +38,9 @@ describe("story canvas blank-drop connections", () => {
   it("creates and connects a text scene from a scene completion handle", () => {
     const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     const opening = canvasNode(content, "opening");
-    const result = createConnectedSceneForBlankDrop(
-      content,
-      opening.data,
-      "completion",
-      "en-US",
-      "text"
-    )!;
+    const result = createConnectedSceneForBlankDrop(content, opening.data, "completion", "en-US", {
+      sceneKind: "text",
+    })!;
 
     expect(graphNode(result.content, result.createdNodeId)).toMatchObject({
       kind: "text",
@@ -80,13 +76,18 @@ describe("story canvas blank-drop connections", () => {
     const appended = createConnectedSceneForBlankDrop(
       retargeted.content,
       canvasNode(retargeted.content, decisionId).data,
-      "choice-new",
-      "en-US"
+      "choice-new:draft-1",
+      "en-US",
+      { newChoiceLabel: "Take the new path" }
     )!;
     const appendedOpening = graphNode(appended.content, "opening");
     expect(appendedOpening.exit.kind === "choice" ? appendedOpening.exit.choices : []).toEqual([
       expect.objectContaining({ choiceId: "stay", nextNodeId: retargeted.createdNodeId }),
-      expect.objectContaining({ choiceId: "choice:2", nextNodeId: appended.createdNodeId }),
+      expect.objectContaining({
+        choiceId: "choice:2",
+        label: { "en-US": "Take the new path" },
+        nextNodeId: appended.createdNodeId,
+      }),
     ]);
   });
 

@@ -1,4 +1,4 @@
-export type StoryCanvasRecoveryPlane = "draft" | "layout" | "generation";
+export type StoryCanvasRecoveryPlane = "draft" | "layout";
 
 export interface StoryCanvasLeaveRiskInput {
   draftDirty: boolean;
@@ -7,7 +7,6 @@ export interface StoryCanvasLeaveRiskInput {
   layoutDirty: boolean;
   layoutSaveInFlight: boolean;
   layoutConflict: boolean;
-  generationRecipeDirty: boolean;
 }
 
 export interface StoryCanvasLeaveRisk {
@@ -47,12 +46,10 @@ export function resolveStoryCanvasLeaveRisk({
   layoutDirty,
   layoutSaveInFlight,
   layoutConflict,
-  generationRecipeDirty,
 }: StoryCanvasLeaveRiskInput): StoryCanvasLeaveRisk {
   const planes: StoryCanvasRecoveryPlane[] = [];
   if (draftDirty || draftSaveInFlight || draftConflict) planes.push("draft");
   if (layoutDirty || layoutSaveInFlight || layoutConflict) planes.push("layout");
-  if (generationRecipeDirty) planes.push("generation");
   return { blocked: planes.length > 0, planes };
 }
 

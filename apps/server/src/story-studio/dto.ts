@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { StoryVideoRecipeSnapshot } from './story-video-production.schema';
 import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -15,8 +14,14 @@ import {
   type StoryReferenceReviewDecision,
   type StoryReferenceSlotSpec,
 } from './interactive-film.schema';
+import {
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+  StoryProductionCanvasContentSchema,
+  type StoryProductionCanvasContent,
+} from './story-production-canvas.schema';
 
 export * from './interactive-film.schema';
+export * from './story-production-canvas.schema';
 
 /** Product-level Story Studio contracts shared by cinematic and narrative profiles. */
 
@@ -24,6 +29,8 @@ export const STORY_TITLE_MAX = 160;
 export const STORY_SUMMARY_MAX = 2_000;
 export const STORY_TAG_MAX = 40;
 export const STORY_TAG_COUNT_MAX = 12;
+export const STORY_CHAPTER_COUNT_MAX = 200;
+export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
   'story-canvas-layout-v2' as const;
 export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
@@ -150,6 +157,21 @@ export const StoryProjectIdParamsSchema = z
   .strict();
 export type StoryProjectIdParams = z.infer<typeof StoryProjectIdParamsSchema>;
 
+export const StoryCandidateAssetParamsSchema = z
+  .object({
+    projectId: StoryUuidSchema,
+    mediaAssetId: StoryUuidSchema,
+  })
+  .strict();
+export type StoryCandidateAssetParams = z.infer<
+  typeof StoryCandidateAssetParamsSchema
+>;
+
+export const StoryChapterParamsSchema = z
+  .object({ projectId: StoryUuidSchema, chapterId: StoryUuidSchema })
+  .strict();
+export type StoryChapterParams = z.infer<typeof StoryChapterParamsSchema>;
+
 export const StoryRevisionParamsSchema = z
   .object({ projectId: StoryUuidSchema, revisionId: StoryUuidSchema })
   .strict();
@@ -184,13 +206,6 @@ export type StoryReferenceVersionParams = z.infer<
   typeof StoryReferenceVersionParamsSchema
 >;
 
-export const StoryVideoGenerationParamsSchema = z
-  .object({ projectId: StoryUuidSchema, generationId: StoryUuidSchema })
-  .strict();
-export type StoryVideoGenerationParams = z.infer<
-  typeof StoryVideoGenerationParamsSchema
->;
-
 export const StoryBuildParamsSchema = z
   .object({ projectId: StoryUuidSchema, buildId: StoryUuidSchema })
   .strict();
@@ -216,7 +231,9 @@ export const StoryProjectListQuerySchema = z
   .strict();
 export type StoryProjectListQuery = z.infer<typeof StoryProjectListQuerySchema>;
 
-export const StoryWorkbenchQuerySchema = z.object({}).strict();
+export const StoryWorkbenchQuerySchema = z
+  .object({ chapterId: StoryUuidSchema.optional() })
+  .strict();
 export type StoryWorkbenchQuery = z.infer<typeof StoryWorkbenchQuerySchema>;
 
 export const StoryProjectVideoLibraryQuerySchema = z
@@ -331,6 +348,32 @@ export type ArchiveStoryProjectInput = z.infer<
   typeof ArchiveStoryProjectSchema
 >;
 
+export const CreateStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type CreateStoryChapterInput = z.infer<typeof CreateStoryChapterSchema>;
+
+export const PatchStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type PatchStoryChapterInput = z.infer<typeof PatchStoryChapterSchema>;
+
+export const ReorderStoryChaptersSchema = z
+  .object({
+    expectedProjectVersion: NonNegativeVersionSchema,
+    chapterIds: z
+      .array(StoryUuidSchema)
+      .min(1)
+      .max(STORY_CHAPTER_COUNT_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Chapter order must not contain duplicates.',
+      }),
+  })
+  .strict();
+export type ReorderStoryChaptersInput = z.infer<
+  typeof ReorderStoryChaptersSchema
+>;
+
 export const PutStoryDraftSchema = z
   .object({
     expectedRevision: NonNegativeVersionSchema,
@@ -338,7 +381,14 @@ export const PutStoryDraftSchema = z
     content: InteractiveStoryDraftContentSchema,
     sessionId: SessionIdSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => value.content.graph.nodes.length <= STORY_CHAPTER_NODE_COUNT_MAX,
+    {
+      path: ['content', 'graph', 'nodes'],
+      message: `A chapter supports at most ${STORY_CHAPTER_NODE_COUNT_MAX} nodes.`,
+    },
+  );
 export type PutStoryDraftInput = z.infer<typeof PutStoryDraftSchema>;
 
 export const PutStoryCanvasLayoutSchema = z
@@ -367,6 +417,17 @@ export const PutStoryCanvasLayoutSchema = z
   });
 export type PutStoryCanvasLayoutInput = z.infer<
   typeof PutStoryCanvasLayoutSchema
+>;
+
+export const PutStoryProductionCanvasSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_PRODUCTION_CANVAS_SCHEMA_VERSION),
+    content: StoryProductionCanvasContentSchema,
+    sessionId: SessionIdSchema,
+  })
+  .strict();
+export type PutStoryProductionCanvasInput = z.infer<
+  typeof PutStoryProductionCanvasSchema
 >;
 
 export const LockStoryRevisionSchema = z
@@ -563,6 +624,23 @@ export interface MediaAssetSummaryDto {
   previewUrl: string | null;
 }
 
+export interface StoryCandidateAssetVideoVariantDto {
+  id: string;
+  variantKey: string;
+  contentType: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  checksumSha256: string | null;
+}
+
+export interface StoryCandidateAssetDto {
+  asset: MediaAssetSummaryDto;
+  videoVariant: StoryCandidateAssetVideoVariantDto | null;
+  addedByUserId: string;
+  addedAt: string;
+}
+
 export interface StoryProjectVideoLibraryItemDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
@@ -571,7 +649,7 @@ export interface StoryProjectVideoLibraryItemDto {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   createdAt: string;
 }
 
@@ -608,7 +686,6 @@ export interface StoryProjectProductionSummaryDto {
   approvedReferenceCount: number;
   clipCount: number;
   currentVideoCount: number;
-  generatingClipCount: number;
   latestBuildStatus: StoryBuildStatus | null;
 }
 
@@ -634,8 +711,22 @@ export interface StoryProjectSummaryDto {
   updatedAt: string;
 }
 
+export interface StoryChapterDto {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  entryNodeId: string | null;
+  nodeCount: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoryDraftDto {
   projectId: string;
+  /** Null only on project-wide immutable-revision conflict payloads. */
+  chapterId: string | null;
   format: CreatableStoryFormat;
   schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
   content: InteractiveStoryDraftContent;
@@ -649,10 +740,21 @@ export interface StoryDraftDto {
 
 export interface StoryCanvasLayoutDto {
   projectId: string;
+  chapterId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: StoryCanvasNodePositions;
   storyWorldNodePresent: boolean;
   revision: number;
+  updatedByUserId: string;
+  updatedBySessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoryProductionCanvasDto {
+  projectId: string;
+  schemaVersion: typeof STORY_PRODUCTION_CANVAS_SCHEMA_VERSION;
+  content: StoryProductionCanvasContent;
   updatedByUserId: string;
   updatedBySessionId: string | null;
   createdAt: string;
@@ -665,86 +767,35 @@ export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   content: InteractiveStoryDraftContent;
 }
 
-export interface StoryVideoTechnicalCheckDto {
-  key: string;
-  status: 'pending' | 'passed' | 'failed';
-  message: string | null;
-}
-
 export interface StoryCurrentVideoDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
-  sourceGenerationId: string | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
-  durationMs: number;
-  width: number;
-  height: number;
-  browserSafeMp4: boolean;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  /** Byte length of the exact selected variant, serialized for BigInt-safe JSON. */
+  sizeBytes: string | null;
+  browserSafeMp4: boolean | null;
   selectionVersion: number;
   setByUserId: string | null;
   setAt: string;
-}
-
-export type StoryVideoGenerationStatus =
-  | 'queued'
-  | 'running'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'cancelled'
-  | 'superseded';
-
-export interface StoryVideoGenerationDto {
-  id: string;
-  projectId: string;
-  target: { kind: 'clip'; graphNodeId: string } | { kind: 'trailer' };
-  number: number;
-  version: number;
-  selectionVersionAtSubmit: number;
-  aiJobId: string;
-  aiJobOutputId: string | null;
-  status: StoryVideoGenerationStatus;
-  recipeSnapshot: StoryVideoRecipeSnapshot;
-  outputAsset: MediaAssetSummaryDto | null;
-  outputVariantId: string | null;
-  outputChecksumSha256: string | null;
-  technicalChecks: StoryVideoTechnicalCheckDto[];
-  error: Record<string, unknown> | null;
-  createdByUserId: string;
-  queuedAt: string | null;
-  startedAt: string | null;
-  readyAt: string | null;
-  cancelledAt: string | null;
-  supersededAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-}
-
-export interface StoryTrailerVideoSummaryDto {
-  selectionVersion: number;
-  currentVideo: StoryCurrentVideoDto | null;
-  generation: StoryVideoGenerationDto | null;
 }
 
 export interface StoryClipVideoSummaryDto {
   graphNodeId: string;
   selectionVersion: number;
   currentVideo: StoryCurrentVideoDto | null;
-  generation: StoryVideoGenerationDto | null;
 }
 
 export interface StoryReferenceVersionDto {
   id: string;
   slotId: string;
   number: number;
-  source: 'upload' | 'ai_job' | 'import' | 'generation_frame';
+  source: 'upload' | 'ai_job' | 'import';
   aiJobId: string | null;
   aiJobOutputId: string | null;
-  sourceGenerationId: string | null;
-  sourceFrameIndex: number | null;
-  sourceOutputChecksumSha256: string | null;
   asset: MediaAssetSummaryDto;
   variantId: string;
   sourceRecipeSnapshot: Record<string, unknown> | null;
@@ -784,7 +835,6 @@ export interface StoryBuildDiagnosticDto {
     | 'revision'
     | 'clip'
     | 'reference'
-    | 'generation'
     | 'choice'
     | 'ending'
     | 'asset'
@@ -805,7 +855,7 @@ export interface FrozenStoryAssetDto {
   logicalKey: string;
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   width: number | null;
   height: number | null;
@@ -895,7 +945,6 @@ export interface StoryWorkingPreviewDto {
     graphNodeId: string;
     assetId: string;
     variantId: string;
-    sourceGenerationId: string | null;
     selectionVersion: number;
     selection: 'current';
   }>;
@@ -918,11 +967,12 @@ export type StoryBuildSummaryDto = Pick<
 
 export interface StoryWorkbenchDto {
   project: StoryProjectSummaryDto;
+  chapters: StoryChapterDto[];
+  chapter: StoryChapterDto;
   draft: StoryDraftDto;
   video: {
     snapshotHash: string;
     clips: StoryClipVideoSummaryDto[];
-    trailer: StoryTrailerVideoSummaryDto;
   };
   references: StoryReferenceSlotDto[];
   latestBuild: StoryBuildSummaryDto | null;

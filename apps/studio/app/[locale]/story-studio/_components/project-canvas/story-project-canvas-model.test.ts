@@ -1,53 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type {
-  StoryTrailerVideoSummary,
   InteractiveStoryDraftContent,
+  MediaAssetSummary,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
   characterCanvasNodeId,
   characterIdForCanvasNode,
-  projectStoryDomainIdsToCanvasNodeIds,
   rejectsStoryCastWiring,
   STORY_ROOT_NODE_ID,
-  storyDomainIdForCanvasProjection,
   syntheticDecisionNodeId,
   syntheticEndingNodeId,
 } from "./story-project-canvas-model";
-
-describe("Story domain id canvas projection", () => {
-  it("resolves graph, choice-decision, and ending projections without exposing synthetic ids", () => {
-    expect(storyDomainIdForCanvasProjection("opening")).toBe("opening");
-    expect(storyDomainIdForCanvasProjection("__decision__:opening")).toBe("opening");
-    expect(storyDomainIdForCanvasProjection("__ending__:truth")).toBe("truth");
-    expect(storyDomainIdForCanvasProjection(STORY_ROOT_NODE_ID)).toBeNull();
-    expect(storyDomainIdForCanvasProjection("__decision__:")).toBeNull();
-    expect(storyDomainIdForCanvasProjection("__ending__:")).toBeNull();
-  });
-
-  it("maps domain ids to every rendered projection in canvas order and deduplicates ids", () => {
-    expect(
-      projectStoryDomainIdsToCanvasNodeIds(
-        ["opening", "truth"],
-        [
-          STORY_ROOT_NODE_ID,
-          "opening",
-          "__decision__:opening",
-          "unrelated",
-          "__ending__:truth",
-          "__decision__:opening",
-        ]
-      )
-    ).toEqual(["opening", "__decision__:opening", "__ending__:truth"]);
-  });
-
-  it("projects an ambiguous domain id to all rendered graph and ending views", () => {
-    expect(
-      projectStoryDomainIdsToCanvasNodeIds(["shared"], ["shared", "__ending__:shared"])
-    ).toEqual(["shared", "__ending__:shared"]);
-  });
-});
 
 describe("buildStoryCanvasModel", () => {
   it("marks every projected element deletable, the summonable Story World root included", () => {
@@ -84,15 +49,7 @@ describe("buildStoryCanvasModel", () => {
       ],
     });
 
-    const model = buildStoryCanvasModel(
-      content,
-      "en-US",
-      [],
-      undefined,
-      "landscape_16_9",
-      null,
-      false
-    );
+    const model = buildStoryCanvasModel(content, "en-US", [], undefined, "landscape_16_9", false);
 
     expect(model.nodes.some((node) => node.id === STORY_ROOT_NODE_ID)).toBe(false);
     expect(model.edges.some((edge) => edge.data.kind === "root")).toBe(false);
@@ -119,20 +76,46 @@ describe("buildStoryCanvasModel", () => {
     ]);
   });
 
-  it("projects the independent trailer and immutable project aspect ratio onto the root", () => {
-    const trailer: StoryTrailerVideoSummary = {
-      selectionVersion: 1,
-      currentVideo: null,
-      generation: null,
-    };
-
-    const model = buildStoryCanvasModel(draft(), "en-US", [], undefined, "portrait_9_16", trailer);
+  it("projects the immutable project aspect ratio onto the root", () => {
+    const model = buildStoryCanvasModel(draft(), "en-US", [], undefined, "portrait_9_16");
 
     expect(model.nodes[0]?.data).toMatchObject({
       kind: "root",
       frameAspectRatio: "9:16",
-      trailerVideo: trailer,
     });
+  });
+
+  it("projects the project cover onto the Story World card without mutating the draft", () => {
+    const content = draft();
+    const canonicalBeforeProjection = JSON.parse(JSON.stringify(content));
+    const cover: MediaAssetSummary = {
+      id: "cover-asset",
+      kind: "video",
+      status: "ready",
+      moderationStatus: "approved",
+      contentType: "video/mp4",
+      width: 1920,
+      height: 1080,
+      durationSeconds: 8,
+      checksumSha256: "a".repeat(64),
+      previewUrl: "https://media.example/cover.mp4",
+    };
+
+    const model = buildStoryCanvasModel(
+      content,
+      "en-US",
+      [],
+      undefined,
+      "landscape_16_9",
+      true,
+      cover
+    );
+
+    expect(model.nodes[0]?.data).toMatchObject({
+      kind: "root",
+      coverMedia: cover,
+    });
+    expect(content).toEqual(canonicalBeforeProjection);
   });
 
   it("projects a linear auto route into deterministic BFS layers", () => {
@@ -237,13 +220,22 @@ describe("buildStoryCanvasModel", () => {
       endings: [ending("truth", "The Truth", "真相"), ending("failure", "Lost", "迷失")],
     });
 
-    const model = buildStoryCanvasModel(content, "zh-CN");
+    const model = buildStoryCanvasModel(content, "zh-CN", [], {
+      rootTitle: "故事世界",
+      rootEyebrow: "世界观",
+      rootSummary: "故事设定",
+      clip: "镜头",
+      text: "关键剧情",
+      decision: "玩家选择",
+      ending: "结局",
+    });
     const decision = model.nodes.find((node) => node.id === "decision");
     const decisionProjection = model.nodes.find((node) => node.id === "__decision__:decision");
     const choiceEdges = model.edges.filter((edge) => edge.data.kind === "choice");
 
     expect(decision?.data).toMatchObject({
       kind: "clip",
+      title: "镜头 1",
       exitKind: "choice",
     });
     expect(decision?.data.choices).toBeUndefined();
@@ -253,8 +245,18 @@ describe("buildStoryCanvasModel", () => {
       decisionId: "gate",
       sourceNodeId: "decision",
       choices: [
-        { choiceId: "follow", label: "追随灯光", targetNodeId: "truth-scene" },
-        { choiceId: "stay", label: "留在原地", targetNodeId: "failure-scene" },
+        {
+          choiceId: "follow",
+          label: "追随灯光",
+          targetNodeId: "truth-scene",
+          targetTitle: "镜头 2",
+        },
+        {
+          choiceId: "stay",
+          label: "留在原地",
+          targetNodeId: "failure-scene",
+          targetTitle: "镜头 3",
+        },
       ],
     });
     expect(choiceEdges.map((edge) => edge.label)).toEqual(["追随灯光", "留在原地"]);
@@ -506,24 +508,15 @@ describe("Story cast projection", () => {
       nodes: [clip("opening", "OPENING", { kind: "auto", nextNodeId: null })],
       characters: [character("hero", "Hero", "The lead.")],
     });
-    const model = buildStoryCanvasModel(
-      content,
-      "en-US",
-      [],
-      undefined,
-      "landscape_16_9",
-      null,
-      false
-    );
+    const model = buildStoryCanvasModel(content, "en-US", [], undefined, "landscape_16_9", false);
     expect(model.edges.some((edge) => edge.data.kind === "membership")).toBe(false);
     expect(model.nodes.some((node) => node.id === "character:hero")).toBe(true);
   });
 
-  it("maps character canvas ids and keeps them out of the executable-graph domain", () => {
+  it("maps character canvas ids outside the executable graph", () => {
     expect(characterCanvasNodeId("hero")).toBe("character:hero");
     expect(characterIdForCanvasNode("character:hero")).toBe("hero");
     expect(characterIdForCanvasNode("opening")).toBeNull();
-    expect(storyDomainIdForCanvasProjection("character:hero")).toBeNull();
   });
 });
 
