@@ -262,7 +262,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 069f75cb6b22c46a2152cb5152992f29422fb3c9
+    tag: 644601427281375f89d2245f43041cc4d82bf0c6
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -336,7 +336,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 069f75cb6b22c46a2152cb5152992f29422fb3c9
+    tag: 644601427281375f89d2245f43041cc4d82bf0c6
   containerPort: 3001
   env:
     FAL_ENABLED: "true"
@@ -575,7 +575,7 @@ temporalDatabaseSecrets:
 studioAgentRuntime:
   image:
     repository: fizzdragon-studio-agent-runtime
-    tag: 6c9b64824b230ee8fcb628f52c8b08a1806edf9f
+    tag: 644601427281375f89d2245f43041cc4d82bf0c6
   internalBaseUrl: http://fizzdragon-server:3001
   temporal:
     # The in-cluster Temporal Service this chart renders. Kept in values rather
