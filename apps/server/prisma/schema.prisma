@@ -4705,97 +4705,105 @@ model AiCostLedgerEntry {
 //   amount, currency, source, reversal_of FK. This Json is a stopgap
 //   until billing goes live.
 model AiJob {
-  id                    String      @id @db.Uuid
-  userId                String      @map("user_id")
+  id                    String                @id @db.Uuid
+  userId                String                @map("user_id")
   /// Immutable product entitlement policy selected at submission time.
   /// This is the source for model access, queue priority, quota bridge,
   /// refunds, and audit; it intentionally does not expose upstream userLevel.
-  entitlementSnapshot   Json?       @map("entitlement_snapshot")
+  entitlementSnapshot   Json?                 @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
   /// free-form String so new providers don't need migrations.
   provider              String
-  modelId               String      @map("model_id")
+  modelId               String                @map("model_id")
   deployment            String
-  canonicalModelId      String?     @map("canonical_model_id") @db.Uuid
-  providerBindingId     String?     @map("provider_binding_id") @db.Uuid
-  schemaVersion         String      @map("schema_version")
+  canonicalModelId      String?               @map("canonical_model_id") @db.Uuid
+  providerBindingId     String?               @map("provider_binding_id") @db.Uuid
+  schemaVersion         String                @map("schema_version")
   /// Platform Core context. New Studio jobs always resolve a workspace
   /// at submit time; legacy rows may remain NULL. Project is optional
   /// because some jobs are workspace-level drafts before a project is
   /// selected.
-  workspaceId           String?     @map("workspace_id") @db.Uuid
-  projectId             String?     @map("project_id") @db.Uuid
-  documentId            String?     @map("document_id") @db.Uuid
-  documentBlockId       String?     @map("document_block_id") @db.VarChar(128)
+  workspaceId           String?               @map("workspace_id") @db.Uuid
+  projectId             String?               @map("project_id") @db.Uuid
+  documentId            String?               @map("document_id") @db.Uuid
+  documentBlockId       String?               @map("document_block_id") @db.VarChar(128)
   /// UI surface snapshot for ops analysis. Examples: 'art-studio' | 'timeline' | 'batch'.
-  sourceSurface         String?     @map("source_surface") @db.VarChar(64)
+  sourceSurface         String?               @map("source_surface") @db.VarChar(64)
+  /// Storage backend this job's outputs MUST be written to, decided from the
+  /// submitting surface and frozen here. NULL means the cell-default binding
+  /// (`StorageModule`), which is every surface but Story Studio
+  /// interactive-film footage. Frozen instead of re-read at upload time so a
+  /// retried attempt cannot land in a different store than the first attempt
+  /// and orphan its object. `external_url` is excluded by a CHECK constraint
+  /// in migration SQL — nothing can write there.
+  outputStorageProvider MediaStorageProvider? @map("output_storage_provider")
   status                AiJobStatus
   stage                 AiJobStage
-  queueName             String      @map("queue_name")
+  queueName             String                @map("queue_name")
   prompt                String
   /// User-facing structured prompt AST captured at submission time.
   /// Provider adapters never parse UI tokens directly; they consume
   /// `normalizedInput.prompt`, which is compiled from this document.
-  promptDocument        Json?       @map("prompt_document")
-  promptDisplayText     String?     @map("prompt_display_text") @db.Text
-  promptSearchText      String?     @map("prompt_search_text") @db.Text
-  compiledPrompt        String?     @map("compiled_prompt") @db.Text
+  promptDocument        Json?                 @map("prompt_document")
+  promptDisplayText     String?               @map("prompt_display_text") @db.Text
+  promptSearchText      String?               @map("prompt_search_text") @db.Text
+  compiledPrompt        String?               @map("compiled_prompt") @db.Text
   /// Ordered reference/style snapshots used by the prompt compiler.
   /// The order is immutable and matches the provider image payload order.
-  referenceSnapshot     Json?       @map("reference_snapshot")
-  styleSnapshot         Json?       @map("style_snapshot")
-  idempotencyKey        String      @map("idempotency_key")
+  referenceSnapshot     Json?                 @map("reference_snapshot")
+  styleSnapshot         Json?                 @map("style_snapshot")
+  idempotencyKey        String                @map("idempotency_key")
   /// External trace id (X-Request-Id header), nullable until UI sends one.
-  requestId             String?     @map("request_id")
+  requestId             String?               @map("request_id")
   input                 Json
-  normalizedInput       Json        @map("normalized_input")
+  normalizedInput       Json                  @map("normalized_input")
   /// Immutable routing/policy snapshot selected at submit time:
   /// route id, provider/model decision, quota/campaign policy, and
   /// queue limits. Workers and refunds read this instead of deriving
   /// policy from mutable runtime config.
-  routingSnapshot       Json?       @map("routing_snapshot")
+  routingSnapshot       Json?                 @map("routing_snapshot")
   error                 Json?
   logs                  Json
   metrics               Json
-  queuePosition         Int?        @map("queue_position")
+  queuePosition         Int?                  @map("queue_position")
   progress              Float?
-  estimatedWaitSeconds  Int?        @map("estimated_wait_seconds")
-  estimatedRunSeconds   Int?        @map("estimated_run_seconds")
-  estimatedTotalSeconds Int?        @map("estimated_total_seconds")
-  etaConfidence         String?     @map("eta_confidence")
-  attempt               Int         @default(1)
-  retryOfJobId          String?     @map("retry_of_job_id") @db.Uuid
+  estimatedWaitSeconds  Int?                  @map("estimated_wait_seconds")
+  estimatedRunSeconds   Int?                  @map("estimated_run_seconds")
+  estimatedTotalSeconds Int?                  @map("estimated_total_seconds")
+  etaConfidence         String?               @map("eta_confidence")
+  attempt               Int                   @default(1)
+  retryOfJobId          String?               @map("retry_of_job_id") @db.Uuid
   /// Provider-side job id for async providers (fal.ai request_id,
   /// Replicate prediction id, Azure video job id). NULL for sync
   /// providers like Azure Foundry images. Indexed with `provider` for
   /// fast webhook reverse-lookup.
-  providerJobId         String?     @map("provider_job_id")
+  providerJobId         String?               @map("provider_job_id")
   /// Aggregated cost across all attempts. See TODO(billing) above.
   cost                  Json?
   /// W3C distributed trace context (traceparent / tracestate) so logs
   /// from worker / DB / provider correlate in observability stack.
   trace                 Json?
   /// Client telemetry — abuse detection, UA-specific bug triage.
-  clientIp              String?     @map("client_ip")
-  userAgent             String?     @map("user_agent")
+  clientIp              String?               @map("client_ip")
+  userAgent             String?               @map("user_agent")
   /// Optimistic concurrency control. Increment on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// repository.update(id, patch, expectedVersion).
-  version               Int         @default(0)
-  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  queuedAt              DateTime?   @map("queued_at") @db.Timestamptz(6)
-  startedAt             DateTime?   @map("started_at") @db.Timestamptz(6)
-  providerSubmittedAt   DateTime?   @map("provider_submitted_at") @db.Timestamptz(6)
-  providerStartedAt     DateTime?   @map("provider_started_at") @db.Timestamptz(6)
-  providerCompletedAt   DateTime?   @map("provider_completed_at") @db.Timestamptz(6)
-  outputFetchedAt       DateTime?   @map("output_fetched_at") @db.Timestamptz(6)
-  ossUploadedAt         DateTime?   @map("oss_uploaded_at") @db.Timestamptz(6)
-  completedAt           DateTime?   @map("completed_at") @db.Timestamptz(6)
-  updatedAt             DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version               Int                   @default(0)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  queuedAt              DateTime?             @map("queued_at") @db.Timestamptz(6)
+  startedAt             DateTime?             @map("started_at") @db.Timestamptz(6)
+  providerSubmittedAt   DateTime?             @map("provider_submitted_at") @db.Timestamptz(6)
+  providerStartedAt     DateTime?             @map("provider_started_at") @db.Timestamptz(6)
+  providerCompletedAt   DateTime?             @map("provider_completed_at") @db.Timestamptz(6)
+  outputFetchedAt       DateTime?             @map("output_fetched_at") @db.Timestamptz(6)
+  ossUploadedAt         DateTime?             @map("oss_uploaded_at") @db.Timestamptz(6)
+  completedAt           DateTime?             @map("completed_at") @db.Timestamptz(6)
+  updatedAt             DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   /// Soft delete tombstone. Repository helpers filter `deletedAt: null`;
   /// raw Prisma callers must do the same.
-  deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  deletedAt             DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
   outputs                AiJobOutput[]
   attempts               AiJobAttempt[]

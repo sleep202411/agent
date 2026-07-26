@@ -28,6 +28,7 @@ import {
   type ReserveQueuedJobResult,
 } from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
+import { resolveOutputStorageProvider } from './output-storage-target';
 import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiPromptCompilerService } from './prompt-compiler.service';
@@ -319,6 +320,12 @@ export class AiGenerationService {
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
             sourceSurface: context.sourceSurface,
+            // Frozen here, never re-read at upload time, so every attempt of
+            // this job writes into the same store.
+            outputStorageProvider: resolveOutputStorageProvider({
+              type: model.type,
+              sourceSurface: context.sourceSurface,
+            }),
             status: 'in_queue',
             stage: 'queued',
             input: rawInput,

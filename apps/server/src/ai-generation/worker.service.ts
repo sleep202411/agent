@@ -36,6 +36,7 @@ import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { DocumentsService } from '../documents/documents.service';
+import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import {
   OutputStorageService,
   type OutputStorageResult,
@@ -133,6 +134,7 @@ export class AiGenerationWorkerService
     private readonly providers: ProviderRegistry,
     private readonly outbox: AiGenerationOutboxService,
     private readonly storage: OutputStorageService,
+    private readonly storageRegistry: StorageProviderRegistry,
     private readonly queueService: AiGenerationQueueService,
     private readonly entitlements: EntitlementService,
     private readonly alerts: AlertingService,
@@ -1548,10 +1550,28 @@ export class AiGenerationWorkerService
     }
   }
 
+  /**
+   * Where this job's outputs go. The target is frozen on the job row at submit
+   * time, so a requeued attempt re-uploads into the store the first attempt
+   * used instead of following the process-wide binding, which is what keeps
+   * the content-addressed key pointing at one object.
+   */
+  private storageFor(job: AiJob): OutputStorageService {
+    if (!job.outputStorageProvider) return this.storage;
+    const pinned = this.storageRegistry.forProvider(job.outputStorageProvider);
+    if (!pinned) {
+      throw new Error(
+        `job pins storage provider ${job.outputStorageProvider}, which has no writable implementation`,
+      );
+    }
+    return pinned;
+  }
+
   private async uploadOutputs(
     job: AiJob,
     raws: RawProviderOutput[],
   ): Promise<AiJobOutput[]> {
+    const storage = this.storageFor(job);
     const created = new Date(job.createdAt);
     const yyyy = created.getUTCFullYear();
     const mm = String(created.getUTCMonth() + 1).padStart(2, '0');
@@ -1585,7 +1605,7 @@ export class AiGenerationWorkerService
             requireBrowserSafeMp4: false,
           });
           const normalizedRaw = { ...raw, ext: actualVideo.fileExtension };
-          result = await this.storage.uploadFromFile({
+          result = await storage.uploadFromFile({
             filePath: spoolPath,
             sizeBytes: spooled.bytes,
             key: this.outputKey(job, normalizedRaw, checksumSha256, {
@@ -1608,7 +1628,7 @@ export class AiGenerationWorkerService
           throw new Error(`no bytes available for output index ${raw.index}`);
         }
         checksumSha256 = createHash('sha256').update(body).digest('hex');
-        result = await this.storage.upload({
+        result = await storage.upload({
           body,
           key: this.outputKey(job, raw, checksumSha256, { yyyy, mm, dd }),
           contentType: raw.mimeType,

@@ -56,6 +56,7 @@ describe('AiGenerationWorkerService video output truth', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       mediaAssetReadiness as never,
       videoProbe as never,
     );

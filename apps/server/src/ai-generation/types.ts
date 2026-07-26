@@ -1,3 +1,4 @@
+import type { MediaStorageProvider } from '@prisma/client';
 import type {
   AiAvailability,
   AiCapabilityMatrix,
@@ -396,6 +397,13 @@ export interface AiJob {
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;
+  /**
+   * Storage backend the worker MUST write this job's outputs to, frozen at
+   * submit time (see `output-storage-target.ts`). `null` = the cell-default
+   * `OutputStorageService` binding, which is what every surface but Story
+   * Studio footage uses.
+   */
+  outputStorageProvider?: MediaStorageProvider | null;
   status: AiJobStatus;
   stage: AiJobStage;
   input: Record<string, unknown>;
