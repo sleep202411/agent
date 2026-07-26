@@ -7561,8 +7561,6 @@
     "mediaError": "Media asset {assetId} could not be played.",
     "videoLabel": "Story video",
     "noVisibleChoices": "No available choices match the current story state.",
-    "checkpointPrompt": "Continue this experience?",
-    "checkpointDescription": "Your current story state is ready for the next section.",
     "continue": "Continue",
     "regionLabel": "Interactive story player",
     "loadErrorTitle": "This experience is not available",

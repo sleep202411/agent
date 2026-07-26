@@ -87,13 +87,6 @@ function deleteStandaloneEdges(
         choiceId: edge.data.choiceId,
       });
     }
-    if (edge.data.kind === "checkpoint") {
-      return disconnectStoryBranch(next, {
-        kind: "checkpoint",
-        sourceNodeId: edge.source,
-        targetNodeId: edge.target,
-      });
-    }
     if (edge.data.kind === "ending") {
       return disconnectStoryBranch(next, {
         kind: "ending",

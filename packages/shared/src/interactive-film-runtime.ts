@@ -2,17 +2,6 @@ import { z } from "zod";
 
 export const INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION = 1 as const;
 
-/**
- * Built-in renderer contract for a non-narrative playback checkpoint.
- *
- * Story authoring treats a checkpoint as an interaction boundary without
- * turning it into a narrative decision. Builds lower that authoring exit to
- * the existing external-overlay runtime primitive so players can handle it as
- * a first-party renderer without widening the release schema union.
- */
-export const STORY_CHECKPOINT_RENDERER_ID = "story.checkpoint" as const;
-export const STORY_CHECKPOINT_CONTINUE_ACTION_ID = "continue" as const;
-
 const stableId = z.string().trim().min(1).max(120);
 const localizedText = z.record(z.string().trim().min(2), z.string().trim().min(1));
 const positiveInteger = z.number().int().positive();
@@ -194,32 +183,6 @@ export const RuntimeChoiceExitSchema = z
   })
   .strict();
 
-const ExternalActionRouteSchema = z.union([
-  z.object({ actionId: stableId, nextNodeId: stableId }).strict(),
-  z.object({ actionId: stableId, endingId: stableId }).strict(),
-]);
-
-export const RuntimeExternalExitSchema = z
-  .object({
-    kind: z.literal("external-overlay"),
-    rendererId: stableId,
-    routes: z.array(ExternalActionRouteSchema).min(1),
-  })
-  .strict()
-  .superRefine((exit, context) => {
-    const actionIds = new Set<string>();
-    exit.routes.forEach((route, index) => {
-      if (actionIds.has(route.actionId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["routes", index, "actionId"],
-          message: `Duplicate external action route ${route.actionId}`,
-        });
-      }
-      actionIds.add(route.actionId);
-    });
-  });
-
 export const RuntimeEndingExitSchema = z
   .object({ kind: z.literal("ending"), endingId: stableId })
   .strict();
@@ -332,7 +295,6 @@ const ExtensionPresentationSchema = z
 const RuntimeNodeExitSchema = z.discriminatedUnion("kind", [
   RuntimeAutoExitSchema,
   RuntimeChoiceExitSchema,
-  RuntimeExternalExitSchema,
   RuntimeEndingExitSchema,
 ]);
 
@@ -542,15 +504,6 @@ export const InteractiveFilmReleaseSchema = z
           requireNode(choice.nextNodeId, [...exitPath, "choices", choiceIndex, "nextNodeId"]);
         });
       }
-      if (node.exit.kind === "external-overlay") {
-        node.exit.routes.forEach((route, routeIndex) => {
-          if ("nextNodeId" in route) {
-            requireNode(route.nextNodeId, [...exitPath, "routes", routeIndex, "nextNodeId"]);
-          } else {
-            requireEnding(route.endingId, [...exitPath, "routes", routeIndex, "endingId"]);
-          }
-        });
-      }
       if (node.exit.kind === "ending") {
         requireEnding(node.exit.endingId, [...exitPath, "endingId"]);
       }
@@ -569,11 +522,7 @@ export const InteractiveFilmReleaseSchema = z
           ? [node.exit.nextNodeId]
           : node.exit.kind === "choice"
             ? node.exit.choices.map((choice) => choice.nextNodeId)
-            : node.exit.kind === "external-overlay"
-              ? node.exit.routes.flatMap((route) =>
-                  "nextNodeId" in route ? [route.nextNodeId] : []
-                )
-              : [];
+            : [];
       nextNodeIds.forEach((nextNodeId) => pending.push(nextNodeId));
     }
     release.nodes.forEach((node, nodeIndex) => {
@@ -585,14 +534,9 @@ export const InteractiveFilmReleaseSchema = z
         });
       }
     });
-    const hasReachableEnding = release.nodes.some((node) => {
-      if (!reachable.has(node.nodeId)) return false;
-      if (node.exit.kind === "ending") return true;
-      return (
-        node.exit.kind === "external-overlay" &&
-        node.exit.routes.some((route) => "endingId" in route)
-      );
-    });
+    const hasReachableEnding = release.nodes.some(
+      (node) => reachable.has(node.nodeId) && node.exit.kind === "ending"
+    );
     if (!hasReachableEnding) {
       context.addIssue({
         code: "custom",
@@ -606,7 +550,6 @@ export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema
 export type InteractiveFilmRuntimeNode = z.infer<typeof InteractiveFilmRuntimeNodeSchema>;
 export type RuntimeAutoExit = z.infer<typeof RuntimeAutoExitSchema>;
 export type RuntimeChoiceExit = z.infer<typeof RuntimeChoiceExitSchema>;
-export type RuntimeExternalExit = z.infer<typeof RuntimeExternalExitSchema>;
 export type RuntimeEndingExit = z.infer<typeof RuntimeEndingExitSchema>;
 export type RuntimeVideoSequenceClip = z.infer<typeof VideoSequenceClipSchema>;
 export type RuntimeVideoVariant = z.infer<typeof VideoVariantSchema>;

@@ -1,8 +1,6 @@
 import {
   INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION,
   InteractiveFilmReleaseSchema,
-  STORY_CHECKPOINT_CONTINUE_ACTION_ID,
-  STORY_CHECKPOINT_RENDERER_ID,
   type InteractiveFilmRelease,
 } from '@repo/shared/interactive-film-runtime';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
@@ -608,8 +606,6 @@ function analyzePaths(
         node.exit.choices.forEach((choice) => {
           successors.push(choice.nextNodeId);
         });
-      } else if (node.exit.kind === 'checkpoint') {
-        successors.push(node.exit.nextNodeId);
       } else if (node.exit.nextNodeId) {
         successors.push(node.exit.nextNodeId);
       } else {
@@ -818,18 +814,6 @@ function compileExit(
     }
     return { kind: 'auto', nextNodeId: exit.nextNodeId };
   }
-  if (exit.kind === 'checkpoint') {
-    return {
-      kind: 'external-overlay',
-      rendererId: STORY_CHECKPOINT_RENDERER_ID,
-      routes: [
-        {
-          actionId: STORY_CHECKPOINT_CONTINUE_ACTION_ID,
-          nextNodeId: exit.nextNodeId,
-        },
-      ],
-    };
-  }
   return {
     kind: 'choice',
     decisionId: exit.decisionId,
@@ -884,7 +868,6 @@ function nextNodeIds(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
   if (node.exit.kind === 'ending') return [];
-  if (node.exit.kind === 'checkpoint') return [node.exit.nextNodeId];
   if (node.exit.kind === 'choice') {
     return node.exit.choices.map((choice) => choice.nextNodeId);
   }

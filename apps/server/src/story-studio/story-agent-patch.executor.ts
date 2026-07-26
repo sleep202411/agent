@@ -351,10 +351,6 @@ function removeGraphNode(
       affectedNodeIds.add(node.nodeId);
       return { ...node, exit: { ...node.exit, choices } };
     }
-    if (node.exit.kind === 'checkpoint' && node.exit.nextNodeId === nodeId) {
-      affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { kind: 'auto', nextNodeId: null } };
-    }
     return node;
   });
 }
@@ -423,7 +419,6 @@ function graphNodeTargets(node: StoryGraphNode): string[] {
   if (node.exit.kind === 'choice') {
     return node.exit.choices.map((choice) => choice.nextNodeId);
   }
-  if (node.exit.kind === 'checkpoint') return [node.exit.nextNodeId];
   return [];
 }
 

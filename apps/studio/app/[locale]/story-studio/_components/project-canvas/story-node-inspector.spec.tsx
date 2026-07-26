@@ -300,28 +300,10 @@ describe("StoryNodeInspector scene exit editor", () => {
     });
   };
 
-  /**
-   * The whole point of converting in place: a scene that already continues
-   * somewhere keeps that destination when it becomes an interaction boundary.
-   * Dropping the target would silently dead-end the story.
-   */
-  it("carries the existing continuation into a checkpoint", async () => {
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-    await render(draftWithMusic(), "opening", onSetSceneExit);
-
-    await click(exitButton(container, "Checkpoint"));
-
-    expect(onSetSceneExit).toHaveBeenCalledWith("opening", {
-      kind: "checkpoint",
-      nextNodeId: "second",
-    });
-  });
-
-  it("leaves a checkpoint unavailable when there is nowhere to continue to", async () => {
+  it("leaves an ending unavailable when the bible names none", async () => {
     const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
     await render(draftWithCharacter(), "opening", onSetSceneExit);
 
-    expect(exitButton(container, "Checkpoint").disabled).toBe(true);
     expect(exitButton(container, "Ending").disabled).toBe(true);
   });
 
@@ -339,23 +321,6 @@ describe("StoryNodeInspector scene exit editor", () => {
     await click(requiredElement(confirm ?? null, "confirm button"));
 
     expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "auto", nextNodeId: null });
-  });
-
-  /**
-   * An ending exit has no continuation to inherit. Seeding the FIRST scene would
-   * point the finale back at the opening and hand the creator an instant cycle;
-   * the newest scene is what they just made room for.
-   */
-  it("seeds a checkpoint converted from an ending with the newest scene", async () => {
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-    await render(draftEndingBeforeNewScene(), "finale", onSetSceneExit);
-
-    await click(exitButton(container, "Checkpoint"));
-
-    expect(onSetSceneExit).toHaveBeenCalledWith("finale", {
-      kind: "checkpoint",
-      nextNodeId: "just-added",
-    });
   });
 
   /**
@@ -397,42 +362,6 @@ describe("StoryNodeInspector scene exit editor", () => {
     expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "choice" });
   });
 });
-
-function draftEndingBeforeNewScene(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      worldview: "",
-      characters: [],
-      endings: [{ id: "ending:1", title: { "en-US": "Curtain" } }],
-    },
-    graph: {
-      entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          exit: { kind: "auto", nextNodeId: "finale" },
-        },
-        {
-          kind: "clip",
-          nodeId: "finale",
-          clipKey: "FINALE",
-          exit: { kind: "ending", endingId: "ending:1" },
-        },
-        {
-          kind: "clip",
-          nodeId: "just-added",
-          clipKey: "JUST_ADDED",
-          exit: { kind: "ending", endingId: "ending:1" },
-        },
-      ],
-    },
-    productionNotes: [],
-  };
-}
 
 function draftWithChoiceBranches(): InteractiveStoryDraftContent {
   return {

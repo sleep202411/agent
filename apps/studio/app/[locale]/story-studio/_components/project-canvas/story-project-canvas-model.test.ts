@@ -195,37 +195,6 @@ describe("buildStoryCanvasModel", () => {
     ]);
   });
 
-  it("projects a checkpoint as one direct interaction edge without a synthetic decision", () => {
-    const content = draft({
-      entryNodeId: "scene",
-      nodes: [
-        clip("scene", "SCENE", { kind: "checkpoint", nextNodeId: "epilogue" }),
-        clip("epilogue", "EPILOGUE", { kind: "ending", endingId: "truth" }),
-      ],
-      endings: [ending("truth", "The Truth", "真相")],
-    });
-
-    const model = buildStoryCanvasModel(content, "en-US");
-
-    expect(model.nodes.find((node) => node.id === "scene")?.data).toMatchObject({
-      kind: "clip",
-      exitKind: "checkpoint",
-      checkpointTargetNodeId: "epilogue",
-    });
-    expect(model.nodes.some((node) => node.data.kind === "decision")).toBe(false);
-    expect(model.edges).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: "scene",
-          target: "epilogue",
-          sourceHandle: "completion",
-          targetHandle: "in",
-          data: { kind: "checkpoint" },
-        }),
-      ])
-    );
-  });
-
   it("projects mixed text and video scenes through one graph", () => {
     const content = draft({
       entryNodeId: "prologue",
@@ -291,7 +260,7 @@ describe("buildStoryCanvasModel", () => {
     });
   });
 
-  it("projects text choices, checkpoints, and endings with the canonical edge semantics", () => {
+  it("projects text choices, continuations, and endings with the canonical edge semantics", () => {
     const content = draft({
       entryNodeId: "question",
       nodes: [
@@ -305,7 +274,7 @@ describe("buildStoryCanvasModel", () => {
           ],
         }),
         textScene("pause", "Pause", "Take a breath.", {
-          kind: "checkpoint",
+          kind: "auto",
           nextNodeId: "farewell",
         }),
         textScene("farewell", "Farewell", "The door closes.", {
@@ -339,7 +308,7 @@ describe("buildStoryCanvasModel", () => {
         expect.objectContaining({
           source: "pause",
           target: "farewell",
-          data: { kind: "checkpoint" },
+          data: { kind: "continuation" },
         }),
         expect.objectContaining({
           source: "farewell",

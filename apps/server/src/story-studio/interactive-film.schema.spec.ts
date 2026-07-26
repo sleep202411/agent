@@ -138,7 +138,7 @@ describe('unified-story text node contract', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts strict text nodes for auto, choice, checkpoint, and ending exits', () => {
+  it('accepts strict text nodes for auto, choice, and ending exits', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
@@ -178,13 +178,6 @@ describe('unified-story text node contract', () => {
             },
           ],
         },
-      },
-      {
-        kind: 'text',
-        nodeId: 'text:checkpoint',
-        title: localized('Turn the page'),
-        body: localized('The next chapter waits for the reader.'),
-        exit: { kind: 'checkpoint', nextNodeId: targetNodeId },
       },
       {
         kind: 'text',
@@ -331,51 +324,24 @@ describe('interactive-film mutable draft structural identity', () => {
   });
 });
 
-describe('interactive-film checkpoint exit contract', () => {
-  it('locks the four finale checkpoints without counting them as decisions', () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const checkpoints = draft.graph.nodes.flatMap((node) =>
-      node.kind === 'clip' && node.exit.kind === 'checkpoint'
-        ? [node.exit]
-        : [],
-    );
-
-    expect(checkpoints).toHaveLength(4);
-    expect(checkpoints.map((checkpoint) => checkpoint.nextNodeId)).toEqual([
-      'clip:E01',
-      'clip:E02',
-      'clip:E03',
-      'clip:E04',
-    ]);
-    expect(
-      new Set(
-        draft.graph.nodes.flatMap((node) =>
-          node.exit.kind === 'choice' ? [node.exit.decisionId] : [],
-        ),
-      ).size,
-    ).toBe(6);
-    expect(
-      LockableInteractiveStoryDraftContentSchema.safeParse(draft).success,
-    ).toBe(true);
-  });
-
-  it('rejects an unknown checkpoint continuation at revision lock', () => {
+describe('interactive-film scene continuation contract', () => {
+  it('rejects an unknown scene continuation at revision lock', () => {
     const draft = structuredClone(
       buildInteractiveFilmTestBundle().draftContent,
     );
-    const checkpointNode = draft.graph.nodes.find(
-      (node) => node.kind === 'clip' && node.exit.kind === 'checkpoint',
+    const continuationNode = draft.graph.nodes.find(
+      (node) => node.kind === 'clip' && node.exit.kind === 'auto',
     );
-    if (!checkpointNode || checkpointNode.exit.kind !== 'checkpoint') {
-      throw new Error('Fixture checkpoint missing.');
+    if (!continuationNode || continuationNode.exit.kind !== 'auto') {
+      throw new Error('Fixture continuation missing.');
     }
-    checkpointNode.exit.nextNodeId = 'clip:UNKNOWN';
+    continuationNode.exit.nextNodeId = 'clip:UNKNOWN';
 
     expectLockIssue(draft, {
       path: [
         'graph',
         'nodes',
-        draft.graph.nodes.indexOf(checkpointNode),
+        draft.graph.nodes.indexOf(continuationNode),
         'exit',
         'nextNodeId',
       ],

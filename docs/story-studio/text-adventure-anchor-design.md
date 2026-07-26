@@ -22,7 +22,7 @@ anchorEvent      锚点事件(必达):此节点必须发生什么     ★ 新增
 musts[]          必达事实:离开此锚点时已成立的事实      ★ 新增(≤10 条)
 convergenceHint  收束提示:引导 LLM 从自由态收拢的过渡指令 ★ 新增(可选)
 freedom          自由度 {min,max}:到下一锚点的自由回合区间 ★ 新增,默认 {0,0}
-exit             出口(auto/choice/checkpoint/ending)   ← 不变
+exit             出口(auto/choice/ending)              ← 不变
 ```
 
 **自由度 0 的语义**:定场文本照本宣科 → 直接出口,即今天的行为。这使 P1(schema+文案)可以先行发布而不欺骗创作者。

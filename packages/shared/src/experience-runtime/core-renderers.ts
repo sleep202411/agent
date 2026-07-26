@@ -8,14 +8,12 @@ export const EXPERIENCE_CORE_RENDERER_CONFIG_VERSION = "1.0.0" as const;
 export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
 export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
-export const EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID = "core.checkpoint" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
 
 export const EXPERIENCE_CORE_RENDERER_IDS = [
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
 ] as const;
 
@@ -151,27 +149,6 @@ export const ExperienceCoreChoiceRendererConfigSchema = z
     });
   });
 
-export const ExperienceCoreCheckpointRendererConfigSchema = z
-  .object({
-    actionIds: z.array(ExperienceStableIdSchema).min(1),
-    initiallyOpen: z.boolean(),
-  })
-  .strict()
-  .superRefine((config, context) => {
-    const actionIds = new Set<string>();
-    config.actionIds.forEach((actionId, index) => {
-      if (!actionIds.has(actionId)) {
-        actionIds.add(actionId);
-        return;
-      }
-      context.addIssue({
-        code: "custom",
-        path: ["actionIds", index],
-        message: `Duplicate checkpoint action id ${actionId}`,
-      });
-    });
-  });
-
 export const ExperienceCoreChargeFeedbackRendererConfigSchema = z
   .object({
     appearance: z.enum(["ring", "target"]).default("ring"),
@@ -185,7 +162,6 @@ export const ExperienceCoreTextCompletedOutcomePayloadSchema = z.object({}).stri
 export const ExperienceCoreChoiceSelectedOutcomePayloadSchema = z
   .object({ choiceId: ExperienceStableIdSchema })
   .strict();
-export const ExperienceCoreCheckpointOutcomePayloadSchema = z.object({}).strict();
 
 export type ExperienceCoreVideoRendererConfig = z.infer<
   typeof ExperienceCoreVideoRendererConfigSchema
@@ -195,9 +171,6 @@ export type ExperienceCoreTextRendererConfig = z.infer<
 >;
 export type ExperienceCoreChoiceRendererConfig = z.infer<
   typeof ExperienceCoreChoiceRendererConfigSchema
->;
-export type ExperienceCoreCheckpointRendererConfig = z.infer<
-  typeof ExperienceCoreCheckpointRendererConfigSchema
 >;
 export type ExperienceCoreChargeFeedbackRendererConfig = z.infer<
   typeof ExperienceCoreChargeFeedbackRendererConfigSchema

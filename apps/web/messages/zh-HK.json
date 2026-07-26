@@ -7560,8 +7560,6 @@
     "mediaError": "媒體資產 {assetId} 無法播放。",
     "videoLabel": "故事影片",
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
-    "checkpointPrompt": "繼續這段體驗？",
-    "checkpointDescription": "目前故事狀態已就緒，可以進入下一段內容。",
     "continue": "繼續",
     "regionLabel": "互動故事播放器",
     "loadErrorTitle": "目前體驗不可用",

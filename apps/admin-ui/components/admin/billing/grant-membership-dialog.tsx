@@ -44,21 +44,18 @@ interface MembershipGrant {
   activeNow: boolean;
 }
 
-// 与服务端 ADMIN_GRANTABLE_PLAN_KEYS 一致；并发数来自 entitlement PLAN_CONFIG，
-// 写在标签里帮 admin 按需选档。并发数与定价页一致。
-//
-// 只列有 active billing_membership_plans 行的档位。发放一个没有计划行的 key
-// 会静默回落到 free 权益:管理员看到发放成功,用户拿到的却是免费档,唯一线索
-// 是一条服务端日志。加档位时必须先建计划行,并且标签上的并发数只能抄计划行,
-// 不能自己写。
-//
-// 注意:本文件之外的 "studio" 指产品族（Studio 产品 vs 社区产品）,与 plan key
-// 无关。
-const PLAN_OPTIONS = [
-  { key: "basic", label: "basic — 基础版（并发 1）" },
-  { key: "standard", label: "standard — 标准版（并发 2）" },
-  { key: "pro", label: "pro — 专业版（并发 3）" },
-] as const;
+interface GrantablePlan {
+  planKey: string;
+  name: string;
+  benefits: { concurrentJobs?: number | null } | null;
+}
+
+// 档位与并发数一律从 active billing_membership_plans 行读，前端不写死：写死的
+// 列表跟计划表漂移过（历史上留过 creator / studio 这些早已下线的档位）。服务端
+// 现在按同一批计划行校验发放（没有 active 行就 MEMBERSHIP_PLAN_NOT_GRANTABLE），
+// 所以这里列出来的一定发得出去。
+const GRANTABLE_PLANS_URL =
+  "/api/admin/billing/membership-plans?productType=membership_plan&subjectType=user&status=active";
 
 const DURATION_PRESETS = [7, 30, 90] as const;
 
@@ -87,11 +84,13 @@ export function GrantMembershipDialog({
   onGranted?: () => void;
 }) {
   const [identifier, setIdentifier] = useState("");
-  const [planKey, setPlanKey] = useState<string>("pro");
+  const [planKey, setPlanKey] = useState("");
   const [days, setDays] = useState("30");
   const [note, setNote] = useState("");
 
   const [user, setUser] = useState<LegacyUser | null>(null);
+  const [plans, setPlans] = useState<GrantablePlan[]>([]);
+  const [plansError, setPlansError] = useState<string | null>(null);
   const [grants, setGrants] = useState<MembershipGrant[]>([]);
   const [lookupDone, setLookupDone] = useState(false);
   const [looking, setLooking] = useState(false);
@@ -103,15 +102,18 @@ export function GrantMembershipDialog({
   const parsedDays = Number(days);
   const daysValid = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 366;
   const canLookup = Boolean(identifier.trim()) && !looking;
-  const canSubmit = Boolean(user) && daysValid && Boolean(note.trim()) && !submitting;
+  const canSubmit =
+    Boolean(user) && Boolean(planKey) && daysValid && Boolean(note.trim()) && !submitting;
 
   useEffect(() => {
     if (!open) {
       setIdentifier("");
-      setPlanKey("pro");
+      setPlanKey("");
       setDays("30");
       setNote("");
       setUser(null);
+      setPlans([]);
+      setPlansError(null);
       setGrants([]);
       setLookupDone(false);
       setError(null);
@@ -120,7 +122,6 @@ export function GrantMembershipDialog({
     }
     const prefilled = initialIdentifier?.trim() ?? "";
     setIdentifier(prefilled);
-    setPlanKey("pro");
     setDays("30");
     setNote("");
     setUser(null);
@@ -128,9 +129,26 @@ export function GrantMembershipDialog({
     setLookupDone(false);
     setError(null);
     setGranted(null);
+    // 每次打开都重读：admin 刚上线/下线一个档位就该立刻反映出来。
+    void loadPlans();
     if (prefilled) void lookup(prefilled);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialIdentifier]);
+
+  async function loadPlans() {
+    setPlans([]);
+    setPlanKey("");
+    setPlansError(null);
+    try {
+      const data = await requestEnvelope<{ items: GrantablePlan[] }>(GRANTABLE_PLANS_URL);
+      const items = data?.items ?? [];
+      setPlans(items);
+      // 服务端按 rank 升序返回，默认选最高档。
+      setPlanKey(items[items.length - 1]?.planKey ?? "");
+    } catch (err) {
+      setPlansError(toErrorMessage(err));
+    }
+  }
 
   async function loadGrants(userId: string) {
     // Best-effort — a listing failure must not block the grant flow.
@@ -213,8 +231,14 @@ export function GrantMembershipDialog({
     setError(null);
   }
 
-  const planLabel = (key: string) =>
-    PLAN_OPTIONS.find((p) => p.key === key)?.label.split(" — ")[0] ?? key;
+  // 历史 grant 可能挂在已下线的 key 上，查不到就原样显示 key。
+  const planLabel = (key: string) => plans.find((p) => p.planKey === key)?.name ?? key;
+
+  const planOptionLabel = (plan: GrantablePlan) => {
+    const concurrency = plan.benefits?.concurrentJobs;
+    const suffix = concurrency == null ? "并发不限" : `并发 ${concurrency}`;
+    return `${plan.planKey} — ${plan.name}（${suffix}）`;
+  };
 
   return (
     <AdminDialog
@@ -356,13 +380,20 @@ export function GrantMembershipDialog({
 
           <FormLabel label="会员档位" help="档位决定并发任务数、每日配额与队列优先级。">
             <Select value={planKey} onChange={setPlanKey}>
-              {PLAN_OPTIONS.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
+              {plans.map((p) => (
+                <option key={p.planKey} value={p.planKey}>
+                  {planOptionLabel(p)}
                 </option>
               ))}
             </Select>
           </FormLabel>
+
+          {plansError ? <ErrorBanner message={plansError} /> : null}
+          {!plansError && plans.length === 0 ? (
+            <p className="text-[12px] text-amber-600">
+              没有可发放的档位：billing_membership_plans 里没有 active 的个人会员计划行。
+            </p>
+          ) : null}
 
           <FormLabel label="时长（天）" help="到期自动回落原档位，无需手动回收。">
             <div className="flex items-center gap-2">

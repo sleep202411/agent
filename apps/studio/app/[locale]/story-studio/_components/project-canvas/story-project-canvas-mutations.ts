@@ -14,7 +14,6 @@ type ChoiceExit = ClipChoiceExit | TextChoiceExit;
 type ChoiceScene =
   | (ClipGraphNode & { exit: ClipChoiceExit })
   | (TextGraphNode & { exit: TextChoiceExit });
-type CheckpointExit = Extract<SceneGraphNode["exit"], { kind: "checkpoint" }>;
 type StoryEnding = InteractiveStoryDraftContent["storyBible"]["endings"][number];
 
 const STABLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]*$/;
@@ -361,39 +360,6 @@ export function updateChoiceExitPrompt(
   });
 }
 
-/**
- * Replaces a scene's next step with a deterministic player checkpoint. A
- * checkpoint is an interaction boundary, not a narrative decision: it keeps
- * the current story session intact and owns exactly one target.
- */
-export function convertSceneExitToCheckpoint(
-  content: InteractiveStoryDraftContent,
-  sourceNodeId: string,
-  targetNodeId: string
-): InteractiveStoryDraftContent {
-  const source = requireScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
-  if (source.exit.kind === "checkpoint" && source.exit.nextNodeId === targetNodeId) return content;
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: { kind: "checkpoint", nextNodeId: targetNodeId },
-  });
-}
-
-export function updateCheckpointTarget(
-  content: InteractiveStoryDraftContent,
-  sourceNodeId: string,
-  targetNodeId: string
-): InteractiveStoryDraftContent {
-  const source = requireCheckpointScene(content, sourceNodeId);
-  requireTargetNode(content, targetNodeId);
-  if (source.exit.nextNodeId === targetNodeId) return content;
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: { ...source.exit, nextNodeId: targetNodeId },
-  });
-}
-
 export interface AddChoiceOptionOptions {
   choiceId?: string;
   label?: string;
@@ -642,7 +608,6 @@ export type StoryBranchSelector =
     }
   | { kind: "decision"; sourceNodeId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string }
-  | { kind: "checkpoint"; sourceNodeId: string; targetNodeId: string }
   | { kind: "ending"; sourceNodeId: string; endingId: string };
 
 /** Dispatches a projected canvas edge deletion back into canonical content. */
@@ -658,16 +623,6 @@ export function disconnectStoryBranch(
   }
   if (selector.kind === "choice") {
     return disconnectChoiceTarget(content, selector.sourceNodeId, selector.choiceId);
-  }
-  if (selector.kind === "checkpoint") {
-    const source = requireCheckpointScene(content, selector.sourceNodeId);
-    if (source.exit.nextNodeId !== selector.targetNodeId) {
-      throw mutationError(
-        "BRANCH_NOT_FOUND",
-        `Checkpoint ${selector.sourceNodeId} does not target ${selector.targetNodeId}.`
-      );
-    }
-    return convertExitToAuto(content, selector.sourceNodeId);
   }
   return disconnectEnding(content, selector.sourceNodeId, selector.endingId);
 }
@@ -860,16 +815,6 @@ export function validateStoryDraftGraph(
       });
       return;
     }
-    if (node.exit.kind === "checkpoint") {
-      if (!nodeIds.has(node.exit.nextNodeId)) {
-        issues.push({
-          code: "unknown-target-node",
-          path: [...exitPath, "nextNodeId"],
-          message: `Unknown target node ${node.exit.nextNodeId}.`,
-        });
-      }
-      return;
-    }
     if (node.exit.kind === "ending" && !endingIds.has(node.exit.endingId)) {
       issues.push({
         code: "unknown-ending",
@@ -903,11 +848,6 @@ function removeGraphNodeReferences(node: StoryGraphNode, deleted: StoryGraphNode
   if (node.exit.kind === "choice") {
     const choices = node.exit.choices.filter((choice) => choice.nextNodeId !== deleted.nodeId);
     return replaceSceneChoices(node as ChoiceScene, choices);
-  }
-  if (node.exit.kind === "checkpoint") {
-    return node.exit.nextNodeId === deleted.nodeId
-      ? { ...node, exit: { kind: "auto", nextNodeId: null } }
-      : node;
   }
   return node;
 }
@@ -993,20 +933,6 @@ function requireChoiceScene(content: InteractiveStoryDraftContent, nodeId: strin
     );
   }
   return node as ChoiceScene;
-}
-
-function requireCheckpointScene(
-  content: InteractiveStoryDraftContent,
-  nodeId: string
-): SceneGraphNode & { exit: CheckpointExit } {
-  const node = requireScene(content, nodeId);
-  if (node.exit.kind !== "checkpoint") {
-    throw mutationError(
-      "SOURCE_EXIT_KIND_MISMATCH",
-      `Scene ${nodeId} has a ${node.exit.kind} exit, not a checkpoint exit.`
-    );
-  }
-  return node as SceneGraphNode & { exit: CheckpointExit };
 }
 
 function requireTargetNode(content: InteractiveStoryDraftContent, nodeId: string): void {
@@ -1131,7 +1057,7 @@ function allocateClipKey(existing: string[], preferred: string): string {
 }
 
 function hasBranches(exit: SceneGraphNode["exit"]): boolean {
-  if (exit.kind === "ending" || exit.kind === "checkpoint") return true;
+  if (exit.kind === "ending") return true;
   if (exit.kind === "choice") return exit.choices.length > 0;
   return exit.nextNodeId !== null;
 }

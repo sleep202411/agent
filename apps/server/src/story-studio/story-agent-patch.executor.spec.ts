@@ -228,13 +228,8 @@ describe('executeStoryPatch', () => {
       kind: 'auto',
       nextNodeId: null,
     });
-    expect(requiredClip(result.draft, 'clip:checkpoint').exit).toEqual({
-      kind: 'auto',
-      nextNodeId: null,
-    });
     expect(result.affectedNodeIds).toEqual([
       'clip:auto',
-      'clip:checkpoint',
       'clip:choice',
       'clip:target',
     ]);
@@ -575,12 +570,6 @@ function buildCascadeDraft(): InteractiveStoryDraftContent {
           nodeId: 'clip:auto',
           clipKey: 'AUTO',
           exit: { kind: 'auto', nextNodeId: 'clip:target' },
-        },
-        {
-          kind: 'clip',
-          nodeId: 'clip:checkpoint',
-          clipKey: 'CHECKPOINT',
-          exit: { kind: 'checkpoint', nextNodeId: 'clip:target' },
         },
         {
           kind: 'clip',

@@ -12,13 +12,13 @@
 
 ## 2. 五棒流水线(替换 `StoryPatchAuthorService.author`)
 
-| #   | 棒(agent 名) | key         | 输入                      | 产物(声明式契约)                                                                                                 |
-| --- | ------------ | ----------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 1   | 世界观架构师 | `worldview` | brief + 文档全文          | `StoryBibleDraft` = logline/synopsis/worldview + characters[] + stateVariables[] + endings[]                     |
-| 2   | 剧情结构师   | `structure` | bible + 文档              | `StorySkeleton` = nodes[]{id,kind,clipKey?,beat,intendedNext?} + entryId — **确定性校验**(见 §3)                 |
-| 3   | 分支编排师   | `branch`    | skeleton + bible          | `StoryBranchPlan` = 每节点的 exit(auto/choice/checkpoint/ending)+ choices/routes(条件/效果引用只能指向已注册 id) |
-| 4   | 场景撰写师   | `scene`     | skeleton + branch + bible | `StorySceneProse` = 每 text 节点 body、每 choice 的 prompt/label(逐节点,可并行)                                  |
-| 5   | 校验(装配器) | `validate`  | 前四棒产物                | 确定性代码把四份产物**装配**成 `StoryPatchOperation[]`;走 `executeStoryPatch` dry-run 作末端断言                 |
+| #   | 棒(agent 名) | key         | 输入                      | 产物(声明式契约)                                                                                      |
+| --- | ------------ | ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1   | 世界观架构师 | `worldview` | brief + 文档全文          | `StoryBibleDraft` = logline/synopsis/worldview + characters[] + stateVariables[] + endings[]          |
+| 2   | 剧情结构师   | `structure` | bible + 文档              | `StorySkeleton` = nodes[]{id,kind,clipKey?,beat,intendedNext?} + entryId — **确定性校验**(见 §3)      |
+| 3   | 分支编排师   | `branch`    | skeleton + bible          | `StoryBranchPlan` = 每节点的 exit(auto/choice/ending)+ choices/routes(条件/效果引用只能指向已注册 id) |
+| 4   | 场景撰写师   | `scene`     | skeleton + branch + bible | `StorySceneProse` = 每 text 节点 body、每 choice 的 prompt/label(逐节点,可并行)                       |
+| 5   | 校验(装配器) | `validate`  | 前四棒产物                | 确定性代码把四份产物**装配**成 `StoryPatchOperation[]`;走 `executeStoryPatch` dry-run 作末端断言      |
 
 第 4 棒只往**已连好的节点**填肉 → 无从制造悬空。第 5 棒是代码不是 LLM。
 

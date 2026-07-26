@@ -449,7 +449,7 @@
         "nodeId": "clip:S06A",
         "clipKey": "S06A",
         "exit": {
-          "kind": "checkpoint",
+          "kind": "auto",
           "nextNodeId": "clip:E01"
         }
       },
@@ -458,7 +458,7 @@
         "nodeId": "clip:S06B",
         "clipKey": "S06B",
         "exit": {
-          "kind": "checkpoint",
+          "kind": "auto",
           "nextNodeId": "clip:E02"
         }
       },
@@ -467,7 +467,7 @@
         "nodeId": "clip:S06C",
         "clipKey": "S06C",
         "exit": {
-          "kind": "checkpoint",
+          "kind": "auto",
           "nextNodeId": "clip:E03"
         }
       },
@@ -476,7 +476,7 @@
         "nodeId": "clip:S06D",
         "clipKey": "S06D",
         "exit": {
-          "kind": "checkpoint",
+          "kind": "auto",
           "nextNodeId": "clip:E04"
         }
       },

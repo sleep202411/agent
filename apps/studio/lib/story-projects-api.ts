@@ -198,7 +198,6 @@ export type StoryGraphNode =
       exit:
         | { kind: "auto"; nextNodeId: string | null }
         | StoryChoiceExit
-        | { kind: "checkpoint"; nextNodeId: string }
         | { kind: "ending"; endingId: string };
     }
   | {
@@ -210,7 +209,6 @@ export type StoryGraphNode =
       exit:
         | { kind: "auto"; nextNodeId: string | null }
         | StoryChoiceExit
-        | { kind: "checkpoint"; nextNodeId: string }
         | { kind: "ending"; endingId: string };
     };
 

@@ -40,8 +40,8 @@ const PROJECT_ID = '0197f4a2-0800-7000-8000-00000000aa02';
 
 /**
  * Pure branching tree: a node continues to one next node, fans into labelled
- * choices, pauses at a checkpoint, or resolves to an ending. There is no hidden
- * play state — a choice is just its label and its target node.
+ * choices, or resolves to an ending. There is no hidden play state — a choice
+ * is just its label and its target node.
  */
 function draft(): InteractiveStoryDraftContent {
   return {
@@ -106,7 +106,7 @@ function draft(): InteractiveStoryDraftContent {
           kind: 'text',
           nodeId: 'node.reveal',
           body: { 'zh-CN': '你越过门槛，走进庭院。' },
-          exit: { kind: 'checkpoint', nextNodeId: 'node.truth' },
+          exit: { kind: 'auto', nextNodeId: 'node.truth' },
         },
         {
           kind: 'text',
@@ -183,7 +183,7 @@ describe('StoryTextPlayService static engine', () => {
     ]);
   });
 
-  it('applies a choice, continues through a checkpoint, and reaches the ending', async () => {
+  it('applies a choice, continues through the next scene, and reaches the ending', async () => {
     const service = serviceWith(draft());
     const { state } = await service.start(USER, WORKSPACE_ID, PROJECT_ID);
     const atGate = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
@@ -193,17 +193,17 @@ describe('StoryTextPlayService static engine', () => {
       runawayTurnGuard: 18,
     });
 
-    const atCheckpoint = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+    const atReveal = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state: atGate.state,
       action: { kind: 'choice', choiceId: 'choice.push' },
       pace: 'standard',
       runawayTurnGuard: 18,
     });
-    expect(atCheckpoint.ended).toBe(false);
-    expect(atCheckpoint.state.nodeId).toBe('node.reveal');
+    expect(atReveal.ended).toBe(false);
+    expect(atReveal.state.nodeId).toBe('node.reveal');
 
     const result = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
-      state: atCheckpoint.state,
+      state: atReveal.state,
       action: { kind: 'continue' },
       pace: 'standard',
       runawayTurnGuard: 18,
@@ -235,14 +235,14 @@ describe('StoryTextPlayService static engine', () => {
       pace: 'standard',
       runawayTurnGuard: 18,
     });
-    const atCheckpoint = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
+    const atReveal = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
       state: atGate.state,
       action: { kind: 'choice', choiceId: 'choice.push' },
       pace: 'standard',
       runawayTurnGuard: 18,
     });
     const finished = await service.turn(USER, WORKSPACE_ID, PROJECT_ID, {
-      state: atCheckpoint.state,
+      state: atReveal.state,
       action: { kind: 'continue' },
       pace: 'standard',
       runawayTurnGuard: 18,

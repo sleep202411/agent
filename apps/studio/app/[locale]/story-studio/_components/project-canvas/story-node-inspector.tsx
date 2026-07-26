@@ -47,18 +47,17 @@ type StoryChapterTarget = {
 /**
  * What the creator asked a scene's next step to become. The inspector states the
  * intent; the canvas owns which mutation realizes it, because only the canvas
- * knows the surrounding draft (a checkpoint keeps its target, a choice mints a
- * decision, an ending has to name one).
+ * knows the surrounding draft (a choice mints a decision, an ending has to name
+ * one).
  */
 export type SceneExitIntent =
   | { kind: "auto"; nextNodeId: string | null }
   | { kind: "choice" }
-  | { kind: "checkpoint"; nextNodeId: string }
   | { kind: "ending"; endingId: string };
 
 type SceneExitKind = SceneExitIntent["kind"];
 
-const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice", "checkpoint", "ending"];
+const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice", "ending"];
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
@@ -410,10 +409,9 @@ function GraphNodeEditor({
 /**
  * The one place a scene's next step can be re-shaped without drawing edges.
  *
- * The canvas can already express three of the four exits by dragging, but only
- * awkwardly: `choice` demands a drag onto blank canvas (so an existing
- * continuation must be deleted first), and `checkpoint` has no gesture at all.
- * Authoring an interaction beat should not depend on remembering that.
+ * The canvas can express every exit by dragging, but only awkwardly: `choice`
+ * demands a drag onto blank canvas, so an existing continuation must be deleted
+ * first. Re-shaping a scene's next step should not depend on remembering that.
  */
 function SceneExitEditor({
   content,
@@ -432,26 +430,17 @@ function SceneExitEditor({
   const [pendingKind, setPendingKind] = useState<SceneExitKind | null>(null);
 
   const currentKind = node.exit.kind;
-  const currentTarget =
-    node.exit.kind === "auto" || node.exit.kind === "checkpoint" ? node.exit.nextNodeId : null;
+  const currentTarget = node.exit.kind === "auto" ? node.exit.nextNodeId : null;
   // Replacing a choice throws away every authored option and its branch link, so
   // that conversion — and only that one — asks first.
   const branchCount = node.exit.kind === "choice" ? node.exit.choices.length : 0;
 
   const targets = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
   const endings = content.storyBible.endings;
-  // Converting an ending into a checkpoint has no target to inherit, and seeding
-  // the FIRST node would point the last scene back at the opening — an instant
-  // cycle. The newest node is the useful guess: a creator reaching for this has
-  // usually just made the scene they want to insert. The picker corrects either way.
-  const fallbackTarget = currentTarget ?? targets.at(-1)?.nodeId ?? null;
 
   const intentFor = (kind: SceneExitKind): SceneExitIntent | null => {
     if (kind === "auto") return { kind: "auto", nextNodeId: currentTarget };
     if (kind === "choice") return { kind: "choice" };
-    if (kind === "checkpoint") {
-      return fallbackTarget ? { kind: "checkpoint", nextNodeId: fallbackTarget } : null;
-    }
     const endingId = node.exit.kind === "ending" ? node.exit.endingId : endings[0]?.id;
     return endingId ? { kind: "ending", endingId } : null;
   };
@@ -472,9 +461,7 @@ function SceneExitEditor({
   };
 
   const kindDisabled = (kind: SceneExitKind) =>
-    !canEdit ||
-    (kind === "checkpoint" && !fallbackTarget) ||
-    (kind === "ending" && endings.length === 0);
+    !canEdit || (kind === "ending" && endings.length === 0);
 
   return (
     <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
@@ -486,7 +473,7 @@ function SceneExitEditor({
       </div>
 
       <div
-        className="mt-3 grid grid-cols-2 gap-1.5"
+        className="mt-3 grid grid-cols-3 gap-1.5"
         role="radiogroup"
         aria-label={t("inspector.exit")}
       >
@@ -508,7 +495,7 @@ function SceneExitEditor({
               )}
             >
               {t(
-                `inspector.exit${kind === "auto" ? "Auto" : kind === "choice" ? "Choice" : kind === "checkpoint" ? "Checkpoint" : "Ending"}`
+                `inspector.exit${kind === "auto" ? "Auto" : kind === "choice" ? "Choice" : "Ending"}`
               )}
             </button>
           );
@@ -544,23 +531,16 @@ function SceneExitEditor({
         </div>
       ) : null}
 
-      {currentKind === "auto" || currentKind === "checkpoint" ? (
+      {currentKind === "auto" ? (
         <label className="mt-3 block">
           <span className="text-[9px] font-semibold text-white/32">
-            {t(
-              currentKind === "auto" ? "inspector.continuationTarget" : "inspector.checkpointTarget"
-            )}
+            {t("inspector.continuationTarget")}
           </span>
           <Select
             value={currentTarget ?? ""}
             disabled={!canEdit || targets.length === 0}
             onValueChange={(nextNodeId) =>
-              onSetSceneExit(
-                node.nodeId,
-                currentKind === "auto"
-                  ? { kind: "auto", nextNodeId }
-                  : { kind: "checkpoint", nextNodeId }
-              )
+              onSetSceneExit(node.nodeId, { kind: "auto", nextNodeId })
             }
           >
             <SelectTrigger className="mt-1.5 w-full" aria-label={t("inspector.continuationTarget")}>
@@ -607,11 +587,7 @@ function SceneExitEditor({
       ) : null}
 
       <p className="mt-2.5 text-[9px] leading-4 text-white/34">
-        {t(
-          currentKind === "checkpoint"
-            ? "inspector.checkpointDescription"
-            : "inspector.continuationDescription"
-        )}
+        {t("inspector.continuationDescription")}
       </p>
     </section>
   );

@@ -177,7 +177,6 @@ import {
   connectSceneContinuation,
   connectChoiceTarget,
   convertExitToAuto,
-  convertSceneExitToCheckpoint,
   convertSceneExitToChoice,
   convertSceneExitToEnding,
   createClipNode,
@@ -269,7 +268,6 @@ const STORY_PORT_COLORS = {
   entry: "#8f65ff",
   flow: "rgba(255,255,255,0.72)",
   choice: "#5b9dff",
-  checkpoint: "#8f65ff",
   ending: "#E52227",
   cast: "rgba(255,255,255,0.34)",
 } as const;
@@ -1986,11 +1984,9 @@ function StoryProjectCanvasInner({
               ? STORY_MEMBERSHIP_EDGE_COLOR
               : edge.data.kind === "choice" || edge.data.kind === "decision"
                 ? STORY_PORT_COLORS.choice
-                : edge.data.kind === "checkpoint"
-                  ? STORY_PORT_COLORS.checkpoint
-                  : edge.data.kind === "ending"
-                    ? STORY_PORT_COLORS.ending
-                    : "rgba(255,255,255,0.34)",
+                : edge.data.kind === "ending"
+                  ? STORY_PORT_COLORS.ending
+                  : "rgba(255,255,255,0.34)",
           },
           labelStyle: { fill: "rgba(255,255,255,0.68)", fontSize: 10, fontWeight: 600 },
           labelBgStyle: { fill: "rgba(24,24,24,0.88)", fillOpacity: 1 },
@@ -2505,9 +2501,6 @@ function StoryProjectCanvasInner({
       return;
     }
     applyGraphMutation((current) => {
-      if (intent.kind === "checkpoint") {
-        return convertSceneExitToCheckpoint(current, nodeId, intent.nextNodeId);
-      }
       if (intent.kind === "ending") {
         return convertSceneExitToEnding(current, nodeId, intent.endingId);
       }
@@ -3719,11 +3712,9 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             color={
               data.exitKind === "choice"
                 ? STORY_PORT_COLORS.choice
-                : data.exitKind === "checkpoint"
-                  ? STORY_PORT_COLORS.checkpoint
-                  : data.exitKind === "ending"
-                    ? STORY_PORT_COLORS.ending
-                    : STORY_PORT_COLORS.flow
+                : data.exitKind === "ending"
+                  ? STORY_PORT_COLORS.ending
+                  : STORY_PORT_COLORS.flow
             }
             label={t("ports.completion")}
             isConnectable={

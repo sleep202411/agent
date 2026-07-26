@@ -153,20 +153,6 @@ const StoryChoiceExitSchema = z
   })
   .strict();
 
-/**
- * A deliberate interaction boundary that asks the viewer to continue without
- * recording a narrative choice. Player copy belongs to the built-in runtime
- * checkpoint renderer, keeping authoring graphs free from duplicated product
- * UI text.
- */
-export const StoryCheckpointExitSchema = z
-  .object({
-    kind: z.literal('checkpoint'),
-    nextNodeId: StoryStableIdSchema,
-  })
-  .strict();
-export type StoryCheckpointExit = z.infer<typeof StoryCheckpointExitSchema>;
-
 const StoryEndingExitSchema = z
   .object({
     kind: z.literal('ending'),
@@ -206,7 +192,6 @@ const StoryClipGraphNodeSchema = z
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
-      StoryCheckpointExitSchema,
       StoryEndingExitSchema,
     ]),
   })
@@ -222,7 +207,6 @@ const StoryTextGraphNodeSchema = z
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
-      StoryCheckpointExitSchema,
       StoryEndingExitSchema,
     ]),
   })
@@ -772,13 +756,6 @@ function validateInteractiveStoryGameplayReadiness(
             message: `Unknown target node ${choice.nextNodeId}.`,
           });
         }
-      });
-    }
-    if (node.exit.kind === 'checkpoint' && !nodeIds.has(node.exit.nextNodeId)) {
-      context.addIssue({
-        code: 'custom',
-        path: [...exitPath, 'nextNodeId'],
-        message: `Unknown target node ${node.exit.nextNodeId}.`,
       });
     }
     if (node.exit.kind === 'ending' && !endingIds.has(node.exit.endingId)) {

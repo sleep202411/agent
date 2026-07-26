@@ -338,8 +338,23 @@ server:
     repository: fizzdragon-server
     tag: 7adb6b326e6583864c6228c8030b057d79c8e0ad
   containerPort: 3001
+  # Cloudflare R2 credentials, created with `kubectl create secret generic
+  # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
+  # list is safe to carry into a cell that has no such secret.
+  extraSecretRefs:
+    - fizzdragon-r2
   env:
     FAL_ENABLED: "true"
+    # Cloudflare R2 over the S3-compatible API. `auto` is R2's only region and
+    # path-style is required; the bucket is APAC-placed to sit beside the cluster.
+    # Credentials (S3_ACCESS_KEY_ID / S3_ACCESS_KEY_SECRET) come from the
+    # fizzdragon-r2 secret above. Only jobs that pin s3_compatible write here —
+    # OUTPUT_STORAGE_PROVIDER stays unset so every other surface keeps its cell
+    # default of azure_blob.
+    S3_ENDPOINT: https://c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com
+    S3_BUCKET: fizzdragon-media
+    S3_REGION: auto
+    S3_FORCE_PATH_STYLE: "true"
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.

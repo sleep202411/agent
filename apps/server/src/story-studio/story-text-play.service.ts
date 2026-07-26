@@ -951,8 +951,7 @@ export class StoryTextPlayService {
   ): boolean {
     const exit = node.exit;
     switch (exit.kind) {
-      case 'auto':
-      case 'checkpoint': {
+      case 'auto': {
         const next = exit.nextNodeId;
         if (!next) {
           events.push({ kind: 'end' });

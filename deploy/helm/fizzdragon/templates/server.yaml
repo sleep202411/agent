@@ -173,6 +173,15 @@ spec:
             {{- end }}
             - secretRef:
                 name: {{ .Values.studioAgentGatewaySecrets.projectedName }}
+            {{- /* Secrets created outside Key Vault projection (kubectl create
+                   secret). `optional` so a cell that has not been given one yet
+                   starts normally instead of wedging every pod on a missing
+                   reference — the feature reading it degrades, the server does not. */}}
+            {{- range .Values.server.extraSecretRefs }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
           {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets

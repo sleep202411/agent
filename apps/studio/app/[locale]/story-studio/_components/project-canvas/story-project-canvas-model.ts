@@ -8,7 +8,7 @@ import type {
 } from "@/lib/story-projects-api";
 
 type StoryCanvasNodeKind = "clip" | "text" | "decision" | "ending" | "character";
-type StoryCanvasExitKind = "auto" | "choice" | "checkpoint" | "ending";
+type StoryCanvasExitKind = "auto" | "choice" | "ending";
 
 interface StoryCanvasChoiceData {
   choiceId: string;
@@ -31,7 +31,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   characterImageUrl?: string;
   exitKind?: StoryCanvasExitKind;
   continuationTargetNodeId?: string;
-  checkpointTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   clipVideo?: StoryClipVideoSummary;
   frameAspectRatio?: "16:9" | "9:16";
@@ -45,7 +44,6 @@ type StoryCanvasEdgeData =
   | { kind: "continuation" }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string }
-  | { kind: "checkpoint" }
   | { kind: "ending"; endingId: string };
 
 export type StoryCanvasEdge = Edge & { data: StoryCanvasEdgeData };
@@ -157,8 +155,6 @@ export function buildStoryCanvasModel(
             eyebrow: `${copy.text} ${String(textOrdinal).padStart(2, "0")}`,
             nodeId: node.nodeId,
             exitKind: node.exit.kind,
-            checkpointTargetNodeId:
-              node.exit.kind === "checkpoint" ? node.exit.nextNodeId : undefined,
             continuationTargetNodeId:
               node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
             summary: localizedText(node.body, locale, ""),
@@ -197,8 +193,6 @@ export function buildStoryCanvasModel(
           nodeId: node.nodeId,
           clipKey: node.clipKey,
           exitKind: node.exit.kind,
-          checkpointTargetNodeId:
-            node.exit.kind === "checkpoint" ? node.exit.nextNodeId : undefined,
           continuationTargetNodeId:
             node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
           clipVideo: clip,
@@ -383,22 +377,6 @@ function buildConnections(
           },
         });
       }
-      continue;
-    }
-
-    if (node.exit.kind === "checkpoint") {
-      if (!graphNodesById.has(node.exit.nextNodeId)) continue;
-      connections.push({
-        order: order++,
-        edge: {
-          id: `checkpoint:${node.nodeId}:${node.exit.nextNodeId}`,
-          source: node.nodeId,
-          target: node.exit.nextNodeId,
-          sourceHandle: "completion",
-          targetHandle: "in",
-          data: { kind: "checkpoint" },
-        },
-      });
       continue;
     }
 

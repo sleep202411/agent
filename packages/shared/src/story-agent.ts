@@ -304,12 +304,6 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
           .strict(),
         z
           .object({
-            kind: z.literal("checkpoint"),
-            nextNodeId: StoryAgentStableIdSchema,
-          })
-          .strict(),
-        z
-          .object({
             kind: z.literal("ending"),
             endingId: StoryAgentStableIdSchema,
           })
@@ -337,12 +331,6 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
             decisionId: StoryAgentStableIdSchema,
             prompt: StoryAgentLocalizedTextSchema,
             choices: z.array(StoryAgentGraphChoiceSchema).max(6),
-          })
-          .strict(),
-        z
-          .object({
-            kind: z.literal("checkpoint"),
-            nextNodeId: StoryAgentStableIdSchema,
           })
           .strict(),
         z

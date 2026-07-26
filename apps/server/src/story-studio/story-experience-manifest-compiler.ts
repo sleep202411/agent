@@ -1,19 +1,16 @@
 import {
-  STORY_CHECKPOINT_RENDERER_ID,
   type InteractiveFilmRelease,
   type InteractiveFilmRuntimeNode,
   type RuntimeMediaAsset,
 } from '@repo/shared/interactive-film-runtime';
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_RENDERER_API_VERSION,
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
-  type ExperienceCoreCheckpointRendererConfig,
   type ExperienceCoreChoiceRendererConfig,
   type ExperienceCoreRendererId,
   type ExperienceCoreTextRendererConfig,
@@ -59,7 +56,6 @@ export interface StoryExperienceManifestDiagnostic {
     | 'STORY_EXPERIENCE_MEDIA_UNSUPPORTED'
     | 'STORY_EXPERIENCE_OVERLAY_UNSUPPORTED'
     | 'STORY_EXPERIENCE_PRESENTATION_UNSUPPORTED'
-    | 'STORY_EXPERIENCE_CHECKPOINT_UNSUPPORTED'
     | 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID';
   message: string;
   path: PropertyKey[];
@@ -72,7 +68,6 @@ export interface StoryExperienceManifestCompilerResult {
 
 interface NodeCompilationContext {
   experienceProfile: 'cinematic' | 'narrative';
-  checkpointOutcomeIds: Set<string>;
   usedRendererIds: Set<ExperienceCoreRendererId>;
   syntheticScenes: ExperienceScene[];
   diagnostics: StoryExperienceManifestDiagnostic[];
@@ -104,12 +99,10 @@ export function compileStoryExperienceManifest(
   });
   assets.push(coreThemeConfigAsset());
 
-  const checkpointOutcomeIds = new Set<string>();
   const usedRendererIds = new Set<ExperienceCoreRendererId>();
   const syntheticScenes: ExperienceScene[] = [];
   const context: NodeCompilationContext = {
     experienceProfile: input.experienceProfile,
-    checkpointOutcomeIds,
     usedRendererIds,
     syntheticScenes,
     diagnostics,
@@ -159,10 +152,7 @@ export function compileStoryExperienceManifest(
     },
     stateDefinitions: [],
     inputActions: [],
-    rendererRequirements: compileRendererRequirements(
-      usedRendererIds,
-      checkpointOutcomeIds,
-    ),
+    rendererRequirements: compileRendererRequirements(usedRendererIds),
     assets,
     theme: {
       themeId: 'core.film-dark',
@@ -426,7 +416,7 @@ function compileGraphNode(
         ],
       ),
     );
-  } else if (node.exit.kind === 'choice') {
+  } else {
     compileChoiceExit(
       node,
       primaryInstanceId,
@@ -435,17 +425,6 @@ function compileGraphNode(
       renderers,
       eventBindings,
       context,
-    );
-  } else {
-    compileCheckpointExit(
-      node,
-      primaryInstanceId,
-      primaryOutcomeType,
-      isText,
-      renderers,
-      eventBindings,
-      context,
-      path,
     );
   }
 
@@ -529,86 +508,6 @@ function compileChoiceExit(
   });
 }
 
-function compileCheckpointExit(
-  node: Extract<InteractiveFilmRuntimeNode, { presentation: unknown }>,
-  primaryInstanceId: string,
-  primaryOutcomeType: string,
-  isText: boolean,
-  renderers: ExperienceRendererInstance[],
-  eventBindings: ExperienceEventBinding[],
-  context: NodeCompilationContext,
-  path: PropertyKey[],
-): void {
-  if (node.exit.kind !== 'external-overlay') return;
-  if (node.exit.rendererId !== STORY_CHECKPOINT_RENDERER_ID) {
-    context.diagnostics.push({
-      code: 'STORY_EXPERIENCE_CHECKPOINT_UNSUPPORTED',
-      message: `Scene ${node.nodeId} references unsupported legacy renderer ${node.exit.rendererId}.`,
-      path: [...path, 'exit', 'rendererId'],
-    });
-    return;
-  }
-  context.usedRendererIds.add(EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID);
-  const instanceId = `renderer:${node.nodeId}:checkpoint`;
-  const actionIds = node.exit.routes.map((route) => route.actionId);
-  actionIds.forEach((actionId) => context.checkpointOutcomeIds.add(actionId));
-  renderers.push({
-    instanceId,
-    rendererId: EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
-    layer: 100,
-    config: {
-      actionIds,
-      initiallyOpen: isText,
-    } satisfies ExperienceCoreCheckpointRendererConfig,
-    bindings: {},
-  });
-  if (!isText) {
-    eventBindings.push(
-      rendererOutcomeBinding(
-        node.nodeId,
-        primaryInstanceId,
-        primaryOutcomeType,
-        [
-          {
-            routeId: `route:${node.nodeId}:checkpoint-open`,
-            actions: [
-              {
-                kind: 'renderer.command' as const,
-                instanceId,
-                commandType: 'open',
-                payload: {},
-              },
-            ],
-          },
-        ],
-      ),
-    );
-  }
-  node.exit.routes.forEach((route) => {
-    eventBindings.push({
-      bindingId: `binding:${node.nodeId}:checkpoint:${route.actionId}`,
-      on: {
-        type: 'renderer.outcome',
-        sourceId: instanceId,
-        qualifierId: route.actionId,
-      },
-      routes: [
-        {
-          routeId: `route:${node.nodeId}:checkpoint:${route.actionId}`,
-          actions: [
-            'nextNodeId' in route
-              ? { kind: 'scene.goto' as const, sceneId: route.nextNodeId }
-              : {
-                  kind: 'ending.complete' as const,
-                  endingId: route.endingId,
-                },
-          ],
-        },
-      ],
-    });
-  });
-}
-
 function rendererOutcomeBinding(
   sceneId: string,
   instanceId: string,
@@ -628,7 +527,6 @@ function rendererOutcomeBinding(
 
 function compileRendererRequirements(
   usedRendererIds: ReadonlySet<ExperienceCoreRendererId>,
-  checkpointOutcomeIds: ReadonlySet<string>,
 ): ExperienceRendererRequirement[] {
   return [...usedRendererIds].sort().map((rendererId) => {
     if (rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
@@ -658,18 +556,6 @@ function compileRendererRequirements(
         configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
         requiredCapabilities: [rendererId],
         outcomes: [{ outcomeType: 'choice-selected' }],
-        commands: [{ commandType: 'open' }],
-      };
-    }
-    if (rendererId === EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID) {
-      return {
-        rendererId,
-        apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
-        configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
-        requiredCapabilities: [rendererId],
-        outcomes: [...checkpointOutcomeIds]
-          .sort()
-          .map((outcomeType) => ({ outcomeType })),
         commands: [{ commandType: 'open' }],
       };
     }
