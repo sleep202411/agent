@@ -265,6 +265,16 @@ export class StoryExperienceReleaseService {
     try {
       release = await this.gateway.publish(request, viewerCookie);
     } catch (error) {
+      // A lost response is the only genuinely ambiguous outcome: Java may have
+      // committed the release before the transport died. Rather than leaving a
+      // record for a background poller to settle later, ask Java once, right
+      // here, so the answer we hand back is the truth. Whether Java is
+      // idempotent on (gameId, contentVersion) is Java's contract to keep — we
+      // do not compensate for it, we just report what it says.
+      if (isStoryExperienceReleaseOutcomeUnknown(error)) {
+        const settled = await this.settleUncertainPublish(claim, request);
+        if (settled) return settled;
+      }
       await this.recordPublishFailure(claim, error);
       throw error;
     }
@@ -866,6 +876,39 @@ export class StoryExperienceReleaseService {
       message:
         'Publication ownership expired before the Java acknowledgement could be stored.',
     });
+  }
+
+  /**
+   * Resolves a lost publish response by asking Java what it actually has.
+   *
+   * Returns the release when Java is already serving this exact
+   * contentVersion, and null when it is not — or when Java cannot be reached,
+   * in which case the caller reports the failure and the creator simply
+   * publishes again. Being briefly wrong in the UI and self-correcting on the
+   * next click is a far smaller cost than a resident reconciliation worker.
+   */
+  private async settleUncertainPublish(
+    claim: Extract<PublicationClaim, { kind: 'claimed' }>,
+    request: ExperienceReleaseRequest,
+  ): Promise<ExperienceReleaseResponse | null> {
+    // Anything this probe throws must be swallowed, including a synchronous
+    // throw: the publish error it would otherwise mask is the one worth
+    // reporting.
+    let game: Awaited<ReturnType<typeof this.gateway.getGame>> = null;
+    try {
+      game = await this.gateway.getGame(request.gameId);
+    } catch {
+      return null;
+    }
+    if (!game || game.currentVersion !== request.contentVersion) return null;
+    const release: ExperienceReleaseResponse = {
+      gameId: game.gameId,
+      contentVersion: game.currentVersion,
+      status: 'published',
+      manifestUrl: game.manifestUrl,
+    };
+    await this.confirmPublication(claim, release);
+    return release;
   }
 
   private async recordPublishFailure(

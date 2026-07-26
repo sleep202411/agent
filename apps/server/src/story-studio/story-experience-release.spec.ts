@@ -557,6 +557,68 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     expect(data).not.toHaveProperty('leaseOwner');
   });
 
+  it('reports success when a lost response hid a release Java had already taken', async () => {
+    // The alternative — telling the creator it failed while the game is live —
+    // is the exact lie the deleted reconciliation worker existed to correct
+    // later. One synchronous probe tells the truth now instead.
+    const claimed = publicationRow({
+      status: 'pending',
+      leaseOwner: 'lease-unknown',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithTransaction(
+      claimTransaction({
+        existing: publicationRow({ status: 'pending' }),
+        claimed,
+      }),
+    );
+    const gateway = {
+      publish: jest.fn(() =>
+        Promise.reject(
+          new StoryExperienceReleaseOutcomeUnknownException({
+            code: 'JAVA_EXPERIENCE_RELEASE_UNAVAILABLE',
+            message: 'timeout',
+          }),
+        ),
+      ),
+      getGame: jest.fn(() => Promise.resolve(gameDetail(BUILD_ID))),
+    };
+    const service = serviceWith({ prisma, gateway });
+
+    await expect(publish(service)).resolves.toMatchObject({
+      contentVersion: BUILD_ID,
+      status: 'published',
+    });
+    expect(gateway.getGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fails a lost response when Java is not serving that version', async () => {
+    const claimed = publicationRow({
+      status: 'pending',
+      leaseOwner: 'lease-unknown',
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const prisma = prismaWithTransaction(
+      claimTransaction({
+        existing: publicationRow({ status: 'pending' }),
+        claimed,
+      }),
+    );
+    const unknown = new StoryExperienceReleaseOutcomeUnknownException({
+      code: 'JAVA_EXPERIENCE_RELEASE_UNAVAILABLE',
+      message: 'timeout',
+    });
+    const service = serviceWith({
+      prisma,
+      gateway: {
+        publish: jest.fn(() => Promise.reject(unknown)),
+        getGame: jest.fn(() => Promise.resolve(gameDetail('some-other-build'))),
+      },
+    });
+
+    await expect(publish(service)).rejects.toBe(unknown);
+  });
+
   it('revokes authorization only for a definitive first-attempt rejection', async () => {
     const claimed = publicationRow({
       status: 'pending',
