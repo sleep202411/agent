@@ -93,7 +93,10 @@ export class StoryVideoProductionService {
         where: { storyProjectId: projectId, graphNodeId },
       });
       const actualVersion = existing?.version ?? 0;
-      if (actualVersion !== input.expectedSelectionVersion) {
+      if (
+        input.expectedSelectionVersion !== undefined &&
+        actualVersion !== input.expectedSelectionVersion
+      ) {
         throw selectionVersionConflict(
           input.expectedSelectionVersion,
           actualVersion,
@@ -111,10 +114,10 @@ export class StoryVideoProductionService {
         data,
       });
       if (updated.count !== 1) {
-        throw selectionVersionConflict(
-          input.expectedSelectionVersion,
-          actualVersion + 1,
-        );
+        // Lost a concurrent write on the same row. This is not the caller's
+        // token being stale — it is two writers at once — so it reports the
+        // version it read either way.
+        throw selectionVersionConflict(actualVersion, actualVersion + 1);
       }
     });
     return this.getClipSummary(user, workspaceId, projectId, graphNodeId);
@@ -144,7 +147,7 @@ export class StoryVideoProductionService {
     tx: Prisma.TransactionClient,
     projectId: string,
     graphNodeId: string,
-    expectedDraftRevision: number,
+    expectedDraftRevision: number | undefined,
   ): Promise<void> {
     const draft = await tx.storyDraft.findUnique({
       where: { storyProjectId: projectId },
@@ -156,7 +159,10 @@ export class StoryVideoProductionService {
         message: 'Story draft not found.',
       });
     }
-    if (draft.revision !== expectedDraftRevision) {
+    if (
+      expectedDraftRevision !== undefined &&
+      draft.revision !== expectedDraftRevision
+    ) {
       throw draftRevisionConflict(expectedDraftRevision, draft.revision);
     }
     if (canonicalJsonHash(draft.content) !== draft.contentHash) {

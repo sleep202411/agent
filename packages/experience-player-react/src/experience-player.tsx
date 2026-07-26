@@ -315,6 +315,37 @@ function ActiveExperienceRuntimePlayer({
     [controller, run]
   );
 
+  // A `fixed` scene clock is the only clock the experience itself owns. A
+  // `renderer` clock is driven by its media's currentTime, and `none` never
+  // advances — so a scene that must last a known duration without any media to
+  // time it (a placeholder for footage that is not attached yet, a text beat)
+  // has nothing to move it along until this runs.
+  //
+  // Position is fed through the same `advanceTimeline` the media path uses, so
+  // timeline cues fire identically whether the clock came from a video or from
+  // here. `scene.clock-ended` is emitted exactly once per scene entry.
+  const clockScene = scene?.clock.kind === "fixed" ? scene : null;
+  const clockDurationMs = clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : null;
+  useEffect(() => {
+    if (!clockScene || clockDurationMs === null || !started) return;
+    let frame = 0;
+    let ended = false;
+    const startedAt = performance.now();
+    const tick = () => {
+      const elapsed = Math.min(performance.now() - startedAt, clockDurationMs);
+      advanceTimeline(elapsed);
+      if (elapsed < clockDurationMs) {
+        frame = window.requestAnimationFrame(tick);
+        return;
+      }
+      if (ended) return;
+      ended = true;
+      emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [advanceTimeline, clockDurationMs, clockScene, emitRuntimeEvents, started]);
+
   const handleSoundBlocked = useCallback(() => setSoundBlocked(true), []);
   // Unmute the live elements INSIDE the click, then let state follow. Leaving it
   // to the `muted` prop and its effect would push the element write into a task
@@ -576,6 +607,18 @@ function CoreRenderer({
   onSoundBlocked: () => void;
 }) {
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
+    // A video scene with nothing to play is a preview Build of a work whose
+    // footage is not attached yet. It stands in for the shot and then finishes
+    // on the SAME outcome a real clip produces, so every exit downstream — auto,
+    // choice, checkpoint, ending — keeps working untouched.
+    if (isEmptyVideoSequence(renderer)) {
+      return (
+        <EmptyVideoSequencePlaceholder
+          label={copy.emptySequence}
+          onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
+        />
+      );
+    }
     return (
       <CoreVideoRenderer
         manifest={manifest}
@@ -736,6 +779,43 @@ type CoreVideoPlaybackState = {
 
 function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPlaybackState {
   return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
+}
+
+function isEmptyVideoSequence(renderer: ExperienceRendererInstance): boolean {
+  const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+  return parsed.success && parsed.data.sequence.length === 0;
+}
+
+/**
+ * Holds the scene for a fixed beat so a shot without footage still occupies the
+ * time it will occupy, then finishes. Reading a real duration is impossible —
+ * there is no media to read it from — so the beat is a constant, chosen to be
+ * long enough to register as a scene and short enough not to stall a playthrough.
+ */
+const EMPTY_SEQUENCE_HOLD_MS = 6_000;
+
+function EmptyVideoSequencePlaceholder({
+  label,
+  onCompleted,
+}: {
+  label: string;
+  onCompleted: () => void;
+}) {
+  const completedRef = useRef(false);
+  useEffect(() => {
+    completedRef.current = false;
+    const timer = window.setTimeout(() => {
+      if (completedRef.current) return;
+      completedRef.current = true;
+      onCompleted();
+    }, EMPTY_SEQUENCE_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [onCompleted]);
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-black">
+      <p className="text-sm font-semibold tracking-wide text-white/45">{label}</p>
+    </div>
+  );
 }
 
 function CoreVideoRenderer({

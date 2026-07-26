@@ -1607,7 +1607,12 @@ function StoryProjectCanvasInner({
     try {
       await withSavedDraftSnapshot(async () => {
         requestStoryCanvasNavigation(null, () => {
-          router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest`);
+          const chapterQuery = resolvedChapterId
+            ? `?chapter=${encodeURIComponent(resolvedChapterId)}`
+            : "";
+          router.push(
+            `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
+          );
         });
       });
     } catch (error) {
@@ -1617,6 +1622,7 @@ function StoryProjectCanvasInner({
       if (!disposedRef.current) setWorkingPreviewPending(false);
     }
   }, [
+    resolvedChapterId,
     projectId,
     requestStoryCanvasNavigation,
     router,
@@ -3496,23 +3502,23 @@ function CanvasHeader({
           <IconMovie className="size-4" />
           {t("mediaCreation")}
         </button>
-        {/* Playtest hidden for now — the working-preview flow isn't a good fit
-            yet. Re-enable by restoring this button once it's reworked. */}
-        {false ? (
-          <button
-            type="button"
-            onClick={onPreview}
-            disabled={previewPending}
-            className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-wait disabled:opacity-50"
-          >
-            {previewPending ? (
-              <IconLoader2 className="size-4 animate-spin" />
-            ) : (
-              <IconPlayerPlay className="size-4" />
-            )}
-            {t("workingPreview.action")}
-          </button>
-        ) : null}
+        {/* Was hidden while a draft preview could only ever start at the story's
+            first scene, which made it useless for a multi-chapter work. It now
+            previews the chapter being edited, and a missing clip stands in
+            rather than failing the compile, so an unfinished chapter is walkable. */}
+        <button
+          type="button"
+          onClick={onPreview}
+          disabled={previewPending}
+          className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-wait disabled:opacity-50"
+        >
+          {previewPending ? (
+            <IconLoader2 className="size-4 animate-spin" />
+          ) : (
+            <IconPlayerPlay className="size-4" />
+          )}
+          {t("workingPreview.action")}
+        </button>
         {!canPublish && publishDisabledReason ? (
           <Tooltip>
             <TooltipTrigger asChild>

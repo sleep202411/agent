@@ -262,7 +262,10 @@ const VideoSequenceClipSchema = z
 const VideoPresentationSchema = z
   .object({
     kind: z.literal("video"),
-    sequence: z.array(VideoSequenceClipSchema).min(1),
+    // Empty means "this shot has no footage yet". Only a preview Build emits
+    // one; the release path still raises STORY_BUILD_CURRENT_VIDEO_REQUIRED as
+    // an error, so an empty sequence cannot reach a published experience.
+    sequence: z.array(VideoSequenceClipSchema),
     posterAssetId: stableId.optional(),
     // "native" is emitted for narrative (frame-profile-less) stories so inline
     // video keeps its intrinsic size instead of being cropped to a fixed frame.

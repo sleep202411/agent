@@ -14,6 +14,7 @@ import {
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
+import type { StoryBuildScope } from './interactive-film.schema';
 import { canonicalJsonHash } from './canonical-json';
 import {
   createPlayableInteractiveStoryDraftContentSchema,
@@ -68,6 +69,7 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     workspaceId: string,
     projectId: string,
+    chapterId?: string,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -94,6 +96,7 @@ export class StoryWorkingPreviewService {
           tx,
           { ...access.project, format },
           projectId,
+          chapterId,
         ),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -111,6 +114,7 @@ export class StoryWorkingPreviewService {
       summary: string | null;
     },
     projectId: string,
+    chapterId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
     const draft = await tx.storyDraft.findUnique({
       where: { storyProjectId: projectId },
@@ -228,6 +232,19 @@ export class StoryWorkingPreviewService {
       };
     }
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
+    // A chapter owns its own entry scene; the story-level entry belongs to the
+    // first chapter only. An unknown or entry-less chapter falls back to the
+    // whole story rather than failing a play-test.
+    const chapter = chapterId
+      ? await tx.storyChapter.findFirst({
+          where: { id: chapterId, storyProjectId: projectId },
+          select: { entryNodeId: true },
+        })
+      : null;
+    const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
+      ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
+      : null;
+
     const previewBuildId = workingPreviewBuildId(
       projectId,
       draft.contentHash,
@@ -240,7 +257,10 @@ export class StoryWorkingPreviewService {
       buildId: previewBuildId,
       sourceDraftRevision: draft.revision,
       channel: 'preview',
-      scope: { kind: 'full' },
+      // Previewing a chapter starts at that chapter, not at the story's first
+      // scene. Without this a multi-chapter work could only ever be walked from
+      // the top, which is why the canvas play-test entry was closed off.
+      scope: chapterScope ?? { kind: 'full' },
       frameProfile: project.frameProfile,
       defaultLocale: project.defaultLocale,
       metadata: {

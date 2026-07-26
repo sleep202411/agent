@@ -15,6 +15,18 @@ const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000004';
 const CHECKSUM = 'a'.repeat(64);
 
 describe('Story video selection request', () => {
+  it('binds a clip without asking the caller for any version token', () => {
+    // Binding a clip is routine authoring. Requiring a draft revision and a
+    // selection version to do it made every caller read state first for no
+    // benefit a re-bind would not give; both are optional now.
+    expect(
+      PutStoryClipVideoSelectionSchema.parse({
+        assetId: ASSET_ID,
+        variantId: VARIANT_ID,
+      }),
+    ).toEqual({ assetId: ASSET_ID, variantId: VARIANT_ID });
+  });
+
   it('accepts an exact video binding or an explicit clear', () => {
     expect(
       PutStoryClipVideoSelectionSchema.parse({

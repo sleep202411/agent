@@ -54,14 +54,14 @@ export function StoryProjectPlaytest({
       workspaceId,
       projectId,
       source.kind,
-      source.kind === "build" ? source.buildId : "current-draft",
+      source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
     ],
     queryFn: async () => {
       if (!workspaceId) throw new Error(t("errorFallback"));
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(workspaceId, projectId),
+            preview: await getStoryWorkingPreview(workspaceId, projectId, source.chapterId),
           }
         : {
             kind: "build" as const,

@@ -7581,7 +7581,8 @@
     },
     "share": "Share",
     "shareCopied": "Link copied",
-    "shareFailed": "Copy failed"
+    "shareFailed": "Copy failed",
+    "emptySequence": "No footage yet"
   },
   "games": {
     "back": "Back to IP plaza",

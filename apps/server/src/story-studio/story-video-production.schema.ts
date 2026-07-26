@@ -2,7 +2,10 @@ import { z } from 'zod';
 import { canonicalJsonHash } from './canonical-json';
 
 const StoryVideoSelectionMutationFields = {
-  expectedSelectionVersion: z.number().int().nonnegative(),
+  // Optional for the same reason the Build tokens are: binding a clip is a
+  // routine authoring act, and making every caller first read a version number
+  // to perform it buys nothing a re-bind would not fix.
+  expectedSelectionVersion: z.number().int().nonnegative().optional(),
   assetId: z.string().uuid().nullable(),
   variantId: z.string().uuid().nullable(),
 } as const;
@@ -22,7 +25,7 @@ function validateSelectedAsset(
 
 export const PutStoryClipVideoSelectionSchema = z
   .object({
-    expectedDraftRevision: z.number().int().nonnegative(),
+    expectedDraftRevision: z.number().int().nonnegative().optional(),
     ...StoryVideoSelectionMutationFields,
   })
   .strict()

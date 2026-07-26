@@ -545,9 +545,26 @@ export type ApproveStoryReferenceVersionInput = z.infer<
 
 export const CreateStoryBuildSchema = z
   .object({
-    expectedDraftRevision: NonNegativeVersionSchema,
-    expectedVideoSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    // Both tokens are optional: omit them to build whatever is saved right now.
+    // They exist for a caller that wants "build exactly the state I was looking
+    // at, or tell me it moved" — which is worth having, but making every caller
+    // fetch and carry two version values to press Build is not. A Build is
+    // immutable, numbered and cheap, and the author play-tests it immediately,
+    // so a Build of the wrong moment costs one more Build.
+    expectedDraftRevision: NonNegativeVersionSchema.optional(),
+    expectedVideoSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     scope: StoryBuildScopeSchema,
+    // Publishability is an intent, not a shape. A multi-chapter work cannot
+    // compile to one full-scope manifest at all — chapters terminate in
+    // endings, so every chapter after the first would be an unreachable scene,
+    // which the Runtime Manifest rejects outright. Such a work therefore
+    // publishes one manifest PER CHAPTER, and each of those is a subgraph.
+    // Omitted keeps the historical default: full ⇒ production, subgraph ⇒
+    // preview.
+    kind: z.enum(['preview', 'production']).optional(),
   })
   .strict();
 export type CreateStoryBuildInput = z.infer<typeof CreateStoryBuildSchema>;

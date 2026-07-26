@@ -25,6 +25,7 @@ import {
   storyBuildRequestFingerprint,
 } from './story-build.service';
 import { LockableInteractiveStoryDraftContentSchema } from './interactive-film.schema';
+import { CreateStoryBuildSchema } from './dto';
 import {
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
@@ -242,7 +243,63 @@ function compilerInput(
   };
 }
 
+describe('CreateStoryBuild request', () => {
+  it('builds whatever is saved right now when no version token is given', () => {
+    // Pressing Build should not require first reading a draft revision and a
+    // video snapshot hash. Both stay accepted for a caller that wants "exactly
+    // the state I was looking at, or tell me it moved".
+    expect(CreateStoryBuildSchema.parse({ scope: { kind: 'full' } })).toEqual({
+      scope: { kind: 'full' },
+    });
+  });
+});
+
 describe('compileStoryBuild', () => {
+  describe('a clip whose footage is not attached yet', () => {
+    it('keeps the shot playable in a preview, as an empty sequence', () => {
+      const result = compileStoryBuild(
+        compilerInput(undefined, { channel: 'preview', videos: [] }),
+      );
+
+      expect(
+        result.diagnostics.filter((item) => item.severity === 'error'),
+      ).toEqual([]);
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
+        }),
+      );
+      const scenes = result.runtime?.graph.nodes ?? [];
+      expect(scenes.length).toBeGreaterThan(0);
+      // Every clip scene still exists and still carries a video renderer — the
+      // player stands in for the missing footage and advances on the same
+      // `media-ended` outcome, so no exit downstream changes shape.
+      scenes.forEach((scene) => {
+        if (scene.kind !== 'scene') return;
+        const video = scene.renderers.find(
+          (renderer) => renderer.rendererId === 'core.video',
+        );
+        if (!video) return;
+        expect((video.config as { sequence: unknown[] }).sequence).toEqual([]);
+      });
+    });
+
+    it('still refuses to compile a release', () => {
+      const result = compileStoryBuild(
+        compilerInput(undefined, { channel: 'production', videos: [] }),
+      );
+
+      expect(result.runtime).toBeNull();
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: 'error',
+          code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
+        }),
+      );
+    });
+  });
+
   it('compiles a pure-text narrative with no frozen video assets', () => {
     const result = compileStoryBuild(
       compilerInput(textDraft(), {

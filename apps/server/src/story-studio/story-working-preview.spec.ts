@@ -515,6 +515,29 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       WORKSPACE_ID,
       PROJECT_ID,
+      undefined,
+    );
+  });
+
+  it('forwards the chapter being edited so a preview starts there', () => {
+    // Without this a multi-chapter work could only ever be previewed from its
+    // very first scene, which is why the canvas entry used to be closed off.
+    const service = { getWorkingPreview: jest.fn().mockResolvedValue(null) };
+    const controller = new StoryWorkingPreviewController(service as never);
+    const chapterId = uuidAt(9);
+
+    void controller.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      { projectId: PROJECT_ID },
+      { chapterId },
+    );
+
+    expect(service.getWorkingPreview).toHaveBeenCalledWith(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      chapterId,
     );
   });
 });

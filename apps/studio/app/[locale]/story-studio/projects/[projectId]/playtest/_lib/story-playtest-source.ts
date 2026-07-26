@@ -1,15 +1,27 @@
-export type StoryProjectPlaytestSource = { kind: "draft" } | { kind: "build"; buildId: string };
+/**
+ * A draft play-test walks the chapter the author is editing, not the whole
+ * story: a chapter owns its own entry scene, so without `chapterId` a
+ * multi-chapter work could only ever be walked from its very first scene.
+ * Omitting it still walks everything, which is what a single-chapter work wants.
+ */
+export type StoryProjectPlaytestSource =
+  | { kind: "draft"; chapterId?: string }
+  | { kind: "build"; buildId: string; chapterId?: undefined };
 
 export type StoryPlaytestSearchParams = {
   buildId?: string | string[];
+  chapter?: string | string[];
 };
 
 export function parseStoryPlaytestSource(
   query: StoryPlaytestSearchParams
 ): StoryProjectPlaytestSource {
   const buildId = firstQueryValue(query.buildId)?.trim();
+  // A Build is already frozen to one scope, so a chapter hint could only
+  // contradict it.
   if (buildId) return { kind: "build", buildId };
-  return { kind: "draft" };
+  const chapterId = firstQueryValue(query.chapter)?.trim();
+  return chapterId ? { kind: "draft", chapterId } : { kind: "draft" };
 }
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {

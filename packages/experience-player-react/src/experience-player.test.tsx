@@ -22,6 +22,7 @@ const copy: ExperiencePlayerCopy = {
   checkpointPrompt: "Continue?",
   checkpointDescription: "Confirm to continue.",
   continue: "继续",
+  emptySequence: "No footage yet",
   regionLabel: "Experience player",
   video: {
     play: "Play",

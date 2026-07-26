@@ -29,6 +29,7 @@ export function ExperienceRuntimePlayer({
       restart: t("restart"),
       mediaError: (assetId) => t("mediaError", { assetId }),
       videoLabel: () => t("videoLabel"),
+      emptySequence: t("emptySequence"),
       noVisibleChoices: t("noVisibleChoices"),
       checkpointPrompt: t("checkpointPrompt"),
       checkpointDescription: t("checkpointDescription"),

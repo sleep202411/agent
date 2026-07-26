@@ -2585,6 +2585,7 @@
       "exitFullscreen": "退出全屏",
       "seekForward": "快进",
       "seekBackward": "快退"
-    }
+    },
+    "emptySequence": "暂无影片"
   }
 }

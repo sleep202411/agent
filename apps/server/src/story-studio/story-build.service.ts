@@ -256,10 +256,7 @@ export class StoryBuildService {
               select: { nextBuildNumber: true },
             });
             const buildNumber = numbered.nextBuildNumber - 1;
-            const kind =
-              input.scope.kind === 'full'
-                ? StoryBuildKind.production
-                : StoryBuildKind.preview;
+            const kind = await resolveBuildKind(tx, projectId, input);
             const inputManifest = storyBuildInputManifest(
               input,
               snapshot,
@@ -781,7 +778,10 @@ async function loadValidatedBuildSnapshot(
       message: 'The project has no saved story draft to build.',
     });
   }
-  if (draft.revision !== input.expectedDraftRevision) {
+  if (
+    input.expectedDraftRevision !== undefined &&
+    draft.revision !== input.expectedDraftRevision
+  ) {
     throw new ConflictException({
       code: 'STORY_BUILD_DRAFT_REVISION_CONFLICT',
       message: 'The story draft changed. Refresh before creating the Build.',
@@ -842,7 +842,10 @@ async function loadValidatedBuildSnapshot(
     videoSnapshotEntry(node.nodeId, selectionByNodeId.get(node.nodeId) ?? null),
   );
   const videoSnapshotHash = storyVideoSnapshotHash(entries);
-  if (videoSnapshotHash !== input.expectedVideoSnapshotHash) {
+  if (
+    input.expectedVideoSnapshotHash !== undefined &&
+    videoSnapshotHash !== input.expectedVideoSnapshotHash
+  ) {
     throw new ConflictException({
       code: 'STORY_BUILD_VIDEO_SNAPSHOT_CONFLICT',
       message:
@@ -1683,6 +1686,44 @@ function buildVersionConflict(
     expectedVersion,
     actualVersion,
   });
+}
+
+/**
+ * Publishability is declared, then verified against the graph.
+ *
+ * A subgraph Build may be production only when its entry IS a chapter's entry —
+ * that is what makes it a whole shippable unit rather than an arbitrary slice
+ * of someone's draft. Dropping the old shape-based rule without this check
+ * would let any mid-graph node become public content.
+ */
+async function resolveBuildKind(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  input: CreateStoryBuildInput,
+): Promise<StoryBuildKind> {
+  const requested =
+    input.kind ??
+    (input.scope.kind === 'full'
+      ? StoryBuildKind.production
+      : StoryBuildKind.preview);
+  if (
+    requested !== StoryBuildKind.production ||
+    input.scope.kind !== 'subgraph'
+  ) {
+    return requested;
+  }
+  const chapter = await tx.storyChapter.findFirst({
+    where: { storyProjectId: projectId, entryNodeId: input.scope.entryNodeId },
+    select: { id: true },
+  });
+  if (!chapter) {
+    throw new BadRequestException({
+      code: 'STORY_BUILD_PRODUCTION_SCOPE_NOT_A_CHAPTER',
+      message:
+        'A production subgraph Build must start at a chapter entry scene. Use a preview Build for any other subgraph.',
+    });
+  }
+  return StoryBuildKind.production;
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

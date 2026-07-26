@@ -1059,11 +1059,13 @@ export async function turnStoryTextPlay(
 
 export async function getStoryWorkingPreview(
   workspaceId: string,
-  projectId: string
+  projectId: string,
+  chapterId?: string
 ): Promise<StoryWorkingPreview> {
   return api.get<StoryWorkingPreview>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
+      ...(chapterId ? { params: { chapterId } } : {}),
       headers: storyWorkspaceHeaders(workspaceId),
     }
   );

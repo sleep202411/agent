@@ -146,9 +146,11 @@ export function compileStoryBuild(
       if (video) diagnostics.push(...video.eligibilityDiagnostics);
       if (video?.asset) return [video as FrozenStoryBuildVideoInput];
       const node = nodes.get(graphNodeId);
+      // Missing footage stops a release and only annotates a preview: the whole
+      // point of a preview is to walk a work that is not finished yet.
       diagnostics.push(
         diagnostic(
-          'error',
+          input.channel === 'preview' ? 'warning' : 'error',
           'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
           `Clip ${node?.kind === 'clip' ? node.clipKey : graphNodeId} has no current video selection.`,
           'clip',
@@ -691,19 +693,28 @@ function compileIntermediateRelease(
       return;
     }
     const video = videos.get(node.nodeId);
-    if (!video) return;
+    // A preview keeps the shot in the story with an empty sequence so the work
+    // stays playable end to end while its footage is still being made; the
+    // player stands in for it and finishes on the same `media-ended` outcome, so
+    // every exit downstream is unaffected. A release still requires the clip —
+    // `STORY_BUILD_CURRENT_VIDEO_REQUIRED` is raised for it either way, and it
+    // is an error only on the release path.
+    const hasFootage = Boolean(video?.asset);
+    if (!video && input.channel !== 'preview') return;
     runtimeNodes.push({
       nodeId: node.nodeId,
       ...musicReference(node),
       presentation: {
         kind: 'video',
-        sequence: [
-          {
-            clipId: node.nodeId,
-            assetId: storyRuntimeAssetId(node.clipKey),
-            endBehavior: { behavior: 'advance' },
-          },
-        ],
+        sequence: hasFootage
+          ? [
+              {
+                clipId: node.nodeId,
+                assetId: storyRuntimeAssetId(node.clipKey),
+                endBehavior: { behavior: 'advance' },
+              },
+            ]
+          : [],
         // Narrative (null-profile) stories present inline video at native size;
         // film stories cover their fixed frame.
         fit: input.frameProfile === null ? 'native' : 'cover',

@@ -77,7 +77,13 @@ export const ExperienceCoreVideoRendererConfigSchema = z
     // inline at its intrinsic aspect ratio inside a responsive reading stage,
     // for narrative experiences that carry no project-wide frame contract.
     fit: z.enum(["cover", "contain", "native"]),
-    sequence: z.array(ExperienceCoreVideoSequenceClipSchema).min(1),
+    // An empty sequence is a video scene with nothing to play yet: the shot
+    // exists in the story, its footage does not. Preview Builds emit these so a
+    // work in progress stays playable end to end instead of refusing to
+    // compile; the player shows a placeholder and advances on the same
+    // `media-ended` outcome a real clip would produce. Release Builds still
+    // reject a missing clip, so nothing empty reaches a player by accident.
+    sequence: z.array(ExperienceCoreVideoSequenceClipSchema),
     posterAssetId: ExperienceStableIdSchema.optional(),
     autoplay: z.boolean(),
   })

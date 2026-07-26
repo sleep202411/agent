@@ -2585,6 +2585,7 @@
       "exitFullscreen": "Exit fullscreen",
       "seekForward": "Seek forward",
       "seekBackward": "Seek backward"
-    }
+    },
+    "emptySequence": "No footage yet"
   }
 }
