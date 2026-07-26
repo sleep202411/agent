@@ -9,7 +9,7 @@ import {
   type PlayerSrc,
   type VideoMimeType,
 } from "@vidstack/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { classNames } from "./class-names";
 import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 
@@ -33,6 +33,49 @@ export interface ExperienceMediaPlaybackHandle {
   setMuted(muted: boolean): void;
 }
 
+/**
+ * The clip the element is sourced from. Held in state, one render behind the
+ * props, because `source` is the load-bearing field: writing it blanks the
+ * element, so the outgoing frame has to be copied off the element before the
+ * write lands. `poster`, `clipStartTime` and `durationSeconds` travel with it so
+ * the element is never described by one clip and sourced from another, and the
+ * `uri` travels with it because that — not `identity`, and not the `source`
+ * object, which is rebuilt whenever any of these change — is what says the
+ * element is about to be blanked.
+ */
+interface MediaClip {
+  readonly identity: string;
+  readonly uri: string;
+  readonly source: PlayerSrc;
+  readonly poster?: string;
+  readonly clipStartTime?: number;
+  readonly durationSeconds?: number;
+}
+
+/**
+ * Renders one clip on one media element, and covers each cut with a still frame.
+ *
+ * Two constraints meet here.
+ *
+ * A media element shows nothing between the moment its source changes and the
+ * moment the new source has decoded a frame, so the stage falls through to the
+ * black backdrop on every cut. Preloading cannot fix it — the bytes are already
+ * there, the element simply has not painted them yet.
+ *
+ * And the element cannot be doubled, swapped or remounted to hide that. WebKit
+ * grants audible playback to the ELEMENT a user gesture played, and every clip
+ * after the first is started from an effect, so a second element — or a
+ * remounted one — is refused sound from the cut onwards and the viewer is handed
+ * the Unmute button again at every cut.
+ *
+ * So the frame the outgoing clip painted is copied to a canvas stacked over the
+ * element, in the same commit that swaps the source, and taken down when the new
+ * source reports `playing` — the point at which it is producing pixels of its
+ * own. Nothing is timed: a clip that takes a while holds the previous frame for
+ * as long as it needs, and a hold reads as a held shot where a hole reads as a
+ * bug. A frame that cannot be copied leaves the cut uncovered, which is the
+ * backdrop flash this replaced and never worse than it.
+ */
 export function ExperienceMediaPlayer({
   source,
   title,
@@ -70,24 +113,66 @@ export function ExperienceMediaPlayer({
   playbackIdentity: string;
   copy: ExperiencePlayerVideoCopy;
 }) {
+  const { src, type } = source;
+  const clip = useMemo<MediaClip>(
+    () => ({
+      identity: playbackIdentity,
+      uri: src,
+      source: normalizeVideoSource({ src, type }),
+      poster,
+      clipStartTime,
+      durationSeconds,
+    }),
+    [clipStartTime, durationSeconds, playbackIdentity, poster, src, type]
+  );
   const playerRef = useRef<MediaPlayerInstance>(null);
+  const stillFrameRef = useRef<HTMLCanvasElement>(null);
   // Live mute authority for the element. `muted` is the host's declared intent;
   // the autoplay fallback below can mute AHEAD of it, and a late `canplay` must
   // not undo that with a prop value React has not re-rendered yet — Chrome
   // pauses a video that is unmuted without user activation.
   const mutedRef = useRef(muted);
-  const { src, type } = source;
-  const playerSource = useMemo(() => normalizeVideoSource({ src, type }), [src, type]);
+  const [rendered, setRendered] = useState(clip);
+  const [stillFrameHeld, setStillFrameHeld] = useState(false);
+  const { durationSeconds: renderedDuration } = rendered;
+  useLayoutEffect(() => {
+    if (rendered === clip) return;
+    // A layout effect because of what is still true at this point: the DOM holds
+    // the outgoing source, so there is a frame to copy — and the state written
+    // here is flushed into the same pre-paint commit as the source swap, so the
+    // browser never gets a frame in which the element has been blanked and
+    // nothing covers it.
+    //
+    // Only a new source blanks anything. A clip that keeps its URI and moves
+    // `clipStartTime` — the tail wait loop — seeks instead, and a seeking element
+    // goes on showing the frame it already has; covering that would be a freeze,
+    // because a seek inside a buffered source need not report `playing` again.
+    if (clip.uri !== rendered.uri) {
+      const capture = captureStillFrame(stillFrameRef.current, providerVideo(playerRef.current));
+      setStillFrameHeld((held) => holdsStillFrame(capture, held));
+    }
+    setRendered(clip);
+  }, [clip, rendered]);
   useEffect(() => {
     mutedRef.current = muted;
     const player = playerRef.current;
-    if (player) synchronizePlayerContract(player, durationSeconds, muted);
-  }, [durationSeconds, muted]);
+    if (player) synchronizePlayerContract(player, renderedDuration, muted);
+  }, [muted, renderedDuration]);
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !onPlaybackHandle) return;
+    // Keyed on the clip the element is SOURCED from, not the prop: the host
+    // answers a registration by playing it, and a handle offered while the
+    // element still holds the outgoing source would play the clip the viewer
+    // just left.
+    //
+    // Keyed on the source as well as the identity, because a source is what a
+    // write to `src` stops: rotating the device re-resolves the same clip to its
+    // other orientation, and without a fresh registration nothing would start
+    // the newly loaded source — leaving a still frame over a stalled element
+    // with no `playing` coming to take it down.
     onPlaybackHandle({
-      playbackIdentity,
+      playbackIdentity: rendered.identity,
       play: () => playWithSoundFallback(soundFallbackTarget(player), mutedRef, onSoundBlocked),
       pause: () => pauseMediaPlayer(player),
       setMuted: (nextMuted) => {
@@ -96,11 +181,11 @@ export function ExperienceMediaPlayer({
       },
     });
     return () => onPlaybackHandle(null);
-  }, [onPlaybackHandle, onSoundBlocked, playbackIdentity]);
+  }, [onPlaybackHandle, onSoundBlocked, rendered.identity, rendered.uri]);
   return (
     <MediaPlayer
       ref={playerRef}
-      src={playerSource}
+      src={rendered.source}
       title={title}
       ariaLabel={title}
       viewType="video"
@@ -109,19 +194,25 @@ export function ExperienceMediaPlayer({
       autoPlay={autoPlay}
       muted={muted}
       loop={loop}
-      duration={durationSeconds}
-      clipStartTime={clipStartTime ?? 0}
+      duration={renderedDuration}
+      clipStartTime={rendered.clipStartTime ?? 0}
       playsInline
       preload="metadata"
       load="eager"
-      poster={poster}
+      poster={rendered.poster}
       posterLoad="eager"
       keyTarget="player"
       logLevel="silent"
       onCanPlay={() => {
         const player = playerRef.current;
-        if (player) synchronizePlayerContract(player, durationSeconds, mutedRef.current);
+        if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
       }}
+      // Takes the still frame down, and the reason none of this is on a timer.
+      // `playing` is the earliest event that means the element is presenting the
+      // source it was just given: `can-play` only promises decodable data, and
+      // `time-update` is dispatched off seeks and while paused too, so either one
+      // can uncover a cut that has not been composited yet.
+      onPlaying={() => setStillFrameHeld(false)}
       onEnd={onEnd}
       onTimeUpdate={(detail) => emitValidTimeUpdate(onTimeUpdate, detail.currentTime)}
       // The element's own decode/source failure. Always fatal, never routine:
@@ -161,9 +252,9 @@ export function ExperienceMediaPlayer({
           draggable: false,
         }}
       >
-        {poster ? (
+        {rendered.poster ? (
           <Poster
-            src={poster}
+            src={rendered.poster}
             alt={title}
             draggable={false}
             className={classNames(
@@ -174,6 +265,24 @@ export function ExperienceMediaPlayer({
           />
         ) : null}
       </MediaProvider>
+      {/* The cut cover. Ordered after the provider because DOM order is paint
+          order for absolute siblings with no z-index, so this has to come last
+          to sit over the blank element and over the incoming clip's poster. It
+          stays mounted while off stage — `hidden` keeps the captured bitmap,
+          unmounting would throw away the ref the next capture draws into — and
+          takes its box from the same fit rules as the element, so the frame is
+          cropped exactly as the clip it froze. */}
+      <canvas
+        ref={stillFrameRef}
+        hidden={!stillFrameHeld}
+        aria-hidden="true"
+        data-experience-still-frame=""
+        className={classNames(
+          "pointer-events-none absolute inset-0 size-full select-none",
+          fit === "cover" ? "object-cover" : "object-contain",
+          "group-data-[fullscreen]/experience-video:object-contain"
+        )}
+      />
       <ExperienceVideoSurface copy={copy} />
     </MediaPlayer>
   );
@@ -214,6 +323,64 @@ function normalizeVideoSource(source: { src: string; type?: string | null }): Pl
     return { src: source.src, type: normalizedType as VideoMimeType };
   }
   return source.src;
+}
+
+/**
+ * What copying the outgoing frame achieved. Three-way because the two ways it
+ * can fail mean opposite things to the cover: `unavailable` never touched the
+ * canvas, so a frame copied at an earlier cut is still on it; `refused` cleared
+ * the canvas on the way to failing, so there is nothing left to show.
+ */
+type StillFrameCapture = "captured" | "unavailable" | "refused";
+
+/**
+ * Copy the frame the element is showing into the cover canvas.
+ *
+ * Clips are delivered by a redirect from our own API to signed storage, so the
+ * frame is cross-origin and the canvas ends up tainted. That costs nothing here:
+ * the canvas is only ever composited, never read back, and asking for CORS mode
+ * instead — a `crossOrigin` attribute — would fail the load outright against a
+ * storage host that answers without `Access-Control-Allow-Origin`. An engine
+ * that refuses to draw the frame at all is still reported, because the resize
+ * that precedes the draw has already cleared the bitmap.
+ */
+function captureStillFrame(
+  canvas: HTMLCanvasElement | null,
+  media: HTMLVideoElement | null
+): StillFrameCapture {
+  if (!canvas || !media || media.readyState < media.HAVE_CURRENT_DATA) return "unavailable";
+  const { videoWidth, videoHeight } = media;
+  if (videoWidth <= 0 || videoHeight <= 0) return "unavailable";
+  const context = canvas.getContext("2d");
+  if (!context) return "unavailable";
+  try {
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
+    context.drawImage(media, 0, 0);
+    return "captured";
+  } catch {
+    return "refused";
+  }
+}
+
+/** Whether the still frame covers the stage once a capture has been attempted. */
+function holdsStillFrame(capture: StillFrameCapture, held: boolean): boolean {
+  if (capture === "captured") return true;
+  // Nothing was drawn, so a frame copied at an earlier cut is still on the
+  // canvas — and while the incoming clip has yet to paint, still worth showing.
+  if (capture === "unavailable") return held;
+  return false;
+}
+
+/** The `<video>` the provider drives, when the provider has a frame to give.
+ *  Audio and the embedded providers do not, and this player only loads `video/*`
+ *  anyway, so anything else is treated as nothing to copy. */
+function providerVideo(player: MediaPlayerInstance | null): HTMLVideoElement | null {
+  const provider = player?.provider;
+  if (provider?.type === "video" || provider?.type === "hls" || provider?.type === "dash") {
+    return provider.video;
+  }
+  return null;
 }
 
 /** The only element surface the sound fallback needs, so the policy above can be
