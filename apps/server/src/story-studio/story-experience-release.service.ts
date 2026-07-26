@@ -20,7 +20,10 @@ import type {
   StoryExperienceCurrentReleaseDto,
 } from './dto';
 import { canonicalJsonHash } from './canonical-json';
-import { createExperienceReleaseRequest } from './experience-release-request';
+import {
+  createExperienceReleaseRequest,
+  experienceReleaseCoverUrl,
+} from './experience-release-request';
 import { storyExperiencePublicationClock } from './story-experience-publication-clock';
 import {
   isStoryExperienceReleaseOutcomeUnknown,
@@ -188,12 +191,14 @@ export class StoryExperienceReleaseService {
           manifest.localization.defaultLocale,
         )
       : undefined;
+    const coverUrl = experienceReleaseCoverUrl(manifest);
     const request = createExperienceReleaseRequest(
       {
         gameId: manifest.gameId,
         contentVersion: manifest.contentVersion,
         title,
         ...(subtitle ? { subtitle } : {}),
+        ...(coverUrl ? { coverUrl } : {}),
         status: input.status,
         setCurrent: input.setCurrent,
       },
@@ -305,7 +310,20 @@ export class StoryExperienceReleaseService {
       },
       select: { id: true },
     });
-    if (!lifecycle) {
+    // A multi-chapter work has no Build publication at all — its release
+    // lifecycle hangs off the project's chapter set — so that row is the other
+    // proof that Java has been told about this game. Without this the studio
+    // would report a freshly published serial work as unpublished.
+    const released =
+      lifecycle ??
+      (await this.prisma.storyExperienceGameRelease.findFirst({
+        where: {
+          storyProjectId: projectId,
+          status: { in: ['pending', 'uncertain', 'confirmed'] },
+        },
+        select: { id: true },
+      }));
+    if (!released) {
       return {
         projectId,
         gameId: projectId,

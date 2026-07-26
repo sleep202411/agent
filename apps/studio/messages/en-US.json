@@ -2071,16 +2071,15 @@
         "title": "Story Bible",
         "description": "The premise, cast, and world rules that ground every branch. Changes autosave to the draft.",
         "cover": {
-          "title": "Cover media",
-          "description": "One project-level image or video used in the project library.",
-          "empty": "No cover media",
-          "unavailable": "Cover preview unavailable",
-          "choose": "Choose media",
-          "replace": "Replace media",
+          "title": "Cover image",
+          "description": "One still for this story: the project tile here, the title-screen backdrop in the player, and the share image of the published game.",
+          "empty": "No cover image",
+          "unavailable": "This image cannot be published as a cover",
+          "choose": "Choose image",
+          "replace": "Replace image",
           "remove": "Remove",
           "imageAlt": "Project cover",
-          "videoLabel": "Project cover video",
-          "candidateLoadError": "Candidate media could not be loaded."
+          "candidateLoadError": "Candidate images could not be loaded."
         },
         "characters": {
           "cardEyebrow": "Character",

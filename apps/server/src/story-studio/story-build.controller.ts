@@ -18,6 +18,7 @@ import {
   CancelStoryBuildSchema,
   CreateStoryBuildSchema,
   PublishStoryBuildSchema,
+  PublishStoryProjectSchema,
   StoryBuildAssetParamsSchema,
   StoryBuildListQuerySchema,
   StoryBuildParamsSchema,
@@ -26,6 +27,7 @@ import {
   type CancelStoryBuildInput,
   type CreateStoryBuildInput,
   type PublishStoryBuildInput,
+  type PublishStoryProjectInput,
   type StoryBuildAssetParams,
   type StoryBuildListQuery,
   type StoryBuildParams,
@@ -33,12 +35,14 @@ import {
 } from './dto';
 import { StoryBuildService } from './story-build.service';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
+import { StoryGameReleaseService } from './story-game-release.service';
 
 @Controller('story-projects')
 export class StoryBuildController {
   constructor(
     private readonly builds: StoryBuildService,
     private readonly releases: StoryExperienceReleaseService,
+    private readonly gameReleases: StoryGameReleaseService,
   ) {}
 
   @Post(':projectId/builds')
@@ -165,6 +169,36 @@ export class StoryBuildController {
         user,
         requiredWorkspaceId(workspaceHeader),
         params.projectId,
+      ),
+    };
+  }
+
+  /**
+   * Publishes the whole work: one release for a single-chapter project, and one
+   * Game Manifest listing every shipping chapter for a multi-chapter one. This
+   * is the endpoint a creator presses; the per-Build endpoint below stays for
+   * releasing one exact immutable Build.
+   */
+  @Post(':projectId/releases')
+  @HttpCode(HttpStatus.OK)
+  async publishProject(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+    @ViewerCookie() viewerCookie: string,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PublishStoryProjectSchema))
+    body: PublishStoryProjectInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.gameReleases.publishProject(
+        user,
+        requiredWorkspaceId(workspaceHeader),
+        params.projectId,
+        body,
+        viewerCookie,
       ),
     };
   }

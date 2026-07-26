@@ -29,6 +29,7 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildVideoInput,
 } from './story-build-compiler';
+import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import {
   StoryVideoSnapshotEntrySchema,
@@ -112,6 +113,7 @@ export class StoryWorkingPreviewService {
       defaultLocale: string;
       title: string;
       summary: string | null;
+      coverAssetId: string | null;
     },
     projectId: string,
     chapterId: string | undefined,
@@ -274,6 +276,18 @@ export class StoryWorkingPreviewService {
       // bed — a text_adventure playtest runs through StoryTextPlayPanel, which
       // has no audio at all — so resolving one here would be a MediaAsset query
       // per Preview whose result nothing can ever hear.
+      //
+      // The cover is the opposite case and ships here for a different reason
+      // than being painted: a cinematic playtest does run the ExperiencePlayer
+      // that paints it, but a text_adventure playtest renders through
+      // StoryTextPlayPanel and shows no cover at all. What both need is the
+      // publishability verdict — this is the surface that tells a creator, while
+      // they are still authoring, that the still they picked cannot ship.
+      cover: await resolveStoryCover(
+        tx,
+        project.workspaceId,
+        project.coverAssetId,
+      ),
     });
 
     return {

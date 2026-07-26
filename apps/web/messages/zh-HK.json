@@ -7562,6 +7562,7 @@
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
     "continue": "繼續",
     "regionLabel": "互動故事播放器",
+    "chapters": "章節",
     "loadErrorTitle": "目前體驗不可用",
     "loadErrorDescription": "已發佈版本未通過播放器完整性校驗，服務回傳的資訊如下。",
     "loadErrorUnknown": "無法載入已發佈的互動體驗。",

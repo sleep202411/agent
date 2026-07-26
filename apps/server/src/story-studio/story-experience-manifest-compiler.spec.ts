@@ -18,6 +18,29 @@ const BUILD_ID = '0197f4a2-0800-7000-8000-000000000004';
 const ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
 const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
 const CHECKSUM = 'a'.repeat(64);
+const COVER_ASSET_ID = '0197f4a2-0800-7000-8000-00000000000a';
+const COVER_RUNTIME_ASSET_ID = `image:${COVER_ASSET_ID}`;
+const COVER_VARIANT_ID = `${COVER_RUNTIME_ASSET_ID}:original`;
+const COVER_CHECKSUM = 'b'.repeat(64);
+const COVER_URL = `https://media.example.com/workspace/image/${COVER_ASSET_ID}.jpg`;
+
+/** The release's cover as a plain-reference image asset. */
+function coverMedia(): InteractiveFilmRelease['media'][number] {
+  return {
+    assetId: COVER_RUNTIME_ASSET_ID,
+    kind: 'image',
+    orientationPolicy: 'single-master',
+    variants: {
+      landscape: {
+        sourceAssetId: COVER_ASSET_ID,
+        sha256: COVER_CHECKSUM,
+        src: COVER_URL,
+        width: 1600,
+        height: 900,
+      },
+    },
+  };
+}
 
 function release(): InteractiveFilmRelease {
   return InteractiveFilmReleaseSchema.parse({
@@ -381,6 +404,109 @@ describe('Story Runtime Manifest v2 compiler', () => {
     // covering a fixed frame.
     expect(videoConfigs.length).toBeGreaterThan(1);
     expect(videoConfigs.every((config) => config.fit === 'native')).toBe(true);
+  });
+
+  /**
+   * The cover has to arrive as BOTH a resolvable image asset and the metadata
+   * pointer, because the manifest schema validates the pointer against `assets`.
+   * Asserting the metadata field alone would pass while the player still painted
+   * a black rectangle.
+   */
+  it('emits the cover as a resolvable image asset and the metadata pointer', () => {
+    const withCover = release();
+    withCover.media.push(coverMedia());
+
+    const result = compileStoryExperienceManifest({
+      release: withCover,
+      experienceProfile: 'cinematic',
+      metadata: {
+        title: 'Story',
+        summary: null,
+        coverAssetId: COVER_RUNTIME_ASSET_ID,
+      },
+      mediaIdentities: [
+        {
+          runtimeAssetId: 'video:START',
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+        {
+          runtimeAssetId: COVER_RUNTIME_ASSET_ID,
+          variantId: COVER_VARIANT_ID,
+          mediaType: 'image/jpeg',
+        },
+      ],
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.manifest?.metadata.coverAssetId).toBe(COVER_RUNTIME_ASSET_ID);
+    const cover = result.manifest?.assets.find(
+      (asset) => asset.assetId === COVER_RUNTIME_ASSET_ID,
+    );
+    if (!cover || cover.kind !== 'image') {
+      throw new Error('Compiled cover image asset is missing.');
+    }
+    expect(cover.orientationPolicy).toBe('single-master');
+    expect(cover.variants).toEqual([
+      {
+        variantId: COVER_VARIANT_ID,
+        sourceAssetId: COVER_ASSET_ID,
+        sha256: COVER_CHECKSUM,
+        // A plain public media URL, not a frozen /aurora build-asset path.
+        uri: COVER_URL,
+        mediaType: 'image/jpeg',
+        orientation: 'landscape',
+        width: 1600,
+        height: 900,
+      },
+    ]);
+    // The manifest must satisfy its own contract, including the reference check
+    // that makes a dangling coverAssetId invalid.
+    expect(
+      ExperienceRuntimeManifestSchema.safeParse(result.manifest).success,
+    ).toBe(true);
+  });
+
+  /**
+   * Proves the pairing above is load-bearing rather than decorative: the pointer
+   * on its own does not produce a manifest at all.
+   */
+  it('refuses a cover pointer that resolves to no asset', () => {
+    const result = compileStoryExperienceManifest({
+      release: release(),
+      experienceProfile: 'cinematic',
+      metadata: {
+        title: 'Story',
+        summary: null,
+        coverAssetId: COVER_RUNTIME_ASSET_ID,
+      },
+      mediaIdentities: [
+        {
+          runtimeAssetId: 'video:START',
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+      ],
+    });
+
+    expect(result.manifest).toBeNull();
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID',
+          path: ['metadata', 'coverAssetId'],
+        }),
+      ]),
+    );
+  });
+
+  it('keeps a story with no cover free of any cover key', () => {
+    const result = compile();
+
+    expect(result.manifest?.metadata).not.toHaveProperty('coverAssetId');
+    expect(
+      result.manifest?.assets.some((asset) => asset.kind === 'image'),
+    ).toBe(false);
   });
 
   it('fails when a runtime asset has no exact frozen variant identity', () => {

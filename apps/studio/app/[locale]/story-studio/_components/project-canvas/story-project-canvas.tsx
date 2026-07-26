@@ -1260,10 +1260,11 @@ function StoryProjectCanvasInner({
     if (!workspaceId || !canMutateCanvasLayout) {
       throw new Error(t("production.errors.action"));
     }
-    const isVideo =
-      file.type.toLowerCase().startsWith("video/") || /\.(?:mp4|mov)$/i.test(file.name);
+    // A cover is always a still, so this is always the verified-image upload
+    // path — the one that probes and records the checksum and pixel dimensions
+    // that a runtime image asset cannot be published without.
     const uploaded = await uploadFileViaSignedUrl(file, {
-      kind: isVideo ? "ai_reference_video" : "ai_reference_image",
+      kind: "ai_reference_image",
       workspaceId,
       onProgress: (progress) => onState({ stage: "uploading", progress }),
       signal,

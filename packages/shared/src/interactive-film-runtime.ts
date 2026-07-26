@@ -23,6 +23,20 @@ const RuntimeUriSchema = z
     });
   });
 
+/**
+ * Whether a URL can be carried by a release as a PLAIN MEDIA REFERENCE (a music
+ * bed, a cover) rather than a frozen build asset.
+ *
+ * Plain references are resolved from live storage config, so they can come back
+ * in a shape this schema rejects — most often `http://` from an `external_url`
+ * asset. Such a reference must be dropped by its resolver, because reaching the
+ * release parse instead would fail a whole Build over decoration. Exported from
+ * beside the schema so the resolvers cannot drift from what they are gating for.
+ */
+export function isRuntimeMediaUri(value: string): boolean {
+  return RuntimeUriSchema.safeParse(value).success;
+}
+
 const VisualVariantSchema = z
   .object({
     sourceAssetId: stableId,

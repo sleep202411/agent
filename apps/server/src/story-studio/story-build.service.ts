@@ -20,6 +20,7 @@ import {
   StoryAssetRole,
   StoryBuildKind,
   StoryBuildStatus,
+  StoryExperiencePublicationStatus,
   StoryRevisionSource,
 } from '@prisma/client';
 import {
@@ -56,8 +57,10 @@ import {
   compileStoryBuild,
   storyRuntimeAssetId,
   type FrozenStoryVideoAsset,
+  type StoryBuildCoverInput,
   type StoryBuildVideoInput,
 } from './story-build-compiler';
+import { resolveStoryCover } from './story-cover-media';
 import { resolveStoryMusicUrls } from './story-music-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
@@ -134,6 +137,16 @@ const BUILD_DELIVERY_ASSET_INCLUDE =
             mediaAuthorizationRevokedAt: true,
           },
         },
+        gameReleaseChapters: {
+          select: {
+            release: {
+              select: {
+                status: true,
+                mediaAuthorizationRevokedAt: true,
+              },
+            },
+          },
+        },
       },
     },
     asset: { include: { placements: true } },
@@ -162,7 +175,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 5;
+const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 6;
 
 interface BuildCursor {
   number: number;
@@ -189,6 +202,8 @@ interface ValidatedBuildSnapshot {
   videos: StoryBuildVideoInput[];
   /** Plain public URL per bound music asset; a missing entry is silence. */
   musicUrls: Map<string, string>;
+  /** Plain public cover reference; `asset: null` warns instead of failing. */
+  cover: StoryBuildCoverInput;
 }
 
 @Injectable()
@@ -285,6 +300,7 @@ export class StoryBuildService {
               draft: snapshot.draft.content,
               videos: snapshot.videos,
               musicUrls: snapshot.musicUrls,
+              cover: snapshot.cover,
             });
             if (
               !compilation.runtime &&
@@ -514,12 +530,22 @@ export class StoryBuildService {
       throw buildAssetNotFound();
     }
     const scope = StoryBuildScopeSchema.safeParse(frozen.build.scope);
-    const publiclyAuthorized =
+    const publishedAsWholeWork =
       frozen.build.kind === StoryBuildKind.production &&
       scope.success &&
       scope.data.kind === 'full' &&
       frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
       frozen.build.experiencePublication.mediaAuthorizationRevokedAt === null;
+    // A chapter Build is a subgraph and never carries a Build publication, so
+    // its anonymous grant comes from the game release that listed it. Same
+    // rule, different release kind: a durable row authorized the media before
+    // Java could serve the manifest, and only a definitive rejection revokes.
+    const publishedAsChapter = frozen.build.gameReleaseChapters.some(
+      (chapter) =>
+        chapter.release.mediaAuthorizationRevokedAt === null &&
+        chapter.release.status !== StoryExperiencePublicationStatus.rejected,
+    );
+    const publiclyAuthorized = publishedAsWholeWork || publishedAsChapter;
     if (!publiclyAuthorized) {
       if (!user) {
         throw new UnauthorizedException({
@@ -759,6 +785,7 @@ async function loadValidatedBuildSnapshot(
       format: true,
       defaultLocale: true,
       frameProfile: true,
+      coverAssetId: true,
     },
   });
   if (!project) throw projectNotFound();
@@ -881,6 +908,11 @@ async function loadValidatedBuildSnapshot(
       project.workspaceId,
       format,
       lockable.data,
+    ),
+    cover: await resolveStoryCover(
+      tx,
+      project.workspaceId,
+      project.coverAssetId,
     ),
   };
 }
@@ -1155,7 +1187,7 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
@@ -1166,6 +1198,17 @@ export function storyBuildInputManifest(
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
       summary: snapshot.project.summary,
+      // Content identity, not the resolved URL: swapping the cover image must
+      // make this a different Build input, while moving the CDN must not — the
+      // URL is deployment config that says nothing about what was published.
+      cover: snapshot.cover.asset
+        ? {
+            mediaAssetId: snapshot.cover.asset.mediaAssetId,
+            sha256: snapshot.cover.asset.sha256,
+            width: snapshot.cover.asset.width,
+            height: snapshot.cover.asset.height,
+          }
+        : null,
     },
     story: {
       sourceRevisionId,
@@ -1706,6 +1749,23 @@ async function resolveBuildKind(
     (input.scope.kind === 'full'
       ? StoryBuildKind.production
       : StoryBuildKind.preview);
+  if (requested === StoryBuildKind.production && input.scope.kind === 'full') {
+    // A serial work has no publishable whole-work Build: every chapter ends in
+    // an ending, so composing them into one manifest leaves each later chapter
+    // an unreachable scene and compilation fails. Without this the failure
+    // surfaces as an unreachable-scene diagnostic, which names a symptom of the
+    // graph rather than the reason — that this work publishes one manifest per
+    // chapter, via the project release endpoint.
+    const chapterCount = await tx.storyChapter.count({
+      where: { storyProjectId: projectId, archivedAt: null },
+    });
+    if (chapterCount > 1) {
+      throw new BadRequestException({
+        code: 'STORY_BUILD_FULL_SCOPE_MULTI_CHAPTER',
+        message: `This work has ${chapterCount} chapters and does not publish as one Build. Build each chapter from its own entry scene, then publish the project.`,
+      });
+    }
+  }
   if (
     requested !== StoryBuildKind.production ||
     input.scope.kind !== 'subgraph'

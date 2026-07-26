@@ -2071,16 +2071,15 @@
         "title": "故事設定",
         "description": "支撐每個分支的前提、角色與世界規則；修改會自動儲存到草稿。",
         "cover": {
-          "title": "封面素材",
-          "description": "項目共用的一張圖片或一段影片，用於項目列表。",
-          "empty": "尚未設定封面",
-          "unavailable": "封面預覽暫不可用",
-          "choose": "選擇素材",
-          "replace": "更換素材",
+          "title": "封面圖",
+          "description": "本故事的一張靜態封面圖：既是這裡的項目封面，也是播放器標題頁的背景，以及已發布作品的分享圖。",
+          "empty": "尚未設定封面圖",
+          "unavailable": "這張圖無法作為封面發布",
+          "choose": "選擇圖片",
+          "replace": "更換圖片",
           "remove": "移除",
           "imageAlt": "項目封面",
-          "videoLabel": "項目封面影片",
-          "candidateLoadError": "候選素材載入失敗。"
+          "candidateLoadError": "候選圖片載入失敗。"
         },
         "characters": {
           "cardEyebrow": "角色",

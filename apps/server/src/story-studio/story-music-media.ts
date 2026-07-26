@@ -1,4 +1,5 @@
 import { MediaAssetKind, Prisma, type PrismaClient } from '@prisma/client';
+import { isRuntimeMediaUri } from '@repo/shared/interactive-film-runtime';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import type { CreatableStoryFormat } from './dto';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
@@ -30,17 +31,6 @@ const MUSIC_ASSET_SELECT = Prisma.validator<Prisma.MediaAssetSelect>()({
   deletedAt: true,
   placements: true,
 });
-
-/**
- * The manifest accepts a root-relative path or a permanent HTTPS URL and
- * nothing else (`RuntimeUriSchema`). Anything else would pass this resolver and
- * then fail the release parse — a bad bed failing a Build, the one outcome this
- * module exists to prevent — so the shape is checked HERE and a URL that does
- * not fit is dropped like a deleted asset: silence on that scene.
- */
-function isRuntimePlayableUrl(url: string): boolean {
-  return url.startsWith('/') || url.startsWith('https://');
-}
 
 /** The DISTINCT music assets a draft binds — a theme on five scenes is one. */
 export function boundMusicAssetIds(
@@ -93,7 +83,7 @@ export async function resolveStoryMusicUrls(
     // `resolvePublicUrl` is the single gate for deleted / unready / blocked
     // media and never throws — exactly the "no URL means silence" shape.
     const url = resolveMediaPublicUrl(asset)?.trim();
-    if (url && isRuntimePlayableUrl(url)) urls.set(asset.id, url);
+    if (url && isRuntimeMediaUri(url)) urls.set(asset.id, url);
   });
   return urls;
 }

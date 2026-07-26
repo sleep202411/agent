@@ -405,6 +405,12 @@ export class StoryProjectsService {
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
+        // A cover must be a STILL. Every place a cover is consumed needs one: the
+        // player paints it as the pre-playback backdrop from an image asset, the
+        // catalogue tile renders it through next/image, and it is the play page's
+        // og:image. A video could only ever have appeared on the studio's own
+        // library card, so accepting one meant a creator could set a cover that
+        // no player and no catalogue would ever show.
         const cover = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,
@@ -414,9 +420,7 @@ export class StoryProjectsService {
               not: MediaAssetModerationStatus.blocked,
             },
             deletedAt: null,
-            kind: {
-              in: [MediaAssetKind.image, MediaAssetKind.video],
-            },
+            kind: MediaAssetKind.image,
           },
           select: { id: true },
         });
@@ -424,7 +428,7 @@ export class StoryProjectsService {
           throw new UnprocessableEntityException({
             code: 'STORY_PROJECT_COVER_INVALID',
             message:
-              'A project cover must be a ready image or video asset in this project workspace.',
+              'A project cover must be a ready image asset in this project workspace.',
           });
         }
       }

@@ -6,6 +6,8 @@ import { StoryBuildController } from './story-build.controller';
 import { StoryBuildService } from './story-build.service';
 import { StoryExperienceReleaseGateway } from './story-experience-release.gateway';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
+import { StoryChapterManifestStorageService } from './story-chapter-manifest-storage.service';
+import { StoryGameReleaseService } from './story-game-release.service';
 import { StoryVideoProductionController } from './story-video-production.controller';
 import { StoryVideoProductionService } from './story-video-production.service';
 import { StoryReferenceController } from './story-reference.controller';
@@ -55,6 +57,8 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryBuildService,
     StoryExperienceReleaseGateway,
     StoryExperienceReleaseService,
+    StoryChapterManifestStorageService,
+    StoryGameReleaseService,
     StoryWorkingPreviewService,
     StoryTextPlayService,
     StoryNarrativeSessionService,

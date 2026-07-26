@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IconLoader2, IconMovie, IconPhoto, IconTrash, IconX } from "@tabler/icons-react";
+import { IconLoader2, IconPhoto, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -93,16 +93,19 @@ function ProjectCoverEditor({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [clearPending, setClearPending] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
-  const coverUsable =
-    media.cover?.status === "ready" &&
+  // A cover only counts as set if it is a usable STILL: an image is what the
+  // player paints behind its title screen, what the catalogue tile renders, and
+  // what the play page serves as og:image. Anything else — an unready or blocked
+  // asset, or a legacy video cover the API no longer accepts — reads as a cover
+  // that cannot be published, and says so.
+  const cover =
+    media.cover?.kind === "image" &&
+    media.cover.status === "ready" &&
     media.cover.moderationStatus !== "blocked" &&
-    Boolean(media.cover.previewUrl);
-  const dimensions =
-    media.cover?.width && media.cover.height ? `${media.cover.width}×${media.cover.height}` : null;
-  const duration =
-    media.cover?.kind === "video" && media.cover.durationSeconds !== null
-      ? formatDuration(media.cover.durationSeconds)
+    media.cover.previewUrl
+      ? media.cover
       : null;
+  const dimensions = cover?.width && cover.height ? `${cover.width}×${cover.height}` : null;
 
   return (
     <section className="border-b border-white/[0.06] pb-5">
@@ -111,44 +114,23 @@ function ProjectCoverEditor({
           <h3 className="text-[11px] font-semibold text-white/72">{t("world.cover.title")}</h3>
           <p className="mt-1 text-[10px] leading-4 text-white/34">{t("world.cover.description")}</p>
         </div>
-        {media.cover ? (
-          <span className="shrink-0 text-[9px] text-white/30">
-            {media.cover.kind === "video"
-              ? t("candidatePicker.filters.video")
-              : t("candidatePicker.filters.image")}
-            {[dimensions, duration].filter(Boolean).length > 0
-              ? ` · ${[dimensions, duration].filter(Boolean).join(" · ")}`
-              : ""}
-          </span>
+        {dimensions ? (
+          <span className="shrink-0 text-[9px] text-white/30">{dimensions}</span>
         ) : null}
       </div>
 
       <div className="mt-3 aspect-video overflow-hidden rounded-2xl bg-black/28">
-        {coverUsable && media.cover?.kind === "image" ? (
+        {cover ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed project media URL
           <img
-            src={media.cover.previewUrl as string}
+            src={cover.previewUrl as string}
             alt={t("world.cover.imageAlt")}
-            className="size-full object-cover"
-          />
-        ) : coverUsable && media.cover?.kind === "video" ? (
-          <video
-            src={media.cover.previewUrl as string}
-            aria-label={t("world.cover.videoLabel")}
-            muted
-            controls
-            playsInline
-            preload="metadata"
             className="size-full object-cover"
           />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
             <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
-              {media.cover?.kind === "video" ? (
-                <IconMovie className="size-4" stroke={1.6} />
-              ) : (
-                <IconPhoto className="size-4" stroke={1.6} />
-              )}
+              <IconPhoto className="size-4" stroke={1.6} />
             </span>
             <span className="text-[9px] font-medium">
               {media.cover ? t("world.cover.unavailable") : t("world.cover.empty")}
@@ -208,7 +190,7 @@ function ProjectCoverEditor({
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         items={media.candidateAssets}
-        allowedKinds={["image", "video"]}
+        allowedKinds={["image"]}
         currentAssetId={media.cover?.id}
         loading={media.candidateAssetsLoading}
         error={media.candidateAssetsError}
@@ -223,7 +205,7 @@ function ProjectCoverEditor({
         unavailableReason={() => t("world.cover.unavailable")}
         onSelect={media.onSelectCandidate}
         onClearSelection={media.onClearSelection}
-        uploadAccept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.mp4,.mov"
+        uploadAccept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
         onUpload={media.onUpload}
       />
     </section>
@@ -268,14 +250,6 @@ function FoundationEditor({
       />
     </div>
   );
-}
-
-function formatDuration(seconds: number): string {
-  const normalized = Math.max(0, seconds);
-  if (normalized < 60) return `${normalized.toFixed(normalized % 1 === 0 ? 0 : 1)}s`;
-  const minutes = Math.floor(normalized / 60);
-  const remainder = Math.round(normalized % 60);
-  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
 function FoundationField({

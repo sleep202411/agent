@@ -322,9 +322,16 @@ async function apiError(operation: Promise<unknown>) {
 }
 
 describe('StoryProjectsService unified-story authoring boundary', () => {
-  it('accepts only a ready image or video from the project workspace as the cover', async () => {
+  /**
+   * A cover must be a STILL: the player paints it behind the title screen from an
+   * image asset, the catalogue tile renders it through next/image, and it is the
+   * play page's og:image. A video cover could only ever have shown on the
+   * studio's own library card, so accepting one let a creator set a cover that no
+   * player and no catalogue would show.
+   */
+  it('accepts only a ready image from the project workspace as the cover', async () => {
     const project = summaryProject({
-      cover: candidateAssetRow().asset,
+      cover: { ...candidateAssetRow().asset, kind: MediaAssetKind.image },
       coverAssetId: MEDIA_ASSET_ID,
       version: 1,
     });
@@ -351,7 +358,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ).resolves.toMatchObject({
       cover: {
         id: MEDIA_ASSET_ID,
-        kind: 'video',
+        kind: 'image',
       },
       projectVersion: 1,
     });
@@ -368,9 +375,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           not: MediaAssetModerationStatus.blocked,
         },
         deletedAt: null,
-        kind: {
-          in: [MediaAssetKind.image, MediaAssetKind.video],
-        },
+        kind: MediaAssetKind.image,
       },
       select: { id: true },
     });

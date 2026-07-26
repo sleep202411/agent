@@ -18,6 +18,7 @@ import {
 } from './experience-manifest-integrity';
 import {
   createExperienceReleaseRequest,
+  experienceReleaseCoverUrl,
   parseAndVerifyExperienceReleaseRequest,
 } from './experience-release-request';
 
@@ -140,6 +141,35 @@ function textExperienceFixture() {
         },
       ],
     },
+  };
+}
+
+/** The same experience with a cover: one image asset plus the metadata pointer. */
+function coverFixture(uri = 'https://media.example.com/lantern/cover.jpg') {
+  const base = holdToLightFixture();
+  return {
+    ...base,
+    metadata: { ...base.metadata, coverAssetId: 'cover.lantern' },
+    assets: [
+      ...base.assets,
+      {
+        assetId: 'cover.lantern',
+        kind: 'image' as const,
+        orientationPolicy: 'single-master' as const,
+        variants: [
+          {
+            variantId: 'cover.lantern:original',
+            sourceAssetId: 'source.cover.lantern',
+            sha256: HASH,
+            uri,
+            mediaType: 'image/jpeg',
+            orientation: 'landscape' as const,
+            width: 1600,
+            height: 900,
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -674,6 +704,58 @@ describe('Experience Runtime Manifest v2', () => {
     expect(createExperienceManifestIntegrity(reorderedManifest)).toEqual(
       createExperienceManifestIntegrity(request.manifest),
     );
+  });
+
+  /**
+   * The catalogue cover comes out of the FROZEN manifest, never a live re-read:
+   * `requestHash` identifies a release receipt, so re-resolving a swapped or
+   * newly blocked cover on a retry would turn an idempotent replay into a
+   * receipt conflict.
+   */
+  it('carries the frozen manifest cover as the Java release coverUrl', () => {
+    const manifest = parseExperienceRuntimeManifest(coverFixture());
+
+    const coverUrl = experienceReleaseCoverUrl(manifest);
+    expect(coverUrl).toBe('https://media.example.com/lantern/cover.jpg');
+
+    const request = createExperienceReleaseRequest(
+      {
+        gameId: 'experience.lantern',
+        contentVersion: '2026.07.15.1',
+        title: 'Light the Lantern',
+        ...(coverUrl ? { coverUrl } : {}),
+        status: 'published',
+        setCurrent: true,
+      },
+      manifest,
+    );
+    expect(request.coverUrl).toBe(
+      'https://media.example.com/lantern/cover.jpg',
+    );
+    expect(parseAndVerifyExperienceReleaseRequest(request)).toEqual(request);
+  });
+
+  it('sends no coverUrl for a manifest with no cover', () => {
+    expect(
+      experienceReleaseCoverUrl(
+        parseExperienceRuntimeManifest(holdToLightFixture()),
+      ),
+    ).toBeUndefined();
+  });
+
+  /**
+   * A manifest uri may legally be root-relative, but Java's coverUrl must be
+   * absolute and nothing here can absolutize one. Omitting it beats sending a
+   * URL that resolves nowhere.
+   */
+  it('omits a cover whose manifest uri is root-relative', () => {
+    expect(
+      experienceReleaseCoverUrl(
+        parseExperienceRuntimeManifest(
+          coverFixture('/media/lantern/cover.jpg'),
+        ),
+      ),
+    ).toBeUndefined();
   });
 
   it('keeps the Java release transport opaque while validating publisher output', () => {

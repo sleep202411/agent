@@ -355,6 +355,11 @@ server:
     S3_BUCKET: fizzdragon-media
     S3_REGION: auto
     S3_FORCE_PATH_STYLE: "true"
+    # The S3 endpoint above is NOT publicly readable; this custom domain is what
+    # the bucket serves on. Published chapter manifest URLs are minted from it,
+    # and the publisher refuses to release without it rather than hand Java the
+    # resolver's AWS-shaped fallback host, which does not exist for R2.
+    MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.

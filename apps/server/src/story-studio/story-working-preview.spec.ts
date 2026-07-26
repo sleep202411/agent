@@ -12,6 +12,27 @@ import { storyVideoSnapshotHash } from './story-video-production.schema';
 const USER = { userId: 'user-1' };
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
+const COVER_ASSET_ID = '0197f4a2-0800-7000-8000-00000000000a';
+
+/** A ready cover image resolving straight to its permanent public URL. */
+function previewCoverRow() {
+  return {
+    id: COVER_ASSET_ID,
+    storageProvider: 'external_url',
+    bucket: null,
+    region: null,
+    objectKey: null,
+    externalUrl: 'https://assets.example/cover.jpg',
+    status: 'ready',
+    moderationStatus: 'approved',
+    deletedAt: null,
+    contentType: 'image/jpeg',
+    width: 1600,
+    height: 900,
+    checksumSha256: 'c'.repeat(64),
+    placements: [],
+  };
+}
 
 type Draft = ReturnType<typeof buildInteractiveFilmTestBundle>['draftContent'];
 
@@ -20,6 +41,7 @@ function scopedService(
   selections: unknown[] = currentPreviewSelections(draftContent),
   schemaVersion: string = INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   format: 'interactive_film' | 'text_adventure' = 'interactive_film',
+  cover: { coverAssetId: string; row: unknown } | null = null,
 ) {
   const contentHash = canonicalJsonHash(draftContent);
   const tx = {
@@ -33,6 +55,9 @@ function scopedService(
     },
     storyVideoSelection: {
       findMany: jest.fn().mockResolvedValue(selections),
+    },
+    mediaAsset: {
+      findFirst: jest.fn().mockResolvedValue(cover?.row ?? null),
     },
   };
   const prisma = {
@@ -50,6 +75,7 @@ function scopedService(
         defaultLocale: 'zh-CN',
         title: 'Branching Film Test',
         summary: 'A branching interactive film.',
+        coverAssetId: cover?.coverAssetId ?? null,
       },
     }),
   };
@@ -194,6 +220,63 @@ describe('StoryWorkingPreviewService', () => {
       },
     });
     expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The playtest runs the same ExperiencePlayer the published game does, so this
+   * is where a creator actually sees the cover they just picked. Without it the
+   * only way to find out whether a cover works would be to publish.
+   */
+  it('paints the project cover into the Preview manifest', async () => {
+    const { service, tx } = scopedService(
+      pureTextDraft(),
+      [],
+      INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+      'text_adventure',
+      { coverAssetId: COVER_ASSET_ID, row: previewCoverRow() },
+    );
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.diagnostics).toEqual([]);
+    const runtime = preview.runtime as {
+      metadata: { coverAssetId?: string };
+      assets: { assetId: string; kind: string; variants: { uri: string }[] }[];
+    };
+    expect(runtime.metadata.coverAssetId).toBe(`image:${COVER_ASSET_ID}`);
+    expect(
+      runtime.assets.find(
+        (asset) => asset.assetId === `image:${COVER_ASSET_ID}`,
+      ),
+    ).toMatchObject({
+      kind: 'image',
+      variants: [{ uri: 'https://assets.example/cover.jpg' }],
+    });
+    expect(tx.mediaAsset.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('costs a Preview no query at all when the project has no cover', async () => {
+    const { service, tx } = scopedService(
+      pureTextDraft(),
+      [],
+      INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+      'text_adventure',
+    );
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(
+      (preview.runtime as { metadata: Record<string, unknown> }).metadata,
+    ).not.toHaveProperty('coverAssetId');
+    expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
   it('returns actionable diagnostics for an incomplete draft before loading videos', async () => {

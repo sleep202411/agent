@@ -7562,6 +7562,7 @@
     "noVisibleChoices": "当前故事状态下没有可用选项。",
     "continue": "继续",
     "regionLabel": "互动故事播放器",
+    "chapters": "章节",
     "loadErrorTitle": "当前体验不可用",
     "loadErrorDescription": "已发布版本未通过播放器完整性校验，服务返回的信息如下。",
     "loadErrorUnknown": "无法加载已发布的互动体验。",

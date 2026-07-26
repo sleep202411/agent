@@ -340,3 +340,121 @@ test("rejects Java records whose CDN payload is not Runtime Manifest v2", async 
       error instanceof InteractiveFilmLoadError && error.code === "MANIFEST_INVALID"
   );
 });
+
+const GAME_MANIFEST_URL = "https://media.example.test/interactive-film/serial/toc.json";
+const PROLOGUE_URL = "https://r2.fizzdragon.com/story-chapters/serial/prologue/manifest.json";
+const CHAPTER_ONE_URL = "https://r2.fizzdragon.com/story-chapters/serial/chapter-one/manifest.json";
+
+function chapterManifestFixture(contentVersion: string, title: string) {
+  return ExperienceRuntimeManifestSchema.parse({
+    ...manifestFixture(),
+    gameId: "serial",
+    buildId: contentVersion,
+    contentVersion,
+    metadata: { title: { "en-US": title } },
+  });
+}
+
+function gameManifestFixture() {
+  return {
+    manifestType: "fizzdragon.experience-game",
+    schemaVersion: 1,
+    gameId: "serial",
+    contentVersion: "toc-1",
+    defaultLocale: "en-US",
+    chapters: [
+      {
+        chapterId: "chapter-prologue",
+        rank: 0,
+        title: { "en-US": "Prologue" },
+        manifestUrl: PROLOGUE_URL,
+        contentVersion: "prologue-build",
+        manifestHash: HASH,
+      },
+      {
+        chapterId: "chapter-one",
+        rank: 1,
+        title: { "en-US": "Chapter one" },
+        manifestUrl: CHAPTER_ONE_URL,
+        contentVersion: "chapter-one-build",
+        manifestHash: HASH,
+      },
+    ],
+  };
+}
+
+function serialFetcher(overrides: Record<string, unknown> = {}) {
+  const documents: Record<string, unknown> = {
+    [GAME_MANIFEST_URL]: gameManifestFixture(),
+    [PROLOGUE_URL]: chapterManifestFixture("prologue-build", "Prologue"),
+    [CHAPTER_ONE_URL]: chapterManifestFixture("chapter-one-build", "Chapter one"),
+    ...overrides,
+  };
+  return async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/games/")) {
+      return Response.json({
+        code: 200,
+        msg: "成功",
+        data: {
+          gameId: "serial",
+          title: "Serial work",
+          currentVersion: "toc-1",
+          manifestUrl: GAME_MANIFEST_URL,
+        },
+      });
+    }
+    assert.ok(url in documents, `unexpected fetch ${url}`);
+    return Response.json(documents[url]);
+  };
+}
+
+test("opens a serial release on its first chapter and lists every chapter", async () => {
+  const result = await loadPublishedInteractiveFilm("serial", {
+    fetcher: serialFetcher(),
+    javaStudioUrl: JAVA_URL,
+  });
+
+  assert.equal(result.activeChapterId, "chapter-prologue");
+  assert.equal(result.manifest.contentVersion, "prologue-build");
+  assert.deepEqual(
+    result.chapters.map((chapter) => chapter.manifestUrl),
+    [PROLOGUE_URL, CHAPTER_ONE_URL]
+  );
+});
+
+test("plays the requested chapter from its own manifest URL", async () => {
+  const result = await loadPublishedInteractiveFilm("serial", {
+    fetcher: serialFetcher(),
+    javaStudioUrl: JAVA_URL,
+    chapterId: "chapter-one",
+  });
+
+  assert.equal(result.activeChapterId, "chapter-one");
+  assert.equal(result.manifest.contentVersion, "chapter-one-build");
+  assert.equal(result.manifest.metadata.title["en-US"], "Chapter one");
+});
+
+test("refuses a chapter object that serves a different content version", async () => {
+  const fetcher = serialFetcher({
+    [PROLOGUE_URL]: chapterManifestFixture("swapped-build", "Swapped"),
+  });
+
+  await assert.rejects(
+    loadPublishedInteractiveFilm("serial", { fetcher, javaStudioUrl: JAVA_URL }),
+    (error: unknown) =>
+      error instanceof InteractiveFilmLoadError && error.code === "MANIFEST_IDENTITY_MISMATCH"
+  );
+});
+
+test("reports an unknown chapter instead of silently opening another one", async () => {
+  await assert.rejects(
+    loadPublishedInteractiveFilm("serial", {
+      fetcher: serialFetcher(),
+      javaStudioUrl: JAVA_URL,
+      chapterId: "chapter-nine",
+    }),
+    (error: unknown) =>
+      error instanceof InteractiveFilmLoadError && error.code === "CHAPTER_NOT_FOUND"
+  );
+});

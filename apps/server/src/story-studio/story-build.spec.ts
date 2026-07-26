@@ -16,9 +16,13 @@ import {
 } from '@repo/shared/experience-runtime';
 import {
   compileStoryBuild,
+  storyCoverAssetId,
+  storyCoverVariantId,
   type FrozenStoryVideoAsset,
   type StoryBuildCompilerInput,
+  type StoryBuildCoverInput,
   type StoryBuildVideoInput,
+  type StoryCoverMediaReference,
 } from './story-build-compiler';
 import {
   StoryBuildService,
@@ -40,6 +44,7 @@ const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
 const CHECKSUM = 'a'.repeat(64);
 const THEME_ASSET_ID = '0197f4a2-0800-7000-8000-000000000008';
 const ECHO_ASSET_ID = '0197f4a2-0800-7000-8000-000000000009';
+const COVER_ASSET_ID = '0197f4a2-0800-7000-8000-00000000000a';
 
 function simpleDraft() {
   return LockableInteractiveStoryDraftContentSchema.parse({
@@ -255,6 +260,28 @@ function frozenAsset(index: number, durationMs: number): FrozenStoryVideoAsset {
 /** The ordinary public media URL a bound track resolves to. */
 function musicUrl(mediaAssetId: string): string {
   return `https://media.example.com/workspace/audio/${mediaAssetId}.mp3`;
+}
+
+/** The ordinary public media URL a cover resolves to. */
+function coverUrl(mediaAssetId: string): string {
+  return `https://media.example.com/workspace/image/${mediaAssetId}.jpg`;
+}
+
+function readyCover(
+  overrides: Partial<StoryCoverMediaReference> = {},
+): StoryBuildCoverInput {
+  return {
+    asset: {
+      mediaAssetId: COVER_ASSET_ID,
+      url: coverUrl(COVER_ASSET_ID),
+      sha256: 'c'.repeat(64),
+      width: 1600,
+      height: 900,
+      mediaType: 'image/jpeg',
+      ...overrides,
+    },
+    eligibilityDiagnostics: [],
+  };
 }
 
 function compilerInput(
@@ -694,6 +721,125 @@ describe('compileStoryBuild', () => {
     expect(bound.diagnostics).toEqual([]);
     expect(JSON.stringify(bound.runtime)).toBe(JSON.stringify(unbound.runtime));
   });
+
+  /**
+   * A cover must cost a story that has none exactly nothing. The manifest is the
+   * published artifact, so a byte of drift here is a byte of drift in every
+   * release that predates the feature.
+   */
+  it('leaves a story without a cover byte-identical', () => {
+    const withoutInput = compileStoryBuild(compilerInput(choiceDraft()));
+    const withEmptyCover = compileStoryBuild(
+      compilerInput(choiceDraft(), {
+        cover: { asset: null, eligibilityDiagnostics: [] },
+      }),
+    );
+
+    expect(JSON.stringify(withEmptyCover.runtime)).toBe(
+      JSON.stringify(withoutInput.runtime),
+    );
+    // 'cover' alone would match every clip's `fit`, so pin the two things a
+    // cover actually adds: the metadata pointer and the image asset id space.
+    expect(JSON.stringify(withoutInput.runtime)).not.toContain('coverAssetId');
+    expect(JSON.stringify(withoutInput.runtime)).not.toContain('image:');
+  });
+
+  it('publishes the cover as a plain-reference image the manifest can resolve', () => {
+    const compiled = compileStoryBuild(
+      compilerInput(choiceDraft(), { cover: readyCover() }),
+    );
+
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.runtime?.metadata.coverAssetId).toBe(
+      storyCoverAssetId(COVER_ASSET_ID),
+    );
+    const cover = compiled.runtime?.assets.find(
+      (asset) => asset.assetId === storyCoverAssetId(COVER_ASSET_ID),
+    );
+    if (!cover || cover.kind !== 'image') {
+      throw new Error('Compiled cover image asset is missing.');
+    }
+    expect(cover.variants).toEqual([
+      {
+        variantId: storyCoverVariantId(COVER_ASSET_ID),
+        sourceAssetId: COVER_ASSET_ID,
+        sha256: 'c'.repeat(64),
+        uri: coverUrl(COVER_ASSET_ID),
+        mediaType: 'image/jpeg',
+        orientation: 'landscape',
+        width: 1600,
+        height: 900,
+      },
+    ]);
+  });
+
+  it('reads a tall cover as portrait from its own pixels', () => {
+    const compiled = compileStoryBuild(
+      compilerInput(choiceDraft(), {
+        cover: readyCover({ width: 900, height: 1600 }),
+      }),
+    );
+
+    const cover = compiled.runtime?.assets.find(
+      (asset) => asset.assetId === storyCoverAssetId(COVER_ASSET_ID),
+    );
+    expect(cover?.kind === 'image' && cover.variants[0]?.orientation).toBe(
+      'portrait',
+    );
+  });
+
+  /**
+   * A cover the resolver rejected must not fail the Build — losing it costs a
+   * title screen its backdrop, not the story — but it must not vanish in silence
+   * either, because the creator explicitly set one.
+   */
+  it('warns instead of failing when the chosen cover cannot be published', () => {
+    const compiled = compileStoryBuild(
+      compilerInput(choiceDraft(), {
+        cover: {
+          asset: null,
+          eligibilityDiagnostics: [
+            {
+              severity: 'warning',
+              code: 'STORY_BUILD_COVER_UNUSABLE',
+              message: 'The project cover is blocked.',
+              entityType: 'asset',
+              entityId: COVER_ASSET_ID,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(compiled.runtime).not.toBeNull();
+    expect(compiled.diagnostics).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'STORY_BUILD_COVER_UNUSABLE',
+        entityId: COVER_ASSET_ID,
+      }),
+    ]);
+    expect(compiled.runtime?.metadata).not.toHaveProperty('coverAssetId');
+  });
+
+  /**
+   * The cover is decoration for BOTH profiles — the player paints it behind the
+   * cinematic and the narrative title screen alike — so unlike music it is not
+   * profile-gated.
+   */
+  it('publishes the cover for a narrative story too', () => {
+    const compiled = compileStoryBuild(
+      compilerInput(choiceDraft(), {
+        format: 'text_adventure',
+        cover: readyCover(),
+      }),
+    );
+
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.runtime?.metadata.coverAssetId).toBe(
+      storyCoverAssetId(COVER_ASSET_ID),
+    );
+  });
 });
 
 describe('StoryBuildService concurrency boundaries', () => {
@@ -725,6 +871,7 @@ describe('StoryBuildService concurrency boundaries', () => {
         scope: { kind: 'full' },
         runtimeSchemaVersion: 2,
         experiencePublication: null,
+        gameReleaseChapters: [],
       },
       asset: {
         id: ASSET_ID,
@@ -1020,6 +1167,9 @@ describe('StoryBuildService concurrency boundaries', () => {
       storyRevision: { findUnique: jest.fn().mockResolvedValue(revision) },
       storyBuildAsset: { create: freezeAsset },
       storyVideoBuildClip: { create: freezeClip },
+      // A single-chapter project: a full-scope production Build is refused for
+      // a serial work, which publishes one manifest per chapter instead.
+      storyChapter: { count: jest.fn().mockResolvedValue(1) },
     };
     const prisma = {
       storyBuild: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -1230,6 +1380,9 @@ describe('StoryBuildService concurrency boundaries', () => {
           return data;
         }),
       },
+      // A single-chapter project: a full-scope production Build is refused for
+      // a serial work, which publishes one manifest per chapter instead.
+      storyChapter: { count: jest.fn().mockResolvedValue(1) },
     };
     const prisma = {
       storyBuild: {

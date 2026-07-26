@@ -6462,6 +6462,7 @@ model StoryProject {
   builds                  StoryBuild[]
   experiencePublications  StoryExperiencePublication[]
   experienceDraftReleases StoryExperienceDraftRelease[]
+  experienceGameReleases  StoryExperienceGameRelease[]
   referenceSlots          StoryReferenceSlot[]
   referenceVersions       StoryReferenceVersion[]
   videoSelections         StoryVideoSelection[]
@@ -6817,12 +6818,13 @@ model StoryBuild {
   createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project                StoryProject                 @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
-  sourceRevision         StoryRevision                @relation(fields: [sourceRevisionId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+  project                StoryProject                        @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+  sourceRevision         StoryRevision                       @relation(fields: [sourceRevisionId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
   assets                 StoryBuildAsset[]
   videoClips             StoryVideoBuildClip[]
   experiencePublication  StoryExperiencePublication?
   experienceDraftRelease StoryExperienceDraftRelease?
+  gameReleaseChapters    StoryExperienceGameReleaseChapter[]
 
   @@unique([storyProjectId, buildNumber], map: "story_builds_project_number_unique")
   @@unique([id, storyProjectId], map: "story_builds_id_project_unique")
@@ -6947,6 +6949,89 @@ model StoryExperienceDraftRelease {
   @@index([storyProjectId, status, leaseExpiresAt], map: "story_experience_draft_releases_project_lease_idx")
   @@index([status, nextAttemptAt, leaseExpiresAt], map: "story_experience_draft_releases_retry_idx")
   @@map("story_experience_draft_releases")
+}
+
+/// Durable release lifecycle for a MULTI-CHAPTER work. A chapter ends in an
+/// ending, so such a work has no single publishable Build: each chapter ships
+/// as its own Runtime Manifest object and Java receives the Game Manifest
+/// table of contents that lists them. This row therefore hangs off the project
+/// and its chapter set, not off one Build.
+///
+/// `contentVersion` is the canonical hash of that chapter set. A rebuilt or
+/// newly finished chapter changes the hash, which is what makes Java's
+/// immutable (gameId, contentVersion) identity land on a new release instead
+/// of silently re-serving the previous chapter set — while re-running the same
+/// publish converges on this row and re-POSTs nothing.
+model StoryExperienceGameRelease {
+  id                  String                           @id @default(uuid(7)) @db.Uuid
+  storyProjectId      String                           @map("story_project_id") @db.Uuid
+  gameId              String                           @map("game_id") @db.VarChar(160)
+  contentVersion      String                           @map("content_version") @db.VarChar(160)
+  requestHash         String                           @map("request_hash") @db.VarChar(64)
+  status              StoryExperiencePublicationStatus @default(pending)
+  requestedSetCurrent Boolean                          @default(true) @map("requested_set_current")
+  requestedByUserId   String                           @map("requested_by_user_id") @db.VarChar(64)
+
+  /// Anonymous exchange of every listed chapter's frozen media URIs, granted
+  /// before Java can serve the Game Manifest. Only a definitive rejection may
+  /// append a revocation.
+  mediaAuthorizedAt           DateTime  @default(now()) @map("media_authorized_at") @db.Timestamptz(6)
+  mediaAuthorizationRevokedAt DateTime? @map("media_authorization_revoked_at") @db.Timestamptz(6)
+
+  manifestUrl String?   @map("manifest_url") @db.Text
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  rejectedAt  DateTime? @map("rejected_at") @db.Timestamptz(6)
+
+  attemptCount          Int       @default(0) @map("attempt_count")
+  firstAttemptAt        DateTime? @map("first_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt         DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt         DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptedByUserId String?   @map("last_attempted_by_user_id") @db.VarChar(64)
+  leaseOwner            String?   @map("lease_owner") @db.VarChar(160)
+  leaseAcquiredAt       DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
+  leaseExpiresAt        DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  lastErrorCode         String?   @map("last_error_code") @db.VarChar(128)
+  lastErrorDetail       String?   @map("last_error_detail") @db.Text
+  lastErrorAt           DateTime? @map("last_error_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project  StoryProject                        @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
+  chapters StoryExperienceGameReleaseChapter[]
+
+  @@unique([storyProjectId, contentVersion], map: "story_experience_game_releases_project_version_unique")
+  @@unique([gameId, contentVersion], map: "story_experience_game_releases_game_version_unique")
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_experience_game_releases_project_recent_idx")
+  @@index([storyProjectId, status, leaseExpiresAt], map: "story_experience_game_releases_project_lease_idx")
+  @@map("story_experience_game_releases")
+}
+
+/// One chapter as it was actually published: which immutable Build supplied it
+/// and the permanent object URL its Runtime Manifest was uploaded to. This is
+/// both the evidence of what shipped and the lookup that authorizes anonymous
+/// delivery of that Build's frozen media.
+model StoryExperienceGameReleaseChapter {
+  id             String @id @default(uuid(7)) @db.Uuid
+  gameReleaseId  String @map("game_release_id") @db.Uuid
+  storyProjectId String @map("story_project_id") @db.Uuid
+  /// Authored chapter identity, kept as plain data: a release receipt must
+  /// survive the chapter being renamed, re-ranked or deleted afterwards.
+  storyChapterId String @map("story_chapter_id") @db.Uuid
+  buildId        String @map("build_id") @db.Uuid
+  rank           Int
+  manifestKey    String @map("manifest_key") @db.Text
+  manifestUrl    String @map("manifest_url") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  release StoryExperienceGameRelease @relation(fields: [gameReleaseId], references: [id], onDelete: Cascade)
+  build   StoryBuild                 @relation(fields: [buildId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+
+  @@unique([gameReleaseId, storyChapterId], map: "story_experience_game_release_chapters_chapter_unique")
+  @@unique([gameReleaseId, rank], map: "story_experience_game_release_chapters_rank_unique")
+  @@index([buildId], map: "story_experience_game_release_chapters_build_idx")
+  @@map("story_experience_game_release_chapters")
 }
 
 model StoryBuildAsset {

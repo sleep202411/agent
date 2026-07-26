@@ -27,6 +27,7 @@ const WORKSPACE_ID = '019f60f4-b101-70d4-8000-000000000003';
 const HASH = 'a'.repeat(64);
 const MANIFEST_URL =
   'https://media.example.com/interactive-film/branching-film/build/manifest.json';
+const COVER_URL = 'https://media.example.com/story/cover.jpg';
 
 function manifestFixture(buildId = BUILD_ID) {
   return ExperienceRuntimeManifestSchema.parse({
@@ -126,6 +127,35 @@ function manifestFixture(buildId = BUILD_ID) {
         },
       ],
     },
+  });
+}
+
+/** The same experience with a cover: one image asset plus the metadata pointer. */
+function coverManifestFixture() {
+  const base = manifestFixture();
+  return ExperienceRuntimeManifestSchema.parse({
+    ...base,
+    metadata: { ...base.metadata, coverAssetId: 'image:cover-asset' },
+    assets: [
+      ...base.assets,
+      {
+        assetId: 'image:cover-asset',
+        kind: 'image',
+        orientationPolicy: 'single-master',
+        variants: [
+          {
+            variantId: 'image:cover-asset:original',
+            sourceAssetId: 'cover-asset',
+            sha256: HASH,
+            uri: COVER_URL,
+            mediaType: 'image/jpeg',
+            orientation: 'landscape',
+            width: 1600,
+            height: 900,
+          },
+        ],
+      },
+    ],
   });
 }
 
@@ -991,6 +1021,44 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     );
   });
 
+  /**
+   * Closes the last hop: the cover the creator set reaches Java's catalogue row,
+   * which is what the games grid and the play page's og:image read back.
+   */
+  it('sends the frozen cover to Java as the release coverUrl', async () => {
+    const manifest = coverManifestFixture();
+    const gateway = {
+      publish: jest.fn(() => releaseResponse(manifest)),
+      getGame: jest.fn(() => gameDetail(manifest.contentVersion)),
+    };
+    const service = serviceWith({
+      manifest,
+      gateway,
+      frozenAssetsAvailable: false,
+    });
+
+    await publish(service);
+
+    expect(gateway.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ coverUrl: COVER_URL }),
+      'satoken=session',
+    );
+  });
+
+  it('sends no coverUrl key at all for a Build without a cover', async () => {
+    const gateway = {
+      publish: jest.fn((request: ExperienceReleaseRequest) =>
+        releaseResponse(manifestFixture(request.contentVersion)),
+      ),
+      getGame: jest.fn(() => gameDetail(BUILD_ID)),
+    };
+    const service = serviceWith({ gateway, frozenAssetsAvailable: false });
+
+    await publish(service);
+
+    expect(gateway.publish.mock.calls[0]?.[0]).not.toHaveProperty('coverUrl');
+  });
+
   it('rejects a Build whose browser-safe frozen media no longer matches before contacting Java', async () => {
     const gateway = { publish: jest.fn() };
     const service = serviceWith({
@@ -1356,6 +1424,32 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
       checkedAt: null,
     });
     expect(gateway.getGame).not.toHaveBeenCalled();
+  });
+
+  it('reports a chapter-set release as published even with no Build publication', async () => {
+    const prisma = prismaWithTransaction(reconciliationTransaction([]));
+    prisma.storyExperiencePublication.findFirst.mockResolvedValue(null);
+    prisma.storyExperienceGameRelease.findFirst.mockResolvedValue({
+      id: 'game-release-1',
+    });
+    const gateway = { getGame: jest.fn(() => gameDetail('toc-hash-1')) };
+    const service = serviceWith({ prisma, gateway });
+
+    const current = await service.getCurrentRelease(
+      { userId: 'user-1' } as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    // A serial work's chapters each have their own manifest, so there is no
+    // single current Build — Java's current chapter-set version is the answer.
+    expect(current).toMatchObject({
+      published: true,
+      currentVersion: 'toc-hash-1',
+      manifestUrl: MANIFEST_URL,
+      currentBuild: null,
+    });
+    expect(gateway.getGame).toHaveBeenCalledWith(PROJECT_ID);
   });
 
   it('returns unpublished when the only local lifecycles were rejected', async () => {
@@ -1728,6 +1822,12 @@ function prismaWithTransaction(tx: object) {
       findFirst: jest.fn(
         (): Promise<{ id: string } | null> =>
           Promise.resolve({ id: 'publication-1' }),
+      ),
+    },
+    // Only consulted when a project has no Build publication at all.
+    storyExperienceGameRelease: {
+      findFirst: jest.fn(
+        (): Promise<{ id: string } | null> => Promise.resolve(null),
       ),
     },
   };

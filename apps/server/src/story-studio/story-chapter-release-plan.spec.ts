@@ -32,6 +32,22 @@ describe('planStoryChapterRelease', () => {
     expect(result.excluded).toEqual([]);
   });
 
+  it('a serial work with only its opening chapter built still carries a contents page', () => {
+    // The distinction that matters: this project has two chapters, so its
+    // opening Build is a SUBGRAPH. An empty contents page would delegate it to
+    // the Build publication path, whose full-scope gate rejects a subgraph — the
+    // exact state 入梦金陵 is in the moment only its prologue is built.
+    const result = plan([chapter(0, 'build-0'), chapter(1, null)]);
+
+    expect(result.chapters.map((entry) => entry.chapterId)).toEqual([
+      'chapter-0',
+    ]);
+    expect(result.chapters[0]?.manifestUrl).toBe(manifestUrl('build-0'));
+    expect(result.excluded).toEqual([
+      { chapterId: 'chapter-1', reason: 'no-production-build' },
+    ]);
+  });
+
   it('opens on the lowest-ranked chapter and gives every chapter a url', () => {
     const result = plan([chapter(1, 'build-1'), chapter(0, 'build-0')]);
 

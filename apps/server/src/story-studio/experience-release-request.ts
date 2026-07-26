@@ -1,9 +1,12 @@
 import {
+  ExperienceGameManifestSchema,
   ExperienceJsonObjectSchema,
   ExperienceReleaseRequestSchema,
   canonicalizeExperienceJson,
   canonicalizeExperienceRuntimeManifest,
   materializeExperienceRuntimeManifest,
+  type ExperienceGameManifest,
+  type ExperienceJsonValue,
   type ExperienceReleaseRequest,
   type ExperienceRuntimeManifest,
 } from '@repo/shared/experience-runtime';
@@ -15,6 +18,32 @@ export type VerifiedExperienceReleaseRequest = Omit<
   manifest: ExperienceRuntimeManifest;
   setCurrent: boolean;
 };
+
+/**
+ * The catalogue cover URL for a release, read out of the FROZEN manifest.
+ *
+ * Deriving it from the manifest rather than re-reading the live project is what
+ * keeps the request byte-stable: `requestHash` identifies a release receipt, so
+ * a retry that re-resolved a swapped or newly blocked cover would turn into a
+ * receipt conflict instead of an idempotent replay.
+ *
+ * Only an absolute HTTPS URL can be sent. A manifest uri is allowed to be
+ * root-relative and there is no public base URL in this service to absolutize
+ * one with, so a relative uri is omitted — Java's contract is an absolute URL,
+ * and a wrong one would be worse than none. The cover is single-master, so its
+ * one variant is the one every consumer resolves to.
+ */
+export function experienceReleaseCoverUrl(
+  manifest: ExperienceRuntimeManifest,
+): string | undefined {
+  const coverAssetId = manifest.metadata.coverAssetId;
+  if (!coverAssetId) return undefined;
+  const cover = manifest.assets.find(
+    (asset) => asset.assetId === coverAssetId && asset.kind === 'image',
+  );
+  const uri = cover?.kind === 'image' ? cover.variants[0]?.uri : undefined;
+  return uri?.startsWith('https://') ? uri : undefined;
+}
 
 export class ExperienceReleaseRequestError extends Error {
   constructor(
@@ -60,6 +89,60 @@ export function parseAndVerifyExperienceReleaseRequest(
     throw new ExperienceReleaseRequestError(
       'MANIFEST_NOT_MATERIALIZED',
       'Release requests must contain the fully materialized Runtime Manifest',
+    );
+  }
+  if (transport.gameId !== manifest.gameId) {
+    throw new ExperienceReleaseRequestError(
+      'GAME_ID_MISMATCH',
+      `Release gameId ${transport.gameId} does not match manifest gameId ${manifest.gameId}`,
+    );
+  }
+  if (transport.contentVersion !== manifest.contentVersion) {
+    throw new ExperienceReleaseRequestError(
+      'CONTENT_VERSION_MISMATCH',
+      `Release contentVersion ${transport.contentVersion} does not match manifest contentVersion ${manifest.contentVersion}`,
+    );
+  }
+
+  return { ...transport, manifest, setCurrent: transport.setCurrent ?? true };
+}
+
+export type VerifiedExperienceGameReleaseRequest = Omit<
+  ExperienceReleaseRequest,
+  'manifest' | 'setCurrent'
+> & {
+  manifest: ExperienceGameManifest;
+  setCurrent: boolean;
+};
+
+/**
+ * Builds the POST {prefix}/releases body for a multi-chapter work, whose
+ * `manifest` is the Game Manifest table of contents rather than one chapter's
+ * Runtime Manifest. Java stores the JSON verbatim either way, so the
+ * publisher-side parse is the only validation this document will ever get.
+ */
+export function createExperienceGameReleaseRequest(
+  input: Omit<ExperienceReleaseRequest, 'manifest'>,
+  manifestInput: unknown,
+): VerifiedExperienceGameReleaseRequest {
+  const manifest = ExperienceGameManifestSchema.parse(manifestInput);
+  const transport = ExperienceReleaseRequestSchema.parse({
+    ...input,
+    manifest,
+  });
+  const rawManifest = ExperienceJsonObjectSchema.parse(transport.manifest);
+
+  // The Game Manifest declares no schema defaults, so a parsed document that
+  // differs from its input means the shape drifted from this contract — the
+  // same guarantee `parseAndVerifyExperienceReleaseRequest` gives the Runtime
+  // Manifest, where Java cannot re-check anything after transport.
+  if (
+    canonicalizeExperienceJson(rawManifest) !==
+    canonicalizeExperienceJson(manifest as unknown as ExperienceJsonValue)
+  ) {
+    throw new ExperienceReleaseRequestError(
+      'MANIFEST_NOT_MATERIALIZED',
+      'Game release requests must contain the fully materialized Game Manifest',
     );
   }
   if (transport.gameId !== manifest.gameId) {

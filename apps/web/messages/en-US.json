@@ -7563,6 +7563,7 @@
     "noVisibleChoices": "No available choices match the current story state.",
     "continue": "Continue",
     "regionLabel": "Interactive story player",
+    "chapters": "Chapters",
     "loadErrorTitle": "This experience is not available",
     "loadErrorDescription": "The published release could not pass the player’s integrity checks. The service response is shown below.",
     "loadErrorUnknown": "The published experience could not be loaded.",

@@ -38,8 +38,10 @@ export interface StoryChapterReleasePlan {
   /** The chapter the work opens with — the lowest-ranked one that ships. */
   opening: { chapterId: string; buildId: string };
   /**
-   * The table of contents. Empty for a single-chapter work, which publishes its
-   * one chapter manifest directly and needs no contents page to choose from.
+   * The table of contents. Empty only for a work that IS a single chapter,
+   * which publishes its one full-scope manifest directly and needs no contents
+   * page to choose from. A serial work always carries a contents page, even
+   * when only its opening chapter has shipped so far.
    */
   chapters: StoryChapterTocEntry[];
   /** Chapters deliberately not in this release. */
@@ -106,7 +108,14 @@ export function planStoryChapterRelease(
     }));
 
   const opening = { chapterId: first.chapterId, buildId: first.buildId };
-  if (releasable.length === 1) {
+  // Delegating to the Build publication path is a question about the SHAPE of
+  // the work, not about how much of it is built yet. Only a project that IS one
+  // chapter has a full-scope Build, and full scope is the one thing
+  // `publishBuild` accepts. A serial work with just its opening chapter built
+  // therefore still publishes as a Game Manifest of one entry — its Build is a
+  // subgraph, so delegating it would fail the full-scope gate — and later
+  // chapters join the contents without changing how the first one shipped.
+  if (candidates.length === 1) {
     return { opening, chapters: [], excluded };
   }
 

@@ -44,6 +44,39 @@ type FrozenStoryBuildVideoInput = StoryBuildVideoInput & {
   asset: FrozenStoryVideoAsset;
 };
 
+/**
+ * The project cover as a release carries it: a PLAIN MEDIA REFERENCE like a
+ * music bed, resolved to the ordinary public media URL, NOT a frozen build
+ * asset. Losing a cover costs a title screen its backdrop; it does not break a
+ * story, so it must never be able to fail or block a Build.
+ *
+ * Every field is non-optional because the runtime image contract makes them so:
+ * `sha256`, `width` and `height` are all REQUIRED on an image variant (video
+ * relaxes exactly those three). An asset that cannot supply them is not a
+ * usable cover at all, which is why deciding that is the resolver's job and the
+ * compiler only ever sees a complete reference.
+ */
+export interface StoryCoverMediaReference {
+  mediaAssetId: string;
+  url: string;
+  sha256: string;
+  width: number;
+  height: number;
+  mediaType: string;
+}
+
+/**
+ * Mirrors {@link StoryBuildVideoInput}: the database layer decides whether the
+ * cover can ship and says why when it cannot. `asset: null` with diagnostics is
+ * "the creator set a cover that cannot be published"; the diagnostics are
+ * WARNINGS, so the Build still succeeds and the creator still learns why their
+ * cover is missing instead of silently getting a black title screen.
+ */
+export interface StoryBuildCoverInput {
+  asset: StoryCoverMediaReference | null;
+  eligibilityDiagnostics: StoryBuildDiagnosticDto[];
+}
+
 export interface StoryBuildCompilerInput {
   projectId: string;
   format: CreatableStoryFormat;
@@ -64,6 +97,8 @@ export interface StoryBuildCompilerInput {
    * which is why nothing here can ever produce a diagnostic.
    */
   musicUrls?: ReadonlyMap<string, string>;
+  /** Absent for a project with no cover — the common case, and no diagnostic. */
+  cover?: StoryBuildCoverInput;
   diagnostics?: StoryBuildDiagnosticDto[];
 }
 
@@ -83,7 +118,10 @@ export interface StoryBuildCompilerResult {
 export function compileStoryBuild(
   input: StoryBuildCompilerInput,
 ): StoryBuildCompilerResult {
-  const diagnostics = [...(input.diagnostics ?? [])];
+  const diagnostics = [
+    ...(input.diagnostics ?? []),
+    ...(input.cover?.eligibilityDiagnostics ?? []),
+  ];
   const nodes = new Map(
     input.draft.graph.nodes.map((node) => [node.nodeId, node]),
   );
@@ -217,19 +255,38 @@ export function compileStoryBuild(
         ),
       );
     } else {
-      const mediaIdentities: StoryExperienceMediaIdentity[] =
-        includedVideos.map((video) => ({
+      const cover = input.cover?.asset ?? null;
+      const mediaIdentities: StoryExperienceMediaIdentity[] = [
+        ...includedVideos.map((video) => ({
           runtimeAssetId: storyRuntimeAssetId(
             clipNodeById(nodes, video.graphNodeId).clipKey,
           ),
           variantId: video.asset.variantId,
           mediaType: video.asset.contentType,
-        }));
+        })),
+        ...(cover
+          ? [
+              {
+                runtimeAssetId: storyCoverAssetId(cover.mediaAssetId),
+                variantId: storyCoverVariantId(cover.mediaAssetId),
+                mediaType: cover.mediaType,
+              },
+            ]
+          : []),
+      ];
       const compiled = compileStoryExperienceManifest({
         release: release.data,
         experienceProfile:
           input.format === 'interactive_film' ? 'cinematic' : 'narrative',
-        metadata: input.metadata,
+        metadata: {
+          ...input.metadata,
+          // Set together with the `media` entry above or not at all: a manifest
+          // whose coverAssetId does not resolve fails its own validation, so the
+          // pair is only ever emitted as a pair.
+          ...(cover
+            ? { coverAssetId: storyCoverAssetId(cover.mediaAssetId) }
+            : {}),
+        },
         mediaIdentities,
       });
       compiled.diagnostics.forEach((item) =>
@@ -673,7 +730,7 @@ function compileIntermediateRelease(
   // A film project pins every clip to its project-wide orientation. A narrative
   // (null-profile) project derives each clip's orientation from its own native
   // dimensions, so inline video keeps its intrinsic frame.
-  const media = includedVideos.map((video) => {
+  const videoMedia = includedVideos.map((video) => {
     const node = clipNodeById(nodes, video.graphNodeId);
     const variant = {
       sourceAssetId: video.asset.assetId,
@@ -700,6 +757,7 @@ function compileIntermediateRelease(
       variants: landscape ? { landscape: variant } : { portrait: variant },
     };
   });
+  const media = [...videoMedia, ...coverMedia(input.cover?.asset ?? null)];
   // Music ships for the NARRATIVE profile only: it is the one runtime that
   // reads a scene's bed. The cinematic player never looks at it, so emitting it
   // there would cost bandwidth and review surface for something no player can
@@ -845,8 +903,63 @@ function clipNodeById(
   return node;
 }
 
+/**
+ * The cover as an intermediate-release image asset, or nothing at all.
+ *
+ * `single-master`: one authored rendition, the asset's own public object. The
+ * intermediate layer keys visual variants by `landscape`/`portrait` only, so the
+ * orientation is read off the real pixels — a square cover lands under
+ * `landscape`, which costs nothing because a single-variant asset is what every
+ * consumer resolves to regardless of the viewport (the player falls back to the
+ * first variant when no orientation matches).
+ */
+function coverMedia(
+  cover: StoryCoverMediaReference | null,
+): InteractiveFilmRelease['media'] {
+  if (!cover) return [];
+  const variant = {
+    sourceAssetId: cover.mediaAssetId,
+    sha256: cover.sha256,
+    src: cover.url,
+    width: cover.width,
+    height: cover.height,
+  };
+  return [
+    {
+      assetId: storyCoverAssetId(cover.mediaAssetId),
+      kind: 'image' as const,
+      orientationPolicy: 'single-master' as const,
+      variants:
+        cover.width >= cover.height
+          ? { landscape: variant }
+          : { portrait: variant },
+    },
+  ];
+}
+
 export function storyRuntimeAssetId(clipKey: string): string {
   return `video:${clipKey}`;
+}
+
+/**
+ * A cover is identified by its MediaAsset for the same reason a music track is
+ * (see {@link storyMusicTrackId}): the file is the identity, so the same image
+ * used twice is one asset. Namespaced by WHAT it is rather than by the role it
+ * plays here, so if a scene ever presents that same image it resolves to this
+ * one entry instead of publishing the bytes twice under two names.
+ */
+export function storyCoverAssetId(mediaAssetId: string): string {
+  return `image:${mediaAssetId}`;
+}
+
+/**
+ * A plain media reference has no frozen `MediaAssetVariant` row to borrow an id
+ * from — that is the whole point of not putting the cover on the build-asset
+ * route — so the single rendition is named after the asset and the object it
+ * resolves to.
+ */
+export function storyCoverVariantId(mediaAssetId: string): string {
+  return `${storyCoverAssetId(mediaAssetId)}:original`;
 }
 
 /**

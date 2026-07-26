@@ -561,9 +561,14 @@ export const CreateStoryBuildSchema = z
     // compile to one full-scope manifest at all — chapters terminate in
     // endings, so every chapter after the first would be an unreachable scene,
     // which the Runtime Manifest rejects outright. Such a work therefore
-    // publishes one manifest PER CHAPTER, and each of those is a subgraph.
+    // publishes one manifest PER CHAPTER, and each of those is a subgraph;
+    // what the release API receives is the Game Manifest listing those
+    // per-chapter manifest URLs, never a composed manifest.
     // Omitted keeps the historical default: full ⇒ production, subgraph ⇒
-    // preview.
+    // preview. A chapter Build stays `preview` in practice, because
+    // `story_builds_production_scope_chk` admits only full-scope Builds as
+    // `production`; StoryGameReleaseService therefore verifies chapter Builds
+    // itself rather than trusting the kind.
     kind: z.enum(['preview', 'production']).optional(),
   })
   .strict();
@@ -590,6 +595,16 @@ export const PublishStoryBuildSchema = z
     }
   });
 export type PublishStoryBuildInput = z.infer<typeof PublishStoryBuildSchema>;
+
+// Publishing a whole work has no `status`: a draft release deliberately grants
+// no anonymous media, and a chapter manifest is useless without its media, so
+// there is nothing a draft chapter set could usefully deliver.
+export const PublishStoryProjectSchema = z
+  .object({ setCurrent: z.boolean().default(true) })
+  .strict();
+export type PublishStoryProjectInput = z.infer<
+  typeof PublishStoryProjectSchema
+>;
 
 export const CreateFilmPreviewTokenSchema = z
   .object({

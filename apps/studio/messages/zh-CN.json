@@ -2071,16 +2071,15 @@
         "title": "故事设定",
         "description": "支撑每个分支的前提、角色与世界规则；修改会自动保存到草稿。",
         "cover": {
-          "title": "封面素材",
-          "description": "项目共用的一张图片或一段视频，用于项目列表。",
-          "empty": "尚未设置封面",
-          "unavailable": "封面预览暂不可用",
-          "choose": "选择素材",
-          "replace": "更换素材",
+          "title": "封面图",
+          "description": "本故事的一张静态封面图：既是这里的项目封面，也是播放器标题页的背景，以及已发布作品的分享图。",
+          "empty": "尚未设置封面图",
+          "unavailable": "这张图无法作为封面发布",
+          "choose": "选择图片",
+          "replace": "更换图片",
           "remove": "移除",
           "imageAlt": "项目封面",
-          "videoLabel": "项目封面视频",
-          "candidateLoadError": "候选素材加载失败。"
+          "candidateLoadError": "候选图片加载失败。"
         },
         "characters": {
           "cardEyebrow": "角色",
