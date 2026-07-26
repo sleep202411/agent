@@ -43,6 +43,7 @@ import {
   IconLoader2,
   IconBook,
   IconMovie,
+  IconUsers,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
@@ -54,6 +55,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
@@ -336,6 +338,7 @@ function StoryProjectCanvasInner({
     CLOSED_STORY_CANVAS_INSPECTOR
   );
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
   const [productionCanvasSession, setProductionCanvasSession] =
     useState<StoryProductionCanvasContext | null>(null);
@@ -1085,7 +1088,9 @@ function StoryProjectCanvasInner({
         project?.status === "active" && project.capabilities.includes("story.generate")
       ),
       canPreview: true,
-      canPublish: true,
+      canPublish: Boolean(
+        project?.status === "active" && project.capabilities.includes("story.release")
+      ),
     },
     projectionReadiness,
     hasDraftConflict: Boolean(conflict),
@@ -3070,9 +3075,26 @@ function StoryProjectCanvasInner({
               onArchive={archiveChapter}
             />
           }
+          shareControl={
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+            >
+              <IconUsers className="size-4" />
+              {t("share")}
+            </button>
+          }
           assistantOpen={assistantOpen}
           onToggleAssistant={() => setAssistantOpen((current) => !current)}
           onBackNavigate={guardBackNavigation}
+        />
+
+        <ShareDialog
+          scope={{ kind: "story-project", id: projectId, name: project.title }}
+          canManage={project.capabilities.includes("story.admin")}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
         />
 
         {leaveDialog}
@@ -3402,6 +3424,7 @@ function CanvasHeader({
   storyWorldOpen,
   onToggleStoryWorld,
   chapterControl,
+  shareControl,
   assistantOpen,
   onToggleAssistant,
   onBackNavigate,
@@ -3419,6 +3442,7 @@ function CanvasHeader({
   storyWorldOpen: boolean;
   onToggleStoryWorld: () => void;
   chapterControl: ReactNode;
+  shareControl: ReactNode;
   assistantOpen: boolean;
   onToggleAssistant: () => void;
   onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
@@ -3502,6 +3526,7 @@ function CanvasHeader({
           <IconMovie className="size-4" />
           {t("mediaCreation")}
         </button>
+        {shareControl}
         {/* Was hidden while a draft preview could only ever start at the story's
             first scene, which made it useless for a multi-chapter work. It now
             previews the chapter being edited, and a missing clip stands in

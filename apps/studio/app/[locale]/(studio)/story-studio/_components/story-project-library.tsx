@@ -9,6 +9,7 @@ import {
   IconDeviceMobile,
   IconDots,
   IconEdit,
+  IconUsers,
   IconFileText,
   IconGitBranch,
   IconLoader2,
@@ -21,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,6 +81,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<StoryProjectSummary | null>(null);
   const [archiving, setArchiving] = useState<StoryProjectSummary | null>(null);
+  const [sharing, setSharing] = useState<StoryProjectSummary | null>(null);
 
   const projectsQuery = useQuery({
     queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
@@ -166,6 +169,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
                     project={project}
                     locale={locale}
                     onEdit={() => setEditing(project)}
+                    onShare={() => setSharing(project)}
                     onArchive={() => setArchiving(project)}
                   />
                 ))}
@@ -196,6 +200,14 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
             }}
           />
         ) : null}
+        {sharing ? (
+          <ShareDialog
+            scope={{ kind: "story-project", id: sharing.id, name: sharing.title }}
+            canManage={sharing.capabilities.includes("story.admin")}
+            open
+            onOpenChange={(open) => !open && setSharing(null)}
+          />
+        ) : null}
         {archiving ? (
           <ArchiveProjectDialog
             project={archiving}
@@ -216,11 +228,13 @@ function StoryProjectCard({
   project,
   locale,
   onEdit,
+  onShare,
   onArchive,
 }: {
   project: StoryProjectSummary;
   locale: string;
   onEdit: () => void;
+  onShare: () => void;
   onArchive: () => void;
 }) {
   const t = useTranslations("storyStudio");
@@ -370,6 +384,12 @@ function StoryProjectCard({
               <DropdownMenuItem onSelect={onEdit}>
                 <IconEdit className="size-4" />
                 {t("actions.editDetails")}
+              </DropdownMenuItem>
+            ) : null}
+            {canAdmin ? (
+              <DropdownMenuItem onSelect={onShare}>
+                <IconUsers className="size-4" />
+                {t("actions.share")}
               </DropdownMenuItem>
             ) : null}
             {canEdit && canAdmin ? <DropdownMenuSeparator /> : null}

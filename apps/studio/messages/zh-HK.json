@@ -713,7 +713,8 @@
     "share": {
       "title": "分享“{name}”",
       "descriptionWorkspace": "成員可以協作處理此團隊中的所有專案。",
-      "descriptionProject": "成員可以協作處理此專案。"
+      "descriptionProject": "成員可以協作處理此專案。",
+      "descriptionStoryProject": "新增的人會同時加入這個影遊和它所屬的團隊空間，因此也能看到團隊裡的其他內容。"
     }
   },
   "auth": {
@@ -800,7 +801,9 @@
       "billing": "帳單管理員",
       "editor": "編輯者",
       "viewer": "檢視者",
-      "member": "成員"
+      "member": "成員",
+      "producer": "製片",
+      "reviewer": "審閱者"
     },
     "add": "新增",
     "role": "角色",
@@ -1581,7 +1584,8 @@
     "scopeProject": "專案",
     "joinTitle": "加入 {name}",
     "joinBody": "您已獲邀以 {role} 身分協作此{scope}。",
-    "acceptInvitation": "接受邀請"
+    "acceptInvitation": "接受邀請",
+    "joinedStory": "已加入該影遊"
   },
   "modes": {
     "text_to_image": "文生圖",
@@ -1682,7 +1686,8 @@
       "archive": "封存",
       "cancel": "取消",
       "create": "建立專案",
-      "save": "儲存"
+      "save": "儲存",
+      "share": "共創"
     },
     "errors": {
       "loadProjects": "無法載入專案。",
@@ -2392,7 +2397,8 @@
       },
       "tidy": {
         "action": "整理畫布"
-      }
+      },
+      "share": "共創"
     },
     "workbench": {
       "back": "返回 Story Studio",
@@ -2586,6 +2592,7 @@
       "seekForward": "快進",
       "seekBackward": "快退"
     },
-    "emptySequence": "暫無影片"
+    "emptySequence": "暫無影片",
+    "loadingMedia": "正在載入影片"
   }
 }

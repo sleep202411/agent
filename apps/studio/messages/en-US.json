@@ -713,7 +713,8 @@
     "share": {
       "title": "Share “{name}”",
       "descriptionWorkspace": "Members can collaborate on every project in this team.",
-      "descriptionProject": "Members can collaborate on this project."
+      "descriptionProject": "Members can collaborate on this project.",
+      "descriptionStoryProject": "Anyone you add joins this story and the team workspace that owns it, so they can also see the team's other work."
     }
   },
   "auth": {
@@ -800,7 +801,9 @@
       "billing": "Billing",
       "editor": "Editor",
       "viewer": "Viewer",
-      "member": "Member"
+      "member": "Member",
+      "producer": "Producer",
+      "reviewer": "Reviewer"
     },
     "add": "Add",
     "role": "Role",
@@ -1581,7 +1584,8 @@
     "scopeProject": "project",
     "joinTitle": "Join {name}",
     "joinBody": "You've been invited to collaborate on this {scope} as {role}.",
-    "acceptInvitation": "Accept invitation"
+    "acceptInvitation": "Accept invitation",
+    "joinedStory": "Joined the story"
   },
   "modes": {
     "text_to_image": "Text to Image",
@@ -1682,7 +1686,8 @@
       "archive": "Archive",
       "cancel": "Cancel",
       "create": "Create project",
-      "save": "Save"
+      "save": "Save",
+      "share": "Share"
     },
     "errors": {
       "loadProjects": "Projects could not be loaded.",
@@ -2392,7 +2397,8 @@
       },
       "tidy": {
         "action": "Tidy layout"
-      }
+      },
+      "share": "Share"
     },
     "workbench": {
       "back": "Back to Story Studio",
@@ -2586,6 +2592,7 @@
       "seekForward": "Seek forward",
       "seekBackward": "Seek backward"
     },
-    "emptySequence": "No footage yet"
+    "emptySequence": "No footage yet",
+    "loadingMedia": "Loading footage"
   }
 }

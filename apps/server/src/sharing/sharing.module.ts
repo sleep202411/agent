@@ -6,6 +6,7 @@ import { NotificationModule } from '../notification';
 import { UsersModule } from '../users/users.module';
 import { WorkspacesModule } from '../workspaces';
 import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
+import { StoryProjectSharingModule } from '../story-studio/story-project-sharing.module';
 import { InvitesController } from './invites.controller';
 import { ProjectInvitesController } from './project-invites.controller';
 import { ProjectInvitesService } from './project-invites.service';
@@ -37,6 +38,8 @@ import { WorkspaceMembersService } from './workspace-members.service';
     // v2: project-member removal withdraws the removed user's real_person
     // grants for that project. Acyclic — characters does not import sharing.
     CharactersModule,
+    // The scope-agnostic InvitesController resolves story-project tokens too.
+    StoryProjectSharingModule,
   ],
   controllers: [
     WorkspaceMembersController,

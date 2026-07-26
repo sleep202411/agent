@@ -6314,6 +6314,13 @@ enum StoryProjectMemberStatus {
   removed
 }
 
+enum StoryProjectInviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
 enum StoryRevisionSource {
   creator
   import
@@ -6436,6 +6443,7 @@ model StoryProject {
   workspace               Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                   @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                 StoryProjectMember[]
+  invites                 StoryProjectInvite[]
   draft                   StoryDraft?
   productionCanvas        StoryProductionCanvas?
   chapters                StoryChapter[]
@@ -6669,6 +6677,29 @@ model StoryProjectMember {
   @@index([userId, status], map: "story_project_members_user_status_idx")
   @@index([storyProjectId, status, role], map: "story_project_members_project_status_role_idx")
   @@map("story_project_members")
+}
+
+/// Shareable invite link for one Story project. Same bearer-token model as
+/// ProjectInvite (only the sha256 is stored, multi-use until revoke/expiry),
+/// but grants a StoryProjectMemberRole. Accepting also enrolls the recipient in
+/// the owning workspace, which `story_project_member_workspace_guard` requires.
+model StoryProjectInvite {
+  id              String                   @id @default(uuid(7)) @db.Uuid
+  storyProjectId  String                   @map("story_project_id") @db.Uuid
+  role            StoryProjectMemberRole
+  tokenHash       String                   @map("token_hash") @db.VarChar(128)
+  status          StoryProjectInviteStatus @default(pending)
+  invitedByUserId String                   @map("invited_by_user_id") @db.VarChar(64)
+  acceptedAt      DateTime?                @map("accepted_at") @db.Timestamptz(6)
+  revokedAt       DateTime?                @map("revoked_at") @db.Timestamptz(6)
+  expiresAt       DateTime                 @map("expires_at") @db.Timestamptz(6)
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash], map: "story_project_invites_token_hash_unique")
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_project_invites_by_project_idx")
+  @@map("story_project_invites")
 }
 
 model StoryDraft {

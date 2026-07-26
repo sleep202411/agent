@@ -36,6 +36,8 @@ export const NOTIFICATION_TYPES = [
   "project.member.added",
   "project.member.removed",
   "project.invite.received",
+  "story-project.member.added",
+  "story-project.member.removed",
   // System (placeholder — wire as needed)
   "system.account.notice",
 ] as const;
@@ -47,7 +49,13 @@ export type NotificationCategory = "crew" | "sharing" | "system";
 
 export function notificationCategory(type: string): NotificationCategory {
   if (type.startsWith("crew.")) return "crew";
-  if (type.startsWith("workspace.") || type.startsWith("project.")) return "sharing";
+  if (
+    type.startsWith("workspace.") ||
+    type.startsWith("project.") ||
+    type.startsWith("story-project.")
+  ) {
+    return "sharing";
+  }
   return "system";
 }
 
