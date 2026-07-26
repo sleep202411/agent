@@ -22,11 +22,18 @@ function tx(overrides: {
 }) {
   const workspaceMemberCreate = jest.fn().mockResolvedValue({ id: 'wm-new' });
   const workspaceMemberUpdate = jest.fn().mockResolvedValue({ id: 'wm-old' });
+  const workspaceMemberCount = jest.fn().mockResolvedValue(1);
   return {
-    calls: { workspaceMemberCreate, workspaceMemberUpdate },
+    calls: {
+      workspaceMemberCreate,
+      workspaceMemberUpdate,
+      workspaceMemberCount,
+    },
     client: {
       $executeRaw: jest.fn().mockResolvedValue(0),
       workspace: {
+        // The row still carries `type` even though the function stopped reading
+        // it — that is exactly what the personal-workspace case pins.
         findFirst: jest.fn().mockResolvedValue({
           id: WORKSPACE_ID,
           type: overrides.workspaceType ?? WorkspaceType.team,
@@ -40,7 +47,7 @@ function tx(overrides: {
               ? null
               : overrides.workspaceMember,
           ),
-        count: jest.fn().mockResolvedValue(1),
+        count: workspaceMemberCount,
         create: workspaceMemberCreate,
         update: workspaceMemberUpdate,
       },
@@ -94,20 +101,20 @@ describe('ensureWorkspaceMembershipForStory', () => {
     expect(t.calls.workspaceMemberUpdate).not.toHaveBeenCalled();
   });
 
-  it('refuses a personal workspace instead of tripping the DB trigger', async () => {
+  it('enrols into a PERSONAL workspace too — seats decide, not workspace type', async () => {
     const t = tx({ workspaceType: WorkspaceType.personal });
-    await expect(
-      ensureWorkspaceMembershipForStory(t.client, {
-        workspaceId: WORKSPACE_ID,
-        userId: 'guest-1',
-        actorUserId: 'owner-1',
-        entitlements,
-        allowReactivatingRemoved: true,
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'PERSONAL_WORKSPACE_NOT_SHAREABLE' },
+    const result = await ensureWorkspaceMembershipForStory(t.client, {
+      workspaceId: WORKSPACE_ID,
+      userId: 'guest-1',
+      actorUserId: 'owner-1',
+      entitlements,
+      allowReactivatingRemoved: true,
     });
-    expect(t.calls.workspaceMemberCreate).not.toHaveBeenCalled();
+
+    expect(result).toEqual({ created: true });
+    expect(t.calls.workspaceMemberCreate).toHaveBeenCalledTimes(1);
+    // The seat guard still ran: story sharing consumes a seat on every type.
+    expect(t.calls.workspaceMemberCount).toHaveBeenCalledTimes(1);
   });
 
   it('will not let an open invite link resurrect an offboarded teammate', async () => {

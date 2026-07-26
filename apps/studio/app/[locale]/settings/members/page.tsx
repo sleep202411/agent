@@ -1,16 +1,17 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { IconUsersGroup } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MembersManager } from "@/app/_components/members-manager";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import { EmptyState, PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
 
 /**
- * Team members — the full roster for the active team (add-by-account, invite
- * links, role changes, removal). Personal workspaces aren't shareable, so they
- * get an honest "create a team" empty state. Per-project sharing uses the modal.
+ * Workspace members — the full roster for the active workspace (add-by-account,
+ * invite links, role changes, removal). Personal workspaces get the same roster:
+ * the server's seat policy, not the workspace type, decides how many people fit,
+ * so hiding it here would only make that policy unreachable. Per-project sharing
+ * uses the modal.
  */
 export default function MembersSettingsPage() {
   const t = useTranslations("settings");
@@ -24,7 +25,7 @@ export default function MembersSettingsPage() {
         badge={
           ws ? <TeamBadge label={ws.type === "personal" ? t("personal") : t("team")} /> : undefined
         }
-        subtitle={ws && ws.type === "team" ? t("membersSubtitle", { name: ws.name }) : undefined}
+        subtitle={ws ? t("membersSubtitle", { name: ws.name }) : undefined}
       />
 
       {loading || !ws ? (
@@ -32,14 +33,6 @@ export default function MembersSettingsPage() {
           <Skeleton className="h-11 w-full rounded-lg" />
           <Skeleton className="h-11 w-full rounded-lg" />
         </div>
-      ) : ws.type === "personal" ? (
-        <Panel>
-          <EmptyState
-            icon={<IconUsersGroup className="size-5" />}
-            title={t("membersAreForTeams")}
-            body={t("membersAreForTeamsBody")}
-          />
-        </Panel>
       ) : (
         <Panel>
           <MembersManager

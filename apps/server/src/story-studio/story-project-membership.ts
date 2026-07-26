@@ -2,7 +2,6 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
-  WorkspaceType,
   type Prisma,
 } from '@prisma/client';
 import type { EntitlementService } from '../entitlements/entitlement.service';
@@ -22,6 +21,10 @@ import { acquireSeatLock, assertSeatAvailable } from '../sharing/seat-guard';
  *
  * The visible consequence, which the share UI states outright: adding someone to
  * one story project also lets them see the team's other workspace-visible work.
+ *
+ * Workspace TYPE is deliberately not a gate here: a personal workspace shares
+ * exactly like a team one, and the seat policy alone caps how many people fit
+ * (see entitlements/seat-policy). Neither guard above reads it either.
  */
 export async function ensureWorkspaceMembershipForStory(
   tx: Prisma.TransactionClient,
@@ -39,18 +42,12 @@ export async function ensureWorkspaceMembershipForStory(
 ): Promise<{ created: boolean }> {
   const workspace = await tx.workspace.findFirst({
     where: { id: input.workspaceId, deletedAt: null },
-    select: { id: true, type: true },
+    select: { id: true },
   });
   if (!workspace) {
     throw new BadRequestException({
       code: 'WORKSPACE_NOT_FOUND',
       msg: 'The owning workspace no longer exists.',
-    });
-  }
-  if (workspace.type === WorkspaceType.personal) {
-    throw new BadRequestException({
-      code: 'PERSONAL_WORKSPACE_NOT_SHAREABLE',
-      msg: 'Move this story into a team workspace to share it.',
     });
   }
 

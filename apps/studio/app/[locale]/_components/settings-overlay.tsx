@@ -95,17 +95,14 @@ export function SettingsOverlay() {
   );
 }
 
-function teamSubNav(isPersonal: boolean) {
-  return [
-    { section: "overview" as const, labelKey: "navOverview" as const, Icon: IconLayoutGrid },
-    ...(isPersonal
-      ? []
-      : [{ section: "members" as const, labelKey: "navMembers" as const, Icon: IconUsers }]),
-    { section: "usage" as const, labelKey: "navUsage" as const, Icon: IconGauge },
-    { section: "analytics" as const, labelKey: "navAnalytics" as const, Icon: IconChartBar },
-    { section: "billing" as const, labelKey: "navBilling" as const, Icon: IconCreditCard },
-  ];
-}
+/** Mirrors SettingsSidebar's TEAM_SUB_NAV — same sections for every workspace type. */
+const TEAM_SUB_NAV = [
+  { section: "overview", labelKey: "navOverview", Icon: IconLayoutGrid },
+  { section: "members", labelKey: "navMembers", Icon: IconUsers },
+  { section: "usage", labelKey: "navUsage", Icon: IconGauge },
+  { section: "analytics", labelKey: "navAnalytics", Icon: IconChartBar },
+  { section: "billing", labelKey: "navBilling", Icon: IconCreditCard },
+] as const;
 
 /** Hash-based mirror of SettingsSidebar — nav switches the hash, not the route. */
 function OverlaySidebar({ active }: { active: SettingsSection | null }) {
@@ -135,18 +132,16 @@ function OverlaySidebar({ active }: { active: SettingsSection | null }) {
         {activeWorkspace ? (
           <Group title={t("groupTeamsSettings")}>
             <div className="flex flex-col gap-0.5">
-              {teamSubNav(activeWorkspace.type === "personal").map(
-                ({ section, labelKey, Icon }) => (
-                  <NavItem
-                    key={section}
-                    section={section}
-                    active={active === section}
-                    leading={<Icon className="size-4" stroke={1.8} />}
-                  >
-                    {t(labelKey)}
-                  </NavItem>
-                )
-              )}
+              {TEAM_SUB_NAV.map(({ section, labelKey, Icon }) => (
+                <NavItem
+                  key={section}
+                  section={section}
+                  active={active === section}
+                  leading={<Icon className="size-4" stroke={1.8} />}
+                >
+                  {t(labelKey)}
+                </NavItem>
+              ))}
             </div>
           </Group>
         ) : null}

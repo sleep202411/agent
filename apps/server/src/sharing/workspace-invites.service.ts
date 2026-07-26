@@ -9,10 +9,10 @@
  * Accept is idempotent per user: joining twice is a no-op (the partial-unique
  * active-membership index + an existence check guard the race). Expiry is lazy
  * (no sweeper) — a pending link past `expiresAt` reads as expired and is
- * persisted as such on the next touch. Personal workspaces are never shareable.
+ * persisted as such on the next touch. A personal workspace takes links too; the
+ * seat policy alone decides how many people can join through them.
  */
 import {
-  BadRequestException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -23,7 +23,6 @@ import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
-  WorkspaceType,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements/entitlement.service';
@@ -62,18 +61,13 @@ export class WorkspaceInvitesService {
 
   /** Create a shareable link. Returns the raw token once — caller builds the URL. */
   async create(workspaceId: string, actor: AuthUser, input: CreateInviteInput) {
-    const workspace = await this.requireWorkspace(workspaceId);
+    // 404 a deleted/suspended workspace before minting a link for it.
+    await this.requireWorkspace(workspaceId);
     await this.permissions.requireWorkspaceRole(
       actor.userId,
       workspaceId,
       WorkspaceMemberRole.admin,
     );
-    if (workspace.type === WorkspaceType.personal) {
-      throw new BadRequestException({
-        code: 'PERSONAL_WORKSPACE_NOT_SHAREABLE',
-        msg: 'Create a team workspace to invite members.',
-      });
-    }
 
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
@@ -354,7 +348,7 @@ export class WorkspaceInvitesService {
         deletedAt: null,
         status: WorkspaceStatus.active,
       },
-      select: { id: true, name: true, type: true },
+      select: { id: true, name: true },
     });
     if (!ws) {
       throw new NotFoundException({
