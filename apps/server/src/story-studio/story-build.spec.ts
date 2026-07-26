@@ -190,6 +190,53 @@ function choiceDraft() {
   });
 }
 
+/**
+ * `rounds` consecutive 3-way choices whose branches all reconverge on the next
+ * hub — "wide but shallow", the shape a per-scene-choice story actually has.
+ * Node count grows linearly (4 per round) while route count grows as 3^rounds.
+ */
+function wideChoiceDraft(rounds: number) {
+  const base = simpleDraft();
+  const nodes: unknown[] = [];
+  for (let round = 0; round < rounds; round += 1) {
+    const hub = `clip.hub${round}`;
+    const next = round + 1 === rounds ? 'clip.truth' : `clip.hub${round + 1}`;
+    nodes.push({
+      kind: 'clip',
+      nodeId: hub,
+      clipKey: `HUB${round}`,
+      exit: {
+        kind: 'choice',
+        decisionId: `decision.round${round}`,
+        prompt: { 'en-US': `Round ${round}?` },
+        choices: ['a', 'b', 'c'].map((tag) => ({
+          choiceId: `choose.${round}.${tag}`,
+          label: { 'en-US': tag.toUpperCase() },
+          nextNodeId: `clip.branch${round}${tag}`,
+        })),
+      },
+    });
+    ['a', 'b', 'c'].forEach((tag) => {
+      nodes.push({
+        kind: 'clip',
+        nodeId: `clip.branch${round}${tag}`,
+        clipKey: `BRANCH${round}${tag.toUpperCase()}`,
+        exit: { kind: 'auto', nextNodeId: next },
+      });
+    });
+  }
+  nodes.push({
+    kind: 'clip',
+    nodeId: 'clip.truth',
+    clipKey: 'TRUTH',
+    exit: { kind: 'ending', endingId: 'truth' },
+  });
+  return LockableInteractiveStoryDraftContentSchema.parse({
+    ...base,
+    graph: { entryNodeId: 'clip.hub0', nodes },
+  });
+}
+
 function frozenAsset(index: number, durationMs: number): FrozenStoryVideoAsset {
   return {
     assetId: `0197f4a2-1000-7000-8000-${index.toString().padStart(12, '0')}`,
@@ -479,6 +526,71 @@ describe('compileStoryBuild', () => {
       durationMinMs: 12_000,
       durationMaxMs: 14_000,
     });
+  });
+
+  /**
+   * The reason path enumeration was replaced. A story that offers a choice per
+   * scene multiplies out: eight 3-way choices whose branches all reconverge is
+   * 6,561 distinct routes through only 25 nodes, which used to trip a 10,000-route
+   * safety budget and fail the compile on a graph that is perfectly well-formed.
+   * The counts here are exact, so this also pins that summing beats enumerating.
+   */
+  it('reports a combinatorial route count without a safety budget to blow', () => {
+    const CHOICES = 8;
+    const draft = wideChoiceDraft(CHOICES);
+    const input = compilerInput(draft);
+    input.videos = input.videos.map((video, index) => ({
+      ...video,
+      asset: frozenAsset(index + 1, 1_000),
+    }));
+
+    const compiled = compileStoryBuild(input);
+
+    expect(compiled.diagnostics).toEqual([]);
+    // 3^8 routes, and every route walks hub + one branch per round, plus the end.
+    expect(compiled.pathReport.enumeratedPathCount).toBe(3 ** CHOICES);
+    expect(compiled.pathReport.durationMinMs).toBe((CHOICES * 2 + 1) * 1_000);
+    expect(compiled.pathReport.durationMaxMs).toBe((CHOICES * 2 + 1) * 1_000);
+    expect(compiled.pathReport.reachableEndingIds).toEqual(['truth']);
+  });
+
+  /**
+   * A dead branch contributes no route, so it must not contribute a duration
+   * either. Treating its absent runtime as 0 ms would drag durationMinMs down to
+   * whatever the live branch costs minus the dead one — silently wrong, and
+   * invisible because the build still succeeds.
+   */
+  it('excludes a dead branch from the duration span rather than scoring it 0 ms', () => {
+    const draft = choiceDraft();
+    const broken = {
+      ...draft,
+      graph: {
+        ...draft.graph,
+        nodes: draft.graph.nodes.filter((node) => node.nodeId !== 'clip.echo'),
+      },
+    } as typeof draft;
+    const input = compilerInput(broken);
+    const durations = new Map([
+      ['clip.start', 5_000],
+      ['clip.truth', 7_000],
+    ]);
+    input.videos = input.videos.map((video, index) => ({
+      ...video,
+      asset: frozenAsset(index + 1, durations.get(video.graphNodeId) as number),
+    }));
+
+    const compiled = compileStoryBuild(input);
+
+    // The dead branch is reported, not absorbed. Deleting the node drops it from
+    // the scope selection too, so the scope check is what names it.
+    expect(compiled.diagnostics.map((item) => item.code)).toContain(
+      'STORY_BUILD_ROUTE_OUTSIDE_SCOPE',
+    );
+    // One surviving route: start + truth. Never 5_000 on its own.
+    expect(compiled.pathReport.enumeratedPathCount).toBe(1);
+    expect(compiled.pathReport.durationMinMs).toBe(12_000);
+    expect(compiled.pathReport.durationMaxMs).toBe(12_000);
+    expect(compiled.pathReport.reachableEndingIds).toEqual(['truth']);
   });
 
   /**

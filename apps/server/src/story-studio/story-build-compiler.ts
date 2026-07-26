@@ -22,10 +22,6 @@ import {
   type StoryExperienceMediaIdentity,
 } from './story-experience-manifest-compiler';
 
-const MAX_ENUMERATED_PATHS = 10_000;
-const MAX_EXPLORED_PATH_STATES = 10_000;
-const MAX_PATH_STEPS = 2_000;
-
 export interface FrozenStoryVideoAsset {
   assetId: string;
   variantId: string;
@@ -78,11 +74,6 @@ export interface StoryBuildCompilerResult {
   pathReport: StoryBuildPathReportDto;
   runtime: ExperienceRuntimeManifest | null;
   includedGraphNodeIds: string[];
-}
-
-interface EnumeratedPath {
-  endingId: string;
-  durationMs: number;
 }
 
 /**
@@ -162,23 +153,20 @@ export function compileStoryBuild(
     .sort((left, right) => left.graphNodeId.localeCompare(right.graphNodeId));
   includedVideos.forEach((video) => validateFrozenVideo(video, diagnostics));
 
-  const enumeration = enumeratePaths(
+  const analysis = analyzePaths(
     entryNodeId,
     nodes,
     videos,
     selection,
     diagnostics,
   );
-  const durations = enumeration.paths.map((path) => path.durationMs);
   const pathReport: StoryBuildPathReportDto = {
-    enumeratedPathCount: enumeration.paths.length,
-    reachableEndingIds: [
-      ...new Set(enumeration.paths.map((path) => path.endingId)),
-    ].sort(),
+    enumeratedPathCount: analysis.pathCount,
+    reachableEndingIds: [...analysis.endingIds].sort(),
     unreachableNodeIds,
-    ambiguousPathCount: enumeration.ambiguousPathCount,
-    durationMinMs: durations.length > 0 ? Math.min(...durations) : 0,
-    durationMaxMs: durations.length > 0 ? Math.max(...durations) : 0,
+    ambiguousPathCount: analysis.ambiguousPathCount,
+    durationMinMs: analysis.durationMinMs ?? 0,
+    durationMaxMs: analysis.durationMaxMs ?? 0,
   };
   if (pathReport.reachableEndingIds.length === 0) {
     diagnostics.push(
@@ -501,7 +489,48 @@ function detectStructuralCycles(
   if (entryNodeId) visit(entryNodeId);
 }
 
-function enumeratePaths(
+/** Per-node roll-up: what every complete route *from this node onward* looks like. */
+interface NodePathFacts {
+  /** Distinct complete routes from here to any ending. 0 means dead end. */
+  pathCount: number;
+  endingIds: ReadonlySet<string>;
+  /**
+   * Shortest / longest remaining runtime, this node's own clip included. Null
+   * when `pathCount === 0` — a dead end must not read as a 0 ms route, which is
+   * exactly what would happen if these defaulted to zero.
+   */
+  durationMinMs: number | null;
+  durationMaxMs: number | null;
+}
+
+const DEAD_END: NodePathFacts = {
+  pathCount: 0,
+  endingIds: new Set(),
+  durationMinMs: null,
+  durationMaxMs: null,
+};
+
+/**
+ * Path facts for the whole selection, computed over the graph instead of by
+ * walking every route through it.
+ *
+ * The report only ever needed three scalars — shortest runtime, longest runtime,
+ * and which endings are reachable — but this used to materialise every distinct
+ * path to derive them. Route count is the *product* of the branch factors, so a
+ * story that offers a choice per scene explodes: nine 3-to-4-way choices over 55
+ * nodes is 46,656 routes, which blew the old safety budget and reported
+ * PATH_LIMIT_EXCEEDED on a graph that is perfectly well-formed.
+ *
+ * Memoising per node makes it one pass over nodes and edges: each node resolves
+ * once and every route through it reuses the answer. The count stays exact — it
+ * is summed, never enumerated — so the report is unchanged while the work stops
+ * being exponential. There is deliberately no budget left to exceed.
+ *
+ * Dead-end diagnostics are still emitted from here (route out of scope, missing
+ * target, scene with no continuation), deduplicated because a bad node is now
+ * visited once rather than once per route through it.
+ */
+function analyzePaths(
   entryNodeId: string | null,
   nodes: ReadonlyMap<
     string,
@@ -510,45 +539,29 @@ function enumeratePaths(
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
   selection: ReadonlySet<string>,
   diagnostics: StoryBuildDiagnosticDto[],
-): { paths: EnumeratedPath[]; ambiguousPathCount: number } {
+): NodePathFacts & { ambiguousPathCount: number } {
   if (!entryNodeId || !selection.has(entryNodeId)) {
-    return { paths: [], ambiguousPathCount: 0 };
+    return { ...DEAD_END, ambiguousPathCount: 0 };
   }
-  const paths: EnumeratedPath[] = [];
-  let explored = 0;
-  let aborted = false;
   const reported = new Set<string>();
   const reportOnce = (item: StoryBuildDiagnosticDto) => {
-    const key = `${item.code}\u0000${item.entityId ?? ''}\u0000${item.message}`;
+    const key = [item.code, item.entityId ?? '', item.message].join(' ');
     if (reported.has(key)) return;
     reported.add(key);
     diagnostics.push(item);
   };
-  const walk = (
-    nodeId: string,
-    durationMs: number,
-    active: ReadonlySet<string>,
-    steps: number,
-  ): void => {
-    if (aborted) return;
-    explored += 1;
-    if (
-      explored > MAX_EXPLORED_PATH_STATES ||
-      paths.length >= MAX_ENUMERATED_PATHS
-    ) {
-      aborted = true;
-      reportOnce(
-        diagnostic(
-          'error',
-          'STORY_BUILD_PATH_LIMIT_EXCEEDED',
-          'Path exploration exceeded the compiler safety budget.',
-          'revision',
-          nodeId,
-        ),
-      );
-      return;
-    }
-    if (steps > MAX_PATH_STEPS || active.has(nodeId)) return;
+
+  const memo = new Map<string, NodePathFacts>();
+  const onStack = new Set<string>();
+
+  const factsFor = (nodeId: string): NodePathFacts => {
+    const cached = memo.get(nodeId);
+    if (cached) return cached;
+    // A cycle is already reported as STORY_BUILD_GRAPH_CYCLE by the reachability
+    // pass, and route counts are meaningless on one. Treating the back edge as a
+    // dead end only keeps this terminating; it is not a second opinion.
+    if (onStack.has(nodeId)) return DEAD_END;
+
     if (!selection.has(nodeId)) {
       reportOnce(
         diagnostic(
@@ -559,7 +572,7 @@ function enumeratePaths(
           nodeId,
         ),
       );
-      return;
+      return DEAD_END;
     }
     const node = nodes.get(nodeId);
     if (!node) {
@@ -572,44 +585,82 @@ function enumeratePaths(
           nodeId,
         ),
       );
-      return;
+      return DEAD_END;
     }
-    const nextActive = new Set(active).add(nodeId);
-    const nextDuration =
-      durationMs +
-      (node.kind === 'clip'
+
+    onStack.add(nodeId);
+    const selfMs =
+      node.kind === 'clip'
         ? (videos.get(node.nodeId)?.asset?.durationMs ?? 0)
-        : 0);
+        : 0;
+
+    let facts: NodePathFacts;
     if (node.exit.kind === 'ending') {
-      paths.push({ endingId: node.exit.endingId, durationMs: nextDuration });
-      return;
-    }
-    if (node.exit.kind === 'choice') {
-      node.exit.choices.forEach((choice) => {
-        walk(choice.nextNodeId, nextDuration, nextActive, steps + 1);
-      });
-      return;
-    }
-    if (node.exit.kind === 'checkpoint') {
-      walk(node.exit.nextNodeId, nextDuration, nextActive, steps + 1);
-      return;
-    }
-    if (!node.exit.nextNodeId) {
-      reportOnce(
-        diagnostic(
-          'error',
-          'STORY_BUILD_SCENE_CONTINUATION_MISSING',
-          `Scene ${node.nodeId} has no next step.`,
-          'revision',
-          node.nodeId,
-        ),
+      facts = {
+        pathCount: 1,
+        endingIds: new Set([node.exit.endingId]),
+        durationMinMs: selfMs,
+        durationMaxMs: selfMs,
+      };
+    } else {
+      const successors: string[] = [];
+      if (node.exit.kind === 'choice') {
+        node.exit.choices.forEach((choice) => {
+          successors.push(choice.nextNodeId);
+        });
+      } else if (node.exit.kind === 'checkpoint') {
+        successors.push(node.exit.nextNodeId);
+      } else if (node.exit.nextNodeId) {
+        successors.push(node.exit.nextNodeId);
+      } else {
+        reportOnce(
+          diagnostic(
+            'error',
+            'STORY_BUILD_SCENE_CONTINUATION_MISSING',
+            `Scene ${node.nodeId} has no next step.`,
+            'revision',
+            node.nodeId,
+          ),
+        );
+      }
+      facts = combineSuccessorFacts(
+        successors.map((next) => factsFor(next)),
+        selfMs,
       );
-      return;
     }
-    walk(node.exit.nextNodeId, nextDuration, nextActive, steps + 1);
+    onStack.delete(nodeId);
+    memo.set(nodeId, facts);
+    return facts;
   };
-  walk(entryNodeId, 0, new Set(), 0);
-  return { paths, ambiguousPathCount: 0 };
+
+  return { ...factsFor(entryNodeId), ambiguousPathCount: 0 };
+}
+
+/** Fold successor roll-ups into this node's, adding this node's own runtime. */
+function combineSuccessorFacts(
+  parts: readonly NodePathFacts[],
+  selfMs: number,
+): NodePathFacts {
+  const live = parts.filter((part) => part.pathCount > 0);
+  if (live.length === 0) return DEAD_END;
+  const endingIds = new Set<string>();
+  let pathCount = 0;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  live.forEach((part) => {
+    // Clamp so a pathological graph reports a huge count rather than drifting
+    // out of the exact-integer range.
+    pathCount = Math.min(Number.MAX_SAFE_INTEGER, pathCount + part.pathCount);
+    part.endingIds.forEach((id) => endingIds.add(id));
+    min = Math.min(min, part.durationMinMs ?? 0);
+    max = Math.max(max, part.durationMaxMs ?? 0);
+  });
+  return {
+    pathCount,
+    endingIds,
+    durationMinMs: selfMs + min,
+    durationMaxMs: selfMs + max,
+  };
 }
 
 function compileIntermediateRelease(
