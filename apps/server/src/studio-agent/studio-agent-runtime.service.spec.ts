@@ -30,7 +30,10 @@ const GRANDCHILD_RUN_ID = '019f8c10-0000-7000-8000-00000000000e';
 const ACTION_ID = '019f8c10-0000-7000-8000-00000000000f';
 const APPROVAL_ID = '019f8c10-0000-7000-8000-000000000010';
 const CURRENT_POLICY_ID = '019f8c10-0000-7000-8000-000000000011';
-const NOW = new Date('2026-07-24T12:00:00.000Z');
+// Relative to the real clock on purpose: the runtime compares budget deadlines
+// against `new Date()`, so a hardcoded NOW turns every fixture into a test that
+// passes until that calendar date and then fails on its own.
+const NOW = new Date();
 
 function testPermissionPolicy(revision = 1) {
   return {
@@ -86,7 +89,7 @@ function testBudget(overrides: Record<string, unknown> = {}) {
     imageTokenReserveUnits: 8_192,
     minOutputTokenUnitsPerStep: 256,
     maxOutputTokenUnitsPerStep: 8_192,
-    deadlineAt: new Date('2026-07-25T12:00:00.000Z'),
+    deadlineAt: new Date(NOW.getTime() + 24 * 60 * 60 * 1000),
     createdAt: NOW,
     ...overrides,
   };
