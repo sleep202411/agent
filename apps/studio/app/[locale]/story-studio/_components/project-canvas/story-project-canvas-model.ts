@@ -112,8 +112,19 @@ export function buildStoryCanvasModel(
     if (node.kind === "clip") clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
   });
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
+  // `storyBible.endings` is draft-level — one list for the whole work — while a
+  // canvas shows ONE chapter. Projecting all of them put every other chapter's
+  // endings on this canvas as cards nothing could ever connect to, which reads
+  // as a graph full of orphans. Only the endings this chapter actually exits to
+  // belong here.
+  const chapterEndingIds = new Set(
+    content.graph.nodes.flatMap((node) => (node.exit.kind === "ending" ? [node.exit.endingId] : []))
+  );
+  const chapterEndings = content.storyBible.endings.filter((ending) =>
+    chapterEndingIds.has(ending.id)
+  );
   const endingCanvasIds = new Map(
-    content.storyBible.endings.map((ending) => [ending.id, syntheticEndingNodeId(ending.id)])
+    chapterEndings.map((ending) => [ending.id, syntheticEndingNodeId(ending.id)])
   );
   let clipOrdinal = 0;
   let textOrdinal = 0;
@@ -218,7 +229,7 @@ export function buildStoryCanvasModel(
     }),
   ];
 
-  content.storyBible.endings.forEach((ending, index) => {
+  chapterEndings.forEach((ending, index) => {
     const id = endingCanvasIds.get(ending.id)!;
     projections.push({
       id,
@@ -239,7 +250,7 @@ export function buildStoryCanvasModel(
   const characterProjections: CanvasProjection[] = content.storyBible.characters.map(
     (character, index) => ({
       id: characterCanvasNodeId(character.id),
-      order: content.graph.nodes.length * 2 + content.storyBible.endings.length + index,
+      order: content.graph.nodes.length * 2 + chapterEndings.length + index,
       data: {
         kind: "character",
         title: localizedText(character.name, locale, ""),
