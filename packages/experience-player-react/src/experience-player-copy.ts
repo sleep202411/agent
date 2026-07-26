@@ -29,6 +29,8 @@ export interface ExperiencePlayerCopy {
    * sees this.
    */
   emptySequence: string;
+  /** Shown while every reachable clip is fetched, before playback can begin. */
+  loadingMedia: string;
   noVisibleChoices: string;
   checkpointPrompt: string;
   checkpointDescription: string;

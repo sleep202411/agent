@@ -36,6 +36,7 @@ const copy = {
   checkpointDescription: "Confirm to continue.",
   continue: "Continue",
   emptySequence: "No footage yet",
+  loadingMedia: "Loading",
   regionLabel: "Experience player",
   video: {
     play: "Play",

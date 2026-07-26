@@ -30,6 +30,7 @@ export function ExperienceRuntimePlayer({
       mediaError: (assetId) => t("mediaError", { assetId }),
       videoLabel: () => t("videoLabel"),
       emptySequence: t("emptySequence"),
+      loadingMedia: t("loadingMedia"),
       noVisibleChoices: t("noVisibleChoices"),
       checkpointPrompt: t("checkpointPrompt"),
       checkpointDescription: t("checkpointDescription"),

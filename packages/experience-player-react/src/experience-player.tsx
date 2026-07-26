@@ -195,6 +195,13 @@ function ActiveExperienceRuntimePlayer({
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
   const playbackEnabledRef = useRef(false);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
+  const preload = useExperiencePreload(manifest, orientation);
+  // The cover is the only art that exists before any clip has played, so it is
+  // what the loading and title screen should stand on — otherwise the viewer
+  // waits on a black rectangle. Absent cover simply falls back to that.
+  const coverUri = manifest.metadata.coverAssetId
+    ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
+    : undefined;
   const experienceProfile = manifest.metadata.experienceProfile ?? "cinematic";
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
@@ -487,6 +494,14 @@ function ActiveExperienceRuntimePlayer({
               : "bg-[var(--experience-color-background,#111)]"
           )}
         >
+          {coverUri ? (
+            <img
+              src={coverUri}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10 size-full object-cover opacity-40"
+            />
+          ) : null}
           <div className="max-w-lg">
             {experienceProfile === "cinematic" ? (
               <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
@@ -509,10 +524,30 @@ function ActiveExperienceRuntimePlayer({
                 )}
               </p>
             ) : null}
+            {preload.total > 0 && !preload.done ? (
+              <div
+                className="mt-6 w-full"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={preload.total}
+                aria-valuenow={preload.loaded}
+                aria-label={copy.loadingMedia}
+              >
+                <div className="h-1 overflow-hidden rounded-full bg-white/12">
+                  <div
+                    className="h-full rounded-full bg-white/70 transition-[width] duration-300"
+                    style={{ width: `${Math.round((preload.loaded / preload.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs font-semibold text-white/45">
+                  {copy.loadingMedia} {preload.loaded}/{preload.total}
+                </p>
+              </div>
+            ) : null}
             <button
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
-              disabled={!theme || starting}
+              disabled={!theme || starting || !preload.done}
               onClick={() => void begin()}
             >
               <IconPlayerPlay className="size-4 fill-current" />
@@ -1282,6 +1317,72 @@ function resolvePlaybackLocale(
 
 function localize(value: ExperienceLocalizedText, locale: string, defaultLocale: string): string {
   return value[locale] ?? value[defaultLocale] ?? Object.values(value)[0] ?? "";
+}
+
+/**
+ * Warms every clip the experience can reach before it starts.
+ *
+ * An interactive film cuts on a choice, so a clip that has not been fetched
+ * shows as a stall exactly at the dramatic beat — and unlike a linear video
+ * there is no "next" to buffer ahead, because which clip comes next is not
+ * known until the viewer acts. Fetching all of them up front trades a wait the
+ * viewer understands (a bar, before anything begins) for stalls they cannot.
+ *
+ * Progress is per-clip rather than per-byte: `HTMLVideoElement` reports no total
+ * size, and a count of clips is both honest and monotonic. A clip that fails to
+ * load still counts — playback is not blocked on a warm cache, and the scene
+ * that needs it will surface its own error.
+ */
+function useExperiencePreload(
+  manifest: ExperienceRuntimeManifest,
+  orientation: ExperienceOrientation
+): { total: number; loaded: number; done: boolean } {
+  const uris = useMemo(() => {
+    const wanted = new Set<string>();
+    manifest.graph.nodes.forEach((node) => {
+      if (node.kind !== "scene") return;
+      node.renderers.forEach((renderer) => {
+        if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
+        const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+        if (!parsed.success) return;
+        parsed.data.sequence.forEach((clip) => {
+          const media = resolveVideoMedia(manifest.assets, clip.assetId, orientation);
+          if (media) wanted.add(media.variant.uri);
+        });
+      });
+    });
+    return [...wanted];
+  }, [manifest, orientation]);
+
+  const [loaded, setLoaded] = useState(0);
+  useEffect(() => {
+    setLoaded(0);
+    if (uris.length === 0) return;
+    let cancelled = false;
+    const elements: HTMLVideoElement[] = [];
+    const settle = () => {
+      if (!cancelled) setLoaded((current) => current + 1);
+    };
+    uris.forEach((uri) => {
+      const element = document.createElement("video");
+      element.preload = "auto";
+      element.muted = true;
+      // `canplaythrough` is the honest signal that this clip will not stall.
+      element.addEventListener("canplaythrough", settle, { once: true });
+      element.addEventListener("error", settle, { once: true });
+      element.src = uri;
+      elements.push(element);
+    });
+    return () => {
+      cancelled = true;
+      elements.forEach((element) => {
+        element.removeAttribute("src");
+        element.load();
+      });
+    };
+  }, [uris]);
+
+  return { total: uris.length, loaded, done: loaded >= uris.length };
 }
 
 function resolveVideoMedia(

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Gesture,
   MediaAnnouncer,
   MediaPlayer,
   MediaProvider,
@@ -182,8 +181,14 @@ export function ExperienceMediaPlayer({
 
 function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
   // Interactive-film playback is story-driven: no scrub bar, no time readout,
-  // no fullscreen chrome (the shell is already full-bleed). Tap toggles
-  // pause; the announcer keeps assistive tech informed.
+  // no fullscreen chrome (the shell is already full-bleed), and no pause.
+  //
+  // A tap used to toggle pause, which fights the medium: the surface is also
+  // where choices and anchored interactions are read, so the gesture that means
+  // "act on the story" and the gesture that means "stop the story" were the
+  // same one. A paused scene also stalls the exit that advances it, because
+  // advancement is driven by the clip ending. The announcer stays — assistive
+  // tech still needs to hear what playback is doing.
   return (
     <>
       <MediaAnnouncer
@@ -198,12 +203,6 @@ function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
           "Seek Forward": copy.seekForward,
           "Seek Backward": copy.seekBackward,
         }}
-      />
-      <Gesture
-        event="pointerup"
-        action="toggle:paused"
-        className="absolute inset-0 z-10"
-        aria-hidden="true"
       />
     </>
   );
