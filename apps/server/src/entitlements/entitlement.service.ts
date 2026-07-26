@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
   BillingMembershipPlanStatus,
   BillingSubjectType,
   BillingSubscriptionStatus,
   EntitlementGrantStatus,
+  WorkspaceType,
   type BillingMembershipPlan,
   type EntitlementGrant,
   type Prisma,
@@ -26,7 +27,11 @@ import {
   type MembershipBenefits,
 } from './membership-benefits';
 import type { QuotaPlanProfile, QuotaProfile } from '../quota/quota.types';
-import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
+import {
+  DEFAULT_TEAM_SEAT_POLICY,
+  PERSONAL_WORKSPACE_SEAT_POLICY,
+  type SeatPolicy,
+} from './seat-policy';
 
 /**
  * Plan key for the community membership (社区会员) — a SEPARATE access axis from
@@ -120,8 +125,9 @@ export class EntitlementService {
   /**
    * Resolve a workspace's seat policy from its OWN active team plan — NOT the
    * caller's personal plan (seats belong to the workspace subscription). Falls
-   * back to the owner-only default when there's no active team plan. The most
-   * generous active plan wins to be safe across upgrade/overlap windows.
+   * back to the workspace type's no-plan allowance when there's no active team
+   * plan. The most generous active plan wins to be safe across upgrade/overlap
+   * windows.
    */
   async resolveWorkspaceSeatPolicy(
     workspaceId: string,
@@ -142,7 +148,7 @@ export class EntitlementService {
       orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
       take: 5,
     });
-    if (grants.length === 0) return DEFAULT_TEAM_SEAT_POLICY;
+    if (grants.length === 0) return this.noPlanSeatPolicy(db, workspaceId);
 
     const plans = await db.billingMembershipPlan.findMany({
       where: {
@@ -151,7 +157,7 @@ export class EntitlementService {
         archivedAt: null,
       },
     });
-    if (plans.length === 0) return DEFAULT_TEAM_SEAT_POLICY;
+    if (plans.length === 0) return this.noPlanSeatPolicy(db, workspaceId);
 
     const best = plans.reduce((a, b) =>
       b.includedSeats > a.includedSeats ? b : a,
@@ -162,6 +168,27 @@ export class EntitlementService {
       maxSeats: best.maxSeats,
       seatOverageAllowed: best.seatOverageAllowed,
     };
+  }
+
+  /**
+   * Seat allowance for a workspace whose plan cannot answer: it holds no active
+   * grant, or its grants name no active plan row. Personal workspaces never buy a
+   * plan, so they land here permanently and get their own allowance. Teams land
+   * here too and routinely — creating one is ungated, so a team that never
+   * subscribed is as common as one whose plan lapsed. Read lazily on the caller's
+   * client so a workspace WITH a plan still costs the same two queries.
+   */
+  private async noPlanSeatPolicy(
+    db: PrismaService | Prisma.TransactionClient,
+    workspaceId: string,
+  ): Promise<SeatPolicy> {
+    const workspace = await db.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { type: true },
+    });
+    return workspace?.type === WorkspaceType.personal
+      ? PERSONAL_WORKSPACE_SEAT_POLICY
+      : DEFAULT_TEAM_SEAT_POLICY;
   }
 
   requiredPlan(input: string | null | undefined): EntitlementPlanKey | null {
@@ -277,6 +304,11 @@ export class EntitlementService {
    * Grant complimentary membership time (referral / admin) WITHOUT a billing
    * order. Idempotent on (sourceType, sourceId). STACKS: starts at the
    * subject's latest active grant end for the plan (or now) + durationDays.
+   *
+   * Refuses a plan the platform cannot back — see assertGrantablePlan. Order
+   * fulfillment enforces the same rule inside its own transaction
+   * (BillingService.activeMembershipPlanForKeyTx), so these two together are
+   * every path that creates an EntitlementGrant.
    */
   async grantComplimentary(input: {
     subjectType: BillingSubjectType;
@@ -287,12 +319,16 @@ export class EntitlementService {
     sourceId: string;
     metadata?: Record<string, unknown>;
   }): Promise<EntitlementGrant> {
+    // Store the key the same way resolution reads it, so the row the grant was
+    // validated against is the row that later resolves its benefits.
+    const planKey = this.normalizePlanKey(input.planKey);
+    await this.assertGrantablePlan(planKey, input.subjectType);
     const now = new Date();
     const latest = await this.prisma.entitlementGrant.findFirst({
       where: {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
-        planKey: input.planKey,
+        planKey,
         status: EntitlementGrantStatus.active,
       },
       orderBy: [{ endsAt: 'desc' }],
@@ -313,7 +349,7 @@ export class EntitlementService {
       create: {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
-        planKey: input.planKey,
+        planKey,
         status: EntitlementGrantStatus.active,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
@@ -324,6 +360,48 @@ export class EntitlementService {
       // Idempotent: re-granting the same source is a no-op.
       update: {},
     });
+  }
+
+  /**
+   * Refuse to mint a grant the plan table cannot back. Benefits come from the
+   * plan row alone, so a key without an active one resolves free-tier benefits
+   * (benefitsForPlanKey) — the holder would be a paid member on paper and a free
+   * user in every quota check. Only the plan table can answer which keys are
+   * backed: ENTITLEMENT_PLAN_RANK, pricing copy, the web locales and the admin
+   * dialog all name plan keys too, and any of them can drift from it.
+   *
+   * Reads PG directly, NOT the plan cache: the cache is a read-path latency
+   * optimisation, and a plan activated seconds ago must be grantable at once.
+   */
+  private async assertGrantablePlan(
+    planKey: string,
+    subjectType: BillingSubjectType,
+  ): Promise<void> {
+    const plan = await this.prisma.billingMembershipPlan.findUnique({
+      where: { planKey },
+      select: { status: true, archivedAt: true, subjectType: true },
+    });
+    if (
+      !plan ||
+      plan.archivedAt ||
+      plan.status !== BillingMembershipPlanStatus.active
+    ) {
+      const state = !plan
+        ? 'no such row'
+        : plan.archivedAt
+          ? 'archived'
+          : `status=${plan.status}`;
+      throw new ConflictException({
+        code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE',
+        msg: `Membership plan "${planKey}" has no active billing_membership_plans row (${state}), so the grant would resolve free-tier benefits. Activate the plan row first.`,
+      });
+    }
+    if (plan.subjectType !== subjectType) {
+      throw new ConflictException({
+        code: 'MEMBERSHIP_PLAN_SUBJECT_MISMATCH',
+        msg: `Membership plan "${planKey}" is sold to a ${plan.subjectType} subject; grant it to a ${plan.subjectType}, not to a ${subjectType}.`,
+      });
+    }
   }
 
   // ─── plan-row cache (benefits source of truth) ─────────────────────────
@@ -373,6 +451,13 @@ export class EntitlementService {
    * plan legitimately without a row (DEFAULT_FREE_BENEFITS). Any other key
    * without an active row resolves to free benefits with a loud warning —
    * PG plan rows are the single benefits source of truth.
+   *
+   * No grant path can reach this any more (assertGrantablePlan +
+   * activeMembershipPlanForKeyTx both refuse such a key). It stays a read-path
+   * fallback for ONE case: a plan archived/deactivated while its grants are
+   * still live. Throwing there would 500 every request that resolves an
+   * entitlement — the whole product for that member — over an admin's plan-table
+   * edit, so the read path degrades and stays available instead.
    */
   private benefitsForPlanKey(
     planKey: string,

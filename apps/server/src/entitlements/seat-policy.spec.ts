@@ -1,5 +1,6 @@
 import {
   DEFAULT_TEAM_SEAT_POLICY,
+  PERSONAL_WORKSPACE_SEAT_POLICY,
   decideSeatAdmission,
   type SeatPolicy,
 } from './seat-policy';
@@ -27,9 +28,58 @@ describe('decideSeatAdmission', () => {
     }
   });
 
-  it('no-plan default (owner-only): allows the owner, blocks a second member', () => {
+  it('no-plan TEAM default (owner-only): allows the owner, blocks a second member', () => {
     expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 0).kind).toBe('allow');
     expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1).kind).toBe('block');
+  });
+
+  it('no-plan PERSONAL allowance: fills 5 seats, refuses the 6th member', () => {
+    for (let activeSeats = 0; activeSeats < 5; activeSeats += 1) {
+      expect(
+        decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, activeSeats).kind,
+      ).toBe('allow');
+    }
+    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 5).kind).toBe(
+      'block',
+    );
+  });
+
+  it('owner alone at a 1-seat cap: no member to remove, so the remedy is seats', () => {
+    // The ordinary team block, since creating a team needs no plan: the owner holds
+    // the only seat and cannot be removed, so "remove a member" would be advice
+    // nobody can act on.
+    const result = decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1);
+    if (result.kind !== 'block') throw new Error('expected a block');
+    expect(result.reason).toBe(
+      'This workspace is limited to 1 seat. That seat belongs to the workspace owner, so there is no member to remove — subscribe to a plan with more seats to add a member.',
+    );
+  });
+
+  it('at the cap with removable members, tells the owner to remove one', () => {
+    const result = decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 5);
+    if (result.kind !== 'block') throw new Error('expected a block');
+    expect(result.reason).toBe(
+      'This workspace is limited to 5 seats. Remove a member before adding another.',
+    );
+  });
+
+  it('OVER the cap (lapsed team plan, grandfathered members): removal is not the remedy', () => {
+    // The exact shape of the rejected copy: a lapsed team plan caps at 1 while 5
+    // grandfathered members keep their seats. Removing one leaves 4 — still over.
+    const result = decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 5);
+    if (result.kind !== 'block') throw new Error('expected a block');
+    expect(result.reason).toBe(
+      'This workspace is limited to 1 seat. 5 members already hold a seat, so removing one will not free any — restore the plan that granted them to add another member.',
+    );
+  });
+
+  it('names maxSeats, not the included count, when overage ran out', () => {
+    const result = decideSeatAdmission(
+      policy({ seatOverageAllowed: true, maxSeats: 5 }),
+      5,
+    );
+    if (result.kind !== 'block') throw new Error('expected a block');
+    expect(result.reason).toContain('limited to 5 seats');
   });
 
   it('allows free overage when seatOverageAllowed and no price is set', () => {

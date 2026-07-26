@@ -2,10 +2,15 @@ import {
   BillingMembershipPlanStatus,
   BillingSubjectType,
   EntitlementGrantStatus,
+  WorkspaceType,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { EntitlementService } from './entitlement.service';
 import { DEFAULT_FREE_BENEFITS } from './membership-benefits';
+import {
+  DEFAULT_TEAM_SEAT_POLICY,
+  PERSONAL_WORKSPACE_SEAT_POLICY,
+} from './seat-policy';
 
 const NOW = '2026-06-12T12:00:00.000Z';
 
@@ -243,6 +248,207 @@ describe('EntitlementService benefits resolution', () => {
     expect(snapshot.limits.queuePriority).toBe(1);
     expect(snapshot.limits.concurrentJobs).toBeNull();
     expect(snapshot.limits.queuedJobs).toBeNull();
+  });
+});
+
+describe('EntitlementService.grantComplimentary', () => {
+  const input = {
+    subjectType: BillingSubjectType.user,
+    subjectId: 'user-1',
+    planKey: 'pro',
+    durationDays: 30,
+    sourceType: 'admin_manual',
+    sourceId: 'source-1',
+  };
+
+  function grantPrismaMock(planRow: unknown) {
+    return {
+      billingMembershipPlan: {
+        findUnique: jest.fn().mockResolvedValue(planRow),
+      },
+      entitlementGrant: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn((args: { create: { planKey: string } }) => args.create),
+      },
+    };
+  }
+
+  it('grants against an active plan row on the same subject axis', async () => {
+    const prisma = grantPrismaMock(plan({ planKey: 'pro' }));
+    const service = new EntitlementService(prisma as never);
+
+    await service.grantComplimentary(input);
+
+    expect(prisma.entitlementGrant.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a plan key with no plan row instead of granting free benefits', async () => {
+    const prisma = grantPrismaMock(null);
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.grantComplimentary({ ...input, planKey: 'team_creator' }),
+    ).rejects.toMatchObject({
+      response: { code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE' },
+    });
+    expect(prisma.entitlementGrant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses an archived plan row', async () => {
+    const prisma = grantPrismaMock(
+      plan({
+        planKey: 'pro',
+        archivedAt: new Date('2026-07-01T00:00:00.000Z'),
+      }),
+    );
+    const service = new EntitlementService(prisma as never);
+
+    await expect(service.grantComplimentary(input)).rejects.toMatchObject({
+      response: { code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE' },
+    });
+  });
+
+  it('refuses a plan row that is not active yet', async () => {
+    const prisma = grantPrismaMock(
+      plan({ planKey: 'pro', status: BillingMembershipPlanStatus.draft }),
+    );
+    const service = new EntitlementService(prisma as never);
+
+    await expect(service.grantComplimentary(input)).rejects.toMatchObject({
+      response: { code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE' },
+    });
+  });
+
+  it('refuses a workspace-subject plan handed to a user subject', async () => {
+    const prisma = grantPrismaMock(
+      plan({
+        planKey: 'team',
+        productType: 'team_membership_plan',
+        subjectType: BillingSubjectType.workspace,
+      }),
+    );
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.grantComplimentary({ ...input, planKey: 'team' }),
+    ).rejects.toMatchObject({
+      response: { code: 'MEMBERSHIP_PLAN_SUBJECT_MISMATCH' },
+    });
+    expect(prisma.entitlementGrant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('validates and stores the normalized plan key', async () => {
+    const prisma = grantPrismaMock(plan({ planKey: 'pro' }));
+    const service = new EntitlementService(prisma as never);
+
+    await service.grantComplimentary({ ...input, planKey: '  Pro ' });
+
+    expect(prisma.billingMembershipPlan.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { planKey: 'pro' } }),
+    );
+    const upsertArgs = prisma.entitlementGrant.upsert.mock.calls[0]?.[0];
+    expect(upsertArgs?.create.planKey).toBe('pro');
+  });
+});
+
+describe('EntitlementService.resolveWorkspaceSeatPolicy', () => {
+  const WORKSPACE_ID = 'workspace-1';
+
+  function seatPrismaMock(input: {
+    type: WorkspaceType;
+    grants?: unknown[];
+    plans?: unknown[];
+  }) {
+    return {
+      entitlementGrant: {
+        findMany: jest.fn().mockResolvedValue(input.grants ?? []),
+      },
+      billingMembershipPlan: {
+        findMany: jest.fn().mockResolvedValue(input.plans ?? []),
+      },
+      workspace: {
+        findUnique: jest.fn().mockResolvedValue({ type: input.type }),
+      },
+    };
+  }
+
+  /** A team plan row: seats live on the plan, so they win over any fallback. */
+  function teamPlan(overrides: Record<string, unknown> = {}) {
+    return plan({
+      planKey: 'team',
+      productType: 'team_membership_plan',
+      subjectType: BillingSubjectType.workspace,
+      includedSeats: 12,
+      maxSeats: 12,
+      seatOverageAllowed: false,
+      ...overrides,
+    });
+  }
+
+  it('gives a personal workspace with no grant the provisional 5-seat allowance', async () => {
+    const prisma = seatPrismaMock({ type: WorkspaceType.personal });
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
+    ).resolves.toEqual(PERSONAL_WORKSPACE_SEAT_POLICY);
+  });
+
+  it('keeps a TEAM workspace with no grant owner-only', async () => {
+    const prisma = seatPrismaMock({ type: WorkspaceType.team });
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
+    ).resolves.toEqual(DEFAULT_TEAM_SEAT_POLICY);
+  });
+
+  it('branches on type for the other fallback too: grants naming no active plan', async () => {
+    const grants = [
+      grant({
+        subjectType: BillingSubjectType.workspace,
+        subjectId: WORKSPACE_ID,
+        planKey: 'team',
+      }),
+    ];
+    const personal = new EntitlementService(
+      seatPrismaMock({ type: WorkspaceType.personal, grants }) as never,
+    );
+    const team = new EntitlementService(
+      seatPrismaMock({ type: WorkspaceType.team, grants }) as never,
+    );
+
+    await expect(
+      personal.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
+    ).resolves.toEqual(PERSONAL_WORKSPACE_SEAT_POLICY);
+    await expect(
+      team.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
+    ).resolves.toEqual(DEFAULT_TEAM_SEAT_POLICY);
+  });
+
+  it('lets an active plan row set the seats, without reading the workspace type', async () => {
+    const prisma = seatPrismaMock({
+      type: WorkspaceType.personal,
+      grants: [
+        grant({
+          subjectType: BillingSubjectType.workspace,
+          subjectId: WORKSPACE_ID,
+          planKey: 'team',
+        }),
+      ],
+      plans: [teamPlan()],
+    });
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
+    ).resolves.toEqual({
+      planKey: 'team',
+      includedSeats: 12,
+      maxSeats: 12,
+      seatOverageAllowed: false,
+    });
+    expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
   });
 });
 
