@@ -11,12 +11,10 @@ import {
 } from "react";
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   EXPERIENCE_RENDERER_MAX_LAYER,
-  ExperienceCoreCheckpointRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
@@ -247,6 +245,12 @@ function ActiveExperienceRuntimePlayer({
         applyResult(operation());
         return true;
       } catch (error) {
+        // A late input is normal, not a fault. `<video>` fires `ended` on its own
+        // schedule, so one can land after the scene it belonged to is gone or
+        // after the experience finished; a queued rAF frame can do the same. The
+        // runtime is right to refuse it — but ending the viewer's session over it
+        // turns an ordinary race into "试玩无法继续". Discard and carry on.
+        if (isDiscardableLateInput(error)) return false;
         setRuntimeError(runtimeErrorMessage(error));
         return false;
       }
@@ -458,7 +462,7 @@ function ActiveExperienceRuntimePlayer({
 
       {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
         // Renderer overlays stack on the manifest's own `renderer.layer` as a raw
-        // zIndex — choice and checkpoint compile to 100 — so a Tailwind z-* on
+        // zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
         // this button puts it BEHIND the overlay it most needs to sit next to.
         // Stack above the widest band any manifest may declare instead.
         <div
@@ -524,26 +528,35 @@ function ActiveExperienceRuntimePlayer({
                 )}
               </p>
             ) : null}
-            {preload.total > 0 && !preload.done ? (
-              <div
-                className="mt-6 w-full"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={preload.total}
-                aria-valuenow={preload.loaded}
-                aria-label={copy.loadingMedia}
-              >
-                <div className="h-1 overflow-hidden rounded-full bg-white/12">
-                  <div
-                    className="h-full rounded-full bg-white/70 transition-[width] duration-300"
-                    style={{ width: `${Math.round((preload.loaded / preload.total) * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs font-semibold text-white/45">
-                  {copy.loadingMedia} {preload.loaded}/{preload.total}
-                </p>
-              </div>
-            ) : null}
+            {preload.total > 0 && !preload.done
+              ? // Percent, not "5/55": the clip count is production trivia, and a
+                // big number reads as a long wait before the viewer knows whether
+                // it is. Floor it so 100% is never shown while a clip is still
+                // loading.
+                (() => {
+                  const percent = Math.floor((preload.loaded / preload.total) * 100);
+                  return (
+                    <div
+                      className="mt-6 w-full"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={percent}
+                      aria-label={copy.loadingMedia}
+                    >
+                      <div className="h-1 overflow-hidden rounded-full bg-white/12">
+                        <div
+                          className="h-full rounded-full bg-white/70 transition-[width] duration-300"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-white/45">
+                        {copy.loadingMedia} {percent}%
+                      </p>
+                    </div>
+                  );
+                })()
+              : null}
             <button
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
@@ -645,7 +658,7 @@ function CoreRenderer({
     // A video scene with nothing to play is a preview Build of a work whose
     // footage is not attached yet. It stands in for the shot and then finishes
     // on the SAME outcome a real clip produces, so every exit downstream — auto,
-    // choice, checkpoint, ending — keeps working untouched.
+    // choice, ending — keeps working untouched.
     if (isEmptyVideoSequence(renderer)) {
       return (
         <EmptyVideoSequencePlaceholder
@@ -692,17 +705,6 @@ function CoreRenderer({
         locale={locale}
         copy={copy}
         onSelect={(choiceId) => onOutcome(renderer.instanceId, "choice-selected", { choiceId })}
-      />
-    );
-  }
-  if (renderer.rendererId === EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID) {
-    return (
-      <CoreCheckpointRenderer
-        renderer={renderer}
-        active={active}
-        open={open}
-        copy={copy}
-        onSelect={(actionId) => onOutcome(renderer.instanceId, actionId, {})}
       />
     );
   }
@@ -1112,53 +1114,6 @@ function CoreChoiceRenderer({
   );
 }
 
-function CoreCheckpointRenderer({
-  renderer,
-  active,
-  open,
-  copy,
-  onSelect,
-}: {
-  renderer: ExperienceRendererInstance;
-  active: boolean;
-  open: boolean;
-  copy: ExperiencePlayerCopy;
-  onSelect: (actionId: string) => void;
-}) {
-  const titleId = useId();
-  const config = ExperienceCoreCheckpointRendererConfigSchema.parse(renderer.config);
-  if (!active || (!config.initiallyOpen && !open)) return null;
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="absolute inset-0 flex items-end bg-linear-to-t from-black via-black/90 to-black/20 px-5 pt-24 pb-5 text-center sm:px-8 sm:pb-8"
-      style={{ zIndex: renderer.layer }}
-    >
-      <div className="mx-auto max-w-xl rounded-2xl bg-white/[0.1] p-5 backdrop-blur-2xl">
-        <p id={titleId} className="text-sm font-semibold text-white">
-          {copy.checkpointPrompt}
-        </p>
-        <p className="mt-1.5 text-xs leading-5 text-white/52">{copy.checkpointDescription}</p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {config.actionIds.map((actionId) => (
-            <button
-              key={actionId}
-              type="button"
-              className={`${PRIMARY_BUTTON} min-w-40`}
-              onClick={() => onSelect(actionId)}
-            >
-              {copy.continue}
-              <IconArrowRight className="size-4" />
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
   landscape: 16 / 9,
   portrait: 9 / 16,
@@ -1430,6 +1385,22 @@ function sequenceTimelineOffsetMs(
 function runtimeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown experience runtime error";
+}
+
+/**
+ * Runtime invariants that only mean "this input arrived too late to matter".
+ *
+ * Matched on the invariant `code` rather than the class, so a player bundled
+ * against a differently-resolved copy of the engine still recognises them.
+ */
+const DISCARDABLE_INPUT_CODES = new Set(["RUNTIME_NOT_STARTED"]);
+
+function isDiscardableLateInput(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== "ExperienceRuntimeInvariantError") {
+    return false;
+  }
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === "string" && DISCARDABLE_INPUT_CODES.has(code);
 }
 
 function themeStyle(theme: ExperienceThemeConfig): CSSProperties & Record<`--${string}`, string> {

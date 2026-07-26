@@ -19,8 +19,6 @@ const copy: ExperiencePlayerCopy = {
   mediaError: (assetId) => assetId,
   videoLabel: (rendererInstanceId) => rendererInstanceId,
   noVisibleChoices: "No visible choices",
-  checkpointPrompt: "Continue?",
-  checkpointDescription: "Confirm to continue.",
   continue: "继续",
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
@@ -46,7 +44,7 @@ function runtimeFixture(input: {
   experienceProfile?: "cinematic" | "narrative";
   completion: "continue" | "passive";
   rendererKind?: "text" | "video";
-  overlayKind?: "choice" | "checkpoint";
+  overlayKind?: "choice";
   videoFit?: "cover" | "contain" | "native";
   /**
    * Reproduces a manifest that was already published to the CDN, back when
@@ -115,18 +113,7 @@ function runtimeFixture(input: {
               commands: [{ commandType: "open" }],
             },
           ]
-        : input.overlayKind === "checkpoint"
-          ? [
-              {
-                rendererId: "core.checkpoint",
-                apiVersion: "1.0.0",
-                configSchemaVersion: "1.0.0",
-                requiredCapabilities: ["core.checkpoint"],
-                outcomes: [{ outcomeType: "checkpoint.continue" }],
-                commands: [{ commandType: "open" }],
-              },
-            ]
-          : []),
+        : []),
     ],
     assets: [
       {
@@ -235,20 +222,7 @@ function runtimeFixture(input: {
                     bindings: {},
                   },
                 ]
-              : input.overlayKind === "checkpoint"
-                ? [
-                    {
-                      instanceId: "checkpoint.primary",
-                      rendererId: "core.checkpoint",
-                      layer: 100,
-                      config: {
-                        actionIds: ["checkpoint.continue"],
-                        initiallyOpen: true,
-                      },
-                      bindings: {},
-                    },
-                  ]
-                : []),
+              : []),
           ],
           anchors: [],
           gestures: [],
@@ -383,25 +357,21 @@ describe("ExperiencePlayer core.text", () => {
     }
   );
 
-  it.each(["choice", "checkpoint"] as const)(
-    "keeps an initially-open text %s behind the start boundary",
-    (overlayKind) => {
-      const html = renderToStaticMarkup(
-        <ExperiencePlayer
-          runtime={runtimeFixture({
-            experienceProfile: "narrative",
-            completion: "passive",
-            overlayKind,
-          })}
-          locale="en-US"
-          copy={copy}
-          randomSeed={`core-text-${overlayKind}-start-gate-test`}
-        />
-      );
+  it("keeps an initially-open text choice behind the start boundary", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({
+          experienceProfile: "narrative",
+          completion: "passive",
+          overlayKind: "choice",
+        })}
+        locale="en-US"
+        copy={copy}
+        randomSeed="core-text-choice-start-gate-test"
+      />
+    );
 
-      expect(html).toContain(">Start<");
-      expect(html).not.toContain("Choose before start");
-      expect(html).not.toContain(copy.checkpointPrompt);
-    }
-  );
+    expect(html).toContain(">Start<");
+    expect(html).not.toContain("Choose before start");
+  });
 });

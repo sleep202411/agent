@@ -32,8 +32,6 @@ const copy = {
   mediaError: (assetId: string) => assetId,
   videoLabel: (rendererInstanceId: string) => rendererInstanceId,
   noVisibleChoices: "No visible choices",
-  checkpointPrompt: "Continue?",
-  checkpointDescription: "Confirm to continue.",
   continue: "Continue",
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
