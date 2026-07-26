@@ -16,7 +16,6 @@ describe('MembershipBenefitsSchema', () => {
   it('accepts "Infinity" markers and nullable job limits', () => {
     const parsed = MembershipBenefitsSchema.safeParse({
       ...DEFAULT_FREE_BENEFITS,
-      quotaTier: 'VIP3',
       imageDaily: 'Infinity',
       chatDaily: 'Infinity',
       concurrentJobs: null,

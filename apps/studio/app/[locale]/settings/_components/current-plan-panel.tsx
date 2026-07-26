@@ -17,7 +17,7 @@ export const myEntitlementQueryKey = ["billing", "my-entitlement"] as const;
  * The signed-in user's current plan + renews-on/cancel affordance. Replaces the
  * old "Manage plan → purchase dialog" stub that the FAQ pointed at as a manage
  * surface. The plan comes from the Nest entitlement snapshot; cancel + "renews
- * on" come from the active /aurora subscription (null for legacy VIP plans, in
+ * on" come from the active /aurora subscription (null when a plan was granted
  * which case we show the plan with no cancel button).
  */
 export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void }) {

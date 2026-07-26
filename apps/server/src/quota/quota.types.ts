@@ -6,17 +6,14 @@
  * Since the membership-benefits unification, QuotaService no longer
  * owns any limit numbers: every method receives a `QuotaProfile`
  * resolved from the PostgreSQL entitlement snapshot (plan row
- * `benefits` JSONB — see EntitlementService.quotaProfileFor). The
- * coarse `Tier` label survives only as a display/log label carried on
- * plan benefits (`quotaTier`).
+ * `benefits` JSONB — see EntitlementService.quotaProfileFor).
+ *
+ * There is no tier enum. The plan key IS the label — a second coarse
+ * enum only ever drifted from the plan lineup it was meant to summarize.
  */
 import type { QuotaDimension } from '@prisma/client';
 
 export type { QuotaDimension };
-
-/** Coarse quota-tier label. Display/log label only — never a limits key. */
-export const QUOTA_TIERS = ['Free', 'VIP1', 'VIP2', 'VIP3'] as const;
-export type Tier = (typeof QUOTA_TIERS)[number];
 
 /**
  * Per-dimension caps resolved from the entitlement snapshot.
@@ -34,7 +31,7 @@ export interface QuotaLimits {
 /** One plan's quota identity: key, coarse label, resolved caps. */
 export interface QuotaPlanProfile {
   planKey: string;
-  tier: Tier;
+  tier: string;
   limits: QuotaLimits;
 }
 
@@ -82,7 +79,7 @@ export interface QuotaSnapshot {
 }
 
 export interface QuotaPeek {
-  tier: Tier;
+  tier: string;
   /** Each consumable dimension's snapshot. */
   dimensions: Record<QuotaDimension, QuotaSnapshot>;
   /** Chat per-minute rate limit (separate from daily). */
@@ -144,11 +141,11 @@ export interface ConsumeRejected {
   resetAt: string;
   /**
    * Upgrade suggestion derived from billing_membership_plans rank
-   * ordering. `nextTier` keeps the historical wire name (coarse label);
-   * `nextPlanKey` identifies the actual plan; `nextTierLimit` is that
-   * plan's cap on this dimension (`-1` = unlimited).
+   * ordering. `nextTier` keeps the historical wire name and now carries the
+   * plan key itself; `nextPlanKey` is the same value under the honest name;
+   * `nextTierLimit` is that plan's cap on this dimension (`-1` = unlimited).
    */
-  nextTier: Tier | null;
+  nextTier: string | null;
   nextPlanKey: string | null;
   nextTierLimit: number | null;
 }

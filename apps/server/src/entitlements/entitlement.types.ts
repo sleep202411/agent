@@ -1,4 +1,4 @@
-import type { Tier } from '../quota/quota.types';
+import type { QuotaLimits } from '../quota/quota.types';
 
 export const ENTITLEMENT_POLICY_VERSION = '2026-07-19' as const;
 
@@ -8,16 +8,17 @@ export const ENTITLEMENT_POLICY_VERSION = '2026-07-19' as const;
  * exclusively on `billing_membership_plans.benefits` — this table
  * carries no numbers besides ordering.
  */
+/**
+ * Rank per plan KEY. Every key here MUST have an active
+ * `billing_membership_plans` row: without one, a grant reports a rank it cannot
+ * back with benefits, and the holder silently gets free limits.
+ */
 export const ENTITLEMENT_PLAN_RANK = {
   free: 0,
   basic: 10,
-  creator: 10,
   standard: 20,
   pro: 30,
-  studio: 40,
-  enterprise: 90,
   team: 110,
-  team_enterprise: 190,
 } as const;
 
 export type KnownEntitlementPlanKey = keyof typeof ENTITLEMENT_PLAN_RANK;
@@ -43,7 +44,6 @@ export interface EntitlementSnapshot {
   planKey: EntitlementPlanKey;
   rank: number;
   /** Coarse quota-tier label from the plan's benefits. */
-  quotaTier: Tier;
   source: EntitlementSource;
   status: 'active' | 'expired' | 'suspended';
   effectiveAt: string;

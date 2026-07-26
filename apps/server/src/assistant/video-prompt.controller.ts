@@ -67,7 +67,6 @@ export class VideoPromptController {
       'accept-language': req.headers['accept-language'] ?? 'zh-CN',
       'x-storyos-context': JSON.stringify({
         userId: user.userId,
-        userTier: await this.entitlements.quotaTierForUser(user),
       }),
     };
     const cookie = req.headers.cookie;

@@ -29,7 +29,6 @@ function grant(overrides: Record<string, unknown> = {}) {
 
 function benefits(overrides: Record<string, unknown> = {}) {
   return {
-    quotaTier: 'VIP3',
     queuePriority: 2,
     imageDaily: 'Infinity',
     videoDaily: 'Infinity',
@@ -97,7 +96,6 @@ describe('EntitlementService benefits resolution', () => {
 
     expect(snapshot.subject).toEqual({ type: 'user', id: 'user-1' });
     expect(snapshot.planKey).toBe('studio');
-    expect(snapshot.quotaTier).toBe('VIP3');
     expect(snapshot.rank).toBe(40);
     expect(snapshot.limits.queuePriority).toBe(2);
     expect(snapshot.limits.imageDaily).toBe(Number.POSITIVE_INFINITY);
@@ -145,7 +143,6 @@ describe('EntitlementService benefits resolution', () => {
 
     expect(snapshot.planKey).toBe('free');
     expect(snapshot.source).toBe('system_default');
-    expect(snapshot.quotaTier).toBe('Free');
     expect(snapshot.limits.chatDaily).toBe(DEFAULT_FREE_BENEFITS.chatDaily);
     expect(snapshot.limits.queuePriority).toBe(
       DEFAULT_FREE_BENEFITS.queuePriority,
@@ -160,7 +157,6 @@ describe('EntitlementService benefits resolution', () => {
     const snapshot = await service.resolveForUser(user(), { now: NOW });
 
     expect(snapshot.planKey).toBe('studio');
-    expect(snapshot.quotaTier).toBe('Free');
     expect(snapshot.limits.chatDaily).toBe(DEFAULT_FREE_BENEFITS.chatDaily);
   });
 
@@ -257,7 +253,6 @@ describe('EntitlementService quota profile', () => {
       planKey: 'basic',
       rank: 10,
       benefits: benefits({
-        quotaTier: 'VIP1',
         queuePriority: 5,
         imageDaily: 30,
         videoDaily: 4,
@@ -274,7 +269,6 @@ describe('EntitlementService quota profile', () => {
       planKey: 'standard',
       rank: 20,
       benefits: benefits({
-        quotaTier: 'VIP2',
         queuePriority: 4,
         imageDaily: 60,
         videoDaily: 10,
@@ -292,7 +286,7 @@ describe('EntitlementService quota profile', () => {
       productType: 'team_membership_plan',
       subjectType: BillingSubjectType.workspace,
       rank: 110,
-      benefits: benefits({ quotaTier: 'VIP3' }),
+      benefits: benefits({ quotaTier: 'pro' }),
     }),
   ];
 
@@ -303,11 +297,11 @@ describe('EntitlementService quota profile', () => {
     const profile = await service.quotaProfileForUser(user());
 
     expect(profile.planKey).toBe('free');
-    expect(profile.tier).toBe('Free');
+    expect(profile.tier).toBe('free');
     expect(profile.limits.chatDaily).toBe(30);
     expect(profile.upgrade).toMatchObject({
       planKey: 'basic',
-      tier: 'VIP1',
+      tier: 'basic',
     });
     expect(profile.upgrade?.limits.chatDaily).toBe(200);
   });
@@ -322,7 +316,7 @@ describe('EntitlementService quota profile', () => {
     const fromBasic = await service.quotaProfileForUser(user());
     expect(fromBasic.upgrade).toMatchObject({
       planKey: 'standard',
-      tier: 'VIP2',
+      tier: 'standard',
     });
 
     // standard (rank 20) has no higher USER plan sold — team (rank 110) is

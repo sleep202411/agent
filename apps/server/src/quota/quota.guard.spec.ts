@@ -21,7 +21,7 @@ describe('QuotaGuard debit receipts', () => {
   };
   const profile = {
     planKey: 'basic',
-    tier: 'VIP1' as const,
+    tier: 'basic' as const,
     limits: {
       imageDaily: 30,
       videoDaily: 4,
@@ -77,7 +77,7 @@ describe('QuotaGuard debit receipts', () => {
         userId: 'user-a',
         profile: {
           planKey: 'basic',
-          tier: 'VIP1',
+          tier: 'basic',
           limits: profile.limits,
         },
         dimension: 'chat',

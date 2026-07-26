@@ -5,9 +5,9 @@
  * current user. Components use this and never touch context directly.
  *
  * Returns a stable shape regardless of whether the snapshot is
- * unlimited (VIP3) or capped:
+ * unlimited (unlimited plan) or capped:
  *
- *   - `unlimited`  — VIP3 / no daily cap. Renders ∞ badge.
+ *   - `unlimited`  — no daily cap. Renders ∞ badge.
  *   - `used`       — count consumed today (Number, may be 0).
  *   - `limit`      — daily cap (Number.POSITIVE_INFINITY when unlimited).
  *   - `remaining`  — limit − used (or Infinity).

@@ -24,7 +24,6 @@ import type {
   QuotaLimits,
   QuotaProfile,
   QuotaWindow,
-  Tier,
 } from '../quota/quota.types';
 import { StudioAgentConfigService } from './studio-agent.config';
 
@@ -53,7 +52,9 @@ const STORED_LIMIT_SCHEMA = z.union([
 const StoredQuotaPlanSchema = z
   .object({
     planKey: z.string().min(1).max(160),
-    tier: z.enum(['Free', 'VIP1', 'VIP2', 'VIP3']),
+    // Plan key, not a tier enum: the coarse Java-era enum it used to validate
+    // is gone, and a persisted value only ever needs to be a plan key string.
+    tier: z.string().trim().min(1).max(64),
     limits: z
       .object({
         imageDaily: STORED_LIMIT_SCHEMA,
@@ -909,12 +910,12 @@ function restoreQuotaProfile(value: Prisma.JsonValue): QuotaProfile {
   const stored = StoredQuotaProfileSchema.parse(value);
   return {
     planKey: stored.planKey,
-    tier: stored.tier as Tier,
+    tier: stored.tier,
     limits: restoreLimits(stored.limits),
     upgrade: stored.upgrade
       ? {
           planKey: stored.upgrade.planKey,
-          tier: stored.upgrade.tier as Tier,
+          tier: stored.upgrade.tier,
           limits: restoreLimits(stored.upgrade.limits),
         }
       : null,

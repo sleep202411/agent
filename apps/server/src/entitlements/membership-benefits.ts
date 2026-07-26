@@ -13,7 +13,7 @@
  * benefits fails loud at resolution time.
  */
 import { z } from 'zod';
-import { QUOTA_TIERS, type QuotaLimits } from '../quota/quota.types';
+import type { QuotaLimits } from '../quota/quota.types';
 import type { EntitlementSnapshot } from './entitlement.types';
 
 /** Daily cap: non-negative integer, or the JSON-safe `"Infinity"` marker. */
@@ -26,8 +26,6 @@ const NullableJobLimitSchema = z.number().int().min(0).nullable();
 
 export const MembershipBenefitsSchema = z
   .object({
-    /** Coarse quota-tier label (display, logs, legacy wire `tier`). */
-    quotaTier: z.enum(QUOTA_TIERS),
     /** BullMQ priority — smaller = served first under contention. */
     queuePriority: z.number().int().min(0).max(100),
     imageDaily: DailyLimitSchema,
@@ -60,7 +58,6 @@ export type MembershipBenefits = z.infer<typeof MembershipBenefitsSchema>;
  * therefore the only benefits object defined in code.
  */
 export const DEFAULT_FREE_BENEFITS: MembershipBenefits = {
-  quotaTier: 'Free',
   queuePriority: 10,
   imageDaily: 5,
   videoDaily: 0,

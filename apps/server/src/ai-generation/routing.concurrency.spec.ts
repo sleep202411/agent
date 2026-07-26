@@ -24,7 +24,6 @@ function entitlement(
     subject: { type: 'user', id: 'user-1' },
     planKey: 'studio',
     rank: 40,
-    quotaTier: 'VIP3',
     source: 'billing_membership_plan',
     status: 'active',
     effectiveAt: NOW,

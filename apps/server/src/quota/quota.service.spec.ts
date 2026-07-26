@@ -7,7 +7,7 @@ import type { QuotaProfile } from './quota.types';
 
 const FREE_PROFILE: QuotaProfile = {
   planKey: 'free',
-  tier: 'Free',
+  tier: 'free',
   limits: {
     imageDaily: 5,
     videoDaily: 0,
@@ -18,7 +18,7 @@ const FREE_PROFILE: QuotaProfile = {
   },
   upgrade: {
     planKey: 'basic',
-    tier: 'VIP1',
+    tier: 'basic',
     limits: {
       imageDaily: 30,
       videoDaily: 4,
@@ -32,7 +32,7 @@ const FREE_PROFILE: QuotaProfile = {
 
 const VIP1_PROFILE: QuotaProfile = {
   planKey: 'basic',
-  tier: 'VIP1',
+  tier: 'basic',
   limits: {
     imageDaily: 30,
     videoDaily: 4,
@@ -264,7 +264,7 @@ describe('QuotaService strict Redis boundary', () => {
     ).resolves.toMatchObject({
       ok: false,
       reason: 'quota_exceeded',
-      nextTier: 'VIP1',
+      nextTier: 'basic',
       nextPlanKey: 'basic',
       nextTierLimit: 200,
     });
@@ -282,7 +282,7 @@ describe('QuotaService strict Redis boundary', () => {
           ...FREE_PROFILE,
           upgrade: {
             planKey: 'studio',
-            tier: 'VIP3',
+            tier: 'pro',
             limits: {
               ...FREE_PROFILE.limits,
               chatDaily: Number.POSITIVE_INFINITY,
@@ -294,7 +294,7 @@ describe('QuotaService strict Redis boundary', () => {
       }),
     ).resolves.toMatchObject({
       ok: false,
-      nextTier: 'VIP3',
+      nextTier: 'pro',
       nextPlanKey: 'studio',
       nextTierLimit: -1,
     });
@@ -326,7 +326,7 @@ describe('QuotaService strict Redis boundary', () => {
     expect(strictRedis.get).toHaveBeenCalledWith(
       expect.stringMatching(/^quota:user-a:chat:1m:/),
     );
-    expect(peek.tier).toBe('Free');
+    expect(peek.tier).toBe('free');
     expect(peek.dimensions.chat).toMatchObject({ used: 4, limit: 30 });
     expect(peek.chatPerMinute).toMatchObject({
       limit: 20,

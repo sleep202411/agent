@@ -443,7 +443,7 @@ describePostgres('CopilotStore PostgreSQL integration', () => {
     });
     await prisma.copilotQuotaChargeAttempt.update({
       where: { id: retry.turn.chargeAttemptId },
-      data: { tier: 'VIP1', status: CopilotQuotaChargeStatus.charged },
+      data: { tier: 'basic', status: CopilotQuotaChargeStatus.charged },
     });
 
     // A duplicate/late generation-one refund is scoped to its own Redis key
@@ -992,7 +992,7 @@ describePostgres('CopilotStore PostgreSQL integration', () => {
         status: CopilotQuotaChargeStatus.consume_pending,
       },
       data: {
-        tier: 'VIP1',
+        tier: 'basic',
         status: CopilotQuotaChargeStatus.charged,
       },
     });

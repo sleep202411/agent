@@ -40,7 +40,6 @@ export class DraftsProxyController {
     const context = {
       userId: user.userId,
       projectId,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
     const headers: Record<string, string> = {
       Accept: 'application/json',

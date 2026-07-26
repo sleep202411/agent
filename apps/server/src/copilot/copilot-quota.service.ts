@@ -19,7 +19,6 @@ import type {
   QuotaDebitReceipt,
   QuotaLimits,
   QuotaWindow,
-  Tier,
 } from '../quota/quota.types';
 import { EntitlementService } from '../entitlements';
 
@@ -408,10 +407,10 @@ export class CopilotQuotaService
       chargeAttemptId: string;
       turnId: string;
     },
-    requestedTier: Tier,
+    requestedTier: string,
   ): Promise<{
     status: 'consume_pending' | 'charged';
-    tier: Tier;
+    tier: string;
     window: QuotaWindow;
   }> {
     return this.prisma.$transaction(async (tx) => {
@@ -428,7 +427,7 @@ export class CopilotQuotaService
         }
         return {
           status: 'charged',
-          tier: parsePersistedTier(attempt.tier),
+          tier: attempt.tier,
           window: attemptWindow(attempt),
         };
       }
@@ -748,18 +747,6 @@ function quotaSettlementPending(): HttpException {
     },
     HttpStatus.CONFLICT,
   );
-}
-
-function parsePersistedTier(value: string): Tier {
-  if (
-    value === 'Free' ||
-    value === 'VIP1' ||
-    value === 'VIP2' ||
-    value === 'VIP3'
-  ) {
-    return value;
-  }
-  throw new Error('Invalid persisted Copilot quota tier.');
 }
 
 function assertCanonicalTurnIdentity(input: {

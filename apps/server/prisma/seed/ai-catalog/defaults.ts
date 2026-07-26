@@ -1481,7 +1481,7 @@ export const VIDEO_QUEUE_NAME = 'ai-video-generation';
 /**
  * `entitlementPolicy` factory — only `requiredPlan` varies. `freeUserVisible`
  * keeps the model in the public catalog; `providerSelectionPlan` gates manual
- * provider override behind VIP.
+ * provider override behind a paid plan.
  */
 export function buildEntitlementPolicy(
   requiredPlan: RequiredPlan,

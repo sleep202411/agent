@@ -8,7 +8,12 @@ import { MembershipGrantAdminService } from './membership-grant-admin.service';
 import type { PrismaService } from '../infra/db/db.module';
 import type { EntitlementService } from '../entitlements';
 
-const NOW = new Date('2026-07-17T12:00:00Z');
+// Relative to the real clock on purpose. This was a hard-coded
+// '2026-07-17T12:00:00Z' while the service reads the real clock, so every
+// fixture ended NOW+7d and the suite silently started failing once real time
+// passed 2026-07-24. Faking the clock is not an option here — the service
+// awaits, and fake timers stall its promises.
+const NOW = new Date();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function grantRow(overrides: Partial<EntitlementGrant> = {}): EntitlementGrant {
@@ -16,7 +21,7 @@ function grantRow(overrides: Partial<EntitlementGrant> = {}): EntitlementGrant {
     id: '01900000-0000-7000-8000-000000000001',
     subjectType: BillingSubjectType.user,
     subjectId: 'user-1',
-    planKey: 'studio',
+    planKey: 'pro',
     status: EntitlementGrantStatus.active,
     sourceType: 'admin_manual',
     sourceId: 'src-1',
@@ -64,13 +69,13 @@ describe('MembershipGrantAdminService', () => {
 
       await service.grant('admin-1', {
         userId: 'user-1',
-        planKey: 'studio',
+        planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
       });
       await service.grant('admin-1', {
         userId: 'user-1',
-        planKey: 'studio',
+        planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
       });
@@ -82,7 +87,7 @@ describe('MembershipGrantAdminService', () => {
       expect(first).toMatchObject({
         subjectType: BillingSubjectType.user,
         subjectId: 'user-1',
-        planKey: 'studio',
+        planKey: 'pro',
         durationDays: 7,
         sourceType: 'admin_manual',
         metadata: { note: '临时提并发', grantedBy: 'admin-1' },
@@ -95,7 +100,7 @@ describe('MembershipGrantAdminService', () => {
       entitlements.grantComplimentary.mockResolvedValue(grantRow());
       const view = await service.grant('admin-1', {
         userId: 'user-1',
-        planKey: 'studio',
+        planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
       });

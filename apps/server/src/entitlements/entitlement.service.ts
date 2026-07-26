@@ -25,11 +25,7 @@ import {
   parseMembershipBenefits,
   type MembershipBenefits,
 } from './membership-benefits';
-import type {
-  QuotaPlanProfile,
-  QuotaProfile,
-  Tier,
-} from '../quota/quota.types';
+import type { QuotaPlanProfile, QuotaProfile } from '../quota/quota.types';
 import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
 
 /**
@@ -40,17 +36,6 @@ import { DEFAULT_TEAM_SEAT_POLICY, type SeatPolicy } from './seat-policy';
  * they must never outrank (or downgrade) a compute plan.
  */
 export const COMMUNITY_MEMBERSHIP_PLAN_KEY = 'community_membership';
-
-/**
- * Legacy tier aliases still present in ai_service catalog rows'
- * `requiredPlan` values. This is catalog-value normalization ONLY — the
- * retired Java `userLevel` claim must never re-enter through here.
- */
-const CATALOG_TIER_ALIAS_TO_PLAN: Record<string, KnownEntitlementPlanKey> = {
-  VIP1: 'basic',
-  VIP2: 'standard',
-  VIP3: 'pro',
-};
 
 /**
  * Same spirit as the ai_service catalog cache: benefits edits made in the
@@ -186,8 +171,6 @@ export class EntitlementService {
     if (!normalized || normalized === 'none' || normalized === 'free') {
       return null;
     }
-    const catalogPlan = CATALOG_TIER_ALIAS_TO_PLAN[raw.toUpperCase()];
-    if (catalogPlan) return catalogPlan;
     return isKnownPlanKey(normalized) ? normalized : null;
   }
 
@@ -197,22 +180,6 @@ export class EntitlementService {
   ): boolean {
     if (!required) return true;
     return entitlement.rank >= rankForPlanKey(required);
-  }
-
-  quotaTierFor(entitlement: EntitlementSnapshot): Tier {
-    return entitlement.quotaTier;
-  }
-
-  /** One-call quota-tier resolution: PG grants → plan → benefits.quotaTier. */
-  async quotaTierForUser(
-    user: Pick<AuthUser, 'userId'>,
-    options?: { workspaceId?: string | null },
-  ): Promise<Tier> {
-    return this.quotaTierFor(
-      await this.resolveForUser(user, {
-        workspaceId: options?.workspaceId ?? null,
-      }),
-    );
   }
 
   queuePriorityFor(
@@ -231,7 +198,7 @@ export class EntitlementService {
   async quotaProfileFor(snapshot: EntitlementSnapshot): Promise<QuotaProfile> {
     return {
       planKey: snapshot.planKey,
-      tier: snapshot.quotaTier,
+      tier: snapshot.planKey,
       limits: {
         imageDaily: snapshot.limits.imageDaily,
         videoDaily: snapshot.limits.videoDaily,
@@ -444,7 +411,7 @@ export class EntitlementService {
     const benefits = this.planBenefits(next);
     return {
       planKey: next.planKey,
-      tier: benefits.quotaTier,
+      tier: next.planKey,
       limits: benefitsToQuotaLimits(benefits),
     };
   }
@@ -465,7 +432,6 @@ export class EntitlementService {
       subject: input.subject,
       planKey: input.planKey,
       rank: input.rank,
-      quotaTier: input.benefits.quotaTier,
       source: input.source,
       status: 'active',
       effectiveAt: input.effectiveAt,
@@ -603,7 +569,9 @@ export class EntitlementService {
   }
 
   private defaultPlanForRuntime(): EntitlementPlanKey {
-    return process.env.AUTH_DISABLED === 'true' ? 'studio' : 'free';
+    // Must be a plan key with a real plan row, or auth-disabled local runs
+    // silently resolve free benefits and nothing looks wrong.
+    return process.env.AUTH_DISABLED === 'true' ? 'pro' : 'free';
   }
 
   private normalizePlanKey(value: string): string {

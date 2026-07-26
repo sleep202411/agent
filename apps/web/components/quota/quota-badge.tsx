@@ -6,7 +6,7 @@
  *
  * States:
  *   - loading        → ghost-grey ── ─ ── shimmer dots, no number
- *   - unlimited      → "∞" + lightning icon, "VIP·queue-priority"
+ *   - unlimited      → "∞" + lightning icon, "queue-priority"
  *   - green (<60%)   → "3 / 5 张" muted bg
  *   - amber (60-80%) → "4 / 5 张" amber-tinted, no CTA yet
  *   - red (>=80%)    → "5 / 5 张" red-tinted, optional click → upgrade

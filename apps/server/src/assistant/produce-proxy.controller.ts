@@ -32,7 +32,6 @@ type ContextHeader = {
   worldId?: string;
   locale?: string;
   dialogLanguage?: string;
-  userTier?: string;
 };
 
 @Controller('produce')
@@ -86,7 +85,6 @@ export class ProduceProxyController {
       projectId,
       worldId,
       dialogLanguage: language,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
   }
 

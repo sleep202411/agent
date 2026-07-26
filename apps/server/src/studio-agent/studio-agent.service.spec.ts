@@ -395,7 +395,7 @@ describe('StudioAgentService root admission', () => {
     };
     const profile = {
       planKey: 'basic',
-      tier: 'VIP1' as const,
+      tier: 'basic' as const,
       limits: {
         imageDaily: 30,
         videoDaily: 4,

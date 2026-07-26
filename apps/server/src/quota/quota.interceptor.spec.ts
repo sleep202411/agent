@@ -29,7 +29,7 @@ describe('QuotaInterceptor refund ownership', () => {
     uploadMB: 1024,
     chatPerMinute: 40,
   };
-  const profile = { planKey: 'basic', tier: 'VIP1' as const, limits };
+  const profile = { planKey: 'basic', tier: 'basic' as const, limits };
   let quota: { refundFor: jest.Mock };
   let interceptor: QuotaInterceptor;
 

@@ -22,7 +22,7 @@
  *   ends. This keeps reconnect resilience (Redis has a "close enough" blob)
  *   without taking a SET + publish round-trip on every LLM token.
  *
- * TTL: 7 days per conversation (touch on every write). VIP tiers can bump
+ * TTL: 7 days per conversation (touch on every write). Paid plans can bump
  * via setConversationTtl(projectId, days) if we expose tier-aware writers.
  */
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';

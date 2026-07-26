@@ -173,7 +173,6 @@ export class MastraProxyController {
         body.workspaceContext.targetEpisodeCount > 0
           ? body.workspaceContext.targetEpisodeCount
           : undefined,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
 
     // Extract attachment text server-side, strip file parts. See
@@ -712,7 +711,6 @@ export class MastraProxyController {
       stylePainting: confirmProjectParams.stylePainting,
       shotsPerEpisode: confirmProjectParams.shotsPerEpisode,
       targetEpisodeCount: confirmProjectParams.targetEpisodeCount,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
     const agentHeaders: Record<string, string> = {
       'Content-Type': 'application/json',

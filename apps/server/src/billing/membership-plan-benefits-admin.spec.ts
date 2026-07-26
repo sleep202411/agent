@@ -81,7 +81,6 @@ describe('BillingService membership plan benefits admin', () => {
   it('writes benefits, stamps the admin, and busts the entitlement plan cache', async () => {
     const next = {
       ...DEFAULT_FREE_BENEFITS,
-      quotaTier: 'VIP1' as const,
       chatDaily: 250,
     };
     const result = await service.updateAdminMembershipPlanBenefits(

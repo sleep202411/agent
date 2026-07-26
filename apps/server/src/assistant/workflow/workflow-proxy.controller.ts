@@ -30,7 +30,6 @@ type ContextHeader = {
   worldId?: string;
   episodeId?: string;
   locale?: string;
-  userTier?: string;
 };
 
 @Controller('workflow')
@@ -75,7 +74,6 @@ export class WorkflowProxyController {
         typeof workspaceContext?.locale === 'string'
           ? workspaceContext.locale
           : undefined,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
   }
 

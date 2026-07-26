@@ -148,7 +148,7 @@ export interface ActiveSubscription {
 
 export interface MyEntitlement {
   entitlement: EntitlementSnapshot;
-  /** The active Nest subscription backing the plan, or null (e.g. a legacy VIP). */
+  /** The active Nest subscription backing the plan, or null when granted. */
   subscription: ActiveSubscription | null;
 }
 

@@ -4659,7 +4659,8 @@
     "plans": {
       "basic": "Basic",
       "standard": "Standard",
-      "pro": "Pro"
+      "pro": "Pro",
+      "team": "Team"
     },
     "benefits": {
       "bonusCredits": "Includes {value} credits",
@@ -7582,7 +7583,8 @@
     "share": "Share",
     "shareCopied": "Link copied",
     "shareFailed": "Copy failed",
-    "emptySequence": "No footage yet"
+    "emptySequence": "No footage yet",
+    "loadingMedia": "Loading footage"
   },
   "games": {
     "back": "Back to IP plaza",

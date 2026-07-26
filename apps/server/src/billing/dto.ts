@@ -1107,13 +1107,7 @@ export type BillingSubscriptionParams = z.infer<
 
 /** User-subject paid tiers an admin may hand out. Team/enterprise plans are
  *  workspace-subject and follow the workspace billing flow instead. */
-export const ADMIN_GRANTABLE_PLAN_KEYS = [
-  'basic',
-  'creator',
-  'standard',
-  'pro',
-  'studio',
-] as const;
+export const ADMIN_GRANTABLE_PLAN_KEYS = ['basic', 'standard', 'pro'] as const;
 
 export const GrantMembershipSchema = z.object({
   userId: z.string().trim().min(1).max(64),

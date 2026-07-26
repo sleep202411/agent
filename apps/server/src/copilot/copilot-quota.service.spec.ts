@@ -8,9 +8,9 @@ import type { QuotaService } from '../quota/quota.service';
 import type { QuotaProfile } from '../quota/quota.types';
 import { CopilotQuotaService } from './copilot-quota.service';
 
-const VIP1_PROFILE: QuotaProfile = {
+const BASIC_PROFILE: QuotaProfile = {
   planKey: 'basic',
-  tier: 'VIP1',
+  tier: 'basic',
   limits: {
     imageDaily: 30,
     videoDaily: 4,
@@ -21,7 +21,7 @@ const VIP1_PROFILE: QuotaProfile = {
   },
   upgrade: {
     planKey: 'standard',
-    tier: 'VIP2',
+    tier: 'standard',
     limits: {
       imageDaily: 60,
       videoDaily: 10,
@@ -140,7 +140,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
       copilotQuotaChargeAttempt: tx.copilotQuotaChargeAttempt,
     };
     entitlements = {
-      quotaProfileForUser: jest.fn().mockResolvedValue(VIP1_PROFILE),
+      quotaProfileForUser: jest.fn().mockResolvedValue(BASIC_PROFILE),
     };
     service = new CopilotQuotaService(
       quota as unknown as QuotaService,
@@ -156,7 +156,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
     expect(entitlements.quotaProfileForUser).toHaveBeenCalledWith(user, {
       workspaceId: null,
     });
-    expect(quota.checkChatRate).toHaveBeenCalledWith('user-a', VIP1_PROFILE, {
+    expect(quota.checkChatRate).toHaveBeenCalledWith('user-a', BASIC_PROFILE, {
       failureMode: 'closed',
     });
   });
@@ -184,7 +184,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
     const consumeCalls = quota.consume.mock.calls as unknown[][];
     const consumeInput = consumeCalls[0]?.[0];
     expect(consumeInput).toMatchObject({
-      profile: VIP1_PROFILE,
+      profile: BASIC_PROFILE,
       idempotencyKey: OPERATION_KEY,
       idempotencyTtlSeconds: 'persistent',
       failureMode: 'closed',
@@ -198,7 +198,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
       },
     });
     expect(attempt).toMatchObject({
-      tier: 'VIP1',
+      tier: 'basic',
       status: CopilotQuotaChargeStatus.charged,
     });
   });

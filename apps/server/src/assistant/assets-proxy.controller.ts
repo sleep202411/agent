@@ -33,7 +33,6 @@ type ContextHeader = {
   worldId?: string;
   episodeId?: string;
   locale?: string;
-  userTier?: string;
 };
 
 @Controller('assets')
@@ -73,7 +72,6 @@ export class AssetsProxyController {
       userId: user.userId,
       projectId: workspaceContext.projectId,
       worldId: workspaceContext.worldId,
-      userTier: await this.entitlements.quotaTierForUser(user),
     };
   }
 

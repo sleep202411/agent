@@ -4658,7 +4658,8 @@
     "plans": {
       "basic": "Basic · 基礎版",
       "standard": "Standard · 標準版",
-      "pro": "Pro · 專業版"
+      "pro": "Pro · 專業版",
+      "team": "團隊版"
     },
     "benefits": {
       "bonusCredits": "包含 {value} 積分",
@@ -7581,7 +7582,8 @@
     "share": "分享",
     "shareCopied": "連結已複製",
     "shareFailed": "複製失敗",
-    "emptySequence": "暫無影片"
+    "emptySequence": "暫無影片",
+    "loadingMedia": "正在載入影片"
   },
   "games": {
     "back": "返回 IP 廣場",

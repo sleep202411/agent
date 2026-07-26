@@ -131,7 +131,6 @@ export type BillingMembershipPlanRow = {
 
 /** Mirrors the server MembershipBenefitsSchema (stored/wire shape). */
 export type MembershipPlanBenefits = {
-  quotaTier: "Free" | "VIP1" | "VIP2" | "VIP3";
   queuePriority: number;
   imageDaily: number | "Infinity";
   videoDaily: number | "Infinity";

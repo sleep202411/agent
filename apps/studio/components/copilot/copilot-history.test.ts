@@ -176,7 +176,7 @@ describe("copilot stream error details", () => {
       used: 30,
       limit: 30,
       resetAt,
-      nextTier: "VIP1",
+      nextTier: "basic",
       nextTierLimit: 100,
     });
     expect(copilotStreamErrorDetails(new Error(raw))).toEqual({

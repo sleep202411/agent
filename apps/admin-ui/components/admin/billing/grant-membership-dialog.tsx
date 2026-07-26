@@ -45,13 +45,19 @@ interface MembershipGrant {
 }
 
 // 与服务端 ADMIN_GRANTABLE_PLAN_KEYS 一致；并发数来自 entitlement PLAN_CONFIG，
-// 写在标签里帮 admin 按需选档。
+// 写在标签里帮 admin 按需选档。并发数与定价页一致。
+//
+// 只列有 active billing_membership_plans 行的档位。发放一个没有计划行的 key
+// 会静默回落到 free 权益:管理员看到发放成功,用户拿到的却是免费档,唯一线索
+// 是一条服务端日志。加档位时必须先建计划行,并且标签上的并发数只能抄计划行,
+// 不能自己写。
+//
+// 注意:本文件之外的 "studio" 指产品族（Studio 产品 vs 社区产品）,与 plan key
+// 无关。
 const PLAN_OPTIONS = [
   { key: "basic", label: "basic — 基础版（并发 1）" },
-  { key: "creator", label: "creator — 创作者版（并发 1）" },
   { key: "standard", label: "standard — 标准版（并发 2）" },
   { key: "pro", label: "pro — 专业版（并发 3）" },
-  { key: "studio", label: "studio — 工作室版（并发 5）" },
 ] as const;
 
 const DURATION_PRESETS = [7, 30, 90] as const;
@@ -81,7 +87,7 @@ export function GrantMembershipDialog({
   onGranted?: () => void;
 }) {
   const [identifier, setIdentifier] = useState("");
-  const [planKey, setPlanKey] = useState<string>("studio");
+  const [planKey, setPlanKey] = useState<string>("pro");
   const [days, setDays] = useState("30");
   const [note, setNote] = useState("");
 
@@ -102,7 +108,7 @@ export function GrantMembershipDialog({
   useEffect(() => {
     if (!open) {
       setIdentifier("");
-      setPlanKey("studio");
+      setPlanKey("pro");
       setDays("30");
       setNote("");
       setUser(null);
@@ -114,7 +120,7 @@ export function GrantMembershipDialog({
     }
     const prefilled = initialIdentifier?.trim() ?? "";
     setIdentifier(prefilled);
-    setPlanKey("studio");
+    setPlanKey("pro");
     setDays("30");
     setNote("");
     setUser(null);

@@ -312,9 +312,9 @@ function MembershipPlansTable({
                 充值折扣 {formatBpsPercent(plan.topupDiscountBps)}
               </p>
               <p className="text-[12px] text-slate-500">
-                {String(plan.benefits?.quotaTier ?? "?")} · 图/日{" "}
-                {dailyText(plan.benefits?.imageDaily)} · 聊/日 {dailyText(plan.benefits?.chatDaily)}{" "}
-                · {priorityText(plan.benefits?.chatPerMinute)}/分钟
+                图/日 {dailyText(plan.benefits?.imageDaily)} · 聊/日{" "}
+                {dailyText(plan.benefits?.chatDaily)} · {priorityText(plan.benefits?.chatPerMinute)}
+                /分钟
               </p>
               <p className="text-[12px] text-slate-500">
                 并发 {limitText(plan.benefits?.concurrentJobs)} · 队列{" "}
@@ -647,7 +647,6 @@ function dailyText(value: unknown) {
 type CapDraft = { value: string; unlimited: boolean };
 
 type BenefitsDraft = {
-  quotaTier: MembershipPlanBenefits["quotaTier"];
   queuePriority: string;
   imageDaily: CapDraft;
   videoDaily: CapDraft;
@@ -695,11 +694,8 @@ function numberDraft(value: unknown, fallback: number): string {
 }
 
 function benefitsDraft(raw: Record<string, unknown>): BenefitsDraft {
-  const tier = raw.quotaTier;
   const features = (raw.features ?? {}) as Record<string, unknown>;
   return {
-    quotaTier:
-      tier === "Free" || tier === "VIP1" || tier === "VIP2" || tier === "VIP3" ? tier : "Free",
     queuePriority: numberDraft(raw.queuePriority, 10),
     imageDaily: capDraft(raw.imageDaily, 5),
     videoDaily: capDraft(raw.videoDaily, 0),
@@ -728,7 +724,6 @@ function capNumber(draft: CapDraft, label: string): number {
 
 function benefitsPayload(draft: BenefitsDraft): MembershipPlanBenefits {
   return {
-    quotaTier: draft.quotaTier,
     queuePriority: capNumber({ value: draft.queuePriority, unlimited: false }, "队列优先级"),
     imageDaily: draft.imageDaily.unlimited ? "Infinity" : capNumber(draft.imageDaily, "图片 / 日"),
     videoDaily: draft.videoDaily.unlimited ? "Infinity" : capNumber(draft.videoDaily, "视频 / 日"),
@@ -833,24 +828,6 @@ function MembershipPlanBenefitsForm({
       </p>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <FormLabel
-          label="配额档位标签"
-          help="仅作为展示 / 日志的粗粒度标签；实际限额以下方数值为准。"
-        >
-          <Select
-            value={draft.quotaTier}
-            onChange={(value) =>
-              setDraft((prev) =>
-                prev ? { ...prev, quotaTier: value as BenefitsDraft["quotaTier"] } : prev
-              )
-            }
-          >
-            <option value="Free">Free</option>
-            <option value="VIP1">VIP1</option>
-            <option value="VIP2">VIP2</option>
-            <option value="VIP3">VIP3</option>
-          </Select>
-        </FormLabel>
         <FormLabel label="队列优先级" help="BullMQ priority，数字越小越先执行。">
           <TextInput
             type="number"

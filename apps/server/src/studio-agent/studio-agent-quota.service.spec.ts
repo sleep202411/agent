@@ -22,7 +22,7 @@ const OPERATION_KEY = `studio-agent-charge:v1:${ATTEMPT_ID}`;
 
 const PROFILE: QuotaProfile = {
   planKey: 'basic',
-  tier: 'VIP1',
+  tier: 'basic',
   limits: {
     imageDaily: 30,
     videoDaily: 4,
@@ -33,7 +33,7 @@ const PROFILE: QuotaProfile = {
   },
   upgrade: {
     planKey: 'standard',
-    tier: 'VIP2',
+    tier: 'standard',
     limits: {
       imageDaily: 60,
       videoDaily: 10,

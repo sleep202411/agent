@@ -14,8 +14,6 @@
 export const QUOTA_DIMENSIONS = ["image", "chat", "workflow", "upload"] as const;
 export type QuotaDimension = (typeof QUOTA_DIMENSIONS)[number];
 
-export type Tier = "Free" | "VIP1" | "VIP2" | "VIP3";
-
 /** JSON-friendly limit: integer or the literal string "Infinity". */
 export type WireLimit = number | "Infinity";
 
@@ -35,7 +33,8 @@ export interface QuotaSnapshotWire {
 }
 
 export interface QuotaPeekWire {
-  tier: Tier;
+  /** Plan key. There is no separate tier enum — the plan key is the label. */
+  tier: string;
   dimensions: Record<QuotaDimension, QuotaSnapshotWire>;
   chatPerMinute: { limit: number; remaining: number; resetAt: string };
 }
