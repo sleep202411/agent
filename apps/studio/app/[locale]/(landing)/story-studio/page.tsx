@@ -5,13 +5,22 @@ import type { SiteRegion } from "@/app/_components/region-provider";
 import { getWebBaseUrl } from "@/lib/web-base";
 import { StoryProjectLibrary } from "../../(studio)/story-studio/_components/story-project-library";
 
-const JINLING_PLAYER_PATH_BY_REGION: Record<SiteRegion, string> = {
-  // Published Experience Runtime release in the global Java catalogue.
-  global: "/play/interactive-film/019f6e2b-3da1-74b8-b0e4-d816ca733ca9",
-  // The CN catalogue does not yet contain the formal release. Keep this Hero
-  // useful there by linking to the deployed frozen showcase instead of a 404.
-  cn: "/play/jinling-v2",
-};
+/**
+ * The Hero's primary button, in every region and locally.
+ *
+ * `/play/jinling-v2` is the self-contained frozen showcase, deployed with the
+ * web app itself, so it cannot be broken by a catalogue that lacks a release.
+ * It previously pointed, in the global region only, at
+ * `/play/interactive-film/019f6e2b-…` — a Story Project that was never
+ * published, so Java answered `game not found` and the button was dead from the
+ * day it was added. A Story Project id is not evidence of a release; only the
+ * Java catalogue is.
+ *
+ * The serial release of 入梦金陵 lives at
+ * `/play/interactive-film/019f993d-aecc-7020-b59f-3fec0fb7bfc6` and plays, but
+ * it is deliberately not what this Hero features.
+ */
+const JINLING_PLAYER_PATH = "/play/jinling-v2";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("storyStudio");
@@ -25,10 +34,7 @@ export default async function StoryStudioPage({ params }: { params: Promise<{ lo
   const host = requestHeaders.get("host") ?? "";
   const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
   const playerBase = isLocal ? "http://localhost:9527" : getWebBaseUrl(siteRegion);
-  // The local Story Project has no publication yet, so it cannot serve the
-  // global build's protected media through the local Aurora server.
-  const playerPath = isLocal ? "/play/jinling-v2" : JINLING_PLAYER_PATH_BY_REGION[siteRegion];
-  const playerHref = `${playerBase}/${locale}${playerPath}`;
+  const playerHref = `${playerBase}/${locale}${JINLING_PLAYER_PATH}`;
 
   return (
     <div className="relative min-h-screen bg-[#101112] text-white antialiased">
