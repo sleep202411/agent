@@ -612,6 +612,33 @@ export async function listStoryProjects(
 }
 
 /**
+ * The projects someone else invited you into, across every workspace.
+ *
+ * `listStoryProjects` is scoped to the workspace you are looking at, which is
+ * right for the switcher but hides a shared project: it lives in the inviter's
+ * workspace, not yours. Each summary carries its own `workspaceId`, so opening
+ * one is a switch plus a navigation — no resolve round-trip needed.
+ */
+export async function listJoinedStoryProjects(
+  query: {
+    format?: StoryFormat;
+    status?: StoryProjectStatus;
+    cursor?: string;
+    limit?: number;
+  } = {}
+): Promise<CursorPage<StoryProjectSummary>> {
+  const page = await api.get<CursorPage<StoryProjectSummary>>(
+    "/aurora/story-projects/shared-with-me",
+    { params: query }
+  );
+  if (!page || !Array.isArray(page.items)) {
+    throw new Error("Story Studio API returned an invalid project page.");
+  }
+  page.items.forEach(assertProjectSummary);
+  return page;
+}
+
+/**
  * Finalizes a direct Story Studio clip-video upload into one reusable,
  * workspace-owned original variant. The returned item can be passed directly
  * to the existing current-video CAS mutation.
@@ -707,6 +734,33 @@ export async function waitForStoryClipVideoUploadFinalization(
     current.error?.code ?? "STORY_VIDEO_FINALIZE_FAILED",
     current.error?.message ?? "The uploaded video could not be processed."
   );
+}
+
+/**
+ * The workspace a story project lives in — the one Story Studio read that is
+ * deliberately NOT workspace-scoped.
+ *
+ * A shared project link carries no workspace, so an invited member opens it with
+ * their own personal workspace active and every scoped read misses. This answers
+ * "which workspace should be active for this project?" so the studio can switch
+ * before loading it. The server only answers for a caller who can already reach
+ * the project and 404s for everyone else, so it never leaks a workspace id.
+ *
+ * No per-call workspace scope is sent. The ambient `x-fizz-workspace-id` that
+ * `api` attaches to every request still rides along — here it holds the
+ * invitee's own workspace, which is exactly the wrong answer — but the route
+ * declares no `@Headers` and never reads it, so the resolve is unaffected by
+ * whichever workspace happens to be active.
+ */
+export async function getStoryProjectWorkspace(projectId: string): Promise<string> {
+  const resolved = await api.get<{ workspaceId: string }>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/workspace`
+  );
+  const workspaceId = resolved?.workspaceId;
+  if (typeof workspaceId !== "string" || !workspaceId.trim()) {
+    throw new Error("Story Studio API returned an invalid project workspace.");
+  }
+  return workspaceId;
 }
 
 export async function getStoryWorkbench(

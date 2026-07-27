@@ -1666,7 +1666,10 @@
       "videoProgress": "{current}/{total} current videos",
       "textFirstWithoutVideo": "Text-first · video optional",
       "textFirstProgress": "Text-first story",
-      "updatedUnknown": "Update time unavailable"
+      "updatedUnknown": "Update time unavailable",
+      "tabAll": "All",
+      "tabJoined": "Shared with me",
+      "otherWorkspace": "Another workspace"
     },
     "metrics": {
       "references": "References",
@@ -1745,6 +1748,10 @@
       "private": "Private",
       "unlisted": "Unlisted",
       "public": "Public"
+    },
+    "projectWorkspace": {
+      "resolving": "Opening this story project…",
+      "switching": "Switching to the workspace this story belongs to…"
     },
     "canvas": {
       "back": "Back to Story Studio",

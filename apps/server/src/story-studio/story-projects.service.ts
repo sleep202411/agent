@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -18,6 +19,7 @@ import {
   StoryProjectStatus,
   StoryRevisionSource,
   WorkspaceMemberRole,
+  WorkspaceMemberStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -60,6 +62,7 @@ import {
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
+  type StoryProjectWorkspaceRefDto,
   type StoryRevisionDto,
   type StoryRevisionListQuery,
   type StoryRevisionSummaryDto,
@@ -335,6 +338,89 @@ export class StoryProjectsService {
             userId: user.userId,
             status: StoryProjectMemberStatus.active,
             removedAt: null,
+          },
+        },
+        ...(cursor
+          ? {
+              OR: [
+                { updatedAt: { lt: new Date(cursor.updatedAt) } },
+                {
+                  updatedAt: new Date(cursor.updatedAt),
+                  id: { lt: cursor.id },
+                },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      include: PROJECT_SUMMARY_INCLUDE,
+    });
+
+    const hasMore = rows.length > query.limit;
+    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) => this.toProjectSummary(row, user.userId)),
+      nextCursor:
+        hasMore && last
+          ? encodeCursor({
+              id: last.id,
+              updatedAt: last.updatedAt.toISOString(),
+            })
+          : null,
+    };
+  }
+
+  /**
+   * The projects someone was invited into — the second Story Studio read that
+   * is deliberately not workspace-scoped.
+   *
+   * `list` answers "what is in the workspace I am looking at", which is the
+   * right question for the workspace switcher but leaves a shared project
+   * undiscoverable: an invitee lands in their OWN workspace and the project
+   * they were added to lives in someone else's. This answers "what was I let
+   * into", across every tenant, so the studio can offer it without the invitee
+   * having to already know the link.
+   *
+   * "Joined" is `role != owner`. A project in your own workspace is one you
+   * own, so this can never restate what `list` already shows.
+   *
+   * Authorisation is the membership itself — every row returned is one the
+   * caller was explicitly granted — combined with the same tenant re-check
+   * `requireProject` applies: story membership never outlives the workspace
+   * seat, so a project whose workspace seat is gone must not be advertised as
+   * openable.
+   */
+  async listJoined(
+    user: AuthUser,
+    query: StoryProjectListQuery,
+  ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
+    const cursor = query.cursor
+      ? decodeCursor<ProjectCursor>(query.cursor, isProjectCursor)
+      : null;
+    const rows = await this.prisma.storyProject.findMany({
+      where: {
+        status: query.status,
+        format: query.format
+          ? query.format
+          : {
+              in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
+            },
+        members: {
+          some: {
+            userId: user.userId,
+            status: StoryProjectMemberStatus.active,
+            removedAt: null,
+            role: { not: StoryProjectMemberRole.owner },
+          },
+        },
+        workspace: {
+          members: {
+            some: {
+              userId: user.userId,
+              status: WorkspaceMemberStatus.active,
+            },
           },
         },
         ...(cursor
@@ -1453,6 +1539,47 @@ export class StoryProjectsService {
       references,
       latestBuild,
     };
+  }
+
+  /**
+   * Answer which workspace a project lives in. A shared project link carries no
+   * workspace, so the studio lands on the invitee's own tenant, every scoped
+   * read misses on {@link requireScopedProject}'s workspace comparison, and the
+   * canvas 404s; this read is what lets the studio switch to the owning tenant
+   * and retry.
+   *
+   * It is the one Story read not scoped by the caller's active workspace, so it
+   * must not widen anything: authorization is the very same `requireProject`
+   * gate every scoped read runs, which means the only id it can ever return is
+   * the home of a project the caller could already open once pointed at it.
+   *
+   * `allowArchived` mirrors {@link workbench}: an archived project still opens
+   * read-only, so a shared link to one has to resolve or the invitee would be
+   * parked on a 404 the switch could have cleared. A deleted project is not a
+   * case — `StoryProject` has no soft-delete, so its row is gone and the lookup
+   * below misses exactly like an unknown id.
+   */
+  async resolveWorkspace(
+    user: AuthUser,
+    projectId: string,
+  ): Promise<StoryProjectWorkspaceRefDto> {
+    try {
+      const access = await this.permissions.requireProject(
+        user.userId,
+        projectId,
+        'story.read',
+        { allowArchived: true },
+      );
+      return { workspaceId: access.project.workspaceId };
+    } catch (error) {
+      // Every denial has to look the same from outside. `requireProject` 403s
+      // when a story member has lost their seat in the owning tenant, and a 403
+      // on an id-shaped route confirms the project exists to whoever is asking.
+      if (error instanceof ForbiddenException) {
+        throw new NotFoundException(PROJECT_NOT_FOUND);
+      }
+      throw error;
+    }
   }
 
   private async requireScopedProject(

@@ -10,7 +10,9 @@ import {
   StoryProjectStatus,
   StoryRevisionSource,
   WorkspaceMemberRole,
+  WorkspaceMemberStatus,
 } from '@prisma/client';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -21,6 +23,7 @@ import {
   StoryProjectListQuerySchema,
   type InteractiveStoryDraftContent,
 } from './dto';
+import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
 
@@ -33,7 +36,13 @@ const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000005';
 const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
 const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000007';
 const MEDIA_VARIANT_ID = '0197f4a2-0800-7000-8000-000000000008';
+/** Someone else's tenant: where a shared project lives, never the invitee's. */
+const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
+const PROJECT_NOT_FOUND_BODY = {
+  code: 'STORY_PROJECT_NOT_FOUND',
+  message: 'Story project not found.',
+};
 
 function lockableDraft(): InteractiveStoryDraftContent {
   return {
@@ -321,6 +330,97 @@ async function apiError(operation: Promise<unknown>) {
   throw new Error('Expected operation to reject.');
 }
 
+/**
+ * Keeps the status alongside the body so a denial test fails loudly on a 403
+ * instead of quietly accepting any rejection.
+ */
+async function httpError(operation: Promise<unknown>) {
+  try {
+    await operation;
+  } catch (error) {
+    if (error instanceof HttpException) {
+      return {
+        status: error.getStatus(),
+        body: error.getResponse() as Record<string, unknown>,
+      };
+    }
+    throw error;
+  }
+  throw new Error('Expected operation to reject.');
+}
+
+type StoryProjectAccessQuery = {
+  where: {
+    id: string;
+    status?: StoryProjectStatus;
+    members?: { some: { userId: string } };
+  };
+};
+
+/**
+ * A resolver over the REAL permission services, with a prisma double that
+ * applies only the filters the caller actually sends — an absent filter is a
+ * filter Prisma does not apply, so an unscoped lookup finds the project the way
+ * it really would. That is what makes the denial cases below meaningful:
+ * mocking `requireProject` the way {@link serviceWith} does, or hard-coding the
+ * membership scope here, would make them pass by construction.
+ */
+function resolverWith(seats: {
+  storyRole: StoryProjectMemberRole | null;
+  workspaceRole: WorkspaceMemberRole | null;
+  status?: StoryProjectStatus;
+}) {
+  const status = seats.status ?? StoryProjectStatus.active;
+  const prisma = {
+    storyProject: {
+      findFirst: jest.fn(({ where }: StoryProjectAccessQuery) => {
+        if (where.id !== PROJECT_ID) return Promise.resolve(null);
+        if (where.status !== undefined && where.status !== status) {
+          return Promise.resolve(null);
+        }
+        if (
+          where.members !== undefined &&
+          (where.members.some.userId !== USER.userId ||
+            seats.storyRole === null)
+        ) {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve({
+          ...projectRow({ workspaceId: OWNER_WORKSPACE_ID, status }),
+          members: seats.storyRole === null ? [] : [{ role: seats.storyRole }],
+        });
+      }),
+    },
+    workspaceMember: {
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          seats.workspaceRole === null
+            ? null
+            : {
+                workspaceId: OWNER_WORKSPACE_ID,
+                userId: USER.userId,
+                role: seats.workspaceRole,
+              },
+        ),
+      ),
+    },
+  };
+  const writeGuard = {
+    assertHumanWriteAllowedEarly: jest.fn().mockResolvedValue(undefined),
+  };
+  const workspacePermissions = new WorkspacePermissionService(prisma as never);
+  return new StoryProjectsService(
+    prisma as never,
+    new StoryPermissionService(
+      prisma as never,
+      workspacePermissions,
+      writeGuard as never,
+    ),
+    workspacePermissions,
+    writeGuard as never,
+  );
+}
+
 describe('StoryProjectsService unified-story authoring boundary', () => {
   /**
    * A cover must be a STILL: the player paints it behind the title screen from an
@@ -478,6 +578,42 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany.mock.calls[0]?.[0].where.format).toEqual({
       in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
+    });
+  });
+
+  it('lists joined projects across tenants, excluding the ones you own', async () => {
+    // The three properties that make "Shared with me" both useful and safe. A
+    // workspace id in this predicate would defeat the point; dropping the role
+    // filter would restate everything `list` already shows; dropping the
+    // workspace-membership filter would advertise projects whose tenant seat is
+    // gone, which `requireProject` refuses to open.
+    const findMany = jest.fn((input: { where: Record<string, unknown> }) => {
+      void input;
+      return Promise.resolve([]);
+    });
+    const { service } = serviceWith({ storyProject: { findMany } });
+
+    await expect(
+      service.listJoined(USER as never, { status: 'active', limit: 20 }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+
+    const where = findMany.mock.calls[0]?.[0].where ?? {};
+    expect(where).not.toHaveProperty('workspaceId');
+    expect(where.members).toEqual({
+      some: {
+        userId: USER.userId,
+        status: 'active',
+        removedAt: null,
+        role: { not: StoryProjectMemberRole.owner },
+      },
+    });
+    expect(where.workspace).toEqual({
+      members: {
+        some: {
+          userId: USER.userId,
+          status: WorkspaceMemberStatus.active,
+        },
+      },
     });
   });
 
@@ -1403,5 +1539,96 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       clipCount: 1,
       currentVideoCount: 0,
     });
+  });
+});
+
+describe('StoryProjectsService shared-link workspace resolve', () => {
+  /**
+   * The whole reason this read exists: a first-time invitee has no stored
+   * selection, so the studio scopes every request to their own personal
+   * workspace and the project's real tenant never gets asked. A workspace
+   * viewer seat plus an active story membership is precisely what the canvas
+   * needs, so it is precisely what resolves.
+   */
+  it('resolves the owning workspace for an invited member whose active tenant is elsewhere', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.editor,
+      workspaceRole: WorkspaceMemberRole.viewer,
+    });
+
+    await expect(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
+  });
+
+  /**
+   * `workbench` reads with `allowArchived`, so an archived project still opens
+   * read-only. Refusing to resolve one would strand a shared link on a 404 that
+   * switching workspaces would have cleared.
+   */
+  it('resolves an archived project because the canvas still opens it read-only', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.viewer,
+      workspaceRole: WorkspaceMemberRole.viewer,
+      status: StoryProjectStatus.archived,
+    });
+
+    await expect(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
+  });
+
+  /**
+   * Story membership is the grant; the workspace seat only ever narrows it.
+   * A workspace owner who was never added to the project cannot open the canvas
+   * — `requireProject` matches only projects the caller is an active member of
+   * — so resolving for them would hand out a tenant id for a project they still
+   * could not open, which is exactly the widening this route may not do. Their
+   * answer is byte-identical to the stranger's below.
+   */
+  it('tells a workspace member with no story membership nothing, exactly as the canvas would', async () => {
+    const service = resolverWith({
+      storyRole: null,
+      workspaceRole: WorkspaceMemberRole.owner,
+    });
+
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    );
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+  });
+
+  /**
+   * A story member who lost their seat in the owning tenant trips the workspace
+   * re-check, which raises 403. A 403 on an id-shaped route is itself the leak
+   * — it confirms the project exists — so this route flattens it to the 404.
+   */
+  it('flattens the lost-workspace-seat denial into the same 404', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.editor,
+      workspaceRole: null,
+    });
+
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    );
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
+  });
+
+  it('answers a stranger with a 404 that carries no workspace id', async () => {
+    const service = resolverWith({ storyRole: null, workspaceRole: null });
+
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    );
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
   });
 });

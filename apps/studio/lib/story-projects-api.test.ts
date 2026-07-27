@@ -22,6 +22,7 @@ import {
   getStoryCandidateAssets,
   getStoryProductionCanvas,
   getStoryClipVideoUploadFinalization,
+  getStoryProjectWorkspace,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
@@ -505,6 +506,25 @@ describe("current-draft Story production routes", () => {
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project%20%2F%20one/releases/current",
       { headers: { "x-fizz-workspace-id": "workspace-1" } }
+    );
+  });
+
+  it("resolves the project's owning workspace without passing a workspace scope", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ workspaceId: "workspace-owner" });
+
+    await expect(getStoryProjectWorkspace("project / one")).resolves.toBe("workspace-owner");
+
+    // Only that no per-call scope is sent — unlike its neighbours above, which
+    // pass `{ headers: { "x-fizz-workspace-id" } }`. The ambient header `api`
+    // attaches to every request is not observable here and is not claimed.
+    expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project%20%2F%20one/workspace");
+  });
+
+  it("rejects a resolve response that carries no workspace id", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ workspaceId: "" });
+
+    await expect(getStoryProjectWorkspace("project-1")).rejects.toThrow(
+      "Story Studio API returned an invalid project workspace."
     );
   });
 });

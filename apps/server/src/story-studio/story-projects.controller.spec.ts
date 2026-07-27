@@ -207,3 +207,25 @@ describe('StoryProjectsController chapters', () => {
     );
   });
 });
+
+describe('StoryProjectsController shared-link workspace resolve', () => {
+  /**
+   * A shared project link carries no workspace, so this route must not take the
+   * header every sibling route requires. Pinning the call shape keeps a later
+   * "make it consistent" edit from reintroducing `requiredWorkspaceId` on the
+   * one route that cannot have it.
+   */
+  it('resolves a project workspace without a workspace header', async () => {
+    const service = {
+      resolveWorkspace: jest.fn(() =>
+        Promise.resolve({ workspaceId: WORKSPACE_ID }),
+      ),
+    };
+    const controller = new StoryProjectsController(service as never);
+
+    await expect(
+      controller.resolveWorkspace(USER as never, { projectId: PROJECT_ID }),
+    ).resolves.toEqual({ code: 200, data: { workspaceId: WORKSPACE_ID } });
+    expect(service.resolveWorkspace).toHaveBeenCalledWith(USER, PROJECT_ID);
+  });
+});

@@ -90,6 +90,26 @@ export class StoryProjectsController {
     };
   }
 
+  /**
+   * Declared ahead of every `:projectId` route on purpose: Nest matches in
+   * declaration order, and the bare `@Get(':projectId')` further down would
+   * otherwise swallow this path and try to resolve "shared-with-me" as an id.
+   *
+   * Takes no workspace header because the answer spans tenants — see
+   * `listJoined` for why the membership rows are the authorisation.
+   */
+  @Get('shared-with-me')
+  async listJoined(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(StoryProjectListQuerySchema))
+    query: StoryProjectListQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.storyProjects.listJoined(user, query),
+    };
+  }
+
   @Post(':projectId/chapters')
   @HttpCode(HttpStatus.CREATED)
   async createChapter(
@@ -341,6 +361,25 @@ export class StoryProjectsController {
         params.projectId,
         params.mediaAssetId,
       ),
+    };
+  }
+
+  /**
+   * The only route on this controller that takes no `x-fizz-workspace-id`, and
+   * deliberately so: it exists to tell a caller following a shared project link
+   * which workspace to switch to, and that caller has no workspace to send yet.
+   * Requiring the header would make the route unable to answer the one question
+   * it is for. Access is unchanged — see `StoryProjectsService.resolveWorkspace`.
+   */
+  @Get(':projectId/workspace')
+  async resolveWorkspace(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.storyProjects.resolveWorkspace(user, params.projectId),
     };
   }
 

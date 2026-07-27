@@ -1666,7 +1666,10 @@
       "videoProgress": "当前视频 {current}/{total}",
       "textFirstWithoutVideo": "文字优先 · 视频可选",
       "textFirstProgress": "文字优先故事",
-      "updatedUnknown": "更新时间不可用"
+      "updatedUnknown": "更新时间不可用",
+      "tabAll": "全部",
+      "tabJoined": "共享给我的",
+      "otherWorkspace": "其他工作区"
     },
     "metrics": {
       "references": "参考位",
@@ -1745,6 +1748,10 @@
       "private": "私有",
       "unlisted": "不公开列出",
       "public": "公开"
+    },
+    "projectWorkspace": {
+      "resolving": "正在打开该故事项目…",
+      "switching": "正在切换到该故事所属的工作区…"
     },
     "canvas": {
       "back": "返回 Story Studio",

@@ -721,6 +721,17 @@ export interface StoryProjectProductionSummaryDto {
   latestBuildStatus: StoryBuildStatus | null;
 }
 
+/**
+ * Which tenant a project lives in, for a caller who arrived on a shared link
+ * and therefore has no workspace to scope by yet. The id is the whole payload:
+ * the studio switches by id and reads the workspace's name and type from its
+ * own membership list, so echoing them here would hand out tenant metadata the
+ * switch never reads.
+ */
+export interface StoryProjectWorkspaceRefDto {
+  workspaceId: string;
+}
+
 export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;

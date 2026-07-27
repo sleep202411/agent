@@ -59,6 +59,7 @@ import {
   archiveStoryProject,
   createStoryProject,
   listStoryProjects,
+  listJoinedStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
   type CreatableStoryFormat,
@@ -76,12 +77,13 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
+  const { activeWorkspace, workspaces, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<StoryProjectSummary | null>(null);
   const [archiving, setArchiving] = useState<StoryProjectSummary | null>(null);
   const [sharing, setSharing] = useState<StoryProjectSummary | null>(null);
+  const [tab, setTab] = useState<"all" | "joined">("all");
 
   const projectsQuery = useQuery({
     queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
@@ -90,6 +92,15 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
     retry: false,
   });
 
+  // Spans every tenant, so it is deliberately NOT keyed on the active
+  // workspace: switching workspaces must not refetch or invalidate it.
+  const joinedQuery = useQuery({
+    queryKey: [...STORY_PROJECTS_QUERY, "joined"],
+    queryFn: () => listJoinedStoryProjects({ limit: 100 }),
+    retry: false,
+  });
+
+  const joined = joinedQuery.data?.items ?? [];
   const projects = projectsQuery.data?.items ?? [];
   const isLoading = workspaceLoading || (Boolean(workspaceId) && projectsQuery.isLoading);
   const featuredProject = projects.find(
@@ -142,6 +153,29 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
               <h3 id="story-projects-heading" className="sr-only">
                 {t("projects.title")}
               </h3>
+              {joined.length > 0 ? (
+                // Only rendered once you have actually been invited somewhere.
+                // A permanently empty tab would be noise for the majority who
+                // only ever work in their own workspace.
+                <div role="tablist" aria-label={t("projects.title")} className="flex gap-1">
+                  {(["all", "joined"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === value}
+                      onClick={() => setTab(value)}
+                      className={
+                        tab === value
+                          ? "rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white"
+                          : "rounded-lg px-3 py-1.5 text-[12px] font-medium text-white/48 transition hover:text-white/72"
+                      }
+                    >
+                      {value === "all" ? t("projects.tabAll") : t("projects.tabJoined")}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {projectsQuery.isError ? (
                 <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
                   <IconRefresh className="size-4" />
@@ -150,7 +184,24 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
               ) : null}
             </div>
 
-            {isLoading ? (
+            {tab === "joined" ? (
+              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+                {joined.map((project) => (
+                  <StoryProjectCard
+                    key={project.id}
+                    project={project}
+                    locale={locale}
+                    workspaceLabel={
+                      workspaces.find((w) => w.id === project.workspaceId)?.name ??
+                      t("projects.otherWorkspace")
+                    }
+                    onEdit={() => undefined}
+                    onShare={() => undefined}
+                    onArchive={() => undefined}
+                  />
+                ))}
+              </div>
+            ) : isLoading ? (
               <ProjectSkeletons />
             ) : projectsQuery.isError ? (
               <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
@@ -230,12 +281,21 @@ function StoryProjectCard({
   onEdit,
   onShare,
   onArchive,
+  workspaceLabel = null,
 }: {
   project: StoryProjectSummary;
   locale: string;
   onEdit: () => void;
   onShare: () => void;
   onArchive: () => void;
+  /**
+   * Set only for a project in someone else's workspace. Its presence also
+   * suppresses the action menu: every dialog behind it mutates through the
+   * ACTIVE workspace, which for a joined project is the wrong tenant, so those
+   * actions would 404 rather than edit. Opening the project switches workspace
+   * first, and the actions come back once you are there.
+   */
+  workspaceLabel?: string | null;
 }) {
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
@@ -320,6 +380,11 @@ function StoryProjectCard({
         </div>
 
         <div className="p-3.5">
+          {workspaceLabel ? (
+            <p className="mb-1 truncate text-[10px] font-semibold tracking-[0.08em] text-white/34 uppercase">
+              {workspaceLabel}
+            </p>
+          ) : null}
           <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-white">
             {project.title}
           </h3>
@@ -349,7 +414,7 @@ function StoryProjectCard({
         </div>
       </Link>
 
-      {canEdit || canAdmin ? (
+      {!workspaceLabel && (canEdit || canAdmin) ? (
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={t("actions.projectMenu")}
