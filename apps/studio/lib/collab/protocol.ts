@@ -18,6 +18,8 @@ export const CANVAS_ROOT_SCHEMA: RootSchema = {
   meta: "map",
   nodes: "map",
   edges: "map",
+  // Visual groups are project content and travel with history/undo.
+  groups: "map",
   // The project's asset library (generated + uploaded media), synced so every
   // collaborator shares one library. Keyed by asset id.
   assets: "map",

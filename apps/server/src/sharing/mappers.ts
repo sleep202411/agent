@@ -63,7 +63,7 @@ export function toProjectMemberDTO(
 }
 
 /** Sharing scope of an invite — drives the accept-page copy + deeplink. */
-export type ShareScope = 'workspace' | 'project';
+export type ShareScope = 'workspace' | 'project' | 'story-project';
 
 /** A pending invite row as listed to an admin (never carries the raw token). */
 export interface ShareInviteDTO {

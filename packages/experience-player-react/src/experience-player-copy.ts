@@ -23,9 +23,15 @@ export interface ExperiencePlayerCopy {
   restart: string;
   mediaError: (assetId: string) => string;
   videoLabel: (rendererInstanceId: string) => string;
+  /**
+   * Shown in place of a video scene whose footage is not attached yet. Only a
+   * preview Build can contain one, so a viewer of a released experience never
+   * sees this.
+   */
+  emptySequence: string;
+  /** Shown while every reachable clip is fetched, before playback can begin. */
+  loadingMedia: string;
   noVisibleChoices: string;
-  checkpointPrompt: string;
-  checkpointDescription: string;
   continue: string;
   regionLabel: string;
   video: ExperiencePlayerVideoCopy;

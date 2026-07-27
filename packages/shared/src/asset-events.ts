@@ -1,3 +1,5 @@
+import type { StoryAgentRunRealtimeEvent } from "./story-agent.js";
+
 /**
  * Asset events — real-time push payloads for the Assets domain.
  *
@@ -167,6 +169,7 @@ export type AssetEvent = (
       updatedAt: string;
       ts: number;
     }
+  | StoryAgentRunRealtimeEvent
 ) &
   RealtimeEnvelope;
 

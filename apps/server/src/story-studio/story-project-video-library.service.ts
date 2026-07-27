@@ -1,13 +1,10 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import {
-  MediaAssetKind,
-  MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
@@ -19,15 +16,13 @@ import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import {
-  StoryUuidSchema,
   type CompleteStoryProjectVideoUpload,
-  type CursorPageDto,
   type MediaAssetSummaryDto,
   type StoryProjectVideoLibraryItemDto,
-  type StoryProjectVideoLibraryQuery,
   type StoryProjectVideoUploadFinalizeDto,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 const ORIGINAL_VARIANT_BASE_WHERE = {
   variantKey: 'original',
@@ -38,7 +33,6 @@ const ORIGINAL_VARIANT_BASE_WHERE = {
 const ORIGINAL_VARIANT_WHERE = {
   ...ORIGINAL_VARIANT_BASE_WHERE,
   status: MediaAssetVariantStatus.ready,
-  checksumSha256: { not: null },
 } satisfies Prisma.MediaAssetVariantWhereInput;
 
 const ORIGINAL_VARIANT_PLACEMENTS_INCLUDE = {
@@ -64,79 +58,13 @@ type VideoLibraryAssetRow = Prisma.MediaAssetGetPayload<{
   include: typeof VIDEO_LIBRARY_ASSET_INCLUDE;
 }>;
 
-interface VideoLibraryCursor {
-  version: 1;
-  createdAt: string;
-  id: string;
-}
-
 @Injectable()
 export class StoryProjectVideoLibraryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
-
-  async list(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    query: StoryProjectVideoLibraryQuery,
-  ): Promise<CursorPageDto<StoryProjectVideoLibraryItemDto>> {
-    const access = await this.permissions.requireProject(
-      user.userId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
-    if (access.project.workspaceId !== workspaceId) {
-      throw new NotFoundException({
-        code: 'STORY_PROJECT_NOT_FOUND',
-        message: 'Story project not found.',
-      });
-    }
-
-    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-    const rows = await this.prisma.mediaAsset.findMany({
-      where: {
-        workspaceId,
-        kind: MediaAssetKind.video,
-        status: MediaAssetStatus.ready,
-        deletedAt: null,
-        moderationStatus: { not: MediaAssetModerationStatus.blocked },
-        variants: { some: ORIGINAL_VARIANT_WHERE },
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: new Date(cursor.createdAt) } },
-                {
-                  createdAt: new Date(cursor.createdAt),
-                  id: { lt: cursor.id },
-                },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      include: VIDEO_LIBRARY_ASSET_INCLUDE,
-    });
-
-    const hasMore = rows.length > query.limit;
-    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
-    const last = pageRows.at(-1);
-    return {
-      items: pageRows.map(toVideoLibraryItem),
-      nextCursor:
-        hasMore && last
-          ? encodeCursor({
-              version: 1,
-              createdAt: last.createdAt.toISOString(),
-              id: last.id,
-            })
-          : null,
-    };
-  }
 
   async completeUpload(
     user: AuthUser,
@@ -150,7 +78,7 @@ export class StoryProjectVideoLibraryService {
       projectId,
       input.mediaAssetId,
     );
-    session = await this.expireIfNeeded(session);
+    session = await this.expireIfNeeded(session, projectId);
     if (session.status === StoryVideoUploadStatus.issued) {
       throw new ConflictException({
         code: 'STORY_VIDEO_UPLOAD_NOT_CONFIRMED',
@@ -158,22 +86,26 @@ export class StoryProjectVideoLibraryService {
       });
     }
     if (session.status === StoryVideoUploadStatus.confirmed) {
-      await this.prisma.storyVideoUploadSession.updateMany({
-        where: {
-          id: session.id,
-          status: StoryVideoUploadStatus.confirmed,
-        },
-        data: {
-          status: StoryVideoUploadStatus.queued,
-          queuedAt: new Date(),
-          nextAttemptAt: new Date(),
-          reclaimAfter: null,
-          errorCode: null,
-          errorDetail: null,
-        },
-      });
-      session = await this.prisma.storyVideoUploadSession.findUniqueOrThrow({
-        where: { id: session.id },
+      session = await this.prisma.$transaction(async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+        await tx.storyVideoUploadSession.updateMany({
+          where: {
+            id: session.id,
+            storyProjectId: projectId,
+            status: StoryVideoUploadStatus.confirmed,
+          },
+          data: {
+            status: StoryVideoUploadStatus.queued,
+            queuedAt: new Date(),
+            nextAttemptAt: new Date(),
+            reclaimAfter: null,
+            errorCode: null,
+            errorDetail: null,
+          },
+        });
+        return tx.storyVideoUploadSession.findUniqueOrThrow({
+          where: { id: session.id },
+        });
       });
     }
     return this.toFinalizeDto(session);
@@ -185,12 +117,13 @@ export class StoryProjectVideoLibraryService {
     projectId: string,
     mediaAssetId: string,
   ): Promise<StoryProjectVideoUploadFinalizeDto> {
-    const session = await this.expireIfNeeded(
+    const session = effectiveUploadSessionForRead(
       await this.requireUploadSession(
         user,
         workspaceId,
         projectId,
         mediaAssetId,
+        'story.read',
       ),
     );
     if (
@@ -231,6 +164,7 @@ export class StoryProjectVideoLibraryService {
     ) {
       const now = new Date();
       session = await this.prisma.$transaction(async (tx) => {
+        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
         const changed = await tx.storyVideoUploadSession.updateMany({
           where: {
             id: session.id,
@@ -284,11 +218,12 @@ export class StoryProjectVideoLibraryService {
     workspaceId: string,
     projectId: string,
     mediaAssetId: string,
+    capability: 'story.read' | 'story.generate' = 'story.generate',
   ) {
     const access = await this.permissions.requireProject(
       user.userId,
       projectId,
-      'story.generate',
+      capability,
     );
     if (access.project.workspaceId !== workspaceId) throw projectNotFound();
     const session = await this.prisma.storyVideoUploadSession.findUnique({
@@ -307,6 +242,7 @@ export class StoryProjectVideoLibraryService {
 
   private async expireIfNeeded(
     session: StoryVideoUploadSession,
+    projectId: string,
   ): Promise<StoryVideoUploadSession> {
     if (
       session.expiresAt > new Date() ||
@@ -317,6 +253,7 @@ export class StoryProjectVideoLibraryService {
     }
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const changed = await tx.storyVideoUploadSession.updateMany({
         where: {
           id: session.id,
@@ -415,6 +352,25 @@ export class StoryProjectVideoLibraryService {
   }
 }
 
+/** Keep polling read-only; lifecycle persistence belongs to write commands/workers. */
+function effectiveUploadSessionForRead(
+  session: StoryVideoUploadSession,
+): StoryVideoUploadSession {
+  if (
+    session.expiresAt > new Date() ||
+    (session.status !== StoryVideoUploadStatus.issued &&
+      session.status !== StoryVideoUploadStatus.confirmed)
+  ) {
+    return session;
+  }
+  return {
+    ...session,
+    status: StoryVideoUploadStatus.expired,
+    errorCode: 'STORY_VIDEO_UPLOAD_EXPIRED',
+    errorDetail: 'The upload URL expired before finalization.',
+  };
+}
+
 function projectNotFound(): NotFoundException {
   return new NotFoundException({
     code: 'STORY_PROJECT_NOT_FOUND',
@@ -464,7 +420,7 @@ function toVideoLibraryItem(
   row: VideoLibraryAssetRow,
 ): StoryProjectVideoLibraryItemDto {
   const variant = row.variants[0];
-  if (!variant?.checksumSha256) {
+  if (!variant || !variant.contentType.toLowerCase().startsWith('video/')) {
     throw new InternalServerErrorException({
       code: 'STORY_VIDEO_LIBRARY_ASSET_INVALID',
       message: 'A reusable video is missing its ready original variant.',
@@ -506,41 +462,4 @@ function toMediaAsset(
       placements: originalVariant.placements,
     }),
   };
-}
-
-function encodeCursor(cursor: VideoLibraryCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
-}
-
-function decodeCursor(value: string): VideoLibraryCursor {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, 'base64url').toString('utf8'),
-    ) as unknown;
-    if (isVideoLibraryCursor(parsed)) return parsed;
-  } catch {
-    // The public error deliberately does not expose cursor internals.
-  }
-  throw new BadRequestException({
-    code: 'STORY_VIDEO_LIBRARY_CURSOR_INVALID',
-    message: 'The video library pagination cursor is invalid or expired.',
-  });
-}
-
-function isVideoLibraryCursor(value: unknown): value is VideoLibraryCursor {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  if (
-    candidate.version !== 1 ||
-    typeof candidate.createdAt !== 'string' ||
-    typeof candidate.id !== 'string' ||
-    !StoryUuidSchema.safeParse(candidate.id).success
-  ) {
-    return false;
-  }
-  const date = new Date(candidate.createdAt);
-  return (
-    Number.isFinite(date.getTime()) &&
-    date.toISOString() === candidate.createdAt
-  );
 }

@@ -22,6 +22,10 @@ import { OutputStorageService } from './storage.types';
  * only the chosen one is bound to the OutputStorageService token. Every
  * existing injection of OutputStorageService (AI-gen worker, certificates,
  * ip-commerce, /ready) resolves the same token and keeps working unchanged.
+ * A single write path may override the token per unit of work by resolving
+ * {@link StorageProviderRegistry} instead — the AI-gen worker does this for
+ * the provider frozen on `AiJob.outputStorageProvider`, which is how Story
+ * Studio footage reaches R2 without the env flip moving anything else.
  * EXISTING rows are unaffected by the flip — reads resolve per-row via
  * `MediaAsset.storageProvider` (url-resolver / access service / registry),
  * which is what makes a gradual new-writes-only migration safe.

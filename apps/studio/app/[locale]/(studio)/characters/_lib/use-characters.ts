@@ -4,7 +4,7 @@ import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { getCharacter, listCharacters, type CharacterDetail } from "@/lib/characters-api";
 
 /**

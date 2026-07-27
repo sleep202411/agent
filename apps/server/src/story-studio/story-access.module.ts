@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 /**
  * Story authorization is intentionally isolated from the rest of StoryStudio.
@@ -11,7 +12,7 @@ import { StoryPermissionService } from './story-permission.service';
  */
 @Module({
   imports: [WorkspacesModule],
-  providers: [StoryPermissionService],
-  exports: [StoryPermissionService],
+  providers: [StoryProjectWriteGuardService, StoryPermissionService],
+  exports: [StoryProjectWriteGuardService, StoryPermissionService],
 })
 export class StoryAccessModule {}

@@ -24,7 +24,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { QuotaDimension, QuotaPeekWire, QuotaSnapshotWire, Tier } from "@repo/shared";
+import type { QuotaDimension, QuotaPeekWire, QuotaSnapshotWire } from "@repo/shared";
 import { openQuotaClient, type QuotaClient } from "./quota-client";
 
 interface QuotaState {
@@ -133,4 +133,4 @@ export function QuotaProvider({ enabled = true, children }: QuotaProviderProps) 
 }
 
 // Re-export for convenience.
-export type { QuotaDimension, QuotaPeekWire, Tier };
+export type { QuotaDimension, QuotaPeekWire };

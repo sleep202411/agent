@@ -3,11 +3,9 @@ import {
   PatchStoryProjectSchema,
   frameContractMatchesStoryProfile,
 } from './dto';
-import { FilmClipSpecSchema, FilmSpecSchema } from './interactive-film.schema';
-import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 
 describe('StoryProject frame profile contract', () => {
-  it('requires one of the two production profiles at project creation', () => {
+  it('requires one of the two production profiles for interactive film', () => {
     const base = {
       format: 'interactive_film',
       title: 'Portrait mystery',
@@ -26,11 +24,32 @@ describe('StoryProject frame profile contract', () => {
         frameProfile: 'portrait_9_16',
       }).frameProfile,
     ).toBe('portrait_9_16');
+    // A film project fails loud when the frame contract is missing.
     expect(CreateStoryProjectSchema.safeParse(base).success).toBe(false);
     expect(
       CreateStoryProjectSchema.safeParse({
         ...base,
         frameProfile: 'square_1_1',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('forbids any frame profile for a text-adventure project', () => {
+    const base = {
+      format: 'text_adventure',
+      title: 'The Archive',
+      defaultLocale: 'en-US',
+    } as const;
+
+    // A text-first project carries no frame contract at all.
+    const parsed = CreateStoryProjectSchema.parse(base);
+    expect(parsed.frameProfile).toBeUndefined();
+
+    // Declaring one is a fail-loud mismatch, never silently dropped.
+    expect(
+      CreateStoryProjectSchema.safeParse({
+        ...base,
+        frameProfile: 'landscape_16_9',
       }).success,
     ).toBe(false);
   });
@@ -66,43 +85,5 @@ describe('StoryProject frame profile contract', () => {
         height: 1080,
       }),
     ).toBe(false);
-  });
-});
-
-describe('interactive-film frame schemas', () => {
-  it('accepts exact 16:9 and 9:16 FilmSpec dimensions', () => {
-    const { filmSpec } = buildInteractiveFilmTestBundle();
-    const portrait = structuredClone(filmSpec);
-    portrait.frame = {
-      ...portrait.frame,
-      aspectRatio: '9:16',
-      width: 1080,
-      height: 1920,
-    };
-
-    expect(FilmSpecSchema.safeParse(filmSpec).success).toBe(true);
-    expect(FilmSpecSchema.safeParse(portrait).success).toBe(true);
-  });
-
-  it('rejects FilmSpec dimensions that do not match the declared ratio', () => {
-    const { filmSpec } = buildInteractiveFilmTestBundle();
-    const invalid = structuredClone(filmSpec);
-    invalid.frame.aspectRatio = '9:16';
-
-    expect(FilmSpecSchema.safeParse(invalid).success).toBe(false);
-  });
-
-  it('accepts portrait FilmClip output and rejects mismatched output dimensions', () => {
-    const clip = structuredClone(buildInteractiveFilmTestBundle().clipSpecs[0]);
-    clip.outputContract = {
-      ...clip.outputContract,
-      aspectRatio: '9:16',
-      width: 1080,
-      height: 1920,
-    };
-    expect(FilmClipSpecSchema.safeParse(clip).success).toBe(true);
-
-    clip.outputContract.width = 1920;
-    expect(FilmClipSpecSchema.safeParse(clip).success).toBe(false);
   });
 });

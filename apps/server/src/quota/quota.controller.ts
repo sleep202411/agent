@@ -1,18 +1,19 @@
 /**
  * GET /aurora/quota — snapshot for the current user.
  *
- * The frontend's <QuotaProvider/> calls this once on auth-resolve and
- * then subscribes to the (Phase 3) WS gateway for live deltas. Phase
- * 2 still does an HTTP-only flow; the response shape is stable.
+ * Limits come from the PostgreSQL membership truth (EntitlementService:
+ * grants → plan row benefits), never from the retired Java `userLevel` claim.
+ * An optional x-fizz-workspace-id header resolves workspace-scoped team
+ * plans, matching how team compute credits are scoped.
  *
  * Public-shaped JSON intentionally uses string "Infinity" so JSON
  * round-trips cleanly. Frontend converts back via `parseLimit()`.
  */
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Headers } from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
+import { EntitlementService } from '../entitlements';
 import { QuotaService } from './quota.service';
-import { normalizeTier } from './tiers.config';
 import type { QuotaPeek, QuotaSnapshot } from './quota.types';
 
 type WireSnapshot = Omit<QuotaSnapshot, 'limit' | 'remaining'> & {
@@ -22,11 +23,12 @@ type WireSnapshot = Omit<QuotaSnapshot, 'limit' | 'remaining'> & {
 
 interface WirePeek {
   tier: QuotaPeek['tier'];
+  planKey: string;
   dimensions: Record<string, WireSnapshot>;
   chatPerMinute: { limit: number; remaining: number; resetAt: string };
 }
 
-function toWire(peek: QuotaPeek): WirePeek {
+function toWire(peek: QuotaPeek, planKey: string): WirePeek {
   const dims: Record<string, WireSnapshot> = {};
   for (const [k, v] of Object.entries(peek.dimensions)) {
     dims[k] = {
@@ -37,6 +39,7 @@ function toWire(peek: QuotaPeek): WirePeek {
   }
   return {
     tier: peek.tier,
+    planKey,
     dimensions: dims,
     chatPerMinute: peek.chatPerMinute,
   };
@@ -44,12 +47,25 @@ function toWire(peek: QuotaPeek): WirePeek {
 
 @Controller('quota')
 export class QuotaController {
-  constructor(private readonly svc: QuotaService) {}
+  constructor(
+    private readonly svc: QuotaService,
+    private readonly entitlements: EntitlementService,
+  ) {}
 
   @Get()
-  async getQuota(@CurrentUser() user: AuthUser) {
-    const tier = normalizeTier(user.userLevel);
-    const peek = await this.svc.peek(user.userId, tier);
-    return { code: 200, data: toWire(peek) };
+  async getQuota(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id')
+    workspaceHeader: string | string[] | undefined,
+  ) {
+    const workspaceId = Array.isArray(workspaceHeader)
+      ? workspaceHeader[0]
+      : workspaceHeader;
+    const entitlement = await this.entitlements.resolveForUser(user, {
+      workspaceId: workspaceId?.trim() || null,
+    });
+    const profile = await this.entitlements.quotaProfileFor(entitlement);
+    const peek = await this.svc.peek(user.userId, profile);
+    return { code: 200, data: toWire(peek, entitlement.planKey) };
   }
 }

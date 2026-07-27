@@ -215,11 +215,15 @@ function requiredPlanFromPolicy(value: unknown): AiRequiredPlan | null {
 }
 
 function isRequiredPlan(value: unknown): value is AiRequiredPlan {
+  // Plan keys only — every value here must be a key with an active
+  // billing_membership_plans row. Keys without a row normalize to null in
+  // EntitlementService.requiredPlan, i.e. NO gate at all, so listing a dead key
+  // here silently unlocks a model that was meant to be gated.
   return (
     value === 'free' ||
-    value === 'creator' ||
+    value === 'basic' ||
+    value === 'standard' ||
     value === 'pro' ||
-    value === 'studio' ||
     value === 'enterprise'
   );
 }

@@ -213,7 +213,6 @@ export class StoryVideoUploadFinalizeWorkerService
         promoted.storageKey,
         promoted.bucket,
         promoted.region ?? null,
-        promoted.contentType ?? session.contentType,
         technical,
       );
       if (
@@ -232,7 +231,6 @@ export class StoryVideoUploadFinalizeWorkerService
     finalObjectKey: string,
     bucket: string,
     region: string | null,
-    contentType: string,
     technical: StoryUploadedVideoProbeResult,
   ): Promise<boolean> {
     const now = new Date();
@@ -260,7 +258,7 @@ export class StoryVideoUploadFinalizeWorkerService
           region,
           objectKey: finalObjectKey,
           externalUrl: null,
-          contentType,
+          contentType: technical.contentType,
           sizeBytes: technical.sizeBytes,
           width: technical.width,
           height: technical.height,
@@ -274,6 +272,9 @@ export class StoryVideoUploadFinalizeWorkerService
               completedAt,
               probedBy: 'ffprobe',
               durationSecondsExact: technical.durationSecondsExact,
+              videoCodec: technical.videoCodec,
+              audioCodecs: technical.audioCodecs,
+              browserSafeMp4: technical.browserSafeMp4,
             },
           },
         },
@@ -285,10 +286,11 @@ export class StoryVideoUploadFinalizeWorkerService
         region,
         objectKey: finalObjectKey,
         externalUrl: null,
-        contentType,
+        contentType: technical.contentType,
         sizeBytes: technical.sizeBytes,
         width: technical.width,
         height: technical.height,
+        durationMs: technical.durationMs,
         durationSeconds: technical.durationSeconds,
         checksumSha256: technical.checksumSha256,
         metadata: {
@@ -298,6 +300,9 @@ export class StoryVideoUploadFinalizeWorkerService
           completedAt,
           probedBy: 'ffprobe',
           durationSecondsExact: technical.durationSecondsExact,
+          videoCodec: technical.videoCodec,
+          audioCodecs: technical.audioCodecs,
+          browserSafeMp4: technical.browserSafeMp4,
         },
       });
       await tx.storyVideoUploadSession.update({

@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @plugin "@tailwindcss/typography";
 @source "../../../packages/experience-player-react/src";
+@source "../../../packages/auth-flow/src";
 
 @custom-variant dark (&:is(.dark *));
 

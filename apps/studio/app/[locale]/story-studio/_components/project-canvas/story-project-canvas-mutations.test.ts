@@ -1,795 +1,298 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveFilmDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import {
+  connectSceneContinuation,
+  convertSceneExitToChoice,
   addChoiceOption,
-  appendClipPromptBeat,
-  connectAutoRoute,
-  connectClipContinuation,
-  connectChoiceTarget,
-  connectEnding,
-  convertClipExitToCheckpoint,
-  convertClipExitToChoice,
-  convertClipExitToEnding,
-  convertExitToAuto,
   createClipNode,
-  createDefaultClipPrompt,
-  createEndingNode,
-  createRouterNode,
-  createTrailerPrompt,
-  deleteEndingNode,
+  createTextNode,
   deleteGraphNode,
-  disconnectAutoRoute,
-  disconnectChoiceTarget,
-  disconnectEnding,
-  disconnectStoryBranch,
   duplicateClipNode,
-  duplicateRouterNode,
+  duplicateTextNode,
   moveChoiceOption,
-  moveClipPromptBeat,
   removeChoiceOption,
-  replaceClipPrompt,
-  replaceTrailerPrompt,
-  setEntryNode,
-  setClipPromptTargetDuration,
-  StoryDraftMutationError,
-  updateAutoRoute,
-  updateAutoRouteTarget,
-  updateChoiceExit,
+  setNodeMusic,
   updateChoiceExitPrompt,
-  updateChoiceOption,
-  updateCheckpointTarget,
-  updateEndingNode,
+  updateChoiceOptionLabel,
+  updateTextNode,
   validateStoryDraftGraph,
 } from "./story-project-canvas-mutations";
 
+/** Real MediaAsset ids: the binding is validated as a UUID, exactly as on the server. */
+const THEME_ASSET_ID = "0197f4a2-0800-7000-8000-0000000000a1";
+const ECHO_ASSET_ID = "0197f4a2-0800-7000-8000-0000000000a2";
+
 describe("story project canvas mutations", () => {
-  it("authors and replaces an independent mutable trailer director design", () => {
-    const original = draft();
-    const authored = createTrailerPrompt(original, "  Project trailer  ");
+  it("creates and duplicates graph-only clips", () => {
+    const first = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" });
+    const duplicate = duplicateClipNode(first.content, "opening");
 
-    expect(original.trailerPrompt).toBeNull();
-    expect(authored.trailerPrompt).toMatchObject({
-      title: "Project trailer",
-      targetDurationMs: 15_000,
-      generationControl: { mode: "omni_reference" },
-      beats: [{ id: "trailer:beat:1", startMs: 0, endMs: 15_000 }],
+    expect(first.content.graph.entryNodeId).toBe("opening");
+    expect(first.content).toEqual({
+      ...draft(),
+      graph: { entryNodeId: "opening", nodes: [first.created] },
     });
-    expect(createTrailerPrompt(authored, "Ignored")).toBe(authored);
-
-    const replacement = {
-      ...authored.trailerPrompt!,
-      masterDirection: "Open on the villa, then reveal the dragon gate.",
-    };
-    const replaced = replaceTrailerPrompt(authored, replacement);
-
-    expect(replaced.trailerPrompt).toBe(replacement);
-    expect(replaced.clipPrompts).toBe(authored.clipPrompts);
-  });
-
-  it("creates clip, router, and synthetic ending records with stable deterministic IDs", () => {
-    const original = draft();
-    const firstClip = createClipNode(original);
-    const secondClip = createClipNode(firstClip.content, {
-      nodeId: "clip:scene-2",
-      clipKey: "SCENE_2",
-    });
-    const router = createRouterNode(secondClip.content);
-    const ending = createEndingNode(router.content, {
-      locale: "zh-CN",
-      title: "真相",
-      kind: "truth",
-    });
-
-    expect(original).toEqual(draft());
-    expect(firstClip.created).toEqual({
+    expect(duplicate.created).toMatchObject({
       kind: "clip",
-      nodeId: "clip:scene-1",
-      clipKey: "SCENE_1",
+      clipKey: "SCENE_2",
       exit: { kind: "auto", nextNodeId: null },
     });
-    expect(firstClip.content.clipPrompts).toEqual([
-      expect.objectContaining({
-        graphNodeId: "clip:scene-1",
-        clipKey: "SCENE_1",
-        targetDurationMs: 15_000,
-        generationControl: { mode: "frame_lock", frameMode: "first_frame" },
-      }),
-    ]);
-    expect(ending.content.graph.entryNodeId).toBe("clip:scene-1");
-    expect(router.created).toEqual({
-      kind: "router",
-      nodeId: "router:route-1",
-      exit: { kind: "auto", routes: [] },
-    });
-    expect(ending.created).toEqual({
-      id: "ending:1",
-      title: { "zh-CN": "真相" },
-      summary: { "zh-CN": "" },
-      kind: "truth",
-    });
-    expect(validateStoryDraftGraph(ending.content)).toEqual([]);
   });
 
-  it("rejects duplicate or contract-invalid explicit stable identifiers", () => {
-    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-
-    expectMutationCode(() => createRouterNode(content, { nodeId: "opening" }), "DUPLICATE_NODE_ID");
-    expectMutationCode(
-      () => createClipNode(content, { nodeId: "another", clipKey: "OPENING" }),
-      "DUPLICATE_CLIP_KEY"
-    );
-    expectMutationCode(
-      () => createClipNode(content, { nodeId: "1-not-stable", clipKey: "SECOND" }),
-      "INVALID_STABLE_ID"
-    );
-  });
-
-  it("duplicates graph nodes with fresh identities and intentionally empty outgoing exits", () => {
-    let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-    const sourcePrompt = content.clipPrompts[0]!;
-    content = replaceClipPrompt(content, "opening", {
-      ...sourcePrompt,
-      title: "Opening direction",
-      masterDirection: "Hold a single slow push-in.",
-      beats: [{ ...sourcePrompt.beats[0]!, visual: "A lantern enters frame." }],
-    });
-    content = createRouterNode(content, { nodeId: "gate" }).content;
-    content = connectClipContinuation(content, "opening", "gate");
-    content = connectAutoRoute(content, "gate", "opening");
-
-    const clipCopy = duplicateClipNode(content, "opening");
-    const routerCopy = duplicateRouterNode(clipCopy.content, "gate");
-
-    expect(clipCopy.created.nodeId).toBe("clip:scene-2");
-    expect(clipCopy.created.clipKey).toBe("SCENE_2");
-    expect(clipCopy.created.exit).toEqual({ kind: "auto", nextNodeId: null });
-    const copiedPrompt = clipCopy.content.clipPrompts.find(
-      (prompt) => prompt.graphNodeId === clipCopy.created.nodeId
-    );
-    expect(copiedPrompt).toMatchObject({
-      graphNodeId: "clip:scene-2",
-      clipKey: "SCENE_2",
-      title: "Opening direction",
-      masterDirection: "Hold a single slow push-in.",
-      beats: [{ visual: "A lantern enters frame." }],
-    });
-    expect(copiedPrompt?.beats).not.toBe(sourcePrompt.beats);
-    expect(routerCopy.created).toMatchObject({
-      kind: "router",
-      nodeId: "router:route-2",
-      exit: { kind: "auto", routes: [] },
-    });
-  });
-
-  it("sets entry explicitly and selects a stable neighbor when deleting the current entry", () => {
-    const content = draft({
-      entryNodeId: "middle",
-      nodes: [autoClip("first", "FIRST"), autoClip("middle", "MIDDLE"), autoClip("last", "LAST")],
-    });
-
-    expect(setEntryNode(content, "last").graph.entryNodeId).toBe("last");
-    expect(deleteGraphNode(content, "middle").graph.entryNodeId).toBe("last");
-    expect(
-      deleteGraphNode({ ...content, graph: { ...content.graph, entryNodeId: "last" } }, "last")
-        .graph.entryNodeId
-    ).toBe("middle");
-    expectMutationCode(() => setEntryNode(content, "missing"), "TARGET_NODE_NOT_FOUND");
-  });
-
-  it("deletes a graph node and atomically removes incoming routes, choices, and reaction references", () => {
-    const content = draft({
-      entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          exit: {
-            kind: "choice",
-            decisionId: "path",
-            prompt: { "en-US": "Where next?" },
-            trigger: { kind: "media-ended" },
-            choices: [
-              choice("delete-target", "target", "TARGET"),
-              choice("keep-target", "keeper", "TARGET"),
-            ],
-          },
-        },
-        autoClip("target", "TARGET"),
-        {
-          kind: "router",
-          nodeId: "router",
-          exit: {
-            kind: "auto",
-            routes: [
-              { nextNodeId: "target", priority: 0 },
-              { nextNodeId: "keeper", priority: 1 },
-            ],
-          },
-        },
-        autoClip("keeper", "KEEPER"),
-      ],
-    });
-
-    const next = deleteGraphNode(content, "target");
-    const opening = graphNode(next, "opening");
-    const router = graphNode(next, "router");
-
-    expect(opening.exit).toMatchObject({
-      kind: "choice",
-      choices: [
-        {
-          choiceId: "keep-target",
-          nextNodeId: "keeper",
-          afterSelect: { kind: "immediate" },
-        },
-      ],
-    });
-    expect(router.exit).toEqual({
-      kind: "auto",
-      routes: [{ nextNodeId: "keeper", priority: 1 }],
-    });
-    expect(next.clipPrompts.some((prompt) => prompt.graphNodeId === "target")).toBe(false);
-    expect(validateStoryDraftGraph(next)).toEqual([]);
-  });
-
-  it("replaces clip prompts immutably and rejects identity changes", () => {
-    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-    const current = content.clipPrompts[0]!;
-    const replacement = { ...current, emotionalArc: "Unease becomes resolve." };
-
-    const next = replaceClipPrompt(content, "opening", replacement);
-
-    expect(next.clipPrompts[0]).toBe(replacement);
-    expect(content.clipPrompts[0]?.emotionalArc).toBe("");
-    expect(replaceClipPrompt(next, "opening", replacement)).toBe(next);
-    expectMutationCode(
-      () => replaceClipPrompt(content, "opening", { ...replacement, clipKey: "OTHER" }),
-      "CLIP_PROMPT_IDENTITY_MISMATCH"
-    );
-  });
-
-  it("deletes only the director prompt owned by a deleted clip", () => {
+  it("removes incoming routes when a clip is deleted", () => {
     let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     content = createClipNode(content, { nodeId: "second", clipKey: "SECOND" }).content;
-    content = createRouterNode(content, { nodeId: "gate" }).content;
+    content = connectSceneContinuation(content, "opening", "second");
 
-    const withoutOpening = deleteGraphNode(content, "opening");
-    const withoutRouter = deleteGraphNode(content, "gate");
-
-    expect(withoutOpening.clipPrompts.map((prompt) => prompt.graphNodeId)).toEqual(["second"]);
-    expect(withoutRouter.clipPrompts).toEqual(content.clipPrompts);
-    expect(content.clipPrompts.map((prompt) => prompt.graphNodeId)).toEqual(["opening", "second"]);
+    const next = deleteGraphNode(content, "second");
+    expect(next.graph.nodes).toEqual([
+      {
+        kind: "clip",
+        nodeId: "opening",
+        clipKey: "OPENING",
+        exit: { kind: "auto", nextNodeId: null },
+      },
+    ]);
   });
 
-  it("splits positive-length beats, preserves time slots when moving, and clamps duration safely", () => {
-    const prompt = createDefaultClipPrompt({ nodeId: "opening", clipKey: "OPENING" });
-    const split = appendClipPromptBeat(prompt);
-    const directed = {
-      ...split,
-      beats: [
-        { ...split.beats[0]!, visual: "First content" },
-        { ...split.beats[1]!, visual: "Second content" },
-      ],
-    };
+  it("creates, edits, branches, and duplicates a first-class text scene", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "text:opening",
+      locale: "en-US",
+      title: "The letter",
+      body: "You unfold the paper.",
+    }).content;
+    content = createClipNode(content, { nodeId: "clip:reply", clipKey: "REPLY" }).content;
+    content = connectSceneContinuation(content, "text:opening", "clip:reply");
+    content = updateTextNode(content, "text:opening", "zh-CN", {
+      title: "来信",
+      body: "你展开了信纸。",
+    });
 
-    expect(split.beats.map(({ startMs, endMs }) => [startMs, endMs])).toEqual([
-      [0, 7_500],
-      [7_500, 15_000],
-    ]);
-    expect(split.beats.every((beat) => beat.endMs > beat.startMs)).toBe(true);
+    expect(content.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      title: { "en-US": "The letter", "zh-CN": "来信" },
+      body: { "en-US": "You unfold the paper.", "zh-CN": "你展开了信纸。" },
+      exit: { kind: "auto", nextNodeId: "clip:reply" },
+    });
 
-    const moved = moveClipPromptBeat(directed, 1, "up");
-    expect(moved.beats.map(({ startMs, endMs }) => [startMs, endMs])).toEqual([
-      [0, 7_500],
-      [7_500, 15_000],
-    ]);
-    expect(moved.beats.map((beat) => beat.visual)).toEqual(["Second content", "First content"]);
+    const choice = convertSceneExitToChoice(content, "text:opening", "en-US");
+    expect(choice.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: { kind: "choice", choices: [] },
+    });
 
-    const shortened = setClipPromptTargetDuration(directed, 12_000);
-    expect(shortened.targetDurationMs).toBe(12_000);
-    expect(shortened.beats[1]?.endMs).toBe(12_000);
-    const clamped = setClipPromptTargetDuration({ ...directed, targetDurationMs: 20_000 }, 5_000);
-    expect(clamped.targetDurationMs).toBe(15_000);
-
-    expectMutationCode(
-      () =>
-        appendClipPromptBeat({
-          ...prompt,
-          beats: [{ ...prompt.beats[0]!, startMs: 0, endMs: 1 }],
-        }),
-      "CLIP_PROMPT_BEAT_TOO_SHORT"
-    );
+    const duplicate = duplicateTextNode(choice, "text:opening", { locale: "en-US" });
+    expect(duplicate.created).toMatchObject({
+      kind: "text",
+      title: { "en-US": "The letter", "zh-CN": "来信" },
+      exit: { kind: "auto", nextNodeId: null },
+    });
   });
 
-  it("deletes an ending and cleans both terminal exits and unlock effects", () => {
-    const content = draft({
-      entryNodeId: "terminal",
-      endings: [ending("truth"), ending("failure")],
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "terminal",
-          clipKey: "TERMINAL",
-          exit: { kind: "ending", endingId: "truth" },
-        },
-        {
-          kind: "clip",
-          nodeId: "decision",
-          clipKey: "DECISION",
-          exit: {
-            kind: "choice",
-            decisionId: "ending-path",
-            prompt: { "en-US": "Choose" },
-            trigger: { kind: "media-ended" },
-            choices: [
-              {
-                ...choice("unlock", "terminal"),
-                effects: [
-                  { kind: "unlock_ending", endingId: "truth" },
-                  { kind: "unlock_ending", endingId: "failure" },
-                ],
-              },
-            ],
+  it("writes explicit cross-chapter continuations without admitting arbitrary missing targets", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "chapter-one-ending",
+      body: "The first chapter closes.",
+    }).content;
+
+    expect(() =>
+      connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening")
+    ).toThrow(/Unknown target node/);
+
+    content = connectSceneContinuation(content, "chapter-one-ending", "chapter-two-opening", {
+      allowExternalTarget: true,
+    });
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: { kind: "auto", nextNodeId: "chapter-two-opening" },
+    });
+
+    content = convertSceneExitToChoice(content, "chapter-one-ending", "en-US");
+    content = addChoiceOption(content, "chapter-one-ending", "chapter-two-opening", "en-US", {
+      label: "Enter Chapter 2",
+      allowExternalTarget: true,
+    }).content;
+    expect(content.graph.nodes[0]).toMatchObject({
+      exit: {
+        kind: "choice",
+        choices: [
+          {
+            label: { "en-US": "Enter Chapter 2" },
+            nextNodeId: "chapter-two-opening",
           },
-        },
-      ],
+        ],
+      },
     });
-
-    const next = deleteEndingNode(content, "truth");
-    expect(next.storyBible.endings.map((candidate) => candidate.id)).toEqual(["failure"]);
-    expect(graphNode(next, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
-    expect(graphNode(next, "decision").exit).toMatchObject({
-      choices: [{ effects: [{ kind: "unlock_ending", endingId: "failure" }] }],
-    });
-    expect(validateStoryDraftGraph(next)).toEqual([]);
   });
 
-  it("converts a clip exit to a choice and edits the prompt, trigger, and options", () => {
-    let content = draft({
-      entryNodeId: "opening",
-      nodes: [autoClip("opening", "OPENING"), autoClip("left", "LEFT"), autoClip("right", "RIGHT")],
-    });
-    content = connectClipContinuation(content, "opening", "left");
-    content = convertClipExitToChoice(content, "opening", "zh-CN");
-    content = updateChoiceExitPrompt(content, "opening", "zh-CN", "你要走哪条路？");
-    expectMutationCode(
-      () => updateChoiceExit(content, "opening", { trigger: { kind: "timecode", atMs: 1.5 } }),
-      "INVALID_CHOICE_TIMECODE"
+  it("requires text body copy only when validating a playable graph", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "text:opening",
+      locale: "en-US",
+      title: "",
+      body: "",
+    }).content;
+    content = createTextNode(content, {
+      nodeId: "text:ending",
+      locale: "en-US",
+      title: "",
+      body: "The end.",
+    }).content;
+    content = connectSceneContinuation(content, "text:opening", "text:ending");
+
+    expect(validateStoryDraftGraph(content)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "empty-text-body" })])
     );
-    content = updateChoiceExit(content, "opening", { trigger: { kind: "timecode", atMs: 2_500 } });
-    const left = addChoiceOption(content, "opening", "left", "zh-CN", {
-      choiceId: "go-left",
-      label: "向左",
+    expect(validateStoryDraftGraph(content, { requireComplete: true })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "empty-text-body",
+          path: ["graph", "nodes", 0, "body"],
+        }),
+      ])
+    );
+    expect(validateStoryDraftGraph(content, { requireComplete: true })).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "empty-text-title" })])
+    );
+  });
+
+  it("removes a text-scene choice option whose target node is deleted", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "text:choice",
+      body: "Choose.",
+    }).content;
+    content = createClipNode(content, {
+      nodeId: "clip:target",
+      clipKey: "TARGET",
+    }).content;
+    content = createClipNode(content, {
+      nodeId: "clip:other",
+      clipKey: "OTHER",
+    }).content;
+    content = convertSceneExitToChoice(content, "text:choice", "en-US");
+    content = addChoiceOption(content, "text:choice", "clip:target", "en-US", {
+      choiceId: "go",
+    }).content;
+
+    // Deleting an unrelated node leaves the choice and its target untouched.
+    const withoutOther = deleteGraphNode(content, "clip:other");
+    expect(withoutOther.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: {
+        kind: "choice",
+        choices: [{ choiceId: "go", nextNodeId: "clip:target" }],
+      },
+    });
+
+    // Deleting the option's target removes the now-targetless option entirely.
+    const withoutTarget = deleteGraphNode(withoutOther, "clip:target");
+    expect(withoutTarget.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: { kind: "choice", choices: [] },
+    });
+  });
+
+  it("edits a player choice in place without dropping other locales", () => {
+    let content = createTextNode(draft(), {
+      nodeId: "text:choice",
+      body: "Choose.",
+    }).content;
+    content = createClipNode(content, { nodeId: "clip:left", clipKey: "LEFT" }).content;
+    content = createClipNode(content, { nodeId: "clip:right", clipKey: "RIGHT" }).content;
+    content = convertSceneExitToChoice(content, "text:choice", "en-US");
+    content = updateChoiceExitPrompt(content, "text:choice", "en-US", "Which way?");
+    content = updateChoiceExitPrompt(content, "text:choice", "zh-CN", "往哪边走？");
+    const left = addChoiceOption(content, "text:choice", "clip:left", "en-US", {
+      choiceId: "left",
+      label: "Left",
     });
     content = left.content;
-    content = addChoiceOption(content, "opening", "right", "zh-CN", {
-      choiceId: "go-right",
-      label: "向右",
+    content = updateChoiceOptionLabel(content, "text:choice", "left", "zh-CN", "向左");
+    content = updateChoiceOptionLabel(content, "text:choice", "left", "en-US", "Go left");
+    content = addChoiceOption(content, "text:choice", "clip:right", "en-US", {
+      choiceId: "right",
+      label: "Right",
     }).content;
-    content = updateChoiceOption(content, "opening", "go-left", {
-      label: { "zh-CN": "进入左廊" },
-    });
-    content = connectChoiceTarget(content, "opening", "go-left", "right");
+    content = moveChoiceOption(content, "text:choice", "right", "up");
 
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "choice",
-      decisionId: "decision:1",
-      prompt: { "zh-CN": "你要走哪条路？" },
-      trigger: { kind: "timecode", atMs: 2_500 },
-      choices: [
-        expect.objectContaining({
-          choiceId: "go-left",
-          label: { "zh-CN": "进入左廊" },
-          nextNodeId: "right",
-        }),
-        expect.objectContaining({ choiceId: "go-right", nextNodeId: "right" }),
-      ],
-    });
-    expect(
-      validateStoryDraftGraph(content, { requireComplete: true }).filter(
-        (issue) => issue.code === "incomplete-choice-exit"
-      )
-    ).toEqual([]);
-
-    content = disconnectChoiceTarget(content, "opening", "go-left");
-    expect(choiceIds(content, "opening")).toEqual(["go-right"]);
-    content = removeChoiceOption(content, "opening", "go-right");
-    expect(choiceIds(content, "opening")).toEqual([]);
-  });
-
-  it("moves choice options without mutating option objects and no-ops at list boundaries", () => {
-    const content = draft({
-      entryNodeId: "decision",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "decision",
-          clipKey: "DECISION",
-          exit: {
-            kind: "choice",
-            decisionId: "path",
-            prompt: { "en-US": "Choose" },
-            trigger: { kind: "media-ended" },
-            choices: [choice("first", "a"), choice("second", "b"), choice("third", "c")],
+    expect(content.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: {
+        kind: "choice",
+        prompt: { "en-US": "Which way?", "zh-CN": "往哪边走？" },
+        choices: [
+          { choiceId: "right" },
+          {
+            choiceId: "left",
+            label: { "en-US": "Go left", "zh-CN": "向左" },
           },
-        },
-        autoClip("a", "A"),
-        autoClip("b", "B"),
-        autoClip("c", "C"),
-      ],
+        ],
+      },
     });
-    const originalChoices = choiceOptions(content, "decision");
 
-    const moved = moveChoiceOption(content, "decision", "second", "up");
-    const movedChoices = choiceOptions(moved, "decision");
+    content = removeChoiceOption(content, "text:choice", "right");
+    expect(content.graph.nodes[0]).toMatchObject({
+      kind: "text",
+      exit: { kind: "choice", choices: [{ choiceId: "left" }] },
+    });
+  });
 
-    expect(originalChoices.map((candidate) => candidate.choiceId)).toEqual([
-      "first",
-      "second",
-      "third",
-    ]);
-    expect(movedChoices.map((candidate) => candidate.choiceId)).toEqual([
-      "second",
-      "first",
-      "third",
-    ]);
-    expect(movedChoices[0]).toBe(originalChoices[1]);
-    expect(movedChoices[1]).toBe(originalChoices[0]);
-    expect(movedChoices[2]).toBe(originalChoices[2]);
-    expect(moveChoiceOption(moved, "decision", "second", "up")).toBe(moved);
-    expect(moveChoiceOption(content, "decision", "third", "down")).toBe(content);
-    expect(choiceIds(moveChoiceOption(moved, "decision", "second", "down"), "decision")).toEqual([
-      "first",
-      "second",
-      "third",
-    ]);
-    expectMutationCode(
-      () => moveChoiceOption(content, "decision", "missing", "up"),
-      "CHOICE_NOT_FOUND"
+  it("binds, re-binds and clears a scene's music without leaving the key behind", () => {
+    let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
+    content = createTextNode(content, { nodeId: "text:reprise", locale: "en-US" }).content;
+    const pristine = content;
+
+    content = setNodeMusic(content, "opening", { mediaAssetId: ` ${THEME_ASSET_ID} ` });
+    expect(content.graph.nodes[0]).toMatchObject({ music: { mediaAssetId: THEME_ASSET_ID } });
+
+    // The same theme returning on a later scene is legal and normal.
+    content = setNodeMusic(content, "text:reprise", { mediaAssetId: THEME_ASSET_ID });
+    expect(content.graph.nodes[1]).toMatchObject({ music: { mediaAssetId: THEME_ASSET_ID } });
+
+    // Re-binding the attached track is a no-op; a real change replaces it.
+    expect(setNodeMusic(content, "opening", { mediaAssetId: THEME_ASSET_ID })).toBe(content);
+    content = setNodeMusic(content, "opening", { mediaAssetId: ECHO_ASSET_ID });
+    expect(content.graph.nodes[0]).toMatchObject({ music: { mediaAssetId: ECHO_ASSET_ID } });
+
+    // Clearing removes the key entirely — a story with no music serializes
+    // exactly as it did before the field existed.
+    content = setNodeMusic(content, "opening", null);
+    content = setNodeMusic(content, "text:reprise", null);
+    expect(content).toEqual(pristine);
+    expect(Object.keys(content.graph.nodes[0]!)).not.toContain("music");
+    expect(setNodeMusic(content, "opening", null)).toBe(content);
+  });
+
+  it("rejects music bound to an unknown node or an id the server would refuse", () => {
+    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
+
+    expect(() => setNodeMusic(content, "missing", { mediaAssetId: THEME_ASSET_ID })).toThrow(
+      /Unknown graph node/
     );
-  });
-
-  it("owns exactly one direct continuation on a film clip", () => {
-    let content = draft({
-      entryNodeId: "opening",
-      nodes: [autoClip("opening", "OPENING"), autoClip("left", "LEFT"), autoClip("right", "RIGHT")],
-    });
-
-    content = connectClipContinuation(content, "opening", "left");
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "auto",
-      nextNodeId: "left",
-    });
-
-    content = connectClipContinuation(content, "opening", "right");
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "auto",
-      nextNodeId: "right",
-    });
-
-    content = disconnectStoryBranch(content, {
-      kind: "continuation",
-      sourceNodeId: "opening",
-      targetNodeId: "right",
-    });
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "auto",
-      nextNodeId: null,
-    });
-  });
-
-  it("connects and disconnects exact automatic branches without disturbing siblings", () => {
-    let content = draft({
-      entryNodeId: "router",
-      nodes: [
-        { kind: "router", nodeId: "router", exit: { kind: "auto", routes: [] } },
-        autoClip("a", "A"),
-        autoClip("b", "B"),
-      ],
-    });
-    content = connectAutoRoute(content, "router", "a", { priority: 10 });
-    content = connectAutoRoute(content, "router", "b", { priority: 20 });
-    content = disconnectStoryBranch(content, {
-      kind: "auto",
-      sourceNodeId: "router",
-      routeIndex: 0,
-      targetNodeId: "a",
-    });
-
-    expect(graphNode(content, "router").exit).toEqual({
-      kind: "auto",
-      routes: [{ nextNodeId: "b", priority: 20 }],
-    });
-    expectMutationCode(
-      () => disconnectAutoRoute(content, "router", { targetNodeId: "missing" }),
-      "BRANCH_NOT_FOUND"
+    expect(() => setNodeMusic(content, "opening", { mediaAssetId: "   " })).toThrow(
+      /Invalid media asset id/
     );
-  });
-
-  it("updates one automatic route atomically while preserving its position and siblings", () => {
-    const guard = { kind: "flag", flag: "gate-open", equals: true } as const;
-    let content = draft({
-      entryNodeId: "router",
-      nodes: [
-        { kind: "router", nodeId: "router", exit: { kind: "auto", routes: [] } },
-        autoClip("a", "A"),
-        autoClip("b", "B"),
-        autoClip("c", "C"),
-      ],
-    });
-    content = connectAutoRoute(content, "router", "a", { priority: 10, when: guard });
-    content = connectAutoRoute(content, "router", "b", { priority: 20 });
-    const before = content;
-
-    const originalRoutes = autoRoutes(content, "router");
-    const next = updateAutoRoute(content, "router", 0, {
-      targetNodeId: "c",
-      priority: 30,
-      when: null,
-    });
-
-    expect(graphNode(before, "router").exit).toEqual({
-      kind: "auto",
-      routes: [
-        { nextNodeId: "a", priority: 10, when: guard },
-        { nextNodeId: "b", priority: 20 },
-      ],
-    });
-    expect(graphNode(next, "router").exit).toEqual({
-      kind: "auto",
-      routes: [
-        { nextNodeId: "c", priority: 30 },
-        { nextNodeId: "b", priority: 20 },
-      ],
-    });
-    expect(autoRoutes(next, "router")[1]).toBe(originalRoutes[1]);
-    expect(validateStoryDraftGraph(next)).toEqual([]);
-    const withCondition = updateAutoRoute(next, "router", 1, { when: guard });
-    expect(autoRoutes(withCondition, "router")[1]).toEqual({
-      nextNodeId: "b",
-      priority: 20,
-      when: guard,
-    });
-    expect(updateAutoRouteTarget(next, "router", 0, "c")).toBe(next);
-    expectMutationCode(
-      () => updateAutoRoute(next, "router", 0.5, { targetNodeId: "a" }),
-      "INVALID_BRANCH_SELECTOR"
+    // Caught here rather than at save: the server takes a UUID and nothing else,
+    // and its rejection names a graph path the creator cannot act on.
+    expect(() => setNodeMusic(content, "opening", { mediaAssetId: "theme-a" })).toThrow(
+      /Invalid media asset id/
     );
-    expectMutationCode(
-      () => updateAutoRoute(next, "router", 8, { targetNodeId: "a" }),
-      "BRANCH_NOT_FOUND"
-    );
-    expectMutationCode(
-      () => updateAutoRoute(next, "router", 0, { targetNodeId: "missing" }),
-      "TARGET_NODE_NOT_FOUND"
-    );
-    expectMutationCode(
-      () => updateAutoRoute(next, "router", 0, { priority: -1 }),
-      "INVALID_ROUTE_PRIORITY"
-    );
-    expectMutationCode(
-      () =>
-        updateAutoRoute(withCondition, "router", 1, {
-          targetNodeId: "c",
-          priority: 30,
-          when: null,
-        }),
-      "BRANCH_ALREADY_EXISTS"
-    );
-  });
-
-  it("connects an empty clip to an ending, refuses to erase branches, and disconnects cleanly", () => {
-    let content = draft({
-      entryNodeId: "terminal",
-      endings: [ending("truth")],
-      nodes: [autoClip("terminal", "TERMINAL"), autoClip("next", "NEXT")],
-    });
-    content = connectEnding(content, "terminal", "truth");
-    expect(graphNode(content, "terminal").exit).toEqual({ kind: "ending", endingId: "truth" });
-    content = disconnectEnding(content, "terminal", "truth");
-    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
-
-    content = connectClipContinuation(content, "terminal", "next");
-    expectMutationCode(() => connectEnding(content, "terminal", "truth"), "BRANCH_ALREADY_EXISTS");
-  });
-
-  it("authors a deterministic checkpoint as one non-decision target", () => {
-    let content = draft({
-      entryNodeId: "opening",
-      nodes: [autoClip("opening", "OPENING"), autoClip("epilogue", "EPILOGUE")],
-    });
-
-    content = convertClipExitToCheckpoint(content, "opening", "epilogue");
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "checkpoint",
-      nextNodeId: "epilogue",
-    });
-    expect(validateStoryDraftGraph(content)).toEqual([]);
-    expect(updateCheckpointTarget(content, "opening", "epilogue")).toBe(content);
-
-    content = createClipNode(content, { nodeId: "finale", clipKey: "FINALE" }).content;
-    content = updateCheckpointTarget(content, "opening", "finale");
-    expect(graphNode(content, "opening").exit).toEqual({
-      kind: "checkpoint",
-      nextNodeId: "finale",
-    });
-
-    content = disconnectStoryBranch(content, {
-      kind: "checkpoint",
-      sourceNodeId: "opening",
-      targetNodeId: "finale",
-    });
-    expect(graphNode(content, "opening").exit).toEqual({ kind: "auto", nextNodeId: null });
-  });
-
-  it("cleans checkpoint targets when their graph node is deleted", () => {
-    const content = draft({
-      entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          exit: { kind: "checkpoint", nextNodeId: "epilogue" },
-        },
-        autoClip("epilogue", "EPILOGUE"),
-      ],
-    });
-
-    const next = deleteGraphNode(content, "epilogue");
-    expect(graphNode(next, "opening").exit).toEqual({ kind: "auto", nextNodeId: null });
-    expect(
-      validateStoryDraftGraph(next, { requireComplete: true }).map((issue) => issue.code)
-    ).toEqual(["empty-auto-exit"]);
-  });
-
-  it("supports explicit destructive exit conversion and localized ending edits", () => {
-    let content = draft({
-      entryNodeId: "terminal",
-      endings: [ending("truth")],
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "terminal",
-          clipKey: "TERMINAL",
-          exit: { kind: "ending", endingId: "truth" },
-        },
-      ],
-    });
-    content = convertExitToAuto(content, "terminal");
-    content = updateEndingNode(content, "truth", {
-      title: { locale: "zh-CN", value: "真相结局" },
-      summary: { locale: "en-US", value: "The truth is revealed." },
-      kind: "hidden",
-    });
-
-    expect(graphNode(content, "terminal").exit).toEqual({ kind: "auto", nextNodeId: null });
-    expect(content.storyBible.endings[0]).toMatchObject({
-      id: "truth",
-      title: { "en-US": "truth", "zh-CN": "真相结局" },
-      summary: { "en-US": "The truth is revealed." },
-      kind: "hidden",
-    });
-  });
-
-  it("converts an existing branched exit to a selected ending atomically", () => {
-    let content = draft({
-      entryNodeId: "terminal",
-      endings: [ending("truth")],
-      nodes: [autoClip("terminal", "TERMINAL"), autoClip("next", "NEXT")],
-    });
-    content = connectClipContinuation(content, "terminal", "next");
-    content = convertClipExitToEnding(content, "terminal", "truth");
-
-    expect(graphNode(content, "terminal").exit).toEqual({
-      kind: "ending",
-      endingId: "truth",
-    });
-  });
-
-  it("reports relational corruption and lock-only exit completeness separately", () => {
-    const content = draft({
-      entryNodeId: "missing-entry",
-      endings: [],
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          exit: { kind: "ending", endingId: "missing-ending" },
-        },
-        { kind: "router", nodeId: "route", exit: { kind: "auto", routes: [] } },
-      ],
-    });
-
-    expect(validateStoryDraftGraph(content).map((issue) => issue.code)).toEqual([
-      "unknown-entry-node",
-      "unknown-ending",
-    ]);
-    expect(
-      validateStoryDraftGraph(content, { requireComplete: true }).map((issue) => issue.code)
-    ).toEqual(["unknown-entry-node", "unknown-ending", "empty-auto-exit"]);
+    expect(() =>
+      setNodeMusic(content, "opening", { mediaAssetId: THEME_ASSET_ID.slice(0, -1) })
+    ).toThrow(/Invalid media asset id/);
   });
 });
 
-function draft(
-  overrides: {
-    entryNodeId?: string | null;
-    nodes?: StoryGraphNode[];
-    endings?: InteractiveFilmDraftContent["storyBible"]["endings"];
-  } = {}
-): InteractiveFilmDraftContent {
+function draft(): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline: "",
       synopsis: "",
       worldview: "",
-      storyRules: [],
       characters: [],
-      locations: [],
-      props: [],
-      stateVariables: [],
-      endings: overrides.endings ?? [],
+      endings: [],
     },
-    graph: {
-      entryNodeId: overrides.entryNodeId ?? null,
-      nodes: overrides.nodes ?? [],
-    },
-    clipPrompts: [],
-    trailerPrompt: null,
+    graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],
   };
-}
-
-function autoClip(nodeId: string, clipKey: string): StoryGraphNode {
-  return { kind: "clip", nodeId, clipKey, exit: { kind: "auto", nextNodeId: null } };
-}
-
-function choice(choiceId: string, nextNodeId: string, reactionClipKey?: string) {
-  return {
-    choiceId,
-    label: { "en-US": choiceId },
-    effects: [],
-    nextNodeId,
-    afterSelect: reactionClipKey
-      ? ({ kind: "play", reactionClipKey } as const)
-      : ({ kind: "immediate" } as const),
-  };
-}
-
-function ending(id: string): InteractiveFilmDraftContent["storyBible"]["endings"][number] {
-  return { id, title: { "en-US": id }, summary: { "en-US": "" }, kind: "custom" };
-}
-
-function graphNode(content: InteractiveFilmDraftContent, nodeId: string): StoryGraphNode {
-  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node) throw new Error(`Missing fixture graph node ${nodeId}.`);
-  return node;
-}
-
-function choiceIds(content: InteractiveFilmDraftContent, nodeId: string): string[] {
-  return choiceOptions(content, nodeId).map((candidate) => candidate.choiceId);
-}
-
-function choiceOptions(content: InteractiveFilmDraftContent, nodeId: string) {
-  const node = graphNode(content, nodeId);
-  if (node.kind !== "clip" || node.exit.kind !== "choice") throw new Error("Expected choice clip.");
-  return node.exit.choices;
-}
-
-function autoRoutes(content: InteractiveFilmDraftContent, nodeId: string) {
-  const node = graphNode(content, nodeId);
-  if (node.kind !== "router") throw new Error("Expected router node.");
-  return node.exit.routes;
-}
-
-function expectMutationCode(action: () => unknown, code: string): void {
-  try {
-    action();
-    throw new Error(`Expected StoryDraftMutationError ${code}.`);
-  } catch (error) {
-    expect(error).toBeInstanceOf(StoryDraftMutationError);
-    expect(error).toMatchObject({ code });
-  }
 }

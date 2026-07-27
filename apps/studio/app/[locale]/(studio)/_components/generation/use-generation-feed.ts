@@ -16,8 +16,8 @@ import {
   type FizzAiJobType,
   type FizzAiJobView,
   type FizzAiSubmitJobInput,
-} from "@/app/[locale]/canvas/_lib/generation-api";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+} from "@/lib/canvas-authoring/generation-api";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { charactersKeys } from "@/app/[locale]/(studio)/characters/_lib/use-characters";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
@@ -38,6 +38,9 @@ export interface FeedJob {
   input: Record<string, unknown>;
   outputs: FizzAiJobOutput[];
   error?: string;
+  /** Provider/job error code (e.g. PROVIDER_CONTENT_FILTER), so the tile can
+   *  show a code-specific localized message instead of the raw server string. */
+  errorCode?: string;
   createdAtMs: number;
 }
 
@@ -58,6 +61,7 @@ function jobToFeedJob(job: FizzAiJobView): FeedJob {
     input: job.input ?? {},
     outputs: job.outputs ?? [],
     error: job.error ? (job.error.userMessage ?? job.error.message) : undefined,
+    errorCode: job.error?.code,
     createdAtMs: Date.parse(job.createdAt) || Date.now(),
   };
 }
@@ -76,6 +80,7 @@ function mergeRow(existing: FeedJob, incoming: FeedJob): FeedJob {
     // Sticky fields — a stale poll response must not blank them out.
     outputs: incoming.outputs.length ? incoming.outputs : existing.outputs,
     error: incoming.error ?? existing.error,
+    errorCode: incoming.errorCode ?? existing.errorCode,
     prompt: incoming.prompt || existing.prompt,
     input: Object.keys(incoming.input).length ? incoming.input : existing.input,
   };

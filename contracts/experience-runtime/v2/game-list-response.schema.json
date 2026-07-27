@@ -7,9 +7,9 @@
     "type": "object",
     "properties": {
       "gameId": { "$ref": "#/$defs/__schema0" },
-      "title": { "$ref": "#/$defs/__schema1" },
-      "subtitle": { "$ref": "#/$defs/__schema1" },
-      "coverUrl": { "type": "string", "format": "uri" },
+      "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+      "subtitle": {},
+      "coverUrl": {},
       "currentVersion": { "$ref": "#/$defs/__schema0" },
       "updatedAt": {
         "type": "string",
@@ -26,7 +26,6 @@
       "minLength": 1,
       "maxLength": 160,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
-    },
-    "__schema1": { "type": "string", "minLength": 1, "maxLength": 240 }
+    }
   }
 }

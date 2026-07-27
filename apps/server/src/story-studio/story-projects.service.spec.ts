@@ -1,159 +1,69 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, HttpException } from '@nestjs/common';
 import {
-  Prisma,
+  MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetStatus,
+  MediaAssetVariantStatus,
   StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
   StoryRevisionSource,
   WorkspaceMemberRole,
+  WorkspaceMemberStatus,
 } from '@prisma/client';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
-  EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
+  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-  type InteractiveFilmDraftContent,
-  type StoryProjectSummaryDto,
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+  StoryProjectListQuerySchema,
+  type InteractiveStoryDraftContent,
 } from './dto';
-import type { StoryTrailerPromptDraft } from './interactive-film.schema';
-import { projectStoryFilmRevision } from './story-film-revision-projector';
+import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
+import { storyVideoSnapshotHash } from './story-video-production.schema';
 
 const USER = { userId: 'user-1' };
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const DRAFT_ID = '0197f4a2-0800-7000-8000-000000000003';
 const REVISION_ID = '0197f4a2-0800-7000-8000-000000000004';
-const MODEL_ID = '0197f4a2-0800-7000-8000-000000000005';
-const VIDEO_ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
-const MODEL_SLUG = 'story-video-model';
+const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000005';
+const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
+const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000007';
+const MEDIA_VARIANT_ID = '0197f4a2-0800-7000-8000-000000000008';
+/** Someone else's tenant: where a shared project lives, never the invitee's. */
+const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
+const PROJECT_NOT_FOUND_BODY = {
+  code: 'STORY_PROJECT_NOT_FOUND',
+  message: 'Story project not found.',
+};
 
-process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG = MODEL_SLUG;
-
-function projectRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: PROJECT_ID,
-    workspaceId: WORKSPACE_ID,
-    format: StoryFormat.interactive_film,
-    frameProfile: StoryFrameProfile.landscape_16_9,
-    status: StoryProjectStatus.active,
-    visibility: 'private',
-    title: 'Tiger Balm Villa: Nightfall at Dragon Gate',
-    summary: null,
-    defaultLocale: 'zh-CN',
-    coverAssetId: null,
-    tags: [],
-    sourceIpId: null,
-    nextBuildNumber: 1,
-    version: 3,
-    createdByUserId: USER.userId,
-    archivedAt: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
-}
-
-function summaryProject(overrides: Record<string, unknown> = {}) {
-  const content = EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT;
-  return projectRow({
-    cover: null,
-    draft: {
-      revision: 0,
-      content,
-      contentHash: canonicalJsonHash(content),
-    },
-    revisions: [],
-    members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
-    filmReferenceSlots: [],
-    filmClipHeads: [],
-    builds: [],
-    ...overrides,
-  });
-}
-
-function draftRow(overrides: Record<string, unknown> = {}) {
-  const content =
-    (overrides.content as InteractiveFilmDraftContent | undefined) ??
-    EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT;
-  return {
-    id: DRAFT_ID,
-    storyProjectId: PROJECT_ID,
-    schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-    content,
-    contentHash: canonicalJsonHash(content),
-    revision: 3,
-    updatedByUserId: USER.userId,
-    updatedBySessionId: 'session-a',
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
-}
-
-function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
-  return {
-    storyProjectId: PROJECT_ID,
-    workspaceId: WORKSPACE_ID,
-    schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-    nodePositions: {},
-    revision: 0,
-    updatedByUserId: USER.userId,
-    updatedBySessionId: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
-}
-
-function revisionRow(overrides: Record<string, unknown> = {}) {
-  const content =
-    (overrides.content as InteractiveFilmDraftContent | undefined) ??
-    lockableDraft();
-  return {
-    id: REVISION_ID,
-    storyProjectId: PROJECT_ID,
-    number: 1,
-    sourceDraftRevision: 3,
-    schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-    content,
-    contentHash: canonicalJsonHash(content),
-    label: null,
-    source: StoryRevisionSource.creator,
-    createdByUserId: USER.userId,
-    createdAt: NOW,
-    ...overrides,
-  };
-}
-
-function lockableDraft(): InteractiveFilmDraftContent {
+function lockableDraft(): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline: 'At night, a sealed gate asks who owns the truth.',
       synopsis: "A visitor must choose whether to reveal the villa's secret.",
       worldview: 'One night inside a mythic villa.',
-      storyRules: [],
       characters: [
         {
           id: 'hero',
           name: { 'zh-CN': '来客' },
-          role: 'protagonist',
           summary: 'A visitor searching for the truth.',
-          playable: true,
-          continuityRules: [],
+          images: [],
+          voice: null,
         },
       ],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [
         {
           id: 'ending.truth',
           title: { 'zh-CN': '真相' },
           summary: { 'zh-CN': '门打开了。' },
-          kind: 'truth',
         },
       ],
     },
@@ -168,364 +78,660 @@ function lockableDraft(): InteractiveFilmDraftContent {
         },
       ],
     },
-    clipPrompts: [
-      {
-        graphNodeId: 'node.opening',
-        clipKey: 'S00',
-        title: 'The sealed gate',
-        description: 'A visitor faces the gate.',
-        targetDurationMs: 15_000,
-        generationControl: {
-          mode: 'frame_lock',
-          frameMode: 'first_frame',
-        },
-        masterDirection: 'Hold on the visitor as the gate begins to glow.',
-        referenceRoleNotes: [],
-        emotionalArc: 'Uncertainty settles into resolve.',
-        beats: [
-          {
-            id: 'beat:1',
-            startMs: 0,
-            endMs: 15_000,
-            visual: 'The sealed gate fills the background.',
-            camera: 'Slow push-in from a medium shot.',
-            action: 'The visitor raises one hand toward the gate.',
-            performance: '',
-            emotion: '',
-            dialogue: '',
-            audio: '',
-            endState: '',
-            continuity: '',
-          },
-        ],
-        negativeConstraints: [],
-        continuityNotes: [],
-      },
-    ],
-    trailerPrompt: null,
     productionNotes: [],
   };
 }
 
-function trailerDraft(
-  overrides: Partial<StoryTrailerPromptDraft> = {},
-): StoryTrailerPromptDraft {
+function multiChapterDraft(): InteractiveStoryDraftContent {
+  const first = lockableDraft();
   return {
-    title: '15-second trailer',
-    description: 'A promotional root video.',
-    targetDurationMs: 15_000,
-    generationControl: { mode: 'omni_reference' },
-    masterDirection: 'Build restrained dread without revealing the ending.',
-    referenceRoleNotes: [],
-    emotionalArc: 'Curiosity becomes danger.',
-    beats: [
-      {
-        id: 'trailer:beat:1',
-        startMs: 0,
-        endMs: 15_000,
-        visual: 'The dragon gate emerges from the rain.',
-        camera: 'Slow controlled push toward the gate.',
-        action: 'The two visitors stop as the cassette starts.',
-        performance: '',
-        emotion: '',
-        dialogue: '',
-        audio: 'Tape hiss and wet night ambience.',
-        endState: 'Hold on the open dragon mouth.',
-        continuity: '',
-      },
-    ],
-    negativeConstraints: ['Do not reveal an ending.'],
-    continuityNotes: [],
+    ...first,
+    graph: {
+      entryNodeId: 'node.opening',
+      nodes: [
+        ...first.graph.nodes,
+        {
+          kind: 'clip',
+          nodeId: 'node.chapter-two',
+          clipKey: 'S10',
+          exit: { kind: 'ending', endingId: 'ending.truth' },
+        },
+      ],
+    },
+  };
+}
+
+function projectRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    format: StoryFormat.interactive_film,
+    frameProfile: StoryFrameProfile.landscape_16_9,
+    status: StoryProjectStatus.active,
+    visibility: 'private',
+    title: 'Branching Film Test',
+    summary: null,
+    defaultLocale: 'zh-CN',
+    coverAssetId: null,
+    tags: [],
+    sourceIpId: null,
+    nextBuildNumber: 1,
+    version: 0,
+    createdByUserId: USER.userId,
+    archivedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
     ...overrides,
   };
 }
 
-function makeHarness(
-  options: {
-    permissionError?: Error;
-    projectUpdateCount?: number;
-    currentProjectVersion?: number;
-    draftUpdateCount?: number;
-    currentDraft?: ReturnType<typeof draftRow> | null;
-    transactionDraft?: ReturnType<typeof draftRow> | null;
-    existingRevision?: ReturnType<typeof revisionRow> | null;
-    existingFilmSpec?: Record<string, unknown> | null;
-    existingFilmClips?: Array<Record<string, unknown>>;
-    priorFilmClips?: Array<Record<string, unknown>>;
-    existingFilmTrailer?: Record<string, unknown> | null;
-    priorFilmTrailer?: Record<string, unknown> | null;
-    modelGenerationModes?: string[];
-    workbenchRevision?: ReturnType<typeof revisionRow> | null;
-    workbenchFilmSpec?: Record<string, unknown> | null;
-    workbenchFilmClips?: Array<Record<string, unknown>>;
-    workbenchFilmTrailer?: Record<string, unknown> | null;
-    workbenchBuild?: Record<string, unknown> | null;
-    canvasLayoutUpdateCount?: number;
-    currentCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
-    transactionCanvasLayout?: ReturnType<typeof canvasLayoutRow> | null;
-  } = {},
-) {
+function draftRow(overrides: Record<string, unknown> = {}) {
+  const content =
+    (overrides.content as InteractiveStoryDraftContent | undefined) ??
+    lockableDraft();
+  return {
+    id: DRAFT_ID,
+    storyProjectId: PROJECT_ID,
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    content,
+    contentHash: canonicalJsonHash(content),
+    revision: 3,
+    updatedByUserId: USER.userId,
+    updatedBySessionId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyChapterId: CHAPTER_ID,
+    storyProjectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+    nodePositions: { 'clip:scene-1': { x: -500, y: 120 } },
+    revision: 2,
+    updatedByUserId: USER.userId,
+    updatedBySessionId: 'canvas-session',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function productionCanvasRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyProjectId: PROJECT_ID,
+    schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+    content: { nodes: [], edges: [], assets: [], groups: [] },
+    updatedByUserId: USER.userId,
+    updatedBySessionId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function candidateAssetRow(overrides: Record<string, unknown> = {}) {
+  return {
+    storyProjectId: PROJECT_ID,
+    mediaAssetId: MEDIA_ASSET_ID,
+    addedByUserId: USER.userId,
+    addedAt: NOW,
+    asset: {
+      id: MEDIA_ASSET_ID,
+      kind: MediaAssetKind.video,
+      storageProvider: 'external_url',
+      workspaceId: WORKSPACE_ID,
+      bucket: null,
+      region: null,
+      objectKey: null,
+      externalUrl: 'https://media.example/candidate.mp4',
+      contentType: 'video/mp4',
+      sizeBytes: BigInt(1024),
+      width: 1920,
+      height: 1080,
+      durationSeconds: 12,
+      checksumSha256: 'asset-checksum',
+      visibility: 'public',
+      status: MediaAssetStatus.ready,
+      source: 'generated',
+      moderationStatus: MediaAssetModerationStatus.approved,
+      moderationReason: null,
+      moderatedByAdminId: null,
+      moderatedAt: null,
+      metadata: {},
+      createdByUserId: USER.userId,
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+      placements: [],
+      variants: [
+        {
+          id: MEDIA_VARIANT_ID,
+          assetId: MEDIA_ASSET_ID,
+          variantKey: 'original',
+          kind: 'original',
+          status: MediaAssetVariantStatus.ready,
+          contentType: 'video/mp4',
+          sizeBytes: BigInt(1024),
+          width: 1920,
+          height: 1080,
+          durationSeconds: 12,
+          durationMs: 12_000,
+          checksumSha256: 'a'.repeat(64),
+          metadata: {},
+          createdAt: NOW,
+          updatedAt: NOW,
+          deletedAt: null,
+          placements: [],
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+function chapterRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CHAPTER_ID,
+    storyProjectId: PROJECT_ID,
+    title: 'Chapter 1',
+    rank: 0,
+    nodeIds: ['node.opening'],
+    entryNodeId: 'node.opening',
+    createdByUserId: USER.userId,
+    archivedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function summaryProject(overrides: Record<string, unknown> = {}) {
+  const content = lockableDraft();
+  return projectRow({
+    cover: null,
+    draft: draftRow({ content }),
+    revisions: [],
+    members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
+    referenceSlots: [],
+    videoSelections: [],
+    builds: [],
+    ...overrides,
+  });
+}
+
+function revisionRow(overrides: Record<string, unknown> = {}) {
+  const content = lockableDraft();
+  return {
+    id: REVISION_ID,
+    storyProjectId: PROJECT_ID,
+    number: 1,
+    sourceDraftRevision: 3,
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    content,
+    contentHash: canonicalJsonHash(content),
+    label: null,
+    source: StoryRevisionSource.creator,
+    createdByUserId: USER.userId,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+function serviceWith(prisma: Record<string, unknown>) {
   const access = {
     project: projectRow(),
     role: StoryProjectMemberRole.owner,
-    capabilities: [
-      'story.read',
-      'story.edit',
-      'story.generate',
-      'story.review',
-      'story.build',
-      'story.release',
-      'story.admin',
-    ],
+    capabilities: ['story.read', 'story.edit', 'story.build'],
   };
   const permissions = {
-    requireProject: jest.fn(() =>
-      options.permissionError
-        ? Promise.reject(options.permissionError)
-        : Promise.resolve(access),
-    ),
-    capabilities: jest.fn(() => access.capabilities),
+    requireProject: jest.fn().mockResolvedValue(access),
+    capabilities: jest.fn().mockReturnValue(access.capabilities),
   };
   const workspacePermissions = {
-    requireWorkspaceRole: jest.fn(() => ({
-      role: WorkspaceMemberRole.owner,
-    })),
+    requireWorkspaceRole: jest
+      .fn()
+      .mockResolvedValue({ role: WorkspaceMemberRole.owner }),
   };
-
-  const tx = {
-    storyDraft: {
-      findUnique: jest.fn(() =>
-        options.transactionDraft === undefined
-          ? draftRow({ content: lockableDraft() })
-          : options.transactionDraft,
-      ),
-      updateMany: jest.fn(() => ({
-        count: options.draftUpdateCount ?? 1,
-      })),
-    },
-    storyProject: {
-      update: jest.fn(() => projectRow()),
-      findUnique: jest.fn(() => summaryProject()),
-    },
-    storyRevision: {
-      findUnique: jest.fn(() => options.existingRevision ?? null),
-      findFirst: jest.fn(() => options.workbenchRevision ?? null),
-      aggregate: jest.fn(() => ({ _max: { number: 0 } })),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
-        revisionRow(data),
-      ),
-    },
-    storyFilmSpec: {
-      findUnique: jest.fn(
-        () => options.workbenchFilmSpec ?? options.existingFilmSpec ?? null,
-      ),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
-    },
-    storyFilmClip: {
-      findMany: jest.fn(
-        (args?: { where?: { revisionId?: string | { not?: string } } }) =>
-          typeof args?.where?.revisionId === 'object'
-            ? (options.priorFilmClips ?? [])
-            : (options.workbenchFilmClips ?? options.existingFilmClips ?? []),
-      ),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
-    },
-    storyFilmClipHead: {
-      findMany: jest.fn(() =>
-        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
-      ),
-    },
-    storyFilmTrailer: {
-      findUnique: jest.fn(
-        () =>
-          options.workbenchFilmTrailer ?? options.existingFilmTrailer ?? null,
-      ),
-      findFirst: jest.fn(() => options.priorFilmTrailer ?? null),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => data),
-    },
-    storyFilmTrailerHead: {
-      findUnique: jest.fn(() => {
-        const trailer =
-          options.workbenchFilmTrailer ?? options.existingFilmTrailer ?? null;
-        return trailer ? { trailer } : null;
-      }),
-    },
-    storyFilmReferenceSlot: {
-      findMany: jest.fn(() => []),
-    },
-    storyBuild: {
-      findFirst: jest.fn(() => options.workbenchBuild ?? null),
-    },
-    aiCanonicalModel: {
-      findUnique: jest.fn(() =>
-        options.noVideoModel
-          ? null
-          : {
-              id: MODEL_ID,
-              slug: MODEL_SLUG,
-              modality: 'video',
-              status: 'active',
-              archivedAt: null,
-              generationModes: options.modelGenerationModes ?? [
-                'image_to_video',
-                'first_last_frame_to_video',
-                'multimodal_to_video',
-              ],
-            },
-      ),
-      findFirst: jest.fn(() =>
-        options.noVideoModel
-          ? null
-          : {
-              id: MODEL_ID,
-              slug: MODEL_SLUG,
-              modality: 'video',
-              status: 'active',
-              archivedAt: null,
-              generationModes: options.fallbackGenerationModes ??
-                options.modelGenerationModes ?? [
-                  'image_to_video',
-                  'first_last_frame_to_video',
-                  'multimodal_to_video',
-                ],
-            },
-      ),
-    },
-    storyCanvasLayout: {
-      updateMany: jest.fn(() => ({
-        count: options.canvasLayoutUpdateCount ?? 1,
-      })),
-      findUnique: jest.fn(() =>
-        options.transactionCanvasLayout === undefined
-          ? options.currentCanvasLayout === undefined
-            ? canvasLayoutRow({ revision: 1 })
-            : options.currentCanvasLayout
-          : options.transactionCanvasLayout,
-      ),
-    },
+  const writeGuard = {
+    assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
   };
-
-  const prisma = {
-    storyProject: {
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
-        const draftCreate = (data.draft as { create: Record<string, unknown> })
-          .create;
-        return summaryProject({
-          workspaceId: data.workspaceId,
-          format: data.format,
-          frameProfile: data.frameProfile,
-          status: data.status,
-          visibility: data.visibility,
-          title: data.title,
-          summary: data.summary ?? null,
-          defaultLocale: data.defaultLocale,
-          sourceIpId: data.sourceIpId ?? null,
-          createdByUserId: data.createdByUserId,
-          draft: draftRow({ ...draftCreate, revision: 0 }),
-        });
-      }),
-      updateMany: jest.fn(() => ({
-        count: options.projectUpdateCount ?? 1,
-      })),
-      findUnique: jest.fn((args: { select?: unknown }) =>
-        args.select
-          ? {
-              workspaceId: WORKSPACE_ID,
-              status: StoryProjectStatus.active,
-              version: options.currentProjectVersion ?? 8,
-            }
-          : summaryProject(),
-      ),
-      update: jest.fn(() => projectRow()),
-    },
-    storyDraft: {
-      findUnique: jest.fn(() =>
-        options.currentDraft === undefined
-          ? draftRow({ revision: 7 })
-          : options.currentDraft,
-      ),
-    },
-    storyCanvasLayout: {
-      updateMany: jest.fn(() => ({
-        count: options.canvasLayoutUpdateCount ?? 1,
-      })),
-      findUnique: jest.fn(() =>
-        options.currentCanvasLayout === undefined
-          ? canvasLayoutRow({ revision: 1 })
-          : options.currentCanvasLayout,
-      ),
-    },
-    storyRevision: {
-      findUnique: jest.fn(() => options.existingRevision ?? null),
-      findFirst: jest.fn(() => options.workbenchRevision ?? null),
-      findMany: jest.fn(() => []),
-    },
-    storyFilmSpec: {
-      findUnique: jest.fn(() => options.workbenchFilmSpec ?? null),
-    },
-    storyFilmClip: {
-      findMany: jest.fn(() => options.workbenchFilmClips ?? []),
-    },
-    storyFilmClipHead: {
-      findMany: jest.fn(() =>
-        (options.workbenchFilmClips ?? []).map((clip) => ({ clip })),
-      ),
-    },
-    storyFilmTrailer: {
-      findUnique: jest.fn(() => options.workbenchFilmTrailer ?? null),
-    },
-    storyFilmTrailerHead: {
-      findUnique: jest.fn(() => {
-        const trailer = options.workbenchFilmTrailer ?? null;
-        return trailer ? { trailer } : null;
-      }),
-    },
-    storyFilmReferenceSlot: {
-      findMany: jest.fn(() => []),
-    },
-    storyBuild: {
-      findFirst: jest.fn(() => null),
-    },
-    $transaction: jest.fn(
-      (operation: (client: typeof tx) => Promise<unknown>) => operation(tx),
-    ),
-  };
-
   return {
     service: new StoryProjectsService(
       prisma as never,
       permissions as never,
       workspacePermissions as never,
+      writeGuard as never,
     ),
-    prisma,
     permissions,
     workspacePermissions,
-    tx,
+    writeGuard,
   };
 }
 
-async function expectApiError(
-  operation: Promise<unknown>,
-): Promise<Record<string, unknown>> {
+function transactionMock<TClient>(client: TClient) {
+  return jest.fn((callback: (tx: TClient) => Promise<unknown>) =>
+    callback(client),
+  );
+}
+
+async function apiError(operation: Promise<unknown>) {
   try {
     await operation;
   } catch (error) {
-    const response = (error as { response?: unknown }).response;
-    if (!response || typeof response !== 'object' || Array.isArray(response)) {
-      throw error;
+    if (error instanceof ConflictException) {
+      return error.getResponse() as Record<string, unknown>;
     }
-    return response as Record<string, unknown>;
+    throw error;
   }
-  throw new Error('Expected the operation to reject.');
+  throw new Error('Expected operation to reject.');
 }
 
-describe('StoryProjectsService.create', () => {
-  it('creates the tenant-scoped project, owner membership and blank draft atomically', async () => {
-    const { service, prisma, workspacePermissions } = makeHarness();
+/**
+ * Keeps the status alongside the body so a denial test fails loudly on a 403
+ * instead of quietly accepting any rejection.
+ */
+async function httpError(operation: Promise<unknown>) {
+  try {
+    await operation;
+  } catch (error) {
+    if (error instanceof HttpException) {
+      return {
+        status: error.getStatus(),
+        body: error.getResponse() as Record<string, unknown>,
+      };
+    }
+    throw error;
+  }
+  throw new Error('Expected operation to reject.');
+}
+
+type StoryProjectAccessQuery = {
+  where: {
+    id: string;
+    status?: StoryProjectStatus;
+    members?: { some: { userId: string } };
+  };
+};
+
+/**
+ * A resolver over the REAL permission services, with a prisma double that
+ * applies only the filters the caller actually sends — an absent filter is a
+ * filter Prisma does not apply, so an unscoped lookup finds the project the way
+ * it really would. That is what makes the denial cases below meaningful:
+ * mocking `requireProject` the way {@link serviceWith} does, or hard-coding the
+ * membership scope here, would make them pass by construction.
+ */
+function resolverWith(seats: {
+  storyRole: StoryProjectMemberRole | null;
+  workspaceRole: WorkspaceMemberRole | null;
+  status?: StoryProjectStatus;
+}) {
+  const status = seats.status ?? StoryProjectStatus.active;
+  const prisma = {
+    storyProject: {
+      findFirst: jest.fn(({ where }: StoryProjectAccessQuery) => {
+        if (where.id !== PROJECT_ID) return Promise.resolve(null);
+        if (where.status !== undefined && where.status !== status) {
+          return Promise.resolve(null);
+        }
+        if (
+          where.members !== undefined &&
+          (where.members.some.userId !== USER.userId ||
+            seats.storyRole === null)
+        ) {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve({
+          ...projectRow({ workspaceId: OWNER_WORKSPACE_ID, status }),
+          members: seats.storyRole === null ? [] : [{ role: seats.storyRole }],
+        });
+      }),
+    },
+    workspaceMember: {
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          seats.workspaceRole === null
+            ? null
+            : {
+                workspaceId: OWNER_WORKSPACE_ID,
+                userId: USER.userId,
+                role: seats.workspaceRole,
+              },
+        ),
+      ),
+    },
+  };
+  const writeGuard = {
+    assertHumanWriteAllowedEarly: jest.fn().mockResolvedValue(undefined),
+  };
+  const workspacePermissions = new WorkspacePermissionService(prisma as never);
+  return new StoryProjectsService(
+    prisma as never,
+    new StoryPermissionService(
+      prisma as never,
+      workspacePermissions,
+      writeGuard as never,
+    ),
+    workspacePermissions,
+    writeGuard as never,
+  );
+}
+
+describe('StoryProjectsService unified-story authoring boundary', () => {
+  /**
+   * A cover must be a STILL: the player paints it behind the title screen from an
+   * image asset, the catalogue tile renders it through next/image, and it is the
+   * play page's og:image. A video cover could only ever have shown on the
+   * studio's own library card, so accepting one let a creator set a cover that no
+   * player and no catalogue would show.
+   */
+  it('accepts only a ready image from the project workspace as the cover', async () => {
+    const project = summaryProject({
+      cover: { ...candidateAssetRow().asset, kind: MediaAssetKind.image },
+      coverAssetId: MEDIA_ASSET_ID,
+      version: 1,
+    });
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue({ id: MEDIA_ASSET_ID }),
+      },
+      storyProject: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service, writeGuard } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+    });
+
+    await expect(
+      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: MEDIA_ASSET_ID,
+      }),
+    ).resolves.toMatchObject({
+      cover: {
+        id: MEDIA_ASSET_ID,
+        kind: 'image',
+      },
+      projectVersion: 1,
+    });
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.mediaAsset.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: MEDIA_ASSET_ID,
+        workspaceId: WORKSPACE_ID,
+        status: MediaAssetStatus.ready,
+        moderationStatus: {
+          not: MediaAssetModerationStatus.blocked,
+        },
+        deletedAt: null,
+        kind: MediaAssetKind.image,
+      },
+      select: { id: true },
+    });
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        status: StoryProjectStatus.active,
+        version: 0,
+      },
+      data: {
+        coverAssetId: MEDIA_ASSET_ID,
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  it('rejects an invalid project cover before updating the project', async () => {
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      storyProject: {
+        updateMany: jest.fn(),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    let rejection: unknown;
+    try {
+      await service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: MEDIA_ASSET_ID,
+      });
+    } catch (error) {
+      rejection = error;
+    }
+    expect(rejection).toBeInstanceOf(HttpException);
+    if (!(rejection instanceof HttpException)) {
+      throw new Error('Expected an HTTP exception.');
+    }
+    expect(rejection.getResponse()).toMatchObject({
+      code: 'STORY_PROJECT_COVER_INVALID',
+    });
+    expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('clears a project cover without looking up a media asset', async () => {
+    const project = summaryProject({
+      cover: null,
+      coverAssetId: null,
+      version: 1,
+    });
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn(),
+      },
+      storyProject: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+    });
+
+    await expect(
+      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        coverAssetId: null,
+      }),
+    ).resolves.toMatchObject({ cover: null, projectVersion: 1 });
+    expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('keeps retired project formats out of the target project-list contract', async () => {
+    expect(
+      StoryProjectListQuerySchema.safeParse({
+        format: 'narrative_rpg',
+      }).success,
+    ).toBe(false);
+
+    const findMany = jest.fn((input: { where: { format: unknown } }) => {
+      void input;
+      return Promise.resolve([]);
+    });
+    const { service } = serviceWith({ storyProject: { findMany } });
+
+    await expect(
+      service.list(USER as never, WORKSPACE_ID, {
+        status: 'active',
+        limit: 20,
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany.mock.calls[0]?.[0].where.format).toEqual({
+      in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
+    });
+  });
+
+  it('lists joined projects across tenants, excluding the ones you own', async () => {
+    // The three properties that make "Shared with me" both useful and safe. A
+    // workspace id in this predicate would defeat the point; dropping the role
+    // filter would restate everything `list` already shows; dropping the
+    // workspace-membership filter would advertise projects whose tenant seat is
+    // gone, which `requireProject` refuses to open.
+    const findMany = jest.fn((input: { where: Record<string, unknown> }) => {
+      void input;
+      return Promise.resolve([]);
+    });
+    const { service } = serviceWith({ storyProject: { findMany } });
+
+    await expect(
+      service.listJoined(USER as never, { status: 'active', limit: 20 }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+
+    const where = findMany.mock.calls[0]?.[0].where ?? {};
+    expect(where).not.toHaveProperty('workspaceId');
+    expect(where.members).toEqual({
+      some: {
+        userId: USER.userId,
+        status: 'active',
+        removedAt: null,
+        role: { not: StoryProjectMemberRole.owner },
+      },
+    });
+    expect(where.workspace).toEqual({
+      members: {
+        some: {
+          userId: USER.userId,
+          status: WorkspaceMemberStatus.active,
+        },
+      },
+    });
+  });
+
+  it('creates a text-adventure profile with no frame profile on the unified schema', async () => {
+    const project = summaryProject({
+      format: StoryFormat.text_adventure,
+      frameProfile: null,
+      draft: draftRow({
+        revision: 0,
+        content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      }),
+    });
+    const create = jest.fn(
+      (input: {
+        data: {
+          format: StoryFormat;
+          frameProfile: unknown;
+          draft: { create: { schemaVersion: string; content: unknown } };
+          productionCanvas: {
+            create: { schemaVersion: string; content: unknown };
+          };
+        };
+      }) => {
+        expect(input.data).toMatchObject({
+          format: StoryFormat.text_adventure,
+          draft: {
+            create: {
+              schemaVersion: 'interactive-story-draft-v1',
+              content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+            },
+          },
+          productionCanvas: {
+            create: {
+              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+              content: { nodes: [], edges: [], assets: [], groups: [] },
+            },
+          },
+        });
+        // A text-first project persists no frame contract.
+        expect(input.data.frameProfile).toBeNull();
+        return Promise.resolve(project);
+      },
+    );
+    const tx = {
+      storyProject: {
+        create,
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+      storyChapter: {
+        create: jest
+          .fn()
+          .mockResolvedValue(chapterRow({ nodeIds: [], entryNodeId: null })),
+      },
+      storyCanvasLayout: {
+        create: jest.fn().mockResolvedValue(canvasLayoutRow()),
+      },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.create(USER as never, WORKSPACE_ID, {
+        format: 'text_adventure',
+        title: 'A Text Story',
+        defaultLocale: 'en-US',
+        visibility: 'private',
+      }),
+    ).resolves.toMatchObject({
+      project: { format: 'text_adventure', frameProfile: null },
+      draft: { format: 'text_adventure' },
+    });
+  });
+
+  it('creates a unified story draft and a non-null empty video workbench', async () => {
+    const project = summaryProject({
+      draft: draftRow({
+        revision: 0,
+        content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      }),
+    });
+    const create = jest.fn(
+      (input: {
+        data: {
+          draft: { create: { schemaVersion: string; content: unknown } };
+          productionCanvas: {
+            create: { schemaVersion: string; content: unknown };
+          };
+          writeState: { create: Record<string, never> };
+        };
+      }) => {
+        expect(input.data.draft.create).toMatchObject({
+          schemaVersion: 'interactive-story-draft-v1',
+          content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        });
+        expect(input.data.productionCanvas.create).toMatchObject({
+          schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+          content: { nodes: [], edges: [], assets: [], groups: [] },
+        });
+        expect(input.data.writeState).toEqual({ create: {} });
+        return Promise.resolve(project);
+      },
+    );
+    const chapter = chapterRow({ nodeIds: [], entryNodeId: null });
+    const tx = {
+      storyProject: {
+        create,
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+      storyChapter: { create: jest.fn().mockResolvedValue(chapter) },
+      storyCanvasLayout: {
+        create: jest.fn().mockResolvedValue(canvasLayoutRow()),
+      },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service, workspacePermissions } = serviceWith(prisma);
 
     const result = await service.create(USER as never, WORKSPACE_ID, {
       format: 'interactive_film',
-      frameProfile: 'portrait_9_16',
+      frameProfile: 'landscape_16_9',
       title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
@@ -536,1012 +742,766 @@ describe('StoryProjectsService.create', () => {
       WORKSPACE_ID,
       WorkspaceMemberRole.editor,
     );
-    const create = prisma.storyProject.create.mock.calls[0][0].data as {
-      workspaceId: string;
-      frameProfile: StoryFrameProfile;
-      members: { create: Record<string, unknown> };
-      draft: { create: Record<string, unknown> };
-      canvasLayout: { create: Record<string, unknown> };
-    };
-    expect(create.workspaceId).toBe(WORKSPACE_ID);
-    expect(create.frameProfile).toBe(StoryFrameProfile.portrait_9_16);
-    expect(create.members.create).toMatchObject({
-      userId: USER.userId,
-      role: StoryProjectMemberRole.owner,
-    });
-    expect(create.draft.create).toMatchObject({
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-      contentHash: canonicalJsonHash(EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT),
-    });
-    expect(create.canvasLayout.create).toEqual({
-      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-      nodePositions: {},
-      updatedByUserId: USER.userId,
-    });
-    expect(result.draft.revision).toBe(0);
-    expect(result.project.frameProfile).toBe('portrait_9_16');
-  });
-});
-
-describe('StoryProjectsService current-draft production readiness', () => {
-  function projectSummary(
-    service: StoryProjectsService,
-    row: ReturnType<typeof summaryProject>,
-  ) {
-    return (
-      service as unknown as {
-        toProjectSummary(
-          value: ReturnType<typeof summaryProject>,
-          userId: string,
-        ): StoryProjectSummaryDto;
-      }
-    ).toProjectSummary(row, USER.userId);
-  }
-
-  it('preserves a project current video across draft revisions', () => {
-    const { service } = makeHarness();
-    const draft = lockableDraft();
-    const row = summaryProject({
-      draft: {
-        revision: 9,
-        content: draft,
-        contentHash: canonicalJsonHash(draft),
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(tx.storyChapter.create).toHaveBeenCalledWith({
+      data: {
+        storyProjectId: PROJECT_ID,
+        title: '第 1 章',
+        rank: 0,
+        nodeIds: [],
+        entryNodeId: null,
+        createdByUserId: USER.userId,
       },
-      revisions: [
-        revisionRow({
-          sourceDraftRevision: 8,
-          contentHash: 'a'.repeat(64),
-        }),
-      ],
-      filmReferenceSlots: [
-        {
-          revisionId: REVISION_ID,
-          required: true,
-          approvedVersionId: MODEL_ID,
-        },
-      ],
-      filmClipHeads: [
-        {
-          clip: {
-            graphNodeId: 'node.opening',
-            revisionId: REVISION_ID,
-            currentVideoAssetId: VIDEO_ASSET_ID,
-            latestGenerationAttempt: null,
-          },
-        },
-      ],
     });
-
-    expect(projectSummary(service, row).production).toMatchObject({
-      clipCount: 1,
-      currentVideoCount: 1,
-      generatingClipCount: 0,
-      referenceSlotCount: 0,
+    expect(tx.storyCanvasLayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyChapterId: CHAPTER_ID,
+        storyProjectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {},
+      }) as unknown,
     });
+    expect(result).toMatchObject({
+      video: {
+        snapshotHash: storyVideoSnapshotHash([]),
+        clips: [],
+      },
+      references: [],
+      latestBuild: null,
+    });
+    expect(Object.keys(result).sort()).toEqual([
+      'chapter',
+      'chapters',
+      'draft',
+      'latestBuild',
+      'project',
+      'references',
+      'video',
+    ]);
   });
 
-  it('reports neutral current-video and active-generation counts', () => {
-    const { service } = makeHarness();
-    const draft = lockableDraft();
-    const contentHash = canonicalJsonHash(draft);
-    const row = summaryProject({
-      draft: { revision: 9, content: draft, contentHash },
-      revisions: [
-        revisionRow({ sourceDraftRevision: 9, contentHash, content: draft }),
-      ],
-      filmClipHeads: [
-        {
-          clip: {
-            graphNodeId: 'node.opening',
-            revisionId: REVISION_ID,
-            currentVideoAssetId: VIDEO_ASSET_ID,
-            latestGenerationAttempt: { status: 'running' },
-          },
-        },
-      ],
+  it('loads the one project-owned production canvas with read permission', async () => {
+    const row = productionCanvasRow();
+    const findUnique = jest.fn().mockResolvedValue(row);
+    const { service, permissions } = serviceWith({
+      storyProductionCanvas: { findUnique },
     });
 
-    expect(projectSummary(service, row).production).toMatchObject({
-      clipCount: 1,
-      currentVideoCount: 1,
-      generatingClipCount: 1,
+    await expect(
+      service.getProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID),
+    ).resolves.toEqual({
+      projectId: PROJECT_ID,
+      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+      content: { nodes: [], edges: [], assets: [], groups: [] },
+      updatedByUserId: USER.userId,
+      updatedBySessionId: null,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
     });
-  });
-});
-
-describe('StoryProjectsService canvas layout CAS', () => {
-  it('reads a tenant-scoped layout without touching canonical story data', async () => {
-    const { service, prisma, permissions } = makeHarness({
-      currentCanvasLayout: canvasLayoutRow({
-        revision: 4,
-        nodePositions: { __story_root__: { x: -400, y: 80 } },
-      }),
-    });
-
-    const result = await service.getCanvasLayout(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
-
     expect(permissions.requireProject).toHaveBeenCalledWith(
       USER.userId,
       PROJECT_ID,
       'story.read',
       { allowArchived: true },
     );
-    expect(result).toMatchObject({
-      projectId: PROJECT_ID,
-      revision: 4,
-      nodePositions: { __story_root__: { x: -400, y: 80 } },
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
     });
-    expect(prisma.storyProject.update).not.toHaveBeenCalled();
-    expect(prisma.storyProject.updateMany).not.toHaveBeenCalled();
-    expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
   });
 
-  it('persists only layout coordinates with revision CAS', async () => {
-    const { service, prisma, tx } = makeHarness({
-      currentCanvasLayout: canvasLayoutRow({
-        revision: 5,
+  it('persists production canvas content with last-write-wins semantics', async () => {
+    const content = {
+      nodes: [
+        {
+          id: 'note-1',
+          type: 'note' as const,
+          position: { x: 10, y: 20 },
+          data: { text: 'continuity notes' },
+        },
+        {
+          id: 'note-2',
+          type: 'note' as const,
+          position: { x: 360, y: 20 },
+          data: { text: 'camera notes' },
+        },
+      ],
+      edges: [],
+      assets: [],
+      groups: [
+        {
+          id: 'group-1',
+          nodeIds: ['note-1', 'note-2'],
+          color: 'blue' as const,
+        },
+      ],
+    };
+    const updated = productionCanvasRow({
+      content,
+      updatedBySessionId: 'canvas-session',
+    });
+    const tx = {
+      storyProductionCanvas: {
+        update: jest.fn().mockResolvedValue(updated),
+      },
+      storyProject: {
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const { service, writeGuard } = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    await expect(
+      service.putProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+        content,
+        sessionId: 'canvas-session',
+      }),
+    ).resolves.toMatchObject({ projectId: PROJECT_ID, content });
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyProductionCanvas.update).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
+      data: {
+        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+        content,
+        updatedByUserId: USER.userId,
         updatedBySessionId: 'canvas-session',
-        nodePositions: {
-          __story_root__: { x: -500, y: 120 },
-          'clip:opening': { x: 0, y: 120 },
+      },
+    });
+  });
+
+  it('curates durable workspace media independently from canvas layout', async () => {
+    const candidate = candidateAssetRow();
+    const listFindMany = jest.fn().mockResolvedValue([candidate]);
+    const listHarness = serviceWith({
+      storyCandidateAsset: { findMany: listFindMany },
+    });
+
+    const listed = await listHarness.service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.asset).toMatchObject({
+      id: MEDIA_ASSET_ID,
+      kind: 'video',
+      previewUrl: 'https://media.example/candidate.mp4',
+    });
+    expect(listed[0]?.videoVariant).toMatchObject({
+      id: MEDIA_VARIANT_ID,
+      variantKey: 'original',
+      checksumSha256: 'a'.repeat(64),
+    });
+    expect(listFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          storyProjectId: PROJECT_ID,
+          asset: {
+            is: {
+              status: MediaAssetStatus.ready,
+              moderationStatus: {
+                not: MediaAssetModerationStatus.blocked,
+              },
+              deletedAt: null,
+              kind: {
+                in: [
+                  MediaAssetKind.image,
+                  MediaAssetKind.video,
+                  MediaAssetKind.audio,
+                ],
+              },
+            },
+          },
         },
       }),
-    });
-    const nodePositions = {
-      __story_root__: { x: -500, y: 120 },
-      'clip:opening': { x: 0, y: 120 },
+    );
+
+    const tx = {
+      mediaAsset: {
+        findFirst: jest.fn().mockResolvedValue(candidate.asset),
+      },
+      storyCandidateAsset: {
+        upsert: jest.fn().mockResolvedValue({}),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(candidate),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      storyProject: {
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
+    const mutationHarness = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    await expect(
+      mutationHarness.service.addCandidateAsset(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        MEDIA_ASSET_ID,
+      ),
+    ).resolves.toMatchObject({ asset: { id: MEDIA_ASSET_ID } });
+    await expect(
+      mutationHarness.service.removeCandidateAsset(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        MEDIA_ASSET_ID,
+      ),
+    ).resolves.toEqual({ mediaAssetId: MEDIA_ASSET_ID });
+    expect(tx.storyCandidateAsset.upsert).toHaveBeenCalledWith({
+      where: {
+        storyProjectId_mediaAssetId: {
+          storyProjectId: PROJECT_ID,
+          mediaAssetId: MEDIA_ASSET_ID,
+        },
+      },
+      create: {
+        storyProjectId: PROJECT_ID,
+        mediaAssetId: MEDIA_ASSET_ID,
+        addedByUserId: USER.userId,
+      },
+      update: {},
+    });
+    expect(tx.storyCandidateAsset.deleteMany).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: PROJECT_ID,
+        mediaAssetId: MEDIA_ASSET_ID,
+      },
+    });
+  });
+
+  it('exposes a ready video variant even when advisory metadata is absent', async () => {
+    const candidate = candidateAssetRow();
+    const variant = candidate.asset.variants[0] as unknown as Omit<
+      (typeof candidate.asset.variants)[number],
+      'checksumSha256' | 'durationMs' | 'durationSeconds' | 'width' | 'height'
+    > & {
+      checksumSha256: string | null;
+      durationMs: number | null;
+      durationSeconds: number | null;
+      width: number | null;
+      height: number | null;
+    };
+    variant.checksumSha256 = null;
+    variant.durationMs = null;
+    variant.durationSeconds = null;
+    variant.width = null;
+    variant.height = null;
+    const { service } = serviceWith({
+      storyCandidateAsset: {
+        findMany: jest.fn().mockResolvedValue([candidate]),
+      },
+    });
+
+    const result = await service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.asset.id).toBe(MEDIA_ASSET_ID);
+    expect(result[0]?.videoVariant).toMatchObject({
+      id: MEDIA_VARIANT_ID,
+      checksumSha256: null,
+      durationSeconds: null,
+      width: null,
+      height: null,
+    });
+  });
+
+  it('derives candidate display seconds from exact millisecond metadata', async () => {
+    const source = candidateAssetRow();
+    const candidate = {
+      ...source,
+      asset: {
+        ...source.asset,
+        variants: source.asset.variants.map((variant) => ({
+          ...variant,
+          durationSeconds: null,
+        })),
+      },
+    };
+    const { service } = serviceWith({
+      storyCandidateAsset: {
+        findMany: jest.fn().mockResolvedValue([candidate]),
+      },
+    });
+
+    const result = await service.listCandidateAssets(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(result[0]?.videoVariant?.durationSeconds).toBe(12);
+  });
+
+  it('creates a real chapter together with its own empty canvas layout', async () => {
+    const created = chapterRow({
+      id: SECOND_CHAPTER_ID,
+      title: 'The Return',
+      rank: 1,
+      nodeIds: [],
+      entryNodeId: null,
+    });
+    const tx = {
+      storyChapter: {
+        count: jest.fn().mockResolvedValue(1),
+        aggregate: jest.fn().mockResolvedValue({ _max: { rank: 0 } }),
+        create: jest.fn().mockResolvedValue(created),
+      },
+      storyCanvasLayout: { create: jest.fn().mockResolvedValue({}) },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.createChapter(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        title: 'The Return',
+      }),
+    ).resolves.toMatchObject({
+      id: SECOND_CHAPTER_ID,
+      title: 'The Return',
+      rank: 1,
+      nodeCount: 0,
+    });
+    expect(tx.storyChapter.create).toHaveBeenCalledWith({
+      data: {
+        storyProjectId: PROJECT_ID,
+        title: 'The Return',
+        rank: 1,
+        nodeIds: [],
+        entryNodeId: null,
+        createdByUserId: USER.userId,
+      },
+    });
+    expect(tx.storyCanvasLayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyChapterId: SECOND_CHAPTER_ID,
+        storyProjectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
+      }) as unknown,
+    });
+    expect(tx.storyProject.update).toHaveBeenCalledWith({
+      where: { id: PROJECT_ID },
+      data: expect.objectContaining({ version: { increment: 1 } }) as unknown,
+    });
+  });
+
+  it('renames the latest chapter row without a chapter-version claim', async () => {
+    const current = chapterRow();
+    const renamed = chapterRow({ title: 'A New Name' });
+    const tx = {
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue(current),
+        update: jest.fn().mockResolvedValue(renamed),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.patchChapter(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+        { title: 'A New Name' },
+      ),
+    ).resolves.toMatchObject({ id: CHAPTER_ID, title: 'A New Name' });
+    expect(tx.storyChapter.update).toHaveBeenCalledWith({
+      where: { id: CHAPTER_ID },
+      data: { title: 'A New Name' },
+    });
+  });
+
+  it('merges one chapter save into the project graph without replacing another chapter', async () => {
+    const current = draftRow({ content: multiChapterDraft() });
+    const chapters = [
+      chapterRow(),
+      chapterRow({
+        id: SECOND_CHAPTER_ID,
+        title: 'Chapter 2',
+        rank: 1,
+        nodeIds: ['node.chapter-two'],
+        entryNodeId: 'node.chapter-two',
+      }),
+    ];
+    let persistedContent: unknown = null;
+    const storyDraft = {
+      findUnique: jest.fn().mockImplementation(() =>
+        Promise.resolve(
+          persistedContent
+            ? draftRow({
+                content:
+                  InteractiveStoryDraftContentSchema.parse(persistedContent),
+                revision: 4,
+              })
+            : current,
+        ),
+      ),
+      updateMany: jest
+        .fn()
+        .mockImplementation(({ data }: { data: { content: unknown } }) => {
+          persistedContent = data.content as InteractiveStoryDraftContent;
+          return Promise.resolve({ count: 1 });
+        }),
+    };
+    const tx = {
+      storyDraft,
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue(chapters),
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue(chapterRow()),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+    const editedChapter = lockableDraft();
+    editedChapter.graph.nodes = editedChapter.graph.nodes.map((node) =>
+      node.kind === 'clip' && node.nodeId === 'node.opening'
+        ? { ...node, clipKey: 'S01' }
+        : node,
+    );
+
+    const result = await service.putDraft(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+        content: editedChapter,
+        sessionId: 'chapter-save',
+      },
+      CHAPTER_ID,
+    );
+
+    const savedContent =
+      InteractiveStoryDraftContentSchema.parse(persistedContent);
+    expect(savedContent.graph.nodes.map((node) => node.nodeId)).toEqual([
+      'node.chapter-two',
+      'node.opening',
+    ]);
+    expect(
+      savedContent.graph.nodes.find(
+        (node) => node.nodeId === 'node.chapter-two',
+      ),
+    ).toEqual(multiChapterDraft().graph.nodes[1]);
+    expect(result.chapterId).toBe(CHAPTER_ID);
+    expect(result.content.graph.nodes).toHaveLength(1);
+    expect(result.content.graph.nodes[0]).toMatchObject({ clipKey: 'S01' });
+  });
+
+  it('rejects a chapter save that tries to claim another chapter scene id', async () => {
+    const chapters = [
+      chapterRow(),
+      chapterRow({
+        id: SECOND_CHAPTER_ID,
+        rank: 1,
+        nodeIds: ['node.chapter-two'],
+        entryNodeId: 'node.chapter-two',
+      }),
+    ];
+    const tx = {
+      storyDraft: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(draftRow({ content: multiChapterDraft() })),
+        updateMany: jest.fn(),
+      },
+      storyChapter: { findMany: jest.fn().mockResolvedValue(chapters) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+    const conflicting = lockableDraft();
+    conflicting.graph = {
+      entryNodeId: 'node.chapter-two',
+      nodes: [multiChapterDraft().graph.nodes[1]],
+    };
+
+    await expect(
+      service.putDraft(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: conflicting,
+          sessionId: 'chapter-save',
+        },
+        CHAPTER_ID,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moves the project entry to the next chapter when the empty first chapter is archived', async () => {
+    const secondNode = multiChapterDraft().graph.nodes[1];
+    const content: InteractiveStoryDraftContent = {
+      ...lockableDraft(),
+      graph: { entryNodeId: null, nodes: [secondNode] },
+    };
+    const first = chapterRow({ nodeIds: [], entryNodeId: null });
+    const second = chapterRow({
+      id: SECOND_CHAPTER_ID,
+      title: 'Chapter 2',
+      rank: 1,
+      nodeIds: ['node.chapter-two'],
+      entryNodeId: 'node.chapter-two',
+    });
+    const tx = {
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([first, second]),
+        update: jest.fn().mockResolvedValue({
+          ...first,
+          archivedAt: NOW,
+        }),
+      },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue(draftRow({ content })),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.archiveChapter(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+      ),
+    ).resolves.toMatchObject({ id: CHAPTER_ID });
+    expect(tx.storyDraft.update).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID },
+      data: expect.objectContaining({
+        content: expect.objectContaining({
+          graph: expect.objectContaining({
+            entryNodeId: 'node.chapter-two',
+          }) as unknown,
+        }) as unknown,
+        revision: { increment: 1 },
+      }) as unknown,
+    });
+  });
+
+  it('returns the stored canvas layout for a chapter', async () => {
+    const row = canvasLayoutRow({ nodePositions: {} });
+    const findUnique = jest.fn().mockResolvedValue(row);
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      storyCanvasLayout: { findUnique },
+    };
+    const { service } = serviceWith(prisma);
+
+    await expect(
+      service.getCanvasLayout(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        CHAPTER_ID,
+      ),
+    ).resolves.toMatchObject({
+      projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
+      schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+      nodePositions: row.nodePositions,
+      revision: 2,
+    });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { storyChapterId: CHAPTER_ID },
+    });
+  });
+
+  it('writes the canvas layout under compare-and-set on the revision', async () => {
+    const saved = canvasLayoutRow({ nodePositions: {}, revision: 3 });
+    const tx = {
+      storyCanvasLayout: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(saved),
+      },
+    };
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      $transaction: transactionMock(tx),
+    };
+    const { service } = serviceWith(prisma);
 
     const result = await service.putCanvasLayout(
       USER as never,
       WORKSPACE_ID,
       PROJECT_ID,
       {
-        expectedRevision: 4,
+        expectedRevision: 2,
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-        nodePositions,
+        nodePositions: {},
         sessionId: 'canvas-session',
       },
+      CHAPTER_ID,
     );
 
     expect(tx.storyCanvasLayout.updateMany).toHaveBeenCalledWith({
       where: {
+        storyChapterId: CHAPTER_ID,
         storyProjectId: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
-        revision: 4,
+        revision: 2,
       },
       data: {
         schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-        nodePositions,
+        nodePositions: {},
         revision: { increment: 1 },
         updatedByUserId: USER.userId,
         updatedBySessionId: 'canvas-session',
       },
     });
-    expect(result.revision).toBe(5);
-    expect(prisma.storyCanvasLayout.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyProject.update).not.toHaveBeenCalled();
-    expect(prisma.storyProject.updateMany).not.toHaveBeenCalled();
-    expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
+    expect(result.revision).toBe(3);
   });
 
-  it('returns the row read under the successful CAS transaction lock', async () => {
-    const savedByThisRequest = canvasLayoutRow({
-      revision: 5,
-      updatedBySessionId: 'canvas-session-a',
-      nodePositions: { __story_root__: { x: -500, y: 120 } },
-    });
-    const concurrentlySavedAfterCommit = canvasLayoutRow({
-      revision: 6,
-      updatedBySessionId: 'canvas-session-b',
-      nodePositions: { __story_root__: { x: 900, y: 300 } },
-    });
-    const { service, prisma, tx } = makeHarness({
-      transactionCanvasLayout: savedByThisRequest,
-      currentCanvasLayout: concurrentlySavedAfterCommit,
-    });
+  it('rejects inside the write transaction before mutating canvas layout', async () => {
+    const tx = {
+      storyCanvasLayout: {
+        updateMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
+    };
+    const prisma = {
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(chapterRow()) },
+      $transaction: transactionMock(tx),
+    };
+    const { service, writeGuard } = serviceWith(prisma);
+    writeGuard.assertHumanWriteAllowed.mockRejectedValueOnce(
+      new HttpException(
+        {
+          code: 'STORY_AGENT_APPLYING',
+          message: 'The Story Agent is applying a project change.',
+        },
+        423,
+      ),
+    );
 
-    const result = await service.putCanvasLayout(
+    await expect(
+      service.putCanvasLayout(
+        USER as never,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        {
+          expectedRevision: 2,
+          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+          nodePositions: {},
+          sessionId: 'canvas-session',
+        },
+        CHAPTER_ID,
+      ),
+    ).rejects.toMatchObject({ status: 423 });
+
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyCanvasLayout.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a retired workbench before parsing its removed fields', async () => {
+    const draft = draftRow({
+      schemaVersion: 'interactive-film-draft-v2',
+      content: lockableDraft(),
+    });
+    const tx = {
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(summaryProject({ draft })),
+      },
+      storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
+      storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
+      storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
+      storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service } = serviceWith(prisma);
+
+    await expect(
+      apiError(service.workbench(USER as never, WORKSPACE_ID, PROJECT_ID, {})),
+    ).resolves.toMatchObject({
+      code: 'STORY_DRAFT_SCHEMA_UNSUPPORTED',
+      actualSchemaVersion: 'interactive-film-draft-v2',
+      expectedSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    });
+  });
+
+  it('locks only the immutable story revision without creating a production plane', async () => {
+    const draft = draftRow();
+    const tx = {
+      storyDraft: { findUnique: jest.fn().mockResolvedValue(draft) },
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([chapterRow()]),
+      },
+      storyRevision: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        aggregate: jest.fn().mockResolvedValue({ _max: { number: 0 } }),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+            Promise.resolve(revisionRow(data)),
+          ),
+      },
+    };
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service } = serviceWith(prisma);
+
+    const result = await service.lockRevision(
       USER as never,
       WORKSPACE_ID,
       PROJECT_ID,
-      {
-        expectedRevision: 4,
-        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-        nodePositions: savedByThisRequest.nodePositions,
-        sessionId: 'canvas-session-a',
-      },
+      { expectedDraftRevision: 3, source: 'creator' },
     );
 
     expect(result).toMatchObject({
-      revision: 5,
-      updatedBySessionId: 'canvas-session-a',
-      nodePositions: { __story_root__: { x: -500, y: 120 } },
+      id: REVISION_ID,
+      sourceDraftRevision: 3,
+      content: lockableDraft(),
     });
-    expect(tx.storyCanvasLayout.findUnique).toHaveBeenCalledTimes(1);
-    expect(prisma.storyCanvasLayout.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('returns the current complete layout on a stale save', async () => {
-    const { service } = makeHarness({
-      canvasLayoutUpdateCount: 0,
-      currentCanvasLayout: canvasLayoutRow({
-        revision: 9,
-        nodePositions: { '__ending__:truth': { x: 900, y: 40 } },
-      }),
-    });
-
-    const response = await expectApiError(
-      service.putCanvasLayout(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedRevision: 8,
-        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-        nodePositions: {},
-        sessionId: 'canvas-session',
-      }),
-    );
-
-    expect(response).toMatchObject({
-      code: 'CANVAS_LAYOUT_REVISION_CONFLICT',
-      expectedRevision: 8,
-      actualRevision: 9,
-      current: {
-        projectId: PROJECT_ID,
-        revision: 9,
-        nodePositions: { '__ending__:truth': { x: 900, y: 40 } },
-      },
-    });
-  });
-});
-
-describe('StoryProjectsService draft CAS', () => {
-  it('does not advance the draft revision for an identical canonical payload', async () => {
-    const current = draftRow({
-      revision: 3,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-    });
-    const { service, tx } = makeHarness({ transactionDraft: current });
-
-    const saved = await service.putDraft(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      {
-        expectedRevision: 3,
-        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-        sessionId: 'session-b',
-      },
-    );
-
-    expect(saved).toMatchObject({
-      revision: 3,
-      contentHash: current.contentHash,
-      updatedBySessionId: 'session-a',
-    });
-    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
-    expect(tx.storyProject.update).not.toHaveBeenCalled();
-  });
-
-  it('advances the draft revision exactly once for changed content', async () => {
-    const current = draftRow({
-      revision: 3,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-    });
-    const next = lockableDraft();
-    const stored = draftRow({ revision: 4, content: next });
-    const { service, tx } = makeHarness({ transactionDraft: current });
-    tx.storyDraft.findUnique
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce(stored);
-
-    const saved = await service.putDraft(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      {
-        expectedRevision: 3,
-        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-        content: next,
-        sessionId: 'session-b',
-      },
-    );
-
-    expect(saved).toMatchObject({
-      revision: 4,
-      contentHash: canonicalJsonHash(next),
-    });
-    expect(tx.storyDraft.updateMany).toHaveBeenCalledTimes(1);
-    expect(tx.storyProject.update).toHaveBeenCalledTimes(1);
-  });
-
-  it('advances the draft revision when only the schema version changes', async () => {
-    const current = draftRow({
-      revision: 3,
-      schemaVersion: 'interactive-film-draft-v1',
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-    });
-    const stored = draftRow({
-      revision: 4,
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-      content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-    });
-    const { service, tx } = makeHarness({ transactionDraft: current });
-    tx.storyDraft.findUnique
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce(stored);
-
-    const saved = await service.putDraft(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      {
-        expectedRevision: 3,
-        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-        sessionId: 'session-b',
-      },
-    );
-
-    expect(saved).toMatchObject({
-      revision: 4,
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-    });
-    const updateCalls = tx.storyDraft.updateMany.mock.calls as unknown as Array<
-      [{ data: Record<string, unknown> }]
-    >;
-    expect(updateCalls[0]?.[0].data).toMatchObject({
-      schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-      revision: { increment: 1 },
-    });
-  });
-
-  it('returns the complete current draft on a stale save', async () => {
-    const { service } = makeHarness({ draftUpdateCount: 0 });
-
-    const response = await expectApiError(
-      service.putDraft(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedRevision: 2,
-        schemaVersion: INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-        sessionId: 'session-b',
-      }),
-    );
-    expect(response).toMatchObject({
-      code: 'DRAFT_REVISION_CONFLICT',
-      expectedRevision: 2,
-      actualRevision: 7,
-    });
-    expect(response.current).toMatchObject({
-      revision: 7,
-      projectId: PROJECT_ID,
-    });
-  });
-});
-
-describe('StoryProjectsService revision locking', () => {
-  it('rejects an incomplete mutable draft at the lock boundary', async () => {
-    const { service } = makeHarness({
-      transactionDraft: draftRow({
-        content: EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT,
-      }),
-    });
-
-    const response = await expectApiError(
-      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedDraftRevision: 3,
-        source: 'creator',
-      }),
-    );
-    expect(response.code).toBe('STORY_REVISION_NOT_LOCKABLE');
-    expect(Array.isArray(response.issues)).toBe(true);
-  });
-
-  it('is idempotent for an already-locked draft revision', async () => {
-    const content = lockableDraft();
-    const existing = revisionRow({
-      content,
-      contentHash: canonicalJsonHash(content),
-    });
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content }),
-      existingRevision: existing,
-    });
-
-    const result = await service.lockRevision(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { expectedDraftRevision: 3, source: 'creator' },
-    );
-
-    expect(result.id).toBe(REVISION_ID);
-    expect(tx.storyRevision.create).not.toHaveBeenCalled();
-    expect(tx.storyFilmSpec.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClip.create).toHaveBeenCalledTimes(1);
-  });
-
-  it('creates the immutable revision and its film production plane atomically', async () => {
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content: lockableDraft() }),
-    });
-
-    const result = await service.lockRevision(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { expectedDraftRevision: 3, source: 'creator' },
-    );
-
-    expect(result.id).toBe(REVISION_ID);
     expect(tx.storyRevision.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmSpec.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClip.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmSpec.create.mock.calls[0]?.[0].data).toMatchObject({
-      revisionId: REVISION_ID,
-      storyProjectId: PROJECT_ID,
-      targetClipCount: 1,
-      targetEndingCount: 1,
-      frameWidth: 1920,
-      frameHeight: 1080,
-      defaultCanonicalModelId: MODEL_ID,
-    });
-    expect(tx.storyFilmClip.create.mock.calls[0]?.[0].data).toMatchObject({
-      revisionId: REVISION_ID,
-      key: 'S00',
-      graphNodeId: 'node.opening',
-      generationMode: 'frame_lock',
-      frameMode: 'first_frame',
-      targetDurationMs: 15_000,
-    });
-    expect(tx.storyFilmTrailer.create).not.toHaveBeenCalled();
-  });
-
-  it('carries the stable clip current video into a new revision without carrying generation ownership', async () => {
-    const assetId = '0197f4a2-0800-7000-8000-000000000030';
-    const variantId = '0197f4a2-0800-7000-8000-000000000031';
-    const oldSpecHash = 'a'.repeat(64);
-    const oldInputHash = 'b'.repeat(64);
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content: lockableDraft() }),
-      priorFilmClips: [
-        {
-          key: 'S00',
-          currentVideoAssetId: assetId,
-          currentVideoVariantId: variantId,
-          currentVideoSpecHash: oldSpecHash,
-          currentVideoInputHash: oldInputHash,
-          currentVideoChecksumSha256: 'c'.repeat(64),
-          currentVideoTechnicalChecks: [
-            { key: 'kind', status: 'passed', message: null },
-          ],
-          currentVideoRevision: 3,
-          currentVideoSetByUserId: USER.userId,
-          currentVideoSetAt: NOW,
-        },
-      ],
-    });
-
-    await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-      expectedDraftRevision: 3,
-      source: 'creator',
-    });
-
-    expect(tx.storyFilmClip.create.mock.calls[0]?.[0].data).toMatchObject({
-      key: 'S00',
-      currentVideoAssetId: assetId,
-      currentVideoVariantId: variantId,
-      currentVideoSourceAttemptId: null,
-      currentVideoSpecHash: oldSpecHash,
-      currentVideoInputHash: oldInputHash,
-      currentVideoChecksumSha256: 'c'.repeat(64),
-      currentVideoRevision: 3,
-      latestGenerationAttemptId: null,
-    });
-  });
-
-  it('locks complete gameplay while skipping unfinished trailer production', async () => {
-    const content: InteractiveFilmDraftContent = {
-      ...lockableDraft(),
-      trailerPrompt: trailerDraft({ masterDirection: '' }),
-    };
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content }),
-    });
-
-    const revision = await service.lockRevision(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { expectedDraftRevision: 3, source: 'creator' },
-    );
-
-    expect(revision.content.trailerPrompt?.masterDirection).toBe('');
-    expect(tx.storyFilmSpec.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClip.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmTrailer.findFirst).not.toHaveBeenCalled();
-    expect(tx.storyFilmTrailer.create).not.toHaveBeenCalled();
-  });
-
-  it('projects an authored trailer beside the runtime clips without changing clip targets', async () => {
-    const content: InteractiveFilmDraftContent = {
-      ...lockableDraft(),
-      trailerPrompt: trailerDraft(),
-    };
-    const trailerAssetId = '0197f4a2-0800-7000-8000-000000000040';
-    const trailerVariantId = '0197f4a2-0800-7000-8000-000000000041';
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content }),
-      priorFilmTrailer: {
-        currentVideoAssetId: trailerAssetId,
-        currentVideoVariantId: trailerVariantId,
-        currentVideoSpecHash: 'd'.repeat(64),
-        currentVideoInputHash: 'e'.repeat(64),
-        currentVideoChecksumSha256: 'f'.repeat(64),
-        currentVideoTechnicalChecks: [],
-        currentVideoRevision: 2,
-        currentVideoSetByUserId: USER.userId,
-        currentVideoSetAt: NOW,
-      },
-    });
-
-    await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-      expectedDraftRevision: 3,
-      source: 'creator',
-    });
-
-    expect(tx.storyFilmSpec.create.mock.calls[0]?.[0].data).toMatchObject({
-      targetClipCount: 1,
-      targetChoiceCount: 0,
-      targetEndingCount: 1,
-    });
-    expect(tx.storyFilmClip.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmTrailer.create).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmTrailer.create.mock.calls[0]?.[0].data).toMatchObject({
-      revisionId: REVISION_ID,
-      storyProjectId: PROJECT_ID,
-      title: '15-second trailer',
-      generationMode: 'omni_reference',
-      frameMode: null,
-      targetDurationMs: 15_000,
-      currentVideoAssetId: trailerAssetId,
-      currentVideoVariantId: trailerVariantId,
-      currentVideoSourceAttemptId: null,
-      currentVideoSpecHash: 'd'.repeat(64),
-      currentVideoInputHash: 'e'.repeat(64),
-      currentVideoRevision: 2,
-      latestGenerationAttemptId: null,
-    });
-  });
-
-  it('rejects a stored draft that omits required v2 authoring state', async () => {
-    const incomplete = lockableDraft();
-    delete (incomplete as { trailerPrompt?: unknown }).trailerPrompt;
-    const { service } = makeHarness({
-      transactionDraft: draftRow({
-        content: incomplete,
-        contentHash: canonicalJsonHash(incomplete),
-      }),
-    });
-
-    const response = await expectApiError(
-      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedDraftRevision: 3,
-        source: 'creator',
-      }),
-    );
-    expect(response.code).toBe('STORY_REVISION_NOT_LOCKABLE');
-  });
-
-  it('locks without an env default by falling back to any active video model', async () => {
-    const configured = process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG;
-    delete process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG;
-    try {
-      const { service } = makeHarness({
-        transactionDraft: draftRow({ content: lockableDraft() }),
-      });
-      // The unset env no longer blocks: the catalogue fallback supplies a model.
-      await expect(
-        service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-          expectedDraftRevision: 3,
-          source: 'creator',
-        }),
-      ).resolves.toBeDefined();
-    } finally {
-      if (configured) {
-        process.env.STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG = configured;
-      }
-    }
-  });
-
-  it('fails only when the catalogue has no active video model', async () => {
-    const { service } = makeHarness({
-      transactionDraft: draftRow({ content: lockableDraft() }),
-      noVideoModel: true,
-    });
-    const response = await expectApiError(
-      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedDraftRevision: 3,
-        source: 'creator',
-      }),
-    );
-    expect(response).toMatchObject({
-      code: 'STORY_DEFAULT_VIDEO_MODEL_UNAVAILABLE',
-    });
-  });
-
-  it('skips an incapable configured model and uses a capable fallback', async () => {
-    const { service } = makeHarness({
-      transactionDraft: draftRow({ content: lockableDraft() }),
-      // Configured slug can't run the modes; fallback can.
-      modelGenerationModes: ['text_to_video'],
-      fallbackGenerationModes: [
-        'image_to_video',
-        'first_last_frame_to_video',
-        'multimodal_to_video',
-      ],
-    });
-    await expect(
-      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedDraftRevision: 3,
-        source: 'creator',
-      }),
-    ).resolves.toBeDefined();
-  });
-
-  it('verifies a complete existing production projection without rewriting it', async () => {
-    const content = lockableDraft();
-    const projection = projectStoryFilmRevision({
-      draft: content,
-      frameProfile: 'landscape_16_9',
-      defaultLocale: 'zh-CN',
-      defaultCanonicalModelId: MODEL_ID,
-    });
-    const filmSpec = projection.filmSpec;
-    const clip = projection.clipSpecs[0];
-    if (!clip) throw new Error('Expected the projected film clip.');
-    const { service, tx } = makeHarness({
-      transactionDraft: draftRow({ content }),
-      existingRevision: revisionRow({
-        content,
-        contentHash: canonicalJsonHash(content),
-      }),
-      existingFilmSpec: {
-        storyProjectId: PROJECT_ID,
-        revisionId: REVISION_ID,
-        defaultCanonicalModelId: MODEL_ID,
-        specJson: filmSpec,
-        specHash: canonicalJsonHash(filmSpec),
-      },
-      existingFilmClips: [
-        {
-          storyProjectId: PROJECT_ID,
-          revisionId: REVISION_ID,
-          key: clip.key,
-          graphNodeId: clip.graphNodeId,
-          archivedAt: null,
-          specJson: clip,
-          specHash: canonicalJsonHash(clip),
-        },
-      ],
-    });
-
-    await service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-      expectedDraftRevision: 3,
-      source: 'creator',
-    });
-
-    expect(tx.storyFilmSpec.create).not.toHaveBeenCalled();
-    expect(tx.storyFilmClip.create).not.toHaveBeenCalled();
-  });
-
-  it('returns the current draft when the lock CAS is stale', async () => {
-    const { service } = makeHarness({
-      transactionDraft: draftRow({ revision: 4, content: lockableDraft() }),
-    });
-
-    const response = await expectApiError(
-      service.lockRevision(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedDraftRevision: 3,
-        source: 'creator',
-      }),
-    );
-    expect(response).toMatchObject({
-      code: 'DRAFT_REVISION_CONFLICT',
-      expectedRevision: 3,
-      actualRevision: 4,
-    });
-  });
-});
-
-describe('StoryProjectsService film workbench', () => {
-  it('returns stable canonical model metadata beside the UUID film contract', async () => {
-    const content = lockableDraft();
-    const projection = projectStoryFilmRevision({
-      draft: content,
-      frameProfile: 'landscape_16_9',
-      defaultLocale: 'zh-CN',
-      defaultCanonicalModelId: MODEL_ID,
-    });
-    const projectedClip = projection.clipSpecs[0];
-    if (!projectedClip) throw new Error('Expected the projected clip.');
-    const generationId = '0197f4a2-0800-7000-8000-000000000006';
-    const outputAssetId = '0197f4a2-0800-7000-8000-000000000007';
-    const outputVariantId = '0197f4a2-0800-7000-8000-000000000012';
-    const outputUrl = 'https://media.example.com/story-video.mp4';
-    const { service, prisma, tx } = makeHarness({
-      workbenchRevision: revisionRow({ content }),
-      workbenchFilmSpec: {
-        storyProjectId: PROJECT_ID,
-        revisionId: REVISION_ID,
-        specJson: projection.filmSpec,
-        version: 0,
-        productionRevision: 0,
-        updatedByUserId: USER.userId,
-        createdAt: NOW,
-        updatedAt: NOW,
-        defaultCanonicalModel: {
-          id: MODEL_ID,
-          slug: 'seedance-2-0',
-          displayName: 'Seedance 2.0',
-          generationModes: [
-            'image_to_video',
-            'first_last_frame_to_video',
-            'multimodal_to_video',
-          ],
-        },
-      },
-      workbenchFilmClips: [
-        {
-          id: '0197f4a2-0800-7000-8000-000000000008',
-          storyProjectId: PROJECT_ID,
-          revisionId: REVISION_ID,
-          graphNodeId: projectedClip.graphNodeId,
-          rank: projectedClip.rank,
-          specJson: projectedClip,
-          specHash: canonicalJsonHash(projectedClip),
-          version: 0,
-          productionInputHash: 'a'.repeat(64),
-          currentVideoAssetId: outputAssetId,
-          currentVideoVariantId: outputVariantId,
-          currentVideoSourceAttemptId: generationId,
-          currentVideoSpecHash: canonicalJsonHash(projectedClip),
-          currentVideoInputHash: 'a'.repeat(64),
-          currentVideoChecksumSha256: 'b'.repeat(64),
-          currentVideoTechnicalChecks: [],
-          currentVideoRevision: 1,
-          currentVideoSetByUserId: USER.userId,
-          currentVideoSetAt: NOW,
-          updatedAt: NOW,
-          references: [
-            {
-              id: '0197f4a2-0800-7000-8000-000000000009',
-              referenceSlotId: '0197f4a2-0800-7000-8000-000000000010',
-              role: 'first_frame',
-              position: 0,
-              required: true,
-              referenceSlot: {
-                approvedVersionId: '0197f4a2-0800-7000-8000-000000000011',
-              },
-            },
-          ],
-          currentVideoAsset: {
-            id: outputAssetId,
-            kind: 'video',
-            status: 'ready',
-            moderationStatus: 'approved',
-            contentType: 'video/mp4',
-            width: 1920,
-            height: 1080,
-            durationSeconds: 15,
-            checksumSha256: 'b'.repeat(64),
-            storageProvider: 'external_url',
-            bucket: null,
-            region: null,
-            objectKey: null,
-            externalUrl: outputUrl,
-            deletedAt: null,
-            placements: [],
-            variants: [],
-          },
-          latestGenerationAttempt: null,
-        },
-      ],
-      workbenchBuild: {
-        id: '0197f4a2-0800-7000-8000-000000000013',
-        buildNumber: 4,
-        kind: 'production',
-        scope: { kind: 'full' },
-        status: 'ready',
-        sourceProductionRevision: 0,
-        diagnostics: [],
-        experiencePublication: {
-          status: 'confirmed',
-          gameId: 'branching-film',
-          contentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
-          manifestUrl:
-            'https://media.example.test/interactive-film/branching-film/manifest.json',
-          publishedAt: NOW,
-          mediaAuthorizedAt: NOW,
-          mediaAuthorizationRevokedAt: null,
-          authorityIsCurrent: true,
-          authorityGameExists: true,
-          authorityCurrentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
-          authorityCheckedAt: NOW,
-          lastErrorCode: null,
-          lastErrorDetail: null,
-        },
-        createdAt: NOW,
-        completedAt: NOW,
-      },
-    });
-
-    const result = await service.workbench(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      {},
-    );
-
-    expect(result.film?.spec?.generation.defaultCanonicalModelId).toBe(
-      MODEL_ID,
-    );
-    expect(result.film?.defaultModel).toEqual({
-      id: MODEL_ID,
-      slug: 'seedance-2-0',
-      displayName: 'Seedance 2.0',
-      generationModes: [
-        'image_to_video',
-        'first_last_frame_to_video',
-        'multimodal_to_video',
-      ],
-    });
-    expect(result.film?.trailer).toBeNull();
-    expect(result.film?.clips[0]?.currentVideo).toMatchObject({
-      sourceGenerationId: generationId,
-      revision: 1,
-      asset: {
-        id: outputAssetId,
-        previewUrl: outputUrl,
-      },
-    });
-    expect(result.film?.clips[0]?.referenceBindings).toEqual([
-      {
-        id: '0197f4a2-0800-7000-8000-000000000009',
-        referenceSlotId: '0197f4a2-0800-7000-8000-000000000010',
-        role: 'first_frame',
-        rank: 0,
-        required: true,
-        approvedReferenceVersionId: '0197f4a2-0800-7000-8000-000000000011',
-      },
+    expect(Object.keys(tx).sort()).toEqual([
+      'storyChapter',
+      'storyDraft',
+      'storyRevision',
     ]);
-    expect(result.film?.latestBuild?.publication).toEqual({
-      status: 'confirmed',
-      gameId: 'branching-film',
-      contentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
-      manifestUrl:
-        'https://media.example.test/interactive-film/branching-film/manifest.json',
-      publishedAt: NOW.toISOString(),
-      mediaAuthorizedAt: NOW.toISOString(),
-      mediaAuthorizationRevokedAt: null,
-      authorityIsCurrent: true,
-      authorityGameExists: true,
-      authorityCurrentVersion: 'build:0197f4a2-0800-7000-8000-000000000013',
-      authorityCheckedAt: NOW.toISOString(),
-      lastErrorCode: null,
-      lastErrorDetail: null,
-    });
-    const transactionCalls = prisma.$transaction.mock.calls as unknown as Array<
-      [unknown, { isolationLevel: Prisma.TransactionIsolationLevel }]
-    >;
-    expect(transactionCalls[0]?.[1]).toEqual({
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    });
-    expect(tx.storyProject.findUnique).toHaveBeenCalledTimes(1);
-    expect(tx.storyDraft.findUnique).toHaveBeenCalledTimes(1);
-    expect(tx.storyRevision.findFirst).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmSpec.findUnique).toHaveBeenCalledTimes(1);
-    expect(tx.storyFilmClipHead.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.storyProject.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyDraft.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyRevision.findFirst).not.toHaveBeenCalled();
-    expect(prisma.storyFilmSpec.findUnique).not.toHaveBeenCalled();
-    expect(prisma.storyFilmClipHead.findMany).not.toHaveBeenCalled();
   });
 
-  it('returns a revision trailer with neutral current-video state', async () => {
-    const content: InteractiveFilmDraftContent = {
-      ...lockableDraft(),
-      trailerPrompt: {
-        title: '15-second trailer',
-        description: 'Root promotional video.',
-        targetDurationMs: 15_000,
-        generationControl: { mode: 'omni_reference' },
-        masterDirection: 'A restrained nocturnal mystery trailer.',
-        referenceRoleNotes: [],
-        emotionalArc: 'Wonder turns into danger.',
-        beats: [
-          {
-            id: 'trailer:beat:1',
-            startMs: 0,
-            endMs: 15_000,
-            visual: 'The dragon gate emerges from the rain.',
-            camera: 'Slow push toward the entrance.',
-            action: 'The visitor stops.',
-            performance: '',
-            emotion: '',
-            dialogue: '',
-            audio: '',
-            endState: '',
-            continuity: '',
-          },
-        ],
-        negativeConstraints: [],
-        continuityNotes: [],
-      },
+  it('projects every graph clip into an empty CAS summary without inventing video data', async () => {
+    const project = summaryProject();
+    const tx = {
+      storyProject: { findUnique: jest.fn().mockResolvedValue(project) },
+      storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
+      storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
+      storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
+      storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    const projection = projectStoryFilmRevision({
-      draft: content,
-      frameProfile: 'landscape_16_9',
-      defaultLocale: 'zh-CN',
-      defaultCanonicalModelId: MODEL_ID,
-    });
-    const trailer = projection.trailerSpec;
-    if (!trailer) throw new Error('Expected a projected trailer.');
-    const { service } = makeHarness({
-      workbenchRevision: revisionRow({ content }),
-      workbenchFilmSpec: {
-        storyProjectId: PROJECT_ID,
-        revisionId: REVISION_ID,
-        specJson: projection.filmSpec,
-        version: 0,
-        productionRevision: 0,
-        updatedByUserId: USER.userId,
-        createdAt: NOW,
-        updatedAt: NOW,
-        defaultCanonicalModel: {
-          id: MODEL_ID,
-          slug: MODEL_SLUG,
-          displayName: 'Story video model',
-          generationModes: ['multimodal_to_video'],
-        },
+    const prisma = { $transaction: transactionMock(tx) };
+    const { service } = serviceWith(prisma);
+    const expectedSnapshot = [
+      {
+        graphNodeId: 'node.opening',
+        selectionVersion: 0,
+        assetId: null,
+        variantId: null,
+        checksumSha256: null,
+        contentType: null,
+        durationMs: null,
+        width: null,
+        height: null,
+        browserSafeMp4: null,
       },
-      workbenchFilmTrailer: {
-        id: '0197f4a2-0800-7000-8000-000000000020',
-        storyProjectId: PROJECT_ID,
-        revisionId: REVISION_ID,
-        title: trailer.title,
-        generationMode: 'omni_reference',
-        frameMode: null,
-        targetDurationMs: trailer.targetDurationMs,
-        specJson: trailer,
-        specHash: canonicalJsonHash(trailer),
-        productionInputManifest: null,
-        productionInputHash: null,
-        version: 0,
-        currentVideoAssetId: null,
-        currentVideoVariantId: null,
-        currentVideoSourceAttemptId: null,
-        currentVideoSpecHash: null,
-        currentVideoInputHash: null,
-        currentVideoChecksumSha256: null,
-        currentVideoTechnicalChecks: null,
-        currentVideoRevision: 0,
-        currentVideoSetByUserId: null,
-        currentVideoSetAt: null,
-        createdByUserId: USER.userId,
-        updatedByUserId: USER.userId,
-        createdAt: NOW,
-        updatedAt: NOW,
-        references: [],
-        currentVideoAsset: null,
-        latestGenerationAttempt: null,
-      },
-    });
+    ];
 
     const result = await service.workbench(
       USER as never,
@@ -1550,77 +1510,125 @@ describe('StoryProjectsService film workbench', () => {
       {},
     );
 
-    expect(result.film?.clips).toEqual([]);
-    expect(result.film?.trailer).toMatchObject({
-      id: '0197f4a2-0800-7000-8000-000000000020',
-      title: '15-second trailer',
-      currentVideoRevision: 0,
-      referenceBindings: [],
-      currentVideo: null,
-      generation: null,
+    expect(result.video).toEqual({
+      snapshotHash: storyVideoSnapshotHash(expectedSnapshot),
+      clips: [
+        {
+          graphNodeId: 'node.opening',
+          selectionVersion: 0,
+          currentVideo: null,
+        },
+      ],
+    });
+    expect(result.references).toEqual([]);
+    expect(result.latestBuild).toBeNull();
+  });
+
+  it('counts graph clips instead of removed prompt records', async () => {
+    const project = summaryProject();
+    const prisma = {
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(project),
+      },
+    };
+    const { service } = serviceWith(prisma);
+
+    const result = await service.get(USER as never, WORKSPACE_ID, PROJECT_ID);
+
+    expect(result.production).toMatchObject({
+      clipCount: 1,
+      currentVideoCount: 0,
     });
   });
 });
 
-describe('StoryProjectsService project CAS and access', () => {
-  it('returns a concrete conflict for a stale project patch', async () => {
-    const { service } = makeHarness({
-      projectUpdateCount: 0,
-      currentProjectVersion: 9,
+describe('StoryProjectsService shared-link workspace resolve', () => {
+  /**
+   * The whole reason this read exists: a first-time invitee has no stored
+   * selection, so the studio scopes every request to their own personal
+   * workspace and the project's real tenant never gets asked. A workspace
+   * viewer seat plus an active story membership is precisely what the canvas
+   * needs, so it is precisely what resolves.
+   */
+  it('resolves the owning workspace for an invited member whose active tenant is elsewhere', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.editor,
+      workspaceRole: WorkspaceMemberRole.viewer,
     });
 
-    const response = await expectApiError(
-      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        expectedProjectVersion: 3,
-        title: 'New title',
-      }),
-    );
-    expect(response).toMatchObject({
-      code: 'PROJECT_VERSION_CONFLICT',
-      expectedVersion: 3,
-      actualVersion: 9,
-    });
+    await expect(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
   });
 
-  it('archives by CAS and never hard-deletes the project', async () => {
-    const { service, prisma } = makeHarness();
-
-    const result = await service.archive(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { expectedProjectVersion: 3 },
-    );
-
-    const update = prisma.storyProject.updateMany.mock.calls[0][0] as {
-      where: Record<string, unknown>;
-      data: Record<string, unknown>;
-    };
-    expect(update.where).toMatchObject({
-      id: PROJECT_ID,
-      workspaceId: WORKSPACE_ID,
-      version: 3,
-    });
-    expect(update.data).toMatchObject({
+  /**
+   * `workbench` reads with `allowArchived`, so an archived project still opens
+   * read-only. Refusing to resolve one would strand a shared link on a 404 that
+   * switching workspaces would have cleared.
+   */
+  it('resolves an archived project because the canvas still opens it read-only', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.viewer,
+      workspaceRole: WorkspaceMemberRole.viewer,
       status: StoryProjectStatus.archived,
-      version: { increment: 1 },
     });
-    expect(update.data.archivedAt).toBeInstanceOf(Date);
-    expect(result.id).toBe(PROJECT_ID);
+
+    await expect(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
   });
 
-  it('does not reveal a project to a non-member', async () => {
-    const { service, prisma } = makeHarness({
-      permissionError: new NotFoundException({
-        code: 'STORY_PROJECT_NOT_FOUND',
-        message: 'Story project not found.',
-      }),
+  /**
+   * Story membership is the grant; the workspace seat only ever narrows it.
+   * A workspace owner who was never added to the project cannot open the canvas
+   * — `requireProject` matches only projects the caller is an active member of
+   * — so resolving for them would hand out a tenant id for a project they still
+   * could not open, which is exactly the widening this route may not do. Their
+   * answer is byte-identical to the stranger's below.
+   */
+  it('tells a workspace member with no story membership nothing, exactly as the canvas would', async () => {
+    const service = resolverWith({
+      storyRole: null,
+      workspaceRole: WorkspaceMemberRole.owner,
     });
 
-    const response = await expectApiError(
-      service.get(USER as never, WORKSPACE_ID, PROJECT_ID),
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
     );
-    expect(response.code).toBe('STORY_PROJECT_NOT_FOUND');
-    expect(prisma.storyProject.findUnique).not.toHaveBeenCalled();
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+  });
+
+  /**
+   * A story member who lost their seat in the owning tenant trips the workspace
+   * re-check, which raises 403. A 403 on an id-shaped route is itself the leak
+   * — it confirms the project exists — so this route flattens it to the 404.
+   */
+  it('flattens the lost-workspace-seat denial into the same 404', async () => {
+    const service = resolverWith({
+      storyRole: StoryProjectMemberRole.editor,
+      workspaceRole: null,
+    });
+
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    );
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
+  });
+
+  it('answers a stranger with a 404 that carries no workspace id', async () => {
+    const service = resolverWith({ storyRole: null, workspaceRole: null });
+
+    const failure = await httpError(
+      service.resolveWorkspace(USER as never, PROJECT_ID),
+    );
+
+    expect(failure.status).toBe(404);
+    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
+    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
   });
 });

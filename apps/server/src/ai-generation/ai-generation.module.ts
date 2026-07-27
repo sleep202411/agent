@@ -41,7 +41,6 @@ import { ReplicateClient } from './providers/replicate/replicate-client';
 import { ReplicateConfigService } from './providers/replicate/replicate-config.service';
 import { ReplicateProviderAdapter } from './providers/replicate/replicate-provider.adapter';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
-import { BytePlusAssetsModule } from './providers/byteplus/assets/byteplus-assets.module';
 import { BytePlusClient } from './providers/byteplus/byteplus-client';
 import { BytePlusConfigService } from './providers/byteplus/byteplus-config.service';
 import { BytePlusProviderAdapter } from './providers/byteplus/byteplus-provider.adapter';
@@ -66,7 +65,6 @@ import { AiGenerationWorkerService } from './worker.service';
     WorkspacesModule,
     MediaModule,
     DocumentsModule,
-    BytePlusAssetsModule,
   ],
   controllers: [AiGenerationController, AiModelOpsController],
   providers: [

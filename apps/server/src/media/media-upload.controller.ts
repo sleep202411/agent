@@ -21,6 +21,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth';
@@ -29,19 +30,28 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   ConfirmUploadSchema,
   CreateUploadUrlSchema,
-  MediaProviderAssetStatusRequestSchema,
+  MediaAssetAccessParamsSchema,
+  MediaAssetReadinessCheckRequestSchema,
+  MediaAssetReadinessStatusRequestSchema,
   type ConfirmUploadInputDto,
   type ConfirmUploadResponseDto,
   type CreateUploadUrlInputDto,
   type CreateUploadUrlResponseDto,
-  type MediaProviderAssetStatusRequestDto,
-  type MediaProviderAssetStatusResponseDto,
+  type MediaAssetAccessParamsDto,
+  type MediaAssetReadinessCheckRequestDto,
+  type MediaAssetReadinessCheckResponseDto,
+  type MediaAssetReadinessStatusRequestDto,
+  type MediaAssetReadinessStatusResponseDto,
 } from './dto';
+import { MediaAssetReadinessService } from './media-asset-readiness.service';
 import { MediaUploadService } from './media-upload.service';
 
 @Controller('media')
 export class MediaUploadController {
-  constructor(private readonly svc: MediaUploadService) {}
+  constructor(
+    private readonly svc: MediaUploadService,
+    private readonly readiness: MediaAssetReadinessService,
+  ) {}
 
   @Post('upload-url')
   @HttpCode(HttpStatus.OK)
@@ -65,13 +75,35 @@ export class MediaUploadController {
     return this.svc.confirmUpload(user.userId, body, workspaceHeader);
   }
 
-  @Post('provider-assets/status')
+  @Post('asset-readiness/status')
   @HttpCode(HttpStatus.OK)
-  async providerAssetStatuses(
+  async assetReadinessStatuses(
     @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(MediaProviderAssetStatusRequestSchema))
-    body: MediaProviderAssetStatusRequestDto,
-  ): Promise<MediaProviderAssetStatusResponseDto> {
-    return this.svc.providerAssetStatuses(user.userId, body);
+    @Body(new ZodValidationPipe(MediaAssetReadinessStatusRequestSchema))
+    body: MediaAssetReadinessStatusRequestDto,
+  ): Promise<MediaAssetReadinessStatusResponseDto> {
+    const assets = await this.readiness.listStatusesForUser(
+      user.userId,
+      body.capability,
+      body.assetIds,
+    );
+    return { assets };
+  }
+
+  @Post('assets/:assetId/readiness-checks')
+  @HttpCode(HttpStatus.OK)
+  async requestAssetReadinessCheck(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(MediaAssetAccessParamsSchema))
+    params: MediaAssetAccessParamsDto,
+    @Body(new ZodValidationPipe(MediaAssetReadinessCheckRequestSchema))
+    body: MediaAssetReadinessCheckRequestDto,
+  ): Promise<MediaAssetReadinessCheckResponseDto> {
+    const asset = await this.readiness.requestCheckForUser(
+      user.userId,
+      params.assetId,
+      body.capability,
+    );
+    return { asset };
   }
 }

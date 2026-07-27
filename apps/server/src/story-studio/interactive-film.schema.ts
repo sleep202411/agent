@@ -1,16 +1,17 @@
 import { z } from 'zod';
 
 /**
- * Interactive-film authoring contracts.
+ * Interactive-story authoring contracts.
  *
- * These schemas describe creator-owned inputs, not the compiled player
- * manifest. Builds must emit the shared InteractiveFilmReleaseSchema v1;
- * authoring DTOs deliberately do not duplicate runtime media records.
+ * A project's format is its preferred creation profile, not a graph
+ * restriction. The same strict document is a pure branching tree of cinematic
+ * clips and narrative text scenes: each node either continues to one next node,
+ * fans into labelled choices, or resolves to an ending, before it is compiled
+ * to the shared Runtime Manifest.
  */
 
-export const INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION =
-  'interactive-film-draft-v2' as const;
-export const INTERACTIVE_FILM_RUNTIME_SCHEMA_VERSION = 1 as const;
+export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION =
+  'interactive-story-draft-v1' as const;
 
 export const StoryUuidSchema = z.string().uuid();
 export const StoryStableIdSchema = z
@@ -19,194 +20,109 @@ export const StoryStableIdSchema = z
   .min(1)
   .max(120)
   .regex(/^[A-Za-z][A-Za-z0-9._:-]*$/, 'Use a stable identifier.');
-export const FilmClipKeySchema = z
+export const StoryClipKeySchema = z
   .string()
   .trim()
   .min(1)
   .max(40)
   .regex(/^[A-Z][A-Z0-9_-]*$/, 'Use an uppercase stable clip key.');
-export const FilmReferenceKeySchema = z
+export const StoryReferenceKeySchema = z
   .string()
   .trim()
   .min(1)
   .max(40)
   .regex(/^[A-Z][A-Z0-9_-]*$/, 'Use an uppercase stable reference key.');
 export const StoryLocaleSchema = z.string().trim().min(2).max(16);
-export const Sha256Schema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/, 'Expected a lowercase SHA-256 digest.');
-
-export const LocalizedTextSchema = z
-  .record(StoryLocaleSchema, z.string().trim().min(1).max(4_000))
-  .refine((value) => Object.keys(value).length > 0, {
-    message: 'Provide at least one localized value.',
-  });
-
 /** Mutable-draft text may be empty while the creator is still authoring. */
 export const DraftLocalizedTextSchema = z.record(
   StoryLocaleSchema,
   z.string().max(4_000),
 );
-
-export const StoryScalarValueSchema = z.union([
-  z.string().max(2_000),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
-export type StoryScalarValue = z.infer<typeof StoryScalarValueSchema>;
-
-export const StoryStateVariableSchema = z.discriminatedUnion('type', [
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('boolean'),
-      initialValue: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('number'),
-      initialValue: z.number().finite(),
-      minimum: z.number().finite().optional(),
-      maximum: z.number().finite().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      key: StoryStableIdSchema,
-      type: z.literal('string'),
-      initialValue: z.string().max(2_000),
-      allowedValues: z.array(z.string().max(2_000)).min(1).max(100).optional(),
-    })
-    .strict(),
-]);
-export type StoryStateVariable = z.infer<typeof StoryStateVariableSchema>;
-
-export type FilmCondition =
-  | { kind: 'flag'; flag: string; equals: boolean }
-  | {
-      kind: 'variable';
-      key: string;
-      operator:
-        | 'equals'
-        | 'not_equals'
-        | 'greater_than'
-        | 'at_least'
-        | 'less_than'
-        | 'at_most';
-      value: StoryScalarValue;
-    }
-  | { kind: 'relationship-at-least'; characterId: string; value: number }
-  | { kind: 'all'; conditions: FilmCondition[] }
-  | { kind: 'any'; conditions: FilmCondition[] }
-  | { kind: 'not'; condition: FilmCondition };
-
-export const FilmConditionSchema: z.ZodType<FilmCondition> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z
-      .object({
-        kind: z.literal('flag'),
-        flag: StoryStableIdSchema,
-        equals: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('variable'),
-        key: StoryStableIdSchema,
-        operator: z.enum([
-          'equals',
-          'not_equals',
-          'greater_than',
-          'at_least',
-          'less_than',
-          'at_most',
-        ]),
-        value: StoryScalarValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('relationship-at-least'),
-        characterId: StoryStableIdSchema,
-        value: z.number().finite(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('all'),
-        conditions: z.array(FilmConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('any'),
-        conditions: z.array(FilmConditionSchema).min(1).max(50),
-      })
-      .strict(),
-    z
-      .object({ kind: z.literal('not'), condition: FilmConditionSchema })
-      .strict(),
-  ]),
+export const StoryTextBodyLocalizedTextSchema = z.record(
+  StoryLocaleSchema,
+  z.string().max(20_000),
 );
 
-export const FilmEffectSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('set_variable'),
-      key: StoryStableIdSchema,
-      value: StoryScalarValueSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('increment_variable'),
-      key: StoryStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('set_flag'),
-      flag: StoryStableIdSchema,
-      value: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('adjust_relationship'),
-      characterId: StoryStableIdSchema,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('unlock_ending'),
-      endingId: StoryStableIdSchema,
-    })
-    .strict(),
-]);
-export type FilmEffect = z.infer<typeof FilmEffectSchema>;
+export const MAX_CHARACTER_IMAGES = 6;
+export const MAX_CHARACTER_VOICE_DURATION_MS = 5_000;
+export const MAX_STORY_PROJECT_NODES = 10_000;
 
-export const StoryCharacterSchema = z
+export const MAX_CHARACTER_IMAGE_LABEL_LENGTH = 60;
+
+/**
+ * One uploaded appearance-reference image (形象图) backing generation. The
+ * label names the look (常服 / 夜行 / 盛装 …) so prompts can address it.
+ */
+export const StoryCharacterImageSchema = z
+  .object({
+    mediaAssetId: z.string().uuid(),
+    url: z.string().trim().min(1).max(2_048),
+    label: z.string().trim().min(1).max(MAX_CHARACTER_IMAGE_LABEL_LENGTH),
+  })
+  .strict();
+export type StoryCharacterImage = z.infer<typeof StoryCharacterImageSchema>;
+
+/** Voice-clone reference sample (音色); hard-capped at 5 seconds. */
+export const StoryCharacterVoiceSchema = z
+  .object({
+    mediaAssetId: z.string().uuid(),
+    url: z.string().trim().min(1).max(2_048),
+    durationMs: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_CHARACTER_VOICE_DURATION_MS),
+  })
+  .strict();
+export type StoryCharacterVoice = z.infer<typeof StoryCharacterVoiceSchema>;
+
+const StoryCharacterObjectSchema = z
   .object({
     id: StoryStableIdSchema,
     name: DraftLocalizedTextSchema,
-    role: z.string().max(160),
     summary: z.string().max(4_000),
-    playable: z.boolean().default(false),
-    continuityRules: z.array(z.string().trim().min(1).max(1_000)).max(50),
+    images: z
+      .array(StoryCharacterImageSchema)
+      .max(MAX_CHARACTER_IMAGES)
+      .default([]),
+    voice: StoryCharacterVoiceSchema.nullable().default(null),
   })
   .strict();
+
+// Drafts written before 2026-07 carried `playable`/`continuityRules`/`role`,
+// and briefly stored unlabeled images; normalize them so `.strict()` keeps
+// rejecting genuinely unknown keys.
+export const StoryCharacterSchema = z.preprocess((value) => {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const {
+      playable: _playable,
+      continuityRules: _rules,
+      role: _role,
+      ...rest
+    } = value as Record<string, unknown>;
+    if (Array.isArray(rest.images)) {
+      rest.images = rest.images.map((image, index) =>
+        image !== null &&
+        typeof image === 'object' &&
+        !Array.isArray(image) &&
+        !(
+          typeof (image as Record<string, unknown>).label === 'string' &&
+          ((image as Record<string, unknown>).label as string).trim()
+        )
+          ? { ...(image as Record<string, unknown>), label: `Ref ${index + 1}` }
+          : image,
+      );
+    }
+    return rest;
+  }
+  return value;
+}, StoryCharacterObjectSchema);
 
 export const StoryEndingSchema = z
   .object({
     id: StoryStableIdSchema,
     title: DraftLocalizedTextSchema,
-    summary: DraftLocalizedTextSchema,
-    kind: z.enum(['truth', 'bond', 'echo', 'failure', 'hidden', 'custom']),
+    summary: DraftLocalizedTextSchema.optional(),
   })
   .strict();
 
@@ -214,29 +130,7 @@ export const StoryGraphChoiceSchema = z
   .object({
     choiceId: StoryStableIdSchema,
     label: DraftLocalizedTextSchema,
-    accessibilityLabel: DraftLocalizedTextSchema.optional(),
-    visibleWhen: FilmConditionSchema.optional(),
-    effects: z.array(FilmEffectSchema).max(30).default([]),
     nextNodeId: StoryStableIdSchema,
-    afterSelect: z
-      .discriminatedUnion('kind', [
-        z.object({ kind: z.literal('immediate') }).strict(),
-        z
-          .object({
-            kind: z.literal('play'),
-            reactionClipKey: FilmClipKeySchema,
-          })
-          .strict(),
-      ])
-      .default({ kind: 'immediate' }),
-  })
-  .strict();
-
-const StoryAutoRouteSchema = z
-  .object({
-    nextNodeId: StoryStableIdSchema,
-    when: FilmConditionSchema.optional(),
-    priority: z.number().int().min(0).max(10_000).default(0),
   })
   .strict();
 
@@ -247,44 +141,17 @@ const StoryClipAutoExitSchema = z
   })
   .strict();
 
-const StoryRouterAutoExitSchema = z
-  .object({
-    kind: z.literal('auto'),
-    routes: z.array(StoryAutoRouteSchema).max(20),
-  })
-  .strict();
-
+// One choice exit for both clip and text nodes: a decision is just its prompt
+// and its labelled choices. When the choice is presented (clip end, text read)
+// is derived from the node kind at compile time, not authored per node.
 const StoryChoiceExitSchema = z
   .object({
     kind: z.literal('choice'),
     decisionId: StoryStableIdSchema,
     prompt: DraftLocalizedTextSchema,
-    trigger: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('media-ended') }).strict(),
-      z
-        .object({
-          kind: z.literal('timecode'),
-          atMs: z.number().int().nonnegative(),
-        })
-        .strict(),
-    ]),
     choices: z.array(StoryGraphChoiceSchema).max(6),
   })
   .strict();
-
-/**
- * A deliberate interaction boundary that asks the viewer to continue without
- * recording a narrative choice. Player copy belongs to the built-in runtime
- * checkpoint renderer, keeping authoring graphs free from duplicated product
- * UI text.
- */
-export const StoryCheckpointExitSchema = z
-  .object({
-    kind: z.literal('checkpoint'),
-    nextNodeId: StoryStableIdSchema,
-  })
-  .strict();
-export type StoryCheckpointExit = z.infer<typeof StoryCheckpointExitSchema>;
 
 const StoryEndingExitSchema = z
   .object({
@@ -293,201 +160,112 @@ const StoryEndingExitSchema = z
   })
   .strict();
 
+/**
+ * The music track a node asks for, named by the workspace audio MediaAsset the
+ * creator attached.
+ *
+ * Optional and additive: a node without it changes nothing about the music, and
+ * every revision authored before music parses unchanged. Binding one asset to
+ * several nodes is normal — that is how a theme returns.
+ *
+ * Nothing downstream may FAIL on this binding. Whether the asset still exists,
+ * belongs to the workspace and is audio is answered at compile time by simply
+ * resolving a URL: no URL, no music on that scene. Losing a video breaks the
+ * story; losing a bed only means silence, so publishing never blocks on it.
+ */
+export const StoryNodeMusicSchema = z
+  .object({ mediaAssetId: z.string().uuid() })
+  .strict();
+export type StoryNodeMusic = z.infer<typeof StoryNodeMusicSchema>;
+
 const StoryClipGraphNodeSchema = z
   .object({
     kind: z.literal('clip'),
     nodeId: StoryStableIdSchema,
-    clipKey: FilmClipKeySchema,
+    clipKey: StoryClipKeySchema,
+    // Authoring-only display metadata. clipKey stays the uppercase stable key;
+    // these are the human-facing name and description edited in the inspector.
+    // Optional so drafts authored before the field parse unchanged.
+    name: z.string().trim().max(120).optional(),
+    description: z.string().trim().max(4_000).optional(),
+    music: StoryNodeMusicSchema.optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
-      StoryCheckpointExitSchema,
       StoryEndingExitSchema,
     ]),
   })
   .strict();
 
-/**
- * A graph-only routing node. It owns no generated video and can only choose
- * an automatic conditional route. The compiler materializes its runtime
- * representation without inventing another FilmClip or video asset.
- */
-const StoryRouterGraphNodeSchema = z
+const StoryTextGraphNodeSchema = z
   .object({
-    kind: z.literal('router'),
+    kind: z.literal('text'),
     nodeId: StoryStableIdSchema,
-    exit: StoryRouterAutoExitSchema,
+    title: DraftLocalizedTextSchema.optional(),
+    body: StoryTextBodyLocalizedTextSchema,
+    music: StoryNodeMusicSchema.optional(),
+    exit: z.discriminatedUnion('kind', [
+      StoryClipAutoExitSchema,
+      StoryChoiceExitSchema,
+      StoryEndingExitSchema,
+    ]),
   })
   .strict();
 
 export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
   StoryClipGraphNodeSchema,
-  StoryRouterGraphNodeSchema,
+  StoryTextGraphNodeSchema,
 ]);
 
 /** Mutable graph shape. Referential and completeness checks run on lock. */
-export const InteractiveFilmStoryGraphSchema = z
+export const InteractiveStoryGraphSchema = z
   .object({
     entryNodeId: StoryStableIdSchema.nullable(),
-    nodes: z.array(StoryGraphNodeSchema).max(500),
+    nodes: z.array(StoryGraphNodeSchema).max(MAX_STORY_PROJECT_NODES),
   })
   .strict();
 
-export const StoryClipPromptGenerationControlSchema = z.discriminatedUnion(
-  'mode',
-  [
-    z
-      .object({
-        mode: z.literal('frame_lock'),
-        frameMode: z.enum(['first_frame', 'first_last_frame']),
-      })
-      .strict(),
-    z.object({ mode: z.literal('omni_reference') }).strict(),
-  ],
-);
-
-export const StoryClipReferenceRoleNoteSchema = z
+const InteractiveStoryDraftContentBaseSchema = z
   .object({
-    id: StoryStableIdSchema,
-    role: z.enum([
-      'subject',
-      'location',
-      'prop',
-      'style',
-      'first_frame',
-      'last_frame',
-      'omni_reference',
-      'other',
-    ]),
-    referenceId: z.string().max(120),
-    note: z.string().max(2_000),
-  })
-  .strict();
-
-export const StoryClipPromptBeatSchema = z
-  .object({
-    id: StoryStableIdSchema,
-    startMs: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(10 * 60 * 1_000),
-    endMs: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(10 * 60 * 1_000),
-    visual: z.string().max(4_000),
-    camera: z.string().max(2_000),
-    action: z.string().max(4_000),
-    performance: z.string().max(2_000),
-    emotion: z.string().max(2_000),
-    dialogue: z.string().max(2_000),
-    audio: z.string().max(2_000),
-    endState: z.string().max(2_000),
-    continuity: z.string().max(2_000),
-  })
-  .strict();
-
-export const StoryClipPromptDraftSchema = z
-  .object({
-    graphNodeId: StoryStableIdSchema,
-    clipKey: FilmClipKeySchema,
-    title: z.string().max(240),
-    description: z.string().max(4_000),
-    targetDurationMs: z
-      .number()
-      .int()
-      .positive()
-      .max(10 * 60 * 1_000),
-    generationControl: StoryClipPromptGenerationControlSchema,
-    masterDirection: z.string().max(20_000),
-    referenceRoleNotes: z.array(StoryClipReferenceRoleNoteSchema).max(100),
-    emotionalArc: z.string().max(4_000),
-    beats: z.array(StoryClipPromptBeatSchema).max(200),
-    negativeConstraints: z.array(z.string().max(1_000)).max(100),
-    continuityNotes: z.array(z.string().max(2_000)).max(100),
-  })
-  .strict();
-export type StoryClipPromptDraft = z.infer<typeof StoryClipPromptDraftSchema>;
-
-/**
- * Mutable director design for the optional project-root trailer. It deliberately
- * has no graph identity: a trailer is revision-scoped promotional media, not a
- * hidden runtime clip.
- */
-export const StoryTrailerPromptDraftSchema = z
-  .object({
-    title: z.string().max(240),
-    description: z.string().max(4_000),
-    targetDurationMs: z
-      .number()
-      .int()
-      .positive()
-      .max(10 * 60 * 1_000),
-    generationControl: StoryClipPromptGenerationControlSchema,
-    masterDirection: z.string().max(20_000),
-    referenceRoleNotes: z.array(StoryClipReferenceRoleNoteSchema).max(100),
-    emotionalArc: z.string().max(4_000),
-    beats: z.array(StoryClipPromptBeatSchema).max(200),
-    negativeConstraints: z.array(z.string().max(1_000)).max(100),
-    continuityNotes: z.array(z.string().max(2_000)).max(100),
-  })
-  .strict();
-export type StoryTrailerPromptDraft = z.infer<
-  typeof StoryTrailerPromptDraftSchema
->;
-
-/**
- * Eligibility boundary for creating immutable trailer-production records.
- *
- * `StoryTrailerPromptDraftSchema` intentionally accepts an unfinished
- * authoring draft. A project trailer is optional promotional media, so its
- * authoring state must not participate in full-gameplay Revision readiness.
- * Only a prompt that passes this schema may be projected into a
- * `FilmTrailerSpec` and enter trailer production.
- */
-export const ProductionReadyStoryTrailerPromptSchema =
-  StoryTrailerPromptDraftSchema.superRefine((prompt, context) => {
-    validateProductionReadyVideoPrompt(
-      prompt,
-      context,
-      [],
-      'trailer',
-      'Required before trailer production.',
-    );
-  });
-export type ProductionReadyStoryTrailerPrompt = z.infer<
-  typeof ProductionReadyStoryTrailerPromptSchema
->;
-
-const InteractiveFilmDraftContentBaseSchema = z
-  .object({
-    storyBible: z
-      .object({
-        logline: z.string().max(1_000),
-        synopsis: z.string().max(20_000),
-        worldview: z.string().max(20_000),
-        storyRules: z.array(z.string().max(2_000)).max(100),
-        characters: z.array(StoryCharacterSchema).max(100),
-        locations: z.array(z.string().max(500)).max(200),
-        props: z.array(z.string().max(500)).max(200),
-        stateVariables: z.array(StoryStateVariableSchema).max(200),
-        endings: z.array(StoryEndingSchema).max(100),
-      })
-      .strict(),
-    graph: InteractiveFilmStoryGraphSchema,
-    clipPrompts: z.array(StoryClipPromptDraftSchema).max(500),
-    trailerPrompt: StoryTrailerPromptDraftSchema.nullable(),
+    // Drafts written before 2026-07 carried storyRules/locations/props lists;
+    // strip them so `.strict()` keeps rejecting genuinely unknown keys.
+    storyBible: z.preprocess(
+      (value) => {
+        if (
+          value !== null &&
+          typeof value === 'object' &&
+          !Array.isArray(value)
+        ) {
+          const {
+            storyRules: _rules,
+            locations: _locations,
+            props: _props,
+            ...rest
+          } = value as Record<string, unknown>;
+          return rest;
+        }
+        return value;
+      },
+      z
+        .object({
+          logline: z.string().max(1_000),
+          synopsis: z.string().max(20_000),
+          worldview: z.string().max(20_000),
+          characters: z.array(StoryCharacterSchema).max(100),
+          endings: z.array(StoryEndingSchema).max(100),
+        })
+        .strict(),
+    ),
+    graph: InteractiveStoryGraphSchema,
     productionNotes: z.array(z.string().max(2_000)).max(200),
   })
   .strict();
-type InteractiveFilmDraftContentBase = z.infer<
-  typeof InteractiveFilmDraftContentBaseSchema
+type InteractiveStoryDraftContentBase = z.infer<
+  typeof InteractiveStoryDraftContentBaseSchema
 >;
 
-export const InteractiveFilmDraftContentSchema =
-  InteractiveFilmDraftContentBaseSchema.superRefine((draft, context) => {
+export const InteractiveStoryDraftContentSchema =
+  InteractiveStoryDraftContentBaseSchema.superRefine((draft, context) => {
     addDuplicateStableIdentifierIssues(
       draft.storyBible.characters,
       (character) => character.id,
@@ -495,18 +273,10 @@ export const InteractiveFilmDraftContentSchema =
       'id',
       context,
     );
-    addDuplicateStableIdentifierIssues(
-      draft.storyBible.stateVariables,
-      (variable) => variable.key,
-      ['storyBible', 'stateVariables'],
-      'key',
-      context,
-    );
     validateCanonicalDecisionDefinitions(draft, context);
-    validateMutableClipPromptStructure(draft, context);
-  }).transform((draft) => normalizeDraftClipPrompts(draft));
-export type InteractiveFilmDraftContent = z.infer<
-  typeof InteractiveFilmDraftContentSchema
+  });
+export type InteractiveStoryDraftContent = z.infer<
+  typeof InteractiveStoryDraftContentSchema
 >;
 
 interface RuntimeLocalizedCopy {
@@ -514,7 +284,7 @@ interface RuntimeLocalizedCopy {
   path: PropertyKey[];
 }
 
-export interface InteractiveFilmRuntimeLocaleCoverageIssue {
+export interface InteractiveStoryRuntimeLocaleCoverageIssue {
   locale: string;
   path: PropertyKey[];
 }
@@ -524,8 +294,8 @@ export interface InteractiveFilmRuntimeLocaleCoverageIssue {
  * bible metadata (for example a translated character name) must never silently
  * widen the release locale contract.
  */
-export function collectInteractiveFilmRuntimeLocales(
-  draft: InteractiveFilmDraftContent,
+export function collectInteractiveStoryRuntimeLocales(
+  draft: InteractiveStoryDraftContent,
   defaultLocale?: string,
 ): string[] {
   const locales = new Set<string>(defaultLocale ? [defaultLocale] : []);
@@ -540,10 +310,10 @@ export function collectInteractiveFilmRuntimeLocales(
   ];
 }
 
-export function findInteractiveFilmRuntimeLocaleCoverageIssues(
-  draft: InteractiveFilmDraftContent,
+export function findInteractiveStoryRuntimeLocaleCoverageIssues(
+  draft: InteractiveStoryDraftContent,
   enabledLocales: readonly string[],
-): InteractiveFilmRuntimeLocaleCoverageIssue[] {
+): InteractiveStoryRuntimeLocaleCoverageIssue[] {
   return runtimeLocalizedCopies(draft).flatMap((copy) =>
     enabledLocales.flatMap((locale) =>
       copy.value[locale]?.trim()
@@ -554,7 +324,7 @@ export function findInteractiveFilmRuntimeLocaleCoverageIssues(
 }
 
 function runtimeLocalizedCopies(
-  draft: InteractiveFilmDraftContent,
+  draft: InteractiveStoryDraftContent,
 ): RuntimeLocalizedCopy[] {
   return [
     ...draft.storyBible.endings.flatMap((ending, endingIndex) => [
@@ -562,188 +332,75 @@ function runtimeLocalizedCopies(
         value: ending.title,
         path: ['storyBible', 'endings', endingIndex, 'title'],
       },
-      {
-        value: ending.summary,
-        path: ['storyBible', 'endings', endingIndex, 'summary'],
-      },
+      ...(hasNonEmptyLocalizedText(ending.summary)
+        ? [
+            {
+              value: ending.summary,
+              path: ['storyBible', 'endings', endingIndex, 'summary'],
+            },
+          ]
+        : []),
     ]),
     ...draft.graph.nodes.flatMap((node, nodeIndex) => {
-      if (node.exit.kind !== 'choice') return [];
+      const textCopies =
+        node.kind === 'text'
+          ? [
+              ...(hasNonEmptyLocalizedText(node.title)
+                ? [
+                    {
+                      value: node.title,
+                      path: ['graph', 'nodes', nodeIndex, 'title'],
+                    },
+                  ]
+                : []),
+              {
+                value: node.body,
+                path: ['graph', 'nodes', nodeIndex, 'body'],
+              },
+            ]
+          : [];
+      if (node.exit.kind !== 'choice') return textCopies;
       return [
+        ...textCopies,
         {
           value: node.exit.prompt,
           path: ['graph', 'nodes', nodeIndex, 'exit', 'prompt'],
         },
-        ...node.exit.choices.flatMap((choice, choiceIndex) => [
-          {
-            value: choice.label,
-            path: [
-              'graph',
-              'nodes',
-              nodeIndex,
-              'exit',
-              'choices',
-              choiceIndex,
-              'label',
-            ],
-          },
-          ...(choice.accessibilityLabel
-            ? [
-                {
-                  value: choice.accessibilityLabel,
-                  path: [
-                    'graph',
-                    'nodes',
-                    nodeIndex,
-                    'exit',
-                    'choices',
-                    choiceIndex,
-                    'accessibilityLabel',
-                  ],
-                },
-              ]
-            : []),
-        ]),
+        ...node.exit.choices.map((choice, choiceIndex) => ({
+          value: choice.label,
+          path: [
+            'graph',
+            'nodes',
+            nodeIndex,
+            'exit',
+            'choices',
+            choiceIndex,
+            'label',
+          ],
+        })),
       ];
     }),
   ];
 }
 
-export const EMPTY_INTERACTIVE_FILM_DRAFT_CONTENT: InteractiveFilmDraftContent =
+function hasNonEmptyLocalizedText(
+  value: Record<string, string> | undefined,
+): value is Record<string, string> {
+  return Boolean(value && Object.values(value).some((text) => text.trim()));
+}
+
+export const EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT: InteractiveStoryDraftContent =
   {
     storyBible: {
       logline: '',
       synopsis: '',
       worldview: '',
-      storyRules: [],
       characters: [],
-      locations: [],
-      props: [],
-      stateVariables: [],
       endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
-    clipPrompts: [],
-    trailerPrompt: null,
     productionNotes: [],
   };
-
-/**
- * Creates the explicit mutable authoring shell for a clip. This is not a
- * FilmClipSpec and carries no output contract, production version, or take
- * state. Empty direction fields are intentional until revision lock.
- */
-export function createDefaultStoryClipPromptDraft(input: {
-  graphNodeId: string;
-  clipKey: string;
-}): StoryClipPromptDraft {
-  return {
-    graphNodeId: input.graphNodeId,
-    clipKey: input.clipKey,
-    title: input.clipKey,
-    description: '',
-    targetDurationMs: 15_000,
-    generationControl: { mode: 'frame_lock', frameMode: 'first_frame' },
-    masterDirection: '',
-    referenceRoleNotes: [],
-    emotionalArc: '',
-    beats: [
-      {
-        id: 'beat:1',
-        startMs: 0,
-        endMs: 15_000,
-        visual: '',
-        camera: '',
-        action: '',
-        performance: '',
-        emotion: '',
-        dialogue: '',
-        audio: '',
-        endState: '',
-        continuity: '',
-      },
-    ],
-    negativeConstraints: [],
-    continuityNotes: [],
-  };
-}
-
-function normalizeDraftClipPrompts(
-  draft: InteractiveFilmDraftContentBase,
-): InteractiveFilmDraftContentBase {
-  const existingByNodeId = new Map(
-    draft.clipPrompts.map((prompt) => [prompt.graphNodeId, prompt]),
-  );
-  return {
-    ...draft,
-    clipPrompts: draft.graph.nodes.flatMap((node) =>
-      node.kind === 'clip'
-        ? [
-            existingByNodeId.get(node.nodeId) ??
-              createDefaultStoryClipPromptDraft({
-                graphNodeId: node.nodeId,
-                clipKey: node.clipKey,
-              }),
-          ]
-        : [],
-    ),
-  };
-}
-
-function validateMutableClipPromptStructure(
-  draft: InteractiveFilmDraftContentBase,
-  context: z.RefinementCtx,
-): void {
-  addDuplicateStableIdentifierIssues(
-    draft.clipPrompts,
-    (prompt) => prompt.graphNodeId,
-    ['clipPrompts'],
-    'graphNodeId',
-    context,
-  );
-  addDuplicateStableIdentifierIssues(
-    draft.clipPrompts,
-    (prompt) => prompt.clipKey,
-    ['clipPrompts'],
-    'clipKey',
-    context,
-  );
-  const clipNodeById = new Map(
-    draft.graph.nodes.flatMap((node) =>
-      node.kind === 'clip' ? [[node.nodeId, node] as const] : [],
-    ),
-  );
-  draft.clipPrompts.forEach((prompt, promptIndex) => {
-    const node = clipNodeById.get(prompt.graphNodeId);
-    if (!node) {
-      context.addIssue({
-        code: 'custom',
-        path: ['clipPrompts', promptIndex, 'graphNodeId'],
-        message: `Unknown clip graph node ${prompt.graphNodeId}.`,
-      });
-    } else if (node.clipKey !== prompt.clipKey) {
-      context.addIssue({
-        code: 'custom',
-        path: ['clipPrompts', promptIndex, 'clipKey'],
-        message: `Clip prompt key ${prompt.clipKey} does not match graph clip ${node.clipKey}.`,
-      });
-    }
-    addDuplicateStableIdentifierIssues(
-      prompt.referenceRoleNotes,
-      (note) => note.id,
-      ['clipPrompts', promptIndex, 'referenceRoleNotes'],
-      'id',
-      context,
-    );
-    addDuplicateStableIdentifierIssues(
-      prompt.beats,
-      (beat) => beat.id,
-      ['clipPrompts', promptIndex, 'beats'],
-      'id',
-      context,
-    );
-  });
-}
 
 /**
  * A stable decision may be rendered after more than one predecessor clip.
@@ -752,7 +409,7 @@ function validateMutableClipPromptStructure(
  * free to route the same option to its own continuation node.
  */
 function validateCanonicalDecisionDefinitions(
-  draft: InteractiveFilmDraftContentBase,
+  draft: InteractiveStoryDraftContentBase,
   context: z.RefinementCtx,
 ): void {
   type ChoiceExit = z.infer<typeof StoryChoiceExitSchema>;
@@ -762,7 +419,7 @@ function validateCanonicalDecisionDefinitions(
   >();
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
-    if (node.kind !== 'clip' || node.exit.kind !== 'choice') return;
+    if (node.exit.kind !== 'choice') return;
     const canonical = decisions.get(node.exit.decisionId);
     if (!canonical) {
       decisions.set(node.exit.decisionId, {
@@ -791,9 +448,6 @@ function findDecisionSemanticConflict(
   candidate: z.infer<typeof StoryChoiceExitSchema>,
 ): string | null {
   if (!semanticValuesEqual(canonical.prompt, candidate.prompt)) return 'prompt';
-  if (!semanticValuesEqual(canonical.trigger, candidate.trigger)) {
-    return 'trigger';
-  }
 
   const canonicalChoices = new Map(
     canonical.choices.map((choice) => [choice.choiceId, choice]),
@@ -813,13 +467,7 @@ function findDecisionSemanticConflict(
   for (const [choiceId, canonicalChoice] of canonicalChoices) {
     const candidateChoice = candidateChoices.get(choiceId);
     if (!candidateChoice) return 'choiceId set';
-    for (const field of [
-      'label',
-      'accessibilityLabel',
-      'visibleWhen',
-      'effects',
-      'afterSelect',
-    ] as const) {
+    for (const field of ['label'] as const) {
       if (
         !semanticValuesEqual(canonicalChoice[field], candidateChoice[field])
       ) {
@@ -866,28 +514,15 @@ function semanticValuesEqual(left: unknown, right: unknown): boolean {
   );
 }
 
-function scalarMatchesVariableType(
-  value: StoryScalarValue,
-  type: StoryStateVariable['type'],
-): boolean {
-  return typeof value === type;
-}
-
-/**
- * Full-story playtest gate. A playable draft must satisfy the same story,
- * branch, localized runtime-copy, and clip-production contracts as a locked
- * Revision. The optional project trailer is deliberately outside this
- * boundary: it is a separately produced marketing asset and is not part of
- * the full interactive-film Runtime Manifest.
- */
-export function createPlayableInteractiveFilmDraftContentSchema(
+/** Full-story playtest gate for story structure and runtime copy. */
+export function createPlayableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,
 ) {
   const normalizedDefaultLocale = defaultLocale
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
-  return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
-    validateInteractiveFilmGameplayReadiness(
+  return InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
+    validateInteractiveStoryGameplayReadiness(
       draft,
       context,
       normalizedDefaultLocale,
@@ -895,24 +530,23 @@ export function createPlayableInteractiveFilmDraftContentSchema(
   });
 }
 
-export const PlayableInteractiveFilmDraftContentSchema =
-  createPlayableInteractiveFilmDraftContentSchema();
+export const PlayableInteractiveStoryDraftContentSchema =
+  createPlayableInteractiveStoryDraftContentSchema();
 
 /**
  * Revision-lock gate. PUT /draft intentionally uses the permissive mutable
  * schema above; POST /revisions/lock parses the stored head through this one.
- * This is the immutable full-gameplay boundary: story graph, runtime copy and
- * every film clip must be production-ready. The optional trailer has its own
- * independent production-readiness schema above.
+ * This is the immutable full-gameplay boundary for story graph and runtime
+ * copy. Clip video selection is independent from the story draft.
  */
-export function createLockableInteractiveFilmDraftContentSchema(
+export function createLockableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,
 ) {
   const normalizedDefaultLocale = defaultLocale
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
-  return InteractiveFilmDraftContentSchema.superRefine((draft, context) => {
-    validateInteractiveFilmGameplayReadiness(
+  return InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
+    validateInteractiveStoryGameplayReadiness(
       draft,
       context,
       normalizedDefaultLocale,
@@ -920,144 +554,11 @@ export function createLockableInteractiveFilmDraftContentSchema(
   });
 }
 
-export const LockableInteractiveFilmDraftContentSchema =
-  createLockableInteractiveFilmDraftContentSchema();
+export const LockableInteractiveStoryDraftContentSchema =
+  createLockableInteractiveStoryDraftContentSchema();
 
-function isBlankClipPromptForReadiness(prompt: {
-  masterDirection: string;
-  emotionalArc: string;
-  beats: ReadonlyArray<{
-    visual: string;
-    camera: string;
-    action: string;
-    performance: string;
-    emotion: string;
-    dialogue: string;
-    audio: string;
-    endState: string;
-    continuity: string;
-  }>;
-}): boolean {
-  // Must agree with the projector's isUnauthoredClipPrompt: a prompt is blank
-  // only when NO field carries authored content, so lock and projection never
-  // disagree (lock skipping a prompt the projector would then reject).
-  if (prompt.masterDirection.trim() || prompt.emotionalArc.trim()) return false;
-  return !prompt.beats.some(
-    (beat) =>
-      beat.visual.trim() ||
-      beat.camera.trim() ||
-      beat.action.trim() ||
-      beat.performance.trim() ||
-      beat.emotion.trim() ||
-      beat.dialogue.trim() ||
-      beat.audio.trim() ||
-      beat.endState.trim() ||
-      beat.continuity.trim(),
-  );
-}
-
-function validateProductionReadyVideoPrompt(
-  prompt: StoryClipPromptDraft | StoryTrailerPromptDraft,
-  context: z.RefinementCtx,
-  promptPath: PropertyKey[],
-  subject: 'clip' | 'trailer',
-  requiredMessage: string,
-): void {
-  const requireText = (value: string, path: PropertyKey[]) => {
-    if (!value.trim()) {
-      context.addIssue({ code: 'custom', path, message: requiredMessage });
-    }
-  };
-  requireText(prompt.title, [...promptPath, 'title']);
-  requireText(prompt.masterDirection, [...promptPath, 'masterDirection']);
-  requireText(prompt.emotionalArc, [...promptPath, 'emotionalArc']);
-  prompt.referenceRoleNotes.forEach((note, noteIndex) => {
-    requireText(note.referenceId, [
-      ...promptPath,
-      'referenceRoleNotes',
-      noteIndex,
-      'referenceId',
-    ]);
-    requireText(note.note, [
-      ...promptPath,
-      'referenceRoleNotes',
-      noteIndex,
-      'note',
-    ]);
-  });
-  prompt.negativeConstraints.forEach((constraint, constraintIndex) =>
-    requireText(constraint, [
-      ...promptPath,
-      'negativeConstraints',
-      constraintIndex,
-    ]),
-  );
-  prompt.continuityNotes.forEach((note, noteIndex) =>
-    requireText(note, [...promptPath, 'continuityNotes', noteIndex]),
-  );
-  if (prompt.beats.length === 0) {
-    context.addIssue({
-      code: 'custom',
-      path: [...promptPath, 'beats'],
-      message:
-        subject === 'clip'
-          ? 'A lockable clip prompt needs at least one time-coded beat.'
-          : 'A production-ready trailer prompt needs at least one time-coded beat.',
-    });
-  }
-  let previousEndMs = 0;
-  prompt.beats.forEach((beat, beatIndex) => {
-    const beatPath = [...promptPath, 'beats', beatIndex];
-    requireText(beat.visual, [...beatPath, 'visual']);
-    requireText(beat.camera, [...beatPath, 'camera']);
-    requireText(beat.action, [...beatPath, 'action']);
-    if (beat.endMs <= beat.startMs) {
-      context.addIssue({
-        code: 'custom',
-        path: [...beatPath, 'endMs'],
-        message: 'Beat endMs must be greater than startMs.',
-      });
-    }
-    if (beatIndex === 0 && beat.startMs !== 0) {
-      context.addIssue({
-        code: 'custom',
-        path: [...beatPath, 'startMs'],
-        message: `The first ${subject} prompt beat must start at 0ms.`,
-      });
-    } else if (beat.startMs < previousEndMs) {
-      context.addIssue({
-        code: 'custom',
-        path: [...beatPath, 'startMs'],
-        message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be ordered and non-overlapping.`,
-      });
-    } else if (beatIndex > 0 && beat.startMs > previousEndMs) {
-      context.addIssue({
-        code: 'custom',
-        path: [...beatPath, 'startMs'],
-        message: `${subject === 'clip' ? 'Clip' : 'Trailer'} prompt beats must be contiguous with no uncovered time.`,
-      });
-    }
-    if (beat.endMs > prompt.targetDurationMs) {
-      context.addIssue({
-        code: 'custom',
-        path: [...beatPath, 'endMs'],
-        message: 'Beat endMs cannot exceed targetDurationMs.',
-      });
-    }
-    previousEndMs = Math.max(previousEndMs, beat.endMs);
-  });
-  const finalBeat = prompt.beats.at(-1);
-  if (finalBeat && finalBeat.endMs !== prompt.targetDurationMs) {
-    context.addIssue({
-      code: 'custom',
-      path: [...promptPath, 'beats', prompt.beats.length - 1, 'endMs'],
-      message: `The final ${subject} prompt beat must end exactly at targetDurationMs.`,
-    });
-  }
-}
-
-function validateInteractiveFilmGameplayReadiness(
-  draft: InteractiveFilmDraftContent,
+function validateInteractiveStoryGameplayReadiness(
+  draft: InteractiveStoryDraftContent,
   context: z.RefinementCtx,
   defaultLocale?: string,
 ): void {
@@ -1103,23 +604,10 @@ function validateInteractiveFilmGameplayReadiness(
     });
     return seen;
   };
-  requireText(draft.storyBible.logline, ['storyBible', 'logline']);
-  requireText(draft.storyBible.synopsis, ['storyBible', 'synopsis']);
-  requireText(draft.storyBible.worldview, ['storyBible', 'worldview']);
-  draft.storyBible.storyRules.forEach((rule, index) =>
-    requireText(rule, ['storyBible', 'storyRules', index]),
-  );
   draft.productionNotes.forEach((note, index) =>
     requireText(note, ['productionNotes', index]),
   );
 
-  if (draft.storyBible.characters.length === 0) {
-    context.addIssue({
-      code: 'custom',
-      path: ['storyBible', 'characters'],
-      message: 'A lockable story needs at least one character.',
-    });
-  }
   if (draft.storyBible.endings.length === 0) {
     context.addIssue({
       code: 'custom',
@@ -1142,9 +630,6 @@ function validateInteractiveFilmGameplayReadiness(
     });
   }
 
-  const characterIds = new Set(
-    draft.storyBible.characters.map((character) => character.id),
-  );
   draft.storyBible.characters.forEach((character, index) => {
     requireLocalizedText(character.name, [
       'storyBible',
@@ -1152,22 +637,12 @@ function validateInteractiveFilmGameplayReadiness(
       index,
       'name',
     ]);
-    requireText(character.role, ['storyBible', 'characters', index, 'role']);
     requireText(character.summary, [
       'storyBible',
       'characters',
       index,
       'summary',
     ]);
-    character.continuityRules.forEach((rule, ruleIndex) =>
-      requireText(rule, [
-        'storyBible',
-        'characters',
-        index,
-        'continuityRules',
-        ruleIndex,
-      ]),
-    );
   });
 
   const endingIds = unique(
@@ -1183,92 +658,29 @@ function validateInteractiveFilmGameplayReadiness(
       index,
       'title',
     ]);
-    requireLocalizedText(ending.summary, [
-      'storyBible',
-      'endings',
-      index,
-      'summary',
-    ]);
+    if (hasNonEmptyLocalizedText(ending.summary)) {
+      requireLocalizedText(ending.summary, [
+        'storyBible',
+        'endings',
+        index,
+        'summary',
+      ]);
+    }
   });
 
-  const enabledLocales = collectInteractiveFilmRuntimeLocales(
+  const enabledLocales = collectInteractiveStoryRuntimeLocales(
     draft,
     defaultLocale,
   );
-  findInteractiveFilmRuntimeLocaleCoverageIssues(draft, enabledLocales).forEach(
-    (issue) => {
-      context.addIssue({
-        code: 'custom',
-        path: issue.path,
-        message: `Provide non-empty ${issue.locale} runtime copy.`,
-      });
-    },
-  );
-
-  const variables = new Map(
-    draft.storyBible.stateVariables.map((variable) => [variable.key, variable]),
-  );
-  draft.storyBible.stateVariables.forEach((variable, index) => {
-    if (variable.type === 'number') {
-      if (
-        variable.minimum !== undefined &&
-        variable.maximum !== undefined &&
-        variable.minimum > variable.maximum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'minimum'],
-          message: 'minimum must not exceed maximum.',
-        });
-      }
-      if (
-        variable.minimum !== undefined &&
-        variable.initialValue < variable.minimum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'initialValue'],
-          message: 'initialValue is below minimum.',
-        });
-      }
-      if (
-        variable.maximum !== undefined &&
-        variable.initialValue > variable.maximum
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['storyBible', 'stateVariables', index, 'initialValue'],
-          message: 'initialValue is above maximum.',
-        });
-      }
-    }
-    if (
-      variable.type === 'string' &&
-      variable.allowedValues &&
-      !variable.allowedValues.includes(variable.initialValue)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['storyBible', 'stateVariables', index, 'initialValue'],
-        message: 'initialValue must be one of allowedValues.',
-      });
-    }
-  });
-
-  // Video-first: a clip is playable from its bound video alone, so a complete
-  // director prompt is NOT required to lock/publish. Director prompts only
-  // drive AI video generation; the player never sees them. Only validate a
-  // prompt that the creator actually authored (non-blank), so partially
-  // written prompts still surface their gaps.
-  draft.clipPrompts.forEach((prompt, promptIndex) => {
-    if (isBlankClipPromptForReadiness(prompt)) return;
-    validateProductionReadyVideoPrompt(
-      prompt,
-      context,
-      ['clipPrompts', promptIndex],
-      'clip',
-      'Required before locking a revision.',
-    );
+  findInteractiveStoryRuntimeLocaleCoverageIssues(
+    draft,
+    enabledLocales,
+  ).forEach((issue) => {
+    context.addIssue({
+      code: 'custom',
+      path: issue.path,
+      message: `Provide non-empty ${issue.locale} runtime copy.`,
+    });
   });
 
   const nodeIds = unique(
@@ -1291,151 +703,25 @@ function validateInteractiveFilmGameplayReadiness(
     });
   }
 
-  const validateCondition = (condition: FilmCondition, path: PropertyKey[]) => {
-    if (condition.kind === 'variable') {
-      const variable = variables.get(condition.key);
-      if (!variable) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'key'],
-          message: `Unknown state variable ${condition.key}.`,
-        });
-      } else {
-        const numericOperator =
-          condition.operator === 'greater_than' ||
-          condition.operator === 'at_least' ||
-          condition.operator === 'less_than' ||
-          condition.operator === 'at_most';
-        if (numericOperator && variable.type !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'operator'],
-            message: `${condition.operator} requires a numeric state variable.`,
-          });
-        }
-        if (numericOperator && typeof condition.value !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `${condition.operator} requires a numeric comparison value.`,
-          });
-        }
-        if (
-          (condition.operator === 'equals' ||
-            condition.operator === 'not_equals') &&
-          !scalarMatchesVariableType(condition.value, variable.type)
-        ) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `${condition.operator} value must match the ${variable.type} type of state variable ${variable.key}.`,
-          });
-        }
-      }
-    }
-    if (
-      condition.kind === 'relationship-at-least' &&
-      !characterIds.has(condition.characterId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'characterId'],
-        message: `Unknown character ${condition.characterId}.`,
-      });
-    }
-    if (condition.kind === 'all' || condition.kind === 'any') {
-      condition.conditions.forEach((child, index) =>
-        validateCondition(child, [...path, 'conditions', index]),
-      );
-    }
-    if (condition.kind === 'not') {
-      validateCondition(condition.condition, [...path, 'condition']);
-    }
-  };
-  const validateEffect = (effect: FilmEffect, path: PropertyKey[]) => {
-    if (
-      effect.kind === 'set_variable' ||
-      effect.kind === 'increment_variable'
-    ) {
-      const variable = variables.get(effect.key);
-      if (!variable) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'key'],
-          message: `Unknown state variable ${effect.key}.`,
-        });
-      } else if (effect.kind === 'increment_variable') {
-        if (variable.type !== 'number') {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'key'],
-            message: 'increment_variable requires a numeric state variable.',
-          });
-        }
-      } else if (!scalarMatchesVariableType(effect.value, variable.type)) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'value'],
-          message: `set_variable value must match the ${variable.type} type of state variable ${variable.key}.`,
-        });
-      } else if (
-        variable.type === 'number' &&
-        typeof effect.value === 'number'
-      ) {
-        if (variable.minimum !== undefined && effect.value < variable.minimum) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `set_variable value is below the minimum for ${variable.key}.`,
-          });
-        }
-        if (variable.maximum !== undefined && effect.value > variable.maximum) {
-          context.addIssue({
-            code: 'custom',
-            path: [...path, 'value'],
-            message: `set_variable value is above the maximum for ${variable.key}.`,
-          });
-        }
-      } else if (
-        variable.type === 'string' &&
-        typeof effect.value === 'string' &&
-        variable.allowedValues &&
-        !variable.allowedValues.includes(effect.value)
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: [...path, 'value'],
-          message: `set_variable value must be one of the allowedValues for ${variable.key}.`,
-        });
-      }
-    }
-    if (
-      effect.kind === 'adjust_relationship' &&
-      !characterIds.has(effect.characterId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'characterId'],
-        message: `Unknown character ${effect.characterId}.`,
-      });
-    }
-    if (effect.kind === 'unlock_ending' && !endingIds.has(effect.endingId)) {
-      context.addIssue({
-        code: 'custom',
-        path: [...path, 'endingId'],
-        message: `Unknown ending ${effect.endingId}.`,
-      });
-    }
-  };
-
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.kind === 'clip' && node.exit.kind === 'auto') {
+    if (node.kind === 'text') {
+      if (hasNonEmptyLocalizedText(node.title)) {
+        requireLocalizedText(node.title, [
+          'graph',
+          'nodes',
+          nodeIndex,
+          'title',
+        ]);
+      }
+      requireLocalizedText(node.body, ['graph', 'nodes', nodeIndex, 'body']);
+    }
+    if (node.exit.kind === 'auto') {
       if (node.exit.nextNodeId === null) {
         context.addIssue({
           code: 'custom',
           path: [...exitPath, 'nextNodeId'],
-          message: 'A clip continuation needs a target node.',
+          message: 'A scene continuation needs a target node.',
         });
       } else if (!nodeIds.has(node.exit.nextNodeId)) {
         context.addIssue({
@@ -1444,32 +730,6 @@ function validateInteractiveFilmGameplayReadiness(
           message: `Unknown target node ${node.exit.nextNodeId}.`,
         });
       }
-    }
-    if (node.kind === 'router') {
-      if (node.exit.routes.length === 0) {
-        context.addIssue({
-          code: 'custom',
-          path: [...exitPath, 'routes'],
-          message: 'An automatic exit needs at least one route.',
-        });
-      }
-      node.exit.routes.forEach((route, routeIndex) => {
-        if (!nodeIds.has(route.nextNodeId)) {
-          context.addIssue({
-            code: 'custom',
-            path: [...exitPath, 'routes', routeIndex, 'nextNodeId'],
-            message: `Unknown target node ${route.nextNodeId}.`,
-          });
-        }
-        if (route.when) {
-          validateCondition(route.when, [
-            ...exitPath,
-            'routes',
-            routeIndex,
-            'when',
-          ]);
-        }
-      });
     }
     if (node.exit.kind === 'choice') {
       requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
@@ -1489,12 +749,6 @@ function validateInteractiveFilmGameplayReadiness(
       node.exit.choices.forEach((choice, choiceIndex) => {
         const choicePath = [...exitPath, 'choices', choiceIndex];
         requireLocalizedText(choice.label, [...choicePath, 'label']);
-        if (choice.accessibilityLabel) {
-          requireLocalizedText(choice.accessibilityLabel, [
-            ...choicePath,
-            'accessibilityLabel',
-          ]);
-        }
         if (!nodeIds.has(choice.nextNodeId)) {
           context.addIssue({
             code: 'custom',
@@ -1502,40 +756,9 @@ function validateInteractiveFilmGameplayReadiness(
             message: `Unknown target node ${choice.nextNodeId}.`,
           });
         }
-        if (
-          choice.afterSelect.kind === 'play' &&
-          !clipKeys.has(choice.afterSelect.reactionClipKey)
-        ) {
-          context.addIssue({
-            code: 'custom',
-            path: [...choicePath, 'afterSelect', 'reactionClipKey'],
-            message: `Unknown reaction clip ${choice.afterSelect.reactionClipKey}.`,
-          });
-        }
-        if (choice.visibleWhen) {
-          validateCondition(choice.visibleWhen, [...choicePath, 'visibleWhen']);
-        }
-        choice.effects.forEach((effect, effectIndex) =>
-          validateEffect(effect, [...choicePath, 'effects', effectIndex]),
-        );
       });
     }
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'checkpoint' &&
-      !nodeIds.has(node.exit.nextNodeId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: [...exitPath, 'nextNodeId'],
-        message: `Unknown target node ${node.exit.nextNodeId}.`,
-      });
-    }
-    if (
-      node.kind === 'clip' &&
-      node.exit.kind === 'ending' &&
-      !endingIds.has(node.exit.endingId)
-    ) {
+    if (node.exit.kind === 'ending' && !endingIds.has(node.exit.endingId)) {
       context.addIssue({
         code: 'custom',
         path: [...exitPath, 'endingId'],
@@ -1566,338 +789,7 @@ function addDuplicateStableIdentifierIssues<T>(
   });
 }
 
-export const FilmFrameRateSchema = z
-  .object({
-    numerator: z.number().int().positive().max(240_000),
-    denominator: z.number().int().positive().max(10_000),
-  })
-  .strict();
-
-export const FilmAspectRatioSchema = z.enum(['16:9', '9:16']);
-export type FilmAspectRatio = z.infer<typeof FilmAspectRatioSchema>;
-
-export const FilmSpecSchema = z
-  .object({
-    runtimeSchemaVersion: z.literal(INTERACTIVE_FILM_RUNTIME_SCHEMA_VERSION),
-    frame: z
-      .object({
-        aspectRatio: FilmAspectRatioSchema,
-        width: z.number().int().positive().max(16_384),
-        height: z.number().int().positive().max(16_384),
-        framesPerSecond: FilmFrameRateSchema,
-      })
-      .strict(),
-    audioSampleRateHz: z.union([z.literal(44_100), z.literal(48_000)]),
-    duration: z
-      .object({
-        targetMs: z
-          .number()
-          .int()
-          .positive()
-          .max(24 * 60 * 60 * 1_000),
-        toleranceMs: z.number().int().nonnegative().max(60_000),
-        maxContinuousMs: z
-          .number()
-          .int()
-          .positive()
-          .max(10 * 60 * 1_000),
-        maxGeneratedClipMs: z
-          .number()
-          .int()
-          .positive()
-          .max(10 * 60 * 1_000),
-      })
-      .strict(),
-    targets: z
-      .object({
-        clipCount: z.number().int().positive().max(10_000),
-        choiceCount: z.number().int().nonnegative().max(10_000),
-        endingCount: z.number().int().positive().max(1_000),
-      })
-      .strict(),
-    locales: z
-      .object({
-        defaultLocale: StoryLocaleSchema,
-        enabledLocales: z.array(StoryLocaleSchema).min(1).max(50),
-      })
-      .strict(),
-    generation: z.object({ defaultCanonicalModelId: StoryUuidSchema }).strict(),
-  })
-  .strict()
-  .superRefine((spec, context) => {
-    if (!dimensionsMatchAspectRatio(spec.frame)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['frame'],
-        message: `Frame dimensions must have an exact ${spec.frame.aspectRatio} ratio.`,
-      });
-    }
-    if (spec.duration.maxGeneratedClipMs > spec.duration.maxContinuousMs) {
-      context.addIssue({
-        code: 'custom',
-        path: ['duration', 'maxGeneratedClipMs'],
-        message: 'Generated clip duration cannot exceed maxContinuousMs.',
-      });
-    }
-    if (!spec.locales.enabledLocales.includes(spec.locales.defaultLocale)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['locales', 'defaultLocale'],
-        message: 'defaultLocale must be included in enabledLocales.',
-      });
-    }
-    if (
-      new Set(spec.locales.enabledLocales).size !==
-      spec.locales.enabledLocales.length
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['locales', 'enabledLocales'],
-        message: 'enabledLocales must not contain duplicates.',
-      });
-    }
-  });
-export type FilmSpec = z.infer<typeof FilmSpecSchema>;
-
-export const FilmGenerationControlSchema = z.discriminatedUnion('mode', [
-  z
-    .object({
-      mode: z.literal('frame_lock'),
-      frameMode: z.enum(['first_frame', 'first_last_frame']),
-    })
-    .strict(),
-  z.object({ mode: z.literal('omni_reference') }).strict(),
-]);
-export type FilmGenerationControl = z.infer<typeof FilmGenerationControlSchema>;
-
-export const FilmPromptTimelineEntrySchema = z
-  .object({
-    startMs: z.number().int().nonnegative(),
-    endMs: z.number().int().positive(),
-    visual: z.string().trim().min(1).max(4_000),
-    camera: z.string().trim().min(1).max(2_000),
-    action: z.string().trim().min(1).max(4_000),
-    performance: z.string().trim().max(2_000).optional(),
-    emotion: z.string().trim().max(2_000).optional(),
-    dialogue: z.string().trim().max(2_000).optional(),
-    audio: z.string().trim().max(2_000).optional(),
-    endState: z.string().trim().max(4_000).optional(),
-    continuity: z.string().trim().max(4_000).optional(),
-  })
-  .strict()
-  .refine((entry) => entry.endMs > entry.startMs, {
-    message: 'endMs must be greater than startMs.',
-    path: ['endMs'],
-  });
-
-export const FilmDialogueWindowSchema = z
-  .object({
-    id: StoryStableIdSchema,
-    speakerId: StoryStableIdSchema.optional(),
-    source: z.enum(['on_screen', 'voice_over', 'off_screen']),
-    startMs: z.number().int().nonnegative(),
-    endMs: z.number().int().positive(),
-    text: LocalizedTextSchema,
-    delivery: z.string().trim().max(1_000).optional(),
-  })
-  .strict()
-  .refine((window) => window.endMs > window.startMs, {
-    message: 'endMs must be greater than startMs.',
-    path: ['endMs'],
-  });
-
-export const FilmClipSpecSchema = z
-  .object({
-    key: FilmClipKeySchema,
-    graphNodeId: StoryStableIdSchema,
-    kind: z.enum(['opening', 'scene', 'ending']),
-    title: z.string().trim().min(1).max(240),
-    description: z.string().trim().max(4_000).default(''),
-    rank: z.number().int().nonnegative().max(100_000),
-    targetDurationMs: z
-      .number()
-      .int()
-      .positive()
-      .max(10 * 60 * 1_000),
-    generationControl: FilmGenerationControlSchema,
-    prompt: z
-      .object({
-        // Immutable provider-neutral director manifest. Provider adapters may
-        // compact this into a smaller request budget, but the revision plane
-        // must preserve the complete authored intent.
-        masterPrompt: z.string().trim().min(1).max(100_000),
-        negativeConstraints: z
-          .array(z.string().trim().min(1).max(1_000))
-          .max(100),
-        timeline: z.array(FilmPromptTimelineEntrySchema).min(1).max(200),
-      })
-      .strict(),
-    dialogueWindows: z.array(FilmDialogueWindowSchema).max(100),
-    outputContract: z
-      .object({
-        aspectRatio: FilmAspectRatioSchema,
-        width: z.number().int().positive().max(16_384),
-        height: z.number().int().positive().max(16_384),
-        durationMs: z
-          .number()
-          .int()
-          .positive()
-          .max(10 * 60 * 1_000),
-        durationToleranceMs: z.number().int().nonnegative().max(30_000),
-        framesPerSecond: FilmFrameRateSchema,
-        audio: z.enum(['none', 'embedded', 'separate']),
-      })
-      .strict(),
-    continuityNotes: z.array(z.string().trim().min(1).max(2_000)).max(100),
-  })
-  .strict()
-  .superRefine((clip, context) => {
-    if (!dimensionsMatchAspectRatio(clip.outputContract)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['outputContract'],
-        message: `Output dimensions must have an exact ${clip.outputContract.aspectRatio} ratio.`,
-      });
-    }
-    if (clip.outputContract.durationMs !== clip.targetDurationMs) {
-      context.addIssue({
-        code: 'custom',
-        path: ['outputContract', 'durationMs'],
-        message: 'Output duration must equal targetDurationMs.',
-      });
-    }
-    const validateWindows = (
-      windows: Array<{ startMs: number; endMs: number }>,
-      path: 'timeline' | 'dialogueWindows',
-    ) => {
-      let previousEnd = 0;
-      windows.forEach((window, index) => {
-        if (window.startMs < previousEnd) {
-          context.addIssue({
-            code: 'custom',
-            path: [
-              path === 'timeline' ? 'prompt' : path,
-              ...(path === 'timeline' ? ['timeline'] : []),
-              index,
-              'startMs',
-            ],
-            message: `${path} entries must be ordered and non-overlapping.`,
-          });
-        }
-        if (window.endMs > clip.targetDurationMs) {
-          context.addIssue({
-            code: 'custom',
-            path: [
-              path === 'timeline' ? 'prompt' : path,
-              ...(path === 'timeline' ? ['timeline'] : []),
-              index,
-              'endMs',
-            ],
-            message: `${path} entry exceeds targetDurationMs.`,
-          });
-        }
-        previousEnd = Math.max(previousEnd, window.endMs);
-      });
-    };
-    validateWindows(clip.prompt.timeline, 'timeline');
-    validateWindows(clip.dialogueWindows, 'dialogueWindows');
-  });
-export type FilmClipSpec = z.infer<typeof FilmClipSpecSchema>;
-
-export const FilmTrailerSpecSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    title: z.string().trim().min(1).max(240),
-    description: z.string().trim().max(4_000).default(''),
-    targetDurationMs: z
-      .number()
-      .int()
-      .positive()
-      .max(10 * 60 * 1_000),
-    generationControl: FilmGenerationControlSchema,
-    referenceRoleNotes: z
-      .array(
-        StoryClipReferenceRoleNoteSchema.extend({
-          referenceId: z.string().trim().min(1).max(120),
-          note: z.string().trim().min(1).max(2_000),
-        }),
-      )
-      .max(100),
-    prompt: z
-      .object({
-        masterPrompt: z.string().trim().min(1).max(100_000),
-        negativeConstraints: z
-          .array(z.string().trim().min(1).max(1_000))
-          .max(100),
-        timeline: z.array(FilmPromptTimelineEntrySchema).min(1).max(200),
-      })
-      .strict(),
-    outputContract: z
-      .object({
-        aspectRatio: FilmAspectRatioSchema,
-        width: z.number().int().positive().max(16_384),
-        height: z.number().int().positive().max(16_384),
-        durationMs: z
-          .number()
-          .int()
-          .positive()
-          .max(10 * 60 * 1_000),
-        durationToleranceMs: z.number().int().nonnegative().max(30_000),
-        framesPerSecond: FilmFrameRateSchema,
-        audio: z.enum(['none', 'embedded', 'separate']),
-      })
-      .strict(),
-    continuityNotes: z.array(z.string().trim().min(1).max(2_000)).max(100),
-  })
-  .strict()
-  .superRefine((trailer, context) => {
-    if (!dimensionsMatchAspectRatio(trailer.outputContract)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['outputContract'],
-        message: `Output dimensions must have an exact ${trailer.outputContract.aspectRatio} ratio.`,
-      });
-    }
-    if (trailer.outputContract.durationMs !== trailer.targetDurationMs) {
-      context.addIssue({
-        code: 'custom',
-        path: ['outputContract', 'durationMs'],
-        message: 'Output duration must equal targetDurationMs.',
-      });
-    }
-    let previousEndMs = 0;
-    trailer.prompt.timeline.forEach((beat, index) => {
-      if (beat.startMs < previousEndMs) {
-        context.addIssue({
-          code: 'custom',
-          path: ['prompt', 'timeline', index, 'startMs'],
-          message:
-            'Trailer timeline entries must be ordered and non-overlapping.',
-        });
-      }
-      if (beat.endMs > trailer.targetDurationMs) {
-        context.addIssue({
-          code: 'custom',
-          path: ['prompt', 'timeline', index, 'endMs'],
-          message: 'Trailer timeline entry exceeds targetDurationMs.',
-        });
-      }
-      previousEndMs = Math.max(previousEndMs, beat.endMs);
-    });
-  });
-export type FilmTrailerSpec = z.infer<typeof FilmTrailerSpecSchema>;
-
-function dimensionsMatchAspectRatio(frame: {
-  aspectRatio: FilmAspectRatio;
-  width: number;
-  height: number;
-}): boolean {
-  return frame.aspectRatio === '16:9'
-    ? frame.width * 9 === frame.height * 16
-    : frame.width * 16 === frame.height * 9;
-}
-
-export const FilmReferenceKindSchema = z.enum([
+export const StoryReferenceKindSchema = z.enum([
   'character',
   'location',
   'prop',
@@ -1907,198 +799,37 @@ export const FilmReferenceKindSchema = z.enum([
   'first_frame',
   'last_frame',
 ]);
-export type FilmReferenceKind = z.infer<typeof FilmReferenceKindSchema>;
+export type StoryReferenceKind = z.infer<typeof StoryReferenceKindSchema>;
 
-export const FilmReferenceSlotSpecSchema = z
+export const StoryReferenceSlotSpecSchema = z
   .object({
-    key: FilmReferenceKeySchema,
-    kind: FilmReferenceKindSchema,
+    key: StoryReferenceKeySchema,
+    kind: StoryReferenceKindSchema,
     label: z.string().trim().min(1).max(240),
     description: z.string().trim().max(4_000).default(''),
     required: z.boolean(),
     rank: z.number().int().nonnegative().max(100_000),
   })
   .strict();
-export type FilmReferenceSlotSpec = z.infer<typeof FilmReferenceSlotSpecSchema>;
-
-export const FilmClipReferenceRoleSchema = z.enum([
-  'omni',
-  'first_frame',
-  'last_frame',
-  'continuity',
-  'style',
-]);
-export type FilmClipReferenceRole = z.infer<typeof FilmClipReferenceRoleSchema>;
-
-export const FilmClipReferenceBindingInputSchema = z
-  .object({
-    referenceSlotId: StoryUuidSchema,
-    role: FilmClipReferenceRoleSchema,
-    rank: z.number().int().nonnegative().max(1_000),
-    required: z.boolean().default(true),
-  })
-  .strict();
-export type FilmClipReferenceBindingInput = z.infer<
-  typeof FilmClipReferenceBindingInputSchema
->;
-
-/**
- * Compose a stored Clip's generationControl with proposed bindings and parse
- * this schema before persisting. This is the authoritative Frame/Omni
- * exclusivity check; the request alone cannot validate against stored state.
- */
-export const FilmClipReferencePlanSchema = z
-  .object({
-    generationControl: FilmGenerationControlSchema,
-    bindings: z.array(FilmClipReferenceBindingInputSchema).max(50),
-  })
-  .strict()
-  .superRefine((plan, context) => {
-    const roles = new Set(plan.bindings.map((binding) => binding.role));
-    if (plan.generationControl.mode === 'omni_reference') {
-      if (roles.has('first_frame') || roles.has('last_frame')) {
-        context.addIssue({
-          code: 'custom',
-          path: ['bindings'],
-          message: 'Omni Reference cannot bind first or last frames.',
-        });
-      }
-      if (!roles.has('omni')) {
-        context.addIssue({
-          code: 'custom',
-          path: ['bindings'],
-          message: 'Omni Reference requires at least one omni binding.',
-        });
-      }
-      if (
-        !plan.bindings.some(
-          (binding) => binding.role === 'omni' && binding.required,
-        )
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['bindings'],
-          message:
-            'Omni Reference requires at least one required omni binding.',
-        });
-      }
-      return;
-    }
-    if (roles.has('omni')) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message: 'Frame Lock cannot bind Omni references.',
-      });
-    }
-    if (!roles.has('first_frame')) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message: 'Frame Lock requires a first-frame binding.',
-      });
-    }
-    if (
-      !plan.bindings.some(
-        (binding) => binding.role === 'first_frame' && binding.required,
-      )
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message: 'Frame Lock requires a required first-frame binding.',
-      });
-    }
-    if (
-      plan.generationControl.frameMode === 'first_last_frame' &&
-      !roles.has('last_frame')
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message: 'First + Last Frame mode requires a last-frame binding.',
-      });
-    }
-    if (
-      plan.generationControl.frameMode === 'first_last_frame' &&
-      !plan.bindings.some(
-        (binding) => binding.role === 'last_frame' && binding.required,
-      )
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message:
-          'First + Last Frame mode requires a required last-frame binding.',
-      });
-    }
-    if (
-      plan.generationControl.frameMode === 'first_frame' &&
-      roles.has('last_frame')
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['bindings'],
-        message: 'First Frame mode cannot bind a last frame.',
-      });
-    }
-  });
-
-export const FilmClipDependencyKindSchema = z.enum([
-  'required',
-  'continuity',
-  'convergence',
-]);
-export type FilmClipDependencyKind = z.infer<
-  typeof FilmClipDependencyKindSchema
->;
-
-export const FilmClipTransitionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('direct') }).strict(),
-  z.object({ kind: z.literal('hidden_cut') }).strict(),
-  z
-    .object({
-      kind: z.literal('shared_join_frame'),
-      joinFrameReferenceSlotId: StoryUuidSchema,
-    })
-    .strict(),
-]);
-export type FilmClipTransition = z.infer<typeof FilmClipTransitionSchema>;
-
-export const FilmClipDependencySpecSchema = z
-  .object({
-    predecessorClipId: StoryUuidSchema,
-    successorClipId: StoryUuidSchema,
-    kind: FilmClipDependencyKindSchema,
-    transition: FilmClipTransitionSchema,
-  })
-  .strict()
-  .refine(
-    (dependency) => dependency.predecessorClipId !== dependency.successorClipId,
-    {
-      path: ['successorClipId'],
-      message: 'A clip cannot depend on itself.',
-    },
-  );
-export type FilmClipDependencySpec = z.infer<
-  typeof FilmClipDependencySpecSchema
+export type StoryReferenceSlotSpec = z.infer<
+  typeof StoryReferenceSlotSpecSchema
 >;
 
 export const ReviewChecklistValueSchema = z.enum(['pass', 'fail', 'na']);
 
-export const FilmBuildScopeSchema = z.discriminatedUnion('kind', [
+export const StoryBuildScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('full') }).strict(),
   z
     .object({
       kind: z.literal('subgraph'),
-      entryClipId: StoryUuidSchema,
+      entryNodeId: StoryStableIdSchema,
       maxDepth: z.number().int().positive().max(100).optional(),
     })
     .strict(),
 ]);
-export type FilmBuildScope = z.infer<typeof FilmBuildScopeSchema>;
+export type StoryBuildScope = z.infer<typeof StoryBuildScopeSchema>;
 
-export const FilmBuildStatusSchema = z.enum([
+export const StoryBuildStatusSchema = z.enum([
   'queued',
   'validating',
   'compiling',
@@ -2106,11 +837,13 @@ export const FilmBuildStatusSchema = z.enum([
   'failed',
   'cancelled',
 ]);
-export type FilmBuildStatus = z.infer<typeof FilmBuildStatusSchema>;
+export type StoryBuildStatus = z.infer<typeof StoryBuildStatusSchema>;
 
-export const FilmReviewDecisionSchema = z.enum([
+export const StoryReferenceReviewDecisionSchema = z.enum([
   'approve',
   'reject',
   'request_changes',
 ]);
-export type FilmReviewDecision = z.infer<typeof FilmReviewDecisionSchema>;
+export type StoryReferenceReviewDecision = z.infer<
+  typeof StoryReferenceReviewDecisionSchema
+>;

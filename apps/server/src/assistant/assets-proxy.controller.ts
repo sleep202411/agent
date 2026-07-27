@@ -25,6 +25,7 @@ import {
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
 import { mastraFetch } from './mastra-fetch';
+import { EntitlementService } from '../entitlements';
 
 type ContextHeader = {
   userId: string;
@@ -32,11 +33,12 @@ type ContextHeader = {
   worldId?: string;
   episodeId?: string;
   locale?: string;
-  userTier?: string;
 };
 
 @Controller('assets')
 export class AssetsProxyController {
+  constructor(private readonly entitlements: EntitlementService) {}
+
   private readonly logger = new Logger(AssetsProxyController.name);
 
   private get mastraUrl(): string {
@@ -62,15 +64,14 @@ export class AssetsProxyController {
     return headers;
   }
 
-  private buildContext(
+  private async buildContext(
     user: AuthUser,
     workspaceContext: { projectId: string; worldId?: string },
-  ): ContextHeader {
+  ): Promise<ContextHeader> {
     return {
       userId: user.userId,
       projectId: workspaceContext.projectId,
       worldId: workspaceContext.worldId,
-      userTier: user.userLevel ?? 'free',
     };
   }
 
@@ -118,7 +119,7 @@ export class AssetsProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, { projectId });
+    const context = await this.buildContext(user, { projectId });
     return this.forward('/assets/image-status', {
       method: 'GET',
       headers: this.buildHeaders(req, context, false),
@@ -155,7 +156,7 @@ export class AssetsProxyController {
     if (!body.prompt || !String(body.prompt).trim()) {
       throw new HttpException('prompt required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, {
+    const context = await this.buildContext(user, {
       projectId,
       worldId: body.worldId ? String(body.worldId) : undefined,
     });

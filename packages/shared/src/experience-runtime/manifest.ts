@@ -31,11 +31,15 @@ import {
 import { EXPERIENCE_GESTURE_CAPABILITY, ExperienceInputActionDefinitionSchema } from "./spatial.js";
 import { ExperienceThemeReferenceSchema } from "./theme.js";
 
+export const ExperienceProfileSchema = z.enum(["cinematic", "narrative"]);
+export type ExperienceProfile = z.infer<typeof ExperienceProfileSchema>;
+
 const ExperienceMetadataSchema = z
   .object({
     title: ExperienceLocalizedTextSchema,
     summary: ExperienceLocalizedTextSchema.optional(),
     coverAssetId: ExperienceStableIdSchema.optional(),
+    experienceProfile: ExperienceProfileSchema.optional(),
   })
   .strict();
 

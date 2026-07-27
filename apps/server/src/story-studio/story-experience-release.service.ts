@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ExperienceRuntimeManifestSchema,
   type ExperienceGameDetailResponse,
+  type ExperienceReleaseRequest,
   type ExperienceReleaseResponse,
 } from '@repo/shared/experience-runtime';
 import type { Prisma } from '@prisma/client';
@@ -18,20 +19,26 @@ import type {
   PublishStoryBuildInput,
   StoryExperienceCurrentReleaseDto,
 } from './dto';
-import { createExperienceReleaseRequest } from './experience-release-request';
+import { canonicalJsonHash } from './canonical-json';
+import {
+  createExperienceReleaseRequest,
+  experienceReleaseCoverUrl,
+} from './experience-release-request';
 import { storyExperiencePublicationClock } from './story-experience-publication-clock';
 import {
   isStoryExperienceReleaseOutcomeUnknown,
   StoryExperienceReleaseGateway,
 } from './story-experience-release.gateway';
-import { StoryFilmBuildService } from './story-film-build.service';
+import { StoryBuildService } from './story-build.service';
 import { StoryPermissionService } from './story-permission.service';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 const PUBLICATION_LEASE_TTL_MS = JAVA_REQUEST_TIMEOUT_MS + 20_000;
 const CONCURRENT_PUBLICATION_WAIT_MS = JAVA_REQUEST_TIMEOUT_MS + 2_000;
 const CONCURRENT_PUBLICATION_POLL_MS = 100;
 const AUTHORITY_TRANSACTION_TIMEOUT_MS = 10_000;
 const AUTHORITY_OBSERVATION_MAX_ATTEMPTS = 3;
+const DRAFT_RELEASE_MAX_RETRY_BACKOFF_MS = 5 * 60_000;
 
 type PublicationStatus = 'pending' | 'confirmed' | 'uncertain' | 'rejected';
 
@@ -75,13 +82,39 @@ type PublicationClaim =
       leaseExpiresAt: Date;
     };
 
+interface DraftReleaseSnapshot {
+  id: string;
+  buildId: string;
+  storyProjectId: string;
+  gameId: string;
+  contentVersion: string;
+  requestHash: string;
+  status: PublicationStatus;
+  manifestUrl: string | null;
+  confirmedAt: Date | null;
+  rejectedAt: Date | null;
+  attemptCount: number;
+  leaseOwner: string | null;
+  leaseExpiresAt: Date | null;
+  nextAttemptAt: Date | null;
+  lastErrorCode: string | null;
+  lastErrorDetail: string | null;
+}
+
+type DraftReleaseClaim =
+  | { kind: 'claimed'; row: DraftReleaseSnapshot; leaseOwner: string }
+  | { kind: 'confirmed'; row: DraftReleaseSnapshot }
+  | { kind: 'rejected'; row: DraftReleaseSnapshot }
+  | { kind: 'busy'; row: DraftReleaseSnapshot; retryAfter: Date };
+
 @Injectable()
 export class StoryExperienceReleaseService {
   constructor(
     private readonly permissions: StoryPermissionService,
-    private readonly builds: StoryFilmBuildService,
+    private readonly builds: StoryBuildService,
     private readonly gateway: StoryExperienceReleaseGateway,
     private readonly prisma: PrismaService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async publishBuild(
@@ -108,23 +141,44 @@ export class StoryExperienceReleaseService {
     );
     if (
       build.status !== 'ready' ||
-      build.profile !== 'production' ||
       build.scope.kind !== 'full' ||
       build.runtimeSchemaVersion !== 2 ||
-      !build.runtimeJson
+      !build.runtimeJson ||
+      !build.runtimeHash ||
+      !build.completedAt ||
+      build.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+      !Number.isInteger(build.sourceDraftRevision) ||
+      build.sourceDraftRevision < 0 ||
+      !/^[a-f0-9]{64}$/.test(build.videoSnapshotHash)
     ) {
       throw new UnprocessableEntityException({
         code: 'STORY_BUILD_NOT_PUBLISHABLE',
         message:
-          'Only a ready production/full Runtime Manifest v2 Build with available frozen media can be published.',
+          'Only a completed ready/full Runtime Manifest v2 Build can be published.',
       });
     }
-    const manifest = ExperienceRuntimeManifestSchema.parse(build.runtimeJson);
-    if (manifest.buildId !== build.id || manifest.channel !== 'production') {
+    const parsedManifest = ExperienceRuntimeManifestSchema.safeParse(
+      build.runtimeJson,
+    );
+    if (!parsedManifest.success) {
+      throw new ConflictException({
+        code: 'STORY_BUILD_MANIFEST_CORRUPT',
+        message:
+          'The immutable Build does not contain a valid Runtime Manifest v2.',
+      });
+    }
+    const manifest = parsedManifest.data;
+    if (
+      manifest.buildId !== build.id ||
+      manifest.channel !== 'production' ||
+      manifest.gameId !== projectId ||
+      manifest.contentVersion !== build.id ||
+      canonicalJsonHash(manifest) !== build.runtimeHash
+    ) {
       throw new ConflictException({
         code: 'STORY_BUILD_MANIFEST_IDENTITY_MISMATCH',
         message:
-          'The frozen Runtime Manifest identity does not match its Build.',
+          'The frozen Runtime Manifest identity or hash does not match its Build.',
       });
     }
     const title = localizedText(
@@ -137,12 +191,14 @@ export class StoryExperienceReleaseService {
           manifest.localization.defaultLocale,
         )
       : undefined;
+    const coverUrl = experienceReleaseCoverUrl(manifest);
     const request = createExperienceReleaseRequest(
       {
         gameId: manifest.gameId,
         contentVersion: manifest.contentVersion,
         title,
         ...(subtitle ? { subtitle } : {}),
+        ...(coverUrl ? { coverUrl } : {}),
         status: input.status,
         setCurrent: input.setCurrent,
       },
@@ -150,9 +206,18 @@ export class StoryExperienceReleaseService {
     );
 
     // Drafts do not authorize anonymous media and cannot become player-current.
-    // Public publication alone enters the durable delivery lifecycle below.
+    // They still establish a durable exact-request receipt under the project
+    // write fence before Java is contacted; an uncertain response is resolved
+    // only by idempotently replaying that immutable request with a live creator
+    // credential. The public authority lifecycle below remains separate.
     if (input.status === 'draft') {
-      return this.gateway.publish(request, viewerCookie);
+      return this.publishDraftRelease(
+        request,
+        build.id,
+        projectId,
+        user.userId,
+        viewerCookie,
+      );
     }
 
     let claim = await this.claimPublication({
@@ -205,6 +270,16 @@ export class StoryExperienceReleaseService {
     try {
       release = await this.gateway.publish(request, viewerCookie);
     } catch (error) {
+      // A lost response is the only genuinely ambiguous outcome: Java may have
+      // committed the release before the transport died. Rather than leaving a
+      // record for a background poller to settle later, ask Java once, right
+      // here, so the answer we hand back is the truth. Whether Java is
+      // idempotent on (gameId, contentVersion) is Java's contract to keep — we
+      // do not compensate for it, we just report what it says.
+      if (isStoryExperienceReleaseOutcomeUnknown(error)) {
+        const settled = await this.settleUncertainPublish(claim, request);
+        if (settled) return settled;
+      }
       await this.recordPublishFailure(claim, error);
       throw error;
     }
@@ -235,7 +310,20 @@ export class StoryExperienceReleaseService {
       },
       select: { id: true },
     });
-    if (!lifecycle) {
+    // A multi-chapter work has no Build publication at all — its release
+    // lifecycle hangs off the project's chapter set — so that row is the other
+    // proof that Java has been told about this game. Without this the studio
+    // would report a freshly published serial work as unpublished.
+    const released =
+      lifecycle ??
+      (await this.prisma.storyExperienceGameRelease.findFirst({
+        where: {
+          storyProjectId: projectId,
+          status: { in: ['pending', 'uncertain', 'confirmed'] },
+        },
+        select: { id: true },
+      }));
+    if (!released) {
       return {
         projectId,
         gameId: projectId,
@@ -247,8 +335,8 @@ export class StoryExperienceReleaseService {
       };
     }
 
-    // Runtime compilation deliberately uses the sovereign Story Project UUID
-    // as gameId. Once a lifecycle exists, Java is the current-version authority.
+    // Runtime compilation uses the sovereign Story Project UUID as gameId.
+    // Once a lifecycle exists, Java is the current-version authority.
     return this.reconcileProjectCurrent(projectId, projectId);
   }
 
@@ -365,6 +453,236 @@ export class StoryExperienceReleaseService {
     }, authorityTransactionOptions());
   }
 
+  private async publishDraftRelease(
+    request: ExperienceReleaseRequest,
+    buildId: string,
+    projectId: string,
+    userId: string,
+    viewerCookie: string,
+  ): Promise<ExperienceReleaseResponse> {
+    const requestHash = canonicalJsonHash(request);
+    const claim = await this.claimDraftRelease({
+      buildId,
+      projectId,
+      userId,
+      gameId: request.gameId,
+      contentVersion: request.contentVersion,
+      requestHash,
+    });
+    if (claim.kind === 'confirmed') return draftReleaseFromRow(claim.row);
+    if (claim.kind === 'rejected') throw storedDraftRejection(claim.row);
+    if (claim.kind === 'busy') throw draftReleaseInProgress(claim);
+
+    let release: ExperienceReleaseResponse;
+    try {
+      release = await this.gateway.publish(request, viewerCookie);
+    } catch (error) {
+      await this.recordDraftReleaseFailure(claim, error);
+      throw error;
+    }
+
+    await this.confirmDraftRelease(claim, release);
+    return release;
+  }
+
+  private async claimDraftRelease(input: {
+    buildId: string;
+    projectId: string;
+    userId: string;
+    gameId: string;
+    contentVersion: string;
+    requestHash: string;
+  }): Promise<DraftReleaseClaim> {
+    const leaseOwner = `draft-release:${process.pid}:${randomUUID()}`;
+    return this.prisma.$transaction(async (tx) => {
+      // This permanent row is the first lock in the transaction. Agent apply
+      // and draft delivery therefore have one total acceptance order, while
+      // the Java POST remains strictly outside the transaction.
+      await this.writeGuard.assertHumanWriteAllowed(tx, input.projectId);
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`story-experience-draft-release:${input.buildId}`})::bigint
+        )
+      `;
+      const now = await storyExperiencePublicationClock(tx);
+      let row = await tx.storyExperienceDraftRelease.findUnique({
+        where: { buildId: input.buildId },
+      });
+      if (row) assertDraftReleaseIdentity(row, input);
+      if (row?.status === 'confirmed') {
+        return { kind: 'confirmed' as const, row: draftReleaseSnapshot(row) };
+      }
+      if (row?.status === 'rejected') {
+        return { kind: 'rejected' as const, row: draftReleaseSnapshot(row) };
+      }
+      const retryAfter = laterDate(row?.leaseExpiresAt, row?.nextAttemptAt);
+      if (retryAfter && retryAfter.getTime() > now.getTime()) {
+        return {
+          kind: 'busy' as const,
+          row: draftReleaseSnapshot(row!),
+          retryAfter,
+        };
+      }
+
+      const recoveringCrashedAttempt = Boolean(
+        row && row.status === 'pending' && row.attemptCount > 0,
+      );
+      if (!row) {
+        row = await tx.storyExperienceDraftRelease.create({
+          data: {
+            buildId: input.buildId,
+            storyProjectId: input.projectId,
+            gameId: input.gameId,
+            contentVersion: input.contentVersion,
+            requestHash: input.requestHash,
+            requestedByUserId: input.userId,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
+
+      const leaseExpiresAt = new Date(now.getTime() + PUBLICATION_LEASE_TTL_MS);
+      const claimed = await tx.storyExperienceDraftRelease.update({
+        where: { buildId: input.buildId },
+        data: {
+          ...(recoveringCrashedAttempt
+            ? {
+                status: 'uncertain' as const,
+                lastErrorCode: 'STORY_EXPERIENCE_DRAFT_RELEASE_CRASH_RECOVERY',
+                lastErrorDetail:
+                  'Recovered a draft release whose process stopped before recording the Java outcome; replaying the exact immutable request.',
+                lastErrorAt: now,
+              }
+            : {}),
+          attemptCount: { increment: 1 },
+          firstAttemptAt: row.firstAttemptAt ?? now,
+          lastAttemptAt: now,
+          lastAttemptedByUserId: input.userId,
+          nextAttemptAt: null,
+          leaseOwner,
+          leaseAcquiredAt: now,
+          leaseExpiresAt,
+        },
+      });
+      return {
+        kind: 'claimed' as const,
+        row: draftReleaseSnapshot(claimed),
+        leaseOwner,
+      };
+    });
+  }
+
+  private async confirmDraftRelease(
+    claim: Extract<DraftReleaseClaim, { kind: 'claimed' }>,
+    release: ExperienceReleaseResponse,
+  ): Promise<void> {
+    if (
+      release.status !== 'draft' ||
+      release.gameId !== claim.row.gameId ||
+      release.contentVersion !== claim.row.contentVersion
+    ) {
+      throw new ConflictException({
+        code: 'STORY_EXPERIENCE_DRAFT_RELEASE_ACKNOWLEDGEMENT_MISMATCH',
+        message: 'Java draft acknowledgement does not match the Build.',
+      });
+    }
+    const now = await storyExperiencePublicationClock(this.prisma);
+    const updated = await this.prisma.storyExperienceDraftRelease.updateMany({
+      where: {
+        buildId: claim.row.buildId,
+        leaseOwner: claim.leaseOwner,
+        status: { in: ['pending', 'uncertain'] },
+      },
+      data: {
+        status: 'confirmed',
+        manifestUrl: release.manifestUrl,
+        confirmedAt: now,
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseExpiresAt: null,
+        nextAttemptAt: null,
+        lastErrorCode: null,
+        lastErrorDetail: null,
+        lastErrorAt: null,
+      },
+    });
+    if (updated.count === 1) return;
+
+    const existing = await this.prisma.storyExperienceDraftRelease.findUnique({
+      where: { buildId: claim.row.buildId },
+    });
+    if (existing?.status === 'confirmed') {
+      assertDraftAcknowledgement(existing, release);
+      return;
+    }
+    throw new ConflictException({
+      code: 'STORY_EXPERIENCE_DRAFT_RELEASE_LEASE_LOST',
+      message:
+        'Draft release ownership expired before the Java acknowledgement could be stored.',
+    });
+  }
+
+  private async recordDraftReleaseFailure(
+    claim: Extract<DraftReleaseClaim, { kind: 'claimed' }>,
+    error: unknown,
+  ): Promise<void> {
+    const now = await storyExperiencePublicationClock(this.prisma);
+    const detail = errorDetail(error);
+    const unknown = isStoryExperienceReleaseOutcomeUnknown(error);
+    if (!unknown) {
+      // A definitive Java rejection terminates the receipt even when a prior
+      // ambiguous attempt left it 'uncertain': the reconciliation replay is
+      // the exact immutable request, so Java rejecting the replay proves the
+      // original POST never committed. Rescheduling instead would wedge the
+      // receipt forever — it cannot be deleted and its build_id is unique.
+      await this.prisma.storyExperienceDraftRelease.updateMany({
+        where: {
+          buildId: claim.row.buildId,
+          leaseOwner: claim.leaseOwner,
+          status: { in: ['pending', 'uncertain'] },
+        },
+        data: {
+          status: 'rejected',
+          rejectedAt: now,
+          leaseOwner: null,
+          leaseAcquiredAt: null,
+          leaseExpiresAt: null,
+          nextAttemptAt: null,
+          lastErrorCode: detail.code,
+          lastErrorDetail: detail.message,
+          lastErrorAt: now,
+        },
+      });
+      return;
+    }
+
+    // An ambiguous draft POST cannot be observed through the public game
+    // endpoint. Keep the receipt uncertain and reconcile by replaying only the
+    // exact request after a bounded backoff. Java's immutable
+    // (gameId, contentVersion, draft) identity makes this replay idempotent.
+    await this.prisma.storyExperienceDraftRelease.updateMany({
+      where: {
+        buildId: claim.row.buildId,
+        leaseOwner: claim.leaseOwner,
+        status: { in: ['pending', 'uncertain'] },
+      },
+      data: {
+        status: 'uncertain',
+        nextAttemptAt: new Date(
+          now.getTime() + draftReleaseBackoffMs(claim.row.attemptCount),
+        ),
+        // Keep the original lease through its bounded expiry. A timeout only
+        // means our response is unknown; Java may still be finishing the POST.
+        // Agent claims inspect this durable lease under the same project fence,
+        // so clearing it here would let Agent apply overtake a late draft write.
+        lastErrorCode: detail.code,
+        lastErrorDetail: detail.message,
+        lastErrorAt: now,
+      },
+    });
+  }
+
   private async claimPublication(input: {
     buildId: string;
     projectId: string;
@@ -376,6 +694,7 @@ export class StoryExperienceReleaseService {
     const leaseOwner = `publish:${process.pid}:${randomUUID()}`;
 
     return this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, input.projectId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
           hashtext(${`story-experience-publication:${input.projectId}`})::bigint
@@ -577,6 +896,39 @@ export class StoryExperienceReleaseService {
     });
   }
 
+  /**
+   * Resolves a lost publish response by asking Java what it actually has.
+   *
+   * Returns the release when Java is already serving this exact
+   * contentVersion, and null when it is not — or when Java cannot be reached,
+   * in which case the caller reports the failure and the creator simply
+   * publishes again. Being briefly wrong in the UI and self-correcting on the
+   * next click is a far smaller cost than a resident reconciliation worker.
+   */
+  private async settleUncertainPublish(
+    claim: Extract<PublicationClaim, { kind: 'claimed' }>,
+    request: ExperienceReleaseRequest,
+  ): Promise<ExperienceReleaseResponse | null> {
+    // Anything this probe throws must be swallowed, including a synchronous
+    // throw: the publish error it would otherwise mask is the one worth
+    // reporting.
+    let game: Awaited<ReturnType<typeof this.gateway.getGame>> = null;
+    try {
+      game = await this.gateway.getGame(request.gameId);
+    } catch {
+      return null;
+    }
+    if (!game || game.currentVersion !== request.contentVersion) return null;
+    const release: ExperienceReleaseResponse = {
+      gameId: game.gameId,
+      contentVersion: game.currentVersion,
+      status: 'published',
+      manifestUrl: game.manifestUrl,
+    };
+    await this.confirmPublication(claim, release);
+    return release;
+  }
+
   private async recordPublishFailure(
     claim: Extract<PublicationClaim, { kind: 'claimed' }>,
     error: unknown,
@@ -644,9 +996,8 @@ export class StoryExperienceReleaseService {
         build: {
           select: {
             id: true,
-            sourceRevisionId: true,
-            sourceProductionRevision: true,
-            sourceRevision: { select: { sourceDraftRevision: true } },
+            sourceDraftRevision: true,
+            videoSnapshotHash: true,
           },
         },
       },
@@ -763,10 +1114,8 @@ export class StoryExperienceReleaseService {
       currentBuild: matching
         ? {
             id: matching.build.id,
-            sourceRevisionId: matching.build.sourceRevisionId,
-            sourceDraftRevision:
-              matching.build.sourceRevision.sourceDraftRevision,
-            sourceProductionRevision: matching.build.sourceProductionRevision,
+            sourceDraftRevision: matching.build.sourceDraftRevision,
+            videoSnapshotHash: matching.build.videoSnapshotHash,
           }
         : null,
       checkedAt: observationCheckedAt,
@@ -917,6 +1266,108 @@ function publicationSnapshot(row: {
   lastErrorDetail: string | null;
 }): PublicationSnapshot {
   return { ...row };
+}
+
+function draftReleaseSnapshot(row: DraftReleaseSnapshot): DraftReleaseSnapshot {
+  return { ...row };
+}
+
+function assertDraftReleaseIdentity(
+  row: Pick<
+    DraftReleaseSnapshot,
+    'storyProjectId' | 'gameId' | 'contentVersion' | 'requestHash'
+  >,
+  input: {
+    projectId: string;
+    gameId: string;
+    contentVersion: string;
+    requestHash: string;
+  },
+): void {
+  if (
+    row.storyProjectId !== input.projectId ||
+    row.gameId !== input.gameId ||
+    row.contentVersion !== input.contentVersion ||
+    row.requestHash !== input.requestHash
+  ) {
+    throw new ConflictException({
+      code: 'STORY_EXPERIENCE_DRAFT_RELEASE_RECEIPT_CONFLICT',
+      message:
+        'The durable draft release identity does not match this exact Build request.',
+    });
+  }
+}
+
+function assertDraftAcknowledgement(
+  row: Pick<DraftReleaseSnapshot, 'gameId' | 'contentVersion' | 'manifestUrl'>,
+  release: ExperienceReleaseResponse,
+): void {
+  if (
+    release.status !== 'draft' ||
+    row.gameId !== release.gameId ||
+    row.contentVersion !== release.contentVersion ||
+    row.manifestUrl !== release.manifestUrl
+  ) {
+    throw new ConflictException({
+      code: 'STORY_EXPERIENCE_DRAFT_RELEASE_RECEIPT_CONFLICT',
+      message:
+        'The stored Java draft acknowledgement does not match this Build release.',
+    });
+  }
+}
+
+function draftReleaseFromRow(
+  row: DraftReleaseSnapshot,
+): ExperienceReleaseResponse {
+  if (!row.manifestUrl || !row.confirmedAt) {
+    throw new ConflictException({
+      code: 'STORY_EXPERIENCE_DRAFT_RELEASE_CORRUPT',
+      message: 'Confirmed draft release acknowledgement is incomplete.',
+    });
+  }
+  return {
+    gameId: row.gameId,
+    contentVersion: row.contentVersion,
+    status: 'draft',
+    manifestUrl: row.manifestUrl,
+  };
+}
+
+function storedDraftRejection(row: DraftReleaseSnapshot): ConflictException {
+  return new ConflictException({
+    code: row.lastErrorCode ?? 'STORY_EXPERIENCE_DRAFT_RELEASE_REJECTED',
+    message:
+      row.lastErrorDetail ??
+      'Java definitively rejected this immutable draft release.',
+  });
+}
+
+function draftReleaseInProgress(
+  claim: Extract<DraftReleaseClaim, { kind: 'busy' }>,
+): ConflictException {
+  return new ConflictException({
+    code: 'STORY_EXPERIENCE_DRAFT_RELEASE_IN_PROGRESS',
+    message:
+      'This exact draft release is still in flight or waiting for a safe replay window.',
+    buildId: claim.row.buildId,
+    retryAfter: claim.retryAfter.toISOString(),
+  });
+}
+
+function laterDate(
+  left: Date | null | undefined,
+  right: Date | null | undefined,
+): Date | null {
+  if (!left) return right ?? null;
+  if (!right) return left;
+  return left.getTime() >= right.getTime() ? left : right;
+}
+
+function draftReleaseBackoffMs(attempt: number): number {
+  return Math.min(
+    5_000 * 2 ** Math.max(0, attempt - 1),
+    DRAFT_RELEASE_MAX_RETRY_BACKOFF_MS,
+  );
 }
 
 function assertPublicationIdentity(

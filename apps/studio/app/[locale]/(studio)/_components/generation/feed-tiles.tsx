@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
-import type { FizzAiJobOutput } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiJobOutput } from "@/lib/canvas-authoring/generation-api";
 import type { FeedJob } from "./use-generation-feed";
 
 /** Translator type for the "generation" namespace, threaded into the pure
@@ -146,7 +146,9 @@ export function FailedTile({
       </span>
       <div className="min-h-0">
         <p className="line-clamp-3 text-xs leading-5 text-white/75">
-          {job.error ?? t("generationFailed")}
+          {job.errorCode === "PROVIDER_CONTENT_FILTER"
+            ? t("contentPolicyBlocked")
+            : (job.error ?? t("generationFailed"))}
         </p>
         <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
           {job.prompt}

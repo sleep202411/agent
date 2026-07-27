@@ -57,6 +57,32 @@ function isStudioHost(request: NextRequest): boolean {
 }
 
 /**
+ * Origin of the standalone FizzStudio app (apps/studio), from
+ * `NEXT_PUBLIC_STUDIO_HOST`. Empty on local dev and anywhere the
+ * subdomain isn't wired up, which is what keeps `/art-studio` reachable
+ * there — the tree still builds and serves, it just stops being the
+ * public entrance once a real studio host exists.
+ */
+const STUDIO_ORIGIN = process.env.NEXT_PUBLIC_STUDIO_HOST
+  ? `https://${process.env.NEXT_PUBLIC_STUDIO_HOST}`
+  : "";
+
+/**
+ * The in-web studio (`app/(studio)/art-studio`) predates the standalone
+ * app and is being retired. Send visitors to the real one.
+ *
+ * Deliberately NOT path-preserving: the two trees never agreed on
+ * routes (`/art-studio/projects/<id>` vs `/project/<id>`, `/image` vs
+ * `/images`, and `/assets` `/tasks` `/theme-preview` have no counterpart
+ * at all), so carrying the path across would land a deep link on a 404.
+ * The studio home is a worse guess than the right page but a much better
+ * one than an error.
+ */
+function studioRedirect(pathname: string): boolean {
+  return pathname === "/art-studio" || pathname.startsWith("/art-studio/");
+}
+
+/**
  * Pick the redirect target locale for an unprefixed request.
  *
  * Cookie wins because it's an explicit user action; Accept-Language
@@ -127,19 +153,22 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 307);
   }
 
-  // Backward compatibility for links/bookmarks created before project
-  // workspaces moved under /art-studio. next.config redirects only see
-  // the original locale-prefixed URL, so handle the localized shape here
-  // before the internal rewrite strips the locale.
-  if (
-    !studioHost &&
-    (rewrittenPathname.startsWith("/projects/") || rewrittenPathname === "/projects")
-  ) {
-    const url = request.nextUrl.clone();
-    const targetPathname = rewrittenPathname === "/projects" ? "" : rewrittenPathname;
-    url.pathname = `/${matchedLocale}/art-studio${targetPathname}`;
-    return NextResponse.redirect(url, 307);
+  // The in-web studio's /art-studio/* surface has moved to its own app; send
+  // those paths there. 307 rather than 308: the apex tree still exists and
+  // still serves wherever STUDIO_ORIGIN is unset, so this must not be cached
+  // as permanent by anyone who visits prod and then runs locally.
+  if (STUDIO_ORIGIN && studioRedirect(rewrittenPathname)) {
+    return NextResponse.redirect(`${STUDIO_ORIGIN}/${matchedLocale}`, 307);
   }
+
+  // Legacy /projects/<id> deep links (created before project workspaces moved
+  // under the /art-studio route tree) must keep RESOLVING on the marketing
+  // apex — never redirect them to the studio subdomain. They render in place
+  // via an internal rewrite below, so the clean /<locale>/projects/<id> URL
+  // stays put and the workspace loads where the link points.
+  const legacyProjects =
+    !studioHost &&
+    (rewrittenPathname === "/projects" || rewrittenPathname.startsWith("/projects/"));
 
   // Auth gate: protected paths without a session cookie 307 to /login
   // with the original (locale-prefixed) path stashed in `?redirect=`.
@@ -169,6 +198,11 @@ export function proxy(request: NextRequest) {
   let internalPathname = rewrittenPathname;
   if (studioHost && !rewrittenPathname.startsWith("/art-studio")) {
     internalPathname = `/art-studio${rewrittenPathname === "/" ? "" : rewrittenPathname}`;
+  } else if (legacyProjects) {
+    // Serve the apex /<locale>/projects/<id> URL from the /art-studio project
+    // route tree — a plain internal rewrite, never a redirect. The URL bar
+    // stays /<locale>/projects/<id> and the workspace renders in place.
+    internalPathname = `/art-studio${rewrittenPathname}`;
   }
 
   const headers = new Headers(request.headers);

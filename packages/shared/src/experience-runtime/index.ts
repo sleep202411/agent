@@ -9,6 +9,7 @@ export * from "./renderer.js";
 export * from "./core-renderers.js";
 export * from "./scene.js";
 export * from "./manifest.js";
+export * from "./game-manifest.js";
 export * from "./integrity.js";
 export * from "./release-protocol.js";
 export * from "./player-protocol.js";

@@ -14,6 +14,7 @@ import {
   MediaAssetStatus,
   MediaAssetVisibility,
   MediaStorageProvider,
+  Prisma,
   StoryVideoUploadStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +24,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
+import { StoryProjectWriteGuardService } from '../story-studio/story-project-write-guard.service';
 import type {
   ConfirmUploadInputDto,
   ConfirmUploadResponseDto,
@@ -35,12 +37,6 @@ import {
 } from './media-upload.policy';
 
 const UUID = z.string().uuid();
-const ACTIVE_RESERVATION_STATUSES: StoryVideoUploadStatus[] = [
-  StoryVideoUploadStatus.issued,
-  StoryVideoUploadStatus.confirmed,
-  StoryVideoUploadStatus.queued,
-  StoryVideoUploadStatus.processing,
-];
 const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
   [STORY_CLIP_VIDEO_CONTENT_TYPE]: 'mp4',
 };
@@ -62,6 +58,7 @@ export class StoryVideoUploadSessionService {
     private readonly permissions: StoryPermissionService,
     private readonly outputStorage: OutputStorageService,
     private readonly storageAccess: MediaStorageAccessService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async issue(
@@ -132,12 +129,16 @@ export class StoryVideoUploadSessionService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
           hashtext(${`story-video-upload-quota:${normalizedWorkspaceId}:${userId}`})::bigint
         )
       `;
       const now = new Date();
+      // Expiring abandoned reservations is system lifecycle cleanup. It may
+      // span the user's Workspace projects and is intentionally independent
+      // of the new human reservation fenced above.
       const expired = await tx.storyVideoUploadSession.findMany({
         where: {
           createdByUserId: userId,
@@ -193,7 +194,7 @@ export class StoryVideoUploadSessionService {
         where: {
           createdByUserId: userId,
           workspaceId: normalizedWorkspaceId,
-          status: { in: ACTIVE_RESERVATION_STATUSES },
+          OR: activeReservationWhere(now),
         },
       });
       const maxActive = positiveIntEnv(
@@ -211,7 +212,7 @@ export class StoryVideoUploadSessionService {
         where: {
           createdByUserId: userId,
           workspaceId: normalizedWorkspaceId,
-          status: { in: ACTIVE_RESERVATION_STATUSES },
+          OR: activeReservationWhere(now),
         },
         _sum: { declaredSizeBytes: true },
       });
@@ -337,6 +338,7 @@ export class StoryVideoUploadSessionService {
         session.id,
         session.mediaAssetId,
         session.expiresAt,
+        session.storyProjectId,
       );
       throw new ConflictException({
         code: 'STORY_VIDEO_UPLOAD_EXPIRED',
@@ -390,6 +392,7 @@ export class StoryVideoUploadSessionService {
     }
 
     const confirmed = await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, session.storyProjectId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
           hashtext(${`story-video-upload-session:${session.id}`})::bigint
@@ -474,6 +477,7 @@ export class StoryVideoUploadSessionService {
     }
     return {
       mediaAssetId: session.mediaAssetId,
+      variantId: null,
       uploadSessionId: session.id,
       storageKey: session.finalObjectKey ?? session.stagingObjectKey,
       provider: prismaProviderToId(session.storageProvider),
@@ -485,9 +489,11 @@ export class StoryVideoUploadSessionService {
     sessionId: string,
     mediaAssetId: string,
     expiresAt: Date,
+    projectId: string,
   ): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(
           hashtext(${`story-video-upload-session:${sessionId}`})::bigint
@@ -524,6 +530,24 @@ export class StoryVideoUploadSessionService {
       });
     });
   }
+}
+
+function activeReservationWhere(
+  now: Date,
+): Prisma.StoryVideoUploadSessionWhereInput[] {
+  return [
+    {
+      status: {
+        in: [StoryVideoUploadStatus.queued, StoryVideoUploadStatus.processing],
+      },
+    },
+    {
+      status: {
+        in: [StoryVideoUploadStatus.issued, StoryVideoUploadStatus.confirmed],
+      },
+      expiresAt: { gt: now },
+    },
+  ];
 }
 
 function requireUuid(

@@ -1,236 +1,520 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
-  canonicalizeExperienceJson,
+  InteractiveFilmReleaseSchema,
+  type InteractiveFilmRelease,
+} from '@repo/shared/interactive-film-runtime';
+import {
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
 } from '@repo/shared/experience-runtime';
-import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import {
   compileStoryExperienceManifest,
   STORY_CORE_THEME_CONFIG_ASSET_ID,
-  type StoryExperienceMediaIdentity,
 } from './story-experience-manifest-compiler';
-import {
-  compileStoryFilmBuild,
-  type StoryFilmBuildClipInput,
-} from './story-film-build-compiler';
 
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
-const REVISION_ID = '0197f4a2-0800-7000-8000-000000000003';
 const BUILD_ID = '0197f4a2-0800-7000-8000-000000000004';
+const ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
+const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
+const CHECKSUM = 'a'.repeat(64);
+const COVER_ASSET_ID = '0197f4a2-0800-7000-8000-00000000000a';
+const COVER_RUNTIME_ASSET_ID = `image:${COVER_ASSET_ID}`;
+const COVER_VARIANT_ID = `${COVER_RUNTIME_ASSET_ID}:original`;
+const COVER_CHECKSUM = 'b'.repeat(64);
+const COVER_URL = `https://media.example.com/workspace/image/${COVER_ASSET_ID}.jpg`;
 
-function uuid(index: number, group: string): string {
-  return `0197f4a2-${group}-7000-8000-${index.toString(16).padStart(12, '0')}`;
-}
-
-function fixture() {
-  const bundle = buildInteractiveFilmTestBundle();
-  const clips: StoryFilmBuildClipInput[] = bundle.clipSpecs.map(
-    (spec, index) => ({
-      id: uuid(index + 1, '2000'),
-      key: spec.key,
-      graphNodeId: spec.graphNodeId,
-      rank: spec.rank,
-      specHash: `${(index + 1).toString(16).padStart(64, '0')}`,
-      productionInputHash: `${(index + 101).toString(16).padStart(64, '0')}`,
-      spec,
-      sourceGenerationId: uuid(index + 1, '3000'),
-      asset: {
-        assetId: uuid(index + 1, '4000'),
-        variantId: uuid(index + 1, '5000'),
-        checksumSha256: `${(index + 201).toString(16).padStart(64, '0')}`,
-        contentType: 'video/mp4',
-        sizeBytes: 1_000n,
-        width: 1920,
-        height: 1080,
-        durationMs: 15_000,
-        url: `https://cdn.example.test/${spec.key}.mp4`,
-      },
-      eligibilityDiagnostics: [],
-    }),
-  );
-  const built = compileStoryFilmBuild({
-    projectId: PROJECT_ID,
-    revisionId: REVISION_ID,
-    revisionNumber: 1,
-    buildId: BUILD_ID,
-    profile: 'production',
-    scope: { kind: 'full' },
-    draft: bundle.draftContent,
-    filmSpec: bundle.filmSpec,
-    clips,
-  });
-  if (!built.runtime) throw new Error('Film fixture did not compile.');
+/** The release's cover as a plain-reference image asset. */
+function coverMedia(): InteractiveFilmRelease['media'][number] {
   return {
-    bundle,
-    clips,
-    release: built.runtime,
-    mediaIdentities: clips.map(
-      (clip): StoryExperienceMediaIdentity => ({
-        runtimeAssetId: `video:${clip.key}`,
-        variantId: clip.asset?.variantId as string,
-        mediaType: clip.asset?.contentType as string,
-      }),
-    ),
+    assetId: COVER_RUNTIME_ASSET_ID,
+    kind: 'image',
+    orientationPolicy: 'single-master',
+    variants: {
+      landscape: {
+        sourceAssetId: COVER_ASSET_ID,
+        sha256: COVER_CHECKSUM,
+        src: COVER_URL,
+        width: 1600,
+        height: 900,
+      },
+    },
   };
 }
 
-function compileFixture() {
-  const value = fixture();
-  const result = compileStoryExperienceManifest({
-    release: value.release,
-    metadata: {
-      title: 'Branching Film Test',
-      summary: value.bundle.draftContent.storyBible.logline,
-    },
-    stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-    mediaIdentities: value.mediaIdentities,
+function release(): InteractiveFilmRelease {
+  return InteractiveFilmReleaseSchema.parse({
+    schemaVersion: 1,
+    channel: 'production',
+    gameId: PROJECT_ID,
+    releaseId: BUILD_ID,
+    contentVersion: BUILD_ID,
+    entryNodeId: 'clip.start',
+    defaultLocale: 'en-US',
+    locales: ['en-US'],
+    endings: [
+      {
+        endingId: 'truth',
+        title: { 'en-US': 'Truth' },
+        summary: { 'en-US': 'Truth wins.' },
+      },
+      {
+        endingId: 'echo',
+        title: { 'en-US': 'Echo' },
+        summary: { 'en-US': 'The moment echoes.' },
+      },
+    ],
+    media: [
+      {
+        assetId: 'video:START',
+        kind: 'video',
+        orientationPolicy: 'single-master',
+        variants: {
+          landscape: {
+            sourceAssetId: ASSET_ID,
+            sha256: CHECKSUM,
+            src: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/${ASSET_ID}/variants/${VARIANT_ID}/content`,
+            width: 1920,
+            height: 1080,
+            durationSeconds: 7,
+          },
+        },
+      },
+    ],
+    nodes: [
+      {
+        nodeId: 'clip.start',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.start',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: {
+          kind: 'choice',
+          decisionId: 'decision.path',
+          prompt: { 'en-US': 'Choose.' },
+          choices: [
+            {
+              choiceId: 'choose.truth',
+              label: { 'en-US': 'Truth' },
+              nextNodeId: 'clip.truth',
+            },
+            {
+              choiceId: 'choose.echo',
+              label: { 'en-US': 'Echo' },
+              nextNodeId: 'clip.echo',
+            },
+          ],
+        },
+      },
+      {
+        nodeId: 'clip.truth',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.truth',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'truth' },
+      },
+      {
+        nodeId: 'clip.echo',
+        presentation: {
+          kind: 'video',
+          sequence: [
+            {
+              clipId: 'clip.echo',
+              assetId: 'video:START',
+              endBehavior: { behavior: 'advance' },
+            },
+          ],
+          fit: 'cover',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'echo' },
+      },
+    ],
   });
-  return { ...value, result };
+}
+
+function textChoiceRelease(): InteractiveFilmRelease {
+  return InteractiveFilmReleaseSchema.parse({
+    schemaVersion: 1,
+    channel: 'production',
+    gameId: PROJECT_ID,
+    releaseId: BUILD_ID,
+    contentVersion: BUILD_ID,
+    entryNodeId: 'text.start',
+    defaultLocale: 'en-US',
+    locales: ['en-US'],
+    endings: [
+      {
+        endingId: 'truth',
+        title: { 'en-US': 'Truth' },
+        summary: { 'en-US': 'Truth wins.' },
+      },
+      {
+        endingId: 'echo',
+        title: { 'en-US': 'Echo' },
+        summary: { 'en-US': 'The moment echoes.' },
+      },
+    ],
+    media: [],
+    nodes: [
+      {
+        nodeId: 'text.start',
+        presentation: {
+          kind: 'text',
+          title: { 'en-US': 'A question' },
+          body: { 'en-US': 'The sealed door waits.' },
+          completion: 'passive',
+        },
+        overlays: [],
+        exit: {
+          kind: 'choice',
+          decisionId: 'decision.path',
+          prompt: { 'en-US': 'Choose.' },
+          choices: [
+            {
+              choiceId: 'choose.truth',
+              label: { 'en-US': 'Open it' },
+              nextNodeId: 'text.truth',
+            },
+            {
+              choiceId: 'choose.echo',
+              label: { 'en-US': 'Walk away' },
+              nextNodeId: 'text.echo',
+            },
+          ],
+        },
+      },
+      {
+        nodeId: 'text.truth',
+        presentation: {
+          kind: 'text',
+          body: { 'en-US': 'The truth is inside.' },
+          completion: 'continue',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'truth' },
+      },
+      {
+        nodeId: 'text.echo',
+        presentation: {
+          kind: 'text',
+          body: { 'en-US': 'Footsteps fade.' },
+          completion: 'continue',
+        },
+        overlays: [],
+        exit: { kind: 'ending', endingId: 'echo' },
+      },
+    ],
+  });
+}
+
+function compile(value = release()) {
+  return compileStoryExperienceManifest({
+    release: value,
+    experienceProfile: 'cinematic',
+    metadata: { title: 'Story', summary: 'A branching story.' },
+    mediaIdentities: [
+      {
+        runtimeAssetId: 'video:START',
+        variantId: VARIANT_ID,
+        mediaType: 'video/mp4',
+      },
+    ],
+  });
 }
 
 describe('Story Runtime Manifest v2 compiler', () => {
-  it('compiles the complete film Build into one deterministic v2 manifest', () => {
-    const first = compileFixture();
-    const second = compileFixture();
+  it('lowers a text choice to immediately visible core text and choice renderers', () => {
+    const result = compileStoryExperienceManifest({
+      release: textChoiceRelease(),
+      experienceProfile: 'narrative',
+      metadata: { title: 'Text Story', summary: null },
+      mediaIdentities: [],
+    });
 
-    expect(first.result.diagnostics).toEqual([]);
-    expect(first.result.manifest).not.toBeNull();
-    expect(first.result.manifest).toEqual(second.result.manifest);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.manifest?.metadata.experienceProfile).toBe('narrative');
+    const entry = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'text.start',
+    );
+    if (!entry || entry.kind !== 'scene') {
+      throw new Error('Compiled text entry scene is missing.');
+    }
+    expect(entry.clock).toEqual({ kind: 'none' });
+    const textRenderer = entry.renderers.find(
+      (renderer) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID,
+    );
+    const choiceRenderer = entry.renderers.find(
+      (renderer) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID,
+    );
+    expect(textRenderer?.config).toMatchObject({ completion: 'passive' });
+    expect(choiceRenderer?.config).toMatchObject({ initiallyOpen: true });
+    const actions = entry.eventBindings.flatMap((binding) =>
+      binding.routes.flatMap((route) => route.actions),
+    );
     expect(
-      ExperienceRuntimeManifestSchema.safeParse(first.result.manifest).success,
+      actions.some(
+        (action) =>
+          action.kind === 'renderer.command' && action.commandType === 'open',
+      ),
+    ).toBe(false);
+    const endingScene = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'text.truth',
+    );
+    const endingTextRenderer =
+      endingScene?.kind === 'scene'
+        ? endingScene.renderers.find(
+            (renderer) =>
+              renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID,
+          )
+        : undefined;
+    expect(endingTextRenderer?.config).not.toHaveProperty('title');
+    expect(
+      endingScene?.kind === 'scene' &&
+        endingScene.eventBindings.some(
+          (binding) => binding.on.qualifierId === 'text-completed',
+        ),
     ).toBe(true);
-    expect(first.result.manifest).toMatchObject({
+  });
+
+  it('is deterministic and preserves raw UUID release identity', () => {
+    const first = compile();
+    const second = compile();
+
+    expect(first.diagnostics).toEqual([]);
+    expect(first.manifest).toEqual(second.manifest);
+    expect(
+      ExperienceRuntimeManifestSchema.safeParse(first.manifest).success,
+    ).toBe(true);
+    expect(first.manifest).toMatchObject({
       manifestType: 'fizzdragon.experience',
       schemaVersion: 2,
-      gameId: PROJECT_ID.replace(/-/g, ''),
+      channel: 'production',
+      gameId: PROJECT_ID,
       buildId: BUILD_ID,
-      contentVersion: BUILD_ID.replace(/-/g, ''),
-      completionPolicy: 'finite',
-      metadata: {
-        title: {
-          'zh-CN': 'Branching Film Test',
-        },
-      },
+      contentVersion: BUILD_ID,
     });
-    expect(first.result.manifest?.assets).toHaveLength(22);
-    expect(
-      first.result.manifest?.assets.find(
-        (asset) => asset.assetId === STORY_CORE_THEME_CONFIG_ASSET_ID,
-      ),
-    ).toMatchObject({
-      kind: 'data',
-      uri: '/experience-runtime/themes/core.film-dark.v1.json',
+  });
+
+  it('freezes the exact media variant and core theme identities', () => {
+    const result = compile();
+    const video = result.manifest?.assets.find(
+      (asset) => asset.assetId === 'video:START',
+    );
+    if (!video || video.kind !== 'video') {
+      throw new Error('Compiled video asset is missing.');
+    }
+
+    expect(video.variants[0]).toMatchObject({
+      sourceAssetId: ASSET_ID,
+      sha256: CHECKSUM,
+      mediaType: 'video/mp4',
     });
-    expect(
-      first.result.manifest?.rendererRequirements.map(
-        (renderer) => renderer.rendererId,
-      ),
-    ).toEqual(
+    expect(video.variants[0]?.variantId).toContain(VARIANT_ID);
+    expect(result.manifest?.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetId: STORY_CORE_THEME_CONFIG_ASSET_ID,
+          kind: 'data',
+        }),
+      ]),
+    );
+  });
+
+  it('lowers choice semantics to core renderers', () => {
+    const result = compile();
+    const rendererIds = result.manifest?.rendererRequirements.map(
+      (requirement) => requirement.rendererId,
+    );
+
+    expect(rendererIds).toEqual(
       expect.arrayContaining([
         EXPERIENCE_CORE_VIDEO_RENDERER_ID,
         EXPERIENCE_CORE_CHOICE_RENDERER_ID,
       ]),
     );
     expect(
-      first.result.manifest?.graph.nodes.some(
-        (node) =>
-          node.kind === 'router' &&
-          node.eventBindings[0]?.on.type === 'scene.entered',
+      result.manifest?.graph.nodes.some((node) =>
+        node.eventBindings.some((binding) =>
+          binding.routes.some((route) =>
+            route.actions.some((action) => action.kind === 'scene.goto'),
+          ),
+        ),
       ),
     ).toBe(true);
-    expect(first.result.manifest?.endings).toHaveLength(4);
-    expect(
-      first.result.manifest?.stateDefinitions.map((state) => state.key),
-    ).toEqual(expect.arrayContaining([expect.stringMatching(/^story\./)]));
   });
 
-  it('preserves reaction playback as an explicit scene before navigation', () => {
-    const value = fixture();
-    const release = structuredClone(value.release);
-    const choiceNode = release.nodes.find(
-      (node) => node.exit.kind === 'choice',
-    );
-    if (!choiceNode || choiceNode.exit.kind !== 'choice') {
-      throw new Error('Choice node missing.');
-    }
-    const choice = choiceNode.exit.choices[0];
-    if (!choice) throw new Error('Choice missing.');
-    choice.afterSelect = {
-      kind: 'play',
-      reactionAssetId: 'video:E01',
+  it('presents narrative video clips inline at native size', () => {
+    const base = release();
+    const narrative: InteractiveFilmRelease = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        'presentation' in node && node.presentation.kind === 'video'
+          ? {
+              ...node,
+              presentation: { ...node.presentation, fit: 'native' as const },
+            }
+          : node,
+      ),
     };
-    const result = compileStoryExperienceManifest({
-      release,
-      metadata: { title: 'Reaction test' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
 
-    expect(result.diagnostics).toEqual([]);
-    const syntheticId = `reaction:${choiceNode.nodeId}:${choice.choiceId}`;
-    const synthetic = result.manifest?.graph.nodes.find(
-      (node) => node.sceneId === syntheticId,
-    );
-    expect(synthetic).toMatchObject({
-      kind: 'scene',
-      renderers: [
+    const result = compileStoryExperienceManifest({
+      release: narrative,
+      experienceProfile: 'narrative',
+      metadata: { title: 'Story', summary: null },
+      mediaIdentities: [
         {
-          rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
-          config: {
-            sequence: [
-              {
-                assetId: 'video:E01',
-              },
-            ],
-          },
+          runtimeAssetId: 'video:START',
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
         },
       ],
     });
-    const original = result.manifest?.graph.nodes.find(
-      (node) => node.sceneId === choiceNode.nodeId,
-    );
-    expect(JSON.stringify(original)).toContain(syntheticId);
-    expect(JSON.stringify(synthetic)).toContain(choice.nextNodeId);
+
+    expect(result.diagnostics).toEqual([]);
+    const videoConfigs =
+      result.manifest?.graph.nodes.flatMap((node) =>
+        node.kind === 'scene'
+          ? node.renderers
+              .filter(
+                (renderer) =>
+                  renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+              )
+              .map((renderer) => renderer.config as { fit: string })
+          : [],
+      ) ?? [];
+    // Every primary video clip presents inline at native size rather than
+    // covering a fixed frame.
+    expect(videoConfigs.length).toBeGreaterThan(1);
+    expect(videoConfigs.every((config) => config.fit === 'native')).toBe(true);
   });
 
-  it('assigns a distinct Java content version to every immutable Build', () => {
-    const value = fixture();
-    const nextBuildId = uuid(5, '0800');
-    const nextRelease = {
-      ...value.release,
-      releaseId: nextBuildId,
-    };
-    const first = compileStoryExperienceManifest({
-      release: value.release,
-      metadata: { title: 'Version identity' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
-    const next = compileStoryExperienceManifest({
-      release: nextRelease,
-      metadata: { title: 'Version identity' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities,
-    });
+  /**
+   * The cover has to arrive as BOTH a resolvable image asset and the metadata
+   * pointer, because the manifest schema validates the pointer against `assets`.
+   * Asserting the metadata field alone would pass while the player still painted
+   * a black rectangle.
+   */
+  it('emits the cover as a resolvable image asset and the metadata pointer', () => {
+    const withCover = release();
+    withCover.media.push(coverMedia());
 
-    expect(first.manifest?.contentVersion).toBe(BUILD_ID.replace(/-/g, ''));
-    expect(next.manifest?.contentVersion).toBe(nextBuildId.replace(/-/g, ''));
-    expect(next.manifest?.contentVersion).not.toBe(
-      first.manifest?.contentVersion,
-    );
-  });
-
-  it('fails loudly when a frozen media variant identity is missing', () => {
-    const value = fixture();
     const result = compileStoryExperienceManifest({
-      release: value.release,
-      metadata: { title: 'Missing variant' },
-      stateVariables: value.bundle.draftContent.storyBible.stateVariables,
-      mediaIdentities: value.mediaIdentities.slice(1),
+      release: withCover,
+      experienceProfile: 'cinematic',
+      metadata: {
+        title: 'Story',
+        summary: null,
+        coverAssetId: COVER_RUNTIME_ASSET_ID,
+      },
+      mediaIdentities: [
+        {
+          runtimeAssetId: 'video:START',
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+        {
+          runtimeAssetId: COVER_RUNTIME_ASSET_ID,
+          variantId: COVER_VARIANT_ID,
+          mediaType: 'image/jpeg',
+        },
+      ],
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.manifest?.metadata.coverAssetId).toBe(COVER_RUNTIME_ASSET_ID);
+    const cover = result.manifest?.assets.find(
+      (asset) => asset.assetId === COVER_RUNTIME_ASSET_ID,
+    );
+    if (!cover || cover.kind !== 'image') {
+      throw new Error('Compiled cover image asset is missing.');
+    }
+    expect(cover.orientationPolicy).toBe('single-master');
+    expect(cover.variants).toEqual([
+      {
+        variantId: COVER_VARIANT_ID,
+        sourceAssetId: COVER_ASSET_ID,
+        sha256: COVER_CHECKSUM,
+        // A plain public media URL, not a frozen /aurora build-asset path.
+        uri: COVER_URL,
+        mediaType: 'image/jpeg',
+        orientation: 'landscape',
+        width: 1600,
+        height: 900,
+      },
+    ]);
+    // The manifest must satisfy its own contract, including the reference check
+    // that makes a dangling coverAssetId invalid.
+    expect(
+      ExperienceRuntimeManifestSchema.safeParse(result.manifest).success,
+    ).toBe(true);
+  });
+
+  /**
+   * Proves the pairing above is load-bearing rather than decorative: the pointer
+   * on its own does not produce a manifest at all.
+   */
+  it('refuses a cover pointer that resolves to no asset', () => {
+    const result = compileStoryExperienceManifest({
+      release: release(),
+      experienceProfile: 'cinematic',
+      metadata: {
+        title: 'Story',
+        summary: null,
+        coverAssetId: COVER_RUNTIME_ASSET_ID,
+      },
+      mediaIdentities: [
+        {
+          runtimeAssetId: 'video:START',
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+      ],
+    });
+
+    expect(result.manifest).toBeNull();
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID',
+          path: ['metadata', 'coverAssetId'],
+        }),
+      ]),
+    );
+  });
+
+  it('keeps a story with no cover free of any cover key', () => {
+    const result = compile();
+
+    expect(result.manifest?.metadata).not.toHaveProperty('coverAssetId');
+    expect(
+      result.manifest?.assets.some((asset) => asset.kind === 'image'),
+    ).toBe(false);
+  });
+
+  it('fails when a runtime asset has no exact frozen variant identity', () => {
+    const result = compileStoryExperienceManifest({
+      release: release(),
+      experienceProfile: 'cinematic',
+      metadata: { title: 'Story', summary: null },
+      mediaIdentities: [],
     });
 
     expect(result.manifest).toBeNull();
@@ -242,29 +526,4 @@ describe('Story Runtime Manifest v2 compiler', () => {
       ]),
     );
   });
-
-  it('keeps the built-in theme bytes identical across Studio and Web', () => {
-    const studio = readTheme(
-      resolve(
-        process.cwd(),
-        '../studio/public/experience-runtime/themes/core.film-dark.v1.json',
-      ),
-    );
-    const web = readTheme(
-      resolve(
-        process.cwd(),
-        '../web/public/experience-runtime/themes/core.film-dark.v1.json',
-      ),
-    );
-    expect(studio).toEqual(web);
-    expect(
-      createHash('sha256')
-        .update(canonicalizeExperienceJson(studio))
-        .digest('hex'),
-    ).toBe('c5fd632a6dcba38e80c84a1bc771c37e791af6bca73421a9c357f859610e6272');
-  });
 });
-
-function readTheme(path: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-}

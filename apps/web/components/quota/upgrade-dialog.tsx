@@ -133,7 +133,7 @@ export function UpgradeDialogHost() {
         </Dialog>
       ) : null}
       {/* Mounted at host root so closing the explainer doesn't tear it
-          down mid-open-transition. VIP package fetch + payment QR live
+          down mid-open-transition. package fetch + payment QR live
           inside this dialog. */}
       <MembershipUpgradeDialog open={membershipOpen} onOpenChange={setMembershipOpen} />
     </>

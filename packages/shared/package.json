@@ -73,6 +73,30 @@
     "./experience-runtime": {
       "types": "./dist/experience-runtime.d.ts",
       "default": "./dist/experience-runtime.js"
+    },
+    "./story-directing-skills": {
+      "types": "./dist/story-directing-skills.d.ts",
+      "default": "./dist/story-directing-skills.js"
+    },
+    "./story-agent": {
+      "types": "./dist/story-agent.d.ts",
+      "default": "./dist/story-agent.js"
+    },
+    "./studio-agent": {
+      "types": "./dist/studio-agent.d.ts",
+      "default": "./dist/studio-agent.js"
+    },
+    "./studio-agent-api": {
+      "types": "./dist/studio-agent-api.d.ts",
+      "default": "./dist/studio-agent-api.js"
+    },
+    "./story-authoring-pipeline": {
+      "types": "./dist/story-authoring-pipeline.d.ts",
+      "default": "./dist/story-authoring-pipeline.js"
+    },
+    "./copilot-documents": {
+      "types": "./dist/copilot-documents.d.ts",
+      "default": "./dist/copilot-documents.js"
     }
   },
   "scripts": {

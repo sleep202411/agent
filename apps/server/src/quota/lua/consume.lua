@@ -8,7 +8,8 @@
 -- ARGV[2] = day limit (integer; -1 = unlimited)
 -- ARGV[3] = day TTL seconds
 -- ARGV[4] = month TTL seconds
--- ARGV[5] = idempotency TTL seconds (0 disables dedup)
+-- ARGV[5] = idempotency TTL seconds (0 disables dedup, -1 persists until
+--           the durable domain coordinator explicitly finalizes the key)
 --
 -- Returns ARRAY:
 --   { status, day_used, day_limit, deduped }
@@ -37,9 +38,11 @@ local idem_ttl  = tonumber(ARGV[5])
 
 -- Idempotency check — same key in TTL window = no-op.
 local deduped = "0"
-if idem_ttl > 0 and idem_key ~= "" then
+if idem_ttl ~= 0 and idem_key ~= "" then
   local prior = redis.call("GET", idem_key)
-  if prior then
+  -- Ordinary REFUNDED operations may consume again. FINAL_REFUNDED is an
+  -- attempt-specific terminal fence and always dedupes a delayed old caller.
+  if prior and prior ~= "REFUNDED" then
     -- Already consumed for this op key; return current snapshot.
     local cur = tonumber(redis.call("GET", day_key) or "0")
     return { "ok", tostring(cur), tostring(day_limit), "1" }
@@ -58,8 +61,12 @@ redis.call("EXPIRE", day_key, day_ttl)
 redis.call("INCRBY", month_key, cost)
 redis.call("EXPIRE", month_key, month_ttl)
 
-if idem_ttl > 0 and idem_key ~= "" then
-  redis.call("SET", idem_key, tostring(new_day), "EX", idem_ttl)
+if idem_ttl ~= 0 and idem_key ~= "" then
+  if idem_ttl < 0 then
+    redis.call("SET", idem_key, tostring(new_day))
+  else
+    redis.call("SET", idem_key, tostring(new_day), "EX", idem_ttl)
+  end
 end
 
 return { "ok", tostring(new_day), tostring(day_limit), deduped }

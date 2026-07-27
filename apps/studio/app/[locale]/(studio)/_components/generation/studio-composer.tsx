@@ -17,15 +17,15 @@ import {
   type FizzAiModel,
   type FizzAiReferenceFieldConstraints,
   type ModelSettings as ModelSettingsBag,
-} from "@/app/[locale]/canvas/_lib/generation-api";
-import { useModeLabel } from "@/app/[locale]/canvas/_lib/use-labels";
-import { ModelPicker } from "@/app/[locale]/canvas/_components/model-picker";
+} from "@/lib/canvas-authoring/generation-api";
+import { useModeLabel } from "@/lib/canvas-authoring/use-labels";
+import { ModelPicker } from "@/components/canvas/authoring/model-picker";
 import {
   hasRenderableModelSettings,
   ModelSettings as ModelSettingsPanel,
-} from "@/app/[locale]/canvas/_components/model-settings";
-import { ComposerQuickSettings } from "@/app/[locale]/canvas/_components/composer-quick-settings";
-import { ModeMenu } from "@/app/[locale]/canvas/_components/mode-menu";
+} from "@/components/canvas/authoring/model-settings";
+import { ComposerQuickSettings } from "@/components/canvas/authoring/composer-quick-settings";
+import { ModeMenu } from "@/components/canvas/authoring/mode-menu";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
 import {

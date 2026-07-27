@@ -23,10 +23,17 @@ export function PlayShareButton({
   gameId,
   locale,
   copy,
+  chapterId,
 }: {
   gameId: string;
   locale: Locale;
   copy: ShareCopy;
+  /**
+   * The chapter currently open, for a serial work. Without it a share from
+   * chapter three hands the recipient chapter one, because the route opens the
+   * first chapter whenever the URL names none.
+   */
+  chapterId?: string | null;
 }) {
   const [code, setCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -62,9 +69,10 @@ export function PlayShareButton({
   const buildShareUrl = useCallback(() => {
     const path = localizePath(`/play/interactive-film/${encodeURIComponent(gameId)}`, locale);
     const url = new URL(path, window.location.origin);
+    if (chapterId) url.searchParams.set("chapter", chapterId);
     if (code) url.searchParams.set("recommendationCode", code);
     return url.toString();
-  }, [gameId, locale, code]);
+  }, [gameId, locale, code, chapterId]);
 
   const onShare = useCallback(async () => {
     const url = buildShareUrl();

@@ -33,6 +33,10 @@ export interface NewsItem {
   /** Stable slug, only used by static articles. */
   slug?: string;
   author?: string;
-  /** Category slug for static articles (see _data/categories.ts). Live items: undefined. */
-  category?: string;
+  /**
+   * Backend-managed tags from `/api/news`. Ids are "dirty" (mixed case /
+   * prefixes); the frontend prepends its own "All" pill and switching a real
+   * tag refetches `/api/news?tag=<id>` — the id never appears in a URL.
+   */
+  tags?: { id: string; label: string }[];
 }

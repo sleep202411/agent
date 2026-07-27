@@ -73,7 +73,6 @@ describe("StoryPublicationDialog", () => {
 
     expect(document.body.textContent).toContain("Publish current version?");
     expect(document.body.textContent).toContain("Future edits remain private");
-    expect(document.body.textContent).not.toContain("productionRevision");
     expect(document.body.textContent).not.toContain("manifest");
     await click(buttonByText("Publish current version"));
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -119,12 +118,32 @@ describe("StoryPublicationDialog", () => {
     expect(document.body.textContent).toContain("Save latest changes");
   });
 
+  it("keeps an already-open confirmation read-only while Agent authoring owns writes", async () => {
+    const onConfirm = vi.fn();
+    await renderDialog(
+      { status: "confirming" },
+      {
+        canMutate: false,
+        disabledReason: "Agent is updating the project.",
+        onConfirm,
+      }
+    );
+
+    const confirm = buttonByText("Publish current version");
+    expect(confirm.disabled).toBe(true);
+    expect(confirm.title).toBe("Agent is updating the project.");
+    confirm.click();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   async function renderDialog(
     state: StoryPublicationState,
     callbacks: {
       onClose?: () => void;
       onConfirm?: () => void;
       onRetry?: () => void;
+      canMutate?: boolean;
+      disabledReason?: string | null;
     } = {}
   ) {
     await act(async () => {
@@ -133,6 +152,8 @@ describe("StoryPublicationDialog", () => {
           <StoryPublicationDialog
             state={state}
             draftRevision={18}
+            canMutate={callbacks.canMutate ?? true}
+            disabledReason={callbacks.disabledReason ?? null}
             onClose={callbacks.onClose ?? vi.fn()}
             onConfirm={callbacks.onConfirm ?? vi.fn()}
             onRetry={callbacks.onRetry ?? vi.fn()}

@@ -5,9 +5,11 @@
 -- KEYS[3] = idempotency key
 --
 -- ARGV[1] = cost to refund (positive integer)
+-- ARGV[2] = terminal fence ("1" writes permanent FINAL_REFUNDED even when
+--           no consume record exists; "0" preserves generic retry semantics)
 --
 -- Returns ARRAY:
---   { status, day_used }
+--   { status, day_used, day_existed }
 --
 --   status   = "ok"           — refund applied
 --            | "no_idem"      — no idempotency record; nothing to refund
@@ -23,29 +25,52 @@ local month_key = KEYS[2]
 local idem_key  = KEYS[3]
 
 local cost      = tonumber(ARGV[1])
+local terminal  = ARGV[2] == "1"
 
 local prior = redis.call("GET", idem_key)
 if not prior then
-  return { "no_idem", tostring(tonumber(redis.call("GET", day_key) or "0")) }
+  if terminal then
+    redis.call("SET", idem_key, "FINAL_REFUNDED")
+  end
+  local day_value = redis.call("GET", day_key)
+  return { "no_idem", tostring(tonumber(day_value or "0")), day_value and "1" or "0" }
+end
+if prior == "FINAL_REFUNDED" then
+  local day_value = redis.call("GET", day_key)
+  return { "already", tostring(tonumber(day_value or "0")), day_value and "1" or "0" }
 end
 if prior == "REFUNDED" then
-  return { "already", tostring(tonumber(redis.call("GET", day_key) or "0")) }
+  if terminal then
+    redis.call("SET", idem_key, "FINAL_REFUNDED")
+  end
+  local day_value = redis.call("GET", day_key)
+  return { "already", tostring(tonumber(day_value or "0")), day_value and "1" or "0" }
 end
 
-local new_day = redis.call("DECRBY", day_key, cost)
-if new_day < 0 then
-  -- Counter went negative — clamp to 0 (TTL probably reset between
-  -- consume and refund). This is the only place where day/month can
-  -- drift; in practice the counter just bottoms out and life goes on.
-  redis.call("SET", day_key, "0", "KEEPTTL")
-  new_day = 0
-end
-redis.call("DECRBY", month_key, cost)
--- Same clamp for month counter — silently fix-up.
-local new_month = tonumber(redis.call("GET", month_key) or "0")
-if new_month < 0 then
-  redis.call("SET", month_key, "0", "KEEPTTL")
+-- Expired windows are skipped rather than recreated as persistent zero or
+-- negative counters. Month lives for 40d, so a <=168h Copilot expiry still
+-- refunds the original monthly bucket even after its 36h day key is gone.
+local day_value = redis.call("GET", day_key)
+local new_day = tonumber(day_value or "0")
+if day_value then
+  new_day = redis.call("DECRBY", day_key, cost)
+  if new_day < 0 then
+    redis.call("SET", day_key, "0", "KEEPTTL")
+    new_day = 0
+  end
 end
 
-redis.call("SET", idem_key, "REFUNDED", "KEEPTTL")
-return { "ok", tostring(new_day) }
+local month_value = redis.call("GET", month_key)
+if month_value then
+  local new_month = redis.call("DECRBY", month_key, cost)
+  if new_month < 0 then
+    redis.call("SET", month_key, "0", "KEEPTTL")
+  end
+end
+
+if terminal then
+  redis.call("SET", idem_key, "FINAL_REFUNDED")
+else
+  redis.call("SET", idem_key, "REFUNDED", "KEEPTTL")
+end
+return { "ok", tostring(new_day), day_value and "1" or "0" }

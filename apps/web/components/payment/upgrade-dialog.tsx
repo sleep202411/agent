@@ -89,9 +89,10 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   type BenefitGroup = { title?: string; items: string[] };
 
   const planNames: Record<string, string> = {
-    VIP1: t("plans.basic"),
-    VIP2: t("plans.standard"),
-    VIP3: t("plans.pro"),
+    basic: t("plans.basic"),
+    standard: t("plans.standard"),
+    pro: t("plans.pro"),
+    team: t("plans.team"),
   };
 
   const planExtras: Record<
@@ -102,7 +103,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
       storyos: string[];
     }
   > = {
-    VIP1: {
+    basic: {
       addCourse: false,
       output: { images: 100, videos: 30, tmin: 6, tmax: 7, agents: 180 },
       storyos: [
@@ -111,7 +112,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
         t("benefits.storyosRetention", { days: 15 }),
       ],
     },
-    VIP2: {
+    standard: {
       addCourse: true,
       output: { images: 200, videos: 60, tmin: 12, tmax: 14, agents: 360 },
       storyos: [
@@ -121,7 +122,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
         t("benefits.storyosRetention", { days: 15 }),
       ],
     },
-    VIP3: {
+    pro: {
       addCourse: true,
       output: { images: 300, videos: 120, tmin: 24, tmax: 28, agents: 720 },
       storyos: [

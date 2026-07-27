@@ -6,18 +6,42 @@ export const EXPERIENCE_CORE_RENDERER_API_VERSION = "1.0.0" as const;
 export const EXPERIENCE_CORE_RENDERER_CONFIG_VERSION = "1.0.0" as const;
 
 export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
+export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
-export const EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID = "core.checkpoint" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
 
 export const EXPERIENCE_CORE_RENDERER_IDS = [
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
 ] as const;
 
 export type ExperienceCoreRendererId = (typeof EXPERIENCE_CORE_RENDERER_IDS)[number];
+
+export const ExperienceCoreTextRendererConfigSchema = z
+  .object({
+    title: ExperienceLocalizedTextSchema.optional(),
+    body: ExperienceLocalizedTextSchema,
+    completion: z.enum(["continue", "passive"]),
+  })
+  .strict()
+  .superRefine((config, context) => {
+    if (Object.keys(config.body).length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["body"],
+        message: "Text body must provide at least one locale",
+      });
+    }
+    if (config.title && Object.keys(config.title).length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["title"],
+        message: "Text title must provide at least one locale when present",
+      });
+    }
+  });
 
 const ExperienceCoreVideoEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z.object({ behavior: z.literal("advance") }).strict(),
@@ -47,8 +71,17 @@ const ExperienceCoreVideoSequenceClipSchema = z
 
 export const ExperienceCoreVideoRendererConfigSchema = z
   .object({
-    fit: z.enum(["cover", "contain"]),
-    sequence: z.array(ExperienceCoreVideoSequenceClipSchema).min(1),
+    // "cover"/"contain" fill a fixed full-bleed stage; "native" renders the clip
+    // inline at its intrinsic aspect ratio inside a responsive reading stage,
+    // for narrative experiences that carry no project-wide frame contract.
+    fit: z.enum(["cover", "contain", "native"]),
+    // An empty sequence is a video scene with nothing to play yet: the shot
+    // exists in the story, its footage does not. Preview Builds emit these so a
+    // work in progress stays playable end to end instead of refusing to
+    // compile; the player shows a placeholder and advances on the same
+    // `media-ended` outcome a real clip would produce. Release Builds still
+    // reject a missing clip, so nothing empty reaches a player by accident.
+    sequence: z.array(ExperienceCoreVideoSequenceClipSchema),
     posterAssetId: ExperienceStableIdSchema.optional(),
     autoplay: z.boolean(),
   })
@@ -116,27 +149,6 @@ export const ExperienceCoreChoiceRendererConfigSchema = z
     });
   });
 
-export const ExperienceCoreCheckpointRendererConfigSchema = z
-  .object({
-    actionIds: z.array(ExperienceStableIdSchema).min(1),
-    initiallyOpen: z.boolean(),
-  })
-  .strict()
-  .superRefine((config, context) => {
-    const actionIds = new Set<string>();
-    config.actionIds.forEach((actionId, index) => {
-      if (!actionIds.has(actionId)) {
-        actionIds.add(actionId);
-        return;
-      }
-      context.addIssue({
-        code: "custom",
-        path: ["actionIds", index],
-        message: `Duplicate checkpoint action id ${actionId}`,
-      });
-    });
-  });
-
 export const ExperienceCoreChargeFeedbackRendererConfigSchema = z
   .object({
     appearance: z.enum(["ring", "target"]).default("ring"),
@@ -146,19 +158,19 @@ export const ExperienceCoreChargeFeedbackRendererConfigSchema = z
 
 export const ExperienceCoreRendererOpenCommandPayloadSchema = z.object({}).strict();
 export const ExperienceCoreMediaEndedOutcomePayloadSchema = z.object({}).strict();
+export const ExperienceCoreTextCompletedOutcomePayloadSchema = z.object({}).strict();
 export const ExperienceCoreChoiceSelectedOutcomePayloadSchema = z
   .object({ choiceId: ExperienceStableIdSchema })
   .strict();
-export const ExperienceCoreCheckpointOutcomePayloadSchema = z.object({}).strict();
 
 export type ExperienceCoreVideoRendererConfig = z.infer<
   typeof ExperienceCoreVideoRendererConfigSchema
 >;
+export type ExperienceCoreTextRendererConfig = z.infer<
+  typeof ExperienceCoreTextRendererConfigSchema
+>;
 export type ExperienceCoreChoiceRendererConfig = z.infer<
   typeof ExperienceCoreChoiceRendererConfigSchema
->;
-export type ExperienceCoreCheckpointRendererConfig = z.infer<
-  typeof ExperienceCoreCheckpointRendererConfigSchema
 >;
 export type ExperienceCoreChargeFeedbackRendererConfig = z.infer<
   typeof ExperienceCoreChargeFeedbackRendererConfigSchema

@@ -8,3 +8,4 @@
 process.env.JAVA_CONTENT_URL ??= 'http://java-content.test.invalid';
 process.env.JAVA_STUDIO_URL ??= 'http://java-studio.test.invalid';
 process.env.JAVA_USER_QUERY_PWD ??= 'test-only';
+process.env.REDIS_URL ??= 'redis://redis.test.invalid:6379';

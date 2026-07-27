@@ -19,11 +19,14 @@ import {
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
 import { mastraFetch } from './mastra-fetch';
+import { EntitlementService } from '../entitlements';
 
 type JsonBody = Record<string, unknown>;
 
 @Controller('video-prompt')
 export class VideoPromptController {
+  constructor(private readonly entitlements: EntitlementService) {}
+
   private readonly logger = new Logger(VideoPromptController.name);
 
   private get mastraUrl(): string {
@@ -64,7 +67,6 @@ export class VideoPromptController {
       'accept-language': req.headers['accept-language'] ?? 'zh-CN',
       'x-storyos-context': JSON.stringify({
         userId: user.userId,
-        userTier: user.userLevel ?? 'free',
       }),
     };
     const cookie = req.headers.cookie;

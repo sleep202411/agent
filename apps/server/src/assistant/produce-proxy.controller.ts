@@ -22,6 +22,7 @@ import { CurrentUser, type AuthUser } from '../auth';
 import { describeUnknown } from '../common/values';
 import { SparkService, type SparkUpload } from '../spark/spark.service';
 import { mastraFetch } from './mastra-fetch';
+import { EntitlementService } from '../entitlements';
 
 type JsonBody = Record<string, unknown>;
 
@@ -31,14 +32,16 @@ type ContextHeader = {
   worldId?: string;
   locale?: string;
   dialogLanguage?: string;
-  userTier?: string;
 };
 
 @Controller('produce')
 export class ProduceProxyController {
   private readonly logger = new Logger(ProduceProxyController.name);
 
-  constructor(private readonly spark: SparkService) {}
+  constructor(
+    private readonly spark: SparkService,
+    private readonly entitlements: EntitlementService,
+  ) {}
 
   private get mastraUrl(): string {
     return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
@@ -66,7 +69,10 @@ export class ProduceProxyController {
     return headers;
   }
 
-  private buildContext(user: AuthUser, body: JsonBody): ContextHeader {
+  private async buildContext(
+    user: AuthUser,
+    body: JsonBody,
+  ): Promise<ContextHeader> {
     const seed =
       body.seed && typeof body.seed === 'object'
         ? (body.seed as Record<string, unknown>)
@@ -79,7 +85,6 @@ export class ProduceProxyController {
       projectId,
       worldId,
       dialogLanguage: language,
-      userTier: user.userLevel ?? 'free',
     };
   }
 
@@ -163,7 +168,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/script-draft/sync', req, context, body);
   }
 
@@ -177,7 +182,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/script-draft/commit', req, context, body);
   }
 
@@ -191,7 +196,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/script-draft/committed', req, context, body);
   }
 
@@ -210,7 +215,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/step1/generate', req, context, body);
   }
 
@@ -224,7 +229,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/step1/commit', req, context, body);
   }
 
@@ -239,7 +244,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/step2/generate', req, context, body);
   }
 
@@ -253,7 +258,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = this.buildContext(user, body);
+    const context = await this.buildContext(user, body);
     return this.forward('/produce/step2/commit', req, context, body);
   }
 
@@ -342,7 +347,7 @@ export class ProduceProxyController {
       createdAt: Date.now(),
     };
 
-    const context = this.buildContext(user, { projectId, worldId });
+    const context = await this.buildContext(user, { projectId, worldId });
     const forwardBody = { projectId, worldId, seed: seedPayload };
     return this.forward('/produce/step1/generate', req, context, forwardBody);
   }

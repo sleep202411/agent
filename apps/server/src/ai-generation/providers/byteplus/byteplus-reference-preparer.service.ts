@@ -17,6 +17,7 @@ const REFERENCE_FIELDS = [
   'referenceVideos',
   'referenceAudios',
 ] as const;
+const AIGC_REFERENCE_FIELDS = ['referenceImages', 'referenceVideos'] as const;
 
 /** Single-value frame fields also forwarded to the mapper. */
 const FRAME_FIELDS = ['startFrame', 'endFrame'] as const;
@@ -34,12 +35,12 @@ const PROVIDER_KEY = 'byteplus-modelark';
  *     (revocation source of truth). Failures are TERMINAL — the worker
  *     releases the billing hold and never requeues.
  *
- *  2. UPGRADE provider-registered IMAGE references from their plain CDN URL
+ *  2. UPGRADE provider-registered IMAGE/VIDEO references from their plain CDN URL
  *     to `asset://<externalAssetId>` when an ACTIVE AIGC mirror exists. This
  *     is what lets Seedance use the private asset library instead of treating
- *     the same image as an unregistered public URL. Best-effort and
+ *     the same media as an unregistered public URL. Best-effort and
  *     provider-scoped: only byteplus jobs reach this hook, an unregistered /
- *     still-processing image keeps its plain URL, and the rewrite is
+ *     still-processing asset keeps its plain URL, and the rewrite is
  *     ephemeral (never persisted — retry re-derives it, and client-facing job
  *     payloads keep the plain URL).
  */
@@ -59,7 +60,7 @@ export class BytePlusReferencePreparerService {
       projectId,
       jobWorkspaceId,
     );
-    return this.upgradeAigcImageReferences(input);
+    return this.upgradeAigcReferences(input);
   }
 
   /** Pass 1 — validate real_person `asset://` references (terminal on fail). */
@@ -221,23 +222,31 @@ export class BytePlusReferencePreparerService {
     }
   }
 
-  /** Pass 2 — opportunistically upgrade provider-registered image refs to `asset://`. */
-  private async upgradeAigcImageReferences(
+  /** Pass 2 — opportunistically upgrade provider-registered image/video refs. */
+  private async upgradeAigcReferences(
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const imagesValue = input.referenceImages;
-    if (!Array.isArray(imagesValue)) return input;
-    const images: unknown[] = imagesValue;
-
-    // Any MediaAsset-stamped image reference still on a plain URL is an
+    // Any MediaAsset-stamped image/video reference still on a plain URL is an
     // upgrade candidate. Canvas references carry assetId directly; old
     // character-expanded entries carry both characterId and assetId.
-    const candidates = images.filter(
-      (e): e is { characterId?: string; assetId: string; url?: unknown } =>
-        isRecord(e) &&
-        typeof e.assetId === 'string' &&
-        !(typeof e.url === 'string' && e.url.startsWith(ASSET_SCHEME)),
-    );
+    const candidates = AIGC_REFERENCE_FIELDS.flatMap((field) => {
+      const entries = input[field];
+      if (!Array.isArray(entries)) return [];
+      return entries.filter(
+        (
+          entry,
+        ): entry is {
+          characterId?: string;
+          assetId: string;
+          url?: unknown;
+        } =>
+          isRecord(entry) &&
+          typeof entry.assetId === 'string' &&
+          !(
+            typeof entry.url === 'string' && entry.url.startsWith(ASSET_SCHEME)
+          ),
+      );
+    });
     if (candidates.length === 0) return input;
 
     const mediaRows = await this.prisma.aiProviderMediaAssetMirror.findMany({
@@ -262,33 +271,43 @@ export class BytePlusReferencePreparerService {
         byAssetId.set(row.mediaAssetId, row.externalAssetId);
     }
 
-    const rows = await this.prisma.aiProviderExternalAsset.findMany({
-      where: {
-        status: AiProviderExternalAssetStatus.active,
-        externalAssetId: { not: null },
-        assetGroup: {
-          provider: PROVIDER_KEY,
-          groupType: AiProviderAssetGroupType.aigc,
-          status: AiProviderAssetGroupStatus.active,
-        },
-        characterMedia: {
-          characterId: {
-            in: [
-              ...new Set(
-                candidates
-                  .map((c) => c.characterId)
-                  .filter((id): id is string => Boolean(id)),
-              ),
-            ],
-          },
-          mediaAssetId: { in: [...new Set(candidates.map((c) => c.assetId))] },
-        },
-      },
-      select: {
-        externalAssetId: true,
-        characterMedia: { select: { characterId: true, mediaAssetId: true } },
-      },
-    });
+    const characterIds = [
+      ...new Set(
+        candidates
+          .map((candidate) => candidate.characterId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const rows =
+      characterIds.length === 0
+        ? []
+        : await this.prisma.aiProviderExternalAsset.findMany({
+            where: {
+              status: AiProviderExternalAssetStatus.active,
+              externalAssetId: { not: null },
+              assetGroup: {
+                provider: PROVIDER_KEY,
+                groupType: AiProviderAssetGroupType.aigc,
+                status: AiProviderAssetGroupStatus.active,
+              },
+              characterMedia: {
+                characterId: { in: characterIds },
+                mediaAssetId: {
+                  in: [
+                    ...new Set(
+                      candidates.map((candidate) => candidate.assetId),
+                    ),
+                  ],
+                },
+              },
+            },
+            select: {
+              externalAssetId: true,
+              characterMedia: {
+                select: { characterId: true, mediaAssetId: true },
+              },
+            },
+          });
 
     const byCharacterAssetKey = new Map<string, string>();
     for (const row of rows) {
@@ -301,22 +320,28 @@ export class BytePlusReferencePreparerService {
     }
     if (byAssetId.size === 0 && byCharacterAssetKey.size === 0) return input;
 
-    const upgraded = images.map((entry) => {
-      if (!isRecord(entry)) return entry;
-      const assetId = stringValue(entry.assetId);
-      const characterId = stringValue(entry.characterId);
-      const externalId =
-        assetId != null
-          ? (byAssetId.get(assetId) ??
-            (characterId != null
-              ? byCharacterAssetKey.get(`${characterId}:${assetId}`)
-              : undefined))
-          : undefined;
-      return externalId
-        ? { ...entry, url: `${ASSET_SCHEME}${externalId}` }
-        : entry;
-    });
-    return { ...input, referenceImages: upgraded };
+    const upgraded = { ...input };
+    for (const field of AIGC_REFERENCE_FIELDS) {
+      const entriesValue = input[field];
+      if (!Array.isArray(entriesValue)) continue;
+      const entries: unknown[] = entriesValue;
+      upgraded[field] = entries.map((entry) => {
+        if (!isRecord(entry)) return entry;
+        const assetId = stringValue(entry.assetId);
+        const characterId = stringValue(entry.characterId);
+        const externalId =
+          assetId != null
+            ? (byAssetId.get(assetId) ??
+              (characterId != null
+                ? byCharacterAssetKey.get(`${characterId}:${assetId}`)
+                : undefined))
+            : undefined;
+        return externalId
+          ? { ...entry, url: `${ASSET_SCHEME}${externalId}` }
+          : entry;
+      });
+    }
+    return upgraded;
   }
 }
 

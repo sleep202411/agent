@@ -3,12 +3,13 @@
  *
  * Two steps:
  *   1. `POST /aurora/media/upload-url` — generic uploads remain stateless.
- *      Story clip uploads are the deliberate exception: they create a durable,
- *      project-scoped staging session before its signed URL is returned.
+ *      Server-verified images receive a disposable staging key; confirm
+ *      promotes it to an unsigned final object before byte inspection. Story clips are
+ *      the durable exception and create a project-scoped upload session.
  *   2. `POST /aurora/media/confirm`    — after the PUT lands, the server
- *      VERIFIES the bytes (ownership + HEAD) and only then writes an
- *      `active` MediaAsset. Storage is the source of truth; the DB only
- *      ever records real, referenced assets.
+ *      verifies the bytes and only then writes an `active` MediaAsset. AI
+ *      verified images are streamed back, hashed, format-probed, and fully
+ *      decoded from immutable final storage before they become active.
  *
  * `kind` is a CLOSED enum — every upload entry point the product offers
  * is named here, and each maps (server-side) to a content-type allowlist,
@@ -16,6 +17,10 @@
  * + a row in UPLOAD_KIND_POLICY (media-upload.service). The client never
  * picks the storage key, the content-type allowlist, or the cap.
  */
+import {
+  MEDIA_ASSET_READINESS_CAPABILITIES,
+  type MediaAssetReadinessResult,
+} from '@repo/shared';
 import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
@@ -25,8 +30,11 @@ export const UploadKindSchema = z.enum([
   'ip_banner',
   'news_cover',
   'ai_reference_image',
+  'studio_agent_image',
+  'studio_agent_document',
   'ai_reference_video',
   'ai_reference_audio',
+  'story_music_audio',
 ]);
 export type UploadKind = z.infer<typeof UploadKindSchema>;
 
@@ -54,10 +62,9 @@ export interface CreateUploadUrlResponseDto {
   method: 'PUT';
   headers: Record<string, string>;
   /**
-   * Server-decided object key. Generic uploads receive their permanent key;
-   * Story clips receive a disposable staging key backed by the accompanying
-   * upload session. The client echoes it verbatim to confirm and derives
-   * nothing from `uploadUrl`.
+   * Server-decided object key. Verified images and Story clips receive a
+   * staging key; other generic uploads receive their permanent key. The client
+   * echoes it verbatim to confirm and derives nothing from `uploadUrl`.
    */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
@@ -75,14 +82,15 @@ export interface CreateUploadUrlResponseDto {
  * MediaAsset row; Story flows confirm the durable staging ledger and leave it
  * non-ready for async promotion/probing. The client sends back the exact `storageKey` it was
  * issued; `kind` re-asserts which feature this was (used to re-derive the
- * ownership scope + asset kind), and `contentType` is advisory only — the
- * persisted content-type is read from the storage HEAD, never this field.
+ * ownership scope + asset kind). `contentType` is never trusted as byte truth:
+ * generic uploads use storage metadata, while reference-image finalization
+ * requires the detected byte format to match it.
  */
 export const ConfirmUploadSchema = z.object({
   /** The exact key issued by upload-url; ownership + existence are verified. */
   storageKey: z.string().trim().min(1).max(1024),
   kind: UploadKindSchema,
-  /** ADVISORY ONLY — the stored content-type comes from the HEAD, not this. */
+  /** Re-asserted against storage metadata and, for verified images, bytes. */
   contentType: z.string().trim().min(1).max(128),
   /** Required for story_clip_video; omitted by stateless generic uploads. */
   uploadSessionId: z.string().uuid().optional(),
@@ -92,7 +100,13 @@ export type ConfirmUploadInputDto = z.infer<typeof ConfirmUploadSchema>;
 export interface ConfirmUploadResponseDto {
   /** The active MediaAsset row — this is what the save call references. */
   mediaAssetId: string;
-  /** Echoed back for the client's bookkeeping / debugging. */
+  /**
+   * Exact immutable original variant created for a generic confirmed upload.
+   * Story video staging has no ready variant until asynchronous finalization,
+   * so that flow returns null explicitly.
+   */
+  variantId: string | null;
+  /** Final immutable key for verified images; otherwise the issued key. */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
   /** Present for durable Story clip sessions. */
@@ -101,22 +115,31 @@ export interface ConfirmUploadResponseDto {
   url: string | null;
 }
 
-export const MediaProviderAssetStatusRequestSchema = z.object({
+const MediaAssetReadinessCapabilitySchema = z.enum(
+  MEDIA_ASSET_READINESS_CAPABILITIES,
+);
+
+export const MediaAssetReadinessStatusRequestSchema = z.object({
+  capability: MediaAssetReadinessCapabilitySchema,
   assetIds: z.array(z.string().uuid()).max(100),
 });
-export type MediaProviderAssetStatusRequestDto = z.infer<
-  typeof MediaProviderAssetStatusRequestSchema
+export type MediaAssetReadinessStatusRequestDto = z.infer<
+  typeof MediaAssetReadinessStatusRequestSchema
 >;
 
-export interface MediaProviderAssetStatusDto {
-  assetId: string;
-  status: string;
-  statusReason?: string | null;
-  updatedAt: string;
+export interface MediaAssetReadinessStatusResponseDto {
+  assets: MediaAssetReadinessResult[];
 }
 
-export interface MediaProviderAssetStatusResponseDto {
-  assets: MediaProviderAssetStatusDto[];
+export const MediaAssetReadinessCheckRequestSchema = z.object({
+  capability: MediaAssetReadinessCapabilitySchema,
+});
+export type MediaAssetReadinessCheckRequestDto = z.infer<
+  typeof MediaAssetReadinessCheckRequestSchema
+>;
+
+export interface MediaAssetReadinessCheckResponseDto {
+  asset: MediaAssetReadinessResult;
 }
 
 export const MediaAssetAccessParamsSchema = z.object({

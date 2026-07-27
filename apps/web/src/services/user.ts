@@ -1,8 +1,13 @@
 /**
- * User service — auth, profile, credits
+ * User service — profile, credits.
  *
  * All functions use the unified api client. Response parsing (code check,
  * data/info/path extraction) is handled by the client automatically.
+ *
+ * No auth here: signing in is `@repo/auth-flow`'s (Java's `/user/new/*`
+ * contract) and signing out is `src/lib/auth/api.ts`. The `/user/email/*`
+ * login / register / reset wrappers that used to sit above `Profile` were
+ * deleted with their last caller — the endpoints are superseded.
  */
 import { api } from "@/src/lib/api";
 import { env } from "@/src/env";
@@ -103,27 +108,6 @@ export interface CreditInfo {
   integral?: number;
   value?: number;
 }
-
-// ─── Auth ─────────────────────────────────────────────
-
-export const login = (email: string, pwd: string) =>
-  api.postForm("/user/email/login", { email, pwd });
-
-export const logout = () => api.post("/user/logout");
-
-export const sendEmailCode = (email: string) =>
-  api.get(`/user/email/getCode`, { params: { email } });
-
-export const register = (email: string, pwd: string, code: string, recommendationCode?: string) =>
-  api.postForm("/user/email/regist", {
-    email,
-    pwd,
-    code,
-    ...(recommendationCode ? { recommendationCode } : {}),
-  });
-
-export const resetPassword = (email: string, pwd: string, code: string) =>
-  api.postForm("/user/email/reset/password", { email, pwd, code });
 
 // ─── Profile ──────────────────────────────────────────
 

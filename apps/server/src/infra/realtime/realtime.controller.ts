@@ -5,6 +5,7 @@
  * connect to Azure directly.
  */
 import {
+  BadRequestException,
   Controller,
   Get,
   Headers,
@@ -12,11 +13,13 @@ import {
   Logger,
   Post,
   Query,
+  NotFoundException,
 } from '@nestjs/common';
 import { WorkspaceMemberRole } from '@prisma/client';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { WorkspacePermissionService } from '../../workspaces';
+import { StoryPermissionService } from '../../story-studio/story-permission.service';
 import { REALTIME_PROVIDER, type RealtimeProvider } from './realtime-provider';
 import { RealtimeReplayService } from './realtime-replay.service';
 
@@ -28,6 +31,7 @@ export class RealtimeController {
     @Inject(REALTIME_PROVIDER)
     private readonly realtime: RealtimeProvider,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly storyPermissions: StoryPermissionService,
     private readonly replayService: RealtimeReplayService,
   ) {}
 
@@ -85,8 +89,10 @@ export class RealtimeController {
   async negotiateRealtime(
     @CurrentUser() user: AuthUser,
     @Headers('x-fizz-workspace-id') workspaceHeader?: string,
+    @Headers('x-fizz-story-project-id') storyProjectHeader?: string,
   ) {
     const workspaceId = normalizeHeaderValue(workspaceHeader);
+    const storyProjectId = normalizeHeaderValue(storyProjectHeader);
     if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
@@ -94,9 +100,31 @@ export class RealtimeController {
         WorkspaceMemberRole.viewer,
       );
     }
+    if (storyProjectId) {
+      if (!workspaceId) {
+        throw new BadRequestException({
+          code: 'STORY_REALTIME_WORKSPACE_REQUIRED',
+          message:
+            'x-fizz-workspace-id is required when negotiating Story project realtime.',
+        });
+      }
+      const access = await this.storyPermissions.requireProject(
+        user.userId,
+        storyProjectId,
+        'story.read',
+        { allowArchived: true },
+      );
+      if (access.project.workspaceId !== workspaceId) {
+        throw new NotFoundException({
+          code: 'STORY_PROJECT_NOT_FOUND',
+          message: 'Story project not found.',
+        });
+      }
+    }
     const access = await this.realtime.issueRealtimeClientAccess(
       user.userId,
       workspaceId,
+      storyProjectId,
     );
     if (!access) {
       return {

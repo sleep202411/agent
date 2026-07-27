@@ -33,10 +33,11 @@ const VisualVariantSchema = z
 const VideoVariantSchema = z
   .object({
     ...SourceIdentityShape,
+    sha256: ExperienceSha256Schema.optional(),
     orientation: ExperienceOrientationSchema,
-    width: PositiveIntegerSchema,
-    height: PositiveIntegerSchema,
-    durationMs: PositiveIntegerSchema,
+    width: PositiveIntegerSchema.optional(),
+    height: PositiveIntegerSchema.optional(),
+    durationMs: PositiveIntegerSchema.optional(),
     framesPerSecond: z
       .object({ numerator: PositiveIntegerSchema, denominator: PositiveIntegerSchema })
       .strict()
@@ -119,7 +120,17 @@ export const ExperienceVideoAssetSchema = z
     kind: z.literal("video"),
     orientationPolicy: OrientationPolicySchema,
     variants: z.array(VideoVariantSchema).min(1),
-    audioMode: z.enum(["none", "embedded"]),
+    /**
+     * RETIRED — accepted for backward compatibility, never read, never emitted.
+     *
+     * Nothing inspects a clip for sound any more: what the creator uploaded is
+     * what plays, and the player decides mute purely from the browser's
+     * autoplay verdict. The key survives ONLY because this object is `.strict()`
+     * and every manifest already published to the CDN carries it. Those
+     * artifacts are immutable, so deleting the key here would make every
+     * existing film fail to parse and stop playing. Do not "clean this up".
+     */
+    audioMode: z.enum(["none", "embedded"]).optional(),
   })
   .strict()
   .superRefine(validateOrientationPolicy);

@@ -20,6 +20,7 @@ import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { requiredScalarString, scalarString } from '../../common/values';
 import { mastraFetch } from '../mastra-fetch';
+import { EntitlementService } from '../../entitlements';
 
 type JsonBody = Record<string, unknown>;
 
@@ -29,11 +30,12 @@ type ContextHeader = {
   worldId?: string;
   episodeId?: string;
   locale?: string;
-  userTier?: string;
 };
 
 @Controller('workflow')
 export class WorkflowProxyController {
+  constructor(private readonly entitlements: EntitlementService) {}
+
   private readonly logger = new Logger(WorkflowProxyController.name);
 
   private get mastraUrl(): string {
@@ -59,10 +61,10 @@ export class WorkflowProxyController {
     return headers;
   }
 
-  private buildContext(
+  private async buildContext(
     user: AuthUser,
     workspaceContext?: Record<string, unknown>,
-  ): ContextHeader {
+  ): Promise<ContextHeader> {
     return {
       userId: user.userId,
       projectId: requiredScalarString(workspaceContext?.projectId),
@@ -72,7 +74,6 @@ export class WorkflowProxyController {
         typeof workspaceContext?.locale === 'string'
           ? workspaceContext.locale
           : undefined,
-      userTier: user.userLevel ?? 'free',
     };
   }
 
@@ -136,7 +137,7 @@ export class WorkflowProxyController {
       );
     }
     const worldId = scalarString(body.worldId);
-    const context = this.buildContext(user, { projectId, worldId });
+    const context = await this.buildContext(user, { projectId, worldId });
     return this.forward('/workflow/start', {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),
@@ -159,7 +160,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
+    const context = await this.buildContext(user, { projectId });
     const payload = {
       approved: Boolean(body.approved ?? false),
       feedback: body.feedback,
@@ -182,7 +183,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
+    const context = await this.buildContext(user, { projectId });
     return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),
@@ -208,7 +209,7 @@ export class WorkflowProxyController {
     const runIds = Array.isArray(body?.runIds)
       ? body.runIds.filter((r): r is string => typeof r === 'string')
       : [];
-    const context = this.buildContext(
+    const context = await this.buildContext(
       user,
       projectId ? { projectId } : undefined,
     );
@@ -235,7 +236,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body?.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
+    const context = await this.buildContext(user, { projectId });
     try {
       return await this.forward(
         `/workflow/${encodeURIComponent(runId)}/heartbeat`,
@@ -283,7 +284,7 @@ export class WorkflowProxyController {
         'projectId query param required',
         HttpStatus.BAD_REQUEST,
       );
-    const context = this.buildContext(user, { projectId });
+    const context = await this.buildContext(user, { projectId });
     return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),

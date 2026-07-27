@@ -88,11 +88,29 @@ export interface ReserveQueuedJobOptions {
   /**
    * Product-plane rows that own an AI job may be inserted here after the
    * canonical AiJob row exists, but before the reservation transaction
-   * commits. This is deliberately distinct from `beforeCreate`: foreign keys
-   * such as StoryFilmGenerationAttempt.aiJobId require the job row to exist first.
+   * commits. This is deliberately distinct from `beforeCreate`: product-plane
+   * foreign keys to the job require the canonical row to exist first.
    */
   afterCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   buildJob: (queuePosition: number) => AiJob;
+}
+
+export interface CancelActiveJobOptions {
+  observedJob: AiJob;
+  patch: Partial<AiJob>;
+  /**
+   * Product-plane owners may establish their own serialization barrier before
+   * the AiJob cancellation is claimed. The callback and the conditional
+   * AiJob transition commit in one transaction; it must never perform network
+   * I/O.
+   */
+  beforeCancel?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+  /**
+   * Runs only when the authoritative AiJob outcome is `cancelled`, after that
+   * outcome is known and before the transaction commits. Product owners use
+   * this to make their visible terminal state share the same acceptance point.
+   */
+  afterCancel?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
 }
 
 export interface AiJobLimitSubject {
@@ -193,7 +211,13 @@ export interface CreateAiOutputAssetInput {
   sizeBytes: number;
   width?: number;
   height?: number;
+  durationMs?: number;
   durationSeconds?: number;
+  videoMetadata?: {
+    videoCodec: string;
+    audioCodecs: string[];
+    browserSafeMp4: boolean;
+  };
   checksumSha256: string;
   outputIndex: number;
   contentHash: string;
@@ -434,10 +458,22 @@ export class AiGenerationRepository {
           },
         ],
       });
-      await tx.aiJob.update({
-        where: { id: job.id },
+      // The claim write must itself be the barrier, not just the read above:
+      // `cancelIfActive` commits out-of-band from this transaction, so the job
+      // can turn 'cancelled' between the read and this write. An unconditional
+      // update would stomp that committed terminal state back to in_progress —
+      // the job would run to completion and be delivered while the cancel had
+      // already released (refunded) the wallet hold. Conditioning on
+      // status = 'in_queue' makes any committed terminal transition win.
+      const claimWrite = await tx.aiJob.updateMany({
+        where: { id: job.id, status: 'in_queue' },
         data: { ...data, version: { increment: 1 } },
       });
+      if (claimWrite.count === 0) {
+        const current = await this.findByIdWith(tx, job.id);
+        if (!current) return { kind: 'missing' };
+        return { kind: 'not_queued', job: current };
+      }
       const claimed = (await this.findByIdWith(tx, job.id)) ?? job;
       const repositioned = await this.recomputeQueuePositionsWith(
         tx,
@@ -568,16 +604,46 @@ export class AiGenerationRepository {
    */
   async cancelIfActive(
     id: string,
-    patch: Partial<AiJob>,
+    options: CancelActiveJobOptions,
   ): Promise<AiJob | null> {
-    const data = this.patchToRow(patch);
-    const result = await this.prisma.aiJob.updateMany({
-      where: { id, status: { in: ['created', 'in_queue', 'in_progress'] } },
-      data: { ...data, version: { increment: 1 } },
+    if (options.observedJob.id !== id) {
+      throw new Error('AiJob cancellation observation does not match job id.');
+    }
+    const data = this.patchToRow(options.patch);
+    return this.prisma.$transaction(async (tx) => {
+      // The hook deliberately runs before touching the AiJob row. Story-owned
+      // jobs use it to lock the permanent project write-state first, giving
+      // Agent apply and human cancellation one globally consistent lock order.
+      // The conditional UPDATE below remains the terminal-outcome race winner.
+      if (options.beforeCancel) {
+        await options.beforeCancel(tx, options.observedJob);
+      }
+
+      const result = await tx.aiJob.updateMany({
+        where: { id, status: { in: ['created', 'in_queue', 'in_progress'] } },
+        data: { ...data, version: { increment: 1 } },
+      });
+      if (result.count === 0) {
+        const winner = await this.findByIdWith(tx, id);
+        if (winner?.status === 'cancelled' && options.afterCancel) {
+          await options.afterCancel(tx, winner);
+        }
+        return null;
+      }
+      if (options.patch.outputs) {
+        throw new Error(
+          'AiJob cancellation cannot replace outputs inside the cancellation claim.',
+        );
+      }
+      const cancelled = await this.findByIdWith(tx, id);
+      if (!cancelled) {
+        throw new Error(
+          'Cancelled AiJob disappeared before transaction commit.',
+        );
+      }
+      if (options.afterCancel) await options.afterCancel(tx, cancelled);
+      return cancelled;
     });
-    if (result.count === 0) return null;
-    if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
-    return this.findById(id);
   }
 
   async recordAttempt(
@@ -753,6 +819,7 @@ export class AiGenerationRepository {
       providerBindingId: job.providerBindingId,
       outputIndex: input.outputIndex,
       safetyFlags: (input.safetyFlags ?? null) as Prisma.InputJsonValue | null,
+      videoProbe: (input.videoMetadata ?? null) as Prisma.InputJsonValue | null,
     };
 
     const existing = await this.prisma.mediaAsset.findFirst({
@@ -790,6 +857,7 @@ export class AiGenerationRepository {
           sizeBytes: existing.sizeBytes,
           width: existing.width,
           height: existing.height,
+          durationMs: input.durationMs ?? null,
           durationSeconds: existing.durationSeconds,
           checksumSha256: existing.checksumSha256,
           metadata,
@@ -838,6 +906,7 @@ export class AiGenerationRepository {
           sizeBytes: input.sizeBytes,
           width: input.width ?? null,
           height: input.height ?? null,
+          durationMs: input.durationMs ?? null,
           durationSeconds: input.durationSeconds ?? null,
           checksumSha256: input.checksumSha256,
           metadata,
@@ -882,6 +951,7 @@ export class AiGenerationRepository {
             sizeBytes: asset.sizeBytes,
             width: asset.width,
             height: asset.height,
+            durationMs: input.durationMs ?? null,
             durationSeconds: asset.durationSeconds,
             checksumSha256: asset.checksumSha256,
             metadata,
@@ -1170,6 +1240,7 @@ export class AiGenerationRepository {
       documentId: row.documentId,
       documentBlockId: row.documentBlockId,
       sourceSurface: row.sourceSurface,
+      outputStorageProvider: row.outputStorageProvider,
       status: row.status as AiJobStatus,
       stage: row.stage as AiJobStage,
       input: row.input as Record<string, unknown>,
@@ -1265,6 +1336,7 @@ export class AiGenerationRepository {
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
       sourceSurface: job.sourceSurface ?? null,
+      outputStorageProvider: job.outputStorageProvider ?? null,
       status: job.status,
       stage: job.stage,
       queueName: job.queueName,

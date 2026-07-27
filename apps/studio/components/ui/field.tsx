@@ -1,16 +1,25 @@
 import { cn } from "@/lib/utils";
+import { RequiredMark } from "@/components/ui/required-mark";
 
 /**
  * Labeled form field — standardizes the label→control rhythm (and an optional
  * hint/error) so dialogs/settings don't hand-roll `space-y-*` per input. The
  * base `Input`/`Textarea` are sized compact for dense canvas chrome; in form
  * contexts pass `inputClassName`-style sizing (e.g. FIELD_CONTROL below).
+ *
+ * Two label rhythms exist by design: the default (`text-sm`, foreground) for
+ * comfortable settings/forms, and `dense` (`text-xs`, muted) for compact
+ * dialogs. `required` renders the brand-red asterisk (DESIGN.md rule 3) —
+ * set it on every field whose value is mandatory in the submitted contract
+ * (defaults included), and pair it with `aria-required` on the control.
  */
 export function Field({
   label,
   htmlFor,
   hint,
   error,
+  required,
+  dense,
   className,
   children,
 }: {
@@ -19,13 +28,21 @@ export function Field({
   /** Muted suffix after the label, e.g. "(optional)". */
   hint?: React.ReactNode;
   error?: string;
+  /** Renders the brand-red RequiredMark after the label. */
+  required?: boolean;
+  /** Compact dialog rhythm: smaller, muted label. */
+  dense?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className={cn("space-y-2", className)}>
-      <label htmlFor={htmlFor} className="block text-sm font-medium">
+      <label
+        htmlFor={htmlFor}
+        className={cn("block font-medium", dense ? "text-xs text-white/58" : "text-sm")}
+      >
         {label}
+        {required ? <RequiredMark /> : null}
         {hint ? <span className="ml-1 font-normal text-muted-foreground">{hint}</span> : null}
       </label>
       {children}

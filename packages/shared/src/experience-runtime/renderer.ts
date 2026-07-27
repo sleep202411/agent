@@ -38,11 +38,19 @@ const AccessibleFallbackSchema = z
   })
   .strict();
 
+/**
+ * Widest stacking band a manifest may claim. Renderer overlays are painted with
+ * `layer` as a raw CSS `zIndex`, so player chrome that must stay above ANY
+ * renderer (rather than above the layers our own compiler happens to emit) has
+ * to stack against this bound rather than a hand-picked number.
+ */
+export const EXPERIENCE_RENDERER_MAX_LAYER = 10_000;
+
 export const ExperienceRendererInstanceSchema = z
   .object({
     instanceId: ExperienceStableIdSchema,
     rendererId: ExperienceStableIdSchema,
-    layer: z.number().int().min(-10_000).max(10_000),
+    layer: z.number().int().min(-EXPERIENCE_RENDERER_MAX_LAYER).max(EXPERIENCE_RENDERER_MAX_LAYER),
     config: ExperienceJsonObjectSchema,
     bindings: z.record(ExperienceStableIdSchema, ExperienceValueExpressionSchema).default({}),
     visibleWhen: ExperienceConditionSchema.optional(),

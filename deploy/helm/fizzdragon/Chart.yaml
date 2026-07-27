@@ -1,6 +1,6 @@
 apiVersion: v2
 name: fizzdragon
-description: Fizzdragon platform — web + server + agent + agent-worker + redis
+description: Fizzdragon platform — web, server, studio, durable agent runtime, and legacy agent workloads
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

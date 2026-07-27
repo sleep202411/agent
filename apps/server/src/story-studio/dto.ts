@@ -1,52 +1,47 @@
 import { z } from 'zod';
 import {
-  FilmBuildScopeSchema,
-  FilmClipDependencySpecSchema,
-  FilmClipReferenceBindingInputSchema,
-  FilmClipReferencePlanSchema,
-  FilmClipSpecSchema,
-  FilmReferenceSlotSpecSchema,
-  FilmReviewDecisionSchema,
-  FilmSpecSchema,
-  INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION,
-  InteractiveFilmDraftContentSchema,
+  StoryBuildScopeSchema,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   ReviewChecklistValueSchema,
+  StoryReferenceReviewDecisionSchema,
+  StoryReferenceSlotSpecSchema,
   StoryStableIdSchema,
   StoryUuidSchema,
-  type FilmBuildScope,
-  type FilmBuildStatus,
-  type FilmClipDependencySpec,
-  type FilmClipReferenceBindingInput,
-  type FilmClipSpec,
-  type FilmReferenceSlotSpec,
-  type FilmReviewDecision,
-  type FilmSpec,
-  type FilmTrailerSpec,
-  type InteractiveFilmDraftContent,
+  type StoryBuildScope,
+  type StoryBuildStatus,
+  type InteractiveStoryDraftContent,
+  type StoryReferenceReviewDecision,
+  type StoryReferenceSlotSpec,
 } from './interactive-film.schema';
+import {
+  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
+  StoryProductionCanvasContentSchema,
+  type StoryProductionCanvasContent,
+} from './story-production-canvas.schema';
 
 export * from './interactive-film.schema';
+export * from './story-production-canvas.schema';
 
-/** Product-level Story Studio core and interactive-film API contracts. */
+/** Product-level Story Studio contracts shared by cinematic and narrative profiles. */
 
 export const STORY_TITLE_MAX = 160;
 export const STORY_SUMMARY_MAX = 2_000;
 export const STORY_TAG_MAX = 40;
 export const STORY_TAG_COUNT_MAX = 12;
+export const STORY_CHAPTER_COUNT_MAX = 200;
+export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
-  'story-canvas-layout-v1' as const;
+  'story-canvas-layout-v3' as const;
+export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
 export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 1_000;
 export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 1_000_000;
 
-export const StoryFormatSchema = z.enum([
-  'text_adventure',
-  'interactive_film',
-  'narrative_rpg',
-]);
+export const StoryFormatSchema = z.enum(['text_adventure', 'interactive_film']);
 export type StoryFormat = z.infer<typeof StoryFormatSchema>;
 
-/** First product slice. The wider StoryFormat type remains future-ready. */
-export const CreatableStoryFormatSchema = z.literal('interactive_film');
+/** Supported creation profiles. A format sets defaults; it never restricts graph node kinds. */
+export const CreatableStoryFormatSchema = StoryFormatSchema;
 export type CreatableStoryFormat = z.infer<typeof CreatableStoryFormatSchema>;
 
 export const StoryProjectStatusSchema = z.enum(['active', 'archived']);
@@ -162,73 +157,61 @@ export const StoryProjectIdParamsSchema = z
   .strict();
 export type StoryProjectIdParams = z.infer<typeof StoryProjectIdParamsSchema>;
 
+export const StoryCandidateAssetParamsSchema = z
+  .object({
+    projectId: StoryUuidSchema,
+    mediaAssetId: StoryUuidSchema,
+  })
+  .strict();
+export type StoryCandidateAssetParams = z.infer<
+  typeof StoryCandidateAssetParamsSchema
+>;
+
+export const StoryChapterParamsSchema = z
+  .object({ projectId: StoryUuidSchema, chapterId: StoryUuidSchema })
+  .strict();
+export type StoryChapterParams = z.infer<typeof StoryChapterParamsSchema>;
+
 export const StoryRevisionParamsSchema = z
   .object({ projectId: StoryUuidSchema, revisionId: StoryUuidSchema })
   .strict();
 export type StoryRevisionParams = z.infer<typeof StoryRevisionParamsSchema>;
 
-export const StoryFilmClipParamsSchema = z
-  .object({
-    projectId: StoryUuidSchema,
-    revisionId: StoryUuidSchema,
-    clipId: StoryUuidSchema,
-  })
-  .strict();
-export type StoryFilmClipParams = z.infer<typeof StoryFilmClipParamsSchema>;
-
-export const StoryFilmDraftClipParamsSchema = z
+export const StoryClipVideoParamsSchema = z
   .object({
     projectId: StoryUuidSchema,
     graphNodeId: StoryStableIdSchema,
   })
   .strict();
-export type StoryFilmDraftClipParams = z.infer<
-  typeof StoryFilmDraftClipParamsSchema
->;
+export type StoryClipVideoParams = z.infer<typeof StoryClipVideoParamsSchema>;
 
-export const StoryFilmReferenceSlotParamsSchema = z
+export const StoryReferenceSlotParamsSchema = z
   .object({
     projectId: StoryUuidSchema,
-    revisionId: StoryUuidSchema,
     slotId: StoryUuidSchema,
   })
   .strict();
-export type StoryFilmReferenceSlotParams = z.infer<
-  typeof StoryFilmReferenceSlotParamsSchema
+export type StoryReferenceSlotParams = z.infer<
+  typeof StoryReferenceSlotParamsSchema
 >;
 
-export const StoryFilmReferenceVersionParamsSchema = z
+export const StoryReferenceVersionParamsSchema = z
   .object({
     projectId: StoryUuidSchema,
-    revisionId: StoryUuidSchema,
     slotId: StoryUuidSchema,
     referenceVersionId: StoryUuidSchema,
   })
   .strict();
-export type StoryFilmReferenceVersionParams = z.infer<
-  typeof StoryFilmReferenceVersionParamsSchema
+export type StoryReferenceVersionParams = z.infer<
+  typeof StoryReferenceVersionParamsSchema
 >;
 
-export const StoryFilmGenerationParamsSchema = z
-  .object({ projectId: StoryUuidSchema, generationId: StoryUuidSchema })
-  .strict();
-export type StoryFilmGenerationParams = z.infer<
-  typeof StoryFilmGenerationParamsSchema
->;
-
-export const StoryFilmTrailerGenerationParamsSchema = z
-  .object({ projectId: StoryUuidSchema, generationId: StoryUuidSchema })
-  .strict();
-export type StoryFilmTrailerGenerationParams = z.infer<
-  typeof StoryFilmTrailerGenerationParamsSchema
->;
-
-export const StoryFilmBuildParamsSchema = z
+export const StoryBuildParamsSchema = z
   .object({ projectId: StoryUuidSchema, buildId: StoryUuidSchema })
   .strict();
-export type StoryFilmBuildParams = z.infer<typeof StoryFilmBuildParamsSchema>;
+export type StoryBuildParams = z.infer<typeof StoryBuildParamsSchema>;
 
-export const StoryFilmBuildAssetParamsSchema = z
+export const StoryBuildAssetParamsSchema = z
   .object({
     projectId: StoryUuidSchema,
     buildId: StoryUuidSchema,
@@ -236,9 +219,7 @@ export const StoryFilmBuildAssetParamsSchema = z
     variantId: StoryUuidSchema,
   })
   .strict();
-export type StoryFilmBuildAssetParams = z.infer<
-  typeof StoryFilmBuildAssetParamsSchema
->;
+export type StoryBuildAssetParams = z.infer<typeof StoryBuildAssetParamsSchema>;
 
 export const StoryProjectListQuerySchema = z
   .object({
@@ -251,7 +232,7 @@ export const StoryProjectListQuerySchema = z
 export type StoryProjectListQuery = z.infer<typeof StoryProjectListQuerySchema>;
 
 export const StoryWorkbenchQuerySchema = z
-  .object({ revisionId: StoryUuidSchema.optional() })
+  .object({ chapterId: StoryUuidSchema.optional() })
   .strict();
 export type StoryWorkbenchQuery = z.infer<typeof StoryWorkbenchQuerySchema>;
 
@@ -294,21 +275,24 @@ export type StoryRevisionListQuery = z.infer<
   typeof StoryRevisionListQuerySchema
 >;
 
-export const FilmBuildListQuerySchema = z
+export const StoryBuildListQuerySchema = z
   .object({
-    profile: z.enum(['preview', 'production']).optional(),
+    kind: z.enum(['preview', 'production']).optional(),
     cursor: z.string().trim().min(1).max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   })
   .strict();
-export type FilmBuildListQuery = z.infer<typeof FilmBuildListQuerySchema>;
+export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 
 // ─── Core project, draft, and immutable revision requests ───────────────
 
 export const CreateStoryProjectSchema = z
   .object({
     format: CreatableStoryFormatSchema,
-    frameProfile: StoryFrameProfileSchema,
+    // Optional: the project-wide frame contract is film-only. A cinematic
+    // (`interactive_film`) project must declare one; a text-first
+    // (`text_adventure`) project must not carry one at all.
+    frameProfile: StoryFrameProfileSchema.optional(),
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -317,7 +301,26 @@ export const CreateStoryProjectSchema = z
     ),
     sourceIpId: StoryUuidSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      input.format === 'interactive_film' &&
+      input.frameProfile === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['frameProfile'],
+        message: 'An interactive-film project requires a frame profile.',
+      });
+    }
+    if (input.format === 'text_adventure' && input.frameProfile !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['frameProfile'],
+        message: 'A text-adventure project must not declare a frame profile.',
+      });
+    }
+  });
 export type CreateStoryProjectInput = z.infer<typeof CreateStoryProjectSchema>;
 
 export const PatchStoryProjectSchema = z
@@ -345,14 +348,47 @@ export type ArchiveStoryProjectInput = z.infer<
   typeof ArchiveStoryProjectSchema
 >;
 
+export const CreateStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type CreateStoryChapterInput = z.infer<typeof CreateStoryChapterSchema>;
+
+export const PatchStoryChapterSchema = z
+  .object({ title: StoryTitleSchema })
+  .strict();
+export type PatchStoryChapterInput = z.infer<typeof PatchStoryChapterSchema>;
+
+export const ReorderStoryChaptersSchema = z
+  .object({
+    expectedProjectVersion: NonNegativeVersionSchema,
+    chapterIds: z
+      .array(StoryUuidSchema)
+      .min(1)
+      .max(STORY_CHAPTER_COUNT_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Chapter order must not contain duplicates.',
+      }),
+  })
+  .strict();
+export type ReorderStoryChaptersInput = z.infer<
+  typeof ReorderStoryChaptersSchema
+>;
+
 export const PutStoryDraftSchema = z
   .object({
     expectedRevision: NonNegativeVersionSchema,
-    schemaVersion: z.literal(INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION),
-    content: InteractiveFilmDraftContentSchema,
+    schemaVersion: z.literal(INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION),
+    content: InteractiveStoryDraftContentSchema,
     sessionId: SessionIdSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => value.content.graph.nodes.length <= STORY_CHAPTER_NODE_COUNT_MAX,
+    {
+      path: ['content', 'graph', 'nodes'],
+      message: `A chapter supports at most ${STORY_CHAPTER_NODE_COUNT_MAX} nodes.`,
+    },
+  );
 export type PutStoryDraftInput = z.infer<typeof PutStoryDraftSchema>;
 
 export const PutStoryCanvasLayoutSchema = z
@@ -362,9 +398,36 @@ export const PutStoryCanvasLayoutSchema = z
     nodePositions: StoryCanvasNodePositionsSchema,
     sessionId: SessionIdSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((layout, context) => {
+    // The synthetic story-world root is gone from the canvas; a layout that
+    // still positions it is stale client state, not a layout we can store.
+    if (
+      Object.prototype.hasOwnProperty.call(
+        layout.nodePositions,
+        STORY_WORLD_CANVAS_NODE_ID,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['nodePositions', STORY_WORLD_CANVAS_NODE_ID],
+        message: 'The story-world node no longer exists on the canvas.',
+      });
+    }
+  });
 export type PutStoryCanvasLayoutInput = z.infer<
   typeof PutStoryCanvasLayoutSchema
+>;
+
+export const PutStoryProductionCanvasSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_PRODUCTION_CANVAS_SCHEMA_VERSION),
+    content: StoryProductionCanvasContentSchema,
+    sessionId: SessionIdSchema,
+  })
+  .strict();
+export type PutStoryProductionCanvasInput = z.infer<
+  typeof PutStoryProductionCanvasSchema
 >;
 
 export const LockStoryRevisionSchema = z
@@ -376,121 +439,11 @@ export const LockStoryRevisionSchema = z
   .strict();
 export type LockStoryRevisionInput = z.infer<typeof LockStoryRevisionSchema>;
 
-// ─── Film spec and clip requests ────────────────────────────────────────
-
-export const PutFilmSpecSchema = z
-  .object({
-    /** null creates the one-per-revision FilmSpec; a number updates it. */
-    expectedVersion: NonNegativeVersionSchema.nullable(),
-    expectedProductionRevision: NonNegativeVersionSchema,
-    spec: FilmSpecSchema,
-  })
-  .strict();
-export type PutFilmSpecInput = z.infer<typeof PutFilmSpecSchema>;
-
-export const CreateFilmClipsBatchSchema = z
-  .object({
-    expectedProductionRevision: NonNegativeVersionSchema,
-    clips: z.array(FilmClipSpecSchema).min(1).max(100),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    const keys = new Set<string>();
-    const graphNodeIds = new Set<string>();
-    input.clips.forEach((clip, index) => {
-      if (keys.has(clip.key)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['clips', index, 'key'],
-          message: `Duplicate clip key ${clip.key}.`,
-        });
-      }
-      if (graphNodeIds.has(clip.graphNodeId)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['clips', index, 'graphNodeId'],
-          message: `Graph node ${clip.graphNodeId} already has a clip.`,
-        });
-      }
-      keys.add(clip.key);
-      graphNodeIds.add(clip.graphNodeId);
-    });
-  });
-export type CreateFilmClipsBatchInput = z.infer<
-  typeof CreateFilmClipsBatchSchema
->;
-
-export const PutFilmClipSchema = z
-  .object({
-    expectedVersion: NonNegativeVersionSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
-    spec: FilmClipSpecSchema,
-  })
-  .strict();
-export type PutFilmClipInput = z.infer<typeof PutFilmClipSchema>;
-
-export const ArchiveFilmClipSchema = z
-  .object({
-    expectedVersion: NonNegativeVersionSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
-  })
-  .strict();
-export type ArchiveFilmClipInput = z.infer<typeof ArchiveFilmClipSchema>;
-
-export const PutFilmClipReferencesSchema = z
-  .object({
-    expectedClipVersion: NonNegativeVersionSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
-    bindings: z.array(FilmClipReferenceBindingInputSchema).max(50),
-  })
-  .strict();
-export type PutFilmClipReferencesInput = z.infer<
-  typeof PutFilmClipReferencesSchema
->;
-
-export const PutFilmTrailerReferencesSchema = z
-  .object({
-    expectedTrailerVersion: NonNegativeVersionSchema,
-    bindings: z.array(FilmClipReferenceBindingInputSchema).max(50),
-  })
-  .strict();
-export type PutFilmTrailerReferencesInput = z.infer<
-  typeof PutFilmTrailerReferencesSchema
->;
-
-/** Service helper input: stored control + request bindings. */
-export const ValidateFilmClipReferencePlanSchema = FilmClipReferencePlanSchema;
-
-export const PutFilmClipDependenciesSchema = z
-  .object({
-    expectedProductionRevision: NonNegativeVersionSchema,
-    dependencies: z.array(FilmClipDependencySpecSchema).max(500),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    const pairs = new Set<string>();
-    input.dependencies.forEach((dependency, index) => {
-      const pair = `${dependency.predecessorClipId}:${dependency.successorClipId}:${dependency.kind}`;
-      if (pairs.has(pair)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['dependencies', index],
-          message: 'Duplicate clip dependency.',
-        });
-      }
-      pairs.add(pair);
-    });
-  });
-export type PutFilmClipDependenciesInput = z.infer<
-  typeof PutFilmClipDependenciesSchema
->;
-
 // ─── Reference slot, version, review, and approval requests ─────────────
 
-export const CreateFilmReferenceSlotsBatchSchema = z
+export const CreateStoryReferenceSlotsBatchSchema = z
   .object({
-    expectedProductionRevision: NonNegativeVersionSchema,
-    slots: z.array(FilmReferenceSlotSpecSchema).min(1).max(100),
+    slots: z.array(StoryReferenceSlotSpecSchema).min(1).max(100),
   })
   .strict()
   .superRefine((input, context) => {
@@ -506,45 +459,47 @@ export const CreateFilmReferenceSlotsBatchSchema = z
       keys.add(slot.key);
     });
   });
-export type CreateFilmReferenceSlotsBatchInput = z.infer<
-  typeof CreateFilmReferenceSlotsBatchSchema
+export type CreateStoryReferenceSlotsBatchInput = z.infer<
+  typeof CreateStoryReferenceSlotsBatchSchema
 >;
 
-export const PutFilmReferenceSlotSchema = z
+export const PutStoryReferenceSlotSchema = z
   .object({
-    expectedVersion: NonNegativeVersionSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
-    slot: FilmReferenceSlotSpecSchema,
+    expectedSlotVersion: NonNegativeVersionSchema,
+    slot: StoryReferenceSlotSpecSchema,
   })
   .strict();
-export type PutFilmReferenceSlotInput = z.infer<
-  typeof PutFilmReferenceSlotSchema
+export type PutStoryReferenceSlotInput = z.infer<
+  typeof PutStoryReferenceSlotSchema
 >;
 
 const ReferenceVersionBaseSchema = z.object({
   expectedSlotVersion: NonNegativeVersionSchema,
   assetId: StoryUuidSchema,
-  promptSnapshot: z.record(z.string(), z.unknown()).optional(),
-  configSnapshot: z.record(z.string(), z.unknown()).optional(),
+  variantId: StoryUuidSchema,
+  sourceRecipeSnapshot: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const CreateFilmReferenceVersionSchema = z.discriminatedUnion('source', [
-  ReferenceVersionBaseSchema.extend({ source: z.literal('upload') }).strict(),
-  ReferenceVersionBaseSchema.extend({ source: z.literal('import') }).strict(),
-  ReferenceVersionBaseSchema.extend({
-    source: z.literal('ai_job'),
-    aiJobId: StoryUuidSchema,
-    aiJobOutputId: z.string().trim().min(1).max(180),
-  }).strict(),
-]);
-export type CreateFilmReferenceVersionInput = z.infer<
-  typeof CreateFilmReferenceVersionSchema
+export const CreateStoryReferenceVersionSchema = z.discriminatedUnion(
+  'source',
+  [
+    ReferenceVersionBaseSchema.extend({ source: z.literal('upload') }).strict(),
+    ReferenceVersionBaseSchema.extend({ source: z.literal('import') }).strict(),
+    ReferenceVersionBaseSchema.extend({
+      source: z.literal('ai_job'),
+      aiJobId: StoryUuidSchema,
+      aiJobOutputId: z.string().trim().min(1).max(180),
+    }).strict(),
+  ],
+);
+export type CreateStoryReferenceVersionInput = z.infer<
+  typeof CreateStoryReferenceVersionSchema
 >;
 
-export const CreateFilmReferenceReviewSchema = z
+export const CreateStoryReferenceReviewSchema = z
   .object({
     expectedReviewRevision: NonNegativeVersionSchema,
-    decision: FilmReviewDecisionSchema,
+    decision: StoryReferenceReviewDecisionSchema,
     checklist: z
       .object({
         technical: ReviewChecklistValueSchema,
@@ -571,135 +526,58 @@ export const CreateFilmReferenceReviewSchema = z
       });
     }
   });
-export type CreateFilmReferenceReviewInput = z.infer<
-  typeof CreateFilmReferenceReviewSchema
+export type CreateStoryReferenceReviewInput = z.infer<
+  typeof CreateStoryReferenceReviewSchema
 >;
 
-export const ApproveFilmReferenceVersionSchema = z
+export const ApproveStoryReferenceVersionSchema = z
   .object({
     expectedSlotVersion: NonNegativeVersionSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
     referenceVersionId: StoryUuidSchema,
     approveReviewId: StoryUuidSchema,
   })
   .strict();
-export type ApproveFilmReferenceVersionInput = z.infer<
-  typeof ApproveFilmReferenceVersionSchema
->;
-
-// ─── Video generation and current-output requests ─────────────────────
-
-export const CreateFilmGenerationSchema = z
-  .object({
-    expectedClipVersion: NonNegativeVersionSchema,
-    /** Public AI catalog id (canonical slug, e.g. `seedance-2-0`). */
-    modelId: z
-      .string()
-      .trim()
-      .min(1)
-      .max(120)
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .refine((value) => !StoryUuidSchema.safeParse(value).success, {
-        message: 'modelId must be the public AI catalog slug, not a UUID.',
-      })
-      .optional(),
-    variationNote: z.string().trim().max(2_000).optional(),
-    /** BigInt-safe provider seed. */
-    seed: z.string().trim().regex(/^\d+$/).max(40).optional(),
-  })
-  .strict();
-export type CreateFilmGenerationInput = z.infer<
-  typeof CreateFilmGenerationSchema
->;
-
-export const CreateDraftFilmGenerationSchema = CreateFilmGenerationSchema.omit({
-  expectedClipVersion: true,
-})
-  .extend({ expectedDraftRevision: NonNegativeVersionSchema })
-  .strict();
-export type CreateDraftFilmGenerationInput = z.infer<
-  typeof CreateDraftFilmGenerationSchema
->;
-
-export const CreateFilmTrailerGenerationSchema =
-  CreateFilmGenerationSchema.omit({
-    expectedClipVersion: true,
-  })
-    .extend({ expectedTrailerVersion: NonNegativeVersionSchema })
-    .strict();
-export type CreateFilmTrailerGenerationInput = z.infer<
-  typeof CreateFilmTrailerGenerationSchema
->;
-
-export const CancelFilmGenerationSchema = z
-  .object({ expectedGenerationVersion: NonNegativeVersionSchema })
-  .strict();
-export type CancelFilmGenerationInput = z.infer<
-  typeof CancelFilmGenerationSchema
->;
-
-export const RetryFilmGenerationSchema = z
-  .object({
-    expectedGenerationVersion: NonNegativeVersionSchema,
-    variationNote: z.string().trim().max(2_000).optional(),
-  })
-  .strict();
-export type RetryFilmGenerationInput = z.infer<
-  typeof RetryFilmGenerationSchema
->;
-
-export const PutFilmCurrentVideoSchema = z
-  .object({
-    expectedCurrentVideoRevision: NonNegativeVersionSchema,
-    assetId: StoryUuidSchema.nullable(),
-    variantId: StoryUuidSchema.nullable(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if ((input.assetId === null) !== (input.variantId === null)) {
-      context.addIssue({
-        code: 'custom',
-        path: input.assetId === null ? ['assetId'] : ['variantId'],
-        message: 'assetId and variantId must both be UUIDs or both be null.',
-      });
-    }
-  });
-export type PutFilmCurrentVideoInput = z.infer<
-  typeof PutFilmCurrentVideoSchema
->;
-
-export const PutDraftFilmCurrentVideoSchema = PutFilmCurrentVideoSchema.extend({
-  expectedDraftRevision: NonNegativeVersionSchema,
-}).strict();
-export type PutDraftFilmCurrentVideoInput = z.infer<
-  typeof PutDraftFilmCurrentVideoSchema
+export type ApproveStoryReferenceVersionInput = z.infer<
+  typeof ApproveStoryReferenceVersionSchema
 >;
 
 // ─── Build requests ─────────────────────────────────────────────────────
 
-export const CreateFilmBuildSchema = z
+export const CreateStoryBuildSchema = z
   .object({
-    revisionId: StoryUuidSchema,
-    expectedProductionRevision: NonNegativeVersionSchema,
-    profile: z.enum(['preview', 'production']),
-    scope: FilmBuildScopeSchema,
+    // Both tokens are optional: omit them to build whatever is saved right now.
+    // They exist for a caller that wants "build exactly the state I was looking
+    // at, or tell me it moved" — which is worth having, but making every caller
+    // fetch and carry two version values to press Build is not. A Build is
+    // immutable, numbered and cheap, and the author play-tests it immediately,
+    // so a Build of the wrong moment costs one more Build.
+    expectedDraftRevision: NonNegativeVersionSchema.optional(),
+    expectedVideoSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    scope: StoryBuildScopeSchema,
+    // Publishability is an intent, not a shape. A multi-chapter work cannot
+    // compile to one full-scope manifest at all — chapters terminate in
+    // endings, so every chapter after the first would be an unreachable scene,
+    // which the Runtime Manifest rejects outright. Such a work therefore
+    // publishes one manifest PER CHAPTER, and each of those is a subgraph;
+    // what the release API receives is the Game Manifest listing those
+    // per-chapter manifest URLs, never a composed manifest.
+    // Omitted keeps the historical default: full ⇒ production, subgraph ⇒
+    // preview. A chapter Build stays `preview` in practice, because
+    // `story_builds_production_scope_chk` admits only full-scope Builds as
+    // `production`; StoryGameReleaseService therefore verifies chapter Builds
+    // itself rather than trusting the kind.
+    kind: z.enum(['preview', 'production']).optional(),
   })
-  .strict()
-  .superRefine((build, context) => {
-    if (build.profile === 'production' && build.scope.kind !== 'full') {
-      context.addIssue({
-        code: 'custom',
-        path: ['scope'],
-        message: 'Production builds must compile the full graph.',
-      });
-    }
-  });
-export type CreateFilmBuildInput = z.infer<typeof CreateFilmBuildSchema>;
+  .strict();
+export type CreateStoryBuildInput = z.infer<typeof CreateStoryBuildSchema>;
 
-export const CancelFilmBuildSchema = z
+export const CancelStoryBuildSchema = z
   .object({ expectedBuildVersion: NonNegativeVersionSchema })
   .strict();
-export type CancelFilmBuildInput = z.infer<typeof CancelFilmBuildSchema>;
+export type CancelStoryBuildInput = z.infer<typeof CancelStoryBuildSchema>;
 
 export const PublishStoryBuildSchema = z
   .object({
@@ -718,6 +596,16 @@ export const PublishStoryBuildSchema = z
   });
 export type PublishStoryBuildInput = z.infer<typeof PublishStoryBuildSchema>;
 
+// Publishing a whole work has no `status`: a draft release deliberately grants
+// no anonymous media, and a chapter manifest is useless without its media, so
+// there is nothing a draft chapter set could usefully deliver.
+export const PublishStoryProjectSchema = z
+  .object({ setCurrent: z.boolean().default(true) })
+  .strict();
+export type PublishStoryProjectInput = z.infer<
+  typeof PublishStoryProjectSchema
+>;
+
 export const CreateFilmPreviewTokenSchema = z
   .object({
     expiresInSeconds: z
@@ -733,7 +621,7 @@ export type CreateFilmPreviewTokenInput = z.infer<
 >;
 
 function requireReviewComment(
-  review: { decision: FilmReviewDecision; comment?: string },
+  review: { decision: StoryReferenceReviewDecision; comment?: string },
   context: z.RefinementCtx,
 ): void {
   if (
@@ -768,6 +656,23 @@ export interface MediaAssetSummaryDto {
   previewUrl: string | null;
 }
 
+export interface StoryCandidateAssetVideoVariantDto {
+  id: string;
+  variantKey: string;
+  contentType: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  checksumSha256: string | null;
+}
+
+export interface StoryCandidateAssetDto {
+  asset: MediaAssetSummaryDto;
+  videoVariant: StoryCandidateAssetVideoVariantDto | null;
+  addedByUserId: string;
+  addedAt: string;
+}
+
 export interface StoryProjectVideoLibraryItemDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
@@ -776,7 +681,7 @@ export interface StoryProjectVideoLibraryItemDto {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
-  checksumSha256: string;
+  checksumSha256: string | null;
   createdAt: string;
 }
 
@@ -813,15 +718,25 @@ export interface StoryProjectProductionSummaryDto {
   approvedReferenceCount: number;
   clipCount: number;
   currentVideoCount: number;
-  generatingClipCount: number;
-  latestBuildStatus: FilmBuildStatus | null;
+  latestBuildStatus: StoryBuildStatus | null;
+}
+
+/**
+ * Which tenant a project lives in, for a caller who arrived on a shared link
+ * and therefore has no workspace to scope by yet. The id is the whole payload:
+ * the studio switches by id and reads the workspace's name and type from its
+ * own membership list, so echoing them here would hand out tenant metadata the
+ * switch never reads.
+ */
+export interface StoryProjectWorkspaceRefDto {
+  workspaceId: string;
 }
 
 export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;
   format: StoryFormat;
-  frameProfile: StoryFrameProfile;
+  frameProfile: StoryFrameProfile | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -839,11 +754,25 @@ export interface StoryProjectSummaryDto {
   updatedAt: string;
 }
 
+export interface StoryChapterDto {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  entryNodeId: string | null;
+  nodeCount: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoryDraftDto {
   projectId: string;
-  format: 'interactive_film';
-  schemaVersion: typeof INTERACTIVE_FILM_DRAFT_SCHEMA_VERSION;
-  content: InteractiveFilmDraftContent;
+  /** Null only on project-wide immutable-revision conflict payloads. */
+  chapterId: string | null;
+  format: CreatableStoryFormat;
+  schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
+  content: InteractiveStoryDraftContent;
   contentHash: string;
   revision: number;
   updatedByUserId: string;
@@ -854,6 +783,7 @@ export interface StoryDraftDto {
 
 export interface StoryCanvasLayoutDto {
   projectId: string;
+  chapterId: string;
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: StoryCanvasNodePositions;
   revision: number;
@@ -863,187 +793,54 @@ export interface StoryCanvasLayoutDto {
   updatedAt: string;
 }
 
+export interface StoryProductionCanvasDto {
+  projectId: string;
+  schemaVersion: typeof STORY_PRODUCTION_CANVAS_SCHEMA_VERSION;
+  content: StoryProductionCanvasContent;
+  updatedByUserId: string;
+  updatedBySessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   projectId: string;
-  format: 'interactive_film';
-  content: InteractiveFilmDraftContent;
+  format: CreatableStoryFormat;
+  content: InteractiveStoryDraftContent;
 }
 
-export interface FilmSpecDto extends FilmSpec {
-  projectId: string;
-  revisionId: string;
-  version: number;
-  productionRevision: number;
-  updatedByUserId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FilmDefaultModelDto {
-  id: string;
-  slug: string;
-  displayName: string;
-  generationModes: string[];
-}
-
-export interface FilmClipReferenceBindingDto extends FilmClipReferenceBindingInput {
-  id: string;
-  approvedReferenceVersionId: string | null;
-}
-
-export interface FilmTechnicalCheckDto {
-  key: string;
-  status: 'pending' | 'passed' | 'failed';
-  message: string | null;
-}
-
-export interface FilmCurrentVideoDto {
+export interface StoryCurrentVideoDto {
   asset: MediaAssetSummaryDto;
   variantId: string;
-  sourceGenerationId: string | null;
-  specHash: string | null;
-  inputHash: string | null;
-  checksumSha256: string;
-  technicalChecks: FilmTechnicalCheckDto[];
-  revision: number;
+  checksumSha256: string | null;
+  contentType: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  /** Byte length of the exact selected variant, serialized for BigInt-safe JSON. */
+  sizeBytes: string | null;
+  browserSafeMp4: boolean | null;
+  selectionVersion: number;
   setByUserId: string | null;
   setAt: string;
-  outdated: boolean;
 }
 
-export type FilmVideoGenerationStatus =
-  | 'queued'
-  | 'running'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'cancelled';
-
-export interface FilmVideoGenerationDto {
-  id: string;
-  projectId: string;
-  revisionId: string;
-  target:
-    | { kind: 'clip'; clipId: string }
-    | { kind: 'trailer'; trailerId: string };
-  number: number;
-  version: number;
-  aiJobId: string;
-  aiJobOutputId: string | null;
-  status: FilmVideoGenerationStatus;
-  specHash: string;
-  inputHash: string;
-  promptSnapshot: Record<string, unknown>;
-  generationConfig: Record<string, unknown>;
-  modelSnapshot: Record<string, unknown>;
-  outputAsset: MediaAssetSummaryDto | null;
-  outputVariantId: string | null;
-  outputChecksumSha256: string | null;
-  technicalChecks: FilmTechnicalCheckDto[];
-  error: Record<string, unknown> | null;
-  createdByUserId: string;
-  queuedAt: string | null;
-  startedAt: string | null;
-  readyAt: string | null;
-  cancelledAt: string | null;
-  supersededAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
+export interface StoryClipVideoSummaryDto {
+  graphNodeId: string;
+  selectionVersion: number;
+  currentVideo: StoryCurrentVideoDto | null;
 }
 
-export interface FilmTrailerSummaryDto extends FilmTrailerSpec {
-  id: string;
-  projectId: string;
-  revisionId: string;
-  version: number;
-  currentVideoRevision: number;
-  specHash: string;
-  productionInputHash: string | null;
-  referenceBindings: FilmClipReferenceBindingDto[];
-  currentVideo: FilmCurrentVideoDto | null;
-  generation: FilmVideoGenerationDto | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FilmTrailerReferencesDto {
-  trailerId: string;
-  trailerVersion: number;
-  currentVideoRevision: number;
-  bindings: FilmClipReferenceBindingDto[];
-}
-
-export interface FilmClipReferencesDto {
-  clipId: string;
-  clipVersion: number;
-  productionRevision: number;
-  bindings: FilmClipReferenceBindingDto[];
-}
-
-export interface FilmClipDependencyDto extends FilmClipDependencySpec {
-  id: string;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FilmClipDto extends FilmClipSpec {
-  id: string;
-  projectId: string;
-  revisionId: string;
-  version: number;
-  currentVideoRevision: number;
-  specHash: string;
-  productionInputHash: string | null;
-  referenceBindings: FilmClipReferenceBindingDto[];
-  incomingDependencies: FilmClipDependencyDto[];
-  outgoingDependencies: FilmClipDependencyDto[];
-  currentVideo: FilmCurrentVideoDto | null;
-  generation: FilmVideoGenerationDto | null;
-  archivedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FilmClipSummaryDto = Pick<
-  FilmClipDto,
-  | 'id'
-  | 'revisionId'
-  | 'key'
-  | 'graphNodeId'
-  | 'kind'
-  | 'title'
-  | 'description'
-  | 'rank'
-  | 'targetDurationMs'
-  | 'generationControl'
-  | 'prompt'
-  | 'dialogueWindows'
-  | 'outputContract'
-  | 'continuityNotes'
-  | 'version'
-  | 'currentVideoRevision'
-  | 'productionInputHash'
-  | 'referenceBindings'
-  | 'currentVideo'
-  | 'generation'
-  | 'updatedAt'
->;
-
-export interface FilmReferenceVersionDto {
+export interface StoryReferenceVersionDto {
   id: string;
   slotId: string;
   number: number;
-  source: 'upload' | 'ai_job' | 'import' | 'generation_frame';
+  source: 'upload' | 'ai_job' | 'import';
   aiJobId: string | null;
   aiJobOutputId: string | null;
-  sourceGenerationId: string | null;
-  sourceFrameIndex: number | null;
-  sourceOutputChecksumSha256: string | null;
   asset: MediaAssetSummaryDto;
-  promptSnapshot: Record<string, unknown> | null;
-  configSnapshot: Record<string, unknown> | null;
+  variantId: string;
+  sourceRecipeSnapshot: Record<string, unknown> | null;
   checksumSha256: string;
   reviewRevision: number;
   approved: boolean;
@@ -1051,29 +848,28 @@ export interface FilmReferenceVersionDto {
   createdAt: string;
 }
 
-export interface FilmReferenceSlotDto extends FilmReferenceSlotSpec {
+export interface StoryReferenceSlotDto extends StoryReferenceSlotSpec {
   id: string;
   projectId: string;
-  revisionId: string;
   version: number;
   status: 'empty' | 'candidate' | 'approved' | 'invalidated';
   approvedVersionId: string | null;
-  versions: FilmReferenceVersionDto[];
+  versions: StoryReferenceVersionDto[];
   createdAt: string;
   updatedAt: string;
 }
 
 /** Review projection for reference-version approval. */
-export interface FilmReviewDto {
+export interface StoryReferenceReviewDto {
   id: string;
-  decision: FilmReviewDecision;
+  decision: StoryReferenceReviewDecision;
   checklist: Record<string, 'pass' | 'fail' | 'na'>;
   comment: string | null;
   reviewerUserId: string;
   createdAt: string;
 }
 
-export interface FilmBuildDiagnosticDto {
+export interface StoryBuildDiagnosticDto {
   severity: 'error' | 'warning';
   code: string;
   message: string;
@@ -1081,7 +877,6 @@ export interface FilmBuildDiagnosticDto {
     | 'revision'
     | 'clip'
     | 'reference'
-    | 'generation'
     | 'choice'
     | 'ending'
     | 'asset'
@@ -1089,7 +884,7 @@ export interface FilmBuildDiagnosticDto {
   entityId: string | null;
 }
 
-export interface FilmBuildPathReportDto {
+export interface StoryBuildPathReportDto {
   enumeratedPathCount: number;
   reachableEndingIds: string[];
   unreachableNodeIds: string[];
@@ -1102,23 +897,24 @@ export interface FrozenStoryAssetDto {
   logicalKey: string;
   assetId: string;
   variantId: string;
-  checksumSha256: string;
+  checksumSha256: string | null;
   contentType: string;
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  browserSafeMp4: boolean | null;
   sizeBytes: string | null;
 }
 
-export interface FilmBuildAssetDto extends FrozenStoryAssetDto {
+export interface StoryBuildAssetDto extends FrozenStoryAssetDto {
   id: string;
   buildId: string;
-  clipId: string | null;
+  graphNodeId: string | null;
   role: string;
 }
 
-export interface FilmBuildPublicationDto {
-  status: FilmBuildPublicationLifecycleStatus;
+export interface StoryBuildPublicationDto {
+  status: StoryBuildPublicationLifecycleStatus;
   gameId: string;
   contentVersion: string;
   manifestUrl: string | null;
@@ -1133,7 +929,7 @@ export interface FilmBuildPublicationDto {
   lastErrorDetail: string | null;
 }
 
-export type FilmBuildPublicationLifecycleStatus =
+export type StoryBuildPublicationLifecycleStatus =
   | 'pending'
   | 'confirmed'
   | 'uncertain'
@@ -1148,32 +944,31 @@ export interface StoryExperienceCurrentReleaseDto {
   manifestUrl: string | null;
   currentBuild: {
     id: string;
-    sourceRevisionId: string;
     sourceDraftRevision: number;
-    sourceProductionRevision: number;
+    videoSnapshotHash: string;
   } | null;
   checkedAt: string | null;
 }
 
-export interface FilmBuildDto {
+export interface StoryBuildDto {
   id: string;
   projectId: string;
-  revisionId: string;
   number: number;
   version: number;
-  profile: 'preview' | 'production';
-  scope: FilmBuildScope;
-  status: FilmBuildStatus;
-  sourceProductionRevision: number;
+  kind: 'preview' | 'production';
+  scope: StoryBuildScope;
+  status: StoryBuildStatus;
+  sourceDraftRevision: number;
+  videoSnapshotHash: string;
   inputHash: string;
   inputManifestHash: string;
-  runtimeSchemaVersion: 1 | 2;
+  runtimeSchemaVersion: 2;
   runtimeJson: Record<string, unknown> | null;
   runtimeHash: string | null;
-  assets: FilmBuildAssetDto[];
-  diagnostics: FilmBuildDiagnosticDto[];
-  pathReport: FilmBuildPathReportDto | null;
-  publication: FilmBuildPublicationDto | null;
+  assets: StoryBuildAssetDto[];
+  diagnostics: StoryBuildDiagnosticDto[];
+  pathReport: StoryBuildPathReportDto | null;
+  publication: StoryBuildPublicationDto | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
@@ -1183,28 +978,29 @@ export interface FilmBuildDto {
 export interface StoryWorkingPreviewDto {
   draftRevision: number;
   contentHash: string;
+  videoSnapshotHash: string | null;
   runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
-  diagnostics: FilmBuildDiagnosticDto[];
-  pathReport: FilmBuildPathReportDto | null;
+  diagnostics: StoryBuildDiagnosticDto[];
+  pathReport: StoryBuildPathReportDto | null;
   sources: Array<{
     graphNodeId: string;
     assetId: string;
     variantId: string;
-    sourceGenerationId: string | null;
-    currentVideoRevision: number;
+    selectionVersion: number;
     selection: 'current';
   }>;
 }
 
-export type FilmBuildSummaryDto = Pick<
-  FilmBuildDto,
+export type StoryBuildSummaryDto = Pick<
+  StoryBuildDto,
   | 'id'
   | 'number'
-  | 'profile'
+  | 'kind'
   | 'scope'
   | 'status'
-  | 'sourceProductionRevision'
+  | 'sourceDraftRevision'
+  | 'videoSnapshotHash'
   | 'diagnostics'
   | 'publication'
   | 'createdAt'
@@ -1213,17 +1009,15 @@ export type FilmBuildSummaryDto = Pick<
 
 export interface StoryWorkbenchDto {
   project: StoryProjectSummaryDto;
+  chapters: StoryChapterDto[];
+  chapter: StoryChapterDto;
   draft: StoryDraftDto;
-  selectedRevision: StoryRevisionDto | null;
-  film: {
-    productionRevision: number;
-    spec: FilmSpecDto | null;
-    defaultModel: FilmDefaultModelDto | null;
-    trailer: FilmTrailerSummaryDto | null;
-    clips: FilmClipSummaryDto[];
-    references: FilmReferenceSlotDto[];
-    latestBuild: FilmBuildSummaryDto | null;
-  } | null;
+  video: {
+    snapshotHash: string;
+    clips: StoryClipVideoSummaryDto[];
+  };
+  references: StoryReferenceSlotDto[];
+  latestBuild: StoryBuildSummaryDto | null;
 }
 
 export interface StoryDraftConflictDto {

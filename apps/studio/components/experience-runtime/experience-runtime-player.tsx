@@ -29,9 +29,9 @@ export function ExperienceRuntimePlayer({
       restart: t("restart"),
       mediaError: (assetId) => t("mediaError", { assetId }),
       videoLabel: (nodeId) => t("videoLabel", { nodeId }),
+      emptySequence: t("emptySequence"),
+      loadingMedia: t("loadingMedia"),
       noVisibleChoices: t("noVisibleChoices"),
-      checkpointPrompt: t("checkpointPrompt"),
-      checkpointDescription: t("checkpointDescription"),
       continue: t("continue"),
       regionLabel: t("regionLabel"),
       video: {

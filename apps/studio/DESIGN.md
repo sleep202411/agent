@@ -86,12 +86,42 @@ below are the binding constraints it must honor.
    (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or
    tint neutral surfaces — a red-washed UI has been explicitly rejected.
    Red is reserved for rare, deliberate, case-by-case accents (e.g. a hero
-   CTA), applied locally and only with an explicit decision. The **Red accent
-   preset** is the one _systematic_ sanctioned use (signed off 2026-06-19):
-   brand red fills every primary ACTION BUTTON (Generate / Start for Free / Try
-   Now / Send / Blank-Canvas +); it still never joins the neutral token set and
-   never tints a surface or active-state fill — only the CTA. The Mono preset
-   keeps CTAs white (`primary`). Generated imagery is the only saturated content
+   CTA), applied locally and only with an explicit decision. Three
+   _systematic_ sanctioned uses exist:
+   - **Red accent preset** (signed off 2026-06-19): brand red fills every
+     primary ACTION BUTTON (Generate / Start for Free / Try Now / Send /
+     Blank-Canvas +). The Mono preset keeps CTAs white (`primary`).
+   - **Option-card selected state** (signed off 2026-07-20; full red fill
+     was tried and rejected the same day as too heavy): in option/radio
+     **card** groups (story create dialog format + frame cards first), the
+     SELECTED card is marked by the **red rim-light treatment**: a red
+     `GlassRim` (conic, 1.5px, peak alpha ≈0.55 in a bright arc at the
+     top-left, easing to a legible floor of ≈0.22 around the rest — the
+     floor must stay visible on every edge; dropping it near zero loses
+     the selection boundary at the bottom-right and was rejected), a faint
+     red wash (`bg-[#E52227]/[0.07]`, ≤10%), white title, brand-red icon. **No drop shadow / glow** — a red
+     shadow on near-black reads as a smudge, not depth (rejected
+     2026-07-20 along with the solid red fill). Never a solid red fill.
+     Unselected cards stay neutral white-alpha. This applies to
+     card-shaped single-choice groups only — not to tabs, list rows,
+     toggles, or text selection, which keep the white/neutral active
+     treatment.
+
+   - **Required-field marker** (signed off 2026-07-20): a brand-red
+     asterisk after the label of a required form field —
+     `components/ui/required-mark.tsx` (`RequiredMark`). Mark every field
+     whose value is mandatory in the submitted contract — including
+     single-choice groups that ship with a default (decided 2026-07-20;
+     the asterisk states "this value matters", not "this blocks submit").
+     Purely optional fields stay unmarked. Pair with `aria-required` on
+     the control. Labeled controls
+     get it via `Field`'s `required` prop (`components/ui/field.tsx` — the
+     standard label→control→error rhythm; use it instead of hand-rolled
+     labels; `dense` for compact dialogs); use `RequiredMark` directly only
+     in non-Field contexts (e.g. a fieldset legend).
+
+   In all three uses red still never joins the neutral token set and never
+   tints a passive surface. Generated imagery is the only saturated content
    by default.
 
 4. **No borders. Anywhere.** shadcn's default border-everywhere look has
@@ -145,6 +175,19 @@ below are the binding constraints it must honor.
   White-alpha _fills_ (`bg-white/[0.07]` etc.) are acceptable inside
   the frosted-chrome idiom where compositing over arbitrary content is
   the intent — fills only, never white-alpha rings/borders.
+- **Quiet icon button** (codified 2026-07-20 from the dialog-close redesign):
+  the idiom for a standalone secondary icon action sitting on a borderless
+  dark surface — dialog close, canvas-toolbar actions, card affordances.
+  A rounded square with a **resting** white-alpha fill; a bare ghost icon
+  with no resting fill reads as unanchored here and is rejected for these
+  spots (`ghost` Button stays for inline/text-adjacent actions only).
+  Normative recipe: hit area `size-7` (28px; toolbars may use up to
+  `size-9`), radius `rounded-lg`–`rounded-xl`, resting
+  `bg-white/[0.06] text-white/55`, hover `bg-white/[0.12] hover:text-white`,
+  focus `focus-visible:ring-2 focus-visible:ring-white/35`, icon `size-3.5`
+  – `size-4`, `transition`. Existing call sites drift across alpha
+  `0.05`–`0.07` and text `55`–`66`; new code uses the normative values and
+  old sites converge opportunistically when touched.
 
 ## Layout
 

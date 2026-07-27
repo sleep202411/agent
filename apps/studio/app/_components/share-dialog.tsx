@@ -36,7 +36,9 @@ export function ShareDialog({
           <DialogDescription>
             {scope.kind === "workspace"
               ? t("share.descriptionWorkspace")
-              : t("share.descriptionProject")}
+              : scope.kind === "story-project"
+                ? t("share.descriptionStoryProject")
+                : t("share.descriptionProject")}
           </DialogDescription>
         </DialogHeader>
         <MembersManager scope={scope} canManage={canManage} />

@@ -7,13 +7,31 @@ import zhHK from "@/messages/zh-HK.json";
 import { defaultLocale, isValidLocale, type Locale } from "@/src/i18n/config";
 import { ExperienceLoadError } from "../../_components/experience-load-error";
 import { ExperienceRuntimePlayer } from "../../_components/experience-runtime-player";
+import { StoryNarrativePlayer } from "../../_components/story-narrative-player";
+import { PlayChapterMenu } from "./_components/play-chapter-menu";
 import { PlayShareButton } from "./_components/play-share-button";
 import {
   getPublishedInteractiveFilm,
   loadPublishedInteractiveFilm,
 } from "../../_lib/interactive-film-api";
 
-type RouteProps = { params: Promise<{ gameId: string }> };
+type RouteProps = {
+  params: Promise<{ gameId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function localizeManifestTitle(
+  manifest: {
+    metadata: { title: Record<string, string> };
+    localization: { defaultLocale: string };
+  },
+  locale: Locale
+): string {
+  const { title } = manifest.metadata;
+  return (
+    title[locale] ?? title[manifest.localization.defaultLocale] ?? Object.values(title)[0] ?? ""
+  );
+}
 
 const PLAYER_COPY = {
   "en-US": enUS.experiencePlayer,
@@ -27,21 +45,39 @@ const PLAYER_COPY = {
     share: string;
     shareCopied: string;
     shareFailed: string;
+    chapters: string;
   }
 >;
 
-export async function generateMetadata({ params }: RouteProps): Promise<Metadata> {
-  const [{ gameId }, headerBag] = await Promise.all([params, headers()]);
+export async function generateMetadata({
+  params,
+  searchParams,
+}: Pick<RouteProps, "params" | "searchParams">): Promise<Metadata> {
+  const [{ gameId }, query, headerBag] = await Promise.all([params, searchParams, headers()]);
+  // A shared chapter link must not preview as chapter one: the canonical URL
+  // carries the chapter the sharer had open, so a crawler and the recipient
+  // resolve the same chapter.
+  const requestedChapter = typeof query.chapter === "string" ? query.chapter : undefined;
   const localeHeader = headerBag.get("x-locale") ?? defaultLocale;
   const locale: Locale = isValidLocale(localeHeader) ? localeHeader : defaultLocale;
   const copy = PLAYER_COPY[locale];
   try {
     const game = await getPublishedInteractiveFilm(gameId);
+    const canonical = requestedChapter
+      ? `/play/interactive-film/${encodeURIComponent(gameId)}?chapter=${encodeURIComponent(requestedChapter)}`
+      : `/play/interactive-film/${encodeURIComponent(gameId)}`;
     return {
       title: game.title,
       description: copy.metadataDescription.replace("{title}", game.title),
+      alternates: { canonical },
       ...(game.coverUrl
-        ? { openGraph: { title: game.title, images: [{ url: game.coverUrl }] } }
+        ? {
+            openGraph: {
+              title: game.title,
+              url: canonical,
+              images: [{ url: game.coverUrl }],
+            },
+          }
         : {}),
     };
   } catch {
@@ -49,21 +85,52 @@ export async function generateMetadata({ params }: RouteProps): Promise<Metadata
   }
 }
 
-export default async function InteractiveFilmPage({ params }: RouteProps) {
-  const [{ gameId }, headerBag] = await Promise.all([params, headers()]);
+export default async function InteractiveFilmPage({ params, searchParams }: RouteProps) {
+  const [{ gameId }, query, headerBag] = await Promise.all([params, searchParams, headers()]);
   const localeHeader = headerBag.get("x-locale") ?? defaultLocale;
   const locale: Locale = isValidLocale(localeHeader) ? localeHeader : defaultLocale;
   const playerCopy = PLAYER_COPY[locale];
 
+  // A serial work publishes one manifest per chapter, so which chapter to play
+  // is part of the URL — that is also what makes a chapter individually
+  // shareable.
+  const requestedChapter = typeof query.chapter === "string" ? query.chapter : undefined;
   let published: Awaited<ReturnType<typeof loadPublishedInteractiveFilm>> | null = null;
   let loadError: string | null = null;
   try {
-    published = await loadPublishedInteractiveFilm(gameId);
+    published = await loadPublishedInteractiveFilm(gameId, {
+      ...(requestedChapter ? { chapterId: requestedChapter } : {}),
+    });
   } catch (error) {
     loadError = error instanceof Error ? error.message : null;
   }
 
   if (published) {
+    // A narrative experience is an authored skeleton the model narrates between
+    // anchors, so it plays through its own turn-loop shell. Cinematic
+    // experiences keep the frozen-manifest player untouched.
+    if (published.manifest.metadata.experienceProfile === "narrative") {
+      return (
+        <main className="relative h-[100dvh] bg-black text-white">
+          <StoryNarrativePlayer
+            gameId={gameId}
+            contentVersion={published.game.currentVersion}
+            title={localizeManifestTitle(published.manifest, locale)}
+          />
+          <ChapterMenu published={published} gameId={gameId} locale={locale} copy={playerCopy} />
+          <PlayShareButton
+            gameId={gameId}
+            locale={locale}
+            chapterId={published.activeChapterId}
+            copy={{
+              share: playerCopy.share,
+              shareCopied: playerCopy.shareCopied,
+              shareFailed: playerCopy.shareFailed,
+            }}
+          />
+        </main>
+      );
+    }
     return (
       <main className="relative h-[100dvh] bg-black text-white">
         <ExperienceRuntimePlayer
@@ -71,9 +138,11 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
           locale={locale}
           randomSeed={randomUUID()}
         />
+        <ChapterMenu published={published} gameId={gameId} locale={locale} copy={playerCopy} />
         <PlayShareButton
           gameId={gameId}
           locale={locale}
+          chapterId={published.activeChapterId}
           copy={{
             share: playerCopy.share,
             shareCopied: playerCopy.shareCopied,
@@ -84,4 +153,27 @@ export default async function InteractiveFilmPage({ params }: RouteProps) {
     );
   }
   return <ExperienceLoadError locale={locale} message={loadError} />;
+}
+
+function ChapterMenu({
+  published,
+  gameId,
+  locale,
+  copy,
+}: {
+  published: Awaited<ReturnType<typeof loadPublishedInteractiveFilm>>;
+  gameId: string;
+  locale: Locale;
+  copy: { chapters: string };
+}) {
+  if (published.chapters.length === 0) return null;
+  return (
+    <PlayChapterMenu
+      gameId={gameId}
+      locale={locale}
+      chapters={published.chapters}
+      activeChapterId={published.activeChapterId}
+      label={copy.chapters}
+    />
+  );
 }

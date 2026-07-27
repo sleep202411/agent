@@ -2,105 +2,10 @@ import { z } from "zod";
 
 export const INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION = 1 as const;
 
-/**
- * Built-in renderer contract for a non-narrative playback checkpoint.
- *
- * Story authoring treats a checkpoint as an interaction boundary without
- * turning it into a narrative decision. Builds lower that authoring exit to
- * the existing external-overlay runtime primitive so players can handle it as
- * a first-party renderer without widening the release schema union.
- */
-export const STORY_CHECKPOINT_RENDERER_ID = "story.checkpoint" as const;
-export const STORY_CHECKPOINT_CONTINUE_ACTION_ID = "continue" as const;
-
 const stableId = z.string().trim().min(1).max(120);
 const localizedText = z.record(z.string().trim().min(2), z.string().trim().min(1));
 const positiveInteger = z.number().int().positive();
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/, "Media hashes must be lowercase SHA-256");
-
-export const RuntimeSessionValueSchema = z.union([
-  z.string(),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
-export type RuntimeSessionValue = z.infer<typeof RuntimeSessionValueSchema>;
-
-export const FilmVariableOperatorSchema = z.enum([
-  "equals",
-  "not_equals",
-  "greater_than",
-  "at_least",
-  "less_than",
-  "at_most",
-]);
-export type FilmVariableOperator = z.infer<typeof FilmVariableOperatorSchema>;
-
-export const FilmConditionSchema: z.ZodType<FilmCondition> = z.lazy(() =>
-  z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("flag"), flag: stableId, equals: z.boolean() }).strict(),
-    z
-      .object({
-        kind: z.literal("variable"),
-        key: stableId,
-        operator: FilmVariableOperatorSchema,
-        value: RuntimeSessionValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("relationship-at-least"),
-        characterId: stableId,
-        value: z.number().finite(),
-      })
-      .strict(),
-    z.object({ kind: z.literal("all"), conditions: z.array(FilmConditionSchema).min(1) }).strict(),
-    z.object({ kind: z.literal("any"), conditions: z.array(FilmConditionSchema).min(1) }).strict(),
-    z.object({ kind: z.literal("not"), condition: FilmConditionSchema }).strict(),
-  ])
-);
-
-export type FilmCondition =
-  | { kind: "flag"; flag: string; equals: boolean }
-  | {
-      kind: "variable";
-      key: string;
-      operator: FilmVariableOperator;
-      value: RuntimeSessionValue;
-    }
-  | { kind: "relationship-at-least"; characterId: string; value: number }
-  | { kind: "all"; conditions: FilmCondition[] }
-  | { kind: "any"; conditions: FilmCondition[] }
-  | { kind: "not"; condition: FilmCondition };
-
-export const RuntimeSessionEffectSchema = z.discriminatedUnion("kind", [
-  z
-    .object({ kind: z.literal("set_variable"), key: stableId, value: RuntimeSessionValueSchema })
-    .strict(),
-  z
-    .object({ kind: z.literal("increment_variable"), key: stableId, amount: z.number().finite() })
-    .strict(),
-  z.object({ kind: z.literal("set_flag"), flag: stableId, value: z.boolean() }).strict(),
-  z
-    .object({
-      kind: z.literal("adjust_relationship"),
-      characterId: stableId,
-      amount: z.number().finite(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("mark_asset_watched"), assetId: stableId }).strict(),
-  z.object({ kind: z.literal("unlock_ending"), endingId: stableId }).strict(),
-]);
-export type RuntimeSessionEffect = z.infer<typeof RuntimeSessionEffectSchema>;
-
-export const RuntimeInitialStateSchema = z
-  .object({
-    variables: z.record(stableId, RuntimeSessionValueSchema).default({}),
-    flags: z.record(stableId, z.boolean()).default({}),
-    relationships: z.record(stableId, z.number().finite()).default({}),
-  })
-  .strict();
-export type RuntimeInitialState = z.infer<typeof RuntimeInitialStateSchema>;
 
 const FramesPerSecondSchema = z
   .object({ numerator: positiveInteger, denominator: positiveInteger })
@@ -118,6 +23,20 @@ const RuntimeUriSchema = z
     });
   });
 
+/**
+ * Whether a URL can be carried by a release as a PLAIN MEDIA REFERENCE (a music
+ * bed, a cover) rather than a frozen build asset.
+ *
+ * Plain references are resolved from live storage config, so they can come back
+ * in a shape this schema rejects — most often `http://` from an `external_url`
+ * asset. Such a reference must be dropped by its resolver, because reaching the
+ * release parse instead would fail a whole Build over decoration. Exported from
+ * beside the schema so the resolvers cannot drift from what they are gating for.
+ */
+export function isRuntimeMediaUri(value: string): boolean {
+  return RuntimeUriSchema.safeParse(value).success;
+}
+
 const VisualVariantSchema = z
   .object({
     sourceAssetId: stableId,
@@ -129,7 +48,10 @@ const VisualVariantSchema = z
   .strict();
 
 const VideoVariantSchema = VisualVariantSchema.extend({
-  durationSeconds: z.number().positive(),
+  sha256: sha256.optional(),
+  width: positiveInteger.optional(),
+  height: positiveInteger.optional(),
+  durationSeconds: z.number().positive().optional(),
   framesPerSecond: FramesPerSecondSchema.optional(),
   codec: z.enum(["h264", "h265", "av1"]).optional(),
 }).strict();
@@ -172,7 +94,6 @@ const RuntimeVideoAssetSchema = z
         portrait: VideoVariantSchema.optional(),
       })
       .strict(),
-    audio: z.enum(["none", "embedded"]),
   })
   .strict()
   .superRefine(validateOrientationPolicy);
@@ -252,41 +173,18 @@ const OverlaySchema = z.discriminatedUnion("kind", [
   OverlayBaseSchema.extend({ kind: z.literal("interaction") }).strict(),
 ]);
 
-const InteractionTriggerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("media-ended") }).strict(),
-  z.object({ kind: z.literal("timecode"), atSeconds: z.number().nonnegative() }).strict(),
-  z.object({ kind: z.literal("overlay-ready") }).strict(),
-]);
-
 const ChoiceSchema = z
   .object({
     choiceId: stableId,
     label: localizedText,
-    accessibilityLabel: localizedText.optional(),
-    visibleWhen: FilmConditionSchema.optional(),
-    effects: z.array(RuntimeSessionEffectSchema).default([]),
     nextNodeId: stableId,
-    afterSelect: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("play"), reactionAssetId: stableId }).strict(),
-      z.object({ kind: z.literal("immediate") }).strict(),
-    ]),
   })
   .strict();
 
 export const RuntimeAutoExitSchema = z
   .object({
     kind: z.literal("auto"),
-    routes: z
-      .array(
-        z
-          .object({
-            nextNodeId: stableId,
-            when: FilmConditionSchema.optional(),
-            priority: z.number().int().min(0).max(10_000).default(0),
-          })
-          .strict()
-      )
-      .min(1),
+    nextNodeId: stableId,
   })
   .strict();
 
@@ -295,48 +193,9 @@ export const RuntimeChoiceExitSchema = z
     kind: z.literal("choice"),
     decisionId: stableId,
     prompt: localizedText,
-    trigger: InteractionTriggerSchema,
     choices: z.array(ChoiceSchema).min(2).max(6),
   })
   .strict();
-
-const ExternalActionRouteSchema = z.union([
-  z
-    .object({
-      actionId: stableId,
-      effects: z.array(RuntimeSessionEffectSchema).default([]),
-      nextNodeId: stableId,
-    })
-    .strict(),
-  z
-    .object({
-      actionId: stableId,
-      effects: z.array(RuntimeSessionEffectSchema).default([]),
-      endingId: stableId,
-    })
-    .strict(),
-]);
-
-export const RuntimeExternalExitSchema = z
-  .object({
-    kind: z.literal("external-overlay"),
-    rendererId: stableId,
-    routes: z.array(ExternalActionRouteSchema).min(1),
-  })
-  .strict()
-  .superRefine((exit, context) => {
-    const actionIds = new Set<string>();
-    exit.routes.forEach((route, index) => {
-      if (actionIds.has(route.actionId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["routes", index, "actionId"],
-          message: `Duplicate external action route ${route.actionId}`,
-        });
-      }
-      actionIds.add(route.actionId);
-    });
-  });
 
 export const RuntimeEndingExitSchema = z
   .object({ kind: z.literal("ending"), endingId: stableId })
@@ -347,7 +206,6 @@ export const RuntimeEndingSchema = z
     endingId: stableId,
     title: localizedText,
     summary: localizedText.optional(),
-    kind: z.enum(["truth", "bond", "echo", "failure", "hidden", "custom"]),
   })
   .strict();
 export type RuntimeEnding = z.infer<typeof RuntimeEndingSchema>;
@@ -381,9 +239,14 @@ const VideoSequenceClipSchema = z
 const VideoPresentationSchema = z
   .object({
     kind: z.literal("video"),
-    sequence: z.array(VideoSequenceClipSchema).min(1),
+    // Empty means "this shot has no footage yet". Only a preview Build emits
+    // one; the release path still raises STORY_BUILD_CURRENT_VIDEO_REQUIRED as
+    // an error, so an empty sequence cannot reach a published experience.
+    sequence: z.array(VideoSequenceClipSchema),
     posterAssetId: stableId.optional(),
-    fit: z.enum(["cover", "contain"]),
+    // "native" is emitted for narrative (frame-profile-less) stories so inline
+    // video keeps its intrinsic size instead of being cropped to a fixed frame.
+    fit: z.enum(["cover", "contain", "native"]),
   })
   .strict()
   .superRefine((presentation, context) => {
@@ -424,6 +287,15 @@ const ImagePresentationSchema = z
   })
   .strict();
 
+const TextPresentationSchema = z
+  .object({
+    kind: z.literal("text"),
+    title: localizedText.optional(),
+    body: localizedText,
+    completion: z.enum(["continue", "passive"]),
+  })
+  .strict();
+
 const ExtensionPresentationSchema = z
   .object({
     kind: z.literal("extension"),
@@ -437,7 +309,6 @@ const ExtensionPresentationSchema = z
 const RuntimeNodeExitSchema = z.discriminatedUnion("kind", [
   RuntimeAutoExitSchema,
   RuntimeChoiceExitSchema,
-  RuntimeExternalExitSchema,
   RuntimeEndingExitSchema,
 ]);
 
@@ -447,22 +318,22 @@ const SceneNodeSchema = z
     presentation: z.discriminatedUnion("kind", [
       VideoPresentationSchema,
       ImagePresentationSchema,
+      TextPresentationSchema,
       ExtensionPresentationSchema,
     ]),
+    /**
+     * The music bed this scene asks for on entry; absent means "unchanged".
+     * A plain media reference — `url` is the track's ordinary public media URL
+     * and it is deliberately NOT a `media` entry, because a bed that fails to
+     * load is silence, never a broken release.
+     */
+    music: z.object({ trackId: stableId, url: RuntimeUriSchema }).strict().optional(),
     overlays: z.array(OverlaySchema).default([]),
     exit: RuntimeNodeExitSchema,
   })
   .strict();
 
-const RouterNodeSchema = z
-  .object({
-    kind: z.literal("router"),
-    nodeId: stableId,
-    exit: RuntimeAutoExitSchema,
-  })
-  .strict();
-
-export const InteractiveFilmRuntimeNodeSchema = z.union([SceneNodeSchema, RouterNodeSchema]);
+export const InteractiveFilmRuntimeNodeSchema = SceneNodeSchema;
 
 export const InteractiveFilmReleaseSchema = z
   .object({
@@ -474,13 +345,8 @@ export const InteractiveFilmReleaseSchema = z
     entryNodeId: stableId,
     defaultLocale: stableId,
     locales: z.array(stableId).min(1),
-    initialState: RuntimeInitialStateSchema.default({
-      variables: {},
-      flags: {},
-      relationships: {},
-    }),
     endings: z.array(RuntimeEndingSchema).default([]),
-    media: z.array(RuntimeMediaAssetSchema).min(1),
+    media: z.array(RuntimeMediaAssetSchema).default([]),
     nodes: z.array(InteractiveFilmRuntimeNodeSchema).min(1),
   })
   .strict()
@@ -489,7 +355,6 @@ export const InteractiveFilmReleaseSchema = z
     const nodes = uniqueIndex(release.nodes, (node) => node.nodeId, ["nodes"], context);
     const endings = uniqueIndex(release.endings, (ending) => ending.endingId, ["endings"], context);
     validateRuntimeDecisionDefinitions(release.nodes, context);
-    validateRuntimeStateContract(release.initialState, release.nodes, context);
 
     if (!release.locales.includes(release.defaultLocale)) {
       context.addIssue({
@@ -568,31 +433,15 @@ export const InteractiveFilmReleaseSchema = z
             if (clip.posterAssetId) {
               requireAsset(clip.posterAssetId, ["image"], [...clipPath, "posterAssetId"]);
             }
-            const clipAsset = media.get(clip.assetId);
-            if (clip.endBehavior.behavior === "loop-tail" && clipAsset?.kind === "video") {
-              if (clipAsset.audio !== "none") {
-                context.addIssue({
-                  code: "custom",
-                  path: [...clipPath, "endBehavior"],
-                  message:
-                    "Tail loops require a silent picture asset so dialogue is never repeated",
-                });
-              }
-            }
+            // A wait loop used to have to point at a provably silent asset.
+            // Nothing inspects media for sound any more — what the creator
+            // supplied is what plays — so only the reference is validated.
             if (clip.endBehavior.behavior === "loop") {
               requireAsset(
                 clip.endBehavior.assetId,
                 ["video"],
                 [...clipPath, "endBehavior", "assetId"]
               );
-              const loopAsset = media.get(clip.endBehavior.assetId);
-              if (loopAsset?.kind === "video" && loopAsset.audio !== "none") {
-                context.addIssue({
-                  code: "custom",
-                  path: [...clipPath, "endBehavior", "assetId"],
-                  message: "Wait-loop assets must be silent so dialogue is never repeated",
-                });
-              }
             }
           });
           if (node.presentation.posterAssetId) {
@@ -604,6 +453,11 @@ export const InteractiveFilmReleaseSchema = z
           }
         } else if (node.presentation.kind === "image") {
           requireAsset(node.presentation.assetId, ["image"], [...presentationPath, "assetId"]);
+        } else if (node.presentation.kind === "text") {
+          if (node.presentation.title) {
+            requireLocaleCoverage(node.presentation.title, [...presentationPath, "title"]);
+          }
+          requireLocaleCoverage(node.presentation.body, [...presentationPath, "body"]);
         } else {
           requireAsset(
             node.presentation.configAssetId,
@@ -646,42 +500,10 @@ export const InteractiveFilmReleaseSchema = z
 
       const exitPath = ["nodes", nodeIndex, "exit"];
       if (node.exit.kind === "auto") {
-        node.exit.routes.forEach((route, routeIndex) =>
-          requireNode(route.nextNodeId, [...exitPath, "routes", routeIndex, "nextNodeId"])
-        );
+        requireNode(node.exit.nextNodeId, [...exitPath, "nextNodeId"]);
       }
       if (node.exit.kind === "choice") {
         requireLocaleCoverage(node.exit.prompt, [...exitPath, "prompt"]);
-        if (node.exit.trigger.kind === "timecode") {
-          if (!("presentation" in node) || node.presentation.kind !== "video") {
-            context.addIssue({
-              code: "custom",
-              path: [...exitPath, "trigger"],
-              message: "Timecode triggers require a video presentation",
-            });
-          } else {
-            const authoredDuration = node.presentation.sequence.reduce((total, clip) => {
-              const asset = media.get(clip.assetId);
-              if (asset?.kind !== "video") return total;
-              const durations = Object.values(asset.variants).flatMap((variant) =>
-                variant ? [variant.durationSeconds] : []
-              );
-              const clipDuration = Math.min(...durations);
-              const holdDuration =
-                clip.endBehavior.behavior === "hold-last-frame" && clip.endBehavior.durationMs
-                  ? clip.endBehavior.durationMs / 1_000
-                  : 0;
-              return total + clipDuration + holdDuration;
-            }, 0);
-            if (node.exit.trigger.atSeconds > authoredDuration) {
-              context.addIssue({
-                code: "custom",
-                path: [...exitPath, "trigger", "atSeconds"],
-                message: `Choice timecode exceeds the ${authoredDuration}s authored sequence`,
-              });
-            }
-          }
-        }
         const choiceIds = new Set<string>();
         node.exit.choices.forEach((choice, choiceIndex) => {
           if (choiceIds.has(choice.choiceId)) {
@@ -693,31 +515,7 @@ export const InteractiveFilmReleaseSchema = z
           }
           choiceIds.add(choice.choiceId);
           requireLocaleCoverage(choice.label, [...exitPath, "choices", choiceIndex, "label"]);
-          if (choice.accessibilityLabel) {
-            requireLocaleCoverage(choice.accessibilityLabel, [
-              ...exitPath,
-              "choices",
-              choiceIndex,
-              "accessibilityLabel",
-            ]);
-          }
           requireNode(choice.nextNodeId, [...exitPath, "choices", choiceIndex, "nextNodeId"]);
-          if (choice.afterSelect.kind === "play") {
-            requireAsset(
-              choice.afterSelect.reactionAssetId,
-              ["video"],
-              [...exitPath, "choices", choiceIndex, "afterSelect", "reactionAssetId"]
-            );
-          }
-        });
-      }
-      if (node.exit.kind === "external-overlay") {
-        node.exit.routes.forEach((route, routeIndex) => {
-          if ("nextNodeId" in route) {
-            requireNode(route.nextNodeId, [...exitPath, "routes", routeIndex, "nextNodeId"]);
-          } else {
-            requireEnding(route.endingId, [...exitPath, "routes", routeIndex, "endingId"]);
-          }
         });
       }
       if (node.exit.kind === "ending") {
@@ -735,14 +533,10 @@ export const InteractiveFilmReleaseSchema = z
       if (!node) continue;
       const nextNodeIds =
         node.exit.kind === "auto"
-          ? node.exit.routes.map((route) => route.nextNodeId)
+          ? [node.exit.nextNodeId]
           : node.exit.kind === "choice"
             ? node.exit.choices.map((choice) => choice.nextNodeId)
-            : node.exit.kind === "external-overlay"
-              ? node.exit.routes.flatMap((route) =>
-                  "nextNodeId" in route ? [route.nextNodeId] : []
-                )
-              : [];
+            : [];
       nextNodeIds.forEach((nextNodeId) => pending.push(nextNodeId));
     }
     release.nodes.forEach((node, nodeIndex) => {
@@ -754,14 +548,9 @@ export const InteractiveFilmReleaseSchema = z
         });
       }
     });
-    const hasReachableEnding = release.nodes.some((node) => {
-      if (!reachable.has(node.nodeId)) return false;
-      if (node.exit.kind === "ending") return true;
-      return (
-        node.exit.kind === "external-overlay" &&
-        node.exit.routes.some((route) => "endingId" in route)
-      );
-    });
+    const hasReachableEnding = release.nodes.some(
+      (node) => reachable.has(node.nodeId) && node.exit.kind === "ending"
+    );
     if (!hasReachableEnding) {
       context.addIssue({
         code: "custom",
@@ -773,10 +562,8 @@ export const InteractiveFilmReleaseSchema = z
 
 export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema>;
 export type InteractiveFilmRuntimeNode = z.infer<typeof InteractiveFilmRuntimeNodeSchema>;
-export type InteractiveFilmRouterNode = z.infer<typeof RouterNodeSchema>;
 export type RuntimeAutoExit = z.infer<typeof RuntimeAutoExitSchema>;
 export type RuntimeChoiceExit = z.infer<typeof RuntimeChoiceExitSchema>;
-export type RuntimeExternalExit = z.infer<typeof RuntimeExternalExitSchema>;
 export type RuntimeEndingExit = z.infer<typeof RuntimeEndingExitSchema>;
 export type RuntimeVideoSequenceClip = z.infer<typeof VideoSequenceClipSchema>;
 export type RuntimeVideoVariant = z.infer<typeof VideoVariantSchema>;
@@ -815,7 +602,6 @@ function findRuntimeDecisionConflict(
   candidate: z.infer<typeof RuntimeChoiceExitSchema>
 ): string | null {
   if (!runtimeSemanticValuesEqual(canonical.prompt, candidate.prompt)) return "prompt";
-  if (!runtimeSemanticValuesEqual(canonical.trigger, candidate.trigger)) return "trigger";
   const canonicalChoices = new Map(canonical.choices.map((choice) => [choice.choiceId, choice]));
   const candidateChoices = new Map(candidate.choices.map((choice) => [choice.choiceId, choice]));
   if (
@@ -827,13 +613,7 @@ function findRuntimeDecisionConflict(
   for (const [choiceId, canonicalChoice] of canonicalChoices) {
     const candidateChoice = candidateChoices.get(choiceId);
     if (!candidateChoice) return "choiceId set";
-    for (const field of [
-      "label",
-      "accessibilityLabel",
-      "visibleWhen",
-      "effects",
-      "afterSelect",
-    ] as const) {
+    for (const field of ["label"] as const) {
       if (!runtimeSemanticValuesEqual(canonicalChoice[field], candidateChoice[field])) {
         return `choice ${choiceId} ${field}`;
       }
@@ -843,132 +623,6 @@ function findRuntimeDecisionConflict(
   // choices keep one semantic identity while targeting context-specific
   // continuation nodes.
   return null;
-}
-
-function validateRuntimeStateContract(
-  initialState: z.infer<typeof RuntimeInitialStateSchema>,
-  nodes: z.infer<typeof InteractiveFilmRuntimeNodeSchema>[],
-  context: z.RefinementCtx
-): void {
-  const validateCondition = (condition: FilmCondition, path: PropertyKey[]): void => {
-    if (condition.kind === "variable") {
-      if (!Object.hasOwn(initialState.variables, condition.key)) {
-        context.addIssue({
-          code: "custom",
-          path: [...path, "key"],
-          message: `Unknown runtime variable ${condition.key}`,
-        });
-      } else {
-        const initialValue = initialState.variables[condition.key];
-        const numericOperator =
-          condition.operator === "greater_than" ||
-          condition.operator === "at_least" ||
-          condition.operator === "less_than" ||
-          condition.operator === "at_most";
-        if (numericOperator && typeof initialValue !== "number") {
-          context.addIssue({
-            code: "custom",
-            path: [...path, "operator"],
-            message: `${condition.operator} requires a numeric runtime variable`,
-          });
-        }
-        if (numericOperator && typeof condition.value !== "number") {
-          context.addIssue({
-            code: "custom",
-            path: [...path, "value"],
-            message: `${condition.operator} requires a numeric comparison value`,
-          });
-        }
-        if (
-          (condition.operator === "equals" || condition.operator === "not_equals") &&
-          !runtimeValuesHaveSameType(initialValue, condition.value)
-        ) {
-          context.addIssue({
-            code: "custom",
-            path: [...path, "value"],
-            message: `${condition.operator} value must match runtime variable ${condition.key}`,
-          });
-        }
-      }
-    }
-    if (condition.kind === "all" || condition.kind === "any") {
-      condition.conditions.forEach((child, index) =>
-        validateCondition(child, [...path, "conditions", index])
-      );
-    }
-    if (condition.kind === "not") {
-      validateCondition(condition.condition, [...path, "condition"]);
-    }
-  };
-  const validateEffect = (
-    effect: z.infer<typeof RuntimeSessionEffectSchema>,
-    path: PropertyKey[]
-  ): void => {
-    if (effect.kind !== "set_variable" && effect.kind !== "increment_variable") return;
-    if (!Object.hasOwn(initialState.variables, effect.key)) {
-      context.addIssue({
-        code: "custom",
-        path: [...path, "key"],
-        message: `Unknown runtime variable ${effect.key}`,
-      });
-      return;
-    }
-    const initialValue = initialState.variables[effect.key];
-    if (effect.kind === "increment_variable") {
-      if (typeof initialValue !== "number") {
-        context.addIssue({
-          code: "custom",
-          path: [...path, "key"],
-          message: "increment_variable requires a numeric runtime variable",
-        });
-      }
-      return;
-    }
-    if (!runtimeValuesHaveSameType(initialValue, effect.value)) {
-      context.addIssue({
-        code: "custom",
-        path: [...path, "value"],
-        message: `set_variable value must match runtime variable ${effect.key}`,
-      });
-    }
-  };
-
-  nodes.forEach((node, nodeIndex) => {
-    const exitPath: PropertyKey[] = ["nodes", nodeIndex, "exit"];
-    if (node.exit.kind === "auto") {
-      node.exit.routes.forEach((route, routeIndex) => {
-        if (route.when) {
-          validateCondition(route.when, [...exitPath, "routes", routeIndex, "when"]);
-        }
-      });
-    }
-    if (node.exit.kind === "choice") {
-      node.exit.choices.forEach((choice, choiceIndex) => {
-        const choicePath = [...exitPath, "choices", choiceIndex];
-        if (choice.visibleWhen) {
-          validateCondition(choice.visibleWhen, [...choicePath, "visibleWhen"]);
-        }
-        choice.effects.forEach((effect, effectIndex) =>
-          validateEffect(effect, [...choicePath, "effects", effectIndex])
-        );
-      });
-    }
-    if (node.exit.kind === "external-overlay") {
-      node.exit.routes.forEach((route, routeIndex) =>
-        route.effects.forEach((effect, effectIndex) =>
-          validateEffect(effect, [...exitPath, "routes", routeIndex, "effects", effectIndex])
-        )
-      );
-    }
-  });
-}
-
-function runtimeValuesHaveSameType(
-  left: RuntimeSessionValue | undefined,
-  right: RuntimeSessionValue
-): boolean {
-  if (left === null || right === null) return left === right;
-  return typeof left === typeof right;
 }
 
 function runtimeSemanticValuesEqual(left: unknown, right: unknown): boolean {

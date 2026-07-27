@@ -106,22 +106,49 @@ function createHarness() {
       contentType: 'video/mp4',
     }),
   };
+  const writeGuard = {
+    assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     tx,
     prisma,
     permissions,
     outputStorage,
     storageAccess,
+    writeGuard,
     service: new StoryVideoUploadSessionService(
       prisma as never,
       permissions as never,
       outputStorage as never,
       storageAccess as never,
+      writeGuard as never,
     ),
   };
 }
 
 describe('StoryVideoUploadSessionService', () => {
+  it('does not persist an upload reservation when the project lock is owned by Agent apply', async () => {
+    const harness = createHarness();
+    const locked = new Error('agent applying');
+    harness.writeGuard.assertHumanWriteAllowed.mockRejectedValueOnce(locked);
+
+    await expect(
+      harness.service.issue(USER_ID, WORKSPACE_ID, {
+        kind: 'story_clip_video',
+        contentType: 'video/mp4',
+        fileName: 'clip.mp4',
+        sizeBytes: 1024,
+        scope: { projectId: PROJECT_ID },
+      }),
+    ).rejects.toBe(locked);
+    expect(harness.writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      harness.tx,
+      PROJECT_ID,
+    );
+    expect(harness.tx.mediaAsset.create).not.toHaveBeenCalled();
+    expect(harness.tx.storyVideoUploadSession.create).not.toHaveBeenCalled();
+  });
+
   it('rejects Story URL issuance without an explicit workspace binding', async () => {
     const harness = createHarness();
 
@@ -225,6 +252,7 @@ describe('StoryVideoUploadSessionService', () => {
       }),
     ).resolves.toMatchObject({
       mediaAssetId: ASSET_ID,
+      variantId: null,
       uploadSessionId: SESSION_ID,
       url: null,
     });

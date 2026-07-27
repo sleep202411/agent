@@ -117,6 +117,8 @@ export type BillingMembershipPlanRow = {
   billingIntervalDefault: string | null;
   featureFlags: Record<string, unknown>;
   limits: Record<string, unknown>;
+  /** Validated benefits JSONB — the entitlement/quota source of truth. */
+  benefits: MembershipPlanBenefits;
   marketing: Record<string, unknown>;
   metadata: Record<string, unknown>;
   createdById: string | null;
@@ -125,6 +127,34 @@ export type BillingMembershipPlanRow = {
   prices: BillingPriceRow[];
   createdAt: string;
   updatedAt: string;
+};
+
+/** Mirrors the server MembershipBenefitsSchema (stored/wire shape). */
+export type MembershipPlanBenefits = {
+  queuePriority: number;
+  imageDaily: number | "Infinity";
+  videoDaily: number | "Infinity";
+  chatDaily: number | "Infinity";
+  workflowDaily: number | "Infinity";
+  uploadMB: number;
+  chatPerMinute: number;
+  concurrentJobs: number | null;
+  queuedJobs: number | null;
+  features: {
+    aiGeneration: boolean;
+    advancedModelAccess: boolean;
+    advancedParameters: boolean;
+    teamSharedCredits: boolean;
+  };
+};
+
+export type MembershipPlanBenefitsData = {
+  id: string;
+  planKey: string;
+  name: string;
+  status: BillingMembershipPlanStatus;
+  benefits: MembershipPlanBenefits | Record<string, unknown>;
+  issues: string[] | null;
 };
 
 export type BillingPromotionProviderBinding = {

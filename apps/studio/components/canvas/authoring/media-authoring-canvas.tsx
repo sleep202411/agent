@@ -1,0 +1,477 @@
+"use client";
+
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import {
+  Background,
+  BackgroundVariant,
+  MiniMap,
+  type FitViewOptions,
+  type Node,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { IconLayoutGrid, type Icon } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
+import { AddNodeMenu } from "@/components/canvas/add-node-menu";
+import {
+  CanvasAuthoringControls,
+  CanvasAuthoringDock,
+} from "@/components/canvas/canvas-authoring-chrome";
+import { CANVAS_DRAWER_INSET } from "@/components/canvas/canvas-drawer-panel";
+import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
+import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
+import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
+import { ASSET_LIBRARY_WIDTH, AssetLibrary } from "@/components/canvas/authoring/asset-library";
+import { CanvasConnectionLine } from "@/components/canvas/authoring/connection-line";
+import { GradientEdge } from "@/components/canvas/authoring/gradient-edge";
+import { ImageNode } from "@/components/canvas/authoring/image-node";
+import { AudioAssetNode, VideoAssetNode } from "@/components/canvas/authoring/media-node";
+import { NoteNode } from "@/components/canvas/authoring/note-node";
+import { PanoramaNode } from "@/components/canvas/authoring/panorama-node";
+import { PromptNode, VideoNode } from "@/components/canvas/authoring/generation-card";
+import { UploadStateContext } from "@/components/canvas/authoring/upload-state-context";
+import {
+  useMediaAuthoringCanvas,
+  type UploadMediaKind,
+} from "@/components/canvas/authoring/use-media-authoring-canvas";
+import {
+  CanvasGroupingActionsProvider,
+  useCanvasGrouping,
+  type CanvasGroupingController,
+} from "@/components/canvas/groups/canvas-grouping";
+import type { CanvasGroup } from "@/lib/canvas-core/types";
+import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import { cn } from "@/lib/utils";
+
+const MIN_ZOOM = 0.16;
+const MAX_ZOOM = 2.4;
+const GRID_SIZE = 24;
+
+const NODE_TYPES = {
+  image: ImageNode,
+  panorama: PanoramaNode,
+  note: NoteNode,
+  videoAsset: VideoAssetNode,
+  audioAsset: AudioAssetNode,
+  prompt: PromptNode,
+  video: VideoNode,
+};
+const EDGE_TYPES = { gradient: GradientEdge };
+
+export interface MediaAuthoringCanvasDrawer {
+  label: string;
+  Icon: Icon;
+  render: (close: () => void) => ReactNode;
+}
+
+export interface MediaAuthoringCanvasStatusContext {
+  groupDropTarget: CanvasGroup | null;
+}
+
+export interface MediaAuthoringCanvasProps {
+  canEdit: boolean;
+  ready: boolean;
+  workspaceId?: string;
+  scopeKey?: string | null;
+  uploadKinds: readonly UploadMediaKind[];
+  fitEmptyCanvas?: boolean;
+  tidySelection?: boolean;
+  grouping?: CanvasGroupingController;
+  secondaryDrawer?: MediaAuthoringCanvasDrawer;
+  assetLibrary?: {
+    variant?: "default" | "floating";
+    description?: string;
+  };
+  onDrawerInsetChange?: (inset: number) => void;
+  backdrop?: ReactNode;
+  viewportBackground?: ReactNode | false;
+  renderViewportLayers?: (nodes: Node[]) => ReactNode;
+  topChrome?: ReactNode;
+  panels?: ReactNode;
+  statusOverlay?: ReactNode | ((interaction: MediaAuthoringCanvasStatusContext) => ReactNode);
+  loadingOverlay?: ReactNode;
+  renderErrorOverlay?: (nodes: Node[]) => ReactNode;
+  renderEmptyState?: (actions: { openAddMenu: () => void }) => ReactNode;
+  onCanvasPointerMove?: (position: { x: number; y: number }) => void;
+  onCanvasPointerLeave?: () => void;
+  className?: string;
+}
+
+/**
+ * The single product-neutral media-authoring surface used by Creative Studio
+ * and Story Studio. Product shells provide graph persistence, generation
+ * context, collaboration layers and optional business actions; this component
+ * owns the complete canvas interaction and chrome contract.
+ */
+export function MediaAuthoringCanvas({
+  canEdit,
+  ready,
+  workspaceId,
+  scopeKey,
+  uploadKinds,
+  fitEmptyCanvas = false,
+  tidySelection = false,
+  grouping,
+  secondaryDrawer,
+  assetLibrary,
+  onDrawerInsetChange,
+  backdrop,
+  viewportBackground,
+  renderViewportLayers,
+  topChrome,
+  panels,
+  statusOverlay,
+  loadingOverlay,
+  renderErrorOverlay,
+  renderEmptyState,
+  onCanvasPointerMove,
+  onCanvasPointerLeave,
+  className,
+}: MediaAuthoringCanvasProps) {
+  const t = useTranslations("canvas");
+  const graph = useCanvasGraphContext();
+  const {
+    nodes,
+    edges,
+    onNodesChange,
+    onNodesDelete,
+    onEdgesChange,
+    onEdgesDelete,
+    onConnect,
+    onConnectStart,
+    onConnectEnd,
+    onReconnectStart,
+    onReconnect,
+    onReconnectEnd,
+    isValidConnection,
+    addMenu,
+    setAddMenu,
+    menuDisabledActions,
+    addNodeOfType,
+    addNodeFromDock,
+    assetsOpen,
+    setAssetsOpen,
+    snapToGrid,
+    setSnapToGrid,
+    minimapOpen,
+    setMinimapOpen,
+    containerRef,
+    fileInputRef,
+    screenToFlowPosition,
+    acceptedFileTypes,
+    uploadContextValue,
+    onDragOver,
+    onDrop,
+    onPickFiles,
+    onDoubleClick,
+    openAddMenuAtCenter,
+    tidyCanvas,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    lastConnectEndAt,
+  } = useMediaAuthoringCanvas({
+    graph,
+    canEdit,
+    ready,
+    workspaceId,
+    scopeKey,
+    uploadKinds,
+    fitEmptyCanvas,
+    tidySelection,
+  });
+  const [secondaryDrawerOpenState, setSecondaryDrawerOpen] = useState(false);
+  const secondaryDrawerOpen = Boolean(secondaryDrawer) && secondaryDrawerOpenState;
+  const floatingAssetDrawer = assetLibrary?.variant === "floating";
+  const drawerInset = secondaryDrawerOpen
+    ? CANVAS_DRAWER_INSET
+    : assetsOpen
+      ? floatingAssetDrawer
+        ? CANVAS_DRAWER_INSET
+        : ASSET_LIBRARY_WIDTH
+      : 0;
+  const railVisible = Boolean(secondaryDrawer) || floatingAssetDrawer || !assetsOpen;
+  const fitViewPadding = useMemo<FitViewOptions["padding"]>(
+    () =>
+      drawerInset
+        ? {
+            top: "64px",
+            right: "48px",
+            bottom: "88px",
+            left: `${drawerInset + 32}px`,
+          }
+        : 0.3,
+    [drawerInset]
+  );
+  const groupingState = useCanvasGrouping({
+    controller: grouping,
+    nodes,
+    canEdit,
+    onNodesChange,
+    selectNodes: graph.selectNodes,
+  });
+  const resolvedStatusOverlay =
+    typeof statusOverlay === "function"
+      ? statusOverlay({ groupDropTarget: groupingState.dropTargetGroup })
+      : statusOverlay;
+  const pendingWireGradientId = `canvas-pending-wire-${useId().replaceAll(":", "")}`;
+
+  useEffect(() => {
+    onDrawerInsetChange?.(drawerInset);
+  }, [drawerInset, onDrawerInsetChange]);
+
+  useEffect(
+    () => () => {
+      onDrawerInsetChange?.(0);
+    },
+    [onDrawerInsetChange]
+  );
+
+  const defaultBackground =
+    viewportBackground === undefined ? (
+      <Background
+        variant={BackgroundVariant.Dots}
+        gap={20}
+        size={1.5}
+        bgColor="#0a0a0a"
+        color="rgb(255 255 255 / 0.12)"
+      />
+    ) : (
+      viewportBackground
+    );
+
+  return (
+    <CanvasGroupingActionsProvider controller={grouping} canEdit={canEdit}>
+      <UploadStateContext.Provider value={uploadContextValue}>
+        <div
+          ref={containerRef}
+          className={cn(
+            "relative h-full",
+            groupingState.hoveredGroupId && "cursor-grab",
+            groupingState.draggingGroupId && "cursor-grabbing",
+            className
+          )}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onDoubleClick={onDoubleClick}
+          onPointerDownCapture={groupingState.containerHandlers.onPointerDownCapture}
+          onPointerMoveCapture={groupingState.containerHandlers.onPointerMoveCapture}
+          onPointerUpCapture={groupingState.containerHandlers.onPointerUpCapture}
+          onPointerCancelCapture={groupingState.containerHandlers.onPointerCancelCapture}
+          onLostPointerCapture={groupingState.containerHandlers.onLostPointerCapture}
+          onPointerMove={(event) => {
+            if (!onCanvasPointerMove) return;
+            onCanvasPointerMove(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+          }}
+          onPointerLeave={() => {
+            groupingState.containerHandlers.onPointerLeave();
+            onCanvasPointerLeave?.();
+          }}
+        >
+          {backdrop}
+          <CanvasReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onNodesDelete={onNodesDelete}
+            onEdgesChange={onEdgesChange}
+            onEdgesDelete={onEdgesDelete}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            onNodeDragStart={groupingState.nodeHandlers.onNodeDragStart}
+            onNodeDrag={groupingState.nodeHandlers.onNodeDrag}
+            onNodeDragStop={groupingState.nodeHandlers.onNodeDragStop}
+            nodesDraggable={canEdit}
+            nodesConnectable={canEdit}
+            edgesReconnectable={canEdit}
+            onReconnectStart={onReconnectStart}
+            onReconnect={onReconnect}
+            onReconnectEnd={onReconnectEnd}
+            isValidConnection={isValidConnection}
+            connectionRadius={38}
+            nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
+            connectionLineComponent={CanvasConnectionLine}
+            colorMode="dark"
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            snapToGrid={snapToGrid}
+            snapGrid={[GRID_SIZE, GRID_SIZE]}
+            zoomOnDoubleClick={false}
+            deleteKeyCode={canEdit ? CANVAS_DELETE_KEY_CODES : null}
+            proOptions={{ hideAttribution: true }}
+            onPaneClick={() => {
+              if (Date.now() - lastConnectEndAt.current < 250) return;
+              setAddMenu(null);
+            }}
+            onMoveStart={() => setAddMenu(null)}
+            className={cn(
+              groupingState.hoveredGroupId && "[&_.react-flow__pane]:cursor-grab",
+              groupingState.draggingGroupId && "[&_.react-flow__pane]:!cursor-grabbing"
+            )}
+            style={{ backgroundColor: "transparent" }}
+          >
+            {defaultBackground}
+            {groupingState.viewportLayer}
+            {renderViewportLayers?.(nodes)}
+            {minimapOpen ? (
+              <MiniMap
+                pannable
+                position="bottom-right"
+                className="canvas-wheel-zoom !right-4 !bottom-[68px] !m-0 overflow-hidden rounded-xl shadow-md"
+                bgColor="rgb(17 17 17)"
+                maskColor="rgba(0,0,0,0.35)"
+                maskStrokeColor="rgba(255,255,255,0.35)"
+                maskStrokeWidth={2}
+                nodeColor="rgba(255,255,255,0.5)"
+                nodeStrokeWidth={0}
+              />
+            ) : null}
+            <CanvasAuthoringControls
+              onTidy={() => tidyCanvas(fitViewPadding)}
+              snapToGrid={snapToGrid}
+              onToggleSnap={() => setSnapToGrid((value) => !value)}
+              minimapOpen={minimapOpen}
+              onToggleMinimap={() => setMinimapOpen((value) => !value)}
+              leftInset={drawerInset}
+              fitViewPadding={fitViewPadding}
+            />
+          </CanvasReactFlow>
+
+          {groupingState.dropTargetGroup ? null : groupingState.toolbar}
+          {resolvedStatusOverlay ? (
+            <div
+              className={
+                groupingState.action && !groupingState.dropTargetGroup ? "hidden" : "contents"
+              }
+            >
+              {resolvedStatusOverlay}
+            </div>
+          ) : null}
+          {topChrome}
+
+          {railVisible ? (
+            <div className="absolute top-1/2 left-4 z-[80] flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
+              {secondaryDrawer ? (
+                <button
+                  type="button"
+                  aria-pressed={secondaryDrawerOpen}
+                  onClick={() => {
+                    setAssetsOpen(false);
+                    setSecondaryDrawerOpen((open) => !open);
+                  }}
+                  aria-label={secondaryDrawer.label}
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+                    secondaryDrawerOpen && "bg-white/[0.12] text-white"
+                  )}
+                >
+                  <secondaryDrawer.Icon className="size-5" stroke={1.7} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-pressed={assetsOpen}
+                aria-label={t("openAssets")}
+                onClick={() => {
+                  setSecondaryDrawerOpen(false);
+                  setAssetsOpen((open) => !open);
+                }}
+                className={cn(
+                  "flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+                  assetsOpen && "bg-white/[0.12] text-white"
+                )}
+              >
+                <IconLayoutGrid className="size-5" stroke={1.7} />
+              </button>
+            </div>
+          ) : null}
+
+          {secondaryDrawerOpen
+            ? secondaryDrawer?.render(() => setSecondaryDrawerOpen(false))
+            : null}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={acceptedFileTypes}
+            multiple
+            hidden
+            onChange={onPickFiles}
+          />
+
+          {canEdit ? <CanvasAuthoringDock onAdd={addNodeFromDock} /> : null}
+          {canEdit ? (
+            <CanvasHistoryControls
+              canUndo={canUndo}
+              canRedo={canRedo}
+              undo={undo}
+              redo={redo}
+              undoLabel={t("undo")}
+              redoLabel={t("redo")}
+              className="absolute right-4 bottom-4 z-20"
+            />
+          ) : null}
+
+          <AssetLibrary
+            open={assetsOpen}
+            onClose={() => setAssetsOpen(false)}
+            variant={assetLibrary?.variant}
+            description={assetLibrary?.description}
+          />
+
+          {panels}
+
+          {addMenu?.wire ? (
+            <svg className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible">
+              <defs>
+                <linearGradient
+                  id={pendingWireGradientId}
+                  gradientUnits="userSpaceOnUse"
+                  x1={addMenu.wire.x1}
+                  y1={addMenu.wire.y1}
+                  x2={addMenu.wire.x2}
+                  y2={addMenu.wire.y2}
+                >
+                  <stop offset="0%" stopColor={addMenu.wire.color} stopOpacity={1} />
+                  <stop offset="55%" stopColor={addMenu.wire.color} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={addMenu.wire.color} stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <path
+                d={`M ${addMenu.wire.x1} ${addMenu.wire.y1} C ${
+                  addMenu.wire.x1 + (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                } ${addMenu.wire.y1}, ${
+                  addMenu.wire.x2 - (addMenu.wire.x2 - addMenu.wire.x1) * 0.5
+                } ${addMenu.wire.y2}, ${addMenu.wire.x2} ${addMenu.wire.y2}`}
+                fill="none"
+                stroke={`url(#${pendingWireGradientId})`}
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : null}
+          {addMenu ? (
+            <AddNodeMenu
+              left={addMenu.left}
+              top={addMenu.top}
+              disabledActions={menuDisabledActions}
+              onAction={(action) => {
+                if (!addMenu) return;
+                addNodeOfType(action, addMenu.flow, addMenu.pending);
+                setAddMenu(null);
+              }}
+            />
+          ) : null}
+
+          {nodes.length === 0 && !addMenu
+            ? renderEmptyState?.({ openAddMenu: openAddMenuAtCenter })
+            : null}
+          {loadingOverlay}
+          {renderErrorOverlay?.(nodes)}
+        </div>
+      </UploadStateContext.Provider>
+    </CanvasGroupingActionsProvider>
+  );
+}

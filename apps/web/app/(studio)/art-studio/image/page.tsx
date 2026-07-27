@@ -576,8 +576,8 @@ export default function AiImageLabPage() {
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3 lg:left-20">
           <div className="pointer-events-auto w-full max-w-3xl">
             {/* Inline quota chip — shows daily image used/limit so users
-              see the cap BEFORE they submit and hit a 429. VIP3 renders
-              an ∞ badge instead; loading state is a quiet shimmer. */}
+              see the cap BEFORE they submit and hit a 429. An unlimited plan
+              renders an ∞ badge instead; loading is a quiet shimmer. */}
             {!IMAGE_GENERATION_SUBMIT_DISABLED ? (
               <div className="mb-1.5 flex justify-end px-1">
                 <QuotaBadge dimension="image" />
@@ -748,23 +748,15 @@ function readOptions(
     }));
 }
 
-// Product entitlement rank. Auth still comes from the existing account
-// payload, so this page adapts that claim into the new AI model protocol.
+// Product entitlement rank. Mirrors the server's ENTITLEMENT_PLAN_RANK, which
+// only lists plan keys that have an active billing_membership_plans row — the
+// never-sold plan-key variants are gone from both sides.
 const PLAN_RANK: Record<string, number> = {
   FREE: 0,
   BASIC: 10,
-  CREATOR: 10,
   STANDARD: 20,
   PRO: 30,
-  STUDIO: 40,
-  ENTERPRISE: 90,
-  TEAM_ULTIMATE: 110,
-  TEAM_CREATOR: 120,
-  TEAM_SCALE: 130,
-  TEAM_ENTERPRISE: 190,
-  VIP1: 10,
-  VIP2: 20,
-  VIP3: 30,
+  TEAM: 110,
 };
 function planRank(level: string | null | undefined): number {
   if (!level) return 0;

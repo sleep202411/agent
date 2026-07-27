@@ -17,11 +17,19 @@ jobs:
 
       - run: npm ci
 
+      - uses: azure/setup-helm@v5
+
+      - name: Helm render contract
+        run: bash deploy/helm/fizzdragon/tests/studio-agent-runtime-render.sh
+
       - name: Lint
         run: npx turbo run lint
 
       - name: Type check
         run: npx turbo run check-types
+
+      - name: Test
+        run: npx turbo run test
 
       - name: Build
         run: npx turbo run build

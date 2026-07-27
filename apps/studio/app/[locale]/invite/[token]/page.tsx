@@ -43,7 +43,13 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
     mutationFn: () => acceptInvite(token),
     onSuccess: (result: AcceptedInvite) => {
       setJoining(true); // keep the button busy through navigation
-      toast.success(result.scope === "workspace" ? t("joinedTeam") : t("joinedProject"));
+      toast.success(
+        result.scope === "workspace"
+          ? t("joinedTeam")
+          : result.scope === "story-project"
+            ? t("joinedStory")
+            : t("joinedProject")
+      );
       if (result.scope === "workspace") {
         try {
           localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, result.workspaceId);
@@ -51,6 +57,9 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
           /* ignore */
         }
         router.replace("/canvas");
+      } else if (result.scope === "story-project") {
+        // A story invite lands on the story it granted, not the canvas home.
+        router.replace(`/story-studio/projects/${result.storyProjectId}/canvas`);
       } else {
         router.replace(`/project/${result.projectId}`);
       }

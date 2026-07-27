@@ -193,7 +193,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     }
 
     if (raw) return body as T;
-    return (body.data ?? body) as T;
+    return (Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body) as T;
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", abortFromCaller);

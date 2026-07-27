@@ -10,7 +10,7 @@ import {
   IconDownload,
   IconX,
 } from "@tabler/icons-react";
-import type { FizzAiJobOutput } from "@/app/[locale]/canvas/_lib/generation-api";
+import type { FizzAiJobOutput } from "@/lib/canvas-authoring/generation-api";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { timeAgo } from "./feed-tiles";
 import type { FeedJob } from "./use-generation-feed";

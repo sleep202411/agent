@@ -1,34 +1,36 @@
-import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasNodeData } from "./story-project-canvas-model";
 import {
   addChoiceOption,
-  connectClipContinuation,
-  connectAutoRoute,
+  connectSceneContinuation,
   connectChoiceTarget,
   createClipNode,
+  createTextNode,
   setEntryNode,
-  updateAutoRouteTarget,
 } from "./story-project-canvas-mutations";
 
 type BlankDropSource = Pick<StoryCanvasNodeData, "kind" | "nodeId" | "sourceNodeId" | "exitKind">;
 
 export type BlankDropConnectionPlan =
   | { kind: "entry" }
-  | { kind: "clip-continuation"; sourceNodeId: string }
-  | { kind: "new-auto-route"; sourceNodeId: string }
-  | { kind: "existing-auto-route"; sourceNodeId: string; routeIndex: number }
+  | { kind: "scene-continuation"; sourceNodeId: string }
   | { kind: "new-choice"; sourceNodeId: string }
   | { kind: "existing-choice"; sourceNodeId: string; choiceId: string };
 
-export interface ConnectedClipDropResult {
-  content: InteractiveFilmDraftContent;
+export interface ConnectedSceneDropResult {
+  content: InteractiveStoryDraftContent;
   createdNodeId: string;
+}
+
+export interface ConnectedSceneDropOptions {
+  sceneKind?: "clip" | "text";
+  newChoiceLabel?: string;
 }
 
 /**
  * Resolves only blank-canvas drops with one unambiguous compatible node kind.
- * Film-clip completion drops are resolved here only after the contextual
- * creator has chosen a new clip. Choice creation is handled separately.
+ * Scene completion drops are resolved here only after the contextual
+ * creator has chosen a new scene. Choice creation is handled separately.
  */
 export function resolveBlankDropConnectionPlan(
   source: BlankDropSource,
@@ -36,13 +38,9 @@ export function resolveBlankDropConnectionPlan(
 ): BlankDropConnectionPlan | null {
   if (!sourceHandle) return null;
 
-  if (source.kind === "root") {
-    return sourceHandle === "entry" ? { kind: "entry" } : null;
-  }
-
   if (source.kind === "decision") {
     if (!source.sourceNodeId) return null;
-    if (sourceHandle === "choice-new") {
+    if (sourceHandle.startsWith("choice-new:")) {
       return { kind: "new-choice", sourceNodeId: source.sourceNodeId };
     }
     const choiceMatch = sourceHandle.match(/^choice:(.+)$/u);
@@ -55,54 +53,39 @@ export function resolveBlankDropConnectionPlan(
       : null;
   }
 
-  if (source.kind === "clip") {
+  if (source.kind === "clip" || source.kind === "text") {
     return source.exitKind === "auto" && sourceHandle === "completion"
-      ? { kind: "clip-continuation", sourceNodeId: source.nodeId }
+      ? { kind: "scene-continuation", sourceNodeId: source.nodeId }
       : null;
   }
 
-  if (source.kind !== "router" || source.exitKind !== "auto") {
-    return null;
-  }
-
-  const prefix = "route";
-  if (sourceHandle === `${prefix}-new`) {
-    return { kind: "new-auto-route", sourceNodeId: source.nodeId };
-  }
-  const routeMatch = sourceHandle.match(new RegExp(`^${prefix}:(\\d+)$`, "u"));
-  return routeMatch
-    ? {
-        kind: "existing-auto-route",
-        sourceNodeId: source.nodeId,
-        routeIndex: Number(routeMatch[1]),
-      }
-    : null;
+  return null;
 }
 
-/** Creates a clip and connects it to the source in one immutable draft mutation. */
-export function createConnectedClipForBlankDrop(
-  content: InteractiveFilmDraftContent,
+/** Creates a playable scene and connects it to the source in one immutable draft mutation. */
+export function createConnectedSceneForBlankDrop(
+  content: InteractiveStoryDraftContent,
   source: BlankDropSource,
   sourceHandle: string | null,
-  locale: string
-): ConnectedClipDropResult | null {
+  locale: string,
+  options: ConnectedSceneDropOptions = {}
+): ConnectedSceneDropResult | null {
   const plan = resolveBlankDropConnectionPlan(source, sourceHandle);
   if (!plan) return null;
 
-  const created = createClipNode(content);
+  const created =
+    options.sceneKind === "text" ? createTextNode(content, { locale }) : createClipNode(content);
   const createdNodeId = created.created.nodeId;
   let next = created.content;
 
   if (plan.kind === "entry") {
     next = setEntryNode(next, createdNodeId);
-  } else if (plan.kind === "clip-continuation") {
-    next = connectClipContinuation(next, plan.sourceNodeId, createdNodeId);
-  } else if (plan.kind === "new-auto-route") {
-    next = connectAutoRoute(next, plan.sourceNodeId, createdNodeId);
-  } else if (plan.kind === "existing-auto-route") {
-    next = updateAutoRouteTarget(next, plan.sourceNodeId, plan.routeIndex, createdNodeId);
+  } else if (plan.kind === "scene-continuation") {
+    next = connectSceneContinuation(next, plan.sourceNodeId, createdNodeId);
   } else if (plan.kind === "new-choice") {
-    next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale).content;
+    next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale, {
+      label: options.newChoiceLabel,
+    }).content;
   } else if (plan.kind === "existing-choice") {
     next = connectChoiceTarget(next, plan.sourceNodeId, plan.choiceId, createdNodeId);
   }

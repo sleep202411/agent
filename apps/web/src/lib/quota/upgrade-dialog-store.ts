@@ -10,14 +10,14 @@
  * Context — so 429 catchers in plain `fetch` interceptors can fire
  * the same event without lifting React state up.
  */
-import { parseLimit, type QuotaDimension, type Tier, type WireLimit } from "@repo/shared";
+import { parseLimit, type QuotaDimension, type WireLimit } from "@repo/shared";
 
 export interface UpgradePayload {
   dimension: QuotaDimension;
   used: number;
   limit: number;
   resetAt: string;
-  nextTier: Tier | null;
+  nextTier: string | null;
   /** -1 if next tier is unlimited (display as "∞"). */
   nextTierLimit: number | null;
 }
@@ -54,7 +54,7 @@ export function payloadFromServerError(body: unknown): UpgradePayload | null {
   const limit = typeof limitRaw === "number" ? limitRaw : limitRaw ? parseLimit(limitRaw) : 0;
   const resetAt = typeof b.resetAt === "string" ? b.resetAt : "";
   if (!dimension || !resetAt) return null;
-  const nextTier = (b.nextTier as Tier | null) ?? null;
+  const nextTier = (b.nextTier as string | null) ?? null;
   const nextTierLimit = typeof b.nextTierLimit === "number" ? b.nextTierLimit : null;
   return { dimension, used, limit, resetAt, nextTier, nextTierLimit };
 }

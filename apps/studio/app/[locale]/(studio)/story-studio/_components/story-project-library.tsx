@@ -9,6 +9,8 @@ import {
   IconDeviceMobile,
   IconDots,
   IconEdit,
+  IconUsers,
+  IconFileText,
   IconGitBranch,
   IconLoader2,
   IconMovie,
@@ -20,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,8 +40,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Field } from "@/components/ui/field";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { GlassRim } from "@/components/ui/glass-rim";
 import { Input } from "@/components/ui/input";
+import { RequiredMark } from "@/components/ui/required-mark";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -46,140 +59,219 @@ import {
   archiveStoryProject,
   createStoryProject,
   listStoryProjects,
+  listJoinedStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
+  type CreatableStoryFormat,
   type StoryFrameProfile,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
+import { StoryStudioHero } from "./story-studio-hero";
 
-const STORY_PROJECTS_QUERY = ["story-studio", "interactive-film-projects"] as const;
+const STORY_PROJECTS_QUERY = ["story-studio", "projects"] as const;
+const JINLING_SOURCE_TITLE = "金陵入梦";
+const JINLING_FEATURE_TAGS = ["interactive_film", "classical_literature", "mystery"] as const;
 
-export function StoryProjectLibrary() {
+export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref: string }) {
   const t = useTranslations("storyStudio");
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
+  const { activeWorkspace, workspaces, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<StoryProjectSummary | null>(null);
   const [archiving, setArchiving] = useState<StoryProjectSummary | null>(null);
+  const [sharing, setSharing] = useState<StoryProjectSummary | null>(null);
+  const [tab, setTab] = useState<"all" | "joined">("all");
 
   const projectsQuery = useQuery({
     queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
-    queryFn: () =>
-      listStoryProjects(workspaceId as string, { format: "interactive_film", limit: 100 }),
+    queryFn: () => listStoryProjects(workspaceId as string, { limit: 100 }),
     enabled: Boolean(workspaceId),
     retry: false,
   });
 
+  // Spans every tenant, so it is deliberately NOT keyed on the active
+  // workspace: switching workspaces must not refetch or invalidate it.
+  const joinedQuery = useQuery({
+    queryKey: [...STORY_PROJECTS_QUERY, "joined"],
+    queryFn: () => listJoinedStoryProjects({ limit: 100 }),
+    retry: false,
+  });
+
+  const joined = joinedQuery.data?.items ?? [];
   const projects = projectsQuery.data?.items ?? [];
   const isLoading = workspaceLoading || (Boolean(workspaceId) && projectsQuery.isLoading);
+  const featuredProject = projects.find(
+    (project) =>
+      project.title.trim() === JINLING_SOURCE_TITLE &&
+      project.defaultLocale === "zh-CN" &&
+      JINLING_FEATURE_TAGS.every((tag) => project.tags.includes(tag))
+  );
+  const featuredProjectHref = featuredProject
+    ? `/story-studio/projects/${encodeURIComponent(featuredProject.id)}/canvas`
+    : null;
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: STORY_PROJECTS_QUERY });
   }, [queryClient]);
 
   return (
-    <section className="relative z-20 pr-6 pb-16 pl-20 pt-12 lg:pl-[120px]">
-      <div className="w-full">
-        <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold tracking-[0.16em] text-white/38 uppercase">
-              {t("eyebrow")}
-            </p>
-            <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.015em] text-white">
-              {t("projects.title")}
-            </h2>
-            <p className="mt-1 max-w-2xl text-[13px] font-medium text-white/48">
-              {t("projects.subtitle")}
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            disabled={!workspaceId}
-            className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
-          >
-            <IconPlus className="size-4" stroke={2} />
-            {t("newProject")}
-          </Button>
-        </header>
-
-        <section className="mt-8" aria-labelledby="story-projects-heading">
-          <div className="flex items-end justify-between gap-4">
-            <h3 id="story-projects-heading" className="sr-only">
-              {t("projects.title")}
-            </h3>
-            {projectsQuery.isError ? (
-              <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
-                <IconRefresh className="size-4" />
-                {t("actions.retry")}
-              </Button>
-            ) : null}
-          </div>
-
-          {isLoading ? (
-            <ProjectSkeletons />
-          ) : projectsQuery.isError ? (
-            <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
-              <p className="text-sm font-medium text-white/72">{t("errors.loadProjects")}</p>
-              <p className="mt-2 max-w-lg text-xs leading-5 text-white/42">
-                {storyApiErrorMessage(projectsQuery.error, t("errors.generic"))}
+    <>
+      <StoryStudioHero featuredProjectHref={featuredProjectHref} playerHref={featuredPlayerHref} />
+      <section
+        id="story-projects"
+        className="relative z-20 pr-6 pb-16 pl-6 pt-12 sm:pl-20 lg:pl-[120px]"
+      >
+        <div className="w-full">
+          <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.16em] text-white/38 uppercase">
+                {t("eyebrow")}
               </p>
-            </FrostedPanel>
-          ) : projects.length === 0 ? (
-            <EmptyProjects onCreate={() => setCreateOpen(true)} />
-          ) : (
-            <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-              {projects.map((project) => (
-                <StoryProjectCard
-                  key={project.id}
-                  project={project}
-                  locale={locale}
-                  onEdit={() => setEditing(project)}
-                  onArchive={() => setArchiving(project)}
-                />
-              ))}
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.015em] text-white">
+                {t("projects.title")}
+              </h2>
+              <p className="mt-1 max-w-2xl text-[13px] font-medium text-white/48">
+                {t("projects.subtitle")}
+              </p>
             </div>
-          )}
-        </section>
-      </div>
+            <Button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              disabled={!workspaceId}
+              className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
+            >
+              <IconPlus className="size-4" stroke={2} />
+              {t("newProject")}
+            </Button>
+          </header>
 
-      <CreateProjectDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        workspaceId={workspaceId}
-        defaultLocale={locale}
-        onCreated={(project) => {
-          void refresh();
-          router.push(`/story-studio/projects/${project.id}/canvas`);
-        }}
-      />
-      {editing ? (
-        <EditProjectDialog
-          key={`${editing.id}:${editing.projectVersion}`}
-          project={editing}
-          workspaceId={workspaceId as string}
-          onOpenChange={(open) => !open && setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
+          <section className="mt-8" aria-labelledby="story-projects-heading">
+            <div className="flex items-end justify-between gap-4">
+              <h3 id="story-projects-heading" className="sr-only">
+                {t("projects.title")}
+              </h3>
+              {joined.length > 0 ? (
+                // Only rendered once you have actually been invited somewhere.
+                // A permanently empty tab would be noise for the majority who
+                // only ever work in their own workspace.
+                <div role="tablist" aria-label={t("projects.title")} className="flex gap-1">
+                  {(["all", "joined"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === value}
+                      onClick={() => setTab(value)}
+                      className={
+                        tab === value
+                          ? "rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white"
+                          : "rounded-lg px-3 py-1.5 text-[12px] font-medium text-white/48 transition hover:text-white/72"
+                      }
+                    >
+                      {value === "all" ? t("projects.tabAll") : t("projects.tabJoined")}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {projectsQuery.isError ? (
+                <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
+                  <IconRefresh className="size-4" />
+                  {t("actions.retry")}
+                </Button>
+              ) : null}
+            </div>
+
+            {tab === "joined" ? (
+              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+                {joined.map((project) => (
+                  <StoryProjectCard
+                    key={project.id}
+                    project={project}
+                    locale={locale}
+                    workspaceLabel={
+                      workspaces.find((w) => w.id === project.workspaceId)?.name ??
+                      t("projects.otherWorkspace")
+                    }
+                    onEdit={() => undefined}
+                    onShare={() => undefined}
+                    onArchive={() => undefined}
+                  />
+                ))}
+              </div>
+            ) : isLoading ? (
+              <ProjectSkeletons />
+            ) : projectsQuery.isError ? (
+              <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
+                <p className="text-sm font-medium text-white/72">{t("errors.loadProjects")}</p>
+                <p className="mt-2 max-w-lg text-xs leading-5 text-white/42">
+                  {storyApiErrorMessage(projectsQuery.error, t("errors.generic"))}
+                </p>
+              </FrostedPanel>
+            ) : projects.length === 0 ? (
+              <EmptyProjects onCreate={() => setCreateOpen(true)} />
+            ) : (
+              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+                {projects.map((project) => (
+                  <StoryProjectCard
+                    key={project.id}
+                    project={project}
+                    locale={locale}
+                    onEdit={() => setEditing(project)}
+                    onShare={() => setSharing(project)}
+                    onArchive={() => setArchiving(project)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <CreateProjectDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          workspaceId={workspaceId}
+          defaultLocale={locale}
+          onCreated={(project) => {
             void refresh();
+            router.push(`/story-studio/projects/${project.id}/canvas`);
           }}
         />
-      ) : null}
-      {archiving ? (
-        <ArchiveProjectDialog
-          project={archiving}
-          workspaceId={workspaceId as string}
-          onOpenChange={(open) => !open && setArchiving(null)}
-          onArchived={() => {
-            setArchiving(null);
-            void refresh();
-          }}
-        />
-      ) : null}
-    </section>
+        {editing ? (
+          <EditProjectDialog
+            key={`${editing.id}:${editing.projectVersion}`}
+            project={editing}
+            workspaceId={workspaceId as string}
+            onOpenChange={(open) => !open && setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              void refresh();
+            }}
+          />
+        ) : null}
+        {sharing ? (
+          <ShareDialog
+            scope={{ kind: "story-project", id: sharing.id, name: sharing.title }}
+            canManage={sharing.capabilities.includes("story.admin")}
+            open
+            onOpenChange={(open) => !open && setSharing(null)}
+          />
+        ) : null}
+        {archiving ? (
+          <ArchiveProjectDialog
+            project={archiving}
+            workspaceId={workspaceId as string}
+            onOpenChange={(open) => !open && setArchiving(null)}
+            onArchived={() => {
+              setArchiving(null);
+              void refresh();
+            }}
+          />
+        ) : null}
+      </section>
+    </>
   );
 }
 
@@ -187,18 +279,40 @@ function StoryProjectCard({
   project,
   locale,
   onEdit,
+  onShare,
   onArchive,
+  workspaceLabel = null,
 }: {
   project: StoryProjectSummary;
   locale: string;
   onEdit: () => void;
+  onShare: () => void;
   onArchive: () => void;
+  /**
+   * Set only for a project in someone else's workspace. Its presence also
+   * suppresses the action menu: every dialog behind it mutates through the
+   * ACTIVE workspace, which for a joined project is the wrong tenant, so those
+   * actions would 404 rather than edit. Opening the project switches workspace
+   * first, and the actions come back once you are there.
+   */
+  workspaceLabel?: string | null;
 }) {
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
   const canAdmin = project.capabilities.includes("story.admin");
-
-  const coverUrl = project.cover?.previewUrl ?? null;
+  // A project cover is an image. That is the contract every consumer needs — the
+  // player's title backdrop, this tile, and the play page's og:image all render
+  // a still — so a legacy video cover falls through to the placeholder art here
+  // and has to be re-picked as an image.
+  const cover =
+    project.cover?.kind === "image" &&
+    project.cover.status === "ready" &&
+    project.cover.moderationStatus !== "blocked" &&
+    project.cover.previewUrl
+      ? project.cover
+      : null;
+  const isTextFirstWithoutVideo =
+    project.format === "text_adventure" && project.production.clipCount === 0;
 
   return (
     <div className="group relative min-w-0">
@@ -207,10 +321,10 @@ function StoryProjectCard({
         className="relative block overflow-hidden rounded-[16px] bg-white/[0.05] shadow-[0_18px_42px_rgba(0,0,0,0.32)] outline-none transition duration-200 hover:-translate-y-1 hover:bg-white/[0.08] hover:shadow-[0_26px_70px_rgba(0,0,0,0.44)] focus-visible:ring-2 focus-visible:ring-white/50"
       >
         <div className="relative aspect-video overflow-hidden bg-[#171819]">
-          {coverUrl ? (
+          {cover ? (
             // eslint-disable-next-line @next/next/no-img-element -- signed media preview URL
             <img
-              src={coverUrl}
+              src={cover.previewUrl as string}
               alt=""
               className="size-full object-cover transition duration-500 group-hover:scale-105"
             />
@@ -219,37 +333,58 @@ function StoryProjectCard({
               <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.055),transparent_48%,rgba(255,255,255,0.018))]" />
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:28px_28px] opacity-70" />
               <div className="absolute inset-0 grid place-items-center">
-                <IconMovie className="size-9 text-white/16" stroke={1.4} />
+                {project.format === "text_adventure" ? (
+                  <IconFileText className="size-9 text-white/16" stroke={1.4} />
+                ) : (
+                  <IconMovie className="size-9 text-white/16" stroke={1.4} />
+                )}
               </div>
             </>
           )}
 
-          <span className="absolute top-2.5 left-2.5 rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
-            {project.activeRevision
-              ? t("projects.revision", { number: project.activeRevision.number })
-              : t("projects.draft")}
-          </span>
+          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+            <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
+              {t("projects.draft")}
+            </span>
+            <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-semibold text-white/78 backdrop-blur-md">
+              {t(`formats.${project.format}.label`)}
+            </span>
+          </div>
 
           <div className="absolute right-2.5 bottom-2.5 left-2.5 flex items-center gap-1.5">
-            <ProjectMetricChip
-              icon={<IconPhoto className="size-3" />}
-              value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
-              label={t("metrics.references")}
-            />
-            <ProjectMetricChip
-              icon={<IconMovie className="size-3" />}
-              value={String(project.production.clipCount)}
-              label={t("metrics.clips")}
-            />
-            <ProjectMetricChip
-              icon={<IconSparkles className="size-3" />}
-              value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
-              label={t("metrics.videos")}
-            />
+            {isTextFirstWithoutVideo ? (
+              <ProjectStateChip
+                icon={<IconFileText className="size-3" />}
+                label={t("projects.textFirstWithoutVideo")}
+              />
+            ) : (
+              <>
+                <ProjectMetricChip
+                  icon={<IconPhoto className="size-3" />}
+                  value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
+                  label={t("metrics.references")}
+                />
+                <ProjectMetricChip
+                  icon={<IconMovie className="size-3" />}
+                  value={String(project.production.clipCount)}
+                  label={t("metrics.clips")}
+                />
+                <ProjectMetricChip
+                  icon={<IconSparkles className="size-3" />}
+                  value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
+                  label={t("metrics.videos")}
+                />
+              </>
+            )}
           </div>
         </div>
 
         <div className="p-3.5">
+          {workspaceLabel ? (
+            <p className="mb-1 truncate text-[10px] font-semibold tracking-[0.08em] text-white/34 uppercase">
+              {workspaceLabel}
+            </p>
+          ) : null}
           <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-white">
             {project.title}
           </h3>
@@ -263,8 +398,8 @@ function StoryProjectCard({
             </p>
             <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white/38">
               <span className="truncate">
-                {project.production.generatingClipCount > 0
-                  ? t("projects.generating", { count: project.production.generatingClipCount })
+                {isTextFirstWithoutVideo
+                  ? t("projects.textFirstProgress")
                   : t("projects.videoProgress", {
                       current: project.production.currentVideoCount,
                       total: project.production.clipCount,
@@ -279,7 +414,7 @@ function StoryProjectCard({
         </div>
       </Link>
 
-      {canEdit || canAdmin ? (
+      {!workspaceLabel && (canEdit || canAdmin) ? (
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={t("actions.projectMenu")}
@@ -295,6 +430,12 @@ function StoryProjectCard({
                 {t("actions.editDetails")}
               </DropdownMenuItem>
             ) : null}
+            {canAdmin ? (
+              <DropdownMenuItem onSelect={onShare}>
+                <IconUsers className="size-4" />
+                {t("actions.share")}
+              </DropdownMenuItem>
+            ) : null}
             {canEdit && canAdmin ? <DropdownMenuSeparator /> : null}
             {canAdmin ? (
               <DropdownMenuItem variant="destructive" onSelect={onArchive}>
@@ -306,6 +447,15 @@ function StoryProjectCard({
         </DropdownMenu>
       ) : null}
     </div>
+  );
+}
+
+function ProjectStateChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-black/52 px-2 py-1 text-[9px] font-semibold text-white/72 backdrop-blur-md">
+      {icon}
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 
@@ -377,25 +527,31 @@ function CreateProjectDialog({
   const t = useTranslations("storyStudio");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(null);
+  const [storyLocale, setStoryLocale] = useState(defaultLocale);
+  const [format, setFormat] = useState<CreatableStoryFormat>("interactive_film");
+  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(DEFAULT_FRAME_PROFILE);
+  // A text-first project sets no frame profile at all; a film project requires one.
+  const requiresFrameProfile = format === "interactive_film";
   const createMutation = useMutation({
     mutationFn: () => {
-      if (!workspaceId || !frameProfile) {
+      if (!workspaceId || (requiresFrameProfile && !frameProfile)) {
         throw new Error(t("errors.createProject"));
       }
       return createStoryProject(workspaceId, {
-        format: "interactive_film",
-        frameProfile,
+        format,
+        ...(requiresFrameProfile && frameProfile ? { frameProfile } : {}),
         title: title.trim(),
         summary: summary.trim() || null,
-        defaultLocale,
+        defaultLocale: storyLocale,
         visibility: "private",
       });
     },
     onSuccess: (project) => {
       setTitle("");
       setSummary("");
-      setFrameProfile(null);
+      setStoryLocale(defaultLocale);
+      setFormat("interactive_film");
+      setFrameProfile(DEFAULT_FRAME_PROFILE);
       onOpenChange(false);
       onCreated(project);
     },
@@ -410,46 +566,103 @@ function CreateProjectDialog({
           <DialogDescription>{t("create.description")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.title")}</span>
+          <Field dense required label={t("fields.title")} htmlFor="story-create-title">
             <Input
+              id="story-create-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={160}
               autoFocus
+              aria-required="true"
               placeholder={t("fields.titlePlaceholder")}
             />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.summary")}</span>
+          </Field>
+          <Field dense label={t("fields.summary")} htmlFor="story-create-summary">
             <Textarea
+              id="story-create-summary"
               value={summary}
               onChange={(event) => setSummary(event.target.value)}
               maxLength={2000}
               rows={4}
               placeholder={t("fields.summaryPlaceholder")}
             />
-          </label>
+          </Field>
+          <Field
+            dense
+            required
+            label={t("fields.storyLocale")}
+            hint={t("fields.storyLocaleHint")}
+            htmlFor="story-create-locale"
+          >
+            <Select value={storyLocale} onValueChange={setStoryLocale}>
+              <SelectTrigger id="story-create-locale" aria-required="true" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STORY_LOCALE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-white/58">
-              {t("fields.frameProfile")}
+              {t("fields.primaryExperience")}
+              <RequiredMark />
             </legend>
-            <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup">
-              <FrameProfileOption
-                profile="landscape_16_9"
-                selected={frameProfile === "landscape_16_9"}
-                icon={<IconRectangle className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
+            <p className="text-[11px] leading-4 text-white/38">
+              {t("fields.primaryExperienceHint")}
+            </p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
+              <FormatOption
+                format="interactive_film"
+                selected={format === "interactive_film"}
+                icon={<IconMovie className="size-5" stroke={1.7} />}
+                onSelect={(next) => {
+                  setFormat(next);
+                  // Coming back from text-first: restore the frame default so
+                  // the film contract is never silently empty.
+                  setFrameProfile((prev) => prev ?? DEFAULT_FRAME_PROFILE);
+                }}
               />
-              <FrameProfileOption
-                profile="portrait_9_16"
-                selected={frameProfile === "portrait_9_16"}
-                icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
+              <FormatOption
+                format="text_adventure"
+                selected={format === "text_adventure"}
+                icon={<IconFileText className="size-5" stroke={1.7} />}
+                onSelect={(next) => {
+                  setFormat(next);
+                  // A text-first project has no frame contract; drop any picked
+                  // profile so it is never sent in the create payload.
+                  if (next === "text_adventure") setFrameProfile(null);
+                }}
               />
             </div>
           </fieldset>
+          {requiresFrameProfile ? (
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-white/58">
+                {t("fields.frameProfile")}
+                <RequiredMark />
+              </legend>
+              <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
+                <FrameProfileOption
+                  profile="landscape_16_9"
+                  selected={frameProfile === "landscape_16_9"}
+                  icon={<IconRectangle className="size-5" stroke={1.7} />}
+                  onSelect={setFrameProfile}
+                />
+                <FrameProfileOption
+                  profile="portrait_9_16"
+                  selected={frameProfile === "portrait_9_16"}
+                  icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
+                  onSelect={setFrameProfile}
+                />
+              </div>
+            </fieldset>
+          ) : null}
         </div>
         <DialogFooter className="pt-2">
           <Button
@@ -461,10 +674,16 @@ function CreateProjectDialog({
             {t("actions.cancel")}
           </Button>
           <Button
+            variant="primary-cta"
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
-            disabled={!workspaceId || !title.trim() || !frameProfile || createMutation.isPending}
+            disabled={
+              !workspaceId ||
+              !title.trim() ||
+              (requiresFrameProfile && !frameProfile) ||
+              createMutation.isPending
+            }
           >
             {createMutation.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("actions.create")}
@@ -472,6 +691,61 @@ function CreateProjectDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Landscape is the dominant story format in practice — preselect it so a film
+// project is creatable with only a title typed.
+const DEFAULT_FRAME_PROFILE: StoryFrameProfile = "landscape_16_9";
+
+// Language autonyms are locale-invariant data (a language picker always shows
+// each language in itself), not translatable UI copy.
+const STORY_LOCALE_OPTIONS = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-HK", label: "繁體中文" },
+  { value: "en-US", label: "English" },
+] as const;
+
+// Brand-red selection treatment for option cards (DESIGN.md rule 3): the rim
+// gradient mirrors the subscription dialog's Popular-tier red GlassRim.
+const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
+const SELECTED_CARD_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
+
+function FormatOption({
+  format,
+  selected,
+  icon,
+  onSelect,
+}: {
+  format: CreatableStoryFormat;
+  selected: boolean;
+  icon: React.ReactNode;
+  onSelect: (format: CreatableStoryFormat) => void;
+}) {
+  const t = useTranslations("storyStudio");
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={`relative flex min-h-24 flex-col rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
+        selected
+          ? "bg-[#E52227]/[0.07] text-white"
+          : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
+      }`}
+      onClick={() => onSelect(format)}
+    >
+      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
+      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
+      <span className="mt-3 block text-xs font-semibold">{t(`formats.${format}.label`)}</span>
+      <span
+        className={`mt-1 block text-[10px] leading-4 font-medium ${
+          selected ? "text-white/58" : "text-white/38"
+        }`}
+      >
+        {t(`formats.${format}.description`)}
+      </span>
+    </button>
   );
 }
 
@@ -492,19 +766,20 @@ function FrameProfileOption({
       type="button"
       role="radio"
       aria-checked={selected}
-      className={`flex min-h-24 flex-col justify-between rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
+      className={`relative flex min-h-24 flex-col justify-between rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
         selected
-          ? "bg-white text-black shadow-[0_14px_32px_rgba(0,0,0,0.3)]"
+          ? "bg-[#E52227]/[0.07] text-white"
           : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
       }`}
       onClick={() => onSelect(profile)}
     >
-      <span className={selected ? "text-black/72" : "text-white/48"}>{icon}</span>
+      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
+      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
       <span className="mt-3 block">
         <span className="block text-xs font-semibold">{t(`frameProfiles.${profile}.label`)}</span>
         <span
           className={`mt-0.5 block text-[10px] font-medium tabular-nums ${
-            selected ? "text-black/54" : "text-white/36"
+            selected ? "text-white/56" : "text-white/36"
           }`}
         >
           {t(`frameProfiles.${profile}.dimensions`)}
@@ -559,20 +834,38 @@ function EditProjectDialog({
           <DialogTitle>{t("edit.title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.title")}</span>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-white/58">{t("fields.summary")}</span>
-            <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} />
-          </label>
+          <Field dense required label={t("fields.title")} htmlFor="story-edit-title">
+            <Input
+              id="story-edit-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={160}
+              aria-required="true"
+            />
+          </Field>
+          <Field dense label={t("fields.summary")} htmlFor="story-edit-summary">
+            <Textarea
+              id="story-edit-summary"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              maxLength={2000}
+              rows={4}
+            />
+          </Field>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="pt-2">
+          <Button
+            variant="ghost"
+            size="xl"
+            className="sm:min-w-24"
+            onClick={() => onOpenChange(false)}
+          >
             {t("actions.cancel")}
           </Button>
           <Button
+            variant="primary-cta"
+            size="xl"
+            className="sm:min-w-32"
             onClick={() => updateMutation.mutate()}
             disabled={!title.trim() || updateMutation.isPending}
           >

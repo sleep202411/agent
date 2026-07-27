@@ -228,10 +228,26 @@ export class AiGenerationBillingWalletService {
       });
       if (existing) return;
 
+      // Unlocked probe only to discover which account to lock; the
+      // authoritative reads happen again under the lock below.
+      const probe = await outstandingHeldTx(tx, job.id);
+      if (probe.amount <= 0n) return;
+
+      await lockWalletAccountTx(tx, probe.accountId);
+
+      // Re-validate under the account lock: a concurrent terminal post for
+      // this job (duplicate cancel lifecycle, or a settle racing a release)
+      // may have committed while this transaction waited for the lock. Its
+      // outcome already owns the hold, so this entry must become a no-op —
+      // pre-lock reads would instead trip the nextHeld < 0 guard or the
+      // idempotency-key unique constraint.
+      const posted = await tx.walletTransaction.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+      });
+      if (posted) return;
       const outstanding = await outstandingHeldTx(tx, job.id);
       if (outstanding.amount <= 0n) return;
 
-      await lockWalletAccountTx(tx, outstanding.accountId);
       const account = await tx.walletAccount.findUniqueOrThrow({
         where: { id: outstanding.accountId },
       });

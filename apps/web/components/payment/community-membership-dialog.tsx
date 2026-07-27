@@ -4,7 +4,7 @@
 // path. Lists the `community_membership` plan's monthly + yearly prices and
 // starts a hosted checkout. Distinct from:
 //  - CommunityRechargeDialog — community-point top-ups (a wallet, not a plan).
-//  - the legacy Java VIP upgrade dialog — studio membership.
+//  - the legacy Java compute-plan upgrade dialog.
 // On provider success the webhook fulfills an EntitlementGrant; the success
 // return URL (`?membership=success`) fires onSuccess (refresh membership state).
 

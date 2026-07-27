@@ -1,41 +1,53 @@
 "use client";
 
-import { IconBook2, IconBox, IconMapPin, IconUsers } from "@tabler/icons-react";
+import { useState } from "react";
+import { IconLoader2, IconPhoto, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { InteractiveFilmDraftContent } from "@/lib/story-projects-api";
-import { StoryCharacterLibrary } from "./story-character-library";
-import { StoryTextCollectionEditor } from "./story-world-collections";
+import {
+  storyApiErrorMessage,
+  type InteractiveStoryDraftContent,
+  type MediaAssetSummary,
+  type StoryCandidateAsset,
+} from "@/lib/story-projects-api";
+import {
+  StoryCandidateAssetPickerDialog,
+  type StoryCandidateAssetUploadState,
+} from "./story-candidate-asset-picker-dialog";
 
 type FoundationField = "logline" | "synopsis" | "worldview";
-type WorldTextField = "locations" | "props";
-type Character = InteractiveFilmDraftContent["storyBible"]["characters"][number];
+
+export interface StoryWorldCoverMediaProps {
+  cover: MediaAssetSummary | null;
+  candidateAssets: StoryCandidateAsset[];
+  candidateAssetsLoading: boolean;
+  candidateAssetsError: string | null;
+  disabledReason?: string | null;
+  onRetryCandidates: () => void;
+  onSelectCandidate: (candidate: StoryCandidateAsset) => Promise<void>;
+  onClearSelection: () => Promise<void>;
+  onUpload: (
+    file: File,
+    onState: (state: StoryCandidateAssetUploadState) => void,
+    signal: AbortSignal
+  ) => Promise<void>;
+}
 
 interface StoryWorldLibraryProps {
-  content: InteractiveFilmDraftContent;
-  locale: string;
+  content: InteractiveStoryDraftContent;
   canEdit: boolean;
+  coverMedia: StoryWorldCoverMediaProps;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
-  onCreateCharacter: () => string | null;
-  onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
-  onDeleteCharacter: (characterId: string) => void;
-  onAddTextItem: (field: WorldTextField) => void;
-  onUpdateTextItem: (field: WorldTextField, index: number, value: string) => void;
-  onRemoveTextItem: (field: WorldTextField, index: number) => void;
+  onClose: () => void;
 }
 
 export function StoryWorldLibrary({
   content,
-  locale,
   canEdit,
+  coverMedia,
   onUpdateFoundation,
-  onCreateCharacter,
-  onUpdateCharacter,
-  onDeleteCharacter,
-  onAddTextItem,
-  onUpdateTextItem,
-  onRemoveTextItem,
+  onClose,
 }: StoryWorldLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
   return (
@@ -48,77 +60,155 @@ export function StoryWorldLibrary({
           <h2 className="mt-1 text-base font-semibold">{t("world.title")}</h2>
           <p className="mt-1 text-[11px] leading-5 text-white/38">{t("world.description")}</p>
         </div>
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48">
-          <IconBook2 className="size-4" />
-        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
+          aria-label={t("inspector.close")}
+        >
+          <IconX className="size-4" />
+        </button>
       </header>
 
-      <div className="mt-4 grid grid-cols-3 gap-1.5">
-        <WorldMetric label={t("metrics.characters")} value={content.storyBible.characters.length} />
-        <WorldMetric label={t("metrics.locations")} value={content.storyBible.locations.length} />
-        <WorldMetric label={t("metrics.props")} value={content.storyBible.props.length} />
+      <div className="mt-5">
+        <ProjectCoverEditor canEdit={canEdit} media={coverMedia} />
+        <FoundationEditor
+          content={content}
+          canEdit={canEdit}
+          onUpdateFoundation={onUpdateFoundation}
+        />
       </div>
-
-      <Tabs defaultValue="foundation" className="mt-5 gap-4">
-        <TabsList className="grid h-auto! w-full grid-cols-2 gap-1 rounded-[16px] bg-white/[0.045] p-1">
-          <WorldTab value="foundation" label={t("world.tabs.foundation")} icon={<IconBook2 />} />
-          <WorldTab value="characters" label={t("world.tabs.characters")} icon={<IconUsers />} />
-          <WorldTab value="locations" label={t("world.tabs.locations")} icon={<IconMapPin />} />
-          <WorldTab value="props" label={t("world.tabs.props")} icon={<IconBox />} />
-        </TabsList>
-
-        <TabsContent value="foundation">
-          <FoundationEditor
-            content={content}
-            canEdit={canEdit}
-            onUpdateFoundation={onUpdateFoundation}
-          />
-        </TabsContent>
-        <TabsContent value="characters">
-          <StoryCharacterLibrary
-            content={content}
-            locale={locale}
-            canEdit={canEdit}
-            onCreate={onCreateCharacter}
-            onUpdate={onUpdateCharacter}
-            onDelete={onDeleteCharacter}
-          />
-        </TabsContent>
-        <TabsContent value="locations">
-          <StoryTextCollectionEditor
-            kind="locations"
-            values={content.storyBible.locations}
-            canEdit={canEdit}
-            onAdd={() => onAddTextItem("locations")}
-            onUpdate={(index, value) => onUpdateTextItem("locations", index, value)}
-            onRemove={(index) => onRemoveTextItem("locations", index)}
-          />
-        </TabsContent>
-        <TabsContent value="props">
-          <StoryTextCollectionEditor
-            kind="props"
-            values={content.storyBible.props}
-            canEdit={canEdit}
-            onAdd={() => onAddTextItem("props")}
-            onUpdate={(index, value) => onUpdateTextItem("props", index, value)}
-            onRemove={(index) => onRemoveTextItem("props", index)}
-          />
-        </TabsContent>
-      </Tabs>
     </>
   );
 }
 
-function WorldTab({ value, label, icon }: { value: string; label: string; icon: React.ReactNode }) {
+function ProjectCoverEditor({
+  canEdit,
+  media,
+}: {
+  canEdit: boolean;
+  media: StoryWorldCoverMediaProps;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [clearPending, setClearPending] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+  // A cover only counts as set if it is a usable STILL: an image is what the
+  // player paints behind its title screen, what the catalogue tile renders, and
+  // what the play page serves as og:image. Anything else — an unready or blocked
+  // asset, or a legacy video cover the API no longer accepts — reads as a cover
+  // that cannot be published, and says so.
+  const cover =
+    media.cover?.kind === "image" &&
+    media.cover.status === "ready" &&
+    media.cover.moderationStatus !== "blocked" &&
+    media.cover.previewUrl
+      ? media.cover
+      : null;
+  const dimensions = cover?.width && cover.height ? `${cover.width}×${cover.height}` : null;
+
   return (
-    <TabsTrigger
-      value={value}
-      title={label}
-      className="h-9 rounded-xl px-2 text-[10px] data-active:bg-white/[0.1]"
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-    </TabsTrigger>
+    <section className="border-b border-white/[0.06] pb-5">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-semibold text-white/72">{t("world.cover.title")}</h3>
+          <p className="mt-1 text-[10px] leading-4 text-white/34">{t("world.cover.description")}</p>
+        </div>
+        {dimensions ? (
+          <span className="shrink-0 text-[9px] text-white/30">{dimensions}</span>
+        ) : null}
+      </div>
+
+      <div className="mt-3 aspect-video overflow-hidden rounded-2xl bg-black/28">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element -- signed project media URL
+          <img
+            src={cover.previewUrl as string}
+            alt={t("world.cover.imageAlt")}
+            className="size-full object-cover"
+          />
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
+            <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
+              <IconPhoto className="size-4" stroke={1.6} />
+            </span>
+            <span className="text-[9px] font-medium">
+              {media.cover ? t("world.cover.unavailable") : t("world.cover.empty")}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={!canEdit}
+          title={!canEdit ? (media.disabledReason ?? undefined) : undefined}
+          onClick={() => setPickerOpen(true)}
+          className="h-8 rounded-xl px-3 text-[10px]"
+        >
+          <IconPhoto className="size-3.5" stroke={1.8} />
+          {media.cover ? t("world.cover.replace") : t("world.cover.choose")}
+        </Button>
+        {media.cover ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!canEdit || clearPending}
+            title={!canEdit ? (media.disabledReason ?? undefined) : undefined}
+            onClick={() => {
+              setClearPending(true);
+              setClearError(null);
+              void media
+                .onClearSelection()
+                .catch((error) =>
+                  setClearError(storyApiErrorMessage(error, t("candidatePicker.clearError")))
+                )
+                .finally(() => setClearPending(false));
+            }}
+            className="h-8 rounded-xl px-3 text-[10px] text-white/42 hover:text-[#ff9b9e]"
+          >
+            {clearPending ? (
+              <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
+            ) : (
+              <IconTrash className="size-3.5" stroke={1.8} />
+            )}
+            {t("world.cover.remove")}
+          </Button>
+        ) : null}
+      </div>
+      {clearError ? (
+        <p className="mt-2 text-[9px] leading-4 text-destructive-foreground" role="alert">
+          {clearError}
+        </p>
+      ) : null}
+
+      <StoryCandidateAssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        items={media.candidateAssets}
+        allowedKinds={["image"]}
+        currentAssetId={media.cover?.id}
+        loading={media.candidateAssetsLoading}
+        error={media.candidateAssetsError}
+        canSelect={canEdit}
+        disabledReason={media.disabledReason}
+        onRetry={media.onRetryCandidates}
+        isSelectable={(candidate) =>
+          candidate.asset.status === "ready" &&
+          candidate.asset.moderationStatus !== "blocked" &&
+          Boolean(candidate.asset.previewUrl)
+        }
+        unavailableReason={() => t("world.cover.unavailable")}
+        onSelect={media.onSelectCandidate}
+        onClearSelection={media.onClearSelection}
+        uploadAccept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        onUpload={media.onUpload}
+      />
+    </section>
   );
 }
 
@@ -192,14 +282,5 @@ function FoundationField({
         className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
       />
     </label>
-  );
-}
-
-function WorldMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl bg-white/[0.045] px-2 py-2.5">
-      <p className="truncate text-[8px] font-semibold text-white/30">{label}</p>
-      <p className="mt-1 text-xs font-semibold tabular-nums text-white/68">{value}</p>
-    </div>
   );
 }

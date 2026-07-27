@@ -26,7 +26,7 @@ import {
 import type { Worker, Job as BullJob } from 'bullmq';
 import { createHash } from 'crypto';
 import { createWriteStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
+import { unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -36,11 +36,16 @@ import { AlertingService, type AlertSeverity } from '../common/alerting';
 import { newShortId } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { DocumentsService } from '../documents/documents.service';
+import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import {
   OutputStorageService,
   type OutputStorageResult,
 } from '../infra/storage/storage.types';
-import { MediaAssetProviderSyncService } from './providers/byteplus/assets/media-asset-provider-sync.service';
+import { MediaAssetReadinessService } from '../media/media-asset-readiness.service';
+import {
+  PlayableVideoProbeService,
+  type PlayableVideoProbeResult,
+} from '../media/playable-video-probe.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
 import {
@@ -129,13 +134,15 @@ export class AiGenerationWorkerService
     private readonly providers: ProviderRegistry,
     private readonly outbox: AiGenerationOutboxService,
     private readonly storage: OutputStorageService,
+    private readonly storageRegistry: StorageProviderRegistry,
     private readonly queueService: AiGenerationQueueService,
     private readonly entitlements: EntitlementService,
     private readonly alerts: AlertingService,
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly documents: DocumentsService,
-    private readonly mediaAssetProviderSync: MediaAssetProviderSyncService,
+    private readonly mediaAssetReadiness: MediaAssetReadinessService,
+    private readonly videoProbe: PlayableVideoProbeService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -1543,10 +1550,28 @@ export class AiGenerationWorkerService
     }
   }
 
+  /**
+   * Where this job's outputs go. The target is frozen on the job row at submit
+   * time, so a requeued attempt re-uploads into the store the first attempt
+   * used instead of following the process-wide binding, which is what keeps
+   * the content-addressed key pointing at one object.
+   */
+  private storageFor(job: AiJob): OutputStorageService {
+    if (!job.outputStorageProvider) return this.storage;
+    const pinned = this.storageRegistry.forProvider(job.outputStorageProvider);
+    if (!pinned) {
+      throw new Error(
+        `job pins storage provider ${job.outputStorageProvider}, which has no writable implementation`,
+      );
+    }
+    return pinned;
+  }
+
   private async uploadOutputs(
     job: AiJob,
     raws: RawProviderOutput[],
   ): Promise<AiJobOutput[]> {
+    const storage = this.storageFor(job);
     const created = new Date(job.createdAt);
     const yyyy = created.getUTCFullYear();
     const mm = String(created.getUTCMonth() + 1).padStart(2, '0');
@@ -1557,28 +1582,39 @@ export class AiGenerationWorkerService
       const outputType = raw.type ?? job.type;
       let checksumSha256: string;
       let result: OutputStorageResult;
-      if (!raw.buffer && raw.providerUrl && outputType === 'video') {
-        // Video outputs never transit worker memory whole — a 15s Seedance
-        // 4k HEVC clip is a ~300MB-class file and the worker shares its
-        // process (and the pod's 1Gi cgroup) with the entire API. Stream
-        // provider → disk spool (hashing en route, since the object key
-        // embeds the content hash) → staged/multipart file upload.
+      let actualVideo: PlayableVideoProbeResult | null = null;
+      if (outputType === 'video') {
+        // Every video takes one byte-truth path: spool, hash, ffprobe, then
+        // upload. Provider width/height/duration and requested audio flags are
+        // not persisted as facts.
         const spoolPath = join(
           tmpdir(),
-          `ai-output-${job.id}-${raw.index}.spool`,
+          `ai-output-${job.id}-${raw.index}-${newShortId()}.spool`,
         );
         try {
-          const spooled = await this.spoolProviderUrlToFile(
-            raw.providerUrl,
-            spoolPath,
-          );
+          const spooled = raw.buffer
+            ? await this.spoolBufferToFile(raw.buffer, spoolPath)
+            : raw.providerUrl
+              ? await this.spoolProviderUrlToFile(raw.providerUrl, spoolPath)
+              : null;
+          if (!spooled) {
+            throw new Error(`no bytes available for output index ${raw.index}`);
+          }
           checksumSha256 = spooled.sha256;
-          result = await this.storage.uploadFromFile({
+          actualVideo = await this.videoProbe.probeFile(spoolPath, {
+            requireBrowserSafeMp4: false,
+          });
+          const normalizedRaw = { ...raw, ext: actualVideo.fileExtension };
+          result = await storage.uploadFromFile({
             filePath: spoolPath,
             sizeBytes: spooled.bytes,
-            key: this.outputKey(job, raw, checksumSha256, { yyyy, mm, dd }),
-            contentType: raw.mimeType,
-            filename: `${job.id}-${raw.index}.${raw.ext}`,
+            key: this.outputKey(job, normalizedRaw, checksumSha256, {
+              yyyy,
+              mm,
+              dd,
+            }),
+            contentType: actualVideo.contentType,
+            filename: `${job.id}-${raw.index}.${actualVideo.fileExtension}`,
           });
         } finally {
           await unlink(spoolPath).catch(() => {});
@@ -1592,7 +1628,7 @@ export class AiGenerationWorkerService
           throw new Error(`no bytes available for output index ${raw.index}`);
         }
         checksumSha256 = createHash('sha256').update(body).digest('hex');
-        result = await this.storage.upload({
+        result = await storage.upload({
           body,
           key: this.outputKey(job, raw, checksumSha256, { yyyy, mm, dd }),
           contentType: raw.mimeType,
@@ -1600,6 +1636,12 @@ export class AiGenerationWorkerService
         });
       }
       const contentHash = checksumSha256.slice(0, 12);
+      const contentType = actualVideo?.contentType ?? raw.mimeType;
+      const width = actualVideo?.width ?? raw.width;
+      const height = actualVideo?.height ?? raw.height;
+      const durationSeconds =
+        actualVideo?.durationSeconds ?? raw.durationSeconds;
+      const durationMs = actualVideo?.durationMs;
       const assetId = await this.store.createAiOutputAsset(job, {
         type: outputType,
         url: result.url,
@@ -1607,19 +1649,25 @@ export class AiGenerationWorkerService
         bucket: result.bucket,
         region: result.region,
         objectKey: result.storagePath,
-        contentType: raw.mimeType,
+        contentType,
         sizeBytes: result.bytes,
-        width: raw.width,
-        height: raw.height,
-        durationSeconds: raw.durationSeconds,
+        width,
+        height,
+        durationMs,
+        durationSeconds,
+        videoMetadata: actualVideo
+          ? {
+              videoCodec: actualVideo.videoCodec,
+              audioCodecs: actualVideo.audioCodecs,
+              browserSafeMp4: actualVideo.browserSafeMp4,
+            }
+          : undefined,
         checksumSha256,
         outputIndex: raw.index,
         contentHash,
         safetyFlags: raw.safetyFlags,
       });
-      if (outputType === 'image') {
-        void this.enqueueProviderImageCheck(assetId);
-      }
+      void this.mediaAssetReadiness.enqueueAutomaticChecks(assetId);
       out.push({
         // Short app-generated ID. Idempotent recovery on retry is via
         // `(jobId, outputIndex)` unique + repository.replaceOutputs
@@ -1630,10 +1678,10 @@ export class AiGenerationWorkerService
         url: result.url,
         storagePath: result.storagePath,
         contentHash,
-        width: raw.width,
-        height: raw.height,
-        durationSeconds: raw.durationSeconds,
-        mimeType: raw.mimeType,
+        width,
+        height,
+        durationSeconds,
+        mimeType: contentType,
         bytes: result.bytes,
         seed: raw.seed,
         safetyFlags: raw.safetyFlags,
@@ -1649,18 +1697,6 @@ export class AiGenerationWorkerService
       });
     }
     return out;
-  }
-
-  private async enqueueProviderImageCheck(assetId: string): Promise<void> {
-    try {
-      await this.mediaAssetProviderSync.enqueueImageAssetRegistration(assetId);
-    } catch (err) {
-      this.logger.warn(
-        `failed to enqueue provider image check for asset=${assetId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
   }
 
   /**
@@ -1687,6 +1723,22 @@ export class AiGenerationWorkerService
     }
     const ab = await res.arrayBuffer();
     return Buffer.from(ab);
+  }
+
+  private async spoolBufferToFile(
+    body: Buffer,
+    filePath: string,
+  ): Promise<{ sha256: string; bytes: number }> {
+    if (body.byteLength > MAX_PROVIDER_OUTPUT_BYTES) {
+      throw new Error(
+        `provider output exceeds ${MAX_PROVIDER_OUTPUT_BYTES} bytes`,
+      );
+    }
+    await writeFile(filePath, body, { flag: 'wx', mode: 0o600 });
+    return {
+      sha256: createHash('sha256').update(body).digest('hex'),
+      bytes: body.byteLength,
+    };
   }
 
   /**

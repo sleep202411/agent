@@ -11,11 +11,12 @@ import {
 } from "react";
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
-  ExperienceCoreCheckpointRendererConfigSchema,
+  EXPERIENCE_RENDERER_MAX_LAYER,
   ExperienceCoreChoiceRendererConfigSchema,
+  ExperienceCoreTextRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
   type ExperienceCoreVideoRendererConfig,
@@ -23,6 +24,7 @@ import {
   type ExperienceImageAsset,
   type ExperienceLocalizedText,
   type ExperienceOrientation,
+  type ExperienceProfile,
   type ExperienceRendererInstance,
   type ExperienceRuntimeAsset,
   type ExperienceRuntimeManifest,
@@ -46,6 +48,7 @@ import {
   IconArrowRight,
   IconPlayerPlay,
   IconRefresh,
+  IconVolumeOff,
 } from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import {
@@ -58,6 +61,7 @@ import {
   ExperienceMediaPlayer,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-media-player";
+import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
 
@@ -178,12 +182,25 @@ function ActiveExperienceRuntimePlayer({
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  // Playback always asks for sound. This flips only when a browser actually
+  // refuses audible playback, and it stays flipped for the rest of the session
+  // so later clips do not each re-run the same rejected attempt. Turning sound
+  // on is the user's call, never a decision read off the media's metadata.
+  const [soundBlocked, setSoundBlocked] = useState(false);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
   const playbackEnabledRef = useRef(false);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
+  const preload = useExperiencePreload(manifest, orientation);
+  // The cover is the only art that exists before any clip has played, so it is
+  // what the loading and title screen should stand on — otherwise the viewer
+  // waits on a black rectangle. Absent cover simply falls back to that.
+  const coverUri = manifest.metadata.coverAssetId
+    ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
+    : undefined;
+  const experienceProfile = manifest.metadata.experienceProfile ?? "cinematic";
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
     unlock: unlockAudio,
@@ -228,6 +245,12 @@ function ActiveExperienceRuntimePlayer({
         applyResult(operation());
         return true;
       } catch (error) {
+        // A late input is normal, not a fault. `<video>` fires `ended` on its own
+        // schedule, so one can land after the scene it belonged to is gone or
+        // after the experience finished; a queued rAF frame can do the same. The
+        // runtime is right to refuse it — but ending the viewer's session over it
+        // turns an ordinary race into "试玩无法继续". Discard and carry on.
+        if (isDiscardableLateInput(error)) return false;
         setRuntimeError(runtimeErrorMessage(error));
         return false;
       }
@@ -266,6 +289,15 @@ function ActiveExperienceRuntimePlayer({
               : `${scene.sceneId}:${sceneEpoch}:${renderer.instanceId}`,
         }))
     : [];
+  const stageProfile = resolveRendererStageProfile(
+    rendererSlots.map(({ renderer }) => renderer),
+    experienceProfile
+  );
+  // The unmute affordance belongs to video playback, so it only appears while a
+  // video renderer is on stage.
+  const hasVideoRenderer = rendererSlots.some(
+    ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
+  );
 
   const emitOutcome = useCallback(
     (
@@ -294,6 +326,49 @@ function ActiveExperienceRuntimePlayer({
     [controller, run]
   );
 
+  // A `fixed` scene clock is the only clock the experience itself owns. A
+  // `renderer` clock is driven by its media's currentTime, and `none` never
+  // advances — so a scene that must last a known duration without any media to
+  // time it (a placeholder for footage that is not attached yet, a text beat)
+  // has nothing to move it along until this runs.
+  //
+  // Position is fed through the same `advanceTimeline` the media path uses, so
+  // timeline cues fire identically whether the clock came from a video or from
+  // here. `scene.clock-ended` is emitted exactly once per scene entry.
+  const clockScene = scene?.clock.kind === "fixed" ? scene : null;
+  const clockDurationMs = clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : null;
+  useEffect(() => {
+    if (!clockScene || clockDurationMs === null || !started) return;
+    let frame = 0;
+    let ended = false;
+    const startedAt = performance.now();
+    const tick = () => {
+      const elapsed = Math.min(performance.now() - startedAt, clockDurationMs);
+      advanceTimeline(elapsed);
+      if (elapsed < clockDurationMs) {
+        frame = window.requestAnimationFrame(tick);
+        return;
+      }
+      if (ended) return;
+      ended = true;
+      emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [advanceTimeline, clockDurationMs, clockScene, emitRuntimeEvents, started]);
+
+  const handleSoundBlocked = useCallback(() => setSoundBlocked(true), []);
+  // Unmute the live elements INSIDE the click, then let state follow. Leaving it
+  // to the `muted` prop and its effect would push the element write into a task
+  // after the user-activation one, which is the fragile half of Chrome's
+  // autoplay rules; doing it here means the unmute is unambiguously
+  // user-activated. The state flip still has to happen — it hides the affordance
+  // and keeps clips mounted later in the session unmuted.
+  const enableSound = useCallback(() => {
+    playbackHandlesRef.current.forEach((handle) => handle.setMuted(false));
+    setSoundBlocked(false);
+  }, []);
+
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
       if (!handle) {
@@ -301,14 +376,25 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (playbackEnabledRef.current) {
-        void handle.play().catch((error: unknown) => {
-          handle.pause();
-          void Promise.allSettled([suspendAudio()]).then(() => {
-            setRuntimeError(runtimeErrorMessage(error));
-          });
+      if (!playbackEnabledRef.current) return;
+      void handle.play().catch((error: unknown) => {
+        // Two guards, both about the gap between "a play() rejected" and "the
+        // film is broken": the rejection may belong to a handle that has since
+        // been replaced, and an interrupted play() is what a normal clip
+        // transition looks like. Either way, pausing and raising the dialog
+        // would stop a film that is playing perfectly well. The reasoning and
+        // the ordering live with the verdict, next to its tests.
+        const verdict = resolveExperiencePlaybackRejection(
+          playbackHandlesRef.current.get(instanceId),
+          handle,
+          error
+        );
+        if (verdict !== "surface") return;
+        handle.pause();
+        void Promise.allSettled([suspendAudio()]).then(() => {
+          setRuntimeError(runtimeErrorMessage(error));
         });
-      }
+      });
     },
     [suspendAudio]
   );
@@ -345,6 +431,8 @@ function ActiveExperienceRuntimePlayer({
   return (
     <PlayerFrame
       orientation={orientation}
+      experienceProfile={experienceProfile}
+      stageProfile={stageProfile}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
     >
@@ -355,19 +443,38 @@ function ActiveExperienceRuntimePlayer({
             manifest={manifest}
             renderer={renderer}
             runtimeState={runtimeState}
+            active={started}
             open={openRendererIds.has(renderer.instanceId)}
             locale={playbackLocale}
             orientation={orientation}
             copy={copy}
+            muted={soundBlocked}
             onTimelineTimeMs={advanceTimeline}
             onOutcome={emitOutcome}
             onRuntimeError={setRuntimeError}
             onPlaybackHandle={registerPlaybackHandle}
+            onSoundBlocked={handleSoundBlocked}
           />
         ))
       ) : (
         <div className="absolute inset-0 bg-black" />
       )}
+
+      {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
+        // Renderer overlays stack on the manifest's own `renderer.layer` as a raw
+        // zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
+        // this button puts it BEHIND the overlay it most needs to sit next to.
+        // Stack above the widest band any manifest may declare instead.
+        <div
+          className="absolute top-0 right-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
+        >
+          <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
+            <IconVolumeOff className="size-4" aria-hidden="true" />
+            {copy.video.unmute}
+          </button>
+        </div>
+      ) : null}
 
       {scene && started && !endingId ? (
         <ExperienceSpatialLayer
@@ -383,11 +490,28 @@ function ActiveExperienceRuntimePlayer({
       ) : null}
 
       {!started && !runtimeError ? (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/68 p-6 text-center backdrop-blur-sm">
+        <div
+          className={classNames(
+            "absolute inset-0 z-40 grid place-items-center p-6 text-center",
+            experienceProfile === "cinematic"
+              ? "bg-black/68 backdrop-blur-sm"
+              : "bg-[var(--experience-color-background,#111)]"
+          )}
+        >
+          {coverUri ? (
+            <img
+              src={coverUri}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10 size-full object-cover opacity-40"
+            />
+          ) : null}
           <div className="max-w-lg">
-            <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
-              {copy.interactiveFilm}
-            </p>
+            {experienceProfile === "cinematic" ? (
+              <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
+                {copy.interactiveFilm}
+              </p>
+            ) : null}
             <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl">
               {localize(
                 manifest.metadata.title,
@@ -404,10 +528,39 @@ function ActiveExperienceRuntimePlayer({
                 )}
               </p>
             ) : null}
+            {preload.total > 0 && !preload.done
+              ? // Percent, not "5/55": the clip count is production trivia, and a
+                // big number reads as a long wait before the viewer knows whether
+                // it is. Floor it so 100% is never shown while a clip is still
+                // loading.
+                (() => {
+                  const percent = Math.floor((preload.loaded / preload.total) * 100);
+                  return (
+                    <div
+                      className="mt-6 w-full"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={percent}
+                      aria-label={copy.loadingMedia}
+                    >
+                      <div className="h-1 overflow-hidden rounded-full bg-white/12">
+                        <div
+                          className="h-full rounded-full bg-white/70 transition-[width] duration-300"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-white/45">
+                        {copy.loadingMedia} {percent}%
+                      </p>
+                    </div>
+                  );
+                })()
+              : null}
             <button
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
-              disabled={!theme || starting}
+              disabled={!theme || starting || !preload.done}
               onClick={() => void begin()}
             >
               <IconPlayerPlay className="size-4 fill-current" />
@@ -470,22 +623,27 @@ function CoreRenderer({
   manifest,
   renderer,
   runtimeState,
+  active,
   open,
   locale,
   orientation,
   copy,
+  muted,
   onTimelineTimeMs,
   onOutcome,
   onRuntimeError,
   onPlaybackHandle,
+  onSoundBlocked,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
+  active: boolean;
   open: boolean;
   locale: string;
   orientation: ExperienceOrientation;
   copy: ExperiencePlayerCopy;
+  muted: boolean;
   onTimelineTimeMs: (timeMs: number) => void;
   onOutcome: (
     instanceId: string,
@@ -494,18 +652,45 @@ function CoreRenderer({
   ) => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  onSoundBlocked: () => void;
 }) {
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
+    // A video scene with nothing to play is a preview Build of a work whose
+    // footage is not attached yet. It stands in for the shot and then finishes
+    // on the SAME outcome a real clip produces, so every exit downstream — auto,
+    // choice, ending — keeps working untouched.
+    if (isEmptyVideoSequence(renderer)) {
+      return (
+        <EmptyVideoSequencePlaceholder
+          label={copy.emptySequence}
+          onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
+        />
+      );
+    }
     return (
       <CoreVideoRenderer
         manifest={manifest}
         renderer={renderer}
         orientation={orientation}
         copy={copy}
+        muted={muted}
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
         onPlaybackHandle={onPlaybackHandle}
+        onSoundBlocked={onSoundBlocked}
+      />
+    );
+  }
+  if (renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID) {
+    return (
+      <CoreTextRenderer
+        manifest={manifest}
+        renderer={renderer}
+        locale={locale}
+        active={active}
+        copy={copy}
+        onCompleted={() => onOutcome(renderer.instanceId, "text-completed", {})}
       />
     );
   }
@@ -515,6 +700,7 @@ function CoreRenderer({
         manifest={manifest}
         renderer={renderer}
         runtimeState={runtimeState}
+        active={active}
         open={open}
         locale={locale}
         copy={copy}
@@ -522,18 +708,99 @@ function CoreRenderer({
       />
     );
   }
-  if (renderer.rendererId === EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID) {
-    return (
-      <CoreCheckpointRenderer
-        renderer={renderer}
-        open={open}
-        copy={copy}
-        onSelect={(actionId) => onOutcome(renderer.instanceId, actionId, {})}
-      />
-    );
-  }
   if (renderer.rendererId === EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID) return null;
   return null;
+}
+
+function CoreTextRenderer({
+  manifest,
+  renderer,
+  locale,
+  active,
+  copy,
+  onCompleted,
+}: {
+  manifest: ExperienceRuntimeManifest;
+  renderer: ExperienceRendererInstance;
+  locale: string;
+  active: boolean;
+  copy: ExperiencePlayerCopy;
+  onCompleted: () => void;
+}) {
+  const titleId = useId();
+  const bodyId = useId();
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const [completed, setCompleted] = useState(false);
+  const config = ExperienceCoreTextRendererConfigSchema.parse(renderer.config);
+  const title = config.title
+    ? localize(config.title, locale, manifest.localization.defaultLocale)
+    : null;
+  const body = localize(config.body, locale, manifest.localization.defaultLocale);
+
+  useEffect(() => {
+    if (!active) return;
+    const scrollRegion = scrollRef.current;
+    if (!scrollRegion) return;
+    scrollRegion.scrollTop = 0;
+    scrollRegion.focus({ preventScroll: true });
+  }, [active, renderer.instanceId]);
+
+  const complete = () => {
+    if (!active || completed) return;
+    setCompleted(true);
+    onCompleted();
+  };
+
+  return (
+    <article
+      ref={scrollRef}
+      tabIndex={active ? 0 : -1}
+      aria-hidden={active ? undefined : true}
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={
+        title
+          ? undefined
+          : localize(manifest.metadata.title, locale, manifest.localization.defaultLocale)
+      }
+      aria-describedby={bodyId}
+      className="absolute inset-0 overflow-y-auto overscroll-contain bg-[var(--experience-color-background,#111)] px-6 py-12 text-[var(--experience-color-text,#fff)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/40 sm:px-10 sm:py-16"
+      style={{ zIndex: renderer.layer }}
+      data-experience-renderer="core.text"
+    >
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center">
+        {title ? (
+          <h2
+            id={titleId}
+            className="text-balance text-2xl font-semibold tracking-[-0.025em] sm:text-4xl"
+          >
+            {title}
+          </h2>
+        ) : null}
+        <p
+          id={bodyId}
+          className={classNames(
+            "whitespace-pre-wrap text-pretty text-base leading-8 text-current/82 sm:text-lg sm:leading-9",
+            title && "mt-6"
+          )}
+        >
+          {body}
+        </p>
+        {config.completion === "continue" ? (
+          <div className="mt-10 flex justify-end pb-[max(0px,env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              className={PRIMARY_BUTTON}
+              disabled={!active || completed}
+              onClick={complete}
+            >
+              {copy.continue}
+              <IconArrowRight className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
 type CoreVideoTerminalMode =
@@ -551,24 +818,65 @@ function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPla
   return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
 }
 
+function isEmptyVideoSequence(renderer: ExperienceRendererInstance): boolean {
+  const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+  return parsed.success && parsed.data.sequence.length === 0;
+}
+
+/**
+ * Holds the scene for a fixed beat so a shot without footage still occupies the
+ * time it will occupy, then finishes. Reading a real duration is impossible —
+ * there is no media to read it from — so the beat is a constant, chosen to be
+ * long enough to register as a scene and short enough not to stall a playthrough.
+ */
+const EMPTY_SEQUENCE_HOLD_MS = 6_000;
+
+function EmptyVideoSequencePlaceholder({
+  label,
+  onCompleted,
+}: {
+  label: string;
+  onCompleted: () => void;
+}) {
+  const completedRef = useRef(false);
+  useEffect(() => {
+    completedRef.current = false;
+    const timer = window.setTimeout(() => {
+      if (completedRef.current) return;
+      completedRef.current = true;
+      onCompleted();
+    }, EMPTY_SEQUENCE_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [onCompleted]);
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-black">
+      <p className="text-sm font-semibold tracking-wide text-white/45">{label}</p>
+    </div>
+  );
+}
+
 function CoreVideoRenderer({
   manifest,
   renderer,
   orientation,
   copy,
+  muted,
   onTimelineTimeMs,
   onCompleted,
   onRuntimeError,
   onPlaybackHandle,
+  onSoundBlocked,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   orientation: ExperienceOrientation;
   copy: ExperiencePlayerCopy;
+  muted: boolean;
   onTimelineTimeMs: (timeMs: number) => void;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  onSoundBlocked: () => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
@@ -666,7 +974,7 @@ function CoreVideoRenderer({
       });
       return;
     }
-    const durationSeconds = media ? media.variant.durationMs / 1_000 : 0;
+    const durationSeconds = media?.variant.durationMs ? media.variant.durationMs / 1_000 : 0;
     setPlaybackState({
       rendererInstanceId: renderer.instanceId,
       sequenceIndex,
@@ -679,25 +987,63 @@ function CoreVideoRenderer({
   };
 
   if (!clip || !assetId || !media) return null;
+  // A "native" clip is inline reading media: it keeps its intrinsic aspect
+  // ratio, is centered in the responsive stage, and scales down to fit without
+  // ever cropping. Everything else fills a fixed full-bleed frame.
+  const native = config.fit === "native";
+  const player = (
+    <ExperienceMediaPlayer
+      source={{ src: media.variant.uri, type: media.variant.mediaType }}
+      title={copy.videoLabel(renderer.instanceId)}
+      autoPlay={false}
+      // Never metadata-driven: a clip is played with sound and only muted once
+      // the browser has actually refused it (see onSoundBlocked).
+      muted={muted}
+      loop={terminalMode?.kind === "loop"}
+      durationSeconds={media.variant.durationMs ? media.variant.durationMs / 1_000 : undefined}
+      clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
+      poster={poster}
+      fit={config.fit === "native" ? "contain" : config.fit}
+      onEnd={handleEnd}
+      onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
+      onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
+      onPlaybackHandle={registerPlaybackHandle}
+      onSoundBlocked={onSoundBlocked}
+      playbackIdentity={playbackIdentity}
+      copy={copy.video}
+    />
+  );
+  if (native) {
+    return (
+      <div
+        className="absolute inset-0 grid place-items-center p-4 sm:p-6"
+        style={{ zIndex: renderer.layer }}
+        data-experience-video-fit="native"
+      >
+        <div
+          className="relative overflow-hidden rounded-lg bg-black"
+          style={{
+            // Percentage width (not a fixed px) so an aspect-ratio box also
+            // shrinks when the viewport height is the binding constraint; the
+            // native width is only an upper cap so the clip never upscales.
+            width: "100%",
+            maxWidth: media.variant.width,
+            maxHeight: "100%",
+            ...(media.variant.width && media.variant.height
+              ? {
+                  aspectRatio: `${media.variant.width} / ${media.variant.height}`,
+                }
+              : {}),
+          }}
+        >
+          {player}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute inset-0" style={{ zIndex: renderer.layer }}>
-      <ExperienceMediaPlayer
-        source={{ src: media.variant.uri, type: media.variant.mediaType }}
-        title={copy.videoLabel(renderer.instanceId)}
-        autoPlay={false}
-        muted={media.asset.audioMode === "none"}
-        loop={terminalMode?.kind === "loop"}
-        durationSeconds={media.variant.durationMs / 1_000}
-        clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
-        poster={poster}
-        fit={config.fit}
-        onEnd={handleEnd}
-        onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
-        onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
-        onPlaybackHandle={registerPlaybackHandle}
-        playbackIdentity={playbackIdentity}
-        copy={copy.video}
-      />
+      {player}
     </div>
   );
 }
@@ -706,6 +1052,7 @@ function CoreChoiceRenderer({
   manifest,
   renderer,
   runtimeState,
+  active,
   open,
   locale,
   copy,
@@ -714,6 +1061,7 @@ function CoreChoiceRenderer({
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
+  active: boolean;
   open: boolean;
   locale: string;
   copy: ExperiencePlayerCopy;
@@ -721,7 +1069,7 @@ function CoreChoiceRenderer({
 }) {
   const promptId = useId();
   const config = ExperienceCoreChoiceRendererConfigSchema.parse(renderer.config);
-  if (!config.initiallyOpen && !open) return null;
+  if (!active || (!config.initiallyOpen && !open)) return null;
   const choices = config.choices.filter(
     (choice) =>
       !choice.visibleWhen ||
@@ -766,51 +1114,6 @@ function CoreChoiceRenderer({
   );
 }
 
-function CoreCheckpointRenderer({
-  renderer,
-  open,
-  copy,
-  onSelect,
-}: {
-  renderer: ExperienceRendererInstance;
-  open: boolean;
-  copy: ExperiencePlayerCopy;
-  onSelect: (actionId: string) => void;
-}) {
-  const titleId = useId();
-  const config = ExperienceCoreCheckpointRendererConfigSchema.parse(renderer.config);
-  if (!config.initiallyOpen && !open) return null;
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="absolute inset-0 flex items-end bg-linear-to-t from-black via-black/90 to-black/20 px-5 pt-24 pb-5 text-center sm:px-8 sm:pb-8"
-      style={{ zIndex: renderer.layer }}
-    >
-      <div className="mx-auto max-w-xl rounded-2xl bg-white/[0.1] p-5 backdrop-blur-2xl">
-        <p id={titleId} className="text-sm font-semibold text-white">
-          {copy.checkpointPrompt}
-        </p>
-        <p className="mt-1.5 text-xs leading-5 text-white/52">{copy.checkpointDescription}</p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {config.actionIds.map((actionId) => (
-            <button
-              key={actionId}
-              type="button"
-              className={`${PRIMARY_BUTTON} min-w-40`}
-              onClick={() => onSelect(actionId)}
-            >
-              {copy.continue}
-              <IconArrowRight className="size-4" />
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
   landscape: 16 / 9,
   portrait: 9 / 16,
@@ -818,22 +1121,23 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
 };
 
 /**
- * Full-bleed player shell. The frame profile no longer draws a letterboxed
- * canvas — it decides which way the content wants to face. The inner stage
- * always keeps the content's exact aspect ratio (spatial-anchor coordinates
- * stay valid) and is scaled to COVER the shell, which crops the overflow like
- * an image in object-cover. When landscape content lands in a portrait shell
- * (mobile web cannot force device rotation), the whole stage rotates 90° —
- * pointer events are mapped through the transform by the browser, so spatial
- * hotspots keep working untouched.
+ * The cinematic shell preserves the authored aspect ratio and covers the
+ * viewport, rotating landscape work on portrait screens when necessary. The
+ * narrative shell is responsive instead, so long-form text owns the available
+ * reading viewport without being cropped. Renderer selection remains entirely
+ * manifest-driven in both profiles.
  */
 function PlayerFrame({
   orientation,
+  experienceProfile,
+  stageProfile,
   copy,
   style,
   children,
 }: {
   orientation: ExperienceOrientation;
+  experienceProfile: ExperienceProfile;
+  stageProfile: ExperienceProfile;
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
   children: React.ReactNode;
@@ -842,9 +1146,12 @@ function PlayerFrame({
   const shellSize = useShellSize(shellRef);
   const aspect = STAGE_ASPECT[orientation];
   const rotated =
-    orientation === "landscape" && shellSize !== null && shellSize.height > shellSize.width;
+    stageProfile === "cinematic" &&
+    orientation === "landscape" &&
+    shellSize !== null &&
+    shellSize.height > shellSize.width;
   let stageStyle: CSSProperties = { width: "100%", height: "100%" };
-  if (shellSize) {
+  if (stageProfile === "cinematic" && shellSize) {
     const availWidth = rotated ? shellSize.height : shellSize.width;
     const availHeight = rotated ? shellSize.width : shellSize.height;
     const width = Math.max(availWidth, availHeight * aspect);
@@ -856,6 +1163,8 @@ function PlayerFrame({
       role="region"
       aria-label={copy.regionLabel}
       style={style}
+      data-experience-profile={experienceProfile}
+      data-experience-stage-profile={stageProfile}
       className="relative h-full min-h-[inherit] w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
       <div
@@ -869,6 +1178,25 @@ function PlayerFrame({
       </div>
     </div>
   );
+}
+
+/**
+ * Project profile controls the overall product presentation, while the active
+ * scene controls the safe stage geometry. Text must never inherit cinematic
+ * cover/rotation behavior: a mixed cinematic story can therefore move into a
+ * full-viewport reading scene and return to its authored cinematic frame for
+ * the next video scene.
+ */
+function resolveRendererStageProfile(
+  visibleRenderers: readonly ExperienceRendererInstance[],
+  experienceProfile: ExperienceProfile
+): ExperienceProfile {
+  if (
+    visibleRenderers.some((renderer) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID)
+  ) {
+    return "narrative";
+  }
+  return experienceProfile;
 }
 
 function useShellSize(ref: React.RefObject<HTMLDivElement | null>): {
@@ -946,6 +1274,72 @@ function localize(value: ExperienceLocalizedText, locale: string, defaultLocale:
   return value[locale] ?? value[defaultLocale] ?? Object.values(value)[0] ?? "";
 }
 
+/**
+ * Warms every clip the experience can reach before it starts.
+ *
+ * An interactive film cuts on a choice, so a clip that has not been fetched
+ * shows as a stall exactly at the dramatic beat — and unlike a linear video
+ * there is no "next" to buffer ahead, because which clip comes next is not
+ * known until the viewer acts. Fetching all of them up front trades a wait the
+ * viewer understands (a bar, before anything begins) for stalls they cannot.
+ *
+ * Progress is per-clip rather than per-byte: `HTMLVideoElement` reports no total
+ * size, and a count of clips is both honest and monotonic. A clip that fails to
+ * load still counts — playback is not blocked on a warm cache, and the scene
+ * that needs it will surface its own error.
+ */
+function useExperiencePreload(
+  manifest: ExperienceRuntimeManifest,
+  orientation: ExperienceOrientation
+): { total: number; loaded: number; done: boolean } {
+  const uris = useMemo(() => {
+    const wanted = new Set<string>();
+    manifest.graph.nodes.forEach((node) => {
+      if (node.kind !== "scene") return;
+      node.renderers.forEach((renderer) => {
+        if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
+        const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+        if (!parsed.success) return;
+        parsed.data.sequence.forEach((clip) => {
+          const media = resolveVideoMedia(manifest.assets, clip.assetId, orientation);
+          if (media) wanted.add(media.variant.uri);
+        });
+      });
+    });
+    return [...wanted];
+  }, [manifest, orientation]);
+
+  const [loaded, setLoaded] = useState(0);
+  useEffect(() => {
+    setLoaded(0);
+    if (uris.length === 0) return;
+    let cancelled = false;
+    const elements: HTMLVideoElement[] = [];
+    const settle = () => {
+      if (!cancelled) setLoaded((current) => current + 1);
+    };
+    uris.forEach((uri) => {
+      const element = document.createElement("video");
+      element.preload = "auto";
+      element.muted = true;
+      // `canplaythrough` is the honest signal that this clip will not stall.
+      element.addEventListener("canplaythrough", settle, { once: true });
+      element.addEventListener("error", settle, { once: true });
+      element.src = uri;
+      elements.push(element);
+    });
+    return () => {
+      cancelled = true;
+      elements.forEach((element) => {
+        element.removeAttribute("src");
+        element.load();
+      });
+    };
+  }, [uris]);
+
+  return { total: uris.length, loaded, done: loaded >= uris.length };
+}
+
 function resolveVideoMedia(
   assets: readonly ExperienceRuntimeAsset[],
   assetId: string,
@@ -991,6 +1385,22 @@ function sequenceTimelineOffsetMs(
 function runtimeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown experience runtime error";
+}
+
+/**
+ * Runtime invariants that only mean "this input arrived too late to matter".
+ *
+ * Matched on the invariant `code` rather than the class, so a player bundled
+ * against a differently-resolved copy of the engine still recognises them.
+ */
+const DISCARDABLE_INPUT_CODES = new Set(["RUNTIME_NOT_STARTED"]);
+
+function isDiscardableLateInput(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== "ExperienceRuntimeInvariantError") {
+    return false;
+  }
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === "string" && DISCARDABLE_INPUT_CODES.has(code);
 }
 
 function themeStyle(theme: ExperienceThemeConfig): CSSProperties & Record<`--${string}`, string> {

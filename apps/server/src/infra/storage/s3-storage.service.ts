@@ -16,8 +16,9 @@
  *   S3_QUARANTINE_BUCKET  — private bucket takendown objects move into
  *     (S3 has no usable per-object ACL on R2). Defaults to
  *     `${S3_BUCKET}-quarantine`. Created on demand.
- *   S3_FORCE_PATH_STYLE   — set truthy for providers that need path-style
- *     addressing (MinIO). R2 handles virtual-hosted style; default off.
+ *   S3_FORCE_PATH_STYLE   — set truthy for path-style addressing. R2 (whose
+ *     S3 endpoint is account-scoped, not bucket-scoped) and MinIO both want
+ *     it; default off.
  *
  * Public reads: R2's S3 endpoint is NOT the public URL — set
  * `MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE` (read resolver) to the CDN custom
@@ -85,6 +86,8 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private readonly bucket: string;
   private readonly quarantineBucket: string;
   private readonly region: string | null;
+  private readonly endpoint: string;
+  private readonly forcePathStyle: boolean;
 
   constructor() {
     super();
@@ -98,6 +101,8 @@ export class S3CompatibleStorageService extends OutputStorageService {
       (process.env.S3_QUARANTINE_BUCKET ?? '').trim() ||
       (bucket ? `${bucket}-quarantine` : '');
     this.region = region || null;
+    this.endpoint = endpoint;
+    this.forcePathStyle = s3ForcePathStyle();
 
     if (!endpoint || !region || !bucket || !accessKeyId || !accessKeySecret) {
       this.logger.warn(
@@ -110,7 +115,17 @@ export class S3CompatibleStorageService extends OutputStorageService {
       endpoint,
       region,
       credentials: { accessKeyId, secretAccessKey: accessKeySecret },
-      forcePathStyle: s3ForcePathStyle(),
+      forcePathStyle: this.forcePathStyle,
+      // Presigning has no body to hash, so the SDK default (WHEN_SUPPORTED)
+      // pins `x-amz-checksum-crc32` of ZERO bytes into every presigned PUT —
+      // hoisted into the query, i.e. covered by the signature and impossible
+      // to drop client-side, so the real bytes can never match it and the
+      // upload 400s on checksum. WHEN_REQUIRED emits checksums only for the
+      // operations that mandate one.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      // Same hoisting on the read side: `x-amz-checksum-mode=ENABLED` would
+      // ride inside every signed GET, demanding a checksum R2 never stored.
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
@@ -192,7 +207,10 @@ export class S3CompatibleStorageService extends OutputStorageService {
       // signableHeaders is load-bearing: without it the presigner leaves
       // content-type OUT of SignedHeaders and any Content-Type is accepted
       // (verified against MinIO) — the pin below is what makes the
-      // mismatched-type PUT fail like the Azure SAS / OSS V4 paths do.
+      // mismatched-type PUT fail like the Azure SAS / OSS V4 paths do. It
+      // takes SignedHeaders to exactly `content-type;host`; every other
+      // signing input the SDK emits is hoisted into the query, not signed as
+      // a header. The spec pins that set.
       { expiresIn: ttl, signableHeaders: new Set(['content-type']) },
     );
     return {
@@ -504,9 +522,9 @@ export class S3CompatibleStorageService extends OutputStorageService {
    * path.
    */
   private storageSideUrl(key: string): string {
-    const endpoint = (process.env.S3_ENDPOINT ?? '').trim().replace(/\/+$/, '');
+    const endpoint = this.endpoint.replace(/\/+$/, '');
     const encoded = key.split('/').map(encodeURIComponent).join('/');
-    return s3ForcePathStyle()
+    return this.forcePathStyle
       ? `${endpoint}/${this.bucket}/${encoded}`
       : `${endpoint.replace('://', `://${this.bucket}.`)}/${encoded}`;
   }

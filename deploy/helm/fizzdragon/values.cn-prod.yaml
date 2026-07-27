@@ -205,10 +205,6 @@ server:
     MEDIA_ASSET_AIGC_REGISTRATION_ENABLED: "true"
     BYTEPLUS_ACR_EXPIRES_AT: "2027-06-29T16:59:59+08:00"
     DISABLE_CONTENT_MODERATION: "true"
-    # story-studio: preferred default video model for revision lock. The server
-    # falls back to any active video model if this slug is unset/unknown, so
-    # this is belt-and-suspenders (keeps parity with .com).
-    STORY_STUDIO_DEFAULT_VIDEO_MODEL_SLUG: "seedance-2-0"
     # Return-URL allowlist (DECLARATIVE — never hardcode host origins in code):
     # fizzstudio.fizzspace.cn = apps/web (社区), studio.fizzspace.cn = apps/studio (算力).
     # billing.service auto-includes fizzdragon.fizzspace.cn + the .com hosts.
@@ -262,3 +258,29 @@ agentWorker:
     maxReplicas: 2
     # Aliyun community Redis is plaintext :6379.
     enableTLS: "false"
+
+temporal:
+  # The Temporal images follow the global image.registry override above, so the
+  # only prerequisite here is that they have been imported into the ACR EE
+  # instance — Docker Hub is unreachable from cn-hangzhou, and this registry
+  # serves blobs only over the VPC endpoint.
+  database:
+    # Dedicated PostgreSQL 16 RDS instance, not the application database.
+    host: ""
+    user: temporal
+  # CN has one untainted node; remove the .com worker-pool placement.
+  nodeSelector: null
+  tolerations: null
+# Azure Key Vault is off here, so the Temporal database password Secret is
+# created out-of-band with kubectl, same trust model as the other CN Secrets.
+temporalDatabaseSecrets:
+  mapping: null
+
+studioAgentRuntime:
+  image:
+    tag: set-at-deploy
+  model:
+    baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # CN has one untainted node; remove the .com worker-pool placement.
+  nodeSelector: null
+  tolerations: null

@@ -15,7 +15,12 @@ describe('ensureOriginalMediaPlacement', () => {
   it('upserts an original variant and creates the primary placement', async () => {
     type UpsertArg = {
       where: { assetId_variantKey: { assetId: string; variantKey: string } };
-      create: { kind: MediaAssetVariantKind; status: MediaAssetVariantStatus };
+      create: {
+        kind: MediaAssetVariantKind;
+        status: MediaAssetVariantStatus;
+        durationMs: number | null;
+      };
+      update: { durationMs?: number | null };
     };
     type CreatePlacementArg = {
       data: {
@@ -55,6 +60,7 @@ describe('ensureOriginalMediaPlacement', () => {
       sizeBytes: 1234,
       width: 1024,
       height: 1024,
+      durationMs: 8375,
       checksumSha256: 'a'.repeat(64),
     });
 
@@ -70,6 +76,8 @@ describe('ensureOriginalMediaPlacement', () => {
     });
     expect(upsertArg.create.kind).toBe(MediaAssetVariantKind.original);
     expect(upsertArg.create.status).toBe(MediaAssetVariantStatus.ready);
+    expect(upsertArg.create.durationMs).toBe(8375);
+    expect(upsertArg.update.durationMs).toBe(8375);
 
     const createArg = createPlacement.mock.calls[0]?.[0];
     if (!createArg) throw new Error('placement create call missing');

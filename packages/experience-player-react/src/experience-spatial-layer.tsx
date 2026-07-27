@@ -397,13 +397,14 @@ function createRendererContentTransforms(
     const variant =
       media.variants.find((candidate) => candidate.orientation === orientation) ??
       media.variants[0];
-    if (!variant) return;
+    if (!variant?.width || !variant.height) return;
     transforms.set(
       renderer.instanceId,
       createMediaContentTransform(
         viewportSize,
         { width: variant.width, height: variant.height },
-        config.fit
+        // Native inline video is never cropped, so its content maps like contain.
+        config.fit === "native" ? "contain" : config.fit
       )
     );
   });
@@ -426,6 +427,7 @@ function videoSequenceClipAtTime(
       asset.variants.find((candidate) => candidate.orientation === orientation) ??
       asset.variants[0];
     if (!variant) continue;
+    if (variant.durationMs === undefined) return clip;
     if (sceneTimeMs < offset + variant.durationMs) return clip;
     offset += variant.durationMs;
   }

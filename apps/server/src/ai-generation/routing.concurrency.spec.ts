@@ -1,22 +1,26 @@
-import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
+import {
+  ENTITLEMENT_POLICY_VERSION,
+  EntitlementService,
+  type EntitlementSnapshot,
+} from '../entitlements';
 import { AiGenerationRoutingService } from './routing.service';
 import type { AiBillingPolicy, AiModelDefinition } from './types';
 
 const NOW = '2026-06-12T12:00:00.000Z';
 
-const freeBillingPolicy = {
+const freeBillingPolicy: AiBillingPolicy = {
   mode: 'free',
-  unit: 'image',
+  unit: 'output',
   displayCurrency: 'COMPUTE_POINTS',
   finalCostSource: 'campaign',
   refundPolicy: 'no_refund',
-} as AiBillingPolicy;
+};
 
 function entitlement(
   overrides: Partial<EntitlementSnapshot> = {},
 ): EntitlementSnapshot {
   return {
-    version: '2026-05-27',
+    version: ENTITLEMENT_POLICY_VERSION,
     subject: { type: 'user', id: 'user-1' },
     planKey: 'studio',
     rank: 40,

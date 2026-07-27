@@ -9,7 +9,6 @@
 
 import "server-only";
 import { env } from "@/src/env";
-import { getStaticArticles } from "./static-articles";
 import type { NewsItem } from "./types";
 
 const SUPPORTED_LANGS = new Set(["en-US", "zh-CN", "zh-HK"]);
@@ -33,6 +32,11 @@ const CONTENT_BASE = requireServerEnv("JAVA_CONTENT_URL").replace(/\/+$/, "");
 const UPSTREAM_BASE = `${CONTENT_BASE}/api/news`;
 const BANNER_HOST = env.BANNER_BASE_URL.replace(/\/+$/, "");
 
+// The "All" pill is inserted client-side — the backend has NO all-tag. This
+// sentinel id means "no server-side tag filter"; a real tag id filters via
+// `?tag=`. Kept here so the fetch layer and the client agree on the value.
+export const ALL_TAG_ID = "all";
+
 interface UpstreamTag {
   id: string;
   label?: string;
@@ -47,6 +51,10 @@ interface UpstreamItem {
   author?: string;
   publishedAt?: string;
   tags?: UpstreamTag[];
+  // Only the DETAIL endpoint (`/api/news/:id`) carries the full article body;
+  // the list endpoint omits it. This is why the detail page must fetch the
+  // single item rather than reuse a list card (which only has `summary`).
+  body?: string;
 }
 
 // Upstream is in flux: legacy shape uses `code: 200` for success; the
@@ -67,6 +75,19 @@ function isUpstreamSuccess(json: UpstreamResponse | null): boolean {
   return false;
 }
 
+// Normalize upstream tags into the rendered `{ id, label }` shape, dropping
+// entries with an empty id or label (defensive — same spirit as the mobile
+// `mapTags`). Live items carry tags from Java; static articles pass none.
+function mapTags(raw?: UpstreamTag[]): { id: string; label: string }[] {
+  const out: { id: string; label: string }[] = [];
+  for (const tag of raw ?? []) {
+    const id = (tag?.id ?? "").trim();
+    const label = (tag?.label ?? "").trim();
+    if (id && label) out.push({ id, label });
+  }
+  return out;
+}
+
 function normalizeUpstream(raw: UpstreamItem): NewsItem {
   const coverUrl = raw.coverUrl ?? "";
   const cover = coverUrl
@@ -75,6 +96,8 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
       : `${BANNER_HOST}/${coverUrl.replace(/^\/+/, "")}`
     : "";
   const isExternal = raw.kind === "external";
+  const body = raw.body?.trim();
+  const tags = mapTags(raw.tags);
   return {
     id: raw.id,
     type: raw.kind ?? "news",
@@ -85,6 +108,12 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
     isExternal,
     // External items jump to `url`; internal articles route to /news/:id.
     url: isExternal ? raw.url || undefined : undefined,
+    // Present only on the detail endpoint's payload; undefined for list cards.
+    ...(body ? { body } : {}),
+    // Backend-managed tags for the main-feed filter bar. Only set when at least
+    // one valid tag survives; static articles carry none (stays undefined).
+    ...(tags.length ? { tags } : {}),
+    author: raw.author,
   };
 }
 
@@ -114,17 +143,21 @@ function parseList(data: unknown): NewsItem[] {
   return out;
 }
 
-export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
+export async function getNewsList(rawLang: string, tag?: string): Promise<NewsItem[]> {
   const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  // "all"/empty → no server-side tag filter (the "All" pill is a frontend-only
+  // insert; the backend has no all-tag). A real tag id filters via `?tag=`.
+  const filterTag = tag && tag !== ALL_TAG_ID ? tag.trim() : "";
 
   // Upstream is flaky — wrap everything (network, parse, shape) so a
-  // 500 / malformed body / non-JSON response can never bubble up.
-  // Worst case we just serve the static articles (or an empty list on
-  // production .cn).
+  // 500 / malformed body / non-JSON response can never bubble up. Worst case
+  // is an empty feed, never a throw.
   // Server-side locale fallback is done by the backend via the `locale` param.
-  // pageSize=100 returns the full published set today (73); revisit with real
+  // pageSize=100 returns the full published set today; revisit with real
   // pagination if the catalogue ever outgrows that.
-  const url = `${UPSTREAM_BASE}?locale=${encodeURIComponent(lang)}&pageSize=100`;
+  const url = `${UPSTREAM_BASE}?locale=${encodeURIComponent(lang)}&pageSize=100${
+    filterTag ? `&tag=${encodeURIComponent(filterTag)}` : ""
+  }`;
   let live: NewsItem[] = [];
   console.log(`[news] fetching upstream lang=${lang} url=${url}`);
   try {
@@ -159,12 +192,80 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
     console.warn("[news] upstream fetch failed, falling back to static-only:", err);
   }
 
-  // Hardcoded marketing articles only run on staging + production .com
-  // (NEXT_PUBLIC_SITE_REGION === "global"). Production .cn (region
-  // "cn") shows the live newsapi feed only.
-  const region = process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
-  const staticArticles = region === "cn" ? [] : getStaticArticles(lang);
-  return [...staticArticles, ...live].sort(
-    (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
-  );
+  // Backend already returns published-only, ordered by publishedAt desc. Sort
+  // defensively so a backend ordering change can't scramble the feed.
+  return live.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
+}
+
+/**
+ * Fetch a single live article WITH its body from the detail endpoint
+ * `GET /api/news/:id` — the list endpoint omits the body, so a detail page that
+ * reuses a list card can only ever show the summary. Returns null when the id
+ * is not a live article (unknown id, unpublished, or an upstream failure); the
+ * caller falls back to the static-article set for our hardcoded posts.
+ */
+export async function getNewsItem(id: number, rawLang: string): Promise<NewsItem | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  const url = `${UPSTREAM_BASE}/${id}?locale=${encodeURIComponent(lang)}`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res.ok) {
+      console.warn(`[news] detail upstream non-OK id=${id}: ${res.status}`);
+      return null;
+    }
+    const json = (await res.json().catch(() => null)) as UpstreamResponse | null;
+    if (!isUpstreamSuccess(json) || !json!.data) return null;
+    // The detail payload is the item object directly under `data` (not a list).
+    const raw = json!.data as UpstreamItem;
+    if (!raw || typeof raw !== "object" || typeof raw.id !== "number") return null;
+    if (!raw.title || raw.title.trim() === "") return null;
+    return normalizeUpstream(raw);
+  } catch (err) {
+    console.warn(`[news] detail fetch failed id=${id}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch the backend-managed tag list that drives the main news feed's filter
+ * bar. `GET /api/news/tags?locale=xx` → `{ code, msg, data: [{ id, label }] }`
+ * where `data` is the tag array directly (not a `.list`). Labels are already
+ * localized with zh-CN fallback and `all` sorts first when present, so this
+ * layer preserves upstream order and does not re-sort.
+ *
+ * Mirrors getNewsList's conventions: same lang normalization, envelope check,
+ * 5-minute revalidate, and TOTAL error tolerance — any failure (network,
+ * non-OK, malformed, non-array) returns `[]` and never throws. The bar simply
+ * won't render when the list is empty. Only entries whose id and label are
+ * both non-empty strings are kept.
+ */
+export async function getNewsTags(rawLang: string): Promise<{ id: string; label: string }[]> {
+  const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
+  // onlyWithNews=true → backend returns only tags bound to ≥1 published article,
+  // so empty tags (e.g. China with no posts yet) never show in the bar. The
+  // "All" pill is added client-side, not by this endpoint.
+  const url = `${UPSTREAM_BASE}/tags?locale=${encodeURIComponent(lang)}&onlyWithNews=true`;
+  try {
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res.ok) {
+      console.warn(`[news] tags upstream non-OK: ${res.status} ${res.statusText}`);
+      return [];
+    }
+    const json = (await res.json().catch(() => null)) as UpstreamResponse | null;
+    // `data` is the tag array directly here — not `data.list`.
+    if (!isUpstreamSuccess(json) || !Array.isArray(json!.data)) return [];
+    const out: { id: string; label: string }[] = [];
+    for (const raw of json!.data as unknown[]) {
+      if (!raw || typeof raw !== "object") continue;
+      const tag = raw as UpstreamTag;
+      const id = typeof tag.id === "string" ? tag.id.trim() : "";
+      const label = typeof tag.label === "string" ? tag.label.trim() : "";
+      if (id && label) out.push({ id, label });
+    }
+    return out;
+  } catch (err) {
+    console.warn("[news] tags fetch failed:", err);
+    return [];
+  }
 }

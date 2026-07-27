@@ -1,4 +1,8 @@
 import type { AiJobError } from '../../types';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 
 export class ReplicateProviderError extends Error {
   constructor(public readonly payload: AiJobError) {
@@ -44,6 +48,14 @@ export function mapReplicateHttpError(
       'PROVIDER_5XX',
       `Replicate HTTP ${status}: ${raw.slice(0, 500)}`,
       'The generation provider is temporarily unavailable.',
+      raw,
+    );
+  }
+  if (isContentPolicyViolation(raw)) {
+    return replicateError(
+      'PROVIDER_CONTENT_FILTER',
+      `Replicate HTTP ${status} (content policy): ${raw.slice(0, 500)}`,
+      CONTENT_POLICY_USER_MESSAGE,
       raw,
     );
   }

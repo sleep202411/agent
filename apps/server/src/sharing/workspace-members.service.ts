@@ -10,7 +10,8 @@
  * an idempotent notification + records an audit row.
  *
  * The owner row (creator) is immutable: it can't be removed or re-roled here.
- * Members are only added to TEAM workspaces — personal workspaces stay single.
+ * Any workspace can hold members, personal ones included; how many is the seat
+ * policy's call alone (see entitlements/seat-policy).
  */
 import {
   BadRequestException,
@@ -18,11 +19,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
-  WorkspaceType,
-} from '@prisma/client';
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { DocumentsGateway } from '../documents/documents.gateway';
 import { EntitlementService } from '../entitlements/entitlement.service';
@@ -97,12 +94,6 @@ export class WorkspaceMembersService {
       workspaceId,
       WorkspaceMemberRole.admin,
     );
-    if (workspace.type === WorkspaceType.personal) {
-      throw new BadRequestException({
-        code: 'PERSONAL_WORKSPACE_NOT_SHAREABLE',
-        msg: 'Create a team workspace to invite members.',
-      });
-    }
 
     const target = await this.users.lookupByContact({
       account: input.account,
@@ -317,7 +308,7 @@ export class WorkspaceMembersService {
   private async requireWorkspace(workspaceId: string) {
     const ws = await this.prisma.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
-      select: { id: true, name: true, type: true, ownerUserId: true },
+      select: { id: true, name: true, ownerUserId: true },
     });
     if (!ws) {
       throw new NotFoundException({

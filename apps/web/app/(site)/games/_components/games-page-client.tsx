@@ -6,7 +6,6 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconDeviceGamepad2,
-  IconMovie,
   IconPlayerPlay,
   IconSparkles,
 } from "@tabler/icons-react";
@@ -17,6 +16,7 @@ import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { NARRATIVE_PLAYABLES } from "@/src/features/narrative/narrative-games";
+import { resolveGameCover } from "../_data/cover-overrides";
 
 export function GamesPageClient({
   interactiveFilms,
@@ -59,66 +59,69 @@ export function GamesPageClient({
         ) : null}
 
         <section className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {interactiveFilms.map((game) => (
-            <article
-              key={game.gameId}
-              className="group overflow-hidden rounded-2xl bg-secondary/55 transition-colors hover:bg-secondary/70"
-            >
-              <div className="relative aspect-video overflow-hidden bg-[linear-gradient(145deg,#16181b,#08090a)]">
-                <div className="absolute inset-0 grid place-items-center text-white/12">
-                  <IconMovie className="size-10" stroke={1} />
-                </div>
-                {game.coverUrl ? (
-                  <Image
-                    src={game.coverUrl}
-                    alt={game.title}
-                    fill
-                    unoptimized
-                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="object-cover opacity-86 transition-transform duration-500 group-hover:scale-[1.025]"
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                  />
-                ) : null}
-                <div className="absolute inset-0 bg-linear-to-b from-black/5 via-transparent to-black/80" />
-                <div className="absolute top-3 left-3 rounded-full bg-black/55 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">
-                  {t("status.published")}
-                </div>
-                <div className="absolute right-3 bottom-3 left-3">
-                  <p className="text-xs font-semibold text-white/58">
-                    {t("catalogue.interactiveFilm")}
-                  </p>
-                  <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
-                    {game.title}
-                  </h2>
-                  {game.subtitle ? (
-                    <p className="mt-1 text-sm text-white/58">{game.subtitle}</p>
+          {interactiveFilms.map((game) => {
+            const coverSrc = resolveGameCover(game.gameId, game.coverUrl);
+            return (
+              <article
+                key={game.gameId}
+                className="group overflow-hidden rounded-2xl bg-secondary/55 transition-colors hover:bg-secondary/70"
+              >
+                <div className="relative aspect-video overflow-hidden bg-[linear-gradient(145deg,#16181b,#08090a)]">
+                  <div className="absolute inset-0 grid place-items-center text-white/12">
+                    <IconDeviceGamepad2 className="size-10" stroke={1} />
+                  </div>
+                  {coverSrc ? (
+                    <Image
+                      src={coverSrc}
+                      alt={game.title}
+                      fill
+                      unoptimized
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      className="object-cover opacity-86 transition-transform duration-500 group-hover:scale-[1.025]"
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                      }}
+                    />
                   ) : null}
+                  <div className="absolute inset-0 bg-linear-to-b from-black/5 via-transparent to-black/80" />
+                  <div className="absolute top-3 left-3 rounded-full bg-black/55 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">
+                    {t("status.published")}
+                  </div>
+                  <div className="absolute right-3 bottom-3 left-3">
+                    <p className="text-xs font-semibold text-white/58">
+                      {t("catalogue.playableStory")}
+                    </p>
+                    <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
+                      {game.title}
+                    </h2>
+                    {game.subtitle ? (
+                      <p className="mt-1 text-sm text-white/58">{game.subtitle}</p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center justify-between gap-3 p-4">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted-foreground">
-                    {t("catalogue.currentVersion")}
-                  </p>
-                  <p className="mt-1 truncate font-mono text-sm text-foreground/82">
-                    {game.currentVersion}
-                  </p>
+                <div className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      {t("catalogue.currentVersion")}
+                    </p>
+                    <p className="mt-1 truncate font-mono text-sm text-foreground/82">
+                      {game.currentVersion}
+                    </p>
+                  </div>
+                  <Link
+                    href={localizePath(
+                      `/play/interactive-film/${encodeURIComponent(game.gameId)}`,
+                      locale
+                    )}
+                    className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
+                  >
+                    <IconPlayerPlay className="size-4" />
+                    {t("catalogue.open")}
+                  </Link>
                 </div>
-                <Link
-                  href={localizePath(
-                    `/play/interactive-film/${encodeURIComponent(game.gameId)}`,
-                    locale
-                  )}
-                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 active:translate-y-0"
-                >
-                  <IconPlayerPlay className="size-4" />
-                  {t("catalogue.open")}
-                </Link>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
 
           {!catalogueError && interactiveFilms.length === 0 ? (
             <div className="rounded-2xl bg-secondary/45 p-8 text-center md:col-span-2">

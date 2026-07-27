@@ -625,6 +625,7 @@ test("starts a fresh controller once and rejects entry replay", () => {
     rendererRegistry: registry,
   });
 
+  assert.throws(() => controller.dispatch([]), { code: "RUNTIME_NOT_STARTED" });
   assert.equal(controller.start().state.currentSceneId, "scene.one");
   assert.throws(() => controller.start(), { code: "RUNTIME_ALREADY_STARTED" });
 });

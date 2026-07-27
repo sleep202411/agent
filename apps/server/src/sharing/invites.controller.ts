@@ -1,9 +1,10 @@
 /**
  * Scope-agnostic invite acceptance. A raw token is opaque about its scope, so
- * preview/accept hash it once and resolve against the workspace table first,
- * then the project table (tokenHash is unique within each; a cross-table
- * collision is cryptographically negligible). The per-scope create/list/revoke
- * endpoints live on WorkspaceInvitesController / ProjectInvitesController.
+ * preview/accept hash it once and resolve against each invite table in turn —
+ * workspace, then platform project, then story project (tokenHash is unique
+ * within each; a cross-table collision is cryptographically negligible). The
+ * per-scope create/list/revoke endpoints live on WorkspaceInvitesController /
+ * ProjectInvitesController / StoryProjectInvitesController.
  */
 import {
   BadRequestException,
@@ -17,6 +18,7 @@ import {
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
+import { StoryProjectInvitesService } from '../story-studio/story-project-invites.service';
 import { AcceptInviteSchema, type AcceptInviteInput } from './dto';
 import { hashInviteToken } from './invite-token';
 import { ProjectInvitesService } from './project-invites.service';
@@ -27,6 +29,7 @@ export class InvitesController {
   constructor(
     private readonly workspaceInvites: WorkspaceInvitesService,
     private readonly projectInvites: ProjectInvitesService,
+    private readonly storyProjectInvites: StoryProjectInvitesService,
   ) {}
 
   @Get('preview')
@@ -43,6 +46,9 @@ export class InvitesController {
     const proj = await this.projectInvites.findByHash(tokenHash);
     if (proj)
       return { code: 200, data: await this.projectInvites.preview(proj) };
+    const story = await this.storyProjectInvites.findByHash(tokenHash);
+    if (story)
+      return { code: 200, data: await this.storyProjectInvites.preview(story) };
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',
       msg: 'This invite link is invalid.',
@@ -61,6 +67,13 @@ export class InvitesController {
     const proj = await this.projectInvites.findByHash(tokenHash);
     if (proj) {
       return { code: 200, data: await this.projectInvites.accept(proj, user) };
+    }
+    const story = await this.storyProjectInvites.findByHash(tokenHash);
+    if (story) {
+      return {
+        code: 200,
+        data: await this.storyProjectInvites.accept(story, user),
+      };
     }
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',

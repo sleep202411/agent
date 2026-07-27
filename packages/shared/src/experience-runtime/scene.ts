@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { ExperienceLocalizedTextSchema, ExperienceStableIdSchema } from "./common.js";
+import {
+  ExperienceLocalizedTextSchema,
+  ExperienceRuntimeUriSchema,
+  ExperienceStableIdSchema,
+} from "./common.js";
 import { ExperienceEventBindingSchema } from "./logic.js";
 import { ExperienceRendererInstanceSchema } from "./renderer.js";
 import { ExperienceGestureSchema, ExperienceSpatialAnchorSchema } from "./spatial.js";
@@ -51,10 +55,30 @@ export const ExperienceTimelineSchema = z
     });
   });
 
+/**
+ * The music bed a scene asks for on entry.
+ *
+ * A PLAIN MEDIA REFERENCE, not a frozen build asset: `url` is the track's
+ * ordinary public media URL, so it is not listed in `assets` and nothing in the
+ * integrity graph points at it. That is deliberate — losing a video breaks the
+ * story, losing a bed only means silence, so music must never be able to fail a
+ * build or a publish. A URL that stops resolving degrades to silence in the
+ * player.
+ *
+ * `trackId` identifies the track (one file bound to five scenes is one id), so
+ * the runtime crossfades only when the bed actually changes and a theme carries
+ * across the scenes that share it. Optional because a scene that names no track
+ * changes nothing — silence is not a binding.
+ */
+export const ExperienceSceneMusicSchema = z
+  .object({ trackId: ExperienceStableIdSchema, url: ExperienceRuntimeUriSchema })
+  .strict();
+
 export const ExperienceSceneSchema = z
   .object({
     kind: z.literal("scene"),
     sceneId: ExperienceStableIdSchema,
+    music: ExperienceSceneMusicSchema.optional(),
     clock: ExperienceSceneClockSchema.default({ kind: "none" }),
     renderers: z.array(ExperienceRendererInstanceSchema).default([]),
     anchors: z.array(ExperienceSpatialAnchorSchema).default([]),
@@ -93,6 +117,7 @@ export const ExperienceEndingSchema = z
   })
   .strict();
 
+export type ExperienceSceneMusic = z.infer<typeof ExperienceSceneMusicSchema>;
 export type ExperienceScene = z.infer<typeof ExperienceSceneSchema>;
 export type ExperienceRouter = z.infer<typeof ExperienceRouterSchema>;
 export type ExperienceGraphNode = z.infer<typeof ExperienceGraphNodeSchema>;

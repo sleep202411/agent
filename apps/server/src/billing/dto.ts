@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MembershipBenefitsSchema } from '../entitlements/membership-benefits';
 
 export const CheckoutPaymentProviderSchema = z.enum([
   'airwallex',
@@ -441,6 +442,12 @@ const MembershipPlanShape = {
   billingIntervalDefault: BillingPriceIntervalSchema.optional(),
   featureFlags: MetadataSchema.optional(),
   limits: MetadataSchema.optional(),
+  /**
+   * Validated membership benefits — omitted on create, the plan starts
+   * from DEFAULT_FREE_BENEFITS until configured. Edits go EXCLUSIVELY
+   * through PUT membership-plans/:planId/benefits (cache-busting).
+   */
+  benefits: MembershipBenefitsSchema.optional(),
   marketing: MetadataSchema.optional(),
   metadata: MetadataSchema.optional(),
 } satisfies z.ZodRawShape;
@@ -486,7 +493,7 @@ export type CreateAdminMembershipPlanInput = z.infer<
 
 export const UpdateAdminMembershipPlanSchema =
   MembershipPlanObjectSchema.partial()
-    .omit({ planKey: true })
+    .omit({ planKey: true, benefits: true })
     .superRefine((value, ctx) => {
       if (
         value.productType === 'membership_plan' &&
@@ -531,6 +538,14 @@ export const BillingMembershipPlanParamsSchema = z.object({
 });
 export type BillingMembershipPlanParams = z.infer<
   typeof BillingMembershipPlanParamsSchema
+>;
+
+/** Full-replace write of a plan's validated benefits. */
+export const UpdateAdminMembershipPlanBenefitsSchema = z.object({
+  benefits: MembershipBenefitsSchema,
+});
+export type UpdateAdminMembershipPlanBenefitsInput = z.infer<
+  typeof UpdateAdminMembershipPlanBenefitsSchema
 >;
 
 const ProviderBindingInputSchema = z.object({
@@ -1090,19 +1105,12 @@ export type BillingSubscriptionParams = z.infer<
 
 // --- Membership grants (admin 手动开会员) ----------------------------------
 
-/** User-subject paid tiers an admin may hand out. Team/enterprise plans are
- *  workspace-subject and follow the workspace billing flow instead. */
-export const ADMIN_GRANTABLE_PLAN_KEYS = [
-  'basic',
-  'creator',
-  'standard',
-  'pro',
-  'studio',
-] as const;
-
 export const GrantMembershipSchema = z.object({
   userId: z.string().trim().min(1).max(64),
-  planKey: z.enum(ADMIN_GRANTABLE_PLAN_KEYS),
+  /** Shape only — WHICH keys are grantable is decided against active
+   *  billing_membership_plans rows in EntitlementService.grantComplimentary. An
+   *  enum here was a second copy of the plan table and drifted from it. */
+  planKey: PlanKeySchema,
   durationDays: z.coerce.number().int().min(1).max(366),
   /** Required — lands in grant metadata and the audit log. */
   note: z.string().trim().min(1).max(500),

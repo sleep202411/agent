@@ -8,12 +8,13 @@
  *     (covers any TZ display the FE wants up to UTC+12).
  *   - Month window: `quota:{userId}:{dim}:month:{YYYY-MM}` — TTL 40d.
  *   - Minute window (chat rate limit): `quota:{userId}:chat:1m:{YYYY-MM-DDTHH:MM}` — TTL 90s.
- *   - Idempotency: `quota:idem:{key}` — TTL 24h.
+ *   - Idempotency: `quota:idem:v2:{sha256(user, dimension, op)}` — TTL 24h.
  *
  * Day boundaries are UTC at the storage layer; the frontend converts
  * `resetAt` to user-local for display. Don't be tempted to do per-user
  * TZ at the key level — multi-pod consistency goes out the window.
  */
+import { createHash } from 'crypto';
 import type { QuotaDimension } from '@prisma/client';
 
 /** Returns `YYYY-MM-DD` in UTC. */
@@ -61,8 +62,28 @@ export function minuteKey(userId: string, minute = utcMinuteKey()) {
   return `quota:${userId}:chat:1m:${minute}`;
 }
 
-export function idempotencyKey(key: string) {
-  return `quota:idem:${key}`;
+/**
+ * Redis never sees a caller-controlled idempotency key directly.
+ *
+ * The authenticated principal and quota dimension are part of the digest, so
+ * the same client token cannot dedupe another user's charge or another paid
+ * dimension. Hashing also gives Redis a fixed-size key even when an upstream
+ * domain uses a long composite operation identifier.
+ */
+export function idempotencyKey(
+  userId: string,
+  dimension: QuotaDimension,
+  operationKey: string,
+) {
+  const digest = createHash('sha256')
+    .update('fizzdragon:quota-idempotency:v2\0', 'utf8')
+    .update(userId, 'utf8')
+    .update('\0', 'utf8')
+    .update(dimension, 'utf8')
+    .update('\0', 'utf8')
+    .update(operationKey, 'utf8')
+    .digest('hex');
+  return `quota:idem:v2:${digest}`;
 }
 
 /** Counter TTLs. Day-window TTL = 36h so a user in UTC+12 (or polling

@@ -1,22 +1,19 @@
 import {
-  STORY_CHECKPOINT_RENDERER_ID,
-  type FilmCondition,
   type InteractiveFilmRelease,
   type InteractiveFilmRuntimeNode,
   type RuntimeMediaAsset,
-  type RuntimeSessionEffect,
 } from '@repo/shared/interactive-film-runtime';
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
-  EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_RENDERER_API_VERSION,
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
-  type ExperienceCoreCheckpointRendererConfig,
   type ExperienceCoreChoiceRendererConfig,
   type ExperienceCoreRendererId,
+  type ExperienceCoreTextRendererConfig,
   type ExperienceCoreVideoRendererConfig,
   type ExperienceCondition,
   type ExperienceEventBinding,
@@ -27,9 +24,7 @@ import {
   type ExperienceRuntimeAsset,
   type ExperienceRuntimeManifest,
   type ExperienceScene,
-  type ExperienceStateDefinition,
 } from '@repo/shared/experience-runtime';
-import type { StoryStateVariable } from './interactive-film.schema';
 
 export const STORY_CORE_THEME_CONFIG_ASSET_ID =
   'theme:core.film-dark:1' as const;
@@ -39,8 +34,6 @@ const STORY_CORE_THEME_CONFIG_URI =
 const STORY_CORE_THEME_CONFIG_SHA256 =
   'c5fd632a6dcba38e80c84a1bc771c37e791af6bca73421a9c357f859610e6272';
 
-type ExperienceTimelineCue = ExperienceScene['timeline']['cues'][number];
-
 export interface StoryExperienceMediaIdentity {
   runtimeAssetId: string;
   variantId: string;
@@ -49,11 +42,19 @@ export interface StoryExperienceMediaIdentity {
 
 export interface StoryExperienceManifestCompilerInput {
   release: InteractiveFilmRelease;
+  experienceProfile: 'cinematic' | 'narrative';
   metadata: {
     title: string;
     summary?: string | null;
+    /**
+     * Must name an image in `release.media`. The manifest schema validates that
+     * the reference resolves, so an id with no matching asset is a compiler bug
+     * and is reported as one (STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID) rather
+     * than quietly dropped — a story whose cover silently vanishes is the exact
+     * failure this field exists to end.
+     */
+    coverAssetId?: string;
   };
-  stateVariables: readonly StoryStateVariable[];
   mediaIdentities: readonly StoryExperienceMediaIdentity[];
 }
 
@@ -63,8 +64,6 @@ export interface StoryExperienceManifestDiagnostic {
     | 'STORY_EXPERIENCE_MEDIA_UNSUPPORTED'
     | 'STORY_EXPERIENCE_OVERLAY_UNSUPPORTED'
     | 'STORY_EXPERIENCE_PRESENTATION_UNSUPPORTED'
-    | 'STORY_EXPERIENCE_CHECKPOINT_UNSUPPORTED'
-    | 'STORY_EXPERIENCE_STATE_CONTRACT_INVALID'
     | 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID';
   message: string;
   path: PropertyKey[];
@@ -75,22 +74,15 @@ export interface StoryExperienceManifestCompilerResult {
   diagnostics: StoryExperienceManifestDiagnostic[];
 }
 
-interface StatePaths {
-  variables: ReadonlyMap<string, string>;
-  flags: ReadonlyMap<string, string>;
-  relationships: ReadonlyMap<string, string>;
-}
-
 interface NodeCompilationContext {
-  statePaths: StatePaths;
-  checkpointOutcomeIds: Set<string>;
+  experienceProfile: 'cinematic' | 'narrative';
   usedRendererIds: Set<ExperienceCoreRendererId>;
   syntheticScenes: ExperienceScene[];
   diagnostics: StoryExperienceManifestDiagnostic[];
 }
 
 /**
- * Lowers the already validated interactive-film Build product into the single
+ * Lowers the already validated unified Story Build product into the single
  * cross-platform Runtime Manifest v2 contract. This layer is deterministic,
  * has no database access, and never invents missing media identities.
  */
@@ -115,17 +107,10 @@ export function compileStoryExperienceManifest(
   });
   assets.push(coreThemeConfigAsset());
 
-  const state = compileStateDefinitions(
-    input.release,
-    input.stateVariables,
-    diagnostics,
-  );
-  const checkpointOutcomeIds = new Set<string>();
   const usedRendererIds = new Set<ExperienceCoreRendererId>();
   const syntheticScenes: ExperienceScene[] = [];
   const context: NodeCompilationContext = {
-    statePaths: state.paths,
-    checkpointOutcomeIds,
+    experienceProfile: input.experienceProfile,
     usedRendererIds,
     syntheticScenes,
     diagnostics,
@@ -146,16 +131,14 @@ export function compileStoryExperienceManifest(
     channel: input.release.channel,
     gameId: input.release.gameId,
     buildId: input.release.releaseId,
-    // Java release idempotency is keyed by (gameId, contentVersion). A Story
-    // revision can legitimately produce several immutable Builds as current
-    // media is replaced, so revision identity is not a safe release version —
-    // the immutable build id is. Emit it dashless (32 chars) so it fits Java's
-    // length-bounded content_version column (the "build:"-prefixed dashed form
-    // was 42 chars and overflowed).
-    contentVersion: input.release.releaseId.replace(/-/g, ''),
+    // Build compilation owns the release identity. Preserve the exact raw
+    // UUID here so local persistence, Java authority queries, and the runtime
+    // manifest all compare the same value without hidden normalization.
+    contentVersion: input.release.contentVersion,
     completionPolicy: 'finite',
     metadata: {
       title: localizeScalar(input.metadata.title, input.release.locales),
+      experienceProfile: input.experienceProfile,
       ...(input.metadata.summary?.trim()
         ? {
             summary: localizeScalar(
@@ -163,6 +146,9 @@ export function compileStoryExperienceManifest(
               input.release.locales,
             ),
           }
+        : {}),
+      ...(input.metadata.coverAssetId
+        ? { coverAssetId: input.metadata.coverAssetId }
         : {}),
     },
     compatibility: {
@@ -175,12 +161,9 @@ export function compileStoryExperienceManifest(
       defaultLocale: input.release.defaultLocale,
       locales: input.release.locales,
     },
-    stateDefinitions: state.definitions,
+    stateDefinitions: [],
     inputActions: [],
-    rendererRequirements: compileRendererRequirements(
-      usedRendererIds,
-      checkpointOutcomeIds,
-    ),
+    rendererRequirements: compileRendererRequirements(usedRendererIds),
     assets,
     theme: {
       themeId: 'core.film-dark',
@@ -191,8 +174,12 @@ export function compileStoryExperienceManifest(
     endings: input.release.endings.map((ending) => ({
       endingId: ending.endingId,
       title: ending.title,
-      ...(ending.summary ? { summary: ending.summary } : {}),
-      kind: compileEndingKind(ending.kind),
+      ...(hasNonEmptyLocalizedText(ending.summary)
+        ? { summary: ending.summary }
+        : {}),
+      // Story endings are no longer typed; the generic manifest still carries a
+      // scene kind, so every story ending compiles to the neutral 'custom' kind.
+      kind: 'custom' as const,
     })),
     graph: {
       entrySceneId: input.release.entryNodeId,
@@ -283,13 +270,17 @@ function compileRuntimeAsset(
             {
               variantId: visualVariantId(asset, identity, orientation),
               sourceAssetId: variant.sourceAssetId,
-              sha256: variant.sha256,
               uri: variant.src,
               mediaType: identity.mediaType,
               orientation: orientation as 'landscape' | 'portrait',
-              width: variant.width,
-              height: variant.height,
-              durationMs: Math.round(variant.durationSeconds * 1_000),
+              ...(variant.sha256 ? { sha256: variant.sha256 } : {}),
+              ...(variant.width ? { width: variant.width } : {}),
+              ...(variant.height ? { height: variant.height } : {}),
+              ...(variant.durationSeconds
+                ? {
+                    durationMs: Math.round(variant.durationSeconds * 1_000),
+                  }
+                : {}),
               ...(variant.framesPerSecond
                 ? { framesPerSecond: variant.framesPerSecond }
                 : {}),
@@ -306,12 +297,13 @@ function compileRuntimeAsset(
     });
     return null;
   }
+  // No `audioMode`: the manifest schema still tolerates the key so already
+  // published films keep parsing, but nothing emits or reads it any more.
   return {
     assetId: asset.assetId,
     kind: 'video',
     orientationPolicy: asset.orientationPolicy,
     variants,
-    audioMode: asset.audio,
   };
 }
 
@@ -337,179 +329,11 @@ function coreThemeConfigAsset(): ExperienceRuntimeAsset {
   };
 }
 
-function compileStateDefinitions(
-  release: InteractiveFilmRelease,
-  authoredVariables: readonly StoryStateVariable[],
-  diagnostics: StoryExperienceManifestDiagnostic[],
-): { definitions: ExperienceStateDefinition[]; paths: StatePaths } {
-  const variables = new Map<string, string>();
-  const flags = new Set(Object.keys(release.initialState.flags));
-  const relationships = new Set(
-    Object.keys(release.initialState.relationships),
-  );
-  collectRuntimeStateReferences(release.nodes, flags, relationships);
-  authoredVariables.forEach((variable) =>
-    variables.set(variable.key, statePath('variables', variable.key)),
-  );
-
-  const definitions: ExperienceStateDefinition[] = authoredVariables.flatMap(
-    (variable, index) => {
-      const initialValue = release.initialState.variables[variable.key];
-      if (initialValue === undefined || initialValue === null) {
-        diagnostics.push({
-          code: 'STORY_EXPERIENCE_STATE_CONTRACT_INVALID',
-          message: `Runtime variable ${variable.key} has no non-null initial value.`,
-          path: ['initialState', 'variables', variable.key],
-        });
-        return [];
-      }
-      const valueType = typeof initialValue;
-      if (valueType !== variable.type) {
-        diagnostics.push({
-          code: 'STORY_EXPERIENCE_STATE_CONTRACT_INVALID',
-          message: `Runtime variable ${variable.key} does not match its authored ${variable.type} type.`,
-          path: ['stateVariables', index],
-        });
-        return [];
-      }
-      const constraints =
-        variable.type === 'number'
-          ? {
-              ...(variable.minimum !== undefined
-                ? { minimum: variable.minimum }
-                : {}),
-              ...(variable.maximum !== undefined
-                ? { maximum: variable.maximum }
-                : {}),
-            }
-          : variable.type === 'string' && variable.allowedValues
-            ? { allowedValues: variable.allowedValues }
-            : undefined;
-      return [
-        {
-          key: variables.get(variable.key) as string,
-          valueType: variable.type,
-          scope: 'session' as const,
-          initialValue,
-          ...(constraints && Object.keys(constraints).length > 0
-            ? { constraints }
-            : {}),
-          sensitive: false,
-        },
-      ];
-    },
-  );
-  Object.keys(release.initialState.variables).forEach((key) => {
-    if (variables.has(key)) return;
-    diagnostics.push({
-      code: 'STORY_EXPERIENCE_STATE_CONTRACT_INVALID',
-      message: `Runtime variable ${key} has no authored state definition.`,
-      path: ['initialState', 'variables', key],
-    });
-  });
-
-  const flagPaths = new Map(
-    [...flags].sort().map((flag) => [flag, statePath('flags', flag)]),
-  );
-  flagPaths.forEach((path, flag) =>
-    definitions.push({
-      key: path,
-      valueType: 'boolean',
-      scope: 'session',
-      initialValue: release.initialState.flags[flag] ?? false,
-      sensitive: false,
-    }),
-  );
-  const relationshipPaths = new Map(
-    [...relationships]
-      .sort()
-      .map((characterId) => [
-        characterId,
-        statePath('relationships', characterId),
-      ]),
-  );
-  relationshipPaths.forEach((path, characterId) =>
-    definitions.push({
-      key: path,
-      valueType: 'number',
-      scope: 'session',
-      initialValue: release.initialState.relationships[characterId] ?? 0,
-      sensitive: false,
-    }),
-  );
-  definitions.sort((left, right) => left.key.localeCompare(right.key));
-  return {
-    definitions,
-    paths: {
-      variables,
-      flags: flagPaths,
-      relationships: relationshipPaths,
-    },
-  };
-}
-
-function collectRuntimeStateReferences(
-  nodes: readonly InteractiveFilmRuntimeNode[],
-  flags: Set<string>,
-  relationships: Set<string>,
-): void {
-  const condition = (value: FilmCondition): void => {
-    if (value.kind === 'flag') flags.add(value.flag);
-    if (value.kind === 'relationship-at-least') {
-      relationships.add(value.characterId);
-    }
-    if (value.kind === 'all' || value.kind === 'any') {
-      value.conditions.forEach(condition);
-    }
-    if (value.kind === 'not') condition(value.condition);
-  };
-  const effect = (value: RuntimeSessionEffect): void => {
-    if (value.kind === 'set_flag') flags.add(value.flag);
-    if (value.kind === 'adjust_relationship') {
-      relationships.add(value.characterId);
-    }
-  };
-  nodes.forEach((node) => {
-    if (node.exit.kind === 'auto') {
-      node.exit.routes.forEach((route) => route.when && condition(route.when));
-    }
-    if (node.exit.kind === 'choice') {
-      node.exit.choices.forEach((choice) => {
-        if (choice.visibleWhen) condition(choice.visibleWhen);
-        choice.effects.forEach(effect);
-      });
-    }
-    if (node.exit.kind === 'external-overlay') {
-      node.exit.routes.forEach((route) => route.effects.forEach(effect));
-    }
-  });
-}
-
 function compileGraphNode(
   node: InteractiveFilmRuntimeNode,
   context: NodeCompilationContext,
   path: PropertyKey[],
 ): ExperienceGraphNode | null {
-  if (!('presentation' in node)) {
-    const routes = orderAutoRoutes(node.exit.routes).map((route, index) => ({
-      routeId: `route:${node.nodeId}:${index}`,
-      ...(route.when
-        ? { when: compileCondition(route.when, context.statePaths) }
-        : {}),
-      actions: [{ kind: 'scene.goto' as const, sceneId: route.nextNodeId }],
-    }));
-    return {
-      kind: 'router',
-      sceneId: node.nodeId,
-      eventBindings: [
-        {
-          bindingId: `binding:${node.nodeId}:entered`,
-          on: { type: 'scene.entered' },
-          routes,
-        },
-      ],
-    };
-  }
   if (node.overlays.length > 0) {
     context.diagnostics.push({
       code: 'STORY_EXPERIENCE_OVERLAY_UNSUPPORTED',
@@ -518,7 +342,7 @@ function compileGraphNode(
     });
     return null;
   }
-  if (node.presentation.kind !== 'video') {
+  if (node.presentation.kind !== 'video' && node.presentation.kind !== 'text') {
     context.diagnostics.push({
       code: 'STORY_EXPERIENCE_PRESENTATION_UNSUPPORTED',
       message: `Scene ${node.nodeId} uses unsupported ${node.presentation.kind} presentation.`,
@@ -527,11 +351,31 @@ function compileGraphNode(
     return null;
   }
 
-  context.usedRendererIds.add(EXPERIENCE_CORE_VIDEO_RENDERER_ID);
-  const videoInstanceId = `renderer:${node.nodeId}:video`;
-  const renderers: ExperienceRendererInstance[] = [
-    {
-      instanceId: videoInstanceId,
+  const isText = node.presentation.kind === 'text';
+  const primaryRendererId = isText
+    ? EXPERIENCE_CORE_TEXT_RENDERER_ID
+    : EXPERIENCE_CORE_VIDEO_RENDERER_ID;
+  const primaryInstanceId = `renderer:${node.nodeId}:${isText ? 'text' : 'video'}`;
+  const primaryOutcomeType = isText ? 'text-completed' : 'media-ended';
+  context.usedRendererIds.add(primaryRendererId);
+  let primaryRenderer: ExperienceRendererInstance;
+  if (node.presentation.kind === 'text') {
+    primaryRenderer = {
+      instanceId: primaryInstanceId,
+      rendererId: EXPERIENCE_CORE_TEXT_RENDERER_ID,
+      layer: 0,
+      config: {
+        ...(hasNonEmptyLocalizedText(node.presentation.title)
+          ? { title: node.presentation.title }
+          : {}),
+        body: node.presentation.body,
+        completion: node.presentation.completion,
+      } satisfies ExperienceCoreTextRendererConfig,
+      bindings: {},
+    };
+  } else {
+    primaryRenderer = {
+      instanceId: primaryInstanceId,
       rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
       layer: 0,
       config: {
@@ -543,77 +387,82 @@ function compileGraphNode(
         autoplay: true,
       } satisfies ExperienceCoreVideoRendererConfig,
       bindings: {},
-    },
-  ];
-  const timelineCues: ExperienceTimelineCue[] = [];
+    };
+  }
+  const renderers: ExperienceRendererInstance[] = [primaryRenderer];
   const eventBindings: ExperienceEventBinding[] = [];
 
   if (node.exit.kind === 'auto') {
     eventBindings.push(
       rendererOutcomeBinding(
         node.nodeId,
-        videoInstanceId,
-        'media-ended',
-        orderAutoRoutes(node.exit.routes).map((route, index) => ({
-          routeId: `route:${node.nodeId}:auto:${index}`,
-          ...(route.when
-            ? { when: compileCondition(route.when, context.statePaths) }
-            : {}),
-          actions: [{ kind: 'scene.goto' as const, sceneId: route.nextNodeId }],
-        })),
+        primaryInstanceId,
+        primaryOutcomeType,
+        [
+          {
+            routeId: `route:${node.nodeId}:auto`,
+            actions: [
+              { kind: 'scene.goto' as const, sceneId: node.exit.nextNodeId },
+            ],
+          },
+        ],
       ),
     );
   } else if (node.exit.kind === 'ending') {
     eventBindings.push(
-      rendererOutcomeBinding(node.nodeId, videoInstanceId, 'media-ended', [
-        {
-          routeId: `route:${node.nodeId}:ending`,
-          actions: [
-            {
-              kind: 'ending.complete' as const,
-              endingId: node.exit.endingId,
-            },
-          ],
-        },
-      ]),
-    );
-  } else if (node.exit.kind === 'choice') {
-    compileChoiceExit(
-      node,
-      videoInstanceId,
-      renderers,
-      timelineCues,
-      eventBindings,
-      context,
+      rendererOutcomeBinding(
+        node.nodeId,
+        primaryInstanceId,
+        primaryOutcomeType,
+        [
+          {
+            routeId: `route:${node.nodeId}:ending`,
+            actions: [
+              {
+                kind: 'ending.complete' as const,
+                endingId: node.exit.endingId,
+              },
+            ],
+          },
+        ],
+      ),
     );
   } else {
-    compileCheckpointExit(
+    compileChoiceExit(
       node,
-      videoInstanceId,
+      primaryInstanceId,
+      primaryOutcomeType,
+      isText,
       renderers,
       eventBindings,
       context,
-      path,
     );
   }
 
   return {
     kind: 'scene',
     sceneId: node.nodeId,
-    clock: { kind: 'renderer', rendererInstanceId: videoInstanceId },
+    // Absent unless the creator bound a track: a scene that says nothing about
+    // music leaves whatever is playing alone. Passed through as the plain media
+    // reference it is — no asset entry, no integrity join.
+    ...(node.music ? { music: node.music } : {}),
+    clock: isText
+      ? { kind: 'none' }
+      : { kind: 'renderer', rendererInstanceId: primaryInstanceId },
     renderers,
     anchors: [],
     gestures: [],
-    timeline: { cues: timelineCues },
+    timeline: { cues: [] },
     eventBindings,
   };
 }
 
 function compileChoiceExit(
   node: Extract<InteractiveFilmRuntimeNode, { presentation: unknown }>,
-  videoInstanceId: string,
+  primaryInstanceId: string,
+  primaryOutcomeType: string,
+  isText: boolean,
   renderers: ExperienceRendererInstance[],
-  timelineCues: ExperienceTimelineCue[],
   eventBindings: ExperienceEventBinding[],
   context: NodeCompilationContext,
 ): void {
@@ -630,52 +479,29 @@ function compileChoiceExit(
       choices: node.exit.choices.map((choice) => ({
         choiceId: choice.choiceId,
         label: choice.label,
-        ...(choice.accessibilityLabel
-          ? { accessibilityLabel: choice.accessibilityLabel }
-          : {}),
-        ...(choice.visibleWhen
-          ? {
-              visibleWhen: compileCondition(
-                choice.visibleWhen,
-                context.statePaths,
-              ),
-            }
-          : {}),
       })),
-      initiallyOpen: false,
+      initiallyOpen: isText,
     } satisfies ExperienceCoreChoiceRendererConfig,
     bindings: {},
   });
-  const openActions: ExperienceRuntimeAction[] = [
-    {
-      kind: 'renderer.command' as const,
-      instanceId: choiceInstanceId,
-      commandType: 'open',
-      payload: {},
-    },
-  ];
-  if (node.exit.trigger.kind === 'timecode') {
-    const cueId = `cue:${node.nodeId}:choice-open`;
-    timelineCues.push({
-      cueId,
-      atMs: Math.round(node.exit.trigger.atSeconds * 1_000),
-      once: true,
-    });
-    eventBindings.push({
-      bindingId: `binding:${node.nodeId}:choice-timecode`,
-      on: { type: 'timeline.cue', qualifierId: cueId },
-      routes: [
-        { routeId: `route:${node.nodeId}:choice-open`, actions: openActions },
-      ],
-    });
-  } else {
+  // A text scene presents its choices with the scene itself (initiallyOpen). A
+  // video scene opens them when the clip finishes playing.
+  if (!isText) {
+    const openActions: ExperienceRuntimeAction[] = [
+      {
+        kind: 'renderer.command' as const,
+        instanceId: choiceInstanceId,
+        commandType: 'open',
+        payload: {},
+      },
+    ];
     eventBindings.push(
-      rendererOutcomeBinding(node.nodeId, videoInstanceId, 'media-ended', [
-        {
-          routeId: `route:${node.nodeId}:choice-open`,
-          actions: openActions,
-        },
-      ]),
+      rendererOutcomeBinding(
+        node.nodeId,
+        primaryInstanceId,
+        primaryOutcomeType,
+        [{ routeId: `route:${node.nodeId}:choice-open`, actions: openActions }],
+      ),
     );
   }
   eventBindings.push({
@@ -685,165 +511,12 @@ function compileChoiceExit(
       sourceId: choiceInstanceId,
       qualifierId: 'choice-selected',
     },
-    routes: node.exit.choices.map((choice) => {
-      const targetSceneId =
-        choice.afterSelect.kind === 'play'
-          ? reactionSceneId(node.nodeId, choice.choiceId)
-          : choice.nextNodeId;
-      if (choice.afterSelect.kind === 'play') {
-        context.syntheticScenes.push(
-          compileReactionScene(
-            node.nodeId,
-            choice.choiceId,
-            choice.afterSelect.reactionAssetId,
-            choice.nextNodeId,
-            context,
-          ),
-        );
-      }
-      const selected = eventValueEquals('choiceId', choice.choiceId);
-      const when = choice.visibleWhen
-        ? {
-            kind: 'all' as const,
-            conditions: [
-              selected,
-              compileCondition(choice.visibleWhen, context.statePaths),
-            ],
-          }
-        : selected;
-      return {
-        routeId: `route:${node.nodeId}:choice:${choice.choiceId}`,
-        when,
-        actions: [
-          ...choice.effects.map((effect) =>
-            compileEffect(effect, context.statePaths),
-          ),
-          { kind: 'scene.goto' as const, sceneId: targetSceneId },
-        ],
-      };
-    }),
+    routes: node.exit.choices.map((choice) => ({
+      routeId: `route:${node.nodeId}:choice:${choice.choiceId}`,
+      when: eventValueEquals('choiceId', choice.choiceId),
+      actions: [{ kind: 'scene.goto' as const, sceneId: choice.nextNodeId }],
+    })),
   });
-}
-
-function compileCheckpointExit(
-  node: Extract<InteractiveFilmRuntimeNode, { presentation: unknown }>,
-  videoInstanceId: string,
-  renderers: ExperienceRendererInstance[],
-  eventBindings: ExperienceEventBinding[],
-  context: NodeCompilationContext,
-  path: PropertyKey[],
-): void {
-  if (node.exit.kind !== 'external-overlay') return;
-  if (node.exit.rendererId !== STORY_CHECKPOINT_RENDERER_ID) {
-    context.diagnostics.push({
-      code: 'STORY_EXPERIENCE_CHECKPOINT_UNSUPPORTED',
-      message: `Scene ${node.nodeId} references unsupported legacy renderer ${node.exit.rendererId}.`,
-      path: [...path, 'exit', 'rendererId'],
-    });
-    return;
-  }
-  context.usedRendererIds.add(EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID);
-  const instanceId = `renderer:${node.nodeId}:checkpoint`;
-  const actionIds = node.exit.routes.map((route) => route.actionId);
-  actionIds.forEach((actionId) => context.checkpointOutcomeIds.add(actionId));
-  renderers.push({
-    instanceId,
-    rendererId: EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID,
-    layer: 100,
-    config: {
-      actionIds,
-      initiallyOpen: false,
-    } satisfies ExperienceCoreCheckpointRendererConfig,
-    bindings: {},
-  });
-  eventBindings.push(
-    rendererOutcomeBinding(node.nodeId, videoInstanceId, 'media-ended', [
-      {
-        routeId: `route:${node.nodeId}:checkpoint-open`,
-        actions: [
-          {
-            kind: 'renderer.command' as const,
-            instanceId,
-            commandType: 'open',
-            payload: {},
-          },
-        ],
-      },
-    ]),
-  );
-  node.exit.routes.forEach((route) => {
-    eventBindings.push({
-      bindingId: `binding:${node.nodeId}:checkpoint:${route.actionId}`,
-      on: {
-        type: 'renderer.outcome',
-        sourceId: instanceId,
-        qualifierId: route.actionId,
-      },
-      routes: [
-        {
-          routeId: `route:${node.nodeId}:checkpoint:${route.actionId}`,
-          actions: [
-            ...route.effects.map((effect) =>
-              compileEffect(effect, context.statePaths),
-            ),
-            'nextNodeId' in route
-              ? { kind: 'scene.goto' as const, sceneId: route.nextNodeId }
-              : {
-                  kind: 'ending.complete' as const,
-                  endingId: route.endingId,
-                },
-          ],
-        },
-      ],
-    });
-  });
-}
-
-function compileReactionScene(
-  ownerNodeId: string,
-  choiceId: string,
-  assetId: string,
-  nextSceneId: string,
-  context: NodeCompilationContext,
-): ExperienceScene {
-  context.usedRendererIds.add(EXPERIENCE_CORE_VIDEO_RENDERER_ID);
-  const sceneId = reactionSceneId(ownerNodeId, choiceId);
-  const instanceId = `renderer:${sceneId}:video`;
-  return {
-    kind: 'scene',
-    sceneId,
-    clock: { kind: 'renderer', rendererInstanceId: instanceId },
-    renderers: [
-      {
-        instanceId,
-        rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
-        layer: 0,
-        config: {
-          fit: 'cover',
-          sequence: [
-            {
-              clipId: `reaction:${ownerNodeId}:${choiceId}`,
-              assetId,
-              endBehavior: { behavior: 'advance' },
-            },
-          ],
-          autoplay: true,
-        } satisfies ExperienceCoreVideoRendererConfig,
-        bindings: {},
-      },
-    ],
-    anchors: [],
-    gestures: [],
-    timeline: { cues: [] },
-    eventBindings: [
-      rendererOutcomeBinding(sceneId, instanceId, 'media-ended', [
-        {
-          routeId: `route:${sceneId}:complete`,
-          actions: [{ kind: 'scene.goto', sceneId: nextSceneId }],
-        },
-      ]),
-    ],
-  };
 }
 
 function rendererOutcomeBinding(
@@ -865,7 +538,6 @@ function rendererOutcomeBinding(
 
 function compileRendererRequirements(
   usedRendererIds: ReadonlySet<ExperienceCoreRendererId>,
-  checkpointOutcomeIds: ReadonlySet<string>,
 ): ExperienceRendererRequirement[] {
   return [...usedRendererIds].sort().map((rendererId) => {
     if (rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
@@ -878,6 +550,16 @@ function compileRendererRequirements(
         commands: [],
       };
     }
+    if (rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID) {
+      return {
+        rendererId,
+        apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
+        configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+        requiredCapabilities: [rendererId],
+        outcomes: [{ outcomeType: 'text-completed' }],
+        commands: [],
+      };
+    }
     if (rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID) {
       return {
         rendererId,
@@ -885,18 +567,6 @@ function compileRendererRequirements(
         configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
         requiredCapabilities: [rendererId],
         outcomes: [{ outcomeType: 'choice-selected' }],
-        commands: [{ commandType: 'open' }],
-      };
-    }
-    if (rendererId === EXPERIENCE_CORE_CHECKPOINT_RENDERER_ID) {
-      return {
-        rendererId,
-        apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
-        configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
-        requiredCapabilities: [rendererId],
-        outcomes: [...checkpointOutcomeIds]
-          .sort()
-          .map((outcomeType) => ({ outcomeType })),
         commands: [{ commandType: 'open' }],
       };
     }
@@ -914,110 +584,6 @@ function compileRendererRequirements(
   });
 }
 
-function compileCondition(
-  condition: FilmCondition,
-  paths: StatePaths,
-): ExperienceCondition {
-  if (condition.kind === 'all' || condition.kind === 'any') {
-    return {
-      kind: condition.kind,
-      conditions: condition.conditions.map((child) =>
-        compileCondition(child, paths),
-      ),
-    };
-  }
-  if (condition.kind === 'not') {
-    return {
-      kind: 'not',
-      condition: compileCondition(condition.condition, paths),
-    };
-  }
-  if (condition.kind === 'flag') {
-    return stateValueEquals(
-      paths.flags.get(condition.flag) as string,
-      condition.equals,
-    );
-  }
-  if (condition.kind === 'relationship-at-least') {
-    return {
-      kind: 'compare',
-      left: {
-        kind: 'state',
-        path: paths.relationships.get(condition.characterId) as string,
-      },
-      operator: 'at-least',
-      right: { kind: 'literal', value: condition.value },
-    };
-  }
-  const operators = {
-    equals: 'equals',
-    not_equals: 'not-equals',
-    greater_than: 'greater-than',
-    at_least: 'at-least',
-    less_than: 'less-than',
-    at_most: 'at-most',
-  } as const;
-  return {
-    kind: 'compare',
-    left: {
-      kind: 'state',
-      path: paths.variables.get(condition.key) as string,
-    },
-    operator: operators[condition.operator],
-    right: { kind: 'literal', value: condition.value },
-  };
-}
-
-function compileEffect(
-  effect: RuntimeSessionEffect,
-  paths: StatePaths,
-): ExperienceRuntimeAction {
-  if (effect.kind === 'set_variable') {
-    return {
-      kind: 'state.set',
-      path: paths.variables.get(effect.key) as string,
-      value: { kind: 'literal', value: effect.value },
-    };
-  }
-  if (effect.kind === 'increment_variable') {
-    return {
-      kind: 'state.increment',
-      path: paths.variables.get(effect.key) as string,
-      amount: { kind: 'literal', value: effect.amount },
-    };
-  }
-  if (effect.kind === 'set_flag') {
-    return {
-      kind: 'state.set',
-      path: paths.flags.get(effect.flag) as string,
-      value: { kind: 'literal', value: effect.value },
-    };
-  }
-  if (effect.kind === 'adjust_relationship') {
-    return {
-      kind: 'state.increment',
-      path: paths.relationships.get(effect.characterId) as string,
-      amount: { kind: 'literal', value: effect.amount },
-    };
-  }
-  if (effect.kind === 'mark_asset_watched') {
-    return { kind: 'progress.mark-asset-watched', assetId: effect.assetId };
-  }
-  return { kind: 'progress.unlock-ending', endingId: effect.endingId };
-}
-
-function orderAutoRoutes<T extends { priority: number }>(
-  routes: readonly T[],
-): T[] {
-  return routes
-    .map((route, index) => ({ route, index }))
-    .sort(
-      (left, right) =>
-        left.route.priority - right.route.priority || left.index - right.index,
-    )
-    .map(({ route }) => route);
-}
-
 function eventValueEquals(path: string, value: string): ExperienceCondition {
   return {
     kind: 'compare',
@@ -1027,23 +593,6 @@ function eventValueEquals(path: string, value: string): ExperienceCondition {
   };
 }
 
-function stateValueEquals(path: string, value: boolean): ExperienceCondition {
-  return {
-    kind: 'compare',
-    left: { kind: 'state', path },
-    operator: 'equals',
-    right: { kind: 'literal', value },
-  };
-}
-
-function reactionSceneId(nodeId: string, choiceId: string): string {
-  return `reaction:${nodeId}:${choiceId}`;
-}
-
-function statePath(bucket: string, stableId: string): string {
-  return `story.${bucket}.id_${Buffer.from(stableId, 'utf8').toString('base64url')}`;
-}
-
 function localizeScalar(
   value: string,
   locales: readonly string[],
@@ -1051,12 +600,8 @@ function localizeScalar(
   return Object.fromEntries(locales.map((locale) => [locale, value]));
 }
 
-function compileEndingKind(
-  kind: InteractiveFilmRelease['endings'][number]['kind'],
-): ExperienceRuntimeManifest['endings'][number]['kind'] {
-  if (kind === 'failure') return 'failure';
-  if (kind === 'hidden') return 'hidden';
-  if (kind === 'truth' || kind === 'bond') return 'success';
-  if (kind === 'echo') return 'neutral';
-  return 'custom';
+function hasNonEmptyLocalizedText(
+  value: Record<string, string> | undefined,
+): value is Record<string, string> {
+  return Boolean(value && Object.values(value).some((text) => text.trim()));
 }

@@ -3,12 +3,15 @@ import "server-only";
 import {
   ExperienceGameDetailResponseSchema,
   ExperienceGameListResponseSchema,
+  ExperienceGameManifestSchema,
   ExperienceGameSummarySchema,
   ExperienceJsonObjectSchema,
   ExperienceRuntimeManifestSchema,
   canonicalizeExperienceJson,
   canonicalizeExperienceRuntimeManifest,
+  isExperienceGameManifest,
   materializeExperienceRuntimeManifest,
+  type ExperienceGameChapter,
   type ExperienceGameDetailResponse,
   type ExperienceGameListResponse,
   type ExperienceRuntimeManifest,
@@ -33,7 +36,8 @@ export class InteractiveFilmLoadError extends Error {
       | "MANIFEST_REQUEST_FAILED"
       | "MANIFEST_INVALID"
       | "MANIFEST_NOT_MATERIALIZED"
-      | "MANIFEST_IDENTITY_MISMATCH",
+      | "MANIFEST_IDENTITY_MISMATCH"
+      | "CHAPTER_NOT_FOUND",
     message: string,
     readonly status?: number,
     readonly issues?: readonly { path: PropertyKey[]; message: string }[]
@@ -45,7 +49,11 @@ export class InteractiveFilmLoadError extends Error {
 
 export interface PublishedInteractiveFilm {
   game: ExperienceGameDetailResponse;
+  /** The Runtime Manifest actually loaded — of one chapter for a serial work. */
   manifest: ExperienceRuntimeManifest;
+  /** Every chapter of a serial work; empty when the release is one manifest. */
+  chapters: readonly ExperienceGameChapter[];
+  activeChapterId: string | null;
 }
 
 /** Public game catalogue. Java owns current-version selection and metadata. */
@@ -63,7 +71,7 @@ export async function listPublishedInteractiveFilms(
   if (!Array.isArray(data)) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",
-      "Java returned an invalid interactive-film catalogue.",
+      "Java returned an invalid playable-story catalogue.",
       undefined,
       ExperienceGameListResponseSchema.safeParse(data).error?.issues
     );
@@ -111,7 +119,7 @@ export async function getPublishedInteractiveFilm(
   if (!parsed.success) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",
-      "Java returned invalid interactive-film metadata.",
+      "Java returned invalid playable-story metadata.",
       undefined,
       parsed.error.issues
     );
@@ -126,23 +134,83 @@ export async function getPublishedInteractiveFilm(
 }
 
 /**
- * Resolves the Java current-version pointer, downloads the immutable CDN
- * manifest, and verifies the complete Runtime Manifest v2 boundary before any
+ * Resolves the Java current-version pointer, downloads the immutable release
+ * document, and verifies the complete Runtime Manifest v2 boundary before any
  * client code or media is allowed to start.
+ *
+ * A release document is either one Runtime Manifest (a work that plays start to
+ * finish) or a Game Manifest listing chapters (a serial work, where each chapter
+ * is its own Runtime Manifest at its own permanent URL). The chapter case adds
+ * one more download and takes its identity from the chapter listing, because
+ * Java's currentVersion identifies the chapter SET, not any single chapter.
  */
 export async function loadPublishedInteractiveFilm(
   gameId: string,
-  options: { fetcher?: Fetcher; javaStudioUrl?: string } = {}
+  options: { fetcher?: Fetcher; javaStudioUrl?: string; chapterId?: string } = {}
 ): Promise<PublishedInteractiveFilm> {
   const fetcher = options.fetcher ?? fetch;
   const game = await getPublishedInteractiveFilm(gameId, {
     fetcher,
     javaStudioUrl: options.javaStudioUrl,
   });
+  const document = await downloadReleaseDocument(fetcher, game.manifestUrl);
 
+  if (!isExperienceGameManifest(document)) {
+    return {
+      game,
+      manifest: verifyRuntimeManifest(document, {
+        gameId: game.gameId,
+        contentVersion: game.currentVersion,
+      }),
+      chapters: [],
+      activeChapterId: null,
+    };
+  }
+
+  const parsedGame = ExperienceGameManifestSchema.safeParse(document);
+  if (!parsedGame.success) {
+    throw new InteractiveFilmLoadError(
+      "MANIFEST_INVALID",
+      "The published Game Manifest is invalid.",
+      undefined,
+      parsedGame.error.issues
+    );
+  }
+  const table = parsedGame.data;
+  if (table.gameId !== game.gameId || table.contentVersion !== game.currentVersion) {
+    throw new InteractiveFilmLoadError(
+      "MANIFEST_IDENTITY_MISMATCH",
+      "The published Game Manifest identity does not match Java's current game version."
+    );
+  }
+  const chapter = options.chapterId
+    ? table.chapters.find((entry) => entry.chapterId === options.chapterId)
+    : table.chapters[0];
+  if (!chapter) {
+    throw new InteractiveFilmLoadError(
+      "CHAPTER_NOT_FOUND",
+      `This release has no chapter ${options.chapterId ?? ""}.`.trim()
+    );
+  }
+  const chapterDocument = await downloadReleaseDocument(fetcher, chapter.manifestUrl);
+  return {
+    game,
+    // The chapter listing is the authority for what this URL must contain: it
+    // arrived inside the identity-checked Game Manifest, so a chapter object
+    // that starts serving something else cannot pass.
+    manifest: verifyRuntimeManifest(chapterDocument, {
+      gameId: game.gameId,
+      contentVersion: chapter.contentVersion,
+    }),
+    chapters: table.chapters,
+    activeChapterId: chapter.chapterId,
+  };
+}
+
+async function downloadReleaseDocument(fetcher: Fetcher, url: string): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetcher(game.manifestUrl, { cache: "force-cache" });
+    response = await fetcher(url, { cache: "force-cache" });
   } catch (error) {
     throw new InteractiveFilmLoadError(
       "MANIFEST_REQUEST_FAILED",
@@ -156,8 +224,13 @@ export async function loadPublishedInteractiveFilm(
       response.status
     );
   }
+  return readJson(response, "MANIFEST_INVALID", "The published manifest is not JSON.");
+}
 
-  const input = await readJson(response, "MANIFEST_INVALID", "The published manifest is not JSON.");
+function verifyRuntimeManifest(
+  input: unknown,
+  identity: { gameId: string; contentVersion: string }
+): ExperienceRuntimeManifest {
   const rawManifest = ExperienceJsonObjectSchema.safeParse(input);
   if (!rawManifest.success) {
     throw new InteractiveFilmLoadError(
@@ -185,13 +258,13 @@ export async function loadPublishedInteractiveFilm(
       "The published Runtime Manifest is incomplete and was not materialized before release."
     );
   }
-  if (manifest.gameId !== game.gameId || manifest.contentVersion !== game.currentVersion) {
+  if (manifest.gameId !== identity.gameId || manifest.contentVersion !== identity.contentVersion) {
     throw new InteractiveFilmLoadError(
       "MANIFEST_IDENTITY_MISMATCH",
-      "The published Runtime Manifest identity does not match Java's current game version."
+      "The published Runtime Manifest identity does not match the release it was published in."
     );
   }
-  return { game, manifest };
+  return manifest;
 }
 
 async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
@@ -201,7 +274,7 @@ async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
   } catch (error) {
     throw new InteractiveFilmLoadError(
       "JAVA_REQUEST_FAILED",
-      error instanceof Error ? error.message : "Java interactive-film service is unavailable."
+      error instanceof Error ? error.message : "Java playable-story service is unavailable."
     );
   }
   const envelopeInput = await readJson(
@@ -218,7 +291,7 @@ async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
       "JAVA_REQUEST_FAILED",
       typeof envelope.msg === "string" && envelope.msg.trim()
         ? envelope.msg
-        : `Java interactive-film request failed (HTTP ${response.status}).`,
+        : `Java playable-story request failed (HTTP ${response.status}).`,
       response.status
     );
   }

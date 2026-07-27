@@ -277,7 +277,7 @@ export async function enqueueRealtimeEvent(
     userId: string;
     jobId?: string | null;
   },
-): Promise<{ eventId: string; seq: bigint }> {
+): Promise<{ outboxId: string; eventId: string; seq: bigint }> {
   // `next_seq` starts at 1; the first insert sets it to 2 and this event takes
   // seq 1. Subsequent events increment atomically. ${channel} is parameterized.
   const rows = await tx.$queryRaw<Array<{ next_seq: bigint }>>`
@@ -289,9 +289,10 @@ export async function enqueueRealtimeEvent(
   `;
   const seq = rows[0].next_seq - 1n;
   const eventId = newShortId();
+  const outboxId = newShortId();
   await tx.aiEventOutbox.create({
     data: {
-      id: newShortId(),
+      id: outboxId,
       channel: input.channel,
       seq,
       eventId,
@@ -302,7 +303,7 @@ export async function enqueueRealtimeEvent(
       attempt: 0,
     },
   });
-  return { eventId, seq };
+  return { outboxId, eventId, seq };
 }
 
 /**

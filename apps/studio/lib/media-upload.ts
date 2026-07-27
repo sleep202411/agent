@@ -35,6 +35,7 @@ interface SignedUrlResponse {
 
 interface ConfirmResponse {
   mediaAssetId: string;
+  variantId: string | null;
   storageKey?: string;
   provider?: "azure_blob" | "aliyun_oss" | "s3_compatible";
   status?: string;
@@ -46,6 +47,10 @@ const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   jpeg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
+  txt: "text/plain",
+  md: "text/markdown",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pdf: "application/pdf",
   mp4: "video/mp4",
   mov: "video/quicktime",
   webm: "video/webm",
@@ -60,7 +65,7 @@ export interface UploadFileOptions {
   /** Called with 0–100 as the PUT streams bytes. */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
-  /** Required ownership scope for Story Studio clip-video uploads. */
+  /** Workspace ownership scope; required for every Story Studio-owned asset. */
   workspaceId?: string;
   scope?: { projectId: string };
   /** Story-only durable reservation identity, emitted before the direct PUT. */
@@ -69,6 +74,7 @@ export interface UploadFileOptions {
 
 export interface UploadFileResult {
   mediaAssetId: string;
+  variantId: string;
   storageKey: string;
   url: string;
 }
@@ -298,6 +304,9 @@ export async function uploadFileViaSignedUrl(
   if (!storyUpload && !confirmed.url) {
     throw new Error("confirmUpload succeeded but returned no media URL");
   }
+  if (!storyUpload && !confirmed.variantId) {
+    throw new Error("confirmUpload succeeded but returned no original media variant");
+  }
   return storyUpload
     ? {
         mediaAssetId: confirmed.mediaAssetId,
@@ -306,6 +315,7 @@ export async function uploadFileViaSignedUrl(
       }
     : {
         mediaAssetId: confirmed.mediaAssetId,
+        variantId: confirmed.variantId!,
         storageKey: info.storageKey,
         url: confirmed.url!,
       };

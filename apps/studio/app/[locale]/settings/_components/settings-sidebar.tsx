@@ -25,17 +25,17 @@ import { LetterAvatar } from "./settings-ui";
  * the Overview / Members / Analytics / Billing sub-pages operate on.
  */
 
-function teamSubNav(isPersonal: boolean) {
-  return [
-    { href: "/settings/overview", labelKey: "navOverview" as const, Icon: IconLayoutGrid },
-    ...(isPersonal
-      ? []
-      : [{ href: "/settings/members", labelKey: "navMembers" as const, Icon: IconUsers }]),
-    { href: "/settings/usage", labelKey: "navUsage" as const, Icon: IconGauge },
-    { href: "/settings/analytics", labelKey: "navAnalytics" as const, Icon: IconChartBar },
-    { href: "/settings/billing", labelKey: "navBilling" as const, Icon: IconCreditCard },
-  ];
-}
+/**
+ * Same nav for every workspace type: personal workspaces hold members too, and
+ * how many is the server's seat policy to answer, not this list's.
+ */
+const TEAM_SUB_NAV = [
+  { href: "/settings/overview", labelKey: "navOverview", Icon: IconLayoutGrid },
+  { href: "/settings/members", labelKey: "navMembers", Icon: IconUsers },
+  { href: "/settings/usage", labelKey: "navUsage", Icon: IconGauge },
+  { href: "/settings/analytics", labelKey: "navAnalytics", Icon: IconChartBar },
+  { href: "/settings/billing", labelKey: "navBilling", Icon: IconCreditCard },
+] as const;
 
 export function SettingsSidebar() {
   const t = useTranslations("settings");
@@ -74,7 +74,7 @@ export function SettingsSidebar() {
         {activeWorkspace && (
           <Group title={t("groupTeamsSettings")}>
             <div className="flex flex-col gap-0.5">
-              {teamSubNav(activeWorkspace.type === "personal").map(({ href, labelKey, Icon }) => (
+              {TEAM_SUB_NAV.map(({ href, labelKey, Icon }) => (
                 <NavLink
                   key={href}
                   href={href}

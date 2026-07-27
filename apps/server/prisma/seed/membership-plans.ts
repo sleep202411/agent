@@ -48,7 +48,6 @@ const BINDING_SEED_SOURCE = 'seed.provider_bindings.v1';
 // individual lineup to Basic/Standard/Pro (dropped Studio) and the team lineup
 // to a single self-serve Team tier (dropped Ultimate/Creator/Scale).
 const retiredPlanKeys = [
-  'studio',
   'team_ultimate',
   'team_creator',
   'team_scale',
@@ -212,7 +211,7 @@ const teamPlans: MembershipPlanSeed[] = [
   },
 ];
 
-// Community membership (社区会员) — a SEPARATE axis from the studio/VIP plans:
+// Community membership (社区会员) — a SEPARATE axis from the compute plans:
 // it grants no compute credits/tiers; its value is member-free IP viewing + IP
 // purchase discounts + exclusive content/badge, enforced in ip-commerce by
 // planKey === 'community_membership' (never by rank). See docs/community-membership.md.

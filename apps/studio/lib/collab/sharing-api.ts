@@ -8,12 +8,20 @@ import { api } from "@/lib/api";
 
 export type AssignableRole = "admin" | "editor" | "viewer";
 
+/**
+ * A Story project carries its own role ladder with story capabilities attached
+ * to each rung, so it does not reuse the platform admin/editor/viewer set.
+ */
+export type AssignableStoryRole = "producer" | "editor" | "reviewer" | "viewer";
+
+export type AssignableShareRole = AssignableRole | AssignableStoryRole;
+
 export interface SharingMember {
   memberId: string;
   userId: string;
   nickname: string | null;
   avatar: string | null;
-  role: "owner" | AssignableRole;
+  role: "owner" | AssignableShareRole;
   status: string;
   joinedAt: string | null;
   isOwner: boolean;
@@ -78,40 +86,94 @@ export async function removeProjectMember(projectId: string, memberId: string): 
   await api.delete(`/aurora/projects/${projectId}/members/${memberId}`, { data: {} });
 }
 
-// ── Scope dispatch (workspace | project) ───────────────────────────────────
+// ── Story-project members ──────────────────────────────────────────────────
+
+export async function listStoryProjectMembers(projectId: string): Promise<SharingMember[]> {
+  return api.get<SharingMember[]>(`/aurora/story-projects/${projectId}/members`);
+}
+
+export async function addStoryProjectMember(
+  projectId: string,
+  account: string,
+  role: AssignableShareRole
+): Promise<SharingMember> {
+  return api.post<SharingMember>(`/aurora/story-projects/${projectId}/members`, {
+    data: { account, role },
+  });
+}
+
+export async function updateStoryProjectMemberRole(
+  projectId: string,
+  memberId: string,
+  role: AssignableShareRole
+): Promise<SharingMember> {
+  return api.patch<SharingMember>(`/aurora/story-projects/${projectId}/members/${memberId}`, {
+    data: { role },
+  });
+}
+
+export async function removeStoryProjectMember(projectId: string, memberId: string): Promise<void> {
+  await api.delete(`/aurora/story-projects/${projectId}/members/${memberId}`, { data: {} });
+}
+
+// ── Scope dispatch (workspace | project | story-project) ───────────────────
 
 export type ShareScope =
   | { kind: "workspace"; id: string; name: string }
-  | { kind: "project"; id: string; name: string };
+  | { kind: "project"; id: string; name: string }
+  | { kind: "story-project"; id: string; name: string };
+
+const PLATFORM_ROLES: readonly AssignableShareRole[] = ["admin", "editor", "viewer"];
+const STORY_ROLES: readonly AssignableShareRole[] = ["producer", "editor", "reviewer", "viewer"];
+
+/** The roles a given scope can actually assign — drives the role pickers. */
+export function rolesForScope(scope: ShareScope): readonly AssignableShareRole[] {
+  return scope.kind === "story-project" ? STORY_ROLES : PLATFORM_ROLES;
+}
+
+/** Least-privilege default, so sharing never over-grants by accident. */
+export function defaultRoleForScope(scope: ShareScope): AssignableShareRole {
+  return scope.kind === "story-project" ? "viewer" : "editor";
+}
 
 export function listMembers(scope: ShareScope): Promise<SharingMember[]> {
-  return scope.kind === "workspace" ? listWorkspaceMembers(scope.id) : listProjectMembers(scope.id);
+  if (scope.kind === "workspace") return listWorkspaceMembers(scope.id);
+  if (scope.kind === "story-project") return listStoryProjectMembers(scope.id);
+  return listProjectMembers(scope.id);
 }
 
 export function addMember(
   scope: ShareScope,
   account: string,
-  role: AssignableRole
+  role: AssignableShareRole
 ): Promise<SharingMember> {
-  return scope.kind === "workspace"
-    ? addWorkspaceMember(scope.id, account, role)
-    : addProjectMember(scope.id, account, role);
+  if (scope.kind === "workspace") {
+    return addWorkspaceMember(scope.id, account, role as AssignableRole);
+  }
+  if (scope.kind === "story-project") {
+    return addStoryProjectMember(scope.id, account, role);
+  }
+  return addProjectMember(scope.id, account, role as AssignableRole);
 }
 
 export function updateMemberRole(
   scope: ShareScope,
   memberId: string,
-  role: AssignableRole
+  role: AssignableShareRole
 ): Promise<SharingMember> {
-  return scope.kind === "workspace"
-    ? updateWorkspaceMemberRole(scope.id, memberId, role)
-    : updateProjectMemberRole(scope.id, memberId, role);
+  if (scope.kind === "workspace") {
+    return updateWorkspaceMemberRole(scope.id, memberId, role as AssignableRole);
+  }
+  if (scope.kind === "story-project") {
+    return updateStoryProjectMemberRole(scope.id, memberId, role);
+  }
+  return updateProjectMemberRole(scope.id, memberId, role as AssignableRole);
 }
 
 export function removeMember(scope: ShareScope, memberId: string): Promise<void> {
-  return scope.kind === "workspace"
-    ? removeWorkspaceMember(scope.id, memberId)
-    : removeProjectMember(scope.id, memberId);
+  if (scope.kind === "workspace") return removeWorkspaceMember(scope.id, memberId);
+  if (scope.kind === "story-project") return removeStoryProjectMember(scope.id, memberId);
+  return removeProjectMember(scope.id, memberId);
 }
 
 // ── Invite links (token) ───────────────────────────────────────────────────
@@ -134,7 +196,7 @@ export interface ShareInvite {
 }
 
 export interface InvitePreview {
-  scope: "workspace" | "project";
+  scope: "workspace" | "project" | "story-project";
   targetName: string;
   role: string;
   status: "pending" | "accepted" | "revoked" | "expired";
@@ -143,12 +205,13 @@ export interface InvitePreview {
 
 export type AcceptedInvite =
   | { scope: "workspace"; workspaceId: string; targetName: string }
-  | { scope: "project"; projectId: string; targetName: string };
+  | { scope: "project"; projectId: string; targetName: string }
+  | { scope: "story-project"; storyProjectId: string; targetName: string };
 
 function scopeBase(scope: ShareScope): string {
-  return scope.kind === "workspace"
-    ? `/aurora/workspaces/${scope.id}/invites`
-    : `/aurora/projects/${scope.id}/invites`;
+  if (scope.kind === "workspace") return `/aurora/workspaces/${scope.id}/invites`;
+  if (scope.kind === "story-project") return `/aurora/story-projects/${scope.id}/invites`;
+  return `/aurora/projects/${scope.id}/invites`;
 }
 
 export function listInvites(scope: ShareScope): Promise<ShareInvite[]> {
@@ -157,7 +220,7 @@ export function listInvites(scope: ShareScope): Promise<ShareInvite[]> {
 
 export function createInvite(
   scope: ShareScope,
-  role: AssignableRole,
+  role: AssignableShareRole,
   expiresInDays = 7
 ): Promise<CreatedInvite> {
   return api.post<CreatedInvite>(scopeBase(scope), { data: { role, expiresInDays } });

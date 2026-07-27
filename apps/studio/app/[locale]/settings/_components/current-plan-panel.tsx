@@ -7,7 +7,7 @@ import { IconReceipt } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cancelSubscription, getMyEntitlement } from "@/lib/billing";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Panel } from "./settings-ui";
 
@@ -17,7 +17,7 @@ export const myEntitlementQueryKey = ["billing", "my-entitlement"] as const;
  * The signed-in user's current plan + renews-on/cancel affordance. Replaces the
  * old "Manage plan → purchase dialog" stub that the FAQ pointed at as a manage
  * surface. The plan comes from the Nest entitlement snapshot; cancel + "renews
- * on" come from the active /aurora subscription (null for legacy VIP plans, in
+ * on" come from the active /aurora subscription (null when a plan was granted
  * which case we show the plan with no cancel button).
  */
 export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void }) {

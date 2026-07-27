@@ -179,6 +179,93 @@ describe('mapBytePlusVideoProviderRequest wire contract (ModelArk doc 1520757)',
     });
     expect(optOut.generate_audio).toBe(false);
   });
+
+  it('asks for the generated last frame only when opted in (shot chaining)', () => {
+    const off = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'a quiet harbor at dawn',
+    });
+    expect(off).not.toHaveProperty('return_last_frame');
+    const on = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'a quiet harbor at dawn',
+      returnLastFrame: true,
+    });
+    expect(on.return_last_frame).toBe(true);
+  });
+
+  it('emits frame roles alone for the first/last-frame scenario', () => {
+    const body = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'the ink line grows northward',
+      startFrame: { url: 'https://cdn.example.com/a-last.png' },
+      endFrame: { url: 'https://cdn.example.com/b-end.png' },
+    });
+    const content = body.content as Array<Record<string, unknown>>;
+    expect(content.map((part) => part.role)).toEqual([
+      undefined,
+      'first_frame',
+      'last_frame',
+    ]);
+  });
+});
+
+// ModelArk doc 1520757: "Image to video - first frame, image to video - first
+// and last frames, Multimodal reference video generation ... are three mutually
+// exclusive scenarios and cannot be mixed." A mixed request earns HTTP 400
+// `InvalidParameter: first/last frame content cannot be mixed with reference
+// media content`, so it must never leave our worker.
+describe('mapBytePlusVideoProviderRequest scenario exclusivity', () => {
+  const frame = { url: 'https://cdn.example.com/frame.png' };
+  const reference = { url: 'https://cdn.example.com/ref.png' };
+
+  it.each([
+    ['referenceImages', { referenceImages: [reference] }],
+    ['referenceVideos', { referenceVideos: [{ url: 'https://x/v.mp4' }] }],
+    ['referenceAudios', { referenceAudios: [{ url: 'https://x/a.mp3' }] }],
+  ])('rejects a start frame combined with %s', (field, extra) => {
+    expect(() =>
+      mapBytePlusVideoProviderRequest(runtimeConfig(), {
+        prompt: 'mixed request',
+        startFrame: frame,
+        ...extra,
+      }),
+    ).toThrow(new RegExp(field));
+  });
+
+  it('rejects an end frame combined with reference media', () => {
+    expect(() =>
+      mapBytePlusVideoProviderRequest(runtimeConfig(), {
+        prompt: 'mixed request',
+        endFrame: frame,
+        referenceImages: [reference],
+      }),
+    ).toThrow(/cannot be combined/);
+  });
+
+  it('allows references with no frames, and frames with no references', () => {
+    expect(() =>
+      mapBytePlusVideoProviderRequest(runtimeConfig(), {
+        prompt: 'multimodal only',
+        referenceImages: [reference],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      mapBytePlusVideoProviderRequest(runtimeConfig(), {
+        prompt: 'frames only',
+        startFrame: frame,
+        endFrame: frame,
+      }),
+    ).not.toThrow();
+  });
+
+  it('ignores empty reference arrays so frames still pass', () => {
+    expect(() =>
+      mapBytePlusVideoProviderRequest(runtimeConfig(), {
+        prompt: 'frames with emptied slots',
+        startFrame: frame,
+        referenceImages: [],
+        referenceVideos: [],
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe('mapBytePlusProviderRequest watermark', () => {

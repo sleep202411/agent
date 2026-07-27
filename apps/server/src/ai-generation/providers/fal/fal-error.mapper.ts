@@ -1,4 +1,8 @@
 import type { AiJobError } from '../../types';
+import {
+  CONTENT_POLICY_USER_MESSAGE,
+  isContentPolicyViolation,
+} from '../content-policy';
 
 export class FalProviderError extends Error {
   constructor(public readonly payload: AiJobError) {
@@ -41,6 +45,17 @@ export function mapFalHttpError(status: number, raw: string): FalProviderError {
       'PROVIDER_5XX',
       `fal.ai HTTP ${status}: ${raw.slice(0, 500)}`,
       'The generation provider is temporarily unavailable.',
+      raw,
+    );
+  }
+  // A moderation refusal is a 4xx too, but "check the inputs" is wrong for it —
+  // the inputs are fine, the content was rejected. Split it out before the
+  // generic validation fallback so the client can tell the user the truth.
+  if (isContentPolicyViolation(raw)) {
+    return falError(
+      'PROVIDER_CONTENT_FILTER',
+      `fal.ai HTTP ${status} (content policy): ${raw.slice(0, 500)}`,
+      CONTENT_POLICY_USER_MESSAGE,
       raw,
     );
   }

@@ -25,7 +25,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiRequestError } from "@/lib/api";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import {
   addMember,
   createInvite,
@@ -35,13 +35,14 @@ import {
   removeMember,
   revokeInvite,
   updateMemberRole,
-  type AssignableRole,
+  defaultRoleForScope,
+  rolesForScope,
+  type AssignableShareRole,
   type CreatedInvite,
   type ShareScope,
   type SharingMember,
 } from "@/lib/collab/sharing-api";
 
-const ROLES: AssignableRole[] = ["admin", "editor", "viewer"];
 const errMsg = (e: unknown, fallback: string) =>
   e instanceof ApiRequestError ? e.message : fallback;
 
@@ -72,7 +73,14 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const roleLabel = (r: string) =>
-    t(`roles.${r}` as "roles.admin" | "roles.editor" | "roles.viewer");
+    t(
+      `roles.${r}` as
+        | "roles.admin"
+        | "roles.editor"
+        | "roles.viewer"
+        | "roles.producer"
+        | "roles.reviewer"
+    );
   const queryClient = useQueryClient();
   const membersKey = ["share-members", scope.kind, scope.id] as const;
   const { data: members, isLoading } = useQuery({
@@ -80,8 +88,11 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
     queryFn: () => listMembers(scope),
   });
 
+  // Role vocabulary is per scope: a Story project assigns story roles, every
+  // other scope assigns the platform ones.
+  const roleOptions = rolesForScope(scope);
   const [account, setAccount] = useState("");
-  const [role, setRole] = useState<AssignableRole>("editor");
+  const [role, setRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
   const [search, setSearch] = useState("");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: membersKey });
 
@@ -111,7 +122,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
     onError: (e) => toast.error(errMsg(e, t("addMemberFailed"))),
   });
   const roleMut = useMutation({
-    mutationFn: (v: { memberId: string; nextRole: AssignableRole }) =>
+    mutationFn: (v: { memberId: string; nextRole: AssignableShareRole }) =>
       updateMemberRole(scope, v.memberId, v.nextRole),
     onSuccess: () => void invalidate(),
     onError: (e) => toast.error(errMsg(e, t("changeRoleFailed"))),
@@ -123,7 +134,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   });
 
   // ── Invite links ──────────────────────────────────────────────────────────
-  const [linkRole, setLinkRole] = useState<AssignableRole>("editor");
+  const [linkRole, setLinkRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
   const [created, setCreated] = useState<CreatedInvite | null>(null);
   const invitesKey = ["share-invites", scope.kind, scope.id] as const;
   const { data: invites } = useQuery({
@@ -181,11 +192,11 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
           />
           <select
             value={role}
-            onChange={(event) => setRole(event.target.value as AssignableRole)}
+            onChange={(event) => setRole(event.target.value as AssignableShareRole)}
             className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
             aria-label={t("role")}
           >
-            {ROLES.map((r) => (
+            {roleOptions.map((r) => (
               <option key={r} value={r}>
                 {roleLabel(r)}
               </option>
@@ -243,7 +254,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                     <IconDotsVertical className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {ROLES.map((r) => (
+                    {roleOptions.map((r) => (
                       <DropdownMenuItem
                         key={r}
                         onSelect={() => roleMut.mutate({ memberId: member.memberId, nextRole: r })}
@@ -311,11 +322,11 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
           <div className="flex items-center gap-2">
             <select
               value={linkRole}
-              onChange={(event) => setLinkRole(event.target.value as AssignableRole)}
+              onChange={(event) => setLinkRole(event.target.value as AssignableShareRole)}
               className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
               aria-label={t("inviteLinkRole")}
             >
-              {ROLES.map((r) => (
+              {roleOptions.map((r) => (
                 <option key={r} value={r}>
                   {roleLabel(r)}
                 </option>

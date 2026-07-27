@@ -6,9 +6,9 @@
   "properties": {
     "gameId": { "$ref": "#/$defs/__schema0" },
     "title": { "type": "string", "minLength": 1, "maxLength": 240 },
-    "coverUrl": { "$ref": "#/$defs/__schema1" },
+    "coverUrl": {},
     "currentVersion": { "$ref": "#/$defs/__schema0" },
-    "manifestUrl": { "$ref": "#/$defs/__schema1" }
+    "manifestUrl": { "type": "string", "format": "uri" }
   },
   "required": ["gameId", "title", "currentVersion", "manifestUrl"],
   "additionalProperties": false,
@@ -18,7 +18,6 @@
       "minLength": 1,
       "maxLength": 160,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
-    },
-    "__schema1": { "type": "string", "format": "uri" }
+    }
   }
 }

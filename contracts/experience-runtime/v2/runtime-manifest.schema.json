@@ -61,7 +61,8 @@
       "properties": {
         "title": { "$ref": "#/$defs/__schema6" },
         "summary": { "$ref": "#/$defs/__schema6" },
-        "coverAssetId": { "$ref": "#/$defs/__schema3" }
+        "coverAssetId": { "$ref": "#/$defs/__schema3" },
+        "experienceProfile": { "type": "string", "enum": ["cinematic", "narrative"] }
       },
       "required": ["title"],
       "additionalProperties": false
@@ -234,7 +235,7 @@
               "variants": { "$ref": "#/$defs/__schema23" },
               "audioMode": { "$ref": "#/$defs/__schema30" }
             },
-            "required": ["assetId", "kind", "orientationPolicy", "variants", "audioMode"],
+            "required": ["assetId", "kind", "orientationPolicy", "variants"],
             "additionalProperties": false
           },
           {
@@ -655,6 +656,15 @@
           "properties": {
             "kind": { "type": "string", "const": "scene" },
             "sceneId": { "$ref": "#/$defs/__schema3" },
+            "music": {
+              "type": "object",
+              "properties": {
+                "trackId": { "$ref": "#/$defs/__schema3" },
+                "url": { "$ref": "#/$defs/__schema26" }
+              },
+              "required": ["trackId", "url"],
+              "additionalProperties": false
+            },
             "clock": {
               "default": { "kind": "none" },
               "oneOf": [

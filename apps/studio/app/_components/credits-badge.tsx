@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useActiveWorkspace, useActiveWorkspaceId } from "@/app/_components/workspace-context";
-import { getAssetsRealtimeKernel } from "@/app/[locale]/canvas/_lib/assets-realtime-kernel";
+import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";

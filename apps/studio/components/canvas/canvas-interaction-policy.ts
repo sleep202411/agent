@@ -28,6 +28,7 @@ export type CanvasWheelRoute = "native" | "zoom" | "scroll" | "blocked" | "pan";
 
 export const CANVAS_MULTI_SELECTION_KEY = "Shift";
 export const CANVAS_PAN_ACTIVATION_KEY = "Space";
+export const CANVAS_DELETE_KEY_CODES = ["Backspace", "Delete"];
 
 export type CanvasTool = "select" | "pan";
 

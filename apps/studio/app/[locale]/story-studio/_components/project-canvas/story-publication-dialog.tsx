@@ -11,22 +11,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { FilmBuildDiagnostic } from "@/lib/story-projects-api";
+import type { StoryBuildDiagnostic } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { isStoryPublicationPending, type StoryPublicationState } from "./use-story-publication";
 import type { StoryPublicationActivePhase } from "./story-publication-flow";
 
-const PUBLICATION_PHASES = ["saving", "locking", "building", "publishing"] as const;
+const PUBLICATION_PHASES = ["saving", "building", "publishing"] as const;
 
 export function StoryPublicationDialog({
   state,
   draftRevision,
+  canMutate,
+  disabledReason,
   onClose,
   onConfirm,
   onRetry,
 }: {
   state: StoryPublicationState;
   draftRevision: number;
+  canMutate: boolean;
+  disabledReason: string | null;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
   onRetry: () => void | Promise<void>;
@@ -114,7 +118,16 @@ export function StoryPublicationDialog({
             <Button type="button" variant="secondary" size="xl" onClick={onClose}>
               {t("actions.cancel")}
             </Button>
-            <Button type="button" variant="primary-cta" size="xl" onClick={() => void onConfirm()}>
+            <Button
+              type="button"
+              variant="primary-cta"
+              size="xl"
+              disabled={!canMutate}
+              title={disabledReason ?? undefined}
+              onClick={() => {
+                if (canMutate) void onConfirm();
+              }}
+            >
               <IconCloudUpload className="size-4" />
               {t("actions.confirm")}
             </Button>
@@ -127,7 +140,15 @@ export function StoryPublicationDialog({
               {t("actions.close")}
             </Button>
             {state.phase !== "permission" ? (
-              <Button type="button" size="xl" onClick={() => void onRetry()}>
+              <Button
+                type="button"
+                size="xl"
+                disabled={!canMutate}
+                title={disabledReason ?? undefined}
+                onClick={() => {
+                  if (canMutate) void onRetry();
+                }}
+              >
                 {t("actions.retry")}
               </Button>
             ) : null}
@@ -201,7 +222,7 @@ function PublicationFailure({
   diagnostics,
 }: {
   message: string;
-  diagnostics: FilmBuildDiagnostic[];
+  diagnostics: StoryBuildDiagnostic[];
 }) {
   const t = useTranslations("storyStudio.canvas.publish");
   return (
@@ -255,7 +276,6 @@ function dialogTitle(state: StoryPublicationState, t: PublicationT): string {
     case "failed":
       return t("failure.title");
     case "saving":
-    case "locking":
     case "building":
     case "publishing":
       return t("progress.title");
@@ -272,7 +292,6 @@ function dialogDescription(state: StoryPublicationState, t: PublicationT): strin
     case "failed":
       return t("failure.description");
     case "saving":
-    case "locking":
     case "building":
     case "publishing":
       return t("progress.description");
@@ -286,8 +305,6 @@ function phaseTitle(phase: StoryPublicationActivePhase, t: PublicationT): string
   switch (phase) {
     case "saving":
       return t("phases.saving.title");
-    case "locking":
-      return t("phases.locking.title");
     case "building":
       return t("phases.building.title");
     case "publishing":
@@ -299,8 +316,6 @@ function phaseDescription(phase: StoryPublicationActivePhase, t: PublicationT): 
   switch (phase) {
     case "saving":
       return t("phases.saving.description");
-    case "locking":
-      return t("phases.locking.description");
     case "building":
       return t("phases.building.description");
     case "publishing":
@@ -311,7 +326,5 @@ function phaseDescription(phase: StoryPublicationActivePhase, t: PublicationT): 
 function isPublicationActivePhase(
   value: StoryPublicationState["status"]
 ): value is StoryPublicationActivePhase {
-  return (
-    value === "saving" || value === "locking" || value === "building" || value === "publishing"
-  );
+  return value === "saving" || value === "building" || value === "publishing";
 }

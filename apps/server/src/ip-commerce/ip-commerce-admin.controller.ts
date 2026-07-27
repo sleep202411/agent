@@ -624,7 +624,6 @@ function adminToAuthUser(admin: AdminActor): AuthUser {
     userName: admin.email,
     nickName: admin.displayName,
     email: admin.email,
-    userLevel: 'ADMIN',
   };
 }
 

@@ -16,14 +16,13 @@
  *     ALSO calls refund (image jobs do this on terminal failure) is
  *     a no-op the second time round.
  *
- * The interceptor reads the same metadata + same idempotency key as
- * the guard; we stash the resolved key on `req.__quotaConsumeKey` in
- * the guard to avoid recomputing it here.
+ * The interceptor requires the guard's debit receipt. A deduplicated request
+ * gets a non-debited receipt and therefore cannot refund the original
+ * request's charge when its own downstream handler fails.
  */
 import {
   CallHandler,
   ExecutionContext,
-  HttpException,
   Injectable,
   Logger,
   NestInterceptor,
@@ -32,13 +31,13 @@ import { Reflector } from '@nestjs/core';
 import { catchError, type Observable, throwError } from 'rxjs';
 import type { Request } from 'express';
 import { QuotaService } from './quota.service';
-import { normalizeTier } from './tiers.config';
 import { QUOTA_METADATA_KEY, type QuotaRequirement } from './quota.decorator';
 import type { AuthUser } from '../auth';
+import type { QuotaDebitReceipt } from './quota.types';
 
 interface QuotaTaggedRequest extends Request {
   user?: AuthUser;
-  __quotaConsumeKey?: string;
+  __quotaConsumeReceipt?: QuotaDebitReceipt;
 }
 
 @Injectable()
@@ -59,29 +58,28 @@ export class QuotaInterceptor implements NestInterceptor {
 
     const req = ctx.switchToHttp().getRequest<QuotaTaggedRequest>();
     const userId = req.user?.userId;
-    const tier = normalizeTier(req.user?.userLevel);
-    const idem = req.__quotaConsumeKey;
+    const receipt = req.__quotaConsumeReceipt;
 
     return next.handle().pipe(
       catchError((err: unknown) => {
-        // Don't refund on QuotaGuard-thrown 429 (we never consumed).
-        const status =
-          err instanceof HttpException ? err.getStatus() : undefined;
-        if (status === 429) return throwError(() => err);
-
-        if (userId && idem) {
+        if (
+          userId &&
+          receipt?.debited === true &&
+          receipt.userId === userId &&
+          receipt.dimension === requirement.dimension
+        ) {
           void this.quota
             .refundFor({
               userId,
-              tier,
-              dimension: requirement.dimension,
-              cost: requirement.cost ?? 1,
-              idempotencyKey: idem,
+              limits: receipt.profile.limits,
+              dimension: receipt.dimension,
+              cost: receipt.cost,
+              idempotencyKey: receipt.idempotencyKey,
               reason: `${requirement.reason ?? 'downstream'}_failed`,
             })
             .catch((refundErr) => {
               this.logger.warn(
-                `auto-refund failed userId=${userId} key=${idem}: ${
+                `auto-refund failed userId=${userId} key=${receipt.idempotencyKey}: ${
                   refundErr instanceof Error
                     ? refundErr.message
                     : String(refundErr)

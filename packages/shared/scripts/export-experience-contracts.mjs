@@ -34,6 +34,15 @@ const contracts = [
   ],
 ];
 
+// Catalogue reads intentionally normalize malformed decorative fields through
+// Zod transforms. Their JSON Schemas describe the accepted transport input;
+// output-mode conversion cannot represent transforms and would leave only a
+// partially written contract set.
+const inputContractFiles = new Set([
+  "game-list-response.schema.json",
+  "game-detail-response.schema.json",
+]);
+
 const obsoleteContracts = [
   "publication-candidate.schema.json",
   "publication-envelope.schema.json",
@@ -52,6 +61,7 @@ for (const [fileName, contractName, schema] of contracts) {
     target: "draft-2020-12",
     unrepresentable: "throw",
     reused: "ref",
+    io: inputContractFiles.has(fileName) ? "input" : "output",
   });
   if (fileName === "release-request.schema.json") {
     jsonSchema.properties.setCurrent.default = true;

@@ -14,6 +14,7 @@ import { WorkspaceMemberRole } from '@prisma/client';
 import type { AssetEvent } from '@repo/shared';
 import { PrismaService } from '../db/db.module';
 import { WorkspacePermissionService } from '../../workspaces';
+import { StoryPermissionService } from '../../story-studio/story-permission.service';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
@@ -34,6 +35,7 @@ export class RealtimeReplayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
+    private readonly storyPermissions: StoryPermissionService,
   ) {}
 
   async replay(
@@ -86,6 +88,17 @@ export class RealtimeReplayService {
         );
         return;
       }
+    }
+    const storyProjectPrefix = 'story:project:';
+    if (channel.startsWith(storyProjectPrefix)) {
+      const storyProjectId = channel.slice(storyProjectPrefix.length);
+      await this.storyPermissions.requireProject(
+        userId,
+        storyProjectId,
+        'story.read',
+        { allowArchived: true },
+      );
+      return;
     }
     throw new ForbiddenException('channel_unsupported');
   }

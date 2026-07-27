@@ -77,6 +77,7 @@ export class ExperienceRuntimeController {
     events: readonly ExperienceRuntimeEvent[],
     options?: { maxProcessedEvents?: number }
   ): ExperienceEventQueueResult {
+    this.#assertStarted();
     const result = runExperienceEventQueue(this.#manifest, this.#state, events, options);
     result.effects.forEach((effect) => {
       if (effect.kind !== "renderer.command") return;
@@ -106,6 +107,7 @@ export class ExperienceRuntimeController {
     outcomeType: string;
     payload?: ExperienceJsonObject;
   }): ExperienceEventQueueResult {
+    this.#assertStarted();
     const scene = this.#manifest.graph.nodes.find(
       (node) => node.sceneId === this.#state.currentSceneId
     );
@@ -141,5 +143,13 @@ export class ExperienceRuntimeController {
         payload,
       },
     ]);
+  }
+
+  #assertStarted(): void {
+    if (this.#started) return;
+    throw new ExperienceRuntimeInvariantError(
+      "RUNTIME_NOT_STARTED",
+      "Experience runtime must be started before it can process input"
+    );
   }
 }
