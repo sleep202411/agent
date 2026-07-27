@@ -48,6 +48,8 @@ export default function RootLayout() {
                   (or replaces) onto the stack; always skippable. */}
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="settings" />
+              <Stack.Screen name="account-security" />
+              <Stack.Screen name="bind-invite" />
               <Stack.Screen name="referrals" />
               <Stack.Screen name="delete-account" />
               <Stack.Screen name="ips" options={detailHeader} />

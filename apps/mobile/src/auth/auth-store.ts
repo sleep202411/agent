@@ -1,13 +1,20 @@
 import { setApiTokenProvider, setUnauthorizedHandler, ApiRequestError } from "@/lib/api-client";
 
 import {
+  bindInviteCode,
   getCurrentUser,
+  loginWithCode,
+  loginWithPassword,
   logout,
-  registerWithIdentifier,
-  signInWithIdentifier,
+  normalizeIdentifier,
+  resetPasswordWithIdentifier,
+  setAccountPassword,
+  type NormalizedIdentifier,
+  updateUserNickname,
 } from "./auth-service";
+import { clearPendingCode } from "./pending-code";
 import { clearStoredSession, readStoredSession, writeStoredSession } from "./token-storage";
-import type { AuthSession, AuthState, RegisterCredentials, SignInCredentials } from "./types";
+import type { AuthSession, AuthState, SignInCredentials } from "./types";
 
 const listeners = new Set<() => void>();
 
@@ -71,17 +78,19 @@ export async function hydrateAuthSession() {
       return;
     }
 
-    setState(toAuthenticatedState(storedSession));
+    // Persisted sessions are never "new user" for onboarding purposes.
+    setState(toAuthenticatedState({ ...storedSession, isNewUser: false }));
 
     try {
       const freshUser = await getCurrentUser();
       if (!freshUser) {
-        setState(toAuthenticatedState(storedSession));
+        setState(toAuthenticatedState({ ...storedSession, isNewUser: false }));
         return;
       }
 
       await replaceSession({
         ...storedSession,
+        isNewUser: false,
         updatedAt: new Date().toISOString(),
         user: freshUser,
       });
@@ -91,7 +100,9 @@ export async function hydrateAuthSession() {
         return;
       }
 
-      setState(toAuthenticatedState(storedSession, messageFromError(error)));
+      setState(
+        toAuthenticatedState({ ...storedSession, isNewUser: false }, messageFromError(error))
+      );
     }
   })().finally(() => {
     hydratePromise = undefined;
@@ -100,11 +111,13 @@ export async function hydrateAuthSession() {
   return hydratePromise;
 }
 
-export async function signIn(credentials: SignInCredentials) {
+/** OTP Continue path — may auto-register; returns `isNewUser` on the session. */
+export async function continueWithCode(identifier: NormalizedIdentifier, code: string) {
   setState({ ...state, error: undefined, status: "submitting" });
 
   try {
-    const session = await signInWithIdentifier(credentials);
+    const session = await loginWithCode(identifier, code);
+    clearPendingCode();
     await replaceSession(session);
     return session;
   } catch (error) {
@@ -116,11 +129,15 @@ export async function signIn(credentials: SignInCredentials) {
   }
 }
 
-export async function register(credentials: RegisterCredentials) {
+/** Secondary password login (`type=pwd`). Never auto-registers. */
+export async function signIn(credentials: SignInCredentials) {
   setState({ ...state, error: undefined, status: "submitting" });
 
   try {
-    const session = await registerWithIdentifier(credentials);
+    const identifier = normalizeIdentifier(credentials.identifier);
+    if (!identifier) throw new Error("Enter a valid phone number or email.");
+    const session = await loginWithPassword(identifier, credentials.password);
+    clearPendingCode();
     await replaceSession(session);
     return session;
   } catch (error) {
@@ -130,6 +147,53 @@ export async function register(credentials: RegisterCredentials) {
     });
     throw error;
   }
+}
+
+/**
+ * Reset password then sign in — web auth-flow parity (`resetPassword` returns
+ * a session; mobile previously only mutated the password and bounced to login).
+ */
+export async function resetPasswordAndSignIn(params: {
+  identifier: string;
+  code: string;
+  password: string;
+}) {
+  setState({ ...state, error: undefined, status: "submitting" });
+
+  try {
+    const session = await resetPasswordWithIdentifier(params);
+    clearPendingCode();
+    await replaceSession(session);
+    return session;
+  } catch (error) {
+    setState({
+      error: messageFromError(error),
+      status: "anonymous",
+    });
+    throw error;
+  }
+}
+
+export async function saveOnboardingNickname(nickName: string) {
+  await updateUserNickname(nickName);
+  // Keep isNewUser through invite — refreshCurrentUser would clear it.
+  const session = state.session;
+  if (session) {
+    await replaceSession({
+      ...session,
+      isNewUser: true,
+      updatedAt: new Date().toISOString(),
+      user: { ...session.user, nickName, nickname: nickName },
+    });
+  }
+}
+
+export async function submitInviteCode(recommendationCode: string) {
+  await bindInviteCode(recommendationCode);
+}
+
+export async function saveAccountPassword(password: string, oldPassword?: string) {
+  await setAccountPassword(password, oldPassword);
 }
 
 export async function refreshCurrentUser() {
@@ -141,10 +205,18 @@ export async function refreshCurrentUser() {
 
   await replaceSession({
     ...session,
+    isNewUser: false,
     updatedAt: new Date().toISOString(),
     user,
   });
   return user;
+}
+
+/** Clear the one-shot onboarding flag without a network round-trip. */
+export async function clearIsNewUserFlag() {
+  const session = state.session;
+  if (!session?.isNewUser) return;
+  await replaceSession({ ...session, isNewUser: false });
 }
 
 export async function clearAuthSession() {

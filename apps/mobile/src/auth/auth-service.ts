@@ -9,13 +9,19 @@ import type {
   AuthToken,
   AuthUser,
   AuthUserLevel,
-  RegisterCredentials,
   SignInCredentials,
 } from "./types";
 
 interface UserInfoEnvelope extends ApiResponse<unknown> {
   info?: AuthUser;
   level?: AuthUserLevel[];
+}
+
+export type IdentifierKind = "phone" | "email";
+
+export interface NormalizedIdentifier {
+  kind: IdentifierKind;
+  account: string;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
@@ -74,6 +80,16 @@ function readSessionToken(data: unknown, envelope: unknown): AuthToken | undefin
   return tokenValue ? { tokenName, tokenValue } : undefined;
 }
 
+function readIsNewUser(envelope: unknown): boolean {
+  const root = objectRecord(envelope);
+  const payload = objectRecord(root.data);
+  const raw = root.isNewUser ?? payload.isNewUser;
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "number") return raw === 1;
+  if (typeof raw === "string") return raw === "true" || raw === "1";
+  return false;
+}
+
 /** Web dev runs on localhost — backend Set-Cookie uses prod domains the browser rejects. */
 function persistSessionCookie(token: AuthToken) {
   if (Platform.OS !== "web" || typeof document === "undefined") return;
@@ -112,36 +128,135 @@ function toAuthResult(envelope: unknown): AuthResult {
   return {
     raw: root,
     token,
+    isNewUser: readIsNewUser(root),
     user: normalizeUser(wrappedUser ?? (looksLikeUser(payloadRecord) ? payloadRecord : undefined)),
   };
 }
 
-function isEmailIdentifier(identifier: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+export function isEmailIdentifier(identifier: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.trim());
 }
 
-export async function emailLogin(params: { email: string; pwd: string }) {
+/** Loose phone: at least 6 digits after stripping common separators. */
+export function isPhoneIdentifier(identifier: string) {
+  const digits = identifier.replace(/[^\d]/g, "");
+  return digits.length >= 6;
+}
+
+export function normalizeIdentifier(raw: string): NormalizedIdentifier | null {
+  const account = raw.trim();
+  if (!account) return null;
+  if (isEmailIdentifier(account)) return { kind: "email", account: account.toLowerCase() };
+  if (isPhoneIdentifier(account)) return { kind: "phone", account: account.replace(/[^\d+]/g, "") };
+  return null;
+}
+
+export function maskIdentifier(identifier: NormalizedIdentifier): string {
+  const { account, kind } = identifier;
+  if (kind === "email") {
+    const [local, domain] = account.split("@");
+    if (!domain) return account;
+    const visible = local.slice(0, Math.min(2, local.length));
+    return `${visible}***@${domain}`;
+  }
+  if (account.length <= 4) return account;
+  return `${account.slice(0, 3)}****${account.slice(-2)}`;
+}
+
+/**
+ * Unified OTP send: `GET /user/new/getCode?type=phone|email&account=&resetPassword=`.
+ * `resetPassword=true` scopes the code to reset and rejects unknown accounts.
+ */
+async function sendGetCode(
+  identifier: NormalizedIdentifier,
+  resetPassword: boolean
+): Promise<void> {
+  await api.get<ApiResponse<unknown>>("/user/new/getCode", {
+    params: {
+      type: identifier.kind,
+      account: identifier.account,
+      resetPassword,
+    },
+  });
+}
+
+/** Sign-in / auto-register OTP (`resetPassword=false`). */
+export async function sendLoginCode(identifier: NormalizedIdentifier) {
+  await sendGetCode(identifier, false);
+}
+
+/** Password-reset OTP (`resetPassword=true`; unknown accounts fail). */
+export async function sendResetCode(identifier: NormalizedIdentifier) {
+  await sendGetCode(identifier, true);
+}
+
+/**
+ * OTP login / auto-register: `POST /user/new/login` with type=phone|email.
+ * Returns session + `isNewUser` from the envelope.
+ */
+export async function loginWithCode(
+  identifier: NormalizedIdentifier,
+  code: string
+): Promise<AuthSession> {
   const envelope = await api.postForm<ApiResponse<unknown>>(
-    "/user/email/login",
+    "/user/new/login",
     {
-      email: params.email,
-      pwd: params.pwd,
+      type: identifier.kind,
+      account: identifier.account,
+      code: code.trim(),
     },
     { raw: true }
   );
-  return toAuthResult(envelope);
+  return sessionFromAuthResult(toAuthResult(envelope));
 }
 
-export async function phoneLogin(params: { phone: string; pwd: string }) {
+/**
+ * Password login for legacy / Account-Security users: `type=pwd`.
+ * Never auto-registers.
+ */
+export async function loginWithPassword(
+  identifier: NormalizedIdentifier,
+  password: string
+): Promise<AuthSession> {
   const envelope = await api.postForm<ApiResponse<unknown>>(
-    "/user/login",
+    "/user/new/login",
     {
-      phone: params.phone,
-      pwd: params.pwd,
+      type: "pwd",
+      account: identifier.account,
+      pwd: password,
     },
     { raw: true }
   );
-  return toAuthResult(envelope);
+  return sessionFromAuthResult(toAuthResult(envelope), { isNewUser: false });
+}
+
+async function sessionFromAuthResult(
+  authResult: AuthResult,
+  overrides?: { isNewUser?: boolean }
+): Promise<AuthSession> {
+  if (!authResult.token) {
+    throw new Error("Login succeeded, but no session token was returned.");
+  }
+
+  let freshUser: AuthUser | undefined;
+  try {
+    freshUser = await getCurrentUser(authResult.token);
+  } catch (error) {
+    if (!authResult.user) throw error;
+  }
+
+  const user = freshUser ?? authResult.user;
+  if (!user) {
+    throw new Error("Login succeeded, but user profile was not returned.");
+  }
+
+  return {
+    region: appEnv.appRegion,
+    token: authResult.token,
+    updatedAt: new Date().toISOString(),
+    user,
+    isNewUser: overrides?.isNewUser ?? authResult.isNewUser === true,
+  };
 }
 
 export async function getCurrentUser(token?: AuthToken) {
@@ -166,160 +281,91 @@ export async function logout() {
   await api.get<unknown>("/user/logout");
 }
 
-export async function sendEmailCode(email: string) {
-  await api.get<ApiResponse<unknown>>("/user/email/getCode", { params: { email } });
+/** Bind invite code once: `POST /user/recommendationcode/bind` (authed). */
+export async function bindInviteCode(recommendationCode: string) {
+  await api.postForm<ApiResponse<unknown>>("/user/recommendationcode/bind", {
+    recommendationCode: recommendationCode.trim(),
+  });
 }
 
-export async function sendPhoneCode(phone: string) {
-  await api.get<ApiResponse<unknown>>("/user/getCode", { params: { phone } });
+/** Set or change password: `POST /user/set/password` (authed). */
+export async function setAccountPassword(password: string, oldPassword?: string) {
+  const form: Record<string, string> = { password };
+  if (oldPassword) form.oldPassword = oldPassword;
+  await api.postForm<ApiResponse<unknown>>("/user/set/password", form);
 }
 
+/** Update nickname after signup: `POST /user/update/user/info`. */
+export async function updateUserNickname(nickName: string) {
+  await api.post<ApiResponse<unknown>>("/user/update/user/info", {
+    data: { nickName: nickName.trim() },
+  });
+}
+
+/**
+ * Password rule for Account Security and forgot-password reset (matches Java
+ * `/user/set/password`): 8–30 chars, letter + digit.
+ */
+export function isValidAccountPassword(password: string): boolean {
+  if (password.length < 8 || password.length > 30) return false;
+  return /[A-Za-z]/.test(password) && /\d/.test(password);
+}
+
+/** Legacy secondary entry still used by older call sites — maps to `type=pwd`. */
 export async function signInWithIdentifier(credentials: SignInCredentials): Promise<AuthSession> {
-  const identifier = credentials.identifier.trim();
-  const password = credentials.password;
-  const authResult = isEmailIdentifier(identifier)
-    ? await emailLogin({ email: identifier, pwd: password })
-    : await phoneLogin({ phone: identifier, pwd: password });
-
-  let freshUser: AuthUser | undefined;
-  try {
-    freshUser = await getCurrentUser(authResult.token);
-  } catch (error) {
-    if (!authResult.user) throw error;
-  }
-
-  const user = freshUser ?? authResult.user;
-
-  if (!user) {
-    throw new Error("Login succeeded, but user profile was not returned.");
-  }
-
-  return {
-    region: appEnv.appRegion,
-    token: authResult.token,
-    updatedAt: new Date().toISOString(),
-    user,
-  };
+  const identifier = normalizeIdentifier(credentials.identifier);
+  if (!identifier) throw new Error("Enter a valid phone number or email.");
+  return loginWithPassword(identifier, credentials.password);
 }
 
-export async function emailRegister(params: {
-  email: string;
-  code: string;
-  password: string;
-  recommendationCode?: string;
-}) {
-  const body: Record<string, string> = {
-    code: params.code,
-    email: params.email,
-    password: params.password,
-  };
-  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const envelope = await api.postForm<ApiResponse<unknown>>("/user/email/regist", body, {
-    raw: true,
-  });
-  return toAuthResult(envelope);
+/** @deprecated Prefer `sendResetCode` — kept for older call sites. */
+export async function sendEmailCode(email: string) {
+  await sendGetCode({ kind: "email", account: email }, true);
 }
 
-export async function phoneRegister(params: {
-  phone: string;
-  code: string;
-  password: string;
-  recommendationCode?: string;
-}) {
-  const body: Record<string, string> = {
-    code: params.code,
-    password: params.password,
-    phone: params.phone,
-  };
-  if (params.recommendationCode) body.recommendationCode = params.recommendationCode;
-  const envelope = await api.postForm<ApiResponse<unknown>>("/user/regist", body, { raw: true });
-  return toAuthResult(envelope);
+/** @deprecated Prefer `sendResetCode` — kept for older call sites. */
+export async function sendPhoneCode(phone: string) {
+  await sendGetCode({ kind: "phone", account: phone }, true);
 }
 
-/** Send a registration verification code to a phone (CN) or email (global). */
+/** Send a reset verification code via `/user/new/getCode` (`resetPassword=true`). */
 export async function sendVerificationCode(identifier: string) {
-  const value = identifier.trim();
-  if (isEmailIdentifier(value)) {
-    await sendEmailCode(value);
-  } else {
-    await sendPhoneCode(value);
-  }
+  const next = normalizeIdentifier(identifier);
+  if (!next) throw new Error("Enter a valid phone number or email.");
+  await sendResetCode(next);
 }
 
-export async function registerWithIdentifier(
-  credentials: RegisterCredentials
-): Promise<AuthSession> {
-  const identifier = credentials.identifier.trim();
-  const code = credentials.code.trim();
-  const authResult = isEmailIdentifier(identifier)
-    ? await emailRegister({
-        code,
-        email: identifier,
-        password: credentials.password,
-        recommendationCode: credentials.recommendationCode,
-      })
-    : await phoneRegister({
-        code,
-        password: credentials.password,
-        phone: identifier,
-        recommendationCode: credentials.recommendationCode,
-      });
-
-  let freshUser: AuthUser | undefined;
-  try {
-    freshUser = await getCurrentUser(authResult.token);
-  } catch (error) {
-    if (!authResult.user) throw error;
-  }
-
-  const user = freshUser ?? authResult.user;
-  if (!user) {
-    throw new Error("Registration succeeded, but user profile was not returned.");
-  }
-
-  return {
-    region: appEnv.appRegion,
-    token: authResult.token,
-    updatedAt: new Date().toISOString(),
-    user,
-  };
-}
-
-export async function emailResetPassword(params: {
-  email: string;
-  code: string;
-  password: string;
-}) {
-  await api.postForm<unknown>("/user/email/reset/password", {
-    code: params.code,
-    email: params.email,
-    password: params.password,
-  });
-}
-
-export async function phoneResetPassword(params: {
-  phone: string;
-  code: string;
-  password: string;
-}) {
-  await api.postForm<unknown>("/user/reset/password", {
-    code: params.code,
-    password: params.password,
-    phone: params.phone,
-  });
-}
-
-/** Reset a password using a verification code — email (global) or phone (CN). */
+/**
+ * Reset password via OTP on the unified set-password endpoint, then return
+ * a signed-in session.
+ *
+ * `POST /user/set/password` with `type` + `account` + `code` + `password`
+ * (unauthenticated reset). Prefer the session token when Java returns one;
+ * otherwise sign in with the new password.
+ */
 export async function resetPasswordWithIdentifier(params: {
   identifier: string;
   code: string;
   password: string;
-}) {
-  const identifier = params.identifier.trim();
-  const code = params.code.trim();
-  if (isEmailIdentifier(identifier)) {
-    await emailResetPassword({ code, email: identifier, password: params.password });
-  } else {
-    await phoneResetPassword({ code, password: params.password, phone: identifier });
+}): Promise<AuthSession> {
+  const identifier = normalizeIdentifier(params.identifier);
+  if (!identifier) throw new Error("Enter a valid phone number or email.");
+
+  const envelope = await api.postForm<ApiResponse<unknown>>(
+    "/user/set/password",
+    {
+      type: identifier.kind,
+      account: identifier.account,
+      code: params.code.trim(),
+      password: params.password,
+    },
+    { raw: true }
+  );
+
+  const authResult = toAuthResult(envelope);
+  if (authResult.token) {
+    return sessionFromAuthResult(authResult, { isNewUser: false });
   }
+
+  return loginWithPassword(identifier, params.password);
 }

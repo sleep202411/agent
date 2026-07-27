@@ -13,7 +13,7 @@ export function useAuthGate() {
     []
   );
   const openRegister = useCallback(
-    (options?: Omit<AuthSheetOptions, "mode">) => openAuthSheet({ ...options, mode: "register" }),
+    (options?: Omit<AuthSheetOptions, "mode">) => openAuthSheet({ ...options, mode: "login" }),
     []
   );
   const requireAuth = useCallback(

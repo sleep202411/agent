@@ -49,16 +49,7 @@ export function AuthRequired({
         ]}
       >
         <ThemedText type="smallBold" style={styles.primaryText}>
-          {t("login.signIn")}
-        </ThemedText>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => authGate.openRegister()}
-        style={({ pressed }) => (pressed ? styles.pressed : null)}
-      >
-        <ThemedText type="small" themeColor="textSecondary">
-          {t("register.title")}
+          {t("auth.continue")}
         </ThemedText>
       </Pressable>
     </View>

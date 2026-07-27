@@ -14,10 +14,12 @@ export interface AuthSheetOptions {
   replace?: boolean;
 }
 
+// Register is no longer a separate product surface — Continue on /login covers
+// both sign-in and auto-register. Keep the mode so old callers still open auth.
 const AUTH_ROUTES: Record<AuthSheetMode, string> = {
   "forgot-password": "/forgot-password",
   login: "/login",
-  register: "/register",
+  register: "/login",
 };
 
 const COMPLETION_DELAY_MS = 260;
@@ -57,6 +59,21 @@ export function cancelPendingAuthRequest() {
   pendingRequest = undefined;
 }
 
+/**
+ * Flush the pending `onAuthenticated` callback without navigating — used when
+ * the auth stack is already leaving (e.g. onboarding abandoned mid-flow) so the
+ * caller that opened auth still runs.
+ */
+export function releasePendingAuthRequest() {
+  if (completingAuth) return;
+  const request = pendingRequest;
+  pendingRequest = undefined;
+  authSheetOpen = false;
+  setTimeout(() => {
+    flushPendingRequest(request);
+  }, COMPLETION_DELAY_MS);
+}
+
 export function completeAuthSheet(router: ImperativeRouter) {
   if (completingAuth) return;
 
@@ -65,6 +82,11 @@ export function completeAuthSheet(router: ImperativeRouter) {
   pendingRequest = undefined;
   authSheetOpen = false;
 
+  // Onboarding may push invite on top of profile. Pop to the first auth screen
+  // first, then leave the auth group — a single back() would stop on profile.
+  if (router.canDismiss()) {
+    router.dismissAll();
+  }
   if (router.canGoBack()) router.back();
   else router.replace(toHref("/"));
 

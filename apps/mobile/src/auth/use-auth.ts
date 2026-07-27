@@ -1,11 +1,16 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 import {
+  clearIsNewUserFlag,
+  continueWithCode,
   getAuthSnapshot,
   refreshCurrentUser,
-  register,
+  resetPasswordAndSignIn,
+  saveAccountPassword,
+  saveOnboardingNickname,
   signIn,
   signOut,
+  submitInviteCode,
   subscribeAuth,
 } from "./auth-store";
 
@@ -15,10 +20,15 @@ export function useAuth() {
   return useMemo(
     () => ({
       ...state,
+      clearIsNewUserFlag,
+      continueWithCode,
       refreshCurrentUser,
-      register,
+      resetPasswordAndSignIn,
+      saveAccountPassword,
+      saveOnboardingNickname,
       signIn,
       signOut,
+      submitInviteCode,
     }),
     [state]
   );

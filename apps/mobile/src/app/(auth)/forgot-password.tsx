@@ -1,9 +1,9 @@
-import { useRouter } from "expo-router";
+import * as Linking from "expo-linking";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,104 +15,270 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { resetPasswordWithIdentifier, sendVerificationCode } from "@/auth";
+import {
+  armResendDeadline,
+  completeAuthSheet,
+  hydratePendingCode,
+  hydrateResendClock,
+  isValidAccountPassword,
+  maskIdentifier,
+  normalizeIdentifier,
+  readPendingCode,
+  RESEND_COOLDOWN_SECONDS,
+  secondsUntilResend,
+  sendResetCode,
+  useAuth,
+  writePendingCode,
+  type NormalizedIdentifier,
+} from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { CodeInput } from "@/components/code-input";
 import { appEnv } from "@/config";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
 
 const theme = Colors.dark;
-const IS_CN = appEnv.siteRegion === "cn";
-const RESEND_SECONDS = 60;
-const MIN_PASSWORD = 6;
+const CODE_LENGTH = 6;
 
-type FieldName = "identifier" | "code" | "password" | "confirmPassword";
+const SITE_BASE_URL =
+  appEnv.siteRegion === "cn" ? "https://fizzdragon.fizzspace.cn/zh-CN" : "https://fizzdragon.com";
+
+type Step = "identifier" | "code" | "password";
+
+function interpolate(template: string, vars: Record<string, string | number>) {
+  return Object.entries(vars).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+    template
+  );
+}
+
+function sameAccount(a: NormalizedIdentifier, b: NormalizedIdentifier) {
+  return a.kind === b.kind && a.account === b.account;
+}
 
 export default function ForgotPasswordScreen() {
   const t = useTranslations();
+  const auth = useAuth();
   const router = useRouter();
-  const safeAreaInsets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ identifier?: string }>();
+  const insets = useSafeAreaInsets();
+  const passwordInputRef = useRef<TextInput>(null);
 
-  const [identifier, setIdentifier] = useState("");
+  const [step, setStep] = useState<Step>("identifier");
+  const [identifierText, setIdentifierText] = useState(
+    typeof params.identifier === "string" ? params.identifier : ""
+  );
+  const [normalized, setNormalized] = useState<NormalizedIdentifier | null>(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [focusedField, setFocusedField] = useState<FieldName | undefined>();
   const [showPassword, setShowPassword] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  const [focusedField, setFocusedField] = useState<"password" | "confirm" | undefined>();
+  const [resendIn, setResendIn] = useState(0);
   const [sendingCode, setSendingCode] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [localError, setLocalError] = useState<string>();
+  const [hydrated, setHydrated] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  const isSubmitting = auth.status === "submitting" || sendingCode;
+  const errorMessage = localError ?? auth.error;
+
+  const canContinueIdentifier = identifierText.trim().length > 0 && acceptedTerms && !isSubmitting;
+  const canSubmitPassword =
+    isValidAccountPassword(password) &&
+    password === confirmPassword &&
+    !isSubmitting &&
+    code.length === CODE_LENGTH;
 
   useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn(secondsUntilResend()), 1000);
     return () => clearTimeout(timer);
-  }, [countdown]);
+  }, [resendIn]);
 
-  const trimmedId = identifier.trim();
-  const canSendCode = trimmedId.length > 0 && countdown === 0 && !sendingCode;
-  const canSubmit =
-    trimmedId.length > 0 &&
-    code.trim().length > 0 &&
-    password.length >= MIN_PASSWORD &&
-    password === confirmPassword &&
-    !submitting;
+  // Web `start_reset`: land on the identifier step with the cooldown
+  // intact. A live reset code is resumed by Continue (same account), not
+  // by auto-jumping to the code step — a sign-in OTP in particular must
+  // not open the reset code UI (it cannot complete a reset).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await Promise.all([hydrateResendClock(), hydratePendingCode()]);
+      if (cancelled) return;
+      setResendIn(secondsUntilResend());
+      const pending = readPendingCode();
+      if (!identifierText.trim() && pending) {
+        setIdentifierText(pending.account.account);
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  async function handleSendCode() {
-    if (!trimmedId) {
-      setError(
-        IS_CN
-          ? t("forgotPassword.identifierRequiredPhone")
-          : t("forgotPassword.identifierRequiredEmail")
-      );
+  function canResumeResetCode(next: NormalizedIdentifier): boolean {
+    const pending = readPendingCode();
+    return pending?.mode === "reset" && sameAccount(pending.account, next);
+  }
+
+  const typedIdentifier = normalizeIdentifier(identifierText);
+  const showIdentifierCooldownHint =
+    step === "identifier" &&
+    resendIn > 0 &&
+    !(typedIdentifier !== null && canResumeResetCode(typedIdentifier));
+
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    completeAuthSheet(router);
+  }, [auth.status, router]);
+
+  function returnToPasswordLogin() {
+    router.replace({
+      pathname: "/login",
+      params: {
+        step: "password",
+        identifier: identifierText.trim() || normalized?.account || "",
+      },
+    });
+  }
+
+  function openSitePath(path: string) {
+    void Linking.openURL(`${SITE_BASE_URL}${path}`).catch(() => {
+      setLocalError(t("auth.linkFailed"));
+    });
+  }
+
+  async function sendResetCodeFor(next: NormalizedIdentifier) {
+    await sendResetCode(next);
+    const at = Date.now();
+    armResendDeadline(at + RESEND_COOLDOWN_SECONDS * 1000);
+    writePendingCode({ account: next, mode: "reset" });
+    setNormalized(next);
+    setCode("");
+    setStep("code");
+    setResendIn(secondsUntilResend(at));
+  }
+
+  async function handleContinueIdentifier() {
+    const next = normalizeIdentifier(identifierText);
+    if (!next) {
+      setLocalError(t("auth.errorIdentifierInvalid"));
       return;
     }
-    setError(undefined);
+    if (!acceptedTerms) {
+      setLocalError(t("auth.termsRequired"));
+      return;
+    }
+    setLocalError(undefined);
+
+    const remaining = secondsUntilResend();
+    if (remaining > 0) {
+      // Same account + reset mode → resume without a second SMS (web
+      // `resume_code`). Otherwise the global cooldown blocks the send.
+      if (canResumeResetCode(next)) {
+        setNormalized(next);
+        setCode("");
+        setStep("code");
+        setResendIn(remaining);
+        return;
+      }
+      setLocalError(t("auth.errorResendCooldown"));
+      setResendIn(remaining);
+      return;
+    }
+
     setSendingCode(true);
     try {
-      await sendVerificationCode(trimmedId);
-      setCountdown(RESEND_SECONDS);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("forgotPassword.sendCodeFailed"));
+      await sendResetCodeFor(next);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
     } finally {
       setSendingCode(false);
     }
   }
 
-  async function handleSubmit() {
-    if (!code.trim()) {
-      setError(t("forgotPassword.codeRequired"));
-      return;
-    }
-    if (password.length < MIN_PASSWORD) {
-      setError(t("forgotPassword.passwordTooShort"));
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError(t("forgotPassword.passwordMismatch"));
-      return;
-    }
-    setError(undefined);
-    setSubmitting(true);
-    try {
-      await resetPasswordWithIdentifier({ identifier: trimmedId, code, password });
-      Alert.alert(t("forgotPassword.successTitle"), t("forgotPassword.successMessage"), [
-        { text: t("forgotPassword.backToLogin"), onPress: () => router.replace("/login") },
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("forgotPassword.failed"));
-    } finally {
-      setSubmitting(false);
+  function handleConfirmCode(nextCode: string) {
+    if (nextCode.trim().length !== CODE_LENGTH) return;
+    setCode(nextCode);
+    setLocalError(undefined);
+    // Reset flow: Java verifies the code together with the new password —
+    // advance to the password step (web parity).
+    setStep("password");
+    setTimeout(() => passwordInputRef.current?.focus(), 50);
+  }
+
+  function handleCodeChange(value: string) {
+    setCode(value);
+    setLocalError(undefined);
+    if (value.length === CODE_LENGTH && !isSubmitting) {
+      handleConfirmCode(value);
     }
   }
 
-  const codeButtonLabel =
-    countdown > 0
-      ? `${countdown}s`
-      : sendingCode
-        ? t("forgotPassword.sending")
-        : t("forgotPassword.sendCode");
+  async function handleResend() {
+    if (!normalized || resendIn > 0 || sendingCode) return;
+    setSendingCode(true);
+    setLocalError(undefined);
+    try {
+      await sendResetCodeFor(normalized);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function handleSubmitNewPassword() {
+    if (!normalized) return;
+    if (code.length !== CODE_LENGTH) {
+      setStep("code");
+      setLocalError(t("auth.errorCodeRequired"));
+      return;
+    }
+    if (!isValidAccountPassword(password)) {
+      setLocalError(t("accountSecurity.invalidPassword"));
+      return;
+    }
+    if (password !== confirmPassword) {
+      setLocalError(t("auth.errorPasswordMismatch"));
+      return;
+    }
+    setLocalError(undefined);
+    try {
+      await auth.resetPasswordAndSignIn({
+        identifier: normalized.account,
+        code,
+        password,
+      });
+      // Effect completes the auth sheet once authenticated.
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("auth.errorServer");
+      setLocalError(message);
+    }
+  }
+
+  const title =
+    step === "identifier"
+      ? t("auth.resetTitle")
+      : step === "code"
+        ? t("auth.codeTitle")
+        : t("auth.resetPasswordTitle");
+
+  const subtitle =
+    step === "identifier"
+      ? t("auth.resetSubtitle")
+      : step === "code" && normalized
+        ? interpolate(t("auth.codeSubtitle"), { account: maskIdentifier(normalized) })
+        : normalized
+          ? interpolate(t("auth.resetPasswordSubtitle"), {
+              account: maskIdentifier(normalized),
+            })
+          : t("auth.resetPasswordSubtitle");
+
+  if (!hydrated) {
+    return <View style={styles.root} />;
+  }
 
   return (
     <View style={styles.root}>
@@ -124,10 +290,10 @@ export default function ForgotPasswordScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             {
-              paddingTop: safeAreaInsets.top + Spacing.two,
-              paddingBottom: safeAreaInsets.bottom + Spacing.five,
-              paddingLeft: Math.max(safeAreaInsets.left, Spacing.five),
-              paddingRight: Math.max(safeAreaInsets.right, Spacing.five),
+              paddingTop: insets.top + Spacing.two,
+              paddingBottom: insets.bottom + Spacing.five,
+              paddingLeft: Math.max(insets.left, Spacing.five),
+              paddingRight: Math.max(insets.right, Spacing.five),
             },
           ]}
           keyboardShouldPersistTaps="handled"
@@ -135,10 +301,24 @@ export default function ForgotPasswordScreen() {
         >
           <View style={styles.page}>
             <Pressable
-              accessibilityLabel={t("forgotPassword.back")}
+              accessibilityLabel={t("auth.back")}
               accessibilityRole="button"
               hitSlop={10}
-              onPress={() => router.replace("/login")}
+              onPress={() => {
+                if (step === "password") {
+                  setStep("code");
+                  setLocalError(undefined);
+                  return;
+                }
+                if (step === "code") {
+                  setStep("identifier");
+                  setCode("");
+                  setLocalError(undefined);
+                  return;
+                }
+                // Exit reset flow → password login (web cancel_reset parity).
+                returnToPasswordLogin();
+              }}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
               <View style={styles.backButton}>
@@ -151,271 +331,308 @@ export default function ForgotPasswordScreen() {
             </Pressable>
 
             <View style={styles.heading}>
-              <Text style={styles.title}>{t("forgotPassword.title")}</Text>
-              <Text style={styles.subtitle}>{t("forgotPassword.subtitle")}</Text>
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
             </View>
 
             <View style={styles.form}>
-              <View style={styles.field}>
-                <Text style={styles.label}>
-                  {IS_CN ? t("forgotPassword.phoneLabel") : t("forgotPassword.emailLabel")}
-                </Text>
-                <View
-                  style={[
-                    styles.inputShell,
-                    focusedField === "identifier" && styles.inputShellFocused,
-                  ]}
-                >
-                  <TextInput
-                    autoCapitalize="none"
-                    inputMode={IS_CN ? "tel" : "email"}
-                    keyboardType={IS_CN ? "phone-pad" : "email-address"}
-                    onBlur={() => setFocusedField(undefined)}
-                    onChangeText={(value) => {
-                      setIdentifier(value);
-                      if (error) setError(undefined);
-                    }}
-                    onFocus={() => setFocusedField("identifier")}
-                    placeholder={
-                      IS_CN
-                        ? t("forgotPassword.phonePlaceholder")
-                        : t("forgotPassword.emailPlaceholder")
-                    }
-                    placeholderTextColor="rgba(255,255,255,0.34)"
-                    style={styles.input}
-                    value={identifier}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>{t("forgotPassword.code")}</Text>
-                <View style={styles.codeRow}>
-                  <View
-                    style={[
-                      styles.inputShell,
-                      styles.codeInputShell,
-                      focusedField === "code" && styles.inputShellFocused,
-                    ]}
-                  >
-                    <TextInput
-                      autoCapitalize="none"
-                      inputMode="numeric"
-                      keyboardType="number-pad"
-                      onBlur={() => setFocusedField(undefined)}
-                      onChangeText={(value) => {
-                        setCode(value);
-                        if (error) setError(undefined);
-                      }}
-                      onFocus={() => setFocusedField("code")}
-                      placeholder={t("forgotPassword.codePlaceholder")}
-                      placeholderTextColor="rgba(255,255,255,0.34)"
-                      style={styles.input}
-                      value={code}
-                    />
+              {step === "identifier" ? (
+                <>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>{t("auth.identifierLabel")}</Text>
+                    <View style={styles.inputShell}>
+                      <TextInput
+                        autoCapitalize="none"
+                        autoFocus
+                        editable={!isSubmitting}
+                        inputMode="email"
+                        keyboardType="email-address"
+                        onChangeText={(value) => {
+                          setIdentifierText(value);
+                          setLocalError(undefined);
+                        }}
+                        onSubmitEditing={() => void handleContinueIdentifier()}
+                        placeholder={t("auth.identifierPlaceholder")}
+                        placeholderTextColor="rgba(255,255,255,0.34)"
+                        returnKeyType="done"
+                        style={styles.input}
+                        value={identifierText}
+                      />
+                    </View>
+                    {showIdentifierCooldownHint ? (
+                      <Text style={styles.hint}>
+                        {interpolate(t("auth.codeResendCountdown"), { seconds: resendIn })}
+                      </Text>
+                    ) : null}
                   </View>
+
                   <Pressable
-                    accessibilityRole="button"
-                    disabled={!canSendCode}
-                    onPress={handleSendCode}
-                    style={({ pressed }) => (pressed && canSendCode ? styles.pressed : null)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: acceptedTerms }}
+                    onPress={() => {
+                      setAcceptedTerms((current) => !current);
+                      setLocalError(undefined);
+                    }}
+                    style={({ pressed }) => (pressed ? styles.pressed : null)}
                   >
-                    <View style={[styles.codeButton, !canSendCode && styles.codeButtonDisabled]}>
-                      <Text
-                        style={[
-                          styles.codeButtonText,
-                          !canSendCode && styles.codeButtonTextDisabled,
-                        ]}
-                      >
-                        {codeButtonLabel}
+                    <View style={styles.termsRow}>
+                      <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                        {acceptedTerms ? (
+                          <SymbolView
+                            name={{ ios: "checkmark", android: "check", web: "check" }}
+                            size={12}
+                            tintColor="#FFFFFF"
+                          />
+                        ) : null}
+                      </View>
+                      <Text style={styles.termsText}>
+                        {t("login.agreementLead")}
+                        <Text
+                          style={styles.termsLink}
+                          onPress={() => openSitePath("/terms-of-service")}
+                        >
+                          {t("login.terms")}
+                        </Text>
+                        {t("login.and")}
+                        <Text
+                          style={styles.termsLink}
+                          onPress={() => openSitePath("/privacy-policy")}
+                        >
+                          {t("login.privacy")}
+                        </Text>
                       </Text>
                     </View>
                   </Pressable>
-                </View>
-              </View>
+                </>
+              ) : null}
 
-              <View style={styles.field}>
-                <Text style={styles.label}>{t("forgotPassword.newPassword")}</Text>
-                <View
-                  style={[
-                    styles.inputShell,
-                    focusedField === "password" && styles.inputShellFocused,
-                  ]}
-                >
-                  <TextInput
-                    autoCapitalize="none"
-                    onBlur={() => setFocusedField(undefined)}
-                    onChangeText={(value) => {
-                      setPassword(value);
-                      if (error) setError(undefined);
-                    }}
-                    onFocus={() => setFocusedField("password")}
-                    placeholder={t("forgotPassword.newPasswordPlaceholder")}
-                    placeholderTextColor="rgba(255,255,255,0.34)"
-                    secureTextEntry={!showPassword}
-                    style={styles.input}
-                    value={password}
+              {step === "code" ? (
+                <View style={styles.field}>
+                  <CodeInput
+                    autoFocus
+                    disabled={isSubmitting}
+                    invalid={!!errorMessage}
+                    label={t("auth.codeInputLabel")}
+                    length={CODE_LENGTH}
+                    onChange={handleCodeChange}
+                    value={code}
                   />
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={10}
-                    onPress={() => setShowPassword((current) => !current)}
-                    style={({ pressed }) => (pressed ? styles.pressed : null)}
-                  >
-                    <View style={styles.eyeButton}>
-                      <SymbolView
-                        name={{
-                          ios: showPassword ? "eye.slash" : "eye",
-                          android: showPassword ? "visibility_off" : "visibility",
-                          web: showPassword ? "visibility_off" : "visibility",
-                        }}
-                        size={18}
-                        tintColor="rgba(255,255,255,0.55)"
-                      />
-                    </View>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>{t("forgotPassword.confirmPassword")}</Text>
-                <View
-                  style={[
-                    styles.inputShell,
-                    focusedField === "confirmPassword" && styles.inputShellFocused,
-                  ]}
-                >
-                  <TextInput
-                    autoCapitalize="none"
-                    onBlur={() => setFocusedField(undefined)}
-                    onChangeText={(value) => {
-                      setConfirmPassword(value);
-                      if (error) setError(undefined);
-                    }}
-                    onFocus={() => setFocusedField("confirmPassword")}
-                    onSubmitEditing={handleSubmit}
-                    placeholder={t("forgotPassword.confirmPasswordPlaceholder")}
-                    placeholderTextColor="rgba(255,255,255,0.34)"
-                    returnKeyType="done"
-                    secureTextEntry={!showPassword}
-                    style={styles.input}
-                    value={confirmPassword}
-                  />
-                </View>
-              </View>
-
-              {error ? (
-                <View accessibilityLiveRegion="polite" style={styles.errorPanel}>
-                  <SymbolView
-                    name={{ ios: "exclamationmark.circle.fill", android: "error", web: "error" }}
-                    size={16}
-                    tintColor={theme.brand}
-                  />
-                  <Text style={styles.errorText}>{error}</Text>
+                  <Text style={styles.hint}>{t("auth.codeSent")}</Text>
                 </View>
               ) : null}
 
-              <Pressable
-                accessibilityRole="button"
-                disabled={!canSubmit}
-                onPress={handleSubmit}
-                style={({ pressed }) => (pressed && canSubmit ? styles.pressed : null)}
-              >
-                <View
-                  style={[
-                    styles.primaryButton,
-                    canSubmit ? styles.primaryButtonEnabled : styles.primaryButtonDisabled,
-                  ]}
+              {step === "password" ? (
+                <>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>{t("auth.newPasswordLabel")}</Text>
+                    <View
+                      style={[
+                        styles.inputShell,
+                        focusedField === "password" && styles.inputShellFocused,
+                      ]}
+                    >
+                      <TextInput
+                        ref={passwordInputRef}
+                        autoCapitalize="none"
+                        editable={!isSubmitting}
+                        onBlur={() => setFocusedField(undefined)}
+                        onChangeText={(value) => {
+                          setPassword(value);
+                          setLocalError(undefined);
+                        }}
+                        onFocus={() => setFocusedField("password")}
+                        placeholder={t("accountSecurity.newPasswordPlaceholder")}
+                        placeholderTextColor="rgba(255,255,255,0.34)"
+                        secureTextEntry={!showPassword}
+                        style={styles.input}
+                        value={password}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        hitSlop={10}
+                        onPress={() => setShowPassword((v) => !v)}
+                      >
+                        <View style={styles.eyeButton}>
+                          <SymbolView
+                            name={{
+                              ios: showPassword ? "eye.slash" : "eye",
+                              android: showPassword ? "visibility_off" : "visibility",
+                              web: showPassword ? "visibility_off" : "visibility",
+                            }}
+                            size={18}
+                            tintColor="rgba(255,255,255,0.55)"
+                          />
+                        </View>
+                      </Pressable>
+                    </View>
+                  </View>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>{t("auth.confirmPasswordLabel")}</Text>
+                    <View
+                      style={[
+                        styles.inputShell,
+                        focusedField === "confirm" && styles.inputShellFocused,
+                      ]}
+                    >
+                      <TextInput
+                        autoCapitalize="none"
+                        editable={!isSubmitting}
+                        onBlur={() => setFocusedField(undefined)}
+                        onChangeText={(value) => {
+                          setConfirmPassword(value);
+                          setLocalError(undefined);
+                        }}
+                        onFocus={() => setFocusedField("confirm")}
+                        onSubmitEditing={() => void handleSubmitNewPassword()}
+                        placeholder={t("auth.confirmPasswordPlaceholder")}
+                        placeholderTextColor="rgba(255,255,255,0.34)"
+                        returnKeyType="done"
+                        secureTextEntry={!showPassword}
+                        style={styles.input}
+                        value={confirmPassword}
+                      />
+                    </View>
+                  </View>
+                </>
+              ) : null}
+
+              {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+
+              {step === "identifier" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!canContinueIdentifier}
+                  onPress={() => void handleContinueIdentifier()}
+                  style={({ pressed }) =>
+                    pressed && canContinueIdentifier ? styles.pressed : null
+                  }
                 >
-                  {submitting ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" style={styles.buttonSpinner} />
-                  ) : null}
-                  <Text
+                  <View
                     style={[
-                      styles.primaryButtonText,
-                      !canSubmit && styles.primaryButtonTextDisabled,
+                      styles.primaryButton,
+                      canContinueIdentifier ? styles.primaryEnabled : styles.primaryDisabled,
                     ]}
                   >
-                    {submitting ? t("forgotPassword.submitting") : t("forgotPassword.submit")}
-                  </Text>
-                </View>
-              </Pressable>
-            </View>
+                    {sendingCode ? (
+                      <ActivityIndicator color="#FFFFFF" style={styles.spinner} />
+                    ) : null}
+                    <Text
+                      style={[
+                        styles.primaryText,
+                        !canContinueIdentifier && styles.primaryTextDisabled,
+                      ]}
+                    >
+                      {t("auth.continue")}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : null}
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>{t("forgotPassword.remembered")}</Text>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={() => router.replace("/login")}
-                style={({ pressed }) => (pressed ? styles.pressed : null)}
-              >
-                <Text style={styles.footerLink}>{t("forgotPassword.backToLogin")}</Text>
-              </Pressable>
+              {step === "code" ? (
+                <>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={code.length !== CODE_LENGTH || isSubmitting}
+                    onPress={() => handleConfirmCode(code)}
+                    style={({ pressed }) =>
+                      pressed && code.length === CODE_LENGTH ? styles.pressed : null
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.primaryButton,
+                        code.length === CODE_LENGTH && !isSubmitting
+                          ? styles.primaryEnabled
+                          : styles.primaryDisabled,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.primaryText,
+                          (code.length !== CODE_LENGTH || isSubmitting) &&
+                            styles.primaryTextDisabled,
+                        ]}
+                      >
+                        {t("auth.verify")}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  <View style={styles.codeActions}>
+                    <Pressable
+                      onPress={() => {
+                        setStep("identifier");
+                        setCode("");
+                        setLocalError(undefined);
+                      }}
+                    >
+                      <Text style={styles.quietLink}>{t("auth.codeEditIdentifier")}</Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={resendIn > 0 || sendingCode}
+                      onPress={() => void handleResend()}
+                    >
+                      <Text
+                        style={[
+                          styles.quietLink,
+                          (resendIn > 0 || sendingCode) && styles.quietLinkDisabled,
+                        ]}
+                      >
+                        {resendIn > 0
+                          ? interpolate(t("auth.codeResendCountdown"), { seconds: resendIn })
+                          : t("auth.codeResend")}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
+
+              {step === "password" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!canSubmitPassword}
+                  onPress={() => void handleSubmitNewPassword()}
+                  style={({ pressed }) => (pressed && canSubmitPassword ? styles.pressed : null)}
+                >
+                  <View
+                    style={[
+                      styles.primaryButton,
+                      canSubmitPassword ? styles.primaryEnabled : styles.primaryDisabled,
+                    ]}
+                  >
+                    {auth.status === "submitting" ? (
+                      <ActivityIndicator color="#FFFFFF" style={styles.spinner} />
+                    ) : null}
+                    <Text
+                      style={[styles.primaryText, !canSubmitPassword && styles.primaryTextDisabled]}
+                    >
+                      {t("auth.resetSubmit")}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-      <LanguageSwitcher style={[styles.langSwitch, { top: safeAreaInsets.top + Spacing.two }]} />
+      <LanguageSwitcher style={[styles.langSwitch, { top: insets.top + Spacing.two }]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    backgroundColor: theme.background,
-    flex: 1,
-  },
-  flex: {
-    flex: 1,
-  },
-  langSwitch: {
-    position: "absolute",
-    right: Spacing.five,
-    zIndex: 10,
-  },
-  scrollContent: {
-    alignItems: "center",
-    flexGrow: 1,
-  },
-  page: {
-    flex: 1,
-    gap: Spacing.five,
-    maxWidth: MaxContentWidth,
-    width: "100%",
-  },
-  backButton: {
-    alignItems: "center",
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  heading: {
-    gap: Spacing.two,
-  },
-  title: {
-    color: theme.text,
-    fontSize: 26,
-    fontWeight: "700",
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    color: theme.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  form: {
-    gap: Spacing.four,
-  },
-  field: {
-    gap: Spacing.two,
-  },
-  label: {
-    color: theme.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.1,
-  },
+  root: { backgroundColor: theme.background, flex: 1 },
+  flex: { flex: 1 },
+  langSwitch: { position: "absolute", right: Spacing.five, zIndex: 10 },
+  scrollContent: { alignItems: "center", flexGrow: 1 },
+  page: { flex: 1, gap: Spacing.five, maxWidth: MaxContentWidth, width: "100%" },
+  backButton: { alignItems: "center", height: 40, justifyContent: "center", width: 40 },
+  heading: { gap: Spacing.two },
+  title: { color: theme.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
+  subtitle: { color: theme.textSecondary, fontSize: 14, lineHeight: 20 },
+  form: { gap: Spacing.four },
+  field: { gap: Spacing.two },
+  label: { color: theme.textSecondary, fontSize: 13, fontWeight: "600" },
+  hint: { color: theme.textSecondary, fontSize: 13, marginTop: Spacing.one },
   inputShell: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.04)",
@@ -438,35 +655,6 @@ const styles = StyleSheet.create({
     height: "100%",
     padding: 0,
   },
-  codeRow: {
-    flexDirection: "row",
-    gap: Spacing.three,
-  },
-  codeInputShell: {
-    flex: 1,
-  },
-  codeButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: theme.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 54,
-    justifyContent: "center",
-    minWidth: 104,
-    paddingHorizontal: Spacing.three,
-  },
-  codeButtonDisabled: {
-    opacity: 0.5,
-  },
-  codeButtonText: {
-    color: theme.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  codeButtonTextDisabled: {
-    color: theme.textSecondary,
-  },
   eyeButton: {
     alignItems: "center",
     height: 32,
@@ -474,23 +662,39 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.two,
     width: 32,
   },
-  errorPanel: {
-    alignItems: "center",
-    backgroundColor: "rgba(229,34,39,0.1)",
-    borderColor: "rgba(229,34,39,0.32)",
-    borderRadius: 10,
-    borderWidth: 1,
+  error: { color: "#FF8088", fontSize: 13 },
+  termsRow: {
+    alignItems: "flex-start",
     flexDirection: "row",
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
+    gap: Spacing.three,
+    marginTop: Spacing.one,
   },
-  errorText: {
-    color: "#FF8088",
+  checkbox: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: theme.border,
+    borderRadius: 6,
+    borderWidth: 1,
+    flexShrink: 0,
+    height: 22,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 22,
+  },
+  checkboxChecked: {
+    backgroundColor: theme.brand,
+    borderColor: theme.brand,
+  },
+  termsText: {
+    color: theme.textSecondary,
     flex: 1,
     fontSize: 13,
-    fontWeight: "500",
-    lineHeight: 18,
+    fontWeight: "400",
+    lineHeight: 19,
+  },
+  termsLink: {
+    color: theme.text,
+    fontWeight: "600",
   },
   primaryButton: {
     alignItems: "center",
@@ -500,42 +704,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: Spacing.two,
   },
-  primaryButtonEnabled: {
-    backgroundColor: theme.brand,
-  },
-  primaryButtonDisabled: {
-    backgroundColor: theme.backgroundSelected,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.1,
-  },
-  primaryButtonTextDisabled: {
-    color: "rgba(255,255,255,0.4)",
-  },
-  buttonSpinner: {
-    marginRight: Spacing.two,
-  },
-  footer: {
-    alignItems: "center",
+  primaryEnabled: { backgroundColor: theme.brand },
+  primaryDisabled: { backgroundColor: theme.backgroundSelected },
+  primaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  primaryTextDisabled: { color: "rgba(255,255,255,0.4)" },
+  spinner: { marginRight: Spacing.two },
+  codeActions: {
     flexDirection: "row",
-    gap: Spacing.two,
-    justifyContent: "center",
-    marginTop: "auto",
-    paddingTop: Spacing.five,
+    justifyContent: "space-between",
+    marginTop: Spacing.one,
   },
-  footerText: {
-    color: theme.textSecondary,
-    fontSize: 14,
-  },
-  footerLink: {
-    color: theme.brand,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  pressed: {
-    opacity: 0.72,
-  },
+  quietLink: { color: theme.brand, fontSize: 14, fontWeight: "600" },
+  quietLinkDisabled: { color: theme.textSecondary },
+  pressed: { opacity: 0.72 },
 });

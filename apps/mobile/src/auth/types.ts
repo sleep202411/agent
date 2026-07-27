@@ -28,6 +28,8 @@ export interface AuthUser {
   scoreBalance?: number;
   userLevel?: string;
   levels?: AuthUserLevel[];
+  /** Present when the account already has a real password (not null / `--`). */
+  hasPassword?: boolean;
   [key: string]: unknown;
 }
 
@@ -41,6 +43,8 @@ export interface AuthSession {
   token?: AuthToken;
   updatedAt: string;
   user: AuthUser;
+  /** True only for the OTP path that just auto-registered. Drives onboarding. */
+  isNewUser?: boolean;
 }
 
 export type AuthStatus = "hydrating" | "anonymous" | "authenticated" | "submitting" | "error";
@@ -57,16 +61,9 @@ export interface SignInCredentials {
   password: string;
 }
 
-export interface RegisterCredentials {
-  /** Phone number (CN region) or email address (global region). */
-  identifier: string;
-  code: string;
-  password: string;
-  recommendationCode?: string;
-}
-
 export interface AuthResult {
   raw: unknown;
   token?: AuthToken;
   user?: AuthUser;
+  isNewUser?: boolean;
 }

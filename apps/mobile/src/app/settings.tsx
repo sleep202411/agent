@@ -19,6 +19,17 @@ export default function SettingsScreen() {
 
   const rows: { key: string; label: string; onPress: () => void; danger?: boolean }[] = [
     {
+      key: "accountSecurity",
+      label: t("settings.accountSecurity"),
+      onPress: () =>
+        authGate.requireAuth({ onAuthenticated: () => router.push("/account-security") }),
+    },
+    {
+      key: "bindInvite",
+      label: t("settings.bindInvite"),
+      onPress: () => authGate.requireAuth({ onAuthenticated: () => router.push("/bind-invite") }),
+    },
+    {
       key: "privacy",
       label: t("settings.privacy"),
       onPress: () => void openLegal("/privacy-policy", locale),
