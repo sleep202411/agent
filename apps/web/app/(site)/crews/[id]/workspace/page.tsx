@@ -3,19 +3,35 @@
 /**
  * Crew workspace — owner / member control surface.
  *
- * Tabs:
- *   - overview   — KPI tiles + recruitment progress, jumps to roles
- *   - roles      — position CRUD + accordion-expanded applicants list
+ * Tabs (doc §4 order):
+ *   - chat       — the crew's one group chat; the default landing tab
+ *   - episodes   — production task units + their assignments
+ *   - assets     — crew folders, files, previews and access inheritance
  *   - members    — roster + add / remove
- *   - episodes   — production task units (currently feature-gated until
- *                  the workspace episode UI is rewritten against the new
- *                  EpisodeDTO shape; the data layer is already live).
+ *   - roles      — position CRUD + accordion-expanded applicants list
+ *   - overview   — KPI tiles + recruitment progress, jumps to roles
  *
- * Backed only by /aurora/crews/* endpoints. Owner gate compares the
- * logged-in user against `crewDetail.founderId`.
+ * The active tab is URL state (`?tab=`), not component state, because
+ * crew notifications deeplink into one: `?tab=episodes&episode=<id>`
+ * opens the board, expands that episode and scrolls it into view, and
+ * `&assignment=<id>` refines the scroll to the row inside it. A bare
+ * URL carries no tab: it means "open this workspace", and the landing
+ * resolves to chat only while the crew's conversation opens — see
+ * `_lib/workspace-tabs`.
+ *
+ * Layout: every tab except chat is a normal scrolling page. Chat turns
+ * the page into a fixed-height app shell (root `h-[calc(100dvh-4rem)]`,
+ * hero + header `shrink-0`, body `min-h-0 flex-1`) so the composer sits
+ * at the bottom of the viewport instead of below the fold — doc §9's
+ * 输入框在桌面和移动端都固定可达. Measuring the pane's offset in JS
+ * would achieve the same thing and be wrong every time the hero image
+ * changes height; CSS gets it right for free.
+ *
+ * Backed only by /aurora/crews/* endpoints. Every action is gated on
+ * the viewer's crew role, resolved by `useUserCrewRole`.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,8 +42,13 @@ import {
   IconEdit,
   IconEye,
   IconEyeOff,
+  IconAlertTriangle,
+  IconFolder,
+  IconLock,
   IconLoader2,
+  IconMessageCircle,
   IconMovie,
+  IconRefresh,
   IconUsers,
 } from "@tabler/icons-react";
 import { env } from "@/src/env";
@@ -42,6 +63,7 @@ import {
   useUpdateCrewListing,
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
@@ -53,6 +75,19 @@ import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/posi
 import { PositionDetailSheet } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-detail-sheet";
 import { PositionsGrid } from "@/app/(site)/crews/[id]/workspace/_components/positions/positions-grid";
 import { EpisodesTab } from "@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab";
+import { CrewChatTab } from "@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab";
+import { CrewAssetsTab } from "@/app/(site)/crews/[id]/workspace/_components/assets/crew-assets-tab";
+import { useAnchorDeeplink } from "@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink";
+import { useCrewConversation } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
+import { workspaceDeeplinkAnchors } from "@/app/(site)/crews/[id]/workspace/_lib/deeplink-anchors";
+import {
+  FALLBACK_WORKSPACE_TAB,
+  applyWorkspaceTab,
+  isWorkspaceTabId,
+  resolveWorkspaceTab,
+  workspaceTabsFor,
+  type WorkspaceTabId,
+} from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,19 +98,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 
-const TABS = [
-  { id: "overview", labelKey: "tabOverview", icon: IconBook },
-  { id: "roles", labelKey: "tabRecruitment", icon: IconBriefcase },
-  { id: "members", labelKey: "tabMembers", icon: IconUsers },
-  { id: "episodes", labelKey: "tabEpisodes", icon: IconMovie },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
+/** Icons live here rather than in `_lib/workspace-tabs` so the tab
+ *  contract stays importable from plain (non-React) modules. */
+const TAB_ICONS: Record<WorkspaceTabId, typeof IconBook> = {
+  chat: IconMessageCircle,
+  episodes: IconMovie,
+  assets: IconFolder,
+  members: IconUsers,
+  roles: IconBriefcase,
+  overview: IconBook,
+};
 
 export default function CrewWorkspacePage() {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
+  const tCrew = useTranslations("crew");
   const params = useParams<{ id: string }>();
   const id = params.id;
   // ?application=<id> comes from the notification deeplink. Read it
@@ -87,15 +126,31 @@ export default function CrewWorkspacePage() {
   const router = useRouter();
   const reviewApplicationId = searchParams.get("application");
 
+  // Every URL edit on this page is a `replace`: the query string carries
+  // view state (tab, consumed deeplinks), and pushing it would make the
+  // back button walk the workspace's own tabs instead of leaving it.
+  const replaceParams = useCallback(
+    (mutate: (next: URLSearchParams) => void) => {
+      const next = new URLSearchParams(searchParams.toString());
+      mutate(next);
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
   const handleCloseReview = useCallback(() => {
     if (!searchParams.get("application")) return;
-    const next = new URLSearchParams(searchParams.toString());
-    next.delete("application");
-    const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [pathname, router, searchParams]);
+    replaceParams((next) => next.delete("application"));
+  }, [replaceParams, searchParams]);
 
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const selectTab = useCallback(
+    (tab: WorkspaceTabId) => {
+      replaceParams((next) => applyWorkspaceTab(next, tab));
+    },
+    [replaceParams]
+  );
+
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -105,8 +160,10 @@ export default function CrewWorkspacePage() {
   // Position expand / freeze state is owned by PositionsGrid +
   // PositionDetailSheet — workspace no longer manages it here.
 
-  const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
-  const { data: members = [], isLoading: membersLoading } = useCrewMembers(id);
+  const detailQuery = useCrewDetail(id);
+  const membersQuery = useCrewMembers(id);
+  const { data: crewDetail, isLoading: detailLoading } = detailQuery;
+  const { data: members = [], isLoading: membersLoading } = membersQuery;
   const { data: positions = [] } = useCrewPositions(id);
   const updateListing = useUpdateCrewListing();
   // Role gating goes through useUserCrewRole so DevIdentitySwitcher
@@ -116,6 +173,46 @@ export default function CrewWorkspacePage() {
   // users still resolve from `useUserInfo` inside the hook.
   const viewer = useUserCrewRole(id);
   const isOwner = viewer.isAdmin;
+  // 群聊 is members-only (doc §7). The roster decides that, so the tab
+  // set is not knowable until `useCrewMembers` resolves — the page
+  // holds its spinner until then rather than showing an outsider a chat
+  // tab that flickers away, or a member an overview they did not ask
+  // for.
+  const canAccessChat = viewer.role !== "outsider";
+
+  // Resolved here, not only inside CrewChatTab, because the landing tab
+  // depends on it: chat is the default the doc asks for, but only while
+  // the crew's conversation actually opens. Same React Query key as the
+  // pane's, so this warms its cache rather than duplicating its fetch.
+  const chatThread = useCrewConversation(id, canAccessChat);
+
+  // Tab is URL state so notification deeplinks can select one and so a
+  // pasted workspace link reopens where the sender was.
+  const tabParam = searchParams.get("tab");
+  const activeTab = resolveWorkspaceTab(tabParam, {
+    entitled: canAccessChat,
+    reachable: !chatThread.isError,
+  });
+  const tabs = workspaceTabsFor(canAccessChat);
+
+  // The demotion above is a render-time decision, so a member whose
+  // chat will not open never sees the error card they did not ask for.
+  // Stamp it into the URL too: without that, the bare URL still means
+  // "chat if you can", and a background refetch that later succeeds
+  // would yank the reader off the overview mid-read. Asking for chat by
+  // name still opens the pane — see `resolveWorkspaceTab`.
+  const demotedFromChat = !isWorkspaceTabId(tabParam) && canAccessChat && chatThread.isError;
+  useEffect(() => {
+    if (!demotedFromChat) return;
+    replaceParams((next) => applyWorkspaceTab(next, FALLBACK_WORKSPACE_TAB));
+  }, [demotedFromChat, replaceParams]);
+
+  // ?episode=<id>, and on assignment-level notifications ?assignment=<id>,
+  // ride along with ?tab=episodes. The episode id also goes to the board,
+  // which expands that row — without that the assignment row never
+  // mounts, since the accordion body is what renders it.
+  const deeplinkEpisodeId = searchParams.get("episode");
+  useAnchorDeeplink(workspaceDeeplinkAnchors(activeTab, searchParams));
 
   const slotsTotal = useMemo(() => positions.reduce((s, p) => s + p.targetCount, 0), [positions]);
   const slotsFilled = useMemo(
@@ -125,11 +222,107 @@ export default function CrewWorkspacePage() {
   const openCount = useMemo(() => positions.filter((p) => p.status === "open").length, [positions]);
   const isListed = crewDetail?.listingStatus === "listed";
 
-  if (detailLoading || !crewDetail) {
+  if (detailLoading || membersLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3">
+          <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          <span className="sr-only">{t("workspaceLoading")}</span>
+        </div>
       </div>
+    );
+  }
+
+  if (detailQuery.isError) {
+    return (
+      <WorkspaceState
+        icon={<IconAlertTriangle className="size-6 text-destructive" />}
+        title={t("workspaceLoadFailedTitle")}
+        description={
+          detailQuery.error instanceof Error
+            ? detailQuery.error.message
+            : t("workspaceLoadFailedBody")
+        }
+      >
+        <Button
+          type="button"
+          size="sm"
+          variant="solid"
+          color="primary"
+          onClick={() => void detailQuery.refetch()}
+          loading={detailQuery.isFetching}
+          icon={<IconRefresh />}
+        >
+          {tc("retry")}
+        </Button>
+        <Button asChild size="sm" variant="ghost" color="muted">
+          <Link href="/crews">{tCrew("backToHall")}</Link>
+        </Button>
+      </WorkspaceState>
+    );
+  }
+
+  if (!crewDetail) {
+    return (
+      <WorkspaceState
+        icon={<IconAlertTriangle className="size-6 text-muted-foreground" />}
+        title={t("workspaceNotFoundTitle")}
+        description={t("workspaceNotFoundBody")}
+      >
+        <Button asChild size="sm" variant="solid" color="primary">
+          <Link href="/crews">{tCrew("backToHall")}</Link>
+        </Button>
+      </WorkspaceState>
+    );
+  }
+
+  const membershipDenied =
+    (membersQuery.error instanceof CrewApiError && membersQuery.error.status === 403) ||
+    (process.env.NODE_ENV !== "production" && viewer.role === "outsider");
+
+  if (membershipDenied) {
+    return (
+      <WorkspaceState
+        icon={<IconLock className="size-6 text-primary" />}
+        title={t("workspaceAccessDeniedTitle")}
+        description={t("workspaceAccessDeniedBody")}
+      >
+        <Button asChild size="sm" variant="solid" color="primary">
+          <Link href={`/crews/${encodeURIComponent(id)}`}>{t("viewPublicCrew")}</Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost" color="muted">
+          <Link href="/crews">{tCrew("backToHall")}</Link>
+        </Button>
+      </WorkspaceState>
+    );
+  }
+
+  if (membersQuery.isError) {
+    return (
+      <WorkspaceState
+        icon={<IconAlertTriangle className="size-6 text-destructive" />}
+        title={t("workspaceLoadFailedTitle")}
+        description={
+          membersQuery.error instanceof Error
+            ? membersQuery.error.message
+            : t("workspaceLoadFailedBody")
+        }
+      >
+        <Button
+          type="button"
+          size="sm"
+          variant="solid"
+          color="primary"
+          onClick={() => void membersQuery.refetch()}
+          loading={membersQuery.isFetching}
+          icon={<IconRefresh />}
+        >
+          {tc("retry")}
+        </Button>
+        <Button asChild size="sm" variant="ghost" color="muted">
+          <Link href="/crews">{tCrew("backToHall")}</Link>
+        </Button>
+      </WorkspaceState>
     );
   }
 
@@ -142,12 +335,21 @@ export default function CrewWorkspacePage() {
     : "";
   const heroDescription = (crewDetail.description ?? "").trim();
 
+  // Chat is a fixed-height app shell; every other tab is a normal
+  // scrolling page. See the module comment.
+  const isChat = activeTab === "chat";
+
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className={cn(
+        "bg-background",
+        isChat ? "flex h-[calc(100dvh-4rem)] flex-col overflow-hidden" : "min-h-screen"
+      )}
+    >
       <DevIdentitySwitcher />
 
       {heroVisual ? (
-        <div className="relative h-48 w-full overflow-hidden bg-black sm:h-64">
+        <div className="relative h-48 w-full shrink-0 overflow-hidden bg-black sm:h-64">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={heroVisual} alt="" className="absolute inset-0 size-full object-cover" />
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
@@ -161,7 +363,7 @@ export default function CrewWorkspacePage() {
         </div>
       ) : null}
 
-      <div className="border-b border-border bg-card/50">
+      <div className="shrink-0 border-b border-border bg-card/50">
         <div className="mx-auto max-w-[1800px] px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
@@ -236,30 +438,30 @@ export default function CrewWorkspacePage() {
         </div>
       </div>
 
-      <div className="mx-auto flex max-w-[1800px] gap-5 px-6 py-6">
-        <div className="w-36 shrink-0">
-          <nav className="sticky top-6 space-y-0.5">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const disabled = "disabled" in tab && tab.disabled;
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-6 py-6 md:flex-row",
+          isChat && "min-h-0 flex-1 overflow-hidden"
+        )}
+      >
+        {/* Vertical rail on desktop; a horizontal scroller on phones,
+            where a 144px column would leave the chat pane unusably
+            narrow. */}
+        <div className="w-full shrink-0 md:w-36">
+          <nav className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-6 md:mx-0 md:block md:space-y-0.5 md:overflow-x-visible md:px-0 md:pb-0">
+            {tabs.map((tab) => {
+              const Icon = TAB_ICONS[tab.id];
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => {
-                    if (disabled) {
-                      toast.info(tc("comingSoon"));
-                      return;
-                    }
-                    setActiveTab(tab.id);
-                  }}
+                  onClick={() => selectTab(tab.id)}
+                  aria-current={activeTab === tab.id ? "page" : undefined}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                    disabled
-                      ? "cursor-not-allowed text-muted-foreground/50 hover:bg-secondary/30"
-                      : activeTab === tab.id
-                        ? "bg-primary/10 font-semibold text-primary"
-                        : "text-muted-foreground hover:bg-secondary/50"
+                    "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm transition-colors md:w-full",
+                    activeTab === tab.id
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-secondary/50"
                   )}
                 >
                   <Icon className="size-4" />
@@ -270,7 +472,9 @@ export default function CrewWorkspacePage() {
           </nav>
         </div>
 
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", isChat && "min-h-0")}>
+          {activeTab === "chat" ? <CrewChatTab crewId={id} /> : null}
+
           {activeTab === "overview" ? (
             <OverviewTab
               crewId={id}
@@ -281,7 +485,7 @@ export default function CrewWorkspacePage() {
               slotsTotal={slotsTotal}
               isOwner={isOwner}
               t={t}
-              onJumpRoles={() => setActiveTab("roles")}
+              onJumpRoles={() => selectTab("roles")}
             />
           ) : null}
 
@@ -304,7 +508,11 @@ export default function CrewWorkspacePage() {
             />
           ) : null}
 
-          {activeTab === "episodes" ? <EpisodesTab crewId={id} /> : null}
+          {activeTab === "episodes" ? (
+            <EpisodesTab crewId={id} deeplinkEpisodeId={deeplinkEpisodeId} />
+          ) : null}
+
+          {activeTab === "assets" ? <CrewAssetsTab crewId={id} /> : null}
         </div>
       </div>
 
@@ -382,6 +590,40 @@ export default function CrewWorkspacePage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function WorkspaceState({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <main
+      className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-6 py-16"
+      aria-labelledby="workspace-state-title"
+    >
+      <DevIdentitySwitcher />
+      <div className="flex max-w-md flex-col items-center text-center">
+        <div
+          className="mb-5 grid size-12 place-items-center rounded-full bg-muted"
+          aria-hidden="true"
+        >
+          {icon}
+        </div>
+        <h1 id="workspace-state-title" className="text-xl font-bold text-foreground">
+          {title}
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">{children}</div>
+      </div>
+    </main>
   );
 }
 

@@ -23,6 +23,8 @@ import type {
 
 export interface ConversationWsHandlers {
   onOpen?: () => void;
+  /** Authenticated and registered on the server; safe recovery boundary. */
+  onReady?: () => void;
   onReconnected?: () => void;
   onMessage?: (data: {
     conversationId: string;
@@ -90,6 +92,7 @@ export function openConversationWs(handlers: ConversationWsHandlers): Conversati
   let attempts = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let lastTerminateCode: number | null = null;
+  let hasBeenReady = false;
 
   const connect = () => {
     if (userClosed) return;
@@ -97,16 +100,21 @@ export function openConversationWs(handlers: ConversationWsHandlers): Conversati
     ws = sock;
 
     sock.addEventListener("open", () => {
-      const wasReconnect = attempts > 0;
-      attempts = 0;
       handlers.onOpen?.();
-      if (wasReconnect) handlers.onReconnected?.();
     });
 
     sock.addEventListener("message", (ev) => {
       const frame = parseFrame(typeof ev.data === "string" ? ev.data : "");
       if (!frame) return;
       switch (frame.event) {
+        case "ready": {
+          const wasReadyBefore = hasBeenReady;
+          hasBeenReady = true;
+          attempts = 0;
+          handlers.onReady?.();
+          if (wasReadyBefore) handlers.onReconnected?.();
+          break;
+        }
         case "message.created":
           handlers.onMessage?.(frame.data);
           break;

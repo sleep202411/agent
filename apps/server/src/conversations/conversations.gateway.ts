@@ -16,9 +16,11 @@
  *
  * Recovery model:
  *   - DB is authoritative; the WS is a latency optimization.
- *   - Clients on reconnect refetch missed messages via
- *     `GET /conversations/:id/messages?since=<cursor>` and call
- *     `GET /conversations` to rebuild inbox state.
+ *   - Clients on reconnect re-page the tail of the thread with
+ *     `GET /conversations/:id/messages` (`cursor` + `limit`, newest
+ *     first — there is no `since` parameter, see
+ *     ListMessagesQuerySchema) and call `GET /conversations` to
+ *     rebuild inbox state.
  */
 import {
   OnGatewayConnection,
@@ -40,13 +42,17 @@ import { AuthService } from '../auth/auth.service';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const ZOMBIE_TIMEOUT_MS = 90_000;
+const REDIS_SUBSCRIPTION_WAIT_MS = 10_000;
+const REDIS_SUBSCRIPTION_RETRY_MS = 1_000;
 const CLOSE_POLICY = 1008;
 const CLOSE_NORMAL = 1000;
+const CLOSE_TRY_AGAIN_LATER = 1013;
 
 type TrackedSocket = WebSocket & {
   __userId?: string;
   __lastActivity?: number;
   __zombieCheck?: NodeJS.Timeout;
+  __readySent?: boolean;
 };
 
 // nginx / ingress strip `/aurora/` before forwarding (same convention
@@ -68,6 +74,10 @@ export class ConversationsGateway
   private server!: Server;
 
   private redisSubscriber!: Redis;
+  private redisSubscriptionReady = false;
+  private redisSubscribeInFlight: Promise<void> | null = null;
+  private redisSubscribeRetryTimer?: NodeJS.Timeout;
+  private readonly redisReadyWaiters = new Set<() => void>();
   private readonly socketsByUser = new Map<string, Set<TrackedSocket>>();
   private heartbeatTimer?: NodeJS.Timeout;
 
@@ -77,16 +87,25 @@ export class ConversationsGateway
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
-    void this.redisSubscriber.psubscribe(
-      CONVERSATION_CHANNEL_PATTERN,
-      (err) => {
-        if (err) {
-          this.logger.error(`psubscribe failed: ${err.message}`);
-          return;
-        }
-        this.logger.log(`subscribed to ${CONVERSATION_CHANNEL_PATTERN}`);
-      },
-    );
+    // A browser `ready` frame is a recovery boundary only if the
+    // server-side Redis fan-out is also subscribed. ioredis emits
+    // `ready` on every reconnect; explicitly (re)subscribe there and
+    // notify already-open browsers once the subscription ACK arrives.
+    // Merely constructing the subscriber and firing psubscribe in the
+    // background left a startup gap, while a Redis-only outage left no
+    // signal that clients needed to REST-recover missed messages.
+    this.redisSubscriber.on('ready', () => {
+      void this.ensureRedisSubscription();
+    });
+    const markRedisUnavailable = () => {
+      this.redisSubscriptionReady = false;
+    };
+    this.redisSubscriber.on('close', markRedisUnavailable);
+    this.redisSubscriber.on('end', markRedisUnavailable);
+    this.redisSubscriber.on('reconnecting', markRedisUnavailable);
+    this.redisSubscriber.on('error', (err) => {
+      this.logger.warn(`redis subscriber error: ${err.message}`);
+    });
 
     this.redisSubscriber.on('pmessage', (_pattern, channel, raw) => {
       const userId = channel.slice(CONVERSATION_CHANNEL_PREFIX.length);
@@ -139,6 +158,16 @@ export class ConversationsGateway
         return;
       }
 
+      // Do not advertise a recovery boundary until Redis has confirmed
+      // the pattern subscription. If Redis remains unavailable, close
+      // with 1013 so the browser's normal non-fatal reconnect loop
+      // retries instead of sitting on a socket that cannot receive.
+      if (!(await this.waitForRedisSubscription())) {
+        this.close(client, CLOSE_TRY_AGAIN_LATER, 'realtime_unavailable');
+        return;
+      }
+      if (client.readyState !== client.OPEN) return;
+
       client.__userId = user.userId;
       client.__lastActivity = Date.now();
       this.addSubscriber(user.userId, client);
@@ -153,6 +182,17 @@ export class ConversationsGateway
       client.on('pong', () => (client.__lastActivity = Date.now()));
       client.on('message', () => (client.__lastActivity = Date.now()));
 
+      // `open` on the browser only means the TCP/WebSocket handshake
+      // finished; auth and registration above were still in flight.
+      // This explicit boundary lets the client refetch DB state only
+      // after no future pub/sub frame can slip through that startup gap.
+      client.send(
+        JSON.stringify({
+          event: 'ready',
+          data: { serverTime: Date.now() },
+        }),
+      );
+      client.__readySent = true;
       client.send(
         JSON.stringify({
           event: 'heartbeat',
@@ -182,6 +222,10 @@ export class ConversationsGateway
 
   async onModuleDestroy() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.redisSubscribeRetryTimer) {
+      clearTimeout(this.redisSubscribeRetryTimer);
+    }
+    this.redisReadyWaiters.clear();
     try {
       await this.redisSubscriber?.quit();
     } catch (err) {
@@ -200,6 +244,87 @@ export class ConversationsGateway
       this.socketsByUser.set(userId, set);
     }
     set.add(sock);
+  }
+
+  private ensureRedisSubscription(): Promise<void> {
+    if (this.redisSubscribeInFlight) return this.redisSubscribeInFlight;
+
+    this.redisSubscribeInFlight = (async () => {
+      try {
+        await this.redisSubscriber.psubscribe(CONVERSATION_CHANNEL_PATTERN);
+        const recovered = !this.redisSubscriptionReady;
+        this.redisSubscriptionReady = true;
+        this.logger.log(`subscribed to ${CONVERSATION_CHANNEL_PATTERN}`);
+
+        for (const resolve of this.redisReadyWaiters) resolve();
+        this.redisReadyWaiters.clear();
+
+        // Only sockets that already crossed an earlier ready boundary
+        // need a second one. Initial handshakes are waiting above and
+        // will send their own ready after this method resolves.
+        if (recovered) this.sendReadyToConnectedSockets();
+      } catch (err) {
+        this.redisSubscriptionReady = false;
+        this.logger.error(
+          `psubscribe failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        this.scheduleRedisSubscribeRetry();
+      } finally {
+        this.redisSubscribeInFlight = null;
+      }
+    })();
+    return this.redisSubscribeInFlight;
+  }
+
+  private scheduleRedisSubscribeRetry(): void {
+    if (this.redisSubscribeRetryTimer) return;
+    this.redisSubscribeRetryTimer = setTimeout(() => {
+      this.redisSubscribeRetryTimer = undefined;
+      if (this.redisSubscriber.status === 'ready') {
+        void this.ensureRedisSubscription();
+      }
+    }, REDIS_SUBSCRIPTION_RETRY_MS);
+  }
+
+  private async waitForRedisSubscription(): Promise<boolean> {
+    const deadline = Date.now() + REDIS_SUBSCRIPTION_WAIT_MS;
+    while (!this.redisSubscriptionReady) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      const becameReady = await new Promise<boolean>((resolve) => {
+        const onReady = () => {
+          clearTimeout(timer);
+          this.redisReadyWaiters.delete(onReady);
+          resolve(true);
+        };
+        const timer = setTimeout(() => {
+          this.redisReadyWaiters.delete(onReady);
+          resolve(false);
+        }, remaining);
+        this.redisReadyWaiters.add(onReady);
+      });
+      if (!becameReady) return false;
+      // Redis may have closed in the microtask between resolving the
+      // waiter and resuming this coroutine. Loop and verify the flag.
+    }
+    return true;
+  }
+
+  private sendReadyToConnectedSockets(): void {
+    const frame = JSON.stringify({
+      event: 'ready',
+      data: { serverTime: Date.now() },
+    });
+    for (const subs of this.socketsByUser.values()) {
+      for (const sock of subs) {
+        if (!sock.__readySent || sock.readyState !== sock.OPEN) continue;
+        try {
+          sock.send(frame);
+        } catch {
+          /* dead socket; close handler will fire */
+        }
+      }
+    }
   }
 
   private async authenticateFromCookie(cookie: string | undefined) {

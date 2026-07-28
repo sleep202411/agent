@@ -73,6 +73,17 @@ export function toConversationDTO(
 }
 
 /**
+ * Crew metadata for a crew-context inbox row. Resolved by the caller
+ * (one batched `crew.findMany` over the page) because the mapper is a
+ * pure row → DTO function with no DB access of its own.
+ */
+export interface CrewCardContext {
+  name: string;
+  logo: string;
+  memberCount: number;
+}
+
+/**
  * Inbox row projection. Computes the counterparty + short preview
  * string + unread count for the viewer.
  *
@@ -80,6 +91,18 @@ export function toConversationDTO(
  * the inbox list. For system messages we pass the kind through —
  * the client renders via its localized template — and for proposals
  * we pass a marker string the client can render specially.
+ *
+ * Crew rows take a different identity branch. A crew chat is N-party,
+ * so "the other participant" is not a thing: in a founder-only crew
+ * the `!== viewerId` search finds nobody and the old
+ * `conv.participants[0]` fallback made the viewer their own
+ * counterparty; in a 12-person crew it would have picked whoever
+ * happened to be first. Either way the row would render a person when
+ * the thread is about a crew. So for `contextType === 'crew'` the
+ * counterparty IS the crew (`contextId`), role `member`, and the
+ * optional `crew*` fields carry what the row actually renders.
+ * `crewContext` is optional — without it the row still resolves to a
+ * correct, viewer-free identity, just without the display metadata.
  */
 export function toConversationCardDTO(
   conv: Conversation & {
@@ -88,26 +111,47 @@ export function toConversationCardDTO(
     _lastMessage: Message | null;
   },
   viewerId: string,
+  crewContext?: CrewCardContext,
 ): ConversationCardDTO {
   const me = conv.participants.find((p) => p.userId === viewerId);
+
+  const lm = conv._lastMessage;
+  const preview = lm ? renderInboxPreview(lm) : '';
+  const base = {
+    id: conv.id,
+    contextType: conv.contextType,
+    contextId: conv.contextId,
+    lastMessagePreview: preview,
+    lastMessageType: (lm?.type ?? 'text') as ConversationMessageType,
+    lastMessageAt: conv.lastMessageAt.toISOString(),
+    unreadCount: me ? conv._unreadCount : 0,
+  };
+
+  if (conv.contextType === 'crew') {
+    return {
+      ...base,
+      counterpartyId: conv.contextId,
+      counterpartyRole: 'member',
+      crewId: conv.contextId,
+      ...(crewContext
+        ? {
+            crewName: crewContext.name,
+            crewLogo: crewContext.logo,
+            memberCount: crewContext.memberCount,
+          }
+        : {}),
+    };
+  }
+
   const other = conv.participants.find((p) => p.userId !== viewerId);
   // If me is missing the controller should have 403'd already, but
   // we degrade safely to the first non-me participant rather than
   // throwing here.
   const counterparty = other ?? conv.participants[0];
-
-  const lm = conv._lastMessage;
-  const preview = lm ? renderInboxPreview(lm) : '';
   return {
-    id: conv.id,
-    contextType: conv.contextType,
-    contextId: conv.contextId,
+    ...base,
     counterpartyId: counterparty.userId,
     counterpartyRole: counterparty.role as ConversationParticipantRole,
-    lastMessagePreview: preview,
-    lastMessageType: (lm?.type ?? 'text') as ConversationMessageType,
-    lastMessageAt: conv.lastMessageAt.toISOString(),
-    unreadCount: me ? conv._unreadCount : 0,
   };
 }
 

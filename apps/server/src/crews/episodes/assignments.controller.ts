@@ -1,13 +1,14 @@
 /**
  *   GET    /aurora/episodes/:episodeId/assignments       List
+ *   GET    /aurora/crews/:crewId/assignments/mine        Current user's tasks
  *   GET    /aurora/episodes/:episodeId/activities        Activity log (paginated)
  *   POST   /aurora/episodes/:episodeId/assignments       Add (admin)
  *
  *   DELETE /aurora/assignments/:assignmentId             Remove (admin)
- *   POST   /aurora/assignments/:assignmentId/submit      Submit (self)
+ *   POST   /aurora/assignments/:assignmentId/submit      Submit (self, still a member)
  *   POST   /aurora/assignments/:assignmentId/approve     Approve (admin)
  *   POST   /aurora/assignments/:assignmentId/reject      Reject (admin)
- *   POST   /aurora/assignments/:assignmentId/revenue     Set revenue (finance)
+ *   POST   /aurora/assignments/:assignmentId/revenue     Set revenue (admin|finance)
  */
 import {
   Body,
@@ -43,6 +44,11 @@ function actorName(user: AuthUser): string {
 @Controller()
 export class AssignmentsController {
   constructor(private readonly svc: AssignmentsService) {}
+
+  @Get('crews/:crewId/assignments/mine')
+  listMine(@Param('crewId') crewIdRaw: string, @CurrentUser() user: AuthUser) {
+    return this.svc.listMine(parseIdParam(crewIdRaw, 'crewId'), user.userId);
+  }
 
   @Get('episodes/:episodeId/assignments')
   list(@Param('episodeId') idRaw: string, @CurrentUser() user: AuthUser) {

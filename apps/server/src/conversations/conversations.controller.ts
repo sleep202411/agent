@@ -54,6 +54,7 @@ import {
   toConversationCardDTO,
   toConversationDTO,
   toMessageDTO,
+  type CrewCardContext,
 } from './mappers';
 import { PrismaService } from '../infra/db/db.module';
 
@@ -131,8 +132,13 @@ export class ConversationsController {
     @Query(new ZodValidationPipe(ListInboxQuerySchema)) query: ListInboxQuery,
   ): Promise<{ items: ConversationCardDTO[]; nextCursor: string | null }> {
     const { items, nextCursor } = await this.svc.listInbox(user.userId, query);
+    const crews = await this.loadCrewCardContexts(
+      items.filter((c) => c.contextType === 'crew').map((c) => c.contextId),
+    );
     return {
-      items: items.map((c) => toConversationCardDTO(c as never, user.userId)),
+      items: items.map((c) =>
+        toConversationCardDTO(c as never, user.userId, crews.get(c.contextId)),
+      ),
       nextCursor,
     };
   }
@@ -161,6 +167,12 @@ export class ConversationsController {
     return { items: items.map(toMessageDTO), nextCursor };
   }
 
+  /**
+   * Send a text message. When the client supplies `clientKey`, a
+   * retry of the same send returns the row the first attempt created
+   * rather than appending a duplicate — still 201, still the same
+   * body, so the client needs no special case.
+   */
   @Post(':id/messages')
   @HttpCode(HttpStatus.CREATED)
   async sendText(
@@ -172,6 +184,7 @@ export class ConversationsController {
       parseIdParam(idRaw, 'id'),
       user.userId,
       body.body,
+      body.clientKey ?? null,
     );
     return toMessageDTO(msg);
   }
@@ -229,5 +242,49 @@ export class ConversationsController {
     return {
       lastReadMessageId: updated.lastReadMessageId ?? body.lastReadMessageId,
     };
+  }
+
+  /**
+   * Crew name / logo / member count for the crew rows on this inbox
+   * page. A crew row renders the CREW, not a counterparty, so without
+   * this the row would have nothing to show.
+   *
+   * Two batched queries for the whole page (never per-row): the crew
+   * rows, and a grouped count of their active members.
+   *
+   * `deletedAt: null` matches every other crew read on the platform. A
+   * soft-deleted crew's thread 404s on open (the service's crew gate
+   * filters the same way), so naming and previewing it in the inbox
+   * would advertise a row that cannot be opened. `listInbox` already
+   * drops those rows before they reach here; this keeps the display
+   * lookup from being the one place that would still resurrect one.
+   */
+  private async loadCrewCardContexts(
+    crewIdsRaw: string[],
+  ): Promise<Map<string, CrewCardContext>> {
+    const crewIds = [...new Set(crewIdsRaw)];
+    if (crewIds.length === 0) return new Map();
+    const [crews, counts] = await Promise.all([
+      this.prisma.crew.findMany({
+        where: { id: { in: crewIds }, deletedAt: null },
+        select: { id: true, name: true, logo: true },
+      }),
+      this.prisma.crewMember.groupBy({
+        by: ['crewId'],
+        where: { crewId: { in: crewIds }, removedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+    const memberCounts = new Map(counts.map((c) => [c.crewId, c._count._all]));
+    return new Map(
+      crews.map((c) => [
+        c.id,
+        {
+          name: c.name,
+          logo: c.logo,
+          memberCount: memberCounts.get(c.id) ?? 0,
+        },
+      ]),
+    );
   }
 }

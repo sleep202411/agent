@@ -32,9 +32,34 @@
  *   - order: lookup key `order:<orderId>`. Rewritten in
  *     `persistEvolveToOrder()` inside the proposal-accept tx so the
  *     UNIQUE constraint shifts atomically.
+ *   - crew: lookup key `crew:<crewId>` — one crew, one group chat.
+ *
+ * Crew conversations (group chat):
+ *   `ConversationParticipant` is a *projection* of crew membership,
+ *   kept in step by `syncCrewParticipant()`. A projection can go
+ *   stale (a missed sync, a crew soft-deleted out from under it), so
+ *   every crew read, every crew send and every crew read-cursor
+ *   advance re-checks live crew membership against `crews` /
+ *   `crew_members` before serving — the inbox included, because a
+ *   crew row there carries the crew's NAME and the last message's
+ *   preview and so leaks as much as opening the thread would. The
+ *   re-check queries Prisma directly instead of importing
+ *   CrewRoleService: module direction is one-way
+ *   (CrewsModule → ConversationsModule) and reaching back would need
+ *   a forwardRef. It duplicates ~8 lines of the membership predicate,
+ *   INCLUDING the founder short-circuit — without that, an
+ *   ownership transfer that leaves the founder without a
+ *   `crew_members` row locks them out of their own crew chat.
  *
  * Authorization (controllers re-check; service is the last line):
- *   - Read / send: caller must be a participant (and not `leftAt`-set).
+ *   - Read / send / mark-read: caller must be a participant (and not
+ *     `leftAt`-set), plus — on `crew` conversations — an active crew
+ *     member. An outsider gets 404, never 403: `assertParticipant`'s
+ *     posture is deliberately non-probeable and the crew gate matches
+ *     it. Everything that touches thread content, or emits a frame
+ *     into the thread, goes through `assertConversationAccess` —
+ *     never `assertParticipant` alone, which a stale projection
+ *     satisfies.
  *   - System messages: only callable from within other services
  *     (no public REST), authorId=null.
  *   - Proposal post: only the `creator` role can post; service
@@ -44,6 +69,15 @@
  *   - `lastReadMessageId` + denormalized `lastReadAt` per
  *     participant. `markRead()` only advances forward (idempotent
  *     against double-clicks / stale clients).
+ *   - "Forward" is the `(createdAt, id)` tuple, not `createdAt`
+ *     alone. `createdAt` is generated client-side by Prisma at
+ *     millisecond precision, so two messages sharing a timestamp is
+ *     ordinary, not exotic — a bare timestamp compare silently
+ *     swallowed every tied message. Both the advance guard and the
+ *     unread count are evaluated in Postgres so the id half of the
+ *     tuple is compared under one collation; JS string order and
+ *     `en_US.utf8` disagree on case, and a cursor that means
+ *     different things on either side of the wire is a bug factory.
  */
 import {
   BadRequestException,
@@ -56,6 +90,7 @@ import {
 } from '@nestjs/common';
 import {
   ConversationContextType,
+  ConversationParticipantRole,
   type Conversation as PrismaConversation,
   type ConversationParticipant as PrismaConversationParticipant,
   type Message as PrismaMessage,
@@ -74,6 +109,7 @@ import {
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 import { REDIS } from '../infra/redis/redis.module';
+import { requireCrewChatWritesEnabled } from './crew-chat-rollout';
 import type { SendProposalInput } from './dto';
 
 type TxClient = Prisma.TransactionClient;
@@ -100,6 +136,12 @@ export interface PendingContextChange {
   conversation: PrismaConversation;
   from: ConversationContextType;
   to: ConversationContextType;
+}
+
+interface PersistResult {
+  message: PrismaMessage;
+  /** False when `clientKey` resolved this call to an earlier write. */
+  created: boolean;
 }
 
 @Injectable()
@@ -194,8 +236,199 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Idempotent "open the crew's group chat". One crew, one row,
+   * keyed `crew:<crewId>`.
+   *
+   * Concurrency is handled exactly as in `openServiceConversation` —
+   * a transaction-scoped advisory lock on the lookup key, NOT P2002
+   * recovery. Read that method's docstring for the full reasoning;
+   * the short version is that this is routinely called with a
+   * caller-supplied tx (adding the first member, posting the "crew
+   * created" system message) and a unique violation inside someone
+   * else's transaction poisons it with 25P02, taking the fallback
+   * `findUnique` down with it.
+   *
+   * When the row is created, it seeds the WHOLE active crew roster
+   * (founder included) into ConversationParticipant in the same
+   * transaction. This is load-bearing for crews that predate group
+   * chat: their first chat-producing event may be an assignment status
+   * change or one newly-approved member, and projecting only that one
+   * actor would create a "group" the rest of the crew cannot receive.
+   *
+   * Existing rows return through the fast path. Later roster changes
+   * remain the caller's job via `syncCrewParticipant`, paired with the
+   * membership write in the crews module's transaction.
+   */
+  async openCrewConversation(
+    crewId: string,
+    db: DbClient = this.prisma,
+  ): Promise<PrismaConversation> {
+    requireCrewChatWritesEnabled();
+    const lookupKey = crewLookupKey(crewId);
+
+    // Fast path — same argument as the service variant: a crew
+    // conversation's lookupKey is written once and never rewritten
+    // (only the service→order promotion rewrites keys), so an
+    // unlocked read cannot observe a key mid-flight.
+    const existing = await db.conversation.findUnique({
+      where: { lookupKey },
+    });
+    if (existing) return existing;
+
+    return await this.runInTx(db, async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${lookupKey}, 0))`,
+      );
+      const winner = await tx.conversation.findUnique({
+        where: { lookupKey },
+      });
+      if (winner) return winner;
+
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { founderId: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+
+      const members = await tx.crewMember.findMany({
+        where: { crewId, removedAt: null },
+        select: { userId: true },
+      });
+      const conversation = await tx.conversation.create({
+        data: {
+          id: newShortId(),
+          contextType: ConversationContextType.crew,
+          contextId: crewId,
+          lookupKey,
+        },
+      });
+      const userIds = new Set([
+        crew.founderId,
+        ...members.map((member) => member.userId),
+      ]);
+      await tx.conversationParticipant.createMany({
+        data: [...userIds].map((userId) => ({
+          conversationId: conversation.id,
+          userId,
+          role: ConversationParticipantRole.member,
+        })),
+        skipDuplicates: true,
+      });
+      return conversation;
+    });
+  }
+
+  /**
+   * Project a crew membership change onto the crew's group chat.
+   * Call from inside the transaction that adds or removes the
+   * member, so the chat can never disagree with `crew_members`.
+   *
+   * `leave` sets `leftAt` instead of deleting the row. The read
+   * cursor (`lastReadAt` / `lastReadMessageId`) survives, which buys
+   * two things: an audit trail of what a departed member had already
+   * seen, and a re-add that resumes their unread badge where they
+   * left it rather than at "everything since the dawn of the crew".
+   * `join` therefore clears `leftAt` on the existing row instead of
+   * recreating it. A genuinely new participant starts at the latest
+   * pre-join message: they may browse full history, but history from
+   * before they belonged to the crew does not arrive as a giant unread
+   * backlog. The member-joined system line is posted after this sync,
+   * so it remains the first unread event.
+   *
+   * `leave` does NOT open the conversation. Someone leaving a crew
+   * that never had a chat should not conjure one; there is nothing
+   * to mark them absent from.
+   */
+  async syncCrewParticipant(
+    crewId: string,
+    userId: string,
+    action: 'join' | 'leave',
+    tx: TxClient,
+  ): Promise<void> {
+    requireCrewChatWritesEnabled();
+    // Membership changes and authored crew-message writes share this
+    // lock. Whichever transaction acquires it first is the operation
+    // that happened first: a send can no longer pass the membership
+    // check, pause, then commit after a removal has completed.
+    await this.lockCrewMembership(crewId, userId, tx);
+
+    // A delayed roster-heal "join" may acquire the lock after a real
+    // removal. The lock orders the operations, but only a fresh roster
+    // read tells us which one won. Never clear `leftAt` from stale input.
+    const mayJoin =
+      action === 'join' && (await this.isActiveCrewMember(crewId, userId, tx));
+    if (!mayJoin) {
+      const conv = await tx.conversation.findUnique({
+        where: { lookupKey: crewLookupKey(crewId) },
+        select: { id: true },
+      });
+      if (!conv) return;
+      await tx.conversationParticipant.updateMany({
+        where: { conversationId: conv.id, userId, leftAt: null },
+        data: { leftAt: new Date() },
+      });
+      return;
+    }
+
+    const conv = await this.openCrewConversation(crewId, tx);
+    // Copy the pre-join baseline inside PostgreSQL. Prisma materializes
+    // TIMESTAMPTZ as JavaScript Date, which would truncate a database
+    // microsecond and leave the baseline message falsely unread.
+    //
+    // The conflict branch changes ONLY left_at: a returning member
+    // resumes their old cursor instead of skipping messages posted
+    // while they were away.
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO conversation_participants (
+        conversation_id,
+        user_id,
+        role,
+        last_read_message_id,
+        last_read_at
+      )
+      SELECT
+        ${conv.id},
+        ${userId},
+        ${ConversationParticipantRole.member}::conversation_participant_role,
+        latest.id,
+        latest.created_at
+      FROM (SELECT 1) AS seed
+      LEFT JOIN LATERAL (
+        SELECT m.id, m.created_at
+        FROM messages AS m
+        WHERE m.conversation_id = ${conv.id}
+          AND m.deleted_at IS NULL
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT 1
+      ) AS latest ON TRUE
+      ON CONFLICT (conversation_id, user_id)
+      DO UPDATE SET left_at = NULL
+    `);
+  }
+
   // ─── Read ────────────────────────────────────────────────
 
+  /**
+   * Inbox feed. The participant projection selects the page; live crew
+   * membership then filters it.
+   *
+   * The re-check is not belt-and-braces here. An inbox row carries the
+   * crew's name, its logo and the last message's preview text, so a
+   * stale `ConversationParticipant` row leaks the same content the
+   * thread does. Someone the crew removed — or whose crew was
+   * soft-deleted — has to stop seeing the row at the same moment they
+   * stop being able to open it, not one missed sync later.
+   *
+   * Two batched queries for the whole page however many crew rows it
+   * holds, and none at all for a page with none.
+   *
+   * Filtering happens AFTER the page is sliced and AFTER `nextCursor`
+   * is taken, so the cursor keeps walking the raw DB order: dropping a
+   * row shortens a page, it never skips the row behind it. A short page
+   * with a non-null `nextCursor` is therefore correct and expected —
+   * clients page on the cursor, not on `items.length`.
+   */
   async listInbox(
     userId: string,
     opts: {
@@ -204,40 +437,175 @@ export class ConversationsService {
       contextType?: ConversationContextType;
     },
   ) {
-    const rows = await this.prisma.conversation.findMany({
-      where: {
-        participants: { some: { userId, leftAt: null } },
-        ...(opts.contextType ? { contextType: opts.contextType } : {}),
-      },
-      orderBy: [{ lastMessageAt: 'desc' }, { id: 'asc' }],
-      take: opts.limit + 1,
-      ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
-      include: { participants: true },
+    return this.readSnapshot(async (db) => {
+      const rows = await db.conversation.findMany({
+        where: {
+          participants: { some: { userId, leftAt: null } },
+          ...(opts.contextType ? { contextType: opts.contextType } : {}),
+        },
+        orderBy: [{ lastMessageAt: 'desc' }, { id: 'asc' }],
+        take: opts.limit + 1,
+        ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
+        include: { participants: true },
+      });
+      const hasMore = rows.length > opts.limit;
+      const page = hasMore ? rows.slice(0, opts.limit) : rows;
+      const nextCursor = hasMore ? page[page.length - 1].id : null;
+      const visible = await this.filterLiveCrewRows(page, userId, db);
+      const hydrated = await Promise.all(
+        visible.map((c) => this.hydrate(c, userId, db)),
+      );
+      return { items: hydrated, nextCursor };
     });
-    const hasMore = rows.length > opts.limit;
-    const page = hasMore ? rows.slice(0, opts.limit) : rows;
-    const hydrated = await Promise.all(
-      page.map((c) => this.hydrate(c, userId)),
-    );
+  }
+
+  /**
+   * Drop the crew rows of a page the viewer is no longer entitled to:
+   * crew soft-deleted, or membership ended while the participant
+   * projection still says otherwise. Non-crew rows pass straight
+   * through — a service / order thread has no crew to check.
+   *
+   * The set-shaped mirror of `isActiveCrewMember`, founder
+   * short-circuit included. A crew absent from `crews` (soft-deleted)
+   * fails for everyone, so `founderOf.has()` is tested before the
+   * membership set: a leftover `crew_members` row must not resurrect a
+   * deleted crew's inbox row.
+   */
+  private async filterLiveCrewRows<
+    T extends { contextType: ConversationContextType; contextId: string },
+  >(rows: T[], userId: string, db: DbClient = this.prisma): Promise<T[]> {
+    const crewIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.contextType === ConversationContextType.crew)
+          .map((r) => r.contextId),
+      ),
+    ];
+    if (crewIds.length === 0) return rows;
+
+    const [crews, memberships] = await Promise.all([
+      db.crew.findMany({
+        where: { id: { in: crewIds }, deletedAt: null },
+        select: { id: true, founderId: true },
+      }),
+      db.crewMember.findMany({
+        where: { crewId: { in: crewIds }, userId, removedAt: null },
+        select: { crewId: true },
+      }),
+    ]);
+    const founderOf = new Map(crews.map((c) => [c.id, c.founderId]));
+    const memberOf = new Set(memberships.map((m) => m.crewId));
+
+    return rows.filter((r) => {
+      if (r.contextType !== ConversationContextType.crew) return true;
+      if (!founderOf.has(r.contextId)) return false;
+      return founderOf.get(r.contextId) === userId || memberOf.has(r.contextId);
+    });
+  }
+
+  /**
+   * A detail row's participant projection can also be stale. Intersect
+   * it with the live crew roster before returning the member list (and
+   * before admitting the viewer), so a missed leave sync cannot inflate
+   * the header count or expose a departed member's read cursor.
+   */
+  private async filterLiveCrewParticipants(
+    conv: PrismaConversation & {
+      participants: PrismaConversationParticipant[];
+    },
+    db: DbClient = this.prisma,
+  ): Promise<
+    PrismaConversation & {
+      participants: PrismaConversationParticipant[];
+    }
+  > {
+    if (conv.contextType !== ConversationContextType.crew) return conv;
+
+    const crew = await db.crew.findFirst({
+      where: { id: conv.contextId, deletedAt: null },
+      select: { founderId: true },
+    });
+    if (!crew) return { ...conv, participants: [] };
+
+    const projectedUserIds = conv.participants.map((p) => p.userId);
+    const memberships =
+      projectedUserIds.length === 0
+        ? []
+        : await db.crewMember.findMany({
+            where: {
+              crewId: conv.contextId,
+              userId: { in: projectedUserIds },
+              removedAt: null,
+            },
+            select: { userId: true },
+          });
+    const liveUserIds = new Set(memberships.map((m) => m.userId));
+    liveUserIds.add(crew.founderId);
     return {
-      items: hydrated,
-      nextCursor: hasMore ? page[page.length - 1].id : null,
+      ...conv,
+      participants: conv.participants.filter((p) => liveUserIds.has(p.userId)),
     };
+  }
+
+  /**
+   * The recipient-shaped mirror of `filterLiveCrewRows`: one crew,
+   * many users, rather than one user, many crews.
+   *
+   * Fan-out is content-bearing — a frame carries the message body —
+   * so it owes the same distrust of the participant projection that
+   * read, send and mark-read already pay. `leftAt: null` alone is not
+   * that: it is exactly the projection, and the module header claims
+   * we do not trust it. A crew soft-deleted out from under an open
+   * socket writes no `leftAt` at all, so without this the whole
+   * roster keeps receiving from a crew that no longer exists.
+   *
+   * Two batched queries per crew broadcast, regardless of roster
+   * size, and none at all for service/order threads.
+   */
+  private async liveCrewRecipients(
+    crewId: string,
+    userIds: string[],
+  ): Promise<Set<string>> {
+    const [crew, memberships] = await Promise.all([
+      this.prisma.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { founderId: true },
+      }),
+      this.prisma.crewMember.findMany({
+        where: { crewId, userId: { in: userIds }, removedAt: null },
+        select: { userId: true },
+      }),
+    ]);
+    if (!crew) return new Set();
+    const live = new Set(memberships.map((m) => m.userId));
+    // The founder short-circuit, same as everywhere else: they are
+    // admin by `crew.founderId` and may hold no `crew_members` row.
+    if (userIds.includes(crew.founderId)) live.add(crew.founderId);
+    return live;
   }
 
   async detail(
     conversationId: string,
     viewerId: string,
   ): Promise<ConversationRowHydrated> {
-    const row = await this.prisma.conversation.findUnique({
-      where: { id: conversationId },
-      include: { participants: true },
+    return this.readSnapshot(async (db) => {
+      const row = await db.conversation.findUnique({
+        where: { id: conversationId },
+        // A left participant is retained as audit/read-cursor history,
+        // not as a current member of the thread. Returning it here made
+        // the crew header's member count grow forever and exposed stale
+        // roster entries to every client.
+        include: { participants: { where: { leftAt: null } } },
+      });
+      if (!row) throw new NotFoundException('Conversation not found');
+      const visible = await this.filterLiveCrewParticipants(row, db);
+      if (
+        !visible.participants.some((p) => p.userId === viewerId && !p.leftAt)
+      ) {
+        throw new NotFoundException('Conversation not found');
+      }
+      return this.hydrate(visible, viewerId, db);
     });
-    if (!row) throw new NotFoundException('Conversation not found');
-    if (!row.participants.some((p) => p.userId === viewerId && !p.leftAt)) {
-      throw new NotFoundException('Conversation not found');
-    }
-    return this.hydrate(row, viewerId);
   }
 
   async listMessages(
@@ -245,30 +613,80 @@ export class ConversationsService {
     viewerId: string,
     opts: { limit: number; cursor?: string },
   ) {
-    await this.assertParticipant(conversationId, viewerId);
-    const rows = await this.prisma.message.findMany({
-      where: { conversationId, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      take: opts.limit + 1,
-      ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
+    return this.readSnapshot(async (db) => {
+      await this.assertConversationAccess(conversationId, viewerId, db);
+      const rows = await db.message.findMany({
+        where: { conversationId, deletedAt: null },
+        // The `id` tiebreaker is load-bearing, not decoration.
+        // `createdAt` is generated client-side by Prisma at millisecond
+        // precision, so ties are ordinary. With a one-column,
+        // non-unique orderBy the sort is only PARTIAL: Postgres is free
+        // to return tied rows in any order, and in practice returns
+        // them in physical heap order, which changes as rows are
+        // updated. `cursor` + `skip: 1` then pages through an order
+        // that is not stable between queries, so a tied burst both
+        // repeats and silently drops messages. Making the sort TOTAL is
+        // what fixes it — the fix is the uniqueness of the sort key,
+        // not any particular thing Prisma emits.
+        // `listInbox` above already does this.
+        // Pinned by conversations.postgres.integration.spec.ts, which
+        // forces the heap order to disagree with the logical order so
+        // that dropping this line actually fails.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: opts.limit + 1,
+        ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
+      });
+      const hasMore = rows.length > opts.limit;
+      const items = hasMore ? rows.slice(0, opts.limit) : rows;
+      return {
+        items,
+        nextCursor: hasMore ? items[items.length - 1].id : null,
+      };
     });
-    const hasMore = rows.length > opts.limit;
-    const items = hasMore ? rows.slice(0, opts.limit) : rows;
-    return {
-      items,
-      nextCursor: hasMore ? items[items.length - 1].id : null,
-    };
   }
 
   // ─── Persist (no broadcast) ──────────────────────────────
 
+  /**
+   * `clientKey` is the caller-supplied idempotency token from the
+   * authenticated send path. Only legal when `db` is NOT a
+   * caller-supplied transaction — see `persist`.
+   */
   async persistText(
     conversationId: string,
     authorId: string,
     body: string,
     db: DbClient = this.prisma,
+    clientKey: string | null = null,
   ): Promise<PrismaMessage> {
-    return this.persist(conversationId, authorId, 'text', body, null, db);
+    return (
+      await this.persist(
+        conversationId,
+        authorId,
+        'text',
+        body,
+        null,
+        db,
+        clientKey,
+      )
+    ).message;
+  }
+
+  private persistTextResult(
+    conversationId: string,
+    authorId: string,
+    body: string,
+    clientKey: string | null,
+  ): Promise<PersistResult> {
+    return this.persist(
+      conversationId,
+      authorId,
+      'text',
+      body,
+      null,
+      this.prisma,
+      clientKey,
+    );
   }
 
   async persistProposal(
@@ -303,16 +721,26 @@ export class ConversationsService {
       note: input.note,
     };
     const payload: MessagePayload = { kind: 'proposal', proposal };
-    return this.persist(
-      conversationId,
-      authorId,
-      'proposal',
-      input.note,
-      payload,
-      db,
-    );
+    return (
+      await this.persist(
+        conversationId,
+        authorId,
+        'proposal',
+        input.note,
+        payload,
+        db,
+      )
+    ).message;
   }
 
+  /**
+   * Deliberately takes NO `clientKey`. This runs inside other
+   * modules' transactions (orders.service.ts), where provoking a
+   * P2002 to detect a duplicate would abort the outer tx and turn
+   * every later statement into a 25P02. System messages are emitted
+   * by server-side state machines that already own their own
+   * idempotency, so there is nothing to dedupe here anyway.
+   */
   async persistSystem(
     conversationId: string,
     kind: SystemMessageKind,
@@ -321,7 +749,8 @@ export class ConversationsService {
   ): Promise<PrismaMessage> {
     const system: SystemMessagePayload = { kind, params };
     const payload: MessagePayload = { kind: 'system', system };
-    return this.persist(conversationId, null, 'system', '', payload, db);
+    return (await this.persist(conversationId, null, 'system', '', payload, db))
+      .message;
   }
 
   async persistProposalStatusPatch(
@@ -391,9 +820,24 @@ export class ConversationsService {
   // ─── Public broadcast helpers ────────────────────────────
 
   /**
-   * Push a `message.created` frame to every participant. Safe to
-   * call from outside the persisting tx — pulls fresh
+   * Push a `message.created` frame to every ACTIVE participant. Safe
+   * to call from outside the persisting tx — pulls fresh
    * conversation/participants from the DB.
+   *
+   * `leftAt: null` is a security filter, not a tidiness one: a
+   * removed member's socket stays open until they close the tab, so
+   * fanning out to departed participants kept streaming a crew's
+   * messages to someone who had been kicked out of it.
+   *
+   * Shape of the work: 1 conversation load + 1 grouped unread query +
+   * N publishes issued concurrently. It used to be 1 load + N
+   * sequential COUNT(*) + N sequentially awaited publishes, all on
+   * the sender's request path — a 30-member crew paid ~61 serial
+   * round-trips per message.
+   *
+   * `unreadCount` stays in the frame; it is part of the wire contract
+   * (packages/shared/src/conversation.ts) and drives the nav bell
+   * badge without a follow-up request.
    *
    * Send failures are logged but never throw: WS is best-effort and
    * the client will reconnect → REST-recover. Don't break a
@@ -402,36 +846,67 @@ export class ConversationsService {
   async broadcastMessage(message: PrismaMessage): Promise<void> {
     const conv = await this.prisma.conversation.findUnique({
       where: { id: message.conversationId },
-      include: { participants: true },
+      include: { participants: { where: { leftAt: null } } },
     });
-    if (!conv) return;
-    for (const p of conv.participants) {
-      const unread = await this.unreadCountFor(conv.id, p);
-      const frame: ConversationFrame = {
-        event: 'message.created',
-        data: {
-          conversationId: conv.id,
-          message: {
-            id: message.id,
-            conversationId: message.conversationId,
-            authorId: message.authorId,
-            type: message.type as ConversationMessageType,
-            body: message.body,
-            payload: (message.payload ?? null) as MessagePayload | null,
-            createdAt: message.createdAt.toISOString(),
+    if (!conv || conv.participants.length === 0) return;
+
+    // `leftAt: null` is the projection, and the projection is exactly
+    // what this module does not trust for crew threads — see
+    // `liveCrewRecipients`.
+    const participants =
+      conv.contextType === ConversationContextType.crew
+        ? await this.liveCrewRecipients(
+            conv.contextId,
+            conv.participants.map((p) => p.userId),
+          ).then((live) => conv.participants.filter((p) => live.has(p.userId)))
+        : conv.participants;
+    if (participants.length === 0) return;
+
+    const unread = await this.unreadCountsFor(
+      conv.id,
+      participants.map((p) => p.userId),
+    );
+    const dto = {
+      id: message.id,
+      conversationId: message.conversationId,
+      authorId: message.authorId,
+      type: message.type as ConversationMessageType,
+      body: message.body,
+      payload: (message.payload ?? null) as MessagePayload | null,
+      createdAt: message.createdAt.toISOString(),
+    };
+    const lastMessageAt = conv.lastMessageAt.toISOString();
+
+    await Promise.all(
+      participants.map((p) => {
+        const frame: ConversationFrame = {
+          event: 'message.created',
+          data: {
+            conversationId: conv.id,
+            message: dto,
+            lastMessageAt,
+            unreadCount: unread.get(p.userId) ?? 0,
           },
-          lastMessageAt: conv.lastMessageAt.toISOString(),
-          unreadCount: unread,
-        },
-      };
-      await this.publishToUser(p.userId, frame);
-    }
+        };
+        return this.publishToUser(p.userId, frame);
+      }),
+    );
   }
 
   async broadcastContextChange(change: PendingContextChange): Promise<void> {
-    const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: change.conversation.id },
+    // Active participants only, and for a crew only those still
+    // actually in it — see `liveCrewRecipients` in broadcastMessage.
+    const projected = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: change.conversation.id, leftAt: null },
+      select: { userId: true },
     });
+    const participants =
+      change.conversation.contextType === ConversationContextType.crew
+        ? await this.liveCrewRecipients(
+            change.conversation.contextId,
+            projected.map((p) => p.userId),
+          ).then((live) => projected.filter((p) => live.has(p.userId)))
+        : projected;
     const frame: ConversationFrame = {
       event: 'context.changed',
       data: {
@@ -441,9 +916,9 @@ export class ConversationsService {
         contextId: change.conversation.contextId,
       },
     };
-    for (const p of participants) {
-      await this.publishToUser(p.userId, frame);
-    }
+    await Promise.all(
+      participants.map((p) => this.publishToUser(p.userId, frame)),
+    );
   }
 
   // ─── Convenience wrappers (persist + broadcast) ──────────
@@ -452,14 +927,31 @@ export class ConversationsService {
   // broadcast. Use from controllers / direct call sites that have
   // no surrounding business transaction.
 
+  /**
+   * `clientKey` — optional idempotency token from the client. A
+   * retried send resolves to the row the first attempt created without
+   * broadcasting it again. The HTTP response repairs the sender's local
+   * cache; every other recipient already received (or can REST-recover)
+   * the original persisted row. Re-broadcasting a replay made every
+   * recipient process duplicate frames and could produce duplicate
+   * desktop toasts despite the message-id cache dedupe.
+   */
   async sendText(
     conversationId: string,
     authorId: string,
     body: string,
+    clientKey: string | null = null,
   ): Promise<PrismaMessage> {
-    const msg = await this.persistText(conversationId, authorId, body);
-    await this.broadcastMessage(msg);
-    return msg;
+    const result = await this.persistTextResult(
+      conversationId,
+      authorId,
+      body,
+      clientKey,
+    );
+    if (result.created) {
+      await this.broadcastMessage(result.message);
+    }
+    return result.message;
   }
 
   async sendProposal(
@@ -602,55 +1094,130 @@ export class ConversationsService {
 
   // ─── Read cursor ─────────────────────────────────────────
 
+  /**
+   * Advance the caller's read cursor to `lastReadMessageId`.
+   *
+   * The gate is `assertConversationAccess`, not `assertParticipant`:
+   * marking read is content-adjacent, not bookkeeping. It reveals
+   * whether a given message id lives in this thread, it moves a cursor
+   * every other member can see, and it publishes a `read.advanced`
+   * frame into the thread. A crew outsider holding a stale-but-active
+   * participant row could do all three — and that stale row is exactly
+   * what the crew gate exists to distrust.
+   *
+   * Access is asserted BEFORE the message is looked up. The old
+   * order let a removed participant probe which message ids exist in
+   * a conversation they had been ejected from ("message not found"
+   * vs "conversation not found"), and — because the participant row
+   * was fetched with a bare `findUnique` that ignored `leftAt` —
+   * actually let them advance their cursor and broadcast a
+   * read-receipt into a thread they were no longer in.
+   *
+   * The advance itself is one SQL UPDATE joined to the Message row, so
+   * the monotonicity check and write are atomic and `last_read_at`
+   * receives Postgres' original microsecond timestamp. Routing that
+   * value through JavaScript `Date` would truncate it to milliseconds;
+   * the just-read message would then still compare newer than its own
+   * cursor and remain unread forever.
+   */
   async markRead(
     conversationId: string,
     userId: string,
     lastReadMessageId: string,
   ) {
+    const { conversation } = await this.assertConversationAccess(
+      conversationId,
+      userId,
+    );
+
     const message = await this.prisma.message.findUnique({
       where: { id: lastReadMessageId },
     });
     if (!message || message.conversationId !== conversationId) {
       throw new NotFoundException('Message not found in this conversation');
     }
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { conversationId_userId: { conversationId, userId } },
-    });
-    if (!participant) throw new NotFoundException('Conversation not found');
 
-    if (participant.lastReadAt && participant.lastReadAt >= message.createdAt) {
-      return participant;
-    }
-    const updated = await this.prisma.conversationParticipant.update({
-      where: { conversationId_userId: { conversationId, userId } },
-      data: {
-        lastReadMessageId: message.id,
-        lastReadAt: message.createdAt,
-      },
-    });
-
-    const conv = await this.prisma.conversation.findUnique({
-      where: { id: conversationId },
-      include: { participants: true },
-    });
-    if (conv) {
-      const frame: ConversationFrame = {
-        event: 'read.advanced',
-        data: {
-          conversationId,
-          userId,
-          lastReadMessageId: message.id,
-        },
-      };
-      for (const p of conv.participants) {
-        await this.publishToUser(p.userId, frame);
+    const [advanced] = await this.prisma.$queryRaw<
+      PrismaConversationParticipant[]
+    >(Prisma.sql`
+      UPDATE conversation_participants AS p
+      SET last_read_message_id = m.id,
+          last_read_at = m.created_at
+      FROM messages AS m
+      WHERE p.conversation_id = ${conversationId}
+        AND p.user_id = ${userId}
+        AND p.left_at IS NULL
+        AND m.id = ${lastReadMessageId}
+        AND m.conversation_id = ${conversationId}
+        AND (
+          p.last_read_at IS NULL
+          OR (p.last_read_at, COALESCE(p.last_read_message_id, ''))
+             < (m.created_at, m.id)
+        )
+      RETURNING
+        p.conversation_id AS "conversationId",
+        p.user_id AS "userId",
+        p.role,
+        p.last_read_message_id AS "lastReadMessageId",
+        p.last_read_at AS "lastReadAt",
+        p.muted_until AS "mutedUntil",
+        p.joined_at AS "joinedAt",
+        p.left_at AS "leftAt"
+    `);
+    if (!advanced) {
+      // Another request may already have advanced beyond this target.
+      // Return the database's current cursor, not the participant row
+      // captured by the access check before that concurrent update.
+      const current = await this.prisma.conversationParticipant.findUnique({
+        where: { conversationId_userId: { conversationId, userId } },
+      });
+      if (!current || current.leftAt) {
+        throw new NotFoundException('Conversation not found');
       }
+      return current;
     }
-    return updated;
+
+    // Read receipts go to active participants only — a departed
+    // member's open socket is not entitled to the thread's activity.
+    const projected = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, leftAt: null },
+      select: { userId: true },
+    });
+    const recipients =
+      conversation.contextType === ConversationContextType.crew
+        ? await this.liveCrewRecipients(
+            conversation.contextId,
+            projected.map((p) => p.userId),
+          ).then((live) => projected.filter((p) => live.has(p.userId)))
+        : projected;
+    const frame: ConversationFrame = {
+      event: 'read.advanced',
+      data: {
+        conversationId,
+        userId,
+        lastReadMessageId: message.id,
+      },
+    };
+    await Promise.all(
+      recipients.map((p) => this.publishToUser(p.userId, frame)),
+    );
+    return advanced;
   }
 
   // ─── Internals ───────────────────────────────────────────
 
+  /**
+   * `clientKey` dedupe: pre-check, then treat the unique violation
+   * as "somebody else already wrote this one". The pre-check wins the
+   * common case (a retry seconds later); the P2002 catch wins the
+   * genuine race (two in-flight retries of the same send).
+   *
+   * It is a hard error to combine `clientKey` with a caller-supplied
+   * transaction. The P2002 recovery re-reads the row, and inside
+   * someone else's tx that read would hit 25P02 on an already-aborted
+   * transaction — a silent corruption of an unrelated business
+   * operation. Fail loudly at the call site instead.
+   */
   private async persist(
     conversationId: string,
     authorId: string | null,
@@ -658,26 +1225,118 @@ export class ConversationsService {
     body: string,
     payload: MessagePayload | null,
     db: DbClient = this.prisma,
-  ): Promise<PrismaMessage> {
-    if (authorId !== null) {
-      await this.assertParticipant(conversationId, authorId, db);
+    clientKey: string | null = null,
+  ): Promise<PersistResult> {
+    if (clientKey !== null) {
+      if (authorId === null) {
+        throw new Error(
+          'clientKey requires an authorId — the dedupe index is scoped to (conversation, author, key)',
+        );
+      }
+      if (this.isTx(db)) {
+        throw new Error(
+          'clientKey dedupe cannot run inside a caller transaction — a unique violation would abort it (25P02)',
+        );
+      }
     }
-    return this.runInTx(db, async (tx) => {
-      const created = await tx.message.create({
-        data: {
-          id: newShortId(),
-          conversationId,
-          authorId,
-          type,
-          body,
-          payload: payload as unknown as Prisma.InputJsonValue,
-        },
+
+    try {
+      return await this.runInTx(db, async (tx) => {
+        if (authorId !== null) {
+          const context = await tx.conversation.findUnique({
+            where: { id: conversationId },
+            select: { contextType: true, contextId: true },
+          });
+          if (!context) throw new NotFoundException('Conversation not found');
+          if (context.contextType === ConversationContextType.crew) {
+            requireCrewChatWritesEnabled();
+            await this.lockCrewMembership(context.contextId, authorId, tx);
+          }
+          // Re-check after taking the membership lock. A concurrent
+          // remove either finished first (this now 404s) or waits until
+          // this message commits (the send linearizes first).
+          await this.assertConversationAccess(conversationId, authorId, tx);
+        }
+
+        if (clientKey !== null) {
+          const existing = await tx.message.findFirst({
+            where: { conversationId, authorId, clientKey },
+          });
+          if (existing) {
+            this.assertIdempotentReplay(existing, type, body);
+            return { message: existing, created: false };
+          }
+        }
+
+        const created = await tx.message.create({
+          data: {
+            id: newShortId(),
+            conversationId,
+            authorId,
+            type,
+            body,
+            payload: payload as unknown as Prisma.InputJsonValue,
+            clientKey,
+          },
+        });
+        // Preserve the DB's microsecond timestamp and never let a
+        // slower transaction move the inbox clock backwards after a
+        // newer message committed first.
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE conversations AS c
+          SET last_message_at = GREATEST(c.last_message_at, m.created_at)
+          FROM messages AS m
+          WHERE c.id = ${conversationId}
+            AND m.id = ${created.id}
+            AND m.conversation_id = c.id
+        `);
+        return { message: created, created: true };
       });
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { lastMessageAt: created.createdAt },
+    } catch (err) {
+      if (clientKey === null || !isUniqueViolation(err)) throw err;
+      const winner = await this.prisma.message.findFirst({
+        where: { conversationId, authorId, clientKey },
       });
-      return created;
+      if (winner) {
+        this.assertIdempotentReplay(winner, type, body);
+        return { message: winner, created: false };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Serialize one user's membership transition with their authored
+   * writes in that crew. Transaction-scoped by construction; using it
+   * on the root client would release at the end of the statement and
+   * provide no protection.
+   */
+  private async lockCrewMembership(
+    crewId: string,
+    userId: string,
+    db: TxClient,
+  ): Promise<void> {
+    const key = `crew-membership:${crewId}:${userId}`;
+    await db.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
+    );
+  }
+
+  /**
+   * An idempotency key identifies one logical write, not an arbitrary
+   * slot whose old response should replace new content. Returning the
+   * first row for a reused key with a different body makes the caller
+   * believe text was sent when it was silently discarded.
+   */
+  private assertIdempotentReplay(
+    existing: PrismaMessage,
+    type: 'text' | 'proposal' | 'system' | 'image' | 'file',
+    body: string,
+  ): void {
+    if (existing.type === type && existing.body === body) return;
+    throw new ConflictException({
+      message: 'Idempotency key was already used for a different message',
+      existingMessageId: existing.id,
     });
   }
 
@@ -701,14 +1360,15 @@ export class ConversationsService {
       participants: PrismaConversationParticipant[];
     },
     viewerId: string,
+    db: DbClient = this.prisma,
   ): Promise<ConversationRowHydrated> {
     const me = conv.participants.find((p) => p.userId === viewerId);
     const [lastMessage, unread] = await Promise.all([
-      this.prisma.message.findFirst({
+      db.message.findFirst({
         where: { conversationId: conv.id, deletedAt: null },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
-      me ? this.unreadCountFor(conv.id, me) : Promise.resolve(0),
+      me ? this.unreadCountFor(conv.id, me, db) : Promise.resolve(0),
     ]);
     return Object.assign(conv, {
       _lastMessage: lastMessage,
@@ -719,17 +1379,65 @@ export class ConversationsService {
   private async unreadCountFor(
     conversationId: string,
     participant: PrismaConversationParticipant,
+    db: DbClient = this.prisma,
   ): Promise<number> {
-    return this.prisma.message.count({
-      where: {
-        conversationId,
-        deletedAt: null,
-        NOT: { authorId: participant.userId },
-        ...(participant.lastReadAt
-          ? { createdAt: { gt: participant.lastReadAt } }
-          : {}),
-      },
-    });
+    const counts = await this.unreadCountsFor(
+      conversationId,
+      [participant.userId],
+      db,
+    );
+    return counts.get(participant.userId) ?? 0;
+  }
+
+  /**
+   * Unread counts for several participants of one conversation in a
+   * single round-trip. The ONE definition of "unread" in this
+   * service — `unreadCountFor` is a one-element call into it — so the
+   * inbox badge, the detail header and the WS frame can never drift
+   * apart.
+   *
+   * Raw SQL because each participant carries a different cursor, and
+   * because two subtleties are only expressible here:
+   *
+   *   - `m.author_id IS NULL OR m.author_id <> p.user_id`. The old
+   *     Prisma `NOT: { authorId: userId }` compiled to
+   *     `NOT (author_id = $1)`, which is NULL — not TRUE — for the
+   *     server-authored messages that carry no author. Every
+   *     order-lifecycle system message was therefore excluded from
+   *     every unread count that has ever been served.
+   *
+   *   - `(m.created_at, m.id) > (p.last_read_at, ...)`. A row-value
+   *     comparison, so a message sharing the cursor's millisecond is
+   *     unread iff it sorts after the cursor under the same total
+   *     order `listMessages` pages by. `COALESCE(..., '')` handles a
+   *     timestamp cursor with no message id: everything at that
+   *     instant stays unread, which is the safe direction.
+   */
+  private async unreadCountsFor(
+    conversationId: string,
+    userIds: string[],
+    db: DbClient = this.prisma,
+  ): Promise<Map<string, number>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await db.$queryRaw<
+      Array<{ userId: string; unread: number }>
+    >(Prisma.sql`
+      SELECT p.user_id AS "userId", COUNT(m.id)::int AS "unread"
+      FROM conversation_participants p
+      LEFT JOIN messages m
+        ON m.conversation_id = p.conversation_id
+       AND m.deleted_at IS NULL
+       AND (m.author_id IS NULL OR m.author_id <> p.user_id)
+       AND (
+             p.last_read_at IS NULL
+             OR (m.created_at, m.id)
+                > (p.last_read_at, COALESCE(p.last_read_message_id, ''))
+           )
+      WHERE p.conversation_id = ${conversationId}
+        AND p.user_id IN (${Prisma.join(userIds)})
+      GROUP BY p.user_id
+    `);
+    return new Map(rows.map((r) => [r.userId, r.unread]));
   }
 
   private async assertParticipant(
@@ -746,12 +1454,110 @@ export class ConversationsService {
     return p;
   }
 
+  /**
+   * Full read/send gate: participant row, then — for a crew
+   * conversation — live crew membership. Use this rather than
+   * `assertParticipant` anywhere content crosses the boundary.
+   */
+  private async assertConversationAccess(
+    conversationId: string,
+    userId: string,
+    db: DbClient = this.prisma,
+  ): Promise<{
+    participant: PrismaConversationParticipant;
+    conversation: {
+      contextType: ConversationContextType;
+      contextId: string;
+    };
+  }> {
+    const participant = await this.assertParticipant(
+      conversationId,
+      userId,
+      db,
+    );
+    const conv = await db.conversation.findUnique({
+      where: { id: conversationId },
+      select: { contextType: true, contextId: true },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
+    await this.assertCrewMembership(conv, userId, db);
+    return { participant, conversation: conv };
+  }
+
+  /** No-op for non-crew conversations. 404 (never 403) for outsiders. */
+  private async assertCrewMembership(
+    conv: { contextType: ConversationContextType; contextId: string },
+    userId: string,
+    db: DbClient = this.prisma,
+  ): Promise<void> {
+    if (conv.contextType !== ConversationContextType.crew) return;
+    if (await this.isActiveCrewMember(conv.contextId, userId, db)) return;
+    throw new NotFoundException('Conversation not found');
+  }
+
+  /**
+   * Mirror of `CrewRoleService.resolve()`'s membership predicate,
+   * minus the role names this module has no use for. Duplicated
+   * rather than imported: ConversationsModule must not depend on
+   * CrewsModule (the dependency runs the other way, and closing the
+   * cycle would take a forwardRef).
+   *
+   * The founder short-circuit is NOT optional. A founder whose
+   * `crew_members` row was never created — or was removed by an
+   * ownership transfer — still owns the crew, and dropping this
+   * branch locks them out of their own group chat.
+   */
+  private async isActiveCrewMember(
+    crewId: string,
+    userId: string,
+    db: DbClient = this.prisma,
+  ): Promise<boolean> {
+    const crew = await db.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { founderId: true },
+    });
+    if (!crew) return false;
+    if (crew.founderId === userId) return true;
+    const member = await db.crewMember.findFirst({
+      where: { crewId, userId, removedAt: null },
+      select: { id: true },
+    });
+    return member !== null;
+  }
+
   private runInTx<T>(
     db: DbClient,
     fn: (tx: TxClient) => Promise<T>,
   ): Promise<T> {
-    if (isTx(db)) return fn(db);
+    if (this.isTx(db)) return fn(db);
     return this.prisma.$transaction((tx) => fn(tx));
+  }
+
+  /**
+   * Authorization and the content it protects must share one database
+   * snapshot. At READ COMMITTED every statement sees a fresh snapshot:
+   * a member could pass the roster check, be removed, then receive a
+   * message committed after that removal. REPEATABLE READ makes each
+   * response linearize entirely before or entirely after the removal.
+   */
+  private readSnapshot<T>(fn: (tx: TxClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn, {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+  }
+
+  /**
+   * Prisma 7's driver-adapter transaction proxy still exposes
+   * `$transaction` at runtime, even though `TransactionClient` omits it
+   * from the public type. Feature-detecting that property therefore
+   * misclassifies a real interactive transaction as the root client.
+   *
+   * Service methods accept only this injected root client or a client
+   * handed to the caller by that root's `$transaction` callback, so
+   * object identity is the stable discriminator.
+   */
+  private isTx(db: DbClient): db is TxClient {
+    return db !== this.prisma;
   }
 }
 
@@ -767,8 +1573,19 @@ export function orderLookupKey(orderId: string): string {
   return `order:${orderId}`;
 }
 
-function isTx(db: DbClient): db is TxClient {
-  return !('$transaction' in db);
+/**
+ * One crew, one group chat. Public because CrewsModule builds the
+ * same token when it wants to check whether a crew already has a
+ * chat without opening one.
+ */
+export function crewLookupKey(crewId: string): string {
+  return `crew:${crewId}`;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
 }
 
 /**

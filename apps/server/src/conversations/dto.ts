@@ -41,6 +41,18 @@ export type OpenConversationInput = z.infer<typeof OpenConversationSchema>;
  */
 export const SendMessageSchema = z.object({
   body: z.string().trim().min(1).max(4000),
+  /// Client-generated idempotency token for this send. Optional, but
+  /// strongly recommended from anything with a retry: a flaky network
+  /// that re-POSTs the same composed message otherwise appends a
+  /// second copy that every member of a group chat then sees. The
+  /// server collapses a retry onto the row the first attempt created
+  /// and returns it unchanged.
+  ///
+  /// Scope is (conversation, author, key) — reusing a key across
+  /// conversations is fine. Reusing it for a genuinely different
+  /// message in the same conversation is a 409 conflict — generate
+  /// one per composed message (a UUID is ideal).
+  clientKey: z.string().trim().min(1).max(64).optional(),
 });
 export type SendMessageInput = z.infer<typeof SendMessageSchema>;
 

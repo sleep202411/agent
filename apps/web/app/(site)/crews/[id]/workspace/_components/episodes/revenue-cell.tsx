@@ -25,16 +25,18 @@ interface RevenueCellProps {
   crewId: string;
   episodeId: string;
   assignment: EpisodeAssignment;
-  /** Only finance can flip into edit mode. Others see the value read-only. */
+  /** Whether this viewer may flip into edit mode. Owned by the caller —
+   *  it folds the server's `['admin','finance']` rule together with the
+   *  episode freeze. Everyone else sees the value read-only. */
   canEdit: boolean;
 }
 
 /**
  * Inline-editable revenue display with cell-aware currency picker.
  *
- * - Non-finance viewers see "—" or the formatted amount.
- * - Finance sees a pencil; click → numeric input + currency picker
- *   (hidden on cells with a single allowed currency like CN).
+ * - Read-only viewers see "—" or the formatted amount.
+ * - Admin and finance see a pencil; click → numeric input + currency
+ *   picker (hidden on cells with a single allowed currency like CN).
  * - JPY etc render whole numbers (zero-decimal); others render two
  *   decimal places. Server stores the smallest currency unit always.
  */
@@ -49,7 +51,7 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
   const initialCurrency: CurrencyCode = assignment.revenue?.currency ?? defaultCurrencyForCell();
   const [currency, setCurrency] = useState<CurrencyCode>(initialCurrency);
 
-  // Integer-only policy: finance enters whole yuan/dollar/yen — no
+  // Integer-only policy: the editor enters whole yuan/dollar/yen — no
   // fractional units. Storage is still the smallest currency unit
   // (×100 for non-zero-decimal currencies) for forward-compat with
   // any future fractional pricing.

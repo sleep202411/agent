@@ -16,7 +16,9 @@
  * Permissions: this component renders the same surface for every
  * non-outsider viewer; per-action gates (assign, approve, set
  * revenue, submit own work) live inside the child components and
- * read from `viewer`.
+ * read from `viewer` — plus the episode freeze, which this component
+ * owns (`isApproved`) and forwards as `frozen`: an approved episode
+ * is closed for edits no matter who is looking at it.
  */
 
 import { useMemo, useState } from "react";
@@ -56,7 +58,11 @@ export function EpisodeAccordionItem({
   viewer,
 }: EpisodeAccordionItemProps) {
   const t = useTranslations("workspace");
-  const { data: assignments = [] } = useEpisodeAssignments(crewId, episode.id);
+  // Keep the stable episode query key while disabling its network work
+  // for collapsed rows. Once a row has been opened, React Query keeps
+  // the resolved summary available if it is collapsed again.
+  const assignmentsQuery = useEpisodeAssignments(crewId, episode.id, { enabled: expanded });
+  const assignments = useMemo(() => assignmentsQuery.data ?? [], [assignmentsQuery.data]);
   const { data: members = [] } = useCrewMembers(crewId);
   const [configureOpen, setConfigureOpen] = useState(false);
 
@@ -141,19 +147,21 @@ export function EpisodeAccordionItem({
         {/* Right-side: avatars + progress + deadline + chevron */}
         <div className="hidden shrink-0 items-center gap-4 md:flex">
           {/* Avatars */}
-          {stackEntries.length > 0 ? (
-            <AvatarStack
-              entries={stackEntries}
-              membersById={membersById}
-              displays={displays}
-              overflow={overflow}
-            />
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <IconUsers className="size-3.5" />
-              {t("rowNoAssignments")}
-            </span>
-          )}
+          {assignmentsQuery.isSuccess ? (
+            stackEntries.length > 0 ? (
+              <AvatarStack
+                entries={stackEntries}
+                membersById={membersById}
+                displays={displays}
+                overflow={overflow}
+              />
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <IconUsers className="size-3.5" />
+                {t("rowNoAssignments")}
+              </span>
+            )
+          ) : null}
 
           {/* Progress */}
           {total > 0 ? (
@@ -228,29 +236,34 @@ export function EpisodeAccordionItem({
           own React Query data on mount. */}
       {expanded ? (
         <div className="space-y-4 border-t border-border/40 px-4 pb-4 pt-4">
-          <EpisodeBrief
-            crewId={crewId}
-            episode={episode}
-            assignments={assignments}
-            viewer={viewer}
-            onConfigureMembers={() => setConfigureOpen(true)}
-          />
+          {assignmentsQuery.isSuccess ? (
+            <EpisodeBrief
+              crewId={crewId}
+              episode={episode}
+              assignments={assignments}
+              viewer={viewer}
+              onConfigureMembers={() => setConfigureOpen(true)}
+            />
+          ) : null}
           <AssignmentTable
             crewId={crewId}
             episodeId={episode.id}
             episodeNumber={episode.number}
             viewer={viewer}
+            frozen={isApproved}
           />
           <ActivityLog crewId={crewId} episodeId={episode.id} />
 
-          <AssignMemberDialog
-            open={configureOpen}
-            onOpenChange={setConfigureOpen}
-            crewId={crewId}
-            episodeId={episode.id}
-            episodeNumber={episode.number}
-            existingAssignments={assignments}
-          />
+          {assignmentsQuery.isSuccess ? (
+            <AssignMemberDialog
+              open={configureOpen}
+              onOpenChange={setConfigureOpen}
+              crewId={crewId}
+              episodeId={episode.id}
+              episodeNumber={episode.number}
+              existingAssignments={assignments}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

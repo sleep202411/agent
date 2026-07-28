@@ -64,7 +64,7 @@ crew workspace 的「剧集制作」tab —— 让 admin 在剧组内开剧集�
 | 派人 / 撤派                        | ✓     | ✗       | ✗       | ✗        |
 | 提交 assignment                    | ✗     | ✗       | 仅 self | ✗        |
 | 审稿 (approve/reject)              | ✓     | ✗       | ✗       | ✗        |
-| 设置 / 修改收益                    | ✗     | ✓       | ✗       | ✗        |
+| 设置 / 修改收益                    | ✓     | ✓       | ✗       | ✗        |
 
 所有写操作的鉴权检查**服务端必须做**（前端是不可信边界）。
 
@@ -374,7 +374,11 @@ POST /project/crew/episode/assignment/remove
 POST /project/crew/episode/assignment/submit
 ```
 
-**鉴权**：**必须是 `assignment.userId` 本人**（admin 也不能代提交）。
+**鉴权**：**必须是 `assignment.userId` 本人**（admin 也不能代提交），
+且提交时**仍是在册成员**——assignment 行会比成员关系活得久，被移出剧组
+的人不能再拿旧 assignment 提交。成员检查排在本人检查之前，所以外人拿到
+的是 403 `Insufficient role`，不会因为报错文案不同而探测出 assignment
+是否存在。
 
 **Body**：
 
@@ -382,8 +386,8 @@ POST /project/crew/episode/assignment/submit
 {
   "crewId": 12345,
   "assignmentId": 4,
-  "url": "https://...", // 可空（如线下交付的情况）
-  "note": "Style v2 for review", // 可空
+  "url": "https://...", // url / note 至少要有一个非空
+  "note": "Style v2 for review",
 }
 ```
 
@@ -393,9 +397,12 @@ reviewNote 清空）。
 **约束**：
 
 - 仅 `in_progress` / `rejected` 可提交（其他 400）
+- `url` / `note` 至少一个非空（都空 → 400）：审稿人得有东西可看
 - episode.status === approved → 423
 - 副作用：写 `submission_made` activity。**reviewNote 字段清空**
   （让被驳回后再提交时不再显示上次驳回原因）
+- 副作用：给 founder 发 `crew.episode.submitted` 站内信（founder 自己
+  提交时不发）。idempotencyKey 带本次 submittedAt，驳回后重交会重新通知
 
 #### 9. 审稿通过
 
@@ -448,7 +455,9 @@ POST /project/crew/episode/assignment/reject
 POST /project/crew/episode/assignment/revenue
 ```
 
-**鉴权**：finance。
+**鉴权**：admin 或 finance。（founder 在角色解析里直接短路成 `admin`，
+永远不会解析成 `finance`；只放行 `finance` 会让没有 finance 成员的剧组
+没有任何人能记收益，founder 也无法给自己开这个标记。）
 
 **Body**：
 
@@ -627,13 +636,12 @@ ALTER TABLE crew_member ADD COLUMN is_finance TINYINT(1) NOT NULL DEFAULT 0;
 | 13  | assignment.status=rejected                   | self submit                      | 200, status=submitted, reviewNote 清空                  |
 | 14  | assignment.status=approved                   | unassign                         | 400                                                     |
 | 15  | finance set revenue { amount: 220000 }       | revenue                          | 200, revenue 写入                                       |
-| 16  | non-finance (admin) set revenue              | revenue                          | 403 + requiredRole=finance                              |
-| 17  | revenue { currency: "USD" }                  | revenue                          | 400                                                     |
-| 18  | episode.status=in_production                 | episode/approve                  | 200, status=approved, approvedAt 写入                   |
-| 19  | episode.status=not_started                   | episode/approve                  | 400                                                     |
-| 20  | crew A 的 admin 调 crew B 的 episode/approve | 任意                             | 404 + entity=crew/episode（不暴露细节）                 |
-| 21  | reject 后再 submit                           | submit                           | 200, 历史活动里能看到两次 submission_made + 一次 reject |
-| 22  | activity 翻页                                | activity/list page=1 pageSize=50 | 200, 倒序                                               |
+| 16  | revenue { currency: "USD" }                  | revenue                          | 400                                                     |
+| 17  | episode.status=in_production                 | episode/approve                  | 200, status=approved, approvedAt 写入                   |
+| 18  | episode.status=not_started                   | episode/approve                  | 400                                                     |
+| 19  | crew A 的 admin 调 crew B 的 episode/approve | 任意                             | 404 + entity=crew/episode（不暴露细节）                 |
+| 20  | reject 后再 submit                           | submit                           | 200, 历史活动里能看到两次 submission_made + 一次 reject |
+| 21  | activity 翻页                                | activity/list page=1 pageSize=50 | 200, 倒序                                               |
 
 ---
 
@@ -643,7 +651,7 @@ ALTER TABLE crew_member ADD COLUMN is_finance TINYINT(1) NOT NULL DEFAULT 0;
 - 多币种 revenue（保留 currency 字段，但接口仅接受 CNY）
 - 删除 episode
 - Approval gate（强制所有 assignment 已 approved 才能 approve episode）
-- Deadline 临近 / 超期提醒、通知中心、邮件
+- Deadline 临近 / 超期提醒、邮件（站内通知已落地，见下方 2026-07-27 回溯）
 - 跨 crew 的 user dashboard（"我所有 crew 的 in-progress 工单"）
 - Activity 按 actor / type 过滤
 - Bulk 操作（一次 assign 多人 / 一次 approve 多个 assignment）
@@ -656,3 +664,13 @@ ALTER TABLE crew_member ADD COLUMN is_finance TINYINT(1) NOT NULL DEFAULT 0;
 - ✅ `crew_member.isFinance` 字段落地（Prisma），无 mock 硬编码
 - ✅ 前端 `workspace/page.tsx` 中 `episodes` tab 启用，走真接口
 - ✅ 多币种 revenue + 整数输入 + 制作看板 + warn-approve 已上线
+
+## 实施回溯（2026-07-27）
+
+- ✅ 站内通知（通知中心）已落地，原「阶段一不要做的事」里的该条作废。
+  本模块发 7 类站内信，类型定义见 `packages/shared/src/notifications.ts`：
+  `crew.episode.assigned` / `unassigned` / `submitted` /
+  `submission_approved` / `submission_rejected` / `approved` /
+  `revenue_set`。其中 `crew.episode.submitted` 的行为写在上文
+  「8. 提交成果」的副作用里。
+- ⛔️ 仍未做：邮件通道、deadline 临近 / 超期提醒。

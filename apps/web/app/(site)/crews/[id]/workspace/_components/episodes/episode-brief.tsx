@@ -35,7 +35,8 @@ interface EpisodeBriefProps {
  * Top stat strip of the expanded episode panel — six counters mirroring
  * the PRD layout, plus the two admin actions (configure members,
  * approve episode). The "submit to client" PRD button is dropped per
- * the internal-only product framing.
+ * the internal-only product framing. Both actions disappear once the
+ * episode is approved: an approved episode shows no editable action.
  *
  * Approve gating note: per the spec ("no gate, just warn"), an admin
  * CAN approve an episode that still has pending/in-progress/rejected
@@ -61,9 +62,14 @@ export function EpisodeBrief({
   ).length;
 
   const isAlreadyApproved = episode.status === "approved";
+  // An approved episode is closed for edits, and every control in this
+  // strip mutates it — the roster it was approved with, and the approval
+  // itself. They go away together rather than lingering as dead disabled
+  // buttons.
+  const showAdminActions = viewer.isAdmin && !isAlreadyApproved;
   // Admin can approve any episode with at least one assignment — gating
   // on "all assignments approved" is now soft (confirm modal).
-  const canApproveEp = viewer.isAdmin && !isAlreadyApproved && total > 0;
+  const canApproveEp = showAdminActions && total > 0;
 
   const doApprove = () => {
     approveEp.mutate(episode.id, {
@@ -86,7 +92,7 @@ export function EpisodeBrief({
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {t("episodeBrief")}
         </h4>
-        {viewer.isAdmin ? (
+        {showAdminActions ? (
           <div className="flex items-center gap-2">
             <Button variant="outline" color="muted" size="xs" onClick={onConfigureMembers}>
               <IconUsers className="size-3" /> {t("configureMembers")}
@@ -126,7 +132,10 @@ export function EpisodeBrief({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("approveEpisodeWarnTitle", { number: episode.number })}
+              {/* zh-CN / zh-HK lead with the pending count, en-US does not
+                  — every locale's placeholder set has to be covered here or
+                  a single-brace `{pending}` renders as literal text. */}
+              {t("approveEpisodeWarnTitle", { number: episode.number, pending })}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t("approveEpisodeWarnBody", { pending, total })}

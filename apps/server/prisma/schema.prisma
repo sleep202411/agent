@@ -5388,13 +5388,20 @@ model ServiceOrder {
 //  Conversations
 //
 //  Context-scoped — every conversation is rooted in a domain entity
-//  (service inquiry or active order). NOT free-form DM.
+//  (service inquiry, active order, or crew). NOT free-form DM.
 //
 //  Identity: a `service` inquiry is unique per (buyer, creator,
-//  service) — same triple resumes the same thread. Encoded via the
-//  denormalized `lookupKey` column for an O(1) UNIQUE constraint.
-//  On proposal-accept, lookupKey rewrites to `order:<orderId>` so
-//  uniqueness shifts cleanly.
+//  service) — same triple resumes the same thread. A `crew` chat is
+//  unique per crew. Encoded via the denormalized `lookupKey` column
+//  for an O(1) UNIQUE constraint. On proposal-accept, lookupKey
+//  rewrites to `order:<orderId>` so uniqueness shifts cleanly.
+//
+//  Two-party contexts (`service` / `order`) pin their membership at
+//  creation. A `crew` chat's membership is a projection of crew
+//  membership: joins/leaves arrive through
+//  `ConversationsService.syncCrewParticipant`, and every read/send
+//  additionally re-checks live crew membership so a stale projection
+//  can never leak the thread.
 //
 //  Realtime: each message broadcasts via Redis pub/sub on
 //  `conversation:user:{userId}` (per participant). Missed-while-
@@ -5404,6 +5411,9 @@ model ServiceOrder {
 enum ConversationContextType {
   service
   order
+  /// One crew = one group chat. `contextId` is the crew id and the
+  /// lookup key is `crew:<crewId>` (see `crewLookupKey`).
+  crew
 
   @@map("conversation_context_type")
 }
@@ -5411,6 +5421,11 @@ enum ConversationContextType {
 enum ConversationParticipantRole {
   buyer
   creator
+  /// Every crew participant, founder included. Crew authorization is
+  /// resolved live by CrewRoleService against `crews` / `crew_members`;
+  /// this value exists only so the NOT NULL column has something to say
+  /// about a group-chat participant. Do NOT mirror admin/finance here.
+  member
 
   @@map("conversation_participant_role")
 }
@@ -5498,6 +5513,16 @@ model Message {
   /// MessagePayload in `packages/shared/src/conversation.ts`.
   payload Json?
 
+  /// Caller-supplied idempotency token for the authenticated send path
+  /// (POST /conversations/:id/messages). A retried send collapses onto
+  /// the row it already created instead of appending a duplicate the
+  /// whole group then sees.
+  ///
+  /// NULL everywhere else — most importantly on system messages, which
+  /// are written from inside other modules' transactions where a
+  /// unique-violation would poison the outer tx (25P02).
+  clientKey String? @map("client_key") @db.VarChar(64)
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
@@ -5506,6 +5531,13 @@ model Message {
   /// History / cursor pagination: per-conversation, newest first
   /// (we paginate backwards from the latest).
   @@index([conversationId, createdAt(sort: Desc)], map: "messages_by_conversation_idx")
+  /// Partial unique enforced in migration SQL (Prisma has no syntax for a
+  /// WHERE-clause index — same arrangement as `crew_members_active_unique`):
+  /// CREATE UNIQUE INDEX messages_client_key_unique
+  ///   ON messages (conversation_id, author_id, client_key)
+  ///   WHERE client_key IS NOT NULL;
+  /// Declaring it as @@unique here would emit a FULL unique index and
+  /// collapse every NULL-keyed system message into one row per author.
   @@map("messages")
 }
 

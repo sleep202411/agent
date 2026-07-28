@@ -1,4 +1,5 @@
 export { NotificationProvider } from "./provider";
+export { notificationHref } from "./deeplink";
 export {
   notificationKeys,
   useUnreadCount,

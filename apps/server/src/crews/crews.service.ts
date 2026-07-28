@@ -10,6 +10,15 @@
  * Aggregates (memberCount, openPositionCount, pendingApplicationCount)
  * are joined here so list / detail responses are render-complete in
  * one round trip.
+ *
+ * Crew group chat: one crew = one Conversation (`crew:<crewId>`). It is
+ * opened in the same transaction that creates the crew, and every
+ * membership change made here syncs the matching ConversationParticipant
+ * INSIDE that transaction — a failed sync must roll the membership
+ * change back, never leave the roster and the chat disagreeing.
+ * `conversation()` is the read side of that: the crew workspace's chat
+ * panel resolves its thread there, and a crew that predates crew chat
+ * gets one opened on the spot.
  */
 import {
   BadRequestException,
@@ -23,8 +32,20 @@ import {
   IpTargetType,
   IpUserBlockTargetType,
   Prisma,
+  type Message as PrismaMessage,
 } from '@prisma/client';
+import type { ConversationDTO } from '@repo/shared/conversation';
+import {
+  ConversationsService,
+  crewLookupKey,
+} from '../conversations/conversations.service';
+import {
+  crewChatWritesEnabled,
+  requireCrewChatWritesEnabled,
+} from '../conversations/crew-chat-rollout';
+import { toConversationDTO } from '../conversations/mappers';
 import { PrismaService } from '../infra/db/db.module';
+import { CrewRoleService } from './crew-role.service';
 import type {
   CreateCrewInput,
   CreateCrewReportInput,
@@ -39,7 +60,11 @@ const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class CrewsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly conversations: ConversationsService,
+    private readonly crewRoles: CrewRoleService,
+  ) {}
 
   async create(founderId: string, input: CreateCrewInput) {
     const crew = await this.prisma.$transaction(async (tx) => {
@@ -83,6 +108,21 @@ export class CrewsService {
           via: 'founder',
         },
       });
+      // One crew, one group chat — opened with the crew so there is
+      // never a window where a member exists without a thread to talk
+      // in. No `crew.member.joined` system message here on purpose:
+      // the founder joining the crew they just created, into a chat
+      // with no other reader, is not an event — the chat's existence
+      // already says it. Every LATER join announces itself.
+      if (crewChatWritesEnabled()) {
+        await this.conversations.openCrewConversation(c.id, tx);
+        await this.conversations.syncCrewParticipant(
+          c.id,
+          founderId,
+          'join',
+          tx,
+        );
+      }
       return c;
     });
     return toCrewDTO(crew, {
@@ -153,6 +193,119 @@ export class CrewsService {
       openPositionCount: counts.openPositions.get(id) ?? 0,
       openPositionPreview: counts.openPositionPreview.get(id) ?? [],
       pendingApplicationCount,
+    });
+  }
+
+  /**
+   * The crew's one group chat, resolved for a member.
+   *
+   * Doc §3.1: one crew, one conversation — so there is nothing to list
+   * and nothing for the client to create. The caller hands us a crew id
+   * and gets back the same `ConversationDTO` that
+   * `GET /aurora/conversations/:id` serves, so every read and write
+   * after this one goes through the shared conversations data layer.
+   *
+   * ### Gate
+   *
+   * {@link CrewRoleService.resolve} — the platform's one crew-role
+   * predicate, founder short-circuit included: `founderId` grants
+   * access before `crew_members` is ever read, so a founder whose
+   * membership row an ownership transfer removed is not locked out of
+   * their own crew's chat. It filters `deletedAt: null`, so a
+   * soft-deleted crew is a 404 for everyone including its founder.
+   *
+   * An outsider gets **404, not 403**. `assertParticipant` and the crew
+   * gate inside ConversationsService are deliberately non-probeable —
+   * they refuse to confirm that a thread exists — and this endpoint is
+   * the front door to exactly those threads. Answering 403 here would
+   * hand back the existence bit that every other path withholds.
+   *
+   * ### Get-or-create, deliberately, on a GET
+   *
+   * A crew founded before crew chat shipped has members and history but
+   * no `crew:<crewId>` row and no participant projection, and nothing in
+   * the membership lifecycle will ever create one for a crew whose
+   * roster does not change again. Requiring the row to pre-exist would
+   * mean 404 forever for those crews — a dead chat tab for the exact
+   * users who have the most to talk about. So this resolves the thread
+   * the way every other crew-chat entry point already does
+   * (`members.service.ts`, `applications.service.ts`,
+   * `transferOwnership`): open it if it is missing.
+   *
+   * `openCrewConversation` is idempotent under an advisory lock, so
+   * concurrent opens converge on one row and a repeat call is a single
+   * indexed read. The write path only runs when the caller is not
+   * already an active participant, which after the first open is never.
+   *
+   * When it does run it projects the WHOLE active roster, not just the
+   * caller: the crews module's contract is that every active member is
+   * a participant (see `openCrewConversation`'s docstring), and a chat
+   * where only the one member who happened to open it can be broadcast
+   * to is not that. `founderId` is unioned in explicitly for the same
+   * reason the gate short-circuits on it.
+   */
+  async conversation(
+    crewId: string,
+    viewerId: string,
+  ): Promise<ConversationDTO> {
+    requireCrewChatWritesEnabled();
+    const role = await this.crewRoles.resolve(crewId, viewerId);
+    if (role === 'outsider') throw new NotFoundException('Crew not found');
+
+    const conversationId = await this.resolveCrewChat(crewId, viewerId);
+    // Re-reads through the conversations service on purpose: it owns
+    // the hydrate (unread count, last message) and re-runs its own crew
+    // gate, so this route cannot serve a shape or a permission the
+    // conversations surface would not.
+    const detail = await this.conversations.detail(conversationId, viewerId);
+    return toConversationDTO(detail, viewerId);
+  }
+
+  /**
+   * Conversation id for a crew's chat, healing the projection if the
+   * caller is not in it. See {@link conversation} for why this creates.
+   */
+  private async resolveCrewChat(
+    crewId: string,
+    viewerId: string,
+  ): Promise<string> {
+    const existing = await this.prisma.conversation.findUnique({
+      where: { lookupKey: crewLookupKey(crewId) },
+      select: {
+        id: true,
+        participants: {
+          where: { userId: viewerId, leftAt: null },
+          select: { userId: true },
+        },
+      },
+    });
+    if (existing && existing.participants.length > 0) return existing.id;
+
+    return await this.prisma.$transaction(async (tx) => {
+      // Re-read the crew first: soft-deleted between the gate and here
+      // means the same 404 the gate gives, and finding that out before
+      // the advisory lock keeps the failure path from taking one.
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { founderId: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+
+      const conv = await this.conversations.openCrewConversation(crewId, tx);
+      const roster = await tx.crewMember.findMany({
+        where: { crewId, removedAt: null },
+        select: { userId: true },
+      });
+      const userIds = new Set([crew.founderId, ...roster.map((m) => m.userId)]);
+      for (const userId of userIds) {
+        await this.conversations.syncCrewParticipant(
+          crewId,
+          userId,
+          'join',
+          tx,
+        );
+      }
+      return conv.id;
     });
   }
 
@@ -282,6 +435,18 @@ export class CrewsService {
    *   - the admin path passes no `requireCurrentFounderId` (act on any crew);
    *   - a future self-service path passes the acting user id so a non-owner
    *     can't transfer a crew they don't own.
+   *
+   * Group-chat projection of a transfer — only membership moves matter,
+   * because ConversationParticipant.role is flat `member` for everyone in
+   * a crew and never mirrors the crew role:
+   *   - outgoing owner, `removeOldOwner` → their membership ends, so they
+   *     LEAVE the chat (and a `crew.member.left` system message fires);
+   *   - outgoing owner, demoted to `member` → still an active member, so
+   *     NOTHING happens to the chat. Syncing a 'leave' here would lock the
+   *     demoted founder out of the crew they still belong to;
+   *   - incoming owner already an active member → already a participant,
+   *     nothing to do;
+   *   - incoming owner promoted from outside (admin path) → they JOIN.
    */
   async transferOwnership(
     crewId: string,
@@ -332,7 +497,15 @@ export class CrewsService {
       }
     }
 
+    const chatEnabled = crewChatWritesEnabled();
+    const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // Idempotent — returns the existing `crew:<crewId>` thread, and
+      // opens one for a crew that predates crew chat.
+      const conversation = chatEnabled
+        ? await this.conversations.openCrewConversation(crewId, tx)
+        : null;
+
       // 1) founder_id carries the authority — swap it (optimistic if asked).
       if (opts.expectedVersion !== undefined) {
         const r = await tx.crew.updateMany({
@@ -371,6 +544,24 @@ export class CrewsService {
             ? { removedAt: new Date() }
             : { roleType: 'member' },
         });
+        // Only the `removedAt` branch ends the membership. The demote
+        // branch keeps them in the crew — and in the chat.
+        if (opts.removeOldOwner && conversation) {
+          await this.conversations.syncCrewParticipant(
+            crewId,
+            crew.founderId,
+            'leave',
+            tx,
+          );
+          pendingMessages.push(
+            await this.conversations.persistSystem(
+              conversation.id,
+              'crew.member.left',
+              { userId: crew.founderId },
+              tx,
+            ),
+          );
+        }
       }
 
       // 3) Ensure the incoming owner has an active `owner` member row. The
@@ -395,8 +586,30 @@ export class CrewsService {
             via: 'manual',
           },
         });
+        // Brand-new membership (admin path can hand a crew to a
+        // non-member) — they join the chat like anyone else.
+        if (conversation) {
+          await this.conversations.syncCrewParticipant(
+            crewId,
+            target,
+            'join',
+            tx,
+          );
+          pendingMessages.push(
+            await this.conversations.persistSystem(
+              conversation.id,
+              'crew.member.joined',
+              { userId: target },
+              tx,
+            ),
+          );
+        }
       }
     });
+    // WS fan-out only after the transfer has actually committed.
+    for (const m of pendingMessages) {
+      await this.conversations.broadcastMessage(m);
+    }
 
     const updated = await this.prisma.crew.findUnique({
       where: { id: crewId },

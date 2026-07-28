@@ -10,6 +10,10 @@ import { AddEpisodeDialog } from "./add-episode-dialog";
 
 interface EpisodesTabProps {
   crewId: string;
+  /** `?episode=` from a crew notification — the board expands it instead
+   *  of the current episode. Null when the reader opened the tab
+   *  themselves. */
+  deeplinkEpisodeId?: string | null;
 }
 
 /**
@@ -17,7 +21,7 @@ interface EpisodesTabProps {
  * per-episode expansion. First non-approved episode is "current",
  * highlighted and pre-expanded. Outsiders are gated at the entry.
  */
-export function EpisodesTab({ crewId }: EpisodesTabProps) {
+export function EpisodesTab({ crewId, deeplinkEpisodeId = null }: EpisodesTabProps) {
   const t = useTranslations("workspace");
   const viewer = useUserCrewRole(crewId);
   const { data: episodes = [], isLoading } = useCrewEpisodes(crewId);
@@ -53,6 +57,7 @@ export function EpisodesTab({ crewId }: EpisodesTabProps) {
         crewId={crewId}
         episodes={episodes}
         currentId={currentId}
+        deeplinkEpisodeId={deeplinkEpisodeId}
         viewer={viewer}
         onAddEpisode={() => setAddOpen(true)}
       />

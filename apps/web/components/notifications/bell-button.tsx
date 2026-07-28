@@ -13,7 +13,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconBell, IconBellOff } from "@tabler/icons-react";
+import { IconAlertTriangle, IconBell, IconBellOff } from "@tabler/icons-react";
 import type { NotificationDTO } from "@repo/shared/notifications";
 import {
   DropdownMenu,
@@ -23,9 +23,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { localizePath } from "@/src/i18n/locale-url";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import {
+  notificationHref,
   useMarkAllRead,
   useMarkRead,
   useRecentNotifications,
@@ -38,9 +39,11 @@ export function BellButton() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const locale = useLocale() as Locale;
+  const t = useTranslations("notifications");
 
   const { data: unreadCount = 0 } = useUnreadCount();
-  const { data: list, isLoading } = useRecentNotifications(DROPDOWN_LIMIT);
+  const recent = useRecentNotifications(DROPDOWN_LIMIT);
+  const { data: list, isLoading } = recent;
   const markRead = useMarkRead();
   const markAll = useMarkAllRead();
 
@@ -55,10 +58,10 @@ export function BellButton() {
 
   const handleItemClick = (n: NotificationDTO) => {
     if (!n.readAt) markRead.mutate(n.id);
-    const deeplink = typeof n.meta?.deeplink === "string" ? (n.meta.deeplink as string) : null;
-    if (deeplink) {
+    const href = notificationHref(n, locale);
+    if (href) {
       setOpen(false);
-      router.push(deeplink);
+      router.push(href);
     }
   };
 
@@ -67,7 +70,7 @@ export function BellButton() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={badge ? `Notifications (${badge} unread)` : "Notifications"}
+          aria-label={badge ? t("ariaUnread", { count: badge }) : t("title")}
           className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
         >
           <IconBell className="size-5" />
@@ -84,7 +87,7 @@ export function BellButton() {
 
       <DropdownMenuContent align="end" sideOffset={8} className="w-[380px] p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <span className="text-sm font-semibold text-foreground">Notifications</span>
+          <span className="text-sm font-semibold text-foreground">{t("title")}</span>
           <Button
             type="button"
             variant="ghost"
@@ -93,18 +96,37 @@ export function BellButton() {
             onClick={() => markAll.mutate()}
             className="h-7 px-2 text-xs"
           >
-            Mark all read
+            {t("markAllRead")}
           </Button>
         </div>
 
         <div className="max-h-[420px] overflow-y-auto">
           {isLoading ? (
             <ItemSkeleton count={3} />
+          ) : recent.isError ? (
+            <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+              <IconAlertTriangle className="size-6 text-destructive" />
+              <p className="text-xs text-muted-foreground">
+                {recent.error instanceof Error ? recent.error.message : t("loadErrorFallback")}
+              </p>
+              <button
+                type="button"
+                onClick={() => void recent.refetch()}
+                className="text-xs font-semibold text-foreground underline underline-offset-2"
+              >
+                {t("retry")}
+              </button>
+            </div>
           ) : items.length === 0 ? (
-            <EmptyState />
+            <EmptyState label={t("empty")} />
           ) : (
             items.map((n) => (
-              <NotificationRow key={n.id} item={n} onClick={() => handleItemClick(n)} />
+              <NotificationRow
+                key={n.id}
+                item={n}
+                locale={locale}
+                onClick={() => handleItemClick(n)}
+              />
             ))
           )}
         </div>
@@ -118,7 +140,7 @@ export function BellButton() {
             }}
             className="block w-full rounded-md py-1.5 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
           >
-            See all notifications
+            {t("seeAll")}
           </button>
         </div>
       </DropdownMenuContent>
@@ -126,7 +148,15 @@ export function BellButton() {
   );
 }
 
-function NotificationRow({ item, onClick }: { item: NotificationDTO; onClick: () => void }) {
+function NotificationRow({
+  item,
+  locale,
+  onClick,
+}: {
+  item: NotificationDTO;
+  locale: Locale;
+  onClick: () => void;
+}) {
   const unread = !item.readAt;
   return (
     <button
@@ -154,17 +184,19 @@ function NotificationRow({ item, onClick }: { item: NotificationDTO; onClick: ()
           {item.title}
         </span>
         <span className="line-clamp-2 text-xs text-muted-foreground">{item.body}</span>
-        <span className="text-[11px] text-muted-foreground/80">{formatAgo(item.createdAt)}</span>
+        <span className="text-[11px] text-muted-foreground/80">
+          {formatAgo(item.createdAt, locale)}
+        </span>
       </div>
     </button>
   );
 }
 
-function EmptyState() {
+function EmptyState({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
       <IconBellOff className="size-8 opacity-60" />
-      <span>You&apos;re all caught up</span>
+      <span>{label}</span>
     </div>
   );
 }
@@ -186,13 +218,17 @@ function ItemSkeleton({ count }: { count: number }) {
 }
 
 /** Compact relative time — "just now", "5m", "2h", "3d", or absolute date. */
-function formatAgo(iso: string): string {
+function formatAgo(iso: string, locale: Locale): string {
   const ts = new Date(iso).getTime();
   if (!Number.isFinite(ts)) return iso;
   const diffMs = Date.now() - ts;
-  if (diffMs < 60_000) return "just now";
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m`;
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h`;
-  if (diffMs < 7 * 86_400_000) return `${Math.floor(diffMs / 86_400_000)}d`;
-  return new Date(iso).toLocaleDateString();
+  const formatter = new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto",
+    style: "narrow",
+  });
+  if (diffMs < 60_000) return formatter.format(0, "second");
+  if (diffMs < 3_600_000) return formatter.format(-Math.floor(diffMs / 60_000), "minute");
+  if (diffMs < 86_400_000) return formatter.format(-Math.floor(diffMs / 3_600_000), "hour");
+  if (diffMs < 7 * 86_400_000) return formatter.format(-Math.floor(diffMs / 86_400_000), "day");
+  return new Date(iso).toLocaleDateString(locale);
 }

@@ -12,6 +12,14 @@
  *
  * Every state change publishes a notification via the outbox with a
  * deterministic idempotency key so retries don't double-notify.
+ *
+ * Add / remove also move the member in and out of the crew group chat.
+ * The participant sync and its `crew.member.joined` / `crew.member.left`
+ * system message run INSIDE the same transaction as the membership
+ * write, so a chat failure rolls the roster change back rather than
+ * leaving someone who can post in a crew they were never added to (or,
+ * worse, a removed member still receiving broadcasts). The WS fan-out
+ * is deliberately outside — it only runs once the row is committed.
  */
 import {
   BadRequestException,
@@ -20,6 +28,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Message as PrismaMessage } from '@prisma/client';
+import { crewChatWritesEnabled } from '../conversations/crew-chat-rollout';
+import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { UsersService } from '../users/users.service';
@@ -33,6 +44,7 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly users: UsersService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   async list(crewId: string, viewerId: string) {
@@ -86,8 +98,17 @@ export class MembersService {
       });
     }
 
+    const chatEnabled = crewChatWritesEnabled();
+    const pendingMessages: PrismaMessage[] = [];
     try {
       const member = await this.prisma.$transaction(async (tx) => {
+        // Lock order for every legacy-crew membership mutation:
+        // conversation advisory lock first, membership row second.
+        // Ownership transfer uses the same order; reversing it here
+        // can deadlock when the crew has no conversation yet.
+        const conversation = chatEnabled
+          ? await this.conversations.openCrewConversation(crewId, tx)
+          : null;
         const m = await tx.crewMember.create({
           data: {
             id: newCrewDomainId(),
@@ -97,6 +118,22 @@ export class MembersService {
             via: 'manual',
           },
         });
+        if (conversation) {
+          await this.conversations.syncCrewParticipant(
+            crewId,
+            target.userId,
+            'join',
+            tx,
+          );
+          pendingMessages.push(
+            await this.conversations.persistSystem(
+              conversation.id,
+              'crew.member.joined',
+              { userId: target.userId },
+              tx,
+            ),
+          );
+        }
         await this.notifications.send(
           {
             userId: target.userId,
@@ -117,6 +154,9 @@ export class MembersService {
         );
         return m;
       });
+      for (const msg of pendingMessages) {
+        await this.conversations.broadcastMessage(msg);
+      }
       return toMemberDTO(member);
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -150,11 +190,45 @@ export class MembersService {
       });
     }
 
+    const chatEnabled = crewChatWritesEnabled();
+    const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
-      await tx.crewMember.update({
-        where: { id: memberId },
+      const conversation = chatEnabled
+        ? await this.conversations.openCrewConversation(crewId, tx)
+        : null;
+      const removed = await tx.crewMember.updateMany({
+        where: { id: memberId, crewId, removedAt: null },
         data: { removedAt: new Date() },
       });
+      if (removed.count !== 1) {
+        throw new ConflictException({
+          message: 'Member was already removed',
+        });
+      }
+      // `syncCrewParticipant('leave')` deliberately won't conjure a
+      // thread, but this crew demonstrably has members, so it is
+      // entitled to one — opening here self-heals a crew that predates
+      // crew chat and gives the departure notice somewhere to land.
+      // Order matters: the participant is marked gone BEFORE the
+      // message is written, so the removed member is not a recipient of
+      // the announcement of their own removal (doc §6.1 — a removed
+      // member must not keep reading or receiving).
+      if (conversation) {
+        await this.conversations.syncCrewParticipant(
+          crewId,
+          member.userId,
+          'leave',
+          tx,
+        );
+        pendingMessages.push(
+          await this.conversations.persistSystem(
+            conversation.id,
+            'crew.member.left',
+            { userId: member.userId },
+            tx,
+          ),
+        );
+      }
       // If the member came through a position, decrement and re-open
       // the slot. Manual adds don't affect any position count.
       if (member.via === 'application' && member.positionId) {
@@ -190,6 +264,9 @@ export class MembersService {
         tx,
       );
     });
+    for (const msg of pendingMessages) {
+      await this.conversations.broadcastMessage(msg);
+    }
   }
 
   async update(

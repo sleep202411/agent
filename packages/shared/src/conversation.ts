@@ -11,8 +11,16 @@
  *   - `order`    — a buyer + creator are executing a ServiceOrder.
  *                  Always exactly one conversation per order.
  *
+ *   - `crew`     — one crew, one group chat. Conversation identity is
+ *                  the crew: lookup key `crew:<crewId>`. Participants
+ *                  are the crew's active members (role `member`),
+ *                  synced from `crew_members` by the crews module.
+ *                  Unlike service/order this is an N-party thread, so
+ *                  the inbox card projects the CREW (name / logo /
+ *                  member count) instead of a single counterparty.
+ *
  *   Future contexts (extensible by adding the literal here + a
- *   server-side resolver): `crew`, `crew_application`, `episode`,
+ *   server-side resolver): `crew_application`, `episode`,
  *   `episode_assignment`.
  *
  * Lifecycle: a `service` conversation can be promoted to an `order`
@@ -35,10 +43,25 @@ import type { ServiceTier } from "./creator-service.js";
 
 // ─── Enums ───────────────────────────────────────────────────
 
-export const CONVERSATION_CONTEXT_TYPES = ["service", "order"] as const;
+export const CONVERSATION_CONTEXT_TYPES = ["service", "order", "crew"] as const;
 export type ConversationContextType = (typeof CONVERSATION_CONTEXT_TYPES)[number];
 
-export const CONVERSATION_PARTICIPANT_ROLES = ["buyer", "creator"] as const;
+/**
+ * Participant roles.
+ *
+ * `buyer` / `creator` are the two sides of a service or order thread and
+ * DO carry authorization weight (only `creator` may post a proposal, only
+ * `buyer` may accept or decline one).
+ *
+ * `member` is the single role every crew-chat participant gets. It is
+ * deliberately flat — crew authority (owner / finance / member) lives in
+ * `crew_members` and is resolved by CrewRoleService. Mirroring crew roles
+ * here would duplicate state that mutates independently and give the
+ * order state machine roles it must never see. Because `member` is
+ * neither `buyer` nor `creator`, every proposal / order gate fails closed
+ * for crew rows without a single extra branch.
+ */
+export const CONVERSATION_PARTICIPANT_ROLES = ["buyer", "creator", "member"] as const;
 export type ConversationParticipantRole = (typeof CONVERSATION_PARTICIPANT_ROLES)[number];
 
 export const CONVERSATION_MESSAGE_TYPES = [
@@ -80,6 +103,20 @@ export const SYSTEM_MESSAGE_KINDS = [
   "order.revision_requested",
   "order.completed",
   "order.cancelled",
+  // Crew chat — membership lifecycle. params: { userId }
+  "crew.member.joined",
+  "crew.member.left",
+  // Crew chat — episode assignment status. params:
+  //   { episodeId, episodeNumber, assignmentId, userId }
+  //
+  // STATUS ONLY. These never carry a money field: doc §5.3 step 7 —
+  // the group chat shows task status changes but must not publish
+  // earnings figures, which are per-assignment and finance-scoped.
+  // (`setRevenue` therefore emits no system message at all.)
+  "crew.episode.assigned",
+  "crew.episode.submitted",
+  "crew.episode.approved",
+  "crew.episode.rejected",
 ] as const;
 export type SystemMessageKind = (typeof SYSTEM_MESSAGE_KINDS)[number];
 
@@ -175,12 +212,28 @@ export interface ConversationDTO {
  * Inbox row projection. Drops participants[] (rendered via the
  * creator/buyer profile cache instead) and shortens lastMessage to
  * a preview string + author.
+ *
+ * Two shapes share one row type:
+ *   - `service` / `order` — two-party. The row is identified by the
+ *     counterparty (avatar + nickname resolved from `counterpartyId`).
+ *   - `crew` — N-party. The row is identified by the CREW, so the
+ *     `crew*` fields below are populated and the renderer should use
+ *     them instead of resolving `counterpartyId` as a user.
+ *
+ * `counterpartyId` / `counterpartyRole` stay REQUIRED and non-nullable
+ * for both shapes — the shipped order inbox dereferences them
+ * unconditionally, and widening them to optional would be a breaking
+ * type change for a surface crew chat has no business touching. For a
+ * crew row they carry the crew's own identity (`counterpartyId` ===
+ * `contextId` === `crewId`, role `member`), which is stable, never the
+ * viewer themselves, and never a random other member.
  */
 export interface ConversationCardDTO {
   id: string;
   contextType: ConversationContextType;
   contextId: string;
-  /** The other participant from the viewer's perspective. */
+  /** The other participant from the viewer's perspective. For a `crew`
+   *  row there is no single other party — this is the crew id. */
   counterpartyId: string;
   counterpartyRole: ConversationParticipantRole;
   /** Short summary line — server-rendered (text body / "[proposal]" /
@@ -190,6 +243,17 @@ export interface ConversationCardDTO {
   lastMessageType: ConversationMessageType;
   lastMessageAt: string;
   unreadCount: number;
+
+  // ─── crew rows only (undefined for service / order) ───────
+
+  /** Crew this thread belongs to. Mirrors `contextId`. */
+  crewId?: string;
+  crewName?: string;
+  /** Crew logo URL — required on the Crew row, so always set when
+   *  `crewName` is. */
+  crewLogo?: string;
+  /** Active member count — the group-chat equivalent of an avatar. */
+  memberCount?: number;
 }
 
 // ─── WS frame envelopes ──────────────────────────────────────
@@ -231,6 +295,10 @@ export type ConversationFrame =
         contextId: string;
       };
     }
+  /** Sent only after authentication and per-user socket registration.
+   *  A client REST-refetches on this boundary, closing the startup gap
+   *  between its first query and a socket that was not ready to receive. */
+  | { event: "ready"; data: { serverTime: number } }
   | { event: "heartbeat"; data: { serverTime: number } }
   | { event: "terminate"; data: { reason: string; code: number } };
 

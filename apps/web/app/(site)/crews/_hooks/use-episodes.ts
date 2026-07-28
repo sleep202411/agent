@@ -41,14 +41,27 @@ export function useCrewEpisodes(crewId: string) {
   });
 }
 
-export function useEpisodeAssignments(crewId: string, episodeId: string | undefined) {
+export function useEpisodeAssignments(
+  crewId: string,
+  episodeId: string | undefined,
+  options: { enabled?: boolean } = {}
+) {
   return useQuery({
     queryKey: crewKeys.episodeAssignments(crewId, episodeId ?? ""),
-    enabled: !!crewId && !!episodeId,
+    enabled: !!crewId && !!episodeId && (options.enabled ?? true),
     queryFn: () =>
       crewApi.get<EpisodeAssignmentDTO[]>(
         `/episodes/${encodeURIComponent(episodeId!)}/assignments`
       ),
+  });
+}
+
+export function useMyCrewAssignments(crewId: string) {
+  return useQuery({
+    queryKey: crewKeys.myAssignments(crewId),
+    enabled: !!crewId,
+    queryFn: () =>
+      crewApi.get<EpisodeAssignmentDTO[]>(`/crews/${encodeURIComponent(crewId)}/assignments/mine`),
   });
 }
 
@@ -102,6 +115,7 @@ export function useAssignMember(crewId: string, episodeId: string) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },
@@ -116,6 +130,7 @@ export function useUnassignMember(crewId: string, episodeId: string) {
         `/assignments/${encodeURIComponent(assignmentId)}`
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },
@@ -139,6 +154,7 @@ export function useSubmitAssignment(crewId: string, episodeId: string) {
         { body: { url, note } }
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },
@@ -153,6 +169,7 @@ export function useApproveAssignment(crewId: string, episodeId: string) {
         `/assignments/${encodeURIComponent(assignmentId)}/approve`
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },
@@ -176,6 +193,7 @@ export function useRejectAssignment(crewId: string, episodeId: string) {
         { body: { reason, suggestion } }
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },
@@ -202,6 +220,7 @@ export function useSetAssignmentRevenue(crewId: string, episodeId: string) {
         { body: currency ? { amount, currency } : { amount } }
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.myAssignments(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
     },

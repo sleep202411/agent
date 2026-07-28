@@ -31,10 +31,27 @@ export const AddAssignmentSchema = z.object({
 });
 export type AddAssignmentInput = z.infer<typeof AddAssignmentSchema>;
 
-export const SubmitAssignmentSchema = z.object({
-  url: z.string().trim().max(1024).nullable().optional(),
-  note: z.string().trim().max(2000).nullable().optional(),
-});
+/**
+ * A submission has to carry something the reviewer can look at. Both
+ * columns stay nullable in the schema — a submission is url-only or
+ * note-only just as legitimately as both — but an empty `POST {}` used
+ * to flip the assignment to `submitted` with nothing attached, which
+ * left the admin reviewing a blank row. `.trim()` runs first, so
+ * whitespace-only counts as blank.
+ *
+ * The issue is anchored on `url` rather than the object root because
+ * ZodValidationPipe keys issues by field path, and a root-level issue
+ * has no field for the form to attach the message to.
+ */
+export const SubmitAssignmentSchema = z
+  .object({
+    url: z.string().trim().max(1024).nullable().optional(),
+    note: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.note), {
+    message: 'A submission needs a url or a note',
+    path: ['url'],
+  });
 export type SubmitAssignmentInput = z.infer<typeof SubmitAssignmentSchema>;
 
 export const RejectAssignmentSchema = z.object({

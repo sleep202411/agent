@@ -25,6 +25,7 @@ export const NOTIFICATION_TYPES = [
   // Episode
   "crew.episode.assigned",
   "crew.episode.unassigned",
+  "crew.episode.submitted",
   "crew.episode.submission_approved",
   "crew.episode.submission_rejected",
   "crew.episode.approved",

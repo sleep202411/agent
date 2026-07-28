@@ -22,7 +22,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CrewApplication } from '@prisma/client';
+import type { CrewApplication, Message as PrismaMessage } from '@prisma/client';
+import { crewChatWritesEnabled } from '../conversations/crew-chat-rollout';
+import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import {
@@ -40,6 +42,7 @@ export class ApplicationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   async listForOwner(crewId: string, ownerId: string) {
@@ -204,6 +207,8 @@ export class ApplicationsService {
     }
 
     const reviewedAt = new Date();
+    const chatEnabled = crewChatWritesEnabled();
+    const pendingMessages: PrismaMessage[] = [];
     let updated: CrewApplication;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
@@ -244,6 +249,14 @@ export class ApplicationsService {
             });
           }
 
+          // Conversation lock before membership insert — the same
+          // order as ownership transfer and manual member changes.
+          // This matters only for a pre-chat crew, but that is exactly
+          // where opposite lock orders can deadlock.
+          const conversation = chatEnabled
+            ? await this.conversations.openCrewConversation(app.crewId, tx)
+            : null;
+
           // Plain insert — partial unique on (crewId, userId) WHERE
           // removed_at IS NULL means a previously removed member becomes
           // a new active row, preserving the history.
@@ -257,6 +270,26 @@ export class ApplicationsService {
               via: 'application',
             },
           });
+          // Approval is the moment they become a member, so it is also
+          // the moment they enter the group chat — same transaction, so
+          // the two can never disagree. A rejection changes no
+          // membership and therefore touches no chat.
+          if (conversation) {
+            await this.conversations.syncCrewParticipant(
+              app.crewId,
+              app.applicantId,
+              'join',
+              tx,
+            );
+            pendingMessages.push(
+              await this.conversations.persistSystem(
+                conversation.id,
+                'crew.member.joined',
+                { userId: app.applicantId },
+                tx,
+              ),
+            );
+          }
         }
 
         const isApprove = next === 'approved';
@@ -296,6 +329,9 @@ export class ApplicationsService {
         });
       }
       throw err;
+    }
+    for (const msg of pendingMessages) {
+      await this.conversations.broadcastMessage(msg);
     }
     return toApplicationDTO(updated);
   }

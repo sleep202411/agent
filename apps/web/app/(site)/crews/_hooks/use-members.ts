@@ -8,7 +8,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { crewApi } from "./api";
+import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { AddMemberInput, CrewMemberDTO } from "./types";
 
@@ -17,6 +17,12 @@ export function useCrewMembers(crewId: string | undefined) {
     queryKey: crewKeys.members(crewId ?? ""),
     enabled: !!crewId,
     queryFn: () => crewApi.get<CrewMemberDTO[]>(`/crews/${encodeURIComponent(crewId!)}/members`),
+    // Membership failures are authoritative. Retrying a 403/404 only
+    // keeps the workspace on its loading screen and floods the console
+    // with requests that cannot succeed without an external state
+    // change. Transient server failures still get one retry.
+    retry: (failureCount, error) =>
+      failureCount < 2 && !(error instanceof CrewApiError && error.status < 500),
   });
 }
 
