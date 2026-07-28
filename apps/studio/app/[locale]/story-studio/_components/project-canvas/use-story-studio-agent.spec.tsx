@@ -56,6 +56,7 @@ const runtime = vi.hoisted(() => {
   };
   /** Whatever `useChat` was constructed with, so its options can be asserted. */
   const chatInit = { current: null as Record<string, unknown> | null };
+  const syncSeed = { current: undefined as unknown[] | undefined };
   return {
     api,
     view,
@@ -63,6 +64,7 @@ const runtime = vi.hoisted(() => {
     chatTransport,
     chat,
     chatInit,
+    syncSeed,
     uploadFileViaSignedUrl: vi.fn(),
     ApiClient: vi.fn(function MockStudioAgentApiClient() {
       return api;
@@ -98,7 +100,9 @@ vi.mock("@ably/ai-transport/vercel/react", () => ({
     sessionError: undefined,
     chatTransportError: undefined,
   }),
-  useMessageSync: () => undefined,
+  useMessageSync: (options: { messages?: unknown[] }) => {
+    runtime.syncSeed.current = options.messages;
+  },
 }));
 
 vi.mock("@ai-sdk/react", () => ({
@@ -321,6 +325,58 @@ describe("useStoryStudioAgentSession", () => {
     // server persists the submission under `clientMessageId`, and the channel
     // carries it under `UIMessage.id`.
     expect(sent.id).toBe(sent.metadata.clientMessageId);
+  });
+
+  /**
+   * THE SEED MUST NOT MOVE UNDER THE RECONCILER.
+   *
+   * `useMessageSync` takes the NEWEST seeded id as its seam, pages the channel
+   * back to it, and composes `seed ⧺ live`. Its contract says the seed is read
+   * once per channel. `bootstrap.history` is not that — it is re-fetched every
+   * time a write lands, so it grows as the conversation does. Handing the grown
+   * copy back re-seams against a seed that already contains the live tail and
+   * composes the same turns twice: the creator watches the conversation they
+   * just had render a second time, and a refresh "fixes" it because a fresh
+   * mount starts from one consistent snapshot again. Observed in production.
+   */
+  it("holds the seed when a write grows the snapshot, so the turn is not composed twice", async () => {
+    const bootstrap = createBootstrap();
+    const first = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
+    bootstrap.history = { ...bootstrap.history, messages: first } as never;
+    await render(bootstrap);
+    expect(runtime.syncSeed.current).toBe(first);
+
+    // The write landed; the snapshot now also carries the reply the CHANNEL has
+    // already delivered. The seam has moved.
+    const grown = [...first, { id: "m2", role: "assistant", parts: [] }];
+    await render({ ...bootstrap, history: { ...bootstrap.history, messages: grown } } as never);
+
+    expect(runtime.syncSeed.current).toBe(first);
+  });
+
+  /**
+   * ...but paging in EARLIER turns is the one growth that must be adopted. It
+   * only adds to the front, so the seam does not move — and the panel renders
+   * the overlay, not the seed, so refusing it would leave "load earlier turns"
+   * clicking with nothing appearing.
+   */
+  it("adopts a seed that grew at the front, because the seam did not move", async () => {
+    const bootstrap = createBootstrap();
+    const current = [{ id: "m2", role: "user", parts: [{ type: "text", text: "now" }] }];
+    bootstrap.history = { ...bootstrap.history, messages: current } as never;
+    await render(bootstrap);
+    expect(runtime.syncSeed.current).toBe(current);
+
+    const withEarlier = [
+      { id: "m0", role: "user", parts: [{ type: "text", text: "before" }] },
+      ...current,
+    ];
+    await render({
+      ...bootstrap,
+      history: { ...bootstrap.history, messages: withEarlier },
+    } as never);
+
+    expect(runtime.syncSeed.current).toBe(withEarlier);
   });
 
   it("publishes a steer as a continuation of the live run and wakes it exactly once", async () => {

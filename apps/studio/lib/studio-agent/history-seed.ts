@@ -4,13 +4,27 @@
  * Ably is the conversation transcript, but its retention is finite and our
  * threads are not. `GET /threads/:id/snapshot` is the persisted prefix; this
  * module turns it into the `seed` that `useChat({ messages })` and
- * `useMessageSync({ messages })` reconcile against the live channel. The seam
- * key is the domain `message.id` — the only id shared between our store and the
- * channel — so `StudioAgentMessage.messageId` IS the `UIMessage.id` the agent
- * publishes. That equality is a contract, not a coincidence: the agent seeds
- * `toUIMessageStream({ generateMessageId })` with the id the control plane
- * allocated, and the browser sends its prompt under the same id it registers as
- * `clientMessageId`.
+ * `useMessageSync({ messages })` reconcile against the live channel.
+ *
+ * ## The seam key is whatever the CHANNEL calls a message
+ *
+ * `useMessagesWithSeed` walks the channel backwards until it meets the newest
+ * SEEDED id and appends only what follows. So the seam key has to be the id the
+ * channel actually carries — and for the two roles that is not the same column.
+ *
+ *   assistant  the control plane allocates the id and the agent publishes under
+ *              it (`toUIMessageStream({ generateMessageId })`), so the row id IS
+ *              the channel id.
+ *   user       the BROWSER publishes first, under an id it mints; the server
+ *              stores that as `clientMessageId` and keeps a row id of its own.
+ *              The row id has never been on the channel.
+ *
+ * Seeding a user message under its row id is therefore a seam the walk can
+ * never find: it scans the whole live window, meets nothing it recognises, and
+ * appends all of it — so the creator watches the turn they just had render a
+ * second time, and a refresh "fixes" it because by then the assistant message
+ * (whose ids DO agree) is the newest seeded one. Prefer the client id and the
+ * seam holds in both cases.
  *
  * The snapshot carries more than messages, and deliberately so. Approvals,
  * delegated task runs and applied change sets have NO wire shape — they are
@@ -243,7 +257,10 @@ export function toStudioAgentUIMessage(message: StudioAgentMessage): StudioAgent
     : ("plain_text" as const);
 
   return {
-    id: message.messageId,
+    // The channel's id, not the row's. See the seam note at the top of this
+    // module: a user message reaches Ably under the id the BROWSER minted, and
+    // seeding it under the server's row id makes the seam unfindable.
+    id: message.clientMessageId ?? message.messageId,
     role: message.role,
     metadata: {
       threadId: message.threadId,

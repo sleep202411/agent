@@ -31,6 +31,49 @@ describe("createStudioAgentHistorySeed", () => {
     expect([...seed.messageIds]).toEqual(["message-1", "message-2"]);
   });
 
+  /**
+   * THE SEAM, AND THE DUPLICATE TURN IT CAUSED.
+   *
+   * `useMessagesWithSeed` walks the channel backwards until it meets the newest
+   * SEEDED id. A user message reaches Ably under the id the BROWSER minted —
+   * stored as `clientMessageId` — while the server keeps a row id of its own
+   * that has never been on the channel. Seeding the row id makes the seam
+   * unfindable, so the walk appends the entire live window and the creator
+   * watches the turn they just had render a second time. Observed in
+   * production; a refresh "fixed" it only because by then the assistant message
+   * (whose ids do agree) was the newest seeded one.
+   */
+  it("seeds a user message under the id the channel carries, not the server's row id", () => {
+    const seed = createStudioAgentHistorySeed(
+      snapshot({
+        messages: [
+          {
+            ...message({ messageId: "row-id-v7", ordinal: 1, role: "user", text: "你好" }),
+            clientMessageId: "channel-id-v4",
+          },
+        ],
+      })
+    );
+
+    expect(seed.messages[0]?.id).toBe("channel-id-v4");
+    // And the projection's own seed/live discriminator has to agree with it.
+    expect([...seed.messageIds]).toEqual(["channel-id-v4"]);
+  });
+
+  it("seeds an assistant message under its row id, which IS its channel id", () => {
+    // The control plane allocates the assistant id and the agent publishes under
+    // it, so there is no second id to prefer — and no `clientMessageId` either.
+    const seed = createStudioAgentHistorySeed(
+      snapshot({
+        messages: [
+          message({ messageId: "assistant-row-id", ordinal: 1, role: "assistant", text: "Hi." }),
+        ],
+      })
+    );
+
+    expect(seed.messages[0]?.id).toBe("assistant-row-id");
+  });
+
   it("carries an attachment as the data part the composer republishes", () => {
     const seed = createStudioAgentHistorySeed(
       snapshot({

@@ -95,6 +95,11 @@ function isTargetRunInactive(cause: unknown): boolean {
   return cause instanceof ApiRequestError && cause.code === "STUDIO_AGENT_TARGET_RUN_INACTIVE";
 }
 
+/** The id the reconciler seams on: the newest message the seed knows about. */
+function seamOf(messages: readonly StudioAgentUIMessage[]): string | null {
+  return messages.at(-1)?.id ?? null;
+}
+
 const STORY_SURFACE_ID = "story.studio";
 const STORY_SCENARIO = {
   id: "story.studio.assistant",
@@ -709,12 +714,62 @@ export function useStoryStudioAgentSession(
   const { session, chatTransport, sessionError, chatTransportError } = useChatTransport();
   const transportError = sessionError ?? chatTransportError ?? null;
 
+  /**
+   * The seed, frozen for the life of this conversation.
+   *
+   * Both consumers below want a seed that does not move. `useChat` reads it once
+   * at construction. `useMessageSync` documents the same — "read once per
+   * channel, on the first render the view resolves" — because it takes the
+   * NEWEST seeded id as the seam, pages the channel back to it, and composes
+   * `seed ⧺ live`.
+   *
+   * `bootstrap.history` is not that: it is re-fetched every time a write lands,
+   * so it GROWS as the conversation does. Handing the grown copy to the sync
+   * re-seams against a seed that already contains the live tail, and it composes
+   * the same turns twice — the creator watches the conversation they just had
+   * render a second time, and a refresh "fixes" it because a fresh mount starts
+   * from one consistent snapshot again.
+   *
+   * Keyed on `conversationKey` so switching thread (or "New conversation")
+   * re-seeds. Within one conversation there is exactly one other legitimate
+   * reason for the seed to change, and it is NOT a write landing: paging in
+   * EARLIER turns. That only ever adds to the front, so the newest id — the
+   * seam itself — does not move, and refusing it would leave "load earlier
+   * turns" clicking with nothing appearing, since the panel renders the overlay
+   * rather than the seed.
+   *
+   * So the rule is stated in terms of the seam: adopt a new seed when the seam
+   * is unchanged (a prepend), and hold when it has moved (a write the channel
+   * has already delivered).
+   */
+  const incomingSeed = bootstrap.history.messages;
+  const [heldSeed, setHeldSeed] = useState<{
+    key: string;
+    messages: StudioAgentUIMessage[];
+  }>({ key: bootstrap.conversationKey, messages: incomingSeed });
+  // Adopt when the conversation changed, or when the snapshot grew WITHOUT the
+  // seam moving — the signature of paging in earlier turns. Hold otherwise: a
+  // seam that moved means the newest message came from the channel, and the
+  // reconciler already has it.
+  const adopt =
+    heldSeed.key !== bootstrap.conversationKey ||
+    (seamOf(incomingSeed) === seamOf(heldSeed.messages) &&
+      incomingSeed.length > heldSeed.messages.length);
+  if (adopt) {
+    // Adjusting state DURING render, which is React's documented pattern for
+    // deriving from props: it re-renders immediately with no flash and no
+    // effect round-trip. Doing it in an effect would let one render go out with
+    // the stale seed.
+    setHeldSeed({ key: bootstrap.conversationKey, messages: incomingSeed });
+  }
+  const seededMessages = adopt ? incomingSeed : heldSeed.messages;
+
   const chat = useChat<StudioAgentUIMessage>({
     id: bootstrap.conversationKey,
     // `useChat` reads this once, at construction. The provider subtree is only
     // mounted after the snapshot has loaded, so the seed is always complete
     // here — which is also why `conversationKey` has to change with the thread.
-    messages: bootstrap.history.messages,
+    messages: seededMessages,
     // The provider bakes the codec's default generics, so the transport it
     // hands back is typed with the SDK's default UIMessage. Re-applying our own
     // parameterisation is a pure type-level narrowing: `createUIMessageCodec`
@@ -745,7 +800,7 @@ export function useStoryStudioAgentSession(
 
   useMessageSync<StudioAgentMessageMetadata, StudioAgentDataParts, UITools>({
     setMessages,
-    messages: bootstrap.history.messages,
+    messages: seededMessages,
   });
 
   // The overlay, published upward for `prepareSendMessagesRequest`. Assigned
