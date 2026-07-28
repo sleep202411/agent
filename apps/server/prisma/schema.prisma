@@ -7340,7 +7340,7 @@ model CopilotQuotaChargeAttempt {
   /// these persisted buckets instead of whatever day/month the worker runs in.
   dayBucket           String                   @map("day_bucket") @db.VarChar(10)
   monthBucket         String                   @map("month_bucket") @db.VarChar(7)
-  tier                String?                  @db.VarChar(16)
+  tier                String?                  @db.VarChar(64)
   status              CopilotQuotaChargeStatus @default(consume_pending)
   refundReason        String?                  @map("refund_reason") @db.VarChar(16)
   clientToolExpiresAt DateTime?                @map("client_tool_expires_at") @db.Timestamptz(6)
@@ -7699,6 +7699,21 @@ model StudioAgentRun {
   task                    Json?                 @db.JsonB
   trigger                 StudioAgentRunTrigger
   triggerMessageId        String?               @map("trigger_message_id") @db.Uuid
+  /// Ably `event-id` of the `ai-input` this turn answers — the ONLY delivery
+  /// fact Postgres keeps.
+  ///
+  /// `@ably/ai-transport` resolves a run's write-time anchors from its
+  /// triggering input event, so the id has to survive into the Temporal
+  /// workflow input; a fresh-process activity retry re-adopts the same run from
+  /// it. The channel name is NOT stored beside it: it is a pure function of
+  /// threadId (`studioAgentThreadChannel`), and storing a derivable name is how
+  /// a thread ends up with two spellings of its own channel.
+  ///
+  /// NULL for a task run, and that is a statement rather than a gap: a
+  /// delegated child has no triggering input event, so it has no place on the
+  /// conversation the channel represents. Its output is durable here and
+  /// reaches the browser through the thread snapshot.
+  deliveryInputEventId    String?               @map("delivery_input_event_id") @db.VarChar(200)
   scenarioId              String                @map("scenario_id") @db.VarChar(160)
   scenarioVersion         String                @map("scenario_version") @db.VarChar(64)
   executionScopeContainer Json                  @map("execution_scope_container") @db.JsonB
@@ -7826,9 +7841,17 @@ model StudioAgentQuotaChargeAttempt {
   @@map("studio_agent_quota_charge_attempts")
 }
 
-/// Append-only event journal and the only source for reconnect/replay. Sequence
-/// is allocated from StudioAgentThread.nextEventSequence in the same database
-/// transaction as the event insert.
+/// Append-only durable JOURNAL. Not a delivery queue and not a replay source.
+///
+/// Delivery is `@ably/ai-transport`: the conversation the browser renders lives
+/// on the thread's Ably channel and is read back through `view.loadOlder()`,
+/// seeded from `GET threads/:id/snapshot`. Nothing subscribes to this table.
+/// It exists so the control plane can answer "what happened, in order" — for
+/// the `studio_agent_activities` projection, for support, and for audit.
+///
+/// `sequence` is allocated from StudioAgentThread.nextEventSequence in the same
+/// transaction as the insert, which is what makes the activity projection's
+/// first/last ordering total. It is no longer a client cursor.
 model StudioAgentEvent {
   eventId        String   @id @default(uuid(7)) @map("event_id") @db.Uuid
   threadId       String   @map("thread_id") @db.Uuid
