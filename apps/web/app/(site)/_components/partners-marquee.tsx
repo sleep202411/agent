@@ -66,12 +66,7 @@ const PARTNERS: Partner[] = [
   // generic Microsoft logo and let the hover title carry the full
   // sub-brand name.
   { slug: "microsoft", name: "Microsoft for Startups", ext: "svg" },
-  // Same pattern as Microsoft — generic Alibaba mark + hover title
-  // for the JUMPSTARTER sub-brand.
-  { slug: "alibaba", name: "Alibaba JUMPSTARTER", ext: "svg" },
-  // Separate from Alibaba JUMPSTARTER above — Alibaba Cloud is the
-  // sister sub-brand that hosts our production infra (ECS).
-  { slug: "alibaba-cloud", name: "Alibaba Cloud", ext: "png" },
+  { slug: "alibaba-new", name: "Alibaba Cloud", ext: "png" },
   { slug: "cyberport", name: "Cyberport", ext: "png" },
   { slug: "sgtech", name: "SGTech", ext: "png" },
   { slug: "accenture", name: "Accenture", ext: "png" },
