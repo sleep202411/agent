@@ -618,7 +618,7 @@ temporalDatabaseSecrets:
 studioAgentRuntime:
   image:
     repository: fizzdragon-studio-agent-runtime
-    tag: 644601427281375f89d2245f43041cc4d82bf0c6
+    tag: f254d5394f8aeb4e60677e7915ac734ff204a3aa
   internalBaseUrl: http://fizzdragon-server:3001
   temporal:
     # The in-cluster Temporal Service this chart renders. Kept in values rather
