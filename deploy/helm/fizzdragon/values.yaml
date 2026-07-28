@@ -359,7 +359,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: d3de15ae598b449ca7de2db7895b974d89d7f60a
+    tag: 6522a4bd39ef8ac180d8b7e3c91f807355cbfadb
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
