@@ -14,7 +14,6 @@ import {
   StudioAgentWorkflowInputSchema,
   type StudioAgentActionExecution,
   type StudioAgentError,
-  type StudioAgentEvent,
   type StudioAgentEventDraft,
   type StudioAgentMessagePart,
 } from '@repo/shared/studio-agent';
@@ -24,7 +23,11 @@ import {
   studioAgentRootBudgetData,
 } from './studio-agent.config';
 import { StudioAgentEventStore } from './studio-agent.events';
-import { toStudioAgentApproval, toStudioAgentRun } from './studio-agent.mapper';
+import {
+  toStudioAgentApproval,
+  toStudioAgentRun,
+  toStudioAgentWorkflowInput,
+} from './studio-agent.mapper';
 import { StudioAgentQuotaService } from './studio-agent-quota.service';
 
 export type StudioAgentTerminalTransition =
@@ -45,11 +48,6 @@ export type StudioAgentTerminalTransition =
 
 export interface StudioAgentTerminalPromotion {
   requestedInputId?: string;
-}
-
-export interface StudioAgentTerminalResult {
-  run: StudioAgentRunRow;
-  events: StudioAgentEvent[];
 }
 
 type TransactionClient = Prisma.TransactionClient;
@@ -83,12 +81,12 @@ export class StudioAgentRunTerminalService {
     transition: StudioAgentTerminalTransition,
     now: Date,
     promotion: StudioAgentTerminalPromotion = {},
-  ): Promise<StudioAgentTerminalResult> {
+  ): Promise<StudioAgentRunRow> {
     if (TERMINAL_RUN_STATUSES.has(run.status)) {
-      return { run, events: [] };
+      return run;
     }
 
-    const events = await this.cancelActiveDescendants(
+    await this.cancelActiveDescendants(
       transaction,
       run,
       now,
@@ -103,26 +101,22 @@ export class StudioAgentRunTerminalService {
 
     let updated: StudioAgentRunRow;
     if (transition.status === 'cancelled') {
-      const cancellation = await this.terminalizeCancelledRun(
+      updated = await this.terminalizeCancelledRun(
         transaction,
         run,
         now,
         transition.reason,
         false,
       );
-      updated = cancellation.run;
-      events.push(...cancellation.events);
     } else {
       if (transition.status === 'failed') {
-        events.push(
-          ...(await this.cleanupRunResources(
-            transaction,
-            run,
-            now,
-            'failed',
-            transition.error,
-            transition.reason,
-          )),
+        await this.cleanupRunResources(
+          transaction,
+          run,
+          now,
+          'failed',
+          transition.error,
+          transition.reason,
         );
       }
       updated = await transaction.studioAgentRun.update({
@@ -137,14 +131,7 @@ export class StudioAgentRunTerminalService {
                 error: transition.error as Prisma.InputJsonValue,
               },
       });
-      events.push(
-        ...(await this.appendRunTerminalEvents(
-          transaction,
-          run,
-          transition,
-          now,
-        )),
-      );
+      await this.appendRunTerminalEvents(transaction, run, transition, now);
     }
 
     if (run.parentRunId === null) {
@@ -158,17 +145,15 @@ export class StudioAgentRunTerminalService {
         where: { id: run.threadId, activeRunId: run.id },
         data: { activeRunId: null },
       });
-      events.push(
-        ...(await this.promoteNextInput(
-          transaction,
-          run,
-          now,
-          promotion.requestedInputId,
-        )),
+      await this.promoteNextInput(
+        transaction,
+        run,
+        now,
+        promotion.requestedInputId,
       );
     }
 
-    return { run: updated, events };
+    return updated;
   }
 
   private async appendRunTerminalEvents(
@@ -176,93 +161,83 @@ export class StudioAgentRunTerminalService {
     run: StudioAgentRunRow,
     transition: Exclude<StudioAgentTerminalTransition, { status: 'cancelled' }>,
     now: Date,
-  ): Promise<StudioAgentEvent[]> {
-    const events: StudioAgentEvent[] = [];
+  ): Promise<void> {
     if (transition.status === 'succeeded') {
-      events.push(
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            run,
-            'run.completed',
-            {
-              outputMessageId: transition.outputMessageId,
-              summary: transition.summary,
-              completedAt: now.toISOString(),
-            },
-            `run:${run.id}:completed`,
-            now,
-          ),
-        ),
-      );
-      if (run.kind === 'task') {
-        events.push(
-          await this.events.appendInTransaction(
-            transaction,
-            eventForRun(
-              run,
-              'task.completed',
-              {
-                task: requireTask(run),
-                summary: transition.summary,
-                completedAt: now.toISOString(),
-              },
-              `run:${run.id}:task-completed`,
-              now,
-            ),
-          ),
-          ...(await this.completeChildAction(
-            transaction,
-            run,
-            'succeeded',
-            now,
-            transition.summary,
-            null,
-          )),
-        );
-      }
-      return events;
-    }
-
-    events.push(
       await this.events.appendInTransaction(
         transaction,
         eventForRun(
           run,
-          'run.failed',
-          { error: transition.error, failedAt: now.toISOString() },
-          `run:${run.id}:failed`,
+          'run.completed',
+          {
+            outputMessageId: transition.outputMessageId,
+            summary: transition.summary,
+            completedAt: now.toISOString(),
+          },
+          `run:${run.id}:completed`,
           now,
         ),
-      ),
-    );
-    if (run.kind === 'task') {
-      events.push(
+      );
+      if (run.kind === 'task') {
         await this.events.appendInTransaction(
           transaction,
           eventForRun(
             run,
-            'task.failed',
+            'task.completed',
             {
               task: requireTask(run),
-              error: transition.error,
-              failedAt: now.toISOString(),
+              summary: transition.summary,
+              completedAt: now.toISOString(),
             },
-            `run:${run.id}:task-failed`,
+            `run:${run.id}:task-completed`,
             now,
           ),
-        ),
-        ...(await this.completeChildAction(
+        );
+        await this.completeChildAction(
           transaction,
           run,
-          'failed',
+          'succeeded',
           now,
+          transition.summary,
           null,
-          transition.error,
-        )),
+        );
+      }
+      return;
+    }
+
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        run,
+        'run.failed',
+        { error: transition.error, failedAt: now.toISOString() },
+        `run:${run.id}:failed`,
+        now,
+      ),
+    );
+    if (run.kind === 'task') {
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          run,
+          'task.failed',
+          {
+            task: requireTask(run),
+            error: transition.error,
+            failedAt: now.toISOString(),
+          },
+          `run:${run.id}:task-failed`,
+          now,
+        ),
+      );
+      await this.completeChildAction(
+        transaction,
+        run,
+        'failed',
+        now,
+        null,
+        transition.error,
       );
     }
-    return events;
   }
 
   private async cancelActiveDescendants(
@@ -270,7 +245,7 @@ export class StudioAgentRunTerminalService {
     ancestor: StudioAgentRunRow,
     now: Date,
     reason: string,
-  ): Promise<StudioAgentEvent[]> {
+  ): Promise<void> {
     const rootedRuns = await transaction.studioAgentRun.findMany({
       where: { rootRunId: ancestor.rootRunId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -299,17 +274,14 @@ export class StudioAgentRunTerminalService {
           right.run.id.localeCompare(left.run.id),
       );
 
-    const events: StudioAgentEvent[] = [];
     for (const descendant of descendants) {
-      const cancellation = await this.terminalizeCancelledRun(
+      await this.terminalizeCancelledRun(
         transaction,
         descendant.run,
         now,
         reason,
       );
-      events.push(...cancellation.events);
     }
-    return events;
   }
 
   private async terminalizeCancelledRun(
@@ -318,14 +290,14 @@ export class StudioAgentRunTerminalService {
     now: Date,
     reason: string,
     cleanupInputs = true,
-  ): Promise<{ run: StudioAgentRunRow; events: StudioAgentEvent[] }> {
+  ): Promise<StudioAgentRunRow> {
     if (TERMINAL_RUN_STATUSES.has(run.status)) {
-      return { run, events: [] };
+      return run;
     }
     if (cleanupInputs) {
       await this.cleanupAcceptedInputs(transaction, run, false);
     }
-    const events = await this.cleanupRunResources(
+    await this.cleanupRunResources(
       transaction,
       run,
       now,
@@ -342,45 +314,41 @@ export class StudioAgentRunTerminalService {
         error: Prisma.DbNull,
       },
     });
-    events.push(
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        run,
+        'run.cancelled',
+        { reason, cancelledAt: now.toISOString() },
+        `run:${run.id}:cancelled`,
+        now,
+      ),
+    );
+    if (run.kind === 'task') {
       await this.events.appendInTransaction(
         transaction,
         eventForRun(
           run,
-          'run.cancelled',
-          { reason, cancelledAt: now.toISOString() },
-          `run:${run.id}:cancelled`,
+          'task.cancelled',
+          {
+            task: requireTask(run),
+            reason,
+            cancelledAt: now.toISOString(),
+          },
+          `run:${run.id}:task-cancelled`,
           now,
         ),
-      ),
-    );
-    if (run.kind === 'task') {
-      events.push(
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            run,
-            'task.cancelled',
-            {
-              task: requireTask(run),
-              reason,
-              cancelledAt: now.toISOString(),
-            },
-            `run:${run.id}:task-cancelled`,
-            now,
-          ),
-        ),
-        ...(await this.completeChildAction(
-          transaction,
-          run,
-          'cancelled',
-          now,
-          null,
-          null,
-        )),
+      );
+      await this.completeChildAction(
+        transaction,
+        run,
+        'cancelled',
+        now,
+        null,
+        null,
       );
     }
-    return { run: updated, events };
+    return updated;
   }
 
   private async cleanupAcceptedInputs(
@@ -411,8 +379,7 @@ export class StudioAgentRunTerminalService {
     attemptStatus: 'failed' | 'cancelled',
     error: StudioAgentError | null,
     reason: string,
-  ): Promise<StudioAgentEvent[]> {
-    const events: StudioAgentEvent[] = [];
+  ): Promise<void> {
     const attempts = await transaction.studioAgentModelAttempt.findMany({
       where: { runId: run.id, status: 'running' },
       include: { assistantMessage: true },
@@ -443,27 +410,25 @@ export class StudioAgentRunTerminalService {
           select: { eventId: true },
         });
         if (activityStarted) {
-          events.push(
-            await this.events.appendInTransaction(
-              transaction,
-              eventForRun(
-                run,
-                attemptStatus === 'cancelled'
-                  ? 'activity.cancelled'
-                  : 'activity.failed',
-                attemptStatus === 'cancelled'
-                  ? {
-                      activityId: plan.compaction.activityId,
-                      cancelledAt: now.toISOString(),
-                    }
-                  : {
-                      activityId: plan.compaction.activityId,
-                      error: error!,
-                      failedAt: now.toISOString(),
-                    },
-                `model:${attempt.stepId}:activity:terminal`,
-                now,
-              ),
+          await this.events.appendInTransaction(
+            transaction,
+            eventForRun(
+              run,
+              attemptStatus === 'cancelled'
+                ? 'activity.cancelled'
+                : 'activity.failed',
+              attemptStatus === 'cancelled'
+                ? {
+                    activityId: plan.compaction.activityId,
+                    cancelledAt: now.toISOString(),
+                  }
+                : {
+                    activityId: plan.compaction.activityId,
+                    error: error!,
+                    failedAt: now.toISOString(),
+                  },
+              `model:${attempt.stepId}:activity:terminal`,
+              now,
             ),
           );
         }
@@ -500,30 +465,27 @@ export class StudioAgentRunTerminalService {
               : Prisma.DbNull,
         },
       });
-      events.push(
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            run,
-            'assistant.segment.completed',
-            {
-              messageId: attempt.assistantMessageId,
-              segmentId: attempt.segmentId,
-              content,
-              finishReason:
-                attemptStatus === 'cancelled' ? 'cancelled' : 'error',
-              providerResponseId: attempt.providerResponseId,
-              usage: {
-                inputTokens: attempt.inputTokens ?? 0,
-                outputTokens: attempt.outputTokens ?? 0,
-                cachedInputTokens: attempt.cachedInputTokens,
-                reasoningTokens: attempt.reasoningTokens,
-              },
-              completedAt: now.toISOString(),
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          run,
+          'assistant.segment.completed',
+          {
+            messageId: attempt.assistantMessageId,
+            segmentId: attempt.segmentId,
+            content,
+            finishReason: attemptStatus === 'cancelled' ? 'cancelled' : 'error',
+            providerResponseId: attempt.providerResponseId,
+            usage: {
+              inputTokens: attempt.inputTokens ?? 0,
+              outputTokens: attempt.outputTokens ?? 0,
+              cachedInputTokens: attempt.cachedInputTokens,
+              reasoningTokens: attempt.reasoningTokens,
             },
-            `model:${attempt.stepId}:segment:${attempt.segmentId}:terminal`,
-            now,
-          ),
+            completedAt: now.toISOString(),
+          },
+          `model:${attempt.stepId}:segment:${attempt.segmentId}:terminal`,
+          now,
         ),
       );
       const activityStarted = await transaction.studioAgentEvent.findFirst({
@@ -534,27 +496,25 @@ export class StudioAgentRunTerminalService {
         select: { eventId: true },
       });
       if (activityStarted) {
-        events.push(
-          await this.events.appendInTransaction(
-            transaction,
-            eventForRun(
-              run,
-              attemptStatus === 'cancelled'
-                ? 'activity.cancelled'
-                : 'activity.failed',
-              attemptStatus === 'cancelled'
-                ? {
-                    activityId: attempt.stepId,
-                    cancelledAt: now.toISOString(),
-                  }
-                : {
-                    activityId: attempt.stepId,
-                    error: error!,
-                    failedAt: now.toISOString(),
-                  },
-              `model:${attempt.stepId}:activity:terminal`,
-              now,
-            ),
+        await this.events.appendInTransaction(
+          transaction,
+          eventForRun(
+            run,
+            attemptStatus === 'cancelled'
+              ? 'activity.cancelled'
+              : 'activity.failed',
+            attemptStatus === 'cancelled'
+              ? {
+                  activityId: attempt.stepId,
+                  cancelledAt: now.toISOString(),
+                }
+              : {
+                  activityId: attempt.stepId,
+                  error: error!,
+                  failedAt: now.toISOString(),
+                },
+            `model:${attempt.stepId}:activity:terminal`,
+            now,
           ),
         );
       }
@@ -577,16 +537,14 @@ export class StudioAgentRunTerminalService {
         where: { id: approval.id },
         data: { status: 'cancelled', decision: Prisma.DbNull },
       });
-      events.push(
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            run,
-            'approval.resolved',
-            { approval: toStudioAgentApproval(updated) },
-            `approval:${approval.id}:resolved`,
-            now,
-          ),
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          run,
+          'approval.resolved',
+          { approval: toStudioAgentApproval(updated) },
+          `approval:${approval.id}:resolved`,
+          now,
         ),
       );
     }
@@ -610,22 +568,20 @@ export class StudioAgentRunTerminalService {
           error: Prisma.DbNull,
         },
       });
-      events.push(
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            run,
-            'action.completed',
-            {
-              execution: cancelledExecution(
-                action.id,
-                now,
-                action.startedAt ?? now,
-              ),
-            },
-            `action:${action.id}:terminal`,
-            now,
-          ),
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          run,
+          'action.completed',
+          {
+            execution: cancelledExecution(
+              action.id,
+              now,
+              action.startedAt ?? now,
+            ),
+          },
+          `action:${action.id}:terminal`,
+          now,
         ),
       );
     }
@@ -646,7 +602,6 @@ export class StudioAgentRunTerminalService {
         lastErrorDetail: reason,
       },
     });
-    return events;
   }
 
   private async completeChildAction(
@@ -656,9 +611,9 @@ export class StudioAgentRunTerminalService {
     now: Date,
     summary: string | null,
     error: StudioAgentError | null,
-  ): Promise<StudioAgentEvent[]> {
+  ): Promise<void> {
     const action = await requireParentAction(transaction, run);
-    if (isTerminalAction(action.status)) return [];
+    if (isTerminalAction(action.status)) return;
     const output =
       status === 'succeeded' ? { runId: run.id, status, summary } : null;
     await transaction.studioAgentAction.update({
@@ -684,18 +639,16 @@ export class StudioAgentRunTerminalService {
       startedAt: (action.startedAt ?? now).toISOString(),
       completedAt: now.toISOString(),
     });
-    return [
-      await this.events.appendInTransaction(
-        transaction,
-        eventForRun(
-          action.run,
-          'action.completed',
-          { execution },
-          `action:${action.id}:terminal`,
-          now,
-        ),
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        action.run,
+        'action.completed',
+        { execution },
+        `action:${action.id}:terminal`,
+        now,
       ),
-    ];
+    );
   }
 
   private async promoteNextInput(
@@ -703,11 +656,11 @@ export class StudioAgentRunTerminalService {
     previousRoot: StudioAgentRunRow,
     promotedAt: Date,
     requestedInputId?: string,
-  ): Promise<StudioAgentEvent[]> {
+  ): Promise<void> {
     const thread = await transaction.studioAgentThread.findUniqueOrThrow({
       where: { id: previousRoot.threadId },
     });
-    if (thread.activeRunId !== null) return [];
+    if (thread.activeRunId !== null) return;
 
     const input = requestedInputId
       ? await transaction.studioAgentInput.findFirst({
@@ -735,7 +688,7 @@ export class StudioAgentRunTerminalService {
           'The stop-and-send input requesting cancellation is not promotable.',
         );
       }
-      return [];
+      return;
     }
 
     const policy = StudioAgentPermissionPolicySchema.parse(
@@ -803,32 +756,30 @@ export class StudioAgentRunTerminalService {
       data: { targetRunId: run.id },
     });
 
-    return [
-      await this.events.appendInTransaction(
-        transaction,
-        eventForRun(
-          previousRoot,
-          'input.promoted',
-          {
-            inputId: input.id,
-            promotedToRunId: run.id,
-            promotedAt: promotedAt.toISOString(),
-          },
-          `input:${input.id}:promoted`,
-          promotedAt,
-        ),
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        previousRoot,
+        'input.promoted',
+        {
+          inputId: input.id,
+          promotedToRunId: run.id,
+          promotedAt: promotedAt.toISOString(),
+        },
+        `input:${input.id}:promoted`,
+        promotedAt,
       ),
-      await this.events.appendInTransaction(
-        transaction,
-        eventForRun(
-          run,
-          'run.created',
-          { run: toStudioAgentRun(run) },
-          `run:${run.id}:created`,
-          promotedAt,
-        ),
+    );
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        run,
+        'run.created',
+        { run: toStudioAgentRun(run) },
+        `run:${run.id}:created`,
+        promotedAt,
       ),
-    ];
+    );
   }
 }
 
@@ -930,21 +881,17 @@ async function requireParentAction(
   return action;
 }
 
+/**
+ * A promoted input's workflow input, built by the ONE mapper that knows the
+ * shape.
+ *
+ * This used to be a second hand-written copy of `toStudioAgentWorkflowInput`,
+ * which is exactly how a promoted turn ended up without the delivery anchor the
+ * worker needs to open its run on the channel: the field was added in one place
+ * and silently absent in the other.
+ */
 function workflowForRun(run: StudioAgentRunRow) {
-  const policy = StudioAgentPermissionPolicySchema.parse(run.permissionPolicy);
-  return StudioAgentWorkflowInputSchema.parse({
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    threadId: run.threadId,
-    runId: run.id,
-    rootRunId: run.rootRunId,
-    parentRunId: run.parentRunId,
-    kind: run.kind,
-    scenario: { id: run.scenarioId, version: run.scenarioVersion },
-    permissionPolicy: {
-      policyId: policy.policyId,
-      revision: policy.revision,
-    },
-  });
+  return StudioAgentWorkflowInputSchema.parse(toStudioAgentWorkflowInput(run));
 }
 
 function eventForRun<

@@ -1,11 +1,9 @@
 {
   "extends": "../../packages/typescript-config/base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

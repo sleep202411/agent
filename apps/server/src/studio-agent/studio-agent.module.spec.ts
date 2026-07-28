@@ -5,20 +5,21 @@ import { StudioAgentController } from './studio-agent.controller';
 import { StudioAgentCommandOutboxDispatcher } from './studio-agent.outbox';
 import { StudioAgentModule } from './studio-agent.module';
 import { StudioAgentTemporalTransport } from './studio-agent.temporal';
+import { arrayContaining } from './__tests__/typed-expect';
 
 describe('StudioAgentModule', () => {
   it('registers the complete HTTP and worker boundary', () => {
     const definition = StudioAgentModule.register();
 
     expect(definition.controllers).toEqual(
-      expect.arrayContaining([
+      arrayContaining([
         StudioAgentController,
         StudioAgentArtifactController,
         StudioAgentRuntimeController,
       ]),
     );
     expect(definition.providers).toEqual(
-      expect.arrayContaining([
+      arrayContaining([
         StudioAgentTemporalTransport,
         StudioAgentCommandOutboxDispatcher,
         StudioAgentArtifactCleanupWorker,

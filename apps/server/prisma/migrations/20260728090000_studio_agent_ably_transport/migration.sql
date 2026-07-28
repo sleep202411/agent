@@ -1,0 +1,38 @@
+-- Studio Agent delivery moves to `@ably/ai-transport`.
+--
+-- The hand-rolled delivery layer is gone: there is no Postgres relay, no
+-- `published_at` watermark, no per-thread claim, and no client cursor over
+-- `studio_agent_events`. The conversation the browser renders now lives on the
+-- thread's Ably channel; `studio_agent_events` stays as a durable journal that
+-- nothing subscribes to, and the `studio_agent_activities` projection it feeds
+-- is unchanged.
+--
+-- This migration is ADDITIVE ONLY, on purpose. The destructive half — wiping
+-- studio-agent conversation history, which the owner authorised — is
+-- deliberately NOT here. It lives in
+-- `prisma/scripts/reset-studio-agent-history.sql`, run by an operator at
+-- cutover, because a TRUNCATE that rides a deploy has already cost this repo a
+-- PITR restore once. See that file's header for what must be run and when.
+--
+-- (`studio_agent_events.published_at` never reached migration history: the
+-- relay's watermark existed only in a working copy of schema.prisma, so there
+-- is nothing to drop. `prisma migrate diff` against this history is clean.)
+
+-- The Ably `event-id` of the `ai-input` this turn answers.
+--
+-- The library resolves a run's write-time anchors from its triggering input
+-- event, so the id has to travel into the Temporal workflow input: it is how
+-- `openAgentRun` opens the run and how a fresh-process activity retry re-adopts
+-- the SAME run instead of minting a parallel one.
+--
+-- Nullable, and the NULL means "task run": a delegated child has no triggering
+-- input event and therefore no place on the conversation channel. It is also
+-- what every pre-cutover row will hold, which is precisely why those rows have
+-- to be reset rather than migrated — a turn with no input event id can never be
+-- opened on the channel, and the browser would watch a run that never streams.
+--
+-- LOCKING: `ADD COLUMN` with no default and no constraint takes an ACCESS
+-- EXCLUSIVE lock for a catalog update only — no table rewrite, no row scan,
+-- constant time regardless of row count.
+ALTER TABLE "studio_agent_runs"
+  ADD COLUMN "delivery_input_event_id" VARCHAR(200);

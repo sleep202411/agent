@@ -9,15 +9,11 @@ import {
   StudioAgentCommandStatus,
   type StudioAgentCommandType,
 } from '@prisma/client';
-import {
-  StudioAgentErrorSchema,
-  type StudioAgentEvent,
-} from '@repo/shared/studio-agent';
+import { StudioAgentErrorSchema } from '@repo/shared/studio-agent';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { PrismaService } from '../infra/db/db.module';
 import { StudioAgentConfigService } from './studio-agent.config';
-import { StudioAgentEventStore } from './studio-agent.events';
 import { StudioAgentRunTerminalService } from './studio-agent-run-terminal.service';
 import { StudioAgentTemporalTransport } from './studio-agent.temporal';
 
@@ -59,7 +55,6 @@ export class StudioAgentCommandOutboxDispatcher
     private readonly prisma: PrismaService,
     private readonly config: StudioAgentConfigService,
     private readonly transport: StudioAgentTemporalTransport,
-    private readonly events: StudioAgentEventStore,
     private readonly runTerminal: StudioAgentRunTerminalService,
   ) {}
 
@@ -239,8 +234,7 @@ export class StudioAgentCommandOutboxDispatcher
       return;
     }
 
-    const terminalEvents = await this.deadLetter(command, error);
-    for (const event of terminalEvents) this.events.publish(event);
+    await this.deadLetter(command, error);
     this.logger.error(
       `Studio Agent command dead-lettered command=${command.id} run=${command.runId} code=${error.code}`,
     );
@@ -249,8 +243,8 @@ export class StudioAgentCommandOutboxDispatcher
   private async deadLetter(
     command: ClaimedCommand,
     error: ReturnType<typeof normalizeError>,
-  ): Promise<StudioAgentEvent[]> {
-    return this.prisma.$transaction(async (transaction) => {
+  ): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
       const now = new Date();
       await transaction.$queryRaw`
         SELECT "id"
@@ -277,7 +271,7 @@ export class StudioAgentCommandOutboxDispatcher
             lastErrorDetail: error.message,
           },
         });
-      if (commandUpdate.count !== 1) return [];
+      if (commandUpdate.count !== 1) return;
 
       const commandRun = await transaction.studioAgentRun.findUnique({
         where: { id: command.runId },
@@ -292,7 +286,7 @@ export class StudioAgentCommandOutboxDispatcher
         // command remains dead-lettered for operational evidence, but a stale
         // command for an already-terminal child must never fail its still-live
         // root run.
-        return [];
+        return;
       }
       const run =
         commandRun.parentRunId === null
@@ -306,14 +300,14 @@ export class StudioAgentCommandOutboxDispatcher
         run.status === 'failed' ||
         run.status === 'cancelled'
       ) {
-        return [];
+        return;
       }
 
       const terminalError = StudioAgentErrorSchema.parse({
         ...error,
         retryable: false,
       });
-      const result = await this.runTerminal.terminalizeInTransaction(
+      await this.runTerminal.terminalizeInTransaction(
         transaction,
         run,
         {
@@ -323,7 +317,6 @@ export class StudioAgentCommandOutboxDispatcher
         },
         now,
       );
-      return result.events;
     });
   }
 }

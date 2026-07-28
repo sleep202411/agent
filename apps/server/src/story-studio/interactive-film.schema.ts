@@ -32,7 +32,17 @@ export const StoryReferenceKeySchema = z
   .min(1)
   .max(40)
   .regex(/^[A-Z][A-Z0-9_-]*$/, 'Use an uppercase stable reference key.');
-export const StoryLocaleSchema = z.string().trim().min(2).max(16);
+/**
+ * A localized-text map key, judged exactly as written.
+ *
+ * Not trimmed, for the same reason `StoryAgentLocaleSchema` is not: these are
+ * object KEYS, so trimming rewrites the document — `{" en-US": a, "en-US": b}`
+ * parsed to one entry and silently dropped a translation. It also has to agree
+ * with the Agent patch contract that writes into this document: a key the patch
+ * accepts must be a key the draft accepts, or a valid patch fails its own
+ * post-write validation.
+ */
+export const StoryLocaleSchema = z.string().min(2).max(16);
 /** Mutable-draft text may be empty while the creator is still authoring. */
 export const DraftLocalizedTextSchema = z.record(
   StoryLocaleSchema,

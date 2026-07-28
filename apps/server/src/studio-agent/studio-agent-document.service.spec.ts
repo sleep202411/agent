@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped. */
 import JSZip from 'jszip';
 import {
   STUDIO_AGENT_DOCUMENT_MAX_BYTES,
   extractStudioAgentDocument,
 } from './studio-agent-document.service';
+import { stringMatching } from './__tests__/typed-expect';
 
 const DOCX_MEDIA_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -71,7 +71,7 @@ describe('Studio Agent document extraction', () => {
       charCount: 21,
       source: {
         byteCount: bytes.length,
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        sha256: stringMatching(/^[a-f0-9]{64}$/),
         sniffed: true,
       },
     });

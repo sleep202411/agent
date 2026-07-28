@@ -1,0 +1,181 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { Realtime } from "ably";
+
+import { StudioAgentRealtimeError, type StudioAgentRealtimeGrant } from "./realtime-grant";
+
+/** Connection state as the surface reports it. `closed` is terminal. */
+export type StudioAgentStreamStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "closed";
+
+export interface StudioAgentRealtimeHandle {
+  /** The Ably client for `<AblyProvider>`, or `null` until the grant resolves. */
+  client: Realtime | null;
+  /** The server-chosen conversation channel, or `null` until the grant resolves. */
+  channelName: string | null;
+  status: StudioAgentStreamStatus;
+  error: Error | null;
+}
+
+/**
+ * One connection's observable state, tagged with the thread it belongs to.
+ *
+ * The tag is what makes a scope change a pure derivation rather than a reset:
+ * state whose `key` is not the current one is simply not read, so switching
+ * threads (or closing the panel) needs no state write at all — and the previous
+ * connection's teardown stays where it belongs, in the effect's cleanup.
+ */
+interface StudioAgentConnectionState {
+  key: string;
+  client: Realtime | null;
+  channelName: string | null;
+  status: StudioAgentStreamStatus;
+  error: Error | null;
+}
+
+/**
+ * Own the Ably connection for one thread.
+ *
+ * One connection and one channel per subscribed thread, and the account is
+ * capped on both, so this is gated by `enabled` — a creator who never opens
+ * StoryOS spends neither, and never downloads the SDK either (it is imported
+ * dynamically).
+ *
+ * Reconnection, backoff and the replay of anything published while the socket
+ * was away are Ably's; a subscriber that rejoins mid-stream receives the
+ * accumulated content of the message being appended to rather than an empty
+ * buffer. There is no catch-up loop here because there is nothing left for one
+ * to do.
+ */
+export function useStudioAgentRealtime({
+  threadId,
+  enabled,
+  authorize,
+}: {
+  threadId: string | null;
+  enabled: boolean;
+  /** Mints a grant. Called to open the connection and again for every renewal. */
+  authorize: () => Promise<StudioAgentRealtimeGrant>;
+}): StudioAgentRealtimeHandle {
+  const key = enabled && threadId ? threadId : null;
+  const [state, setState] = useState<StudioAgentConnectionState | null>(null);
+  // Read through a ref so a re-created `authorize` closure never tears down a
+  // live connection: the identity that matters is the thread, not the callback.
+  const authorizeRef = useRef(authorize);
+  useEffect(() => {
+    authorizeRef.current = authorize;
+  }, [authorize]);
+
+  useEffect(() => {
+    if (!key) return;
+
+    let released = false;
+    let client: Realtime | null = null;
+    /**
+     * The grant that opened the connection, handed to the SDK's first
+     * `authCallback` instead of minting a second one. A token request is
+     * single-use and short-lived, so this is consumed exactly once.
+     */
+    let seeded: StudioAgentRealtimeGrant | null = null;
+
+    /** Merge into this thread's slot, replacing any other thread's. */
+    const publish = (patch: Partial<Omit<StudioAgentConnectionState, "key">>) => {
+      if (released) return;
+      setState((current) =>
+        current?.key === key
+          ? { ...current, ...patch }
+          : {
+              key,
+              client: null,
+              channelName: null,
+              status: "connecting",
+              error: null,
+              ...patch,
+            }
+      );
+    };
+
+    void (async () => {
+      try {
+        const grant = await authorizeRef.current();
+        if (released) return;
+        seeded = grant;
+        const { Realtime: AblyRealtime } = await import("ably");
+        if (released) return;
+
+        client = new AblyRealtime({
+          authCallback: (_tokenParams, callback) => {
+            const pending = seeded ? Promise.resolve(seeded) : authorizeRef.current();
+            seeded = null;
+            pending.then(
+              (next) => callback(null, next.tokenRequest),
+              (cause: unknown) => callback(toMessage(cause), null)
+            );
+          },
+        });
+
+        client.connection.on((change) => {
+          switch (change.current) {
+            case "initialized":
+            case "connecting":
+              publish({ status: "connecting" });
+              return;
+            case "connected":
+              publish({ status: "connected", error: null });
+              return;
+            case "disconnected":
+            case "suspended":
+              publish({ status: "reconnecting" });
+              return;
+            case "failed":
+              publish({
+                status: "closed",
+                error: new StudioAgentRealtimeError(
+                  change.reason?.message ?? "Studio Agent realtime connection failed.",
+                  true
+                ),
+              });
+              return;
+            default:
+              return;
+          }
+        });
+
+        publish({ client, channelName: grant.channel });
+      } catch (cause) {
+        publish({
+          status: "closed",
+          error: cause instanceof Error ? cause : new StudioAgentRealtimeError(String(cause), true),
+        });
+      }
+    })();
+
+    return () => {
+      released = true;
+      seeded = null;
+      // An idle connection still counts against the account's concurrent
+      // connection ceiling, so releasing means closing.
+      client?.close();
+      client = null;
+    };
+  }, [key]);
+
+  // Anything belonging to another thread — or to a panel that has since been
+  // closed — is simply not this handle's state.
+  const current = state?.key === key ? state : null;
+  return {
+    client: current?.client ?? null,
+    channelName: current?.channelName ?? null,
+    status: key === null ? "idle" : (current?.status ?? "connecting"),
+    error: current?.error ?? null,
+  };
+}
+
+function toMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value);
+}

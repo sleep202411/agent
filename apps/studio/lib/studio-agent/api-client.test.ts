@@ -1,9 +1,16 @@
-import { STUDIO_AGENT_SCHEMA_VERSION } from "@repo/shared";
+import {
+  STUDIO_AGENT_SCHEMA_VERSION,
+  type StudioAgentSubmissionInvocationRequest,
+} from "@repo/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api";
 
 import { StudioAgentApiClient } from "./api-client";
+
+const THREAD_ID = "00000000-0000-4000-8000-000000000002";
+const RUN_ID = "00000000-0000-4000-8000-000000000030";
+const MESSAGE_ID = "00000000-0000-4000-8000-000000000031";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -22,14 +29,16 @@ describe("StudioAgentApiClient", () => {
     vi.mocked(api.delete).mockReset();
   });
 
-  it("scopes replay requests and validates the exact shared envelope", async () => {
-    vi.mocked(api.get).mockResolvedValue({
+  it("wakes a turn for an input the transport already published", async () => {
+    vi.mocked(api.post).mockResolvedValue({
       code: 200,
       data: {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        events: [],
-        latestSequence: 7,
-        hasMore: false,
+        kind: "submission",
+        threadId: THREAD_ID,
+        messageId: MESSAGE_ID,
+        runId: RUN_ID,
+        inputId: null,
+        channelName: `studio-agent:thread:${THREAD_ID}`,
       },
     });
     const client = new StudioAgentApiClient({
@@ -37,23 +46,40 @@ describe("StudioAgentApiClient", () => {
       locale: "zh-CN",
     });
 
-    await expect(client.getEventPage("thread-1", 7, 500)).resolves.toEqual({
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      events: [],
-      latestSequence: 7,
-      hasMore: false,
+    await expect(client.sendInvocation(invocation())).resolves.toEqual({
+      kind: "submission",
+      threadId: THREAD_ID,
+      messageId: MESSAGE_ID,
+      runId: RUN_ID,
+      inputId: null,
+      channelName: `studio-agent:thread:${THREAD_ID}`,
     });
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/studio-agent/threads/thread-1/events",
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/studio-agent/invocations",
       expect.objectContaining({
         raw: true,
-        params: { afterSequence: 7, limit: 500 },
+        data: invocation(),
         headers: {
           "x-fizz-workspace-id": "workspace-1",
           "accept-language": "zh-CN",
         },
       })
     );
+  });
+
+  it("refuses to wake a run without saying how the prompt is meant to reach it", async () => {
+    const client = new StudioAgentApiClient({
+      workspaceId: "workspace-1",
+      locale: "en-US",
+    });
+
+    // The pairing rule is the server's, and the client must not be the place it
+    // is first noticed: a steer with no delivery mode would otherwise reach the
+    // control plane as a request to start a second root turn.
+    await expect(
+      client.sendInvocation({ ...invocation(), targetRunId: RUN_ID, delivery: null })
+    ).rejects.toThrow();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it("sends the turn cursor only when paging backwards", async () => {
@@ -90,36 +116,65 @@ describe("StudioAgentApiClient", () => {
   });
 
   it("fails closed when a successful HTTP response drifts from the protocol", async () => {
-    vi.mocked(api.get).mockResolvedValue({
+    vi.mocked(api.post).mockResolvedValue({
       code: 200,
-      data: {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        events: [],
-        latestSequence: "7",
-        hasMore: false,
-      },
+      data: { threadId: THREAD_ID, messageId: MESSAGE_ID, runId: RUN_ID },
     });
     const client = new StudioAgentApiClient({
       workspaceId: "workspace-1",
       locale: "en-US",
     });
 
-    await expect(client.getEventPage("thread-1", 0, 100)).rejects.toThrow();
+    await expect(client.sendInvocation(invocation())).rejects.toThrow();
   });
 
-  it("builds resumable stream URLs from the acknowledged sequence", () => {
+  it("mints a thread-scoped realtime grant and keeps the channel the server's choice", async () => {
+    const tokenRequest = {
+      keyName: "app.key",
+      mac: "signature",
+      nonce: "0123456789abcdef",
+      capability: '{"studio-agent:thread:thread/id":["subscribe"]}',
+      timestamp: 1_800_000_000_000,
+      ttl: 300_000,
+    };
+    vi.mocked(api.get).mockResolvedValue({
+      code: 200,
+      data: { channel: "studio-agent:thread:thread/id", ttlMs: 300_000, tokenRequest },
+    });
     const client = new StudioAgentApiClient({
       workspaceId: "workspace with spaces",
       locale: "en-US",
     });
 
-    expect(client.eventStreamUrl("thread/id", "42")).toBe(
-      "/aurora/studio-agent/threads/thread%2Fid/events/stream?afterSequence=42"
-    );
-    expect(client.eventStreamHeaders()).toEqual({
-      "x-fizz-workspace-id": "workspace with spaces",
-      "accept-language": "en-US",
+    await expect(client.createRealtimeGrant("thread/id")).resolves.toEqual({
+      channel: "studio-agent:thread:thread/id",
+      ttlMs: 300_000,
+      tokenRequest,
     });
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/studio-agent/threads/thread%2Fid/realtime-token",
+      expect.objectContaining({
+        raw: true,
+        headers: {
+          "x-fizz-workspace-id": "workspace with spaces",
+          "accept-language": "en-US",
+        },
+      })
+    );
+  });
+
+  it("refuses a grant that cannot authorize a channel", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      code: 200,
+      data: {
+        channel: "studio-agent:thread:thread-1",
+        ttlMs: 300_000,
+        tokenRequest: { keyName: "app.key" },
+      },
+    });
+    const client = new StudioAgentApiClient({ workspaceId: "workspace-1", locale: "en-US" });
+
+    await expect(client.createRealtimeGrant("thread-1")).rejects.toThrow("is missing mac");
   });
 
   it("registers a confirmed media asset and returns only canonical attachment metadata", async () => {
@@ -202,93 +257,30 @@ describe("StudioAgentApiClient", () => {
       }
     );
   });
-
-  it("resolves a persistent grant and approval through one strict command", async () => {
-    const approvalId = "00000000-0000-4000-8000-000000000061";
-    const threadId = "00000000-0000-4000-8000-000000000001";
-    const actionInputHash = "a".repeat(64);
-    const permissionPolicy = {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      policyId: "00000000-0000-4000-8000-000000000020",
-      revision: 2,
-      mode: "smart" as const,
-      rules: [
-        {
-          ruleId: approvalId,
-          priority: 1_000,
-          selector: {
-            scenarioId: "story.studio.assistant",
-            capabilityId: "story.canvas.write",
-            capabilityVersion: "1.2.0",
-            resourceType: null,
-            effect: "write" as const,
-            risk: "medium" as const,
-          },
-          decision: "allow" as const,
-        },
-      ],
-      createdAt: "2026-07-24T12:00:00.000Z",
-    };
-    vi.mocked(api.post).mockResolvedValue({
-      code: 200,
-      data: {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        approval: {
-          schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-          approvalId,
-          threadId,
-          runId: "00000000-0000-4000-8000-000000000062",
-          actionId: "00000000-0000-4000-8000-000000000060",
-          status: "approved",
-          reason: "The story canvas will be changed.",
-          actionInputHash,
-          requestedAt: "2026-07-24T12:03:01.000Z",
-          expiresAt: null,
-          decision: {
-            decision: "approved",
-            actorId: "actor-1",
-            note: null,
-            decidedAt: "2026-07-24T12:03:02.000Z",
-          },
-        },
-        permissionPolicy,
-      },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "en-US",
-    });
-    const request = {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      decision: "approved" as const,
-      actionInputHash,
-      note: null,
-      persistentGrant: {
-        expectedPolicyRevision: 1,
-        capability: {
-          id: "story.canvas.write",
-          version: "1.2.0",
-        },
-      },
-    };
-
-    await expect(client.resolveApproval(threadId, approvalId, request)).resolves.toEqual(
-      expect.objectContaining({ permissionPolicy })
-    );
-    expect(api.post).toHaveBeenCalledWith(
-      `/aurora/studio-agent/threads/${threadId}/approvals/${approvalId}/resolve`,
-      {
-        raw: true,
-        data: request,
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "accept-language": "en-US",
-        },
-        signal: undefined,
-      }
-    );
-  });
 });
+
+function invocation(): StudioAgentSubmissionInvocationRequest {
+  return {
+    kind: "submission",
+    inputEventId: "ably-event-1",
+    sessionName: `studio-agent:thread:${THREAD_ID}`,
+    threadId: THREAD_ID,
+    clientMessageId: MESSAGE_ID,
+    parts: [{ type: "text", format: "plain_text", text: "Rewrite chapter one." }],
+    targetRunId: null,
+    delivery: null,
+    scope: {
+      workspaceId: "workspace-1",
+      container: {
+        resourceType: "story.project",
+        resourceId: "project-1",
+        revision: null,
+      },
+      focus: null,
+    },
+    locale: "en-US",
+  };
+}
 
 function snapshotThread() {
   const createdAt = "2026-07-24T12:00:00.000Z";

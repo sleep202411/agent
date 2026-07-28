@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { createAlibaba } from "@ai-sdk/alibaba";
+import { studioAgentProviderToolName as providerToolName } from "@repo/shared/studio-agent-tools";
 import {
   STUDIO_AGENT_SCHEMA_VERSION,
   StudioAgentEventDraftSchema,
@@ -7,7 +7,8 @@ import {
   StudioAgentModelStepOutcomeSchema,
   type StudioAgentAssistantSegmentOutput,
   type StudioAgentCapabilityManifest,
-  type StudioAgentChildRunDescriptor,
+  type StudioAgentCapabilityPermission,
+  type StudioAgentChildRunPreparation,
   type StudioAgentContextCompactionModelExecutionPlan,
   type StudioAgentError,
   type StudioAgentEventDraft,
@@ -15,24 +16,55 @@ import {
   type StudioAgentModelExecutionPlan,
   type StudioAgentModelMessageJson,
   type StudioAgentModelStepOutcome,
+  type StudioAgentPlannedCapability,
   type StudioAgentPreparedAction,
   type StudioAgentPrepareActionRequest,
   type StudioAgentResponseModelExecutionPlan,
   type StudioAgentWorkflowInput,
 } from "@repo/shared/studio-agent";
+import type {
+  StudioAgentActivityPart,
+  StudioAgentFailurePart,
+} from "@repo/shared/studio-agent-transport";
+import type { StreamResult } from "@ably/ai-transport";
+import { vercelRunOutcome, type VercelRunOutcome } from "@ably/ai-transport/vercel";
 import {
   generateText,
   jsonSchema,
   streamText,
   tool,
   type AssistantContent,
+  type FinishReason,
   type ModelMessage,
   type Tool,
   type ToolContent,
   type UserContent,
 } from "ai";
+import {
+  activityChunk,
+  failureChunk,
+  type StudioAgentUIChunk,
+  type StudioAgentUIMessage,
+} from "./agent-session.js";
 import type { RuntimeModelConfig } from "./config.js";
 import type { StudioAgentRuntimeGateway } from "./gateway-client.js";
+
+/**
+ * The delivery half of one model step, or null when the run has no channel.
+ *
+ * A TASK run carries null: it has no triggering input event, so it has no
+ * identity on the conversation channel (see `StudioAgentDeliveryTrigger`). Its
+ * output is durable-only and reaches the browser through the snapshot
+ * endpoint. This is not a fallback — it is the absence of a thing the wire has
+ * no shape for.
+ */
+export interface ModelStepDelivery {
+  /** The transport step's id. Stable across a cross-process retry, so a retry
+   *  SUPERSEDES the dead attempt's output instead of appending beside it. */
+  readonly stepId: string;
+  pipe(stream: ReadableStream<StudioAgentUIChunk>): Promise<StreamResult>;
+  send(chunk: StudioAgentUIChunk): Promise<void>;
+}
 
 interface ModelRunObserver {
   signal: AbortSignal;
@@ -44,11 +76,13 @@ export interface ModelRunnerDependencies {
   gateway: StudioAgentRuntimeGateway;
   config: RuntimeModelConfig;
   observer: ModelRunObserver;
+  delivery: ModelStepDelivery | null;
 }
 
 interface ToolBinding {
   providerName: string;
   capability: StudioAgentCapabilityManifest;
+  permission: StudioAgentCapabilityPermission;
 }
 
 type ModelToolResultPart = Extract<ToolContent[number], { type: "tool-result" }>;
@@ -73,70 +107,30 @@ async function runResponseModelStep(
   plan: StudioAgentResponseModelExecutionPlan,
   dependencies: ModelRunnerDependencies
 ): Promise<StudioAgentModelStepOutcome> {
-  const { gateway, config, observer } = dependencies;
+  const { gateway, config, observer, delivery } = dependencies;
 
   const activityId = plan.context.stepId;
   const startedAt = observer.now();
   const bindings = createToolBindings(plan.capabilities);
-  const tools = createTools(bindings);
+  const tools = createCapabilityTools(bindings);
   const provider = createAlibaba({
     apiKey: config.apiKey,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
     includeUsage: true,
   });
 
-  let content = "";
-  let pendingDelta = "";
-  let lastFlushAt = observer.now().getTime();
-  let deltaOrdinal = 0;
-  let providerResponseId: string | null = null;
-  let finishReason: "stop" | "length" = "stop";
+  const activityLabel = "studio_agent.activity.generating_response";
   let activityStarted = false;
   let activityTerminal = false;
   let segmentStarted = false;
   let segmentTerminal = false;
+  let content = "";
+  let providerResponseId: string | null = null;
   let usage = {
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: null as number | null,
     reasoningTokens: null as number | null,
-  };
-  const toolCalls: Array<{
-    toolCallId: string;
-    providerName: string;
-    input: StudioAgentJsonObject;
-  }> = [];
-
-  const flushDelta = async (force: boolean): Promise<void> => {
-    if (pendingDelta.length === 0) {
-      return;
-    }
-    const now = observer.now().getTime();
-    if (
-      !force &&
-      Buffer.byteLength(pendingDelta, "utf8") < config.deltaBytes &&
-      now - lastFlushAt < config.deltaIntervalMs
-    ) {
-      return;
-    }
-    const delta = pendingDelta;
-    pendingDelta = "";
-    lastFlushAt = now;
-    await gateway.appendEvent(
-      eventDraft(
-        workflow,
-        "assistant.segment.delta",
-        {
-          messageId: plan.assistantMessageId,
-          segmentId: plan.segmentId,
-          delta,
-        },
-        `model:${plan.context.stepId}:segment:${plan.segmentId}:delta:${deltaOrdinal}`,
-        observer.now()
-      ),
-      observer.signal
-    );
-    deltaOrdinal += 1;
   };
 
   try {
@@ -151,7 +145,7 @@ async function runResponseModelStep(
           // Durable activity events carry a stable semantic key. Each host
           // surface localizes it at render time instead of freezing whichever
           // locale happened to execute the workflow.
-          label: "studio_agent.activity.generating_response",
+          label: activityLabel,
           startedAt: startedAt.toISOString(),
         },
         `model:${plan.context.stepId}:activity:started`,
@@ -160,6 +154,16 @@ async function runResponseModelStep(
       observer.signal
     );
     activityStarted = true;
+    await publishActivity(delivery, {
+      activityId,
+      kind: "generate",
+      label: activityLabel,
+      status: "running",
+      detail: null,
+      progress: null,
+      startedAt: startedAt.toISOString(),
+      completedAt: null,
+    });
     await gateway.appendEvent(
       eventDraft(
         workflow,
@@ -190,61 +194,75 @@ async function runResponseModelStep(
       toolChoice: plan.capabilities.length === 0 ? "none" : "auto",
     });
 
-    for await (const part of result.fullStream) {
-      observer.heartbeat({
-        stepId: plan.context.stepId,
-        streamPart: part.type,
-        textBytes: Buffer.byteLength(content, "utf8"),
-        toolCallCount: toolCalls.length,
-      });
-      switch (part.type) {
-        case "text-delta":
-          content += part.text;
-          pendingDelta += part.text;
-          await flushDelta(false);
-          break;
-        case "tool-call":
-          if (part.invalid) {
-            throw new Error(`Model emitted an invalid tool call for ${part.toolName}.`, {
-              cause: part.error,
-            });
-          }
-          toolCalls.push({
-            toolCallId: part.toolCallId,
-            providerName: part.toolName,
-            input: StudioAgentJsonObjectSchema.parse(part.input),
-          });
-          break;
-        case "finish-step":
-          providerResponseId = part.response.id;
-          break;
-        case "finish":
-          usage = {
-            inputTokens: part.totalUsage.inputTokens ?? 0,
-            outputTokens: part.totalUsage.outputTokens ?? 0,
-            cachedInputTokens: part.totalUsage.inputTokenDetails.cacheReadTokens ?? null,
-            reasoningTokens: part.totalUsage.outputTokenDetails.reasoningTokens ?? null,
-          };
-          // Only a hard output-token truncation changes the disposition; every
-          // other clean end (plain stop, or a stop that emitted tool calls) is
-          // a normal completion. Provider errors/aborts surface via the error
-          // and abort stream parts, which throw before reaching this event.
-          if (part.finishReason === "length") {
-            finishReason = "length";
-          }
-          break;
-        case "error":
-          throw normalizeUnknownError(part.error);
-        case "abort":
-          throw new Error(part.reason ?? "The model stream was aborted.");
-        default:
-          break;
-      }
+    // THE MESSAGE ID IS OURS, NOT THE SDK'S.
+    //
+    // The browser seeds its conversation from `GET threads/:id/snapshot`
+    // (StudioAgentMessage rows) and then follows the channel. The two only
+    // reconcile if they agree on one id — the transport's internal
+    // `codecMessageId` is never persisted, so the domain `message.id` is the
+    // only key shared by both stores. Seeding the generator with the assistant
+    // message the control plane already allocated is what makes seed and live
+    // the same message instead of two.
+    const uiStream = result.toUIMessageStream<StudioAgentUIMessage>({
+      generateMessageId: () => plan.assistantMessageId,
+      messageMetadata: () => ({
+        threadId: workflow.threadId,
+        runId: workflow.runId,
+        rootRunId: workflow.rootRunId,
+        parentRunId: workflow.parentRunId,
+        kind: workflow.kind,
+      }),
+    });
+
+    const outcome = await consumeModelStream(result, uiStream, delivery);
+    if (outcome.reason === "error") {
+      throw new Error(outcome.error.message);
+    }
+    if (outcome.reason === "cancelled") {
+      throw new Error("The model stream was cancelled.");
     }
 
-    await flushDelta(true);
+    content = await result.text;
+    const totalUsage = await result.totalUsage;
+    usage = {
+      inputTokens: totalUsage.inputTokens ?? 0,
+      outputTokens: totalUsage.outputTokens ?? 0,
+      cachedInputTokens: totalUsage.inputTokenDetails.cacheReadTokens ?? null,
+      reasoningTokens: totalUsage.outputTokenDetails.reasoningTokens ?? null,
+    };
+    providerResponseId = (await result.response).id ?? null;
+    // Only a hard output-token truncation changes the disposition; every other
+    // clean end (plain stop, or a stop that emitted tool calls) is a normal
+    // completion. Provider errors and aborts are already terminal above.
+    const finishReason: "stop" | "length" =
+      (await result.finishReason) === "length" ? "length" : "stop";
+
+    const toolCalls: Array<{
+      toolCallId: string;
+      providerName: string;
+      input: StudioAgentJsonObject;
+    }> = [];
+    for (const call of await result.toolCalls) {
+      if (call.invalid) {
+        throw new Error(`Model emitted an invalid tool call for ${call.toolName}.`, {
+          cause: call.error,
+        });
+      }
+      toolCalls.push({
+        toolCallId: call.toolCallId,
+        providerName: call.toolName,
+        input: StudioAgentJsonObjectSchema.parse(call.input),
+      });
+    }
+
     const preparedActions: StudioAgentPreparedAction[] = [];
-    const childRuns: StudioAgentChildRunDescriptor[] = [];
+    // Both outcomes of a `child_run` prepare belong here: a started delegation
+    // the workflow must run, and a refused one it must not. A refusal is already
+    // a terminal `failed` action on the control plane, so it needs no execution
+    // — but it still counts as work this step produced, which keeps the
+    // directive on `continue` and gives the model the step in which it reads the
+    // rejection and corrects the call.
+    const childRuns: StudioAgentChildRunPreparation[] = [];
     for (const call of toolCalls) {
       const binding = bindings.find((candidate) => candidate.providerName === call.providerName);
       if (!binding) {
@@ -301,6 +319,16 @@ async function runResponseModelStep(
       observer.signal
     );
     activityTerminal = true;
+    await publishActivity(delivery, {
+      activityId,
+      kind: "generate",
+      label: activityLabel,
+      status: "succeeded",
+      detail: null,
+      progress: null,
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt.toISOString(),
+    });
 
     const assistantSegments: StudioAgentAssistantSegmentOutput[] = [
       {
@@ -318,13 +346,14 @@ async function runResponseModelStep(
       assistantSegments,
       preparedActions,
       childRuns,
-      directive: preparedActions.length > 0 || childRuns.length > 0 ? "continue" : "complete",
+      directive: stepDirective(preparedActions, childRuns),
       usage,
       completedAt: completedAt.toISOString(),
     });
   } catch (error) {
     const failedAt = observer.now();
     const cancelled = observer.signal.aborted;
+    const errorRecord = toStudioAgentError(error, cancelled);
     await appendFailureEvents({
       gateway,
       workflow,
@@ -332,8 +361,8 @@ async function runResponseModelStep(
       activityId,
       content,
       failedAt,
+      errorRecord,
       cancelled,
-      error,
       providerResponseId,
       usage,
       activityStarted,
@@ -341,6 +370,30 @@ async function runResponseModelStep(
       segmentStarted,
       segmentTerminal,
     });
+    if (activityStarted && !activityTerminal) {
+      await publishActivity(delivery, {
+        activityId,
+        kind: "generate",
+        label: activityLabel,
+        status: cancelled ? "cancelled" : "failed",
+        detail: cancelled ? null : errorRecord.message.slice(0, 2_000),
+        progress: null,
+        startedAt: startedAt.toISOString(),
+        completedAt: failedAt.toISOString(),
+      });
+    }
+    if (!cancelled) {
+      // `Ably.ErrorInfo` on `ai-run-end` is `{code: number, message}`. Our
+      // failure surface distinguishes `studio_agent.invalid_action_input` from
+      // `studio_agent.capability_result_invalid` by a STRING code and renders
+      // `details.issues` paths, neither of which survives a numeric code — so
+      // the honest error travels as its own part.
+      await publishFailure(delivery, {
+        runId: workflow.runId,
+        error: errorRecord,
+        failedAt: failedAt.toISOString(),
+      });
+    }
     throw error;
   }
 }
@@ -435,11 +488,12 @@ async function runContextCompaction(
 }
 
 export function createToolBindings(
-  capabilities: readonly StudioAgentCapabilityManifest[]
+  capabilities: readonly StudioAgentPlannedCapability[]
 ): ToolBinding[] {
-  const bindings = capabilities.map((capability) => ({
-    providerName: providerToolName(capability.capabilityId),
-    capability,
+  const bindings = capabilities.map((planned) => ({
+    providerName: providerToolName(planned.manifest.capabilityId),
+    capability: planned.manifest,
+    permission: planned.permission,
   }));
   const names = new Set<string>();
   for (const binding of bindings) {
@@ -449,6 +503,26 @@ export function createToolBindings(
     names.add(binding.providerName);
   }
   return bindings;
+}
+
+/**
+ * What the workflow must do next.
+ *
+ * `wait_for_approval` wins over everything else the step produced. An
+ * approval-gated call did not run — the SDK gated it — so the run has to
+ * suspend on the channel and park until the creator answers, even if the same
+ * step also queued work that could proceed. Letting a sibling action land while
+ * the turn is visibly paused would change the workspace under a run the panel
+ * is showing as waiting.
+ */
+function stepDirective(
+  preparedActions: readonly StudioAgentPreparedAction[],
+  childRuns: readonly StudioAgentChildRunPreparation[]
+): StudioAgentModelStepOutcome["directive"] {
+  if (preparedActions.some((prepared) => prepared.permissionDecision === "ask")) {
+    return "wait_for_approval";
+  }
+  return preparedActions.length > 0 || childRuns.length > 0 ? "continue" : "complete";
 }
 
 export function toModelMessages(messages: readonly StudioAgentModelMessageJson[]): ModelMessage[] {
@@ -560,7 +634,26 @@ function normalizeToolResultOutput(
   return output;
 }
 
-function createTools(bindings: readonly ToolBinding[]): Record<string, Tool<unknown, never>> {
+/**
+ * THE APPROVAL GATE, DECLARED WHERE THE TOOL IS OFFERED.
+ *
+ * `needsApproval` is the AI SDK's own switch: with it set, `streamText` parses
+ * the call, emits a `tool-approval-request` chunk carrying a fresh approvalId
+ * and STOPS — it never runs the tool, and it finishes the step with
+ * `finishReason: 'tool-calls'`, which `vercelRunOutcome` reports as `suspend`.
+ * The library's codec encodes that chunk onto the channel as a tool part in
+ * `approval-requested` state, `useChat` renders it, and
+ * `addToolApprovalResponse` answers it. That is the entire approval mechanism;
+ * there is no second one.
+ *
+ * It has to be a property of the OFFER, which is why the permission verdict
+ * travels on the plan (`StudioAgentPlannedCapability`). Deciding it after the
+ * model has already called the tool — where `prepareAction` decides it — is too
+ * late by construction: by then the SDK has either run the tool or not.
+ */
+export function createCapabilityTools(
+  bindings: readonly ToolBinding[]
+): Record<string, Tool<unknown, never>> {
   return Object.fromEntries(
     bindings.map((binding) => [
       binding.providerName,
@@ -571,15 +664,10 @@ function createTools(bindings: readonly ToolBinding[]): Record<string, Tool<unkn
           binding.capability.inputSchema as Parameters<typeof jsonSchema>[0]
         ),
         strict: true,
+        needsApproval: binding.permission.decision === "ask",
       }),
     ])
   );
-}
-
-function providerToolName(capabilityId: string): string {
-  const readable = capabilityId.replace(/[^a-z0-9_]/g, "_").slice(0, 47);
-  const digest = createHash("sha256").update(capabilityId).digest("hex").slice(0, 12);
-  return `cap_${readable}_${digest}`;
 }
 
 function validatePlanAgainstRuntime(
@@ -631,6 +719,60 @@ function eventDraft(
   });
 }
 
+/**
+ * Drive the model stream to its end and say how it ended.
+ *
+ * With a channel, `RunStep.pipe` is the consumer: it encodes each UIMessage
+ * chunk onto the run's step, appending text deltas to one accumulating Ably
+ * message so a late subscriber gets the text so far rather than an empty
+ * buffer. `pipe` deliberately never throws — a stream failure comes back as
+ * `{reason: 'error'}` and marks the step failed — so the caller reads the
+ * outcome rather than catching.
+ *
+ * Without a channel (a delegated task run) the stream still has to be drained
+ * or `result.text` / `result.toolCalls` never resolve. Errors are captured and
+ * shaped into the same {@link StreamResult} the pipe would have produced, so
+ * exactly one outcome vocabulary reaches the caller.
+ */
+async function consumeModelStream(
+  result: {
+    consumeStream(options?: { onError?: (error: unknown) => void }): PromiseLike<void>;
+    finishReason: PromiseLike<FinishReason>;
+  },
+  uiStream: ReadableStream<StudioAgentUIChunk>,
+  delivery: ModelStepDelivery | null
+): Promise<VercelRunOutcome> {
+  if (delivery) {
+    return vercelRunOutcome(await delivery.pipe(uiStream), result.finishReason);
+  }
+  let streamError: unknown = null;
+  await result.consumeStream({
+    onError: (error) => {
+      streamError = error;
+    },
+  });
+  const pipeResult: StreamResult = streamError
+    ? { reason: "error", error: normalizeUnknownError(streamError) }
+    : { reason: "complete" };
+  return vercelRunOutcome(pipeResult, result.finishReason);
+}
+
+async function publishActivity(
+  delivery: ModelStepDelivery | null,
+  part: StudioAgentActivityPart
+): Promise<void> {
+  if (!delivery) return;
+  await delivery.send(activityChunk(part));
+}
+
+async function publishFailure(
+  delivery: ModelStepDelivery | null,
+  part: StudioAgentFailurePart
+): Promise<void> {
+  if (!delivery) return;
+  await delivery.send(failureChunk(part));
+}
+
 async function appendFailureEvents(input: {
   gateway: StudioAgentRuntimeGateway;
   workflow: StudioAgentWorkflowInput;
@@ -638,8 +780,8 @@ async function appendFailureEvents(input: {
   activityId: string;
   content: string;
   failedAt: Date;
+  errorRecord: StudioAgentError;
   cancelled: boolean;
-  error: unknown;
   providerResponseId: string | null;
   usage: {
     inputTokens: number;
@@ -659,8 +801,8 @@ async function appendFailureEvents(input: {
     activityId,
     content,
     failedAt,
+    errorRecord,
     cancelled,
-    error,
     providerResponseId,
     usage,
     activityStarted,
@@ -668,7 +810,6 @@ async function appendFailureEvents(input: {
     segmentStarted,
     segmentTerminal,
   } = input;
-  const errorRecord = toStudioAgentError(error, cancelled);
   const nonCancelledSignal = undefined;
   const reports: Promise<unknown>[] = [];
   if (segmentStarted && !segmentTerminal) {

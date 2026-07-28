@@ -21,7 +21,12 @@ FROM base AS runner
 LABEL org.opencontainers.image.source=https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform
 WORKDIR /app
 ENV NODE_ENV=production
+# One role per container, so both roles use the ports this image EXPOSEs and the
+# HEALTHCHECK below can rely on them. The per-role defaults in src/config.ts are
+# for a developer host running both roles side by side; Helm sets these
+# explicitly per pod either way.
 ENV STUDIO_AGENT_HEALTH_PORT=3010
+ENV STUDIO_AGENT_METRICS_BIND_ADDRESS=0.0.0.0:9464
 
 STOPSIGNAL SIGTERM
 

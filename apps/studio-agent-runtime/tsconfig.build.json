@@ -1,6 +1,11 @@
 {
   "extends": "./tsconfig.json",
+  // The published image contains dist only, so the local dev launcher under
+  // scripts/ is type-checked but never emitted (it also lives outside rootDir).
+  "include": ["src/**/*.ts"],
   "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "declarationMap": true,

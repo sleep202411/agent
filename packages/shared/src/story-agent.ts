@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { findUnprojectableChecks } from "./zod-json-schema-fidelity.js";
 
 export const STORY_PATCH_SCHEMA_VERSION = "story-patch-v1" as const;
 
@@ -228,7 +229,19 @@ export const StoryAgentClipKeySchema = z
   .min(1)
   .max(40)
   .regex(/^[A-Z][A-Z0-9_-]*$/, "Use an uppercase stable clip key.");
-const StoryAgentLocaleSchema = z.string().trim().min(2).max(16);
+/**
+ * A localized-text map key. Never trimmed, deliberately.
+ *
+ * These are object KEYS, and `.trim()` on a key schema rewrites the data: zod
+ * returns the trimmed key, so `{" en-US": a, "en-US": b}` parses to a single
+ * `en-US` entry and one of the two translations is gone. It also put the two
+ * validation gates of the capability path in disagreement — the JSON Schema
+ * projected for the model checks the raw key (a length bound JSON Schema can
+ * express) while zod checked the trimmed one, so `" a"` passed the manifest and
+ * was rejected by the executor. A raw length bound is the same rule on both
+ * sides and rewrites nothing.
+ */
+const StoryAgentLocaleSchema = z.string().min(2).max(16);
 
 /** Mutable-draft localized text may be empty while the creator is authoring. */
 export const StoryAgentLocalizedTextSchema = z.record(
@@ -278,14 +291,24 @@ export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
 export const StoryAgentNodeMusicSchema = z.object({ mediaAssetId: z.uuid() }).strict();
 export type StoryAgentNodeMusic = z.infer<typeof StoryAgentNodeMusicSchema>;
 
+/**
+ * A clip node's editorial labels.
+ *
+ * Declared rather than inlined so the projection-fidelity guard can name them:
+ * `.trim()` is a rewrite the JSON Schema projection cannot carry, and every
+ * such schema is acknowledged by identity in STORY_PATCH_PROJECTION_GAPS.
+ */
+const StoryAgentNodeNameSchema = z.string().trim().max(120);
+const StoryAgentNodeDescriptionSchema = z.string().trim().max(4_000);
+
 export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("clip"),
       nodeId: StoryAgentStableIdSchema,
       clipKey: StoryAgentClipKeySchema,
-      name: z.string().trim().max(120).optional(),
-      description: z.string().trim().max(4_000).optional(),
+      name: StoryAgentNodeNameSchema.optional(),
+      description: StoryAgentNodeDescriptionSchema.optional(),
       music: StoryAgentNodeMusicSchema.optional(),
       exit: z.discriminatedUnion("kind", [
         z
@@ -345,12 +368,29 @@ export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
 ]);
 export type StoryAgentGraphNode = z.infer<typeof StoryAgentGraphNodeSchema>;
 
+/**
+ * Bookkeeping every operation carries and no author writes.
+ *
+ * `operationId` addresses execution errors and de-duplicates a proposal;
+ * `summary` labels the operation in undo bookkeeping. Neither is a narrative
+ * decision, so neither is asked of a model: on the Studio Agent capability path
+ * the server fills both before the input is validated, hashed, or persisted
+ * (see STORY_PATCH_SERVER_SUPPLIED_OPERATION_FIELDS), and the deterministic
+ * authoring pipeline fills both in code.
+ */
 const StoryAgentOperationBaseShape = {
   operationId: StoryAgentUuidSchema,
-  summary: z.string().trim().min(1).max(500),
+  // The `\S` check is redundant for zod — a trimmed string of length >= 1
+  // always holds a non-whitespace character — and load-bearing for the
+  // projection: `minLength: 1` alone let the manifest accept `"   "`, which zod
+  // then rejected after trimming. A projected pattern says the same thing about
+  // the raw string, so both gates agree.
+  summary: z.string().trim().min(1).max(500).regex(/\S/, "Write a non-empty label."),
 } as const;
 
 const StoryAgentPutIntentSchema = z.enum(["create", "replace"]);
+
+const STORY_AGENT_OVERVIEW_FIELDS = ["logline", "synopsis", "worldview"] as const;
 
 const StoryAgentOverviewPayloadSchema = z
   .object({
@@ -360,12 +400,16 @@ const StoryAgentOverviewPayloadSchema = z
   })
   .strict()
   .refine(
-    (payload) =>
-      payload.logline !== undefined ||
-      payload.synopsis !== undefined ||
-      payload.worldview !== undefined,
+    (payload) => STORY_AGENT_OVERVIEW_FIELDS.some((field) => payload[field] !== undefined),
     "At least one story-bible overview field is required."
-  );
+  )
+  // `.refine` predicates are invisible to `z.toJSONSchema`, so the projection
+  // handed to the model would silently lose this rule. Metadata is zod's own
+  // escape hatch for JSON-Schema keywords it cannot infer. The object is
+  // closed and every property optional, so "at least one key" and "at least
+  // one of the three is set" describe the same JSON — a wire payload cannot
+  // carry `undefined`.
+  .meta({ minProperties: 1 });
 
 /**
  * Explicit domain commands proposed by the Story Agent.
@@ -471,25 +515,449 @@ export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const StoryPatchOperationSchema = z
-  .unknown()
-  .superRefine(addStoryPatchPreflightIssue)
-  .pipe(StoryPatchOperationShapeSchema);
+/**
+ * The complexity preflight, declared once so both parsers share one instance.
+ *
+ * Its `superRefine` is a check the JSON Schema projection cannot carry (see
+ * STORY_PATCH_PROJECTION_GAPS); naming the schema is what lets that gap be
+ * acknowledged by identity instead of by a path that moves.
+ */
+const StoryPatchPreflightSchema = z.unknown().superRefine(addStoryPatchPreflightIssue);
+
+export const StoryPatchOperationSchema = StoryPatchPreflightSchema.pipe(
+  StoryPatchOperationShapeSchema
+);
 export type StoryPatchOperation = z.infer<typeof StoryPatchOperationSchema>;
 
-/** Safe parser for an entire operation list, including aggregate limits. */
-export const StoryPatchOperationsSchema = z
-  .unknown()
-  .superRefine(addStoryPatchPreflightIssue)
-  .pipe(z.array(StoryPatchOperationShapeSchema).min(1).max(STORY_AGENT_MAX_PROPOSAL_OPERATIONS));
-
 /**
- * Every operation kind the Story Agent may propose. Derived from the schema so
- * prompt documentation and validators can be proven complete against it.
+ * Every legal `kind`, DERIVED from the union above rather than restated.
+ *
+ * Read the discriminator off the schema that actually validates: a hand-copied
+ * list drifts the moment an eleventh operation lands, and drift here is what
+ * left the Studio Agent manifest describing operations as
+ * `items: { type: "object" }` while the server rejected every call with
+ * `operations.N.kind Invalid input`.
  */
 export const STORY_PATCH_OPERATION_KINDS = StoryPatchOperationShapeSchema.options.map(
   (option) => option.shape.kind.value
 ) as readonly StoryPatchOperation["kind"][];
+
+/**
+ * Server-side label for each operation, keyed by the union's own discriminator
+ * so an eleventh operation fails the build instead of shipping unlabelled.
+ *
+ * This is what fills the machine `summary` on the capability path. Operation
+ * summaries are bookkeeping — undo runs prefix them, nothing renders them — so
+ * they are derived from the command, never requested from a model.
+ */
+export const STORY_PATCH_OPERATION_LABELS: Record<StoryPatchOperation["kind"], string> = {
+  "story_bible.update_overview": "Update the story overview.",
+  "story_bible.put_character": "Write a story-bible character.",
+  "story_bible.remove_character": "Remove a story-bible character.",
+  "story_bible.put_ending": "Write a story ending.",
+  "story_bible.remove_ending": "Remove a story ending.",
+  "story_graph.set_entry_node": "Set the chapter entry node.",
+  "story_graph.put_node": "Write a story graph node.",
+  "story_graph.remove_node": "Remove a story graph node.",
+  "story_graph.reorder_nodes": "Reorder the chapter nodes.",
+  "production.replace_notes": "Replace the production notes.",
+};
+
+/** Safe parser for an entire operation list, including aggregate limits. */
+export const StoryPatchOperationsSchema = StoryPatchPreflightSchema.pipe(
+  z.array(StoryPatchOperationShapeSchema).min(1).max(STORY_AGENT_MAX_PROPOSAL_OPERATIONS)
+);
+
+/**
+ * The authoritative shape of a `story.canvas.apply_patch` capability input.
+ *
+ * It lives beside the operation union because the Studio Agent manifest is
+ * PROJECTED from it (`storyPatchActionInputJsonSchema`) and the server executor
+ * PARSES with it. One declaration, two readings — so the manifest cannot
+ * describe a different SHAPE from the one the executor enforces.
+ *
+ * Shape is not the whole contract. A zod check has no JSON Schema counterpart
+ * unless the projection can render it, and one that cannot is dropped in
+ * silence. `assertStoryPatchProjectionFidelity` is what keeps that from being
+ * invisible: see STORY_PATCH_PROJECTION_GAPS for the checks this schema carries
+ * that the manifest does not, and the argument for each.
+ */
+export const StoryPatchActionInputSchema = z
+  .object({
+    projectId: z.uuid(),
+    chapterId: z.uuid(),
+    baseDraftRevision: z.number().int().nonnegative(),
+    baseLayoutRevision: z.number().int().nonnegative(),
+    operations: StoryPatchOperationsSchema,
+  })
+  .strict();
+
+/**
+ * Fields the server owns on the action envelope, mapped to how the projection
+ * explains them.
+ *
+ * Both are read off the run's immutable authorized scope, so the model has zero
+ * degrees of freedom over them and a transcription slip used to be a hard 409.
+ */
+export const STORY_PATCH_SERVER_SUPPLIED_ACTION_FIELDS = {
+  projectId:
+    "Server-supplied from the authorized thread scope. Omit it — any value sent is replaced.",
+  chapterId:
+    "Server-supplied from the authorized thread scope. Omit it — any value sent is replaced.",
+} as const;
+export type StoryPatchServerSuppliedActionField =
+  keyof typeof STORY_PATCH_SERVER_SUPPLIED_ACTION_FIELDS;
+
+/** Fields the server owns on every operation. See StoryAgentOperationBaseShape. */
+export const STORY_PATCH_SERVER_SUPPLIED_OPERATION_FIELDS = {
+  operationId: "Server-generated bookkeeping id. Omit it — any value sent is replaced.",
+  summary: "Server-generated operation label. Omit it — any value sent is replaced.",
+} as const;
+export type StoryPatchServerSuppliedOperationField =
+  keyof typeof STORY_PATCH_SERVER_SUPPLIED_OPERATION_FIELDS;
+
+export interface StoryPatchProjectionGap {
+  /**
+   * The schema instance carrying the check.
+   *
+   * Keyed by identity, not by path: a shared schema is analysed once, and
+   * inserting a union arm does not invalidate anyone else's acknowledgement.
+   * It also means a NEW `.refine()` or `.trim()` is never covered by an
+   * existing entry — zod clones on every modifier, so the modified schema is a
+   * different instance and lands unacknowledged.
+   *
+   * Typed as the bare identity it is used as, matching `UnprojectableCheck.schema`
+   * — the walker's finding is what an entry is compared against, and nothing
+   * here ever parses with it. Declaring `z.ZodType` promised a capability this
+   * contract does not use and forced a cast on every caller holding the walker's
+   * own output.
+   */
+  schema: object;
+  /** zod's own name for the check: `custom` for `.refine`, `overwrite` for `.trim`. */
+  check: string;
+  /** Why a model may be told a payload is acceptable without this rule. */
+  reason: string;
+}
+
+/**
+ * Every zod check in `StoryPatchActionInputSchema` that the JSON Schema
+ * projection cannot carry, with the argument for why the gap is safe.
+ *
+ * A gap is safe only in one direction. If the manifest is STRICTER than zod, a
+ * payload the model believes is legal is legal; the model is never surprised.
+ * If the manifest is LOOSER, the model is told a payload is acceptable and the
+ * executor then refuses it, with no way for the model to learn the rule from
+ * the document it was given. Every entry below has to argue the first case.
+ *
+ * `assertStoryPatchProjectionFidelity` refuses to project a schema carrying an
+ * unprojectable check that is not listed here, and refuses to keep an entry
+ * whose check no longer exists. Adding a refinement therefore fails the
+ * `@repo/shared` build until someone either expresses the rule in JSON Schema
+ * (zod's `.meta()` is the escape hatch — see StoryAgentOverviewPayloadSchema)
+ * or writes down why the model can live without it.
+ */
+export const STORY_PATCH_PROJECTION_GAPS: readonly StoryPatchProjectionGap[] = [
+  {
+    schema: StoryPatchPreflightSchema,
+    check: "custom",
+    reason:
+      "STORY_PATCH_COMPLEXITY_LIMITS — serialized size, container counts and depth. " +
+      "JSON Schema has no vocabulary for them, so they stay a server-side gate. " +
+      "An oversized patch comes back as a correctable failed action carrying the " +
+      "offending path, not a lost turn, which is the only reason this looseness is " +
+      "tolerable at all.",
+  },
+  {
+    schema: StoryAgentOverviewPayloadSchema,
+    check: "custom",
+    reason:
+      "'at least one overview field' is re-expressed for the model as " +
+      "`.meta({ minProperties: 1 })`. The object is closed and every property " +
+      "optional, so minProperties says exactly the same thing about the wire " +
+      "payload — the manifest is not looser here, only stated differently.",
+  },
+  {
+    schema: StoryAgentOperationBaseShape.summary,
+    check: "overwrite",
+    reason:
+      "`.trim()` before min(1). The projected `\\S` pattern rejects an " +
+      "all-whitespace label on the RAW string, so nothing the manifest accepts can " +
+      "trim into a value zod rejects. Without that pattern this was a live defect: " +
+      "`minLength: 1` accepted '   '.",
+  },
+  {
+    schema: StoryAgentStableIdSchema,
+    check: "overwrite",
+    reason:
+      "`.trim()` before an identifier pattern. The pattern is projected and " +
+      "anchored, so the manifest rejects every string with surrounding whitespace " +
+      "— strictly stricter than zod, which would have trimmed it and accepted.",
+  },
+  {
+    schema: StoryAgentClipKeySchema,
+    check: "overwrite",
+    reason:
+      "`.trim()` before an uppercase-key pattern. Same anchored-pattern argument " +
+      "as StoryAgentStableIdSchema: the manifest is the stricter of the two.",
+  },
+  {
+    schema: StoryAgentNodeNameSchema,
+    check: "overwrite",
+    reason:
+      "`.trim()` before max(120) only. Trimming can never lengthen a string, so " +
+      "every value the manifest's maxLength admits still satisfies zod.",
+  },
+  {
+    schema: StoryAgentNodeDescriptionSchema,
+    check: "overwrite",
+    reason:
+      "`.trim()` before max(4000) only. Same length-only argument as " +
+      "StoryAgentNodeNameSchema.",
+  },
+];
+
+/**
+ * Fails when the zod schema carries a rule the projection silently drops.
+ *
+ * `z.toJSONSchema({ unrepresentable: "throw" })` already refuses a zod TYPE it
+ * cannot render. It is silent about a CHECK, and a dropped check is the drift
+ * that hurts: the model is handed a document saying its payload is acceptable
+ * and the executor — parsing with the very schema the document came from —
+ * refuses it. This closes that hole by requiring every unprojectable check to
+ * be acknowledged in STORY_PATCH_PROJECTION_GAPS, and by rejecting an
+ * acknowledgement that no longer corresponds to a real check.
+ *
+ * Parameterised so a test can drive it with a schema that has drifted.
+ */
+export function assertStoryPatchProjectionFidelity(
+  schema: z.ZodType = StoryPatchActionInputSchema,
+  gaps: readonly StoryPatchProjectionGap[] = STORY_PATCH_PROJECTION_GAPS
+): void {
+  // Two things that look alike and must not be conflated:
+  //   - the SAME schema reused at twenty paths is one thing to acknowledge;
+  //   - the same schema carrying a SECOND check of the same kind is a new gap.
+  // So findings are folded by schema identity first (a shared schema reports
+  // identically at every path it appears), and only then counted per kind. A
+  // set would have let a schema whose single `.refine` was already accounted
+  // for quietly grow another — the divergence this guard exists to catch.
+  // The walker emits one finding per individual check, at every path the schema
+  // is reachable from. Within ONE path a repeated kind means the schema really
+  // carries two of them; ACROSS paths it is the same schema seen again. Taking
+  // the max over paths recovers the true per-schema count, so a shared schema
+  // still needs one acknowledgement while a second `.refine()` needs another.
+  const bySchema = new Map<object, Map<string, Map<string, number>>>();
+  const firstPath = new Map<object, Map<string, string>>();
+  for (const found of findUnprojectableChecks(schema)) {
+    const paths = bySchema.get(found.schema) ?? new Map<string, Map<string, number>>();
+    const kinds = paths.get(found.path) ?? new Map<string, number>();
+    kinds.set(found.check, (kinds.get(found.check) ?? 0) + 1);
+    paths.set(found.path, kinds);
+    bySchema.set(found.schema, paths);
+
+    const seen = firstPath.get(found.schema) ?? new Map<string, string>();
+    if (!seen.has(found.check)) seen.set(found.check, found.path);
+    firstPath.set(found.schema, seen);
+  }
+
+  const carried = new Map<object, Map<string, number>>();
+  for (const [schemaRef, paths] of bySchema) {
+    const perKind = new Map<string, number>();
+    for (const kinds of paths.values()) {
+      for (const [check, count] of kinds) {
+        perKind.set(check, Math.max(perKind.get(check) ?? 0, count));
+      }
+    }
+    carried.set(schemaRef, perKind);
+  }
+
+  const acknowledged = new Map<object, Map<string, number>>();
+  for (const gap of gaps) {
+    const perKind = acknowledged.get(gap.schema) ?? new Map<string, number>();
+    perKind.set(gap.check, (perKind.get(gap.check) ?? 0) + 1);
+    acknowledged.set(gap.schema, perKind);
+  }
+
+  const unacknowledged: string[] = [];
+  for (const [schemaRef, perKind] of carried) {
+    for (const [check, count] of perKind) {
+      const covered = acknowledged.get(schemaRef)?.get(check) ?? 0;
+      for (let i = covered; i < count; i += 1) {
+        unacknowledged.push(`${firstPath.get(schemaRef)?.get(check) ?? "$"} (${check})`);
+      }
+    }
+  }
+  if (unacknowledged.length > 0) {
+    throw new Error(
+      `The story patch JSON Schema projection cannot express ${unacknowledged.length} zod ` +
+        `check(s) that nothing has accounted for: ${unacknowledged.join(", ")}. ` +
+        `A model handed this projection would be told such a payload is acceptable and ` +
+        `then refused by the executor. Either express the rule in JSON Schema (zod's ` +
+        `.meta() — see StoryAgentOverviewPayloadSchema) or add it to ` +
+        `STORY_PATCH_PROJECTION_GAPS with the argument for why the manifest stays the ` +
+        `stricter of the two gates.`
+    );
+  }
+
+  // An acknowledgement the schema no longer carries. Counted the same way, so
+  // deleting one of two refinements leaves exactly one entry stale.
+  const spent = new Map<object, Map<string, number>>();
+  const stale: string[] = [];
+  for (const [index, gap] of gaps.entries()) {
+    const perKind = spent.get(gap.schema) ?? new Map<string, number>();
+    const used = (perKind.get(gap.check) ?? 0) + 1;
+    perKind.set(gap.check, used);
+    spent.set(gap.schema, perKind);
+    if (used > (carried.get(gap.schema)?.get(gap.check) ?? 0)) {
+      stale.push(`STORY_PATCH_PROJECTION_GAPS[${index}] (${gap.check})`);
+    }
+  }
+  if (stale.length > 0) {
+    throw new Error(
+      `STORY_PATCH_PROJECTION_GAPS acknowledges ${stale.length} check(s) the schema no ` +
+        `longer carries: ${stale.join(", ")}. Remove them — an acknowledgement list nobody ` +
+        `can trust to be current is one nobody reads.`
+    );
+  }
+}
+
+type JsonSchemaNode = Record<string, unknown>;
+
+/**
+ * The `story.canvas.apply_patch` manifest input schema, GENERATED from the zod
+ * schema that validates the request.
+ *
+ * Hand-maintaining this projection is exactly the failure it exists to prevent:
+ * while the manifest said `payload: { type: "object" }` the model had to guess
+ * every payload field and learned the contract one rejection at a time. The
+ * only edits applied on top of the generated document are mechanical:
+ *
+ *  - `$schema` is dropped, because AJV v8 resolves draft-07 by default and a
+ *    declared meta-schema at the document root is an unresolvable ref for it;
+ *  - `oneOf` becomes `anyOf`, because every union here is discriminated by a
+ *    `const`, so the two are equivalent, and provider strict-tool subsets
+ *    accept `anyOf` where they reject `oneOf`;
+ *  - server-supplied fields are demoted out of `required` and annotated. They
+ *    stay declared because the persisted input is re-validated against this
+ *    same schema at execute time, and every manifest object is closed.
+ *
+ * What is guaranteed, and by what:
+ *
+ *  - STRUCTURE — which branches exist, which fields they carry, which are
+ *    optional — cannot drift unnoticed. The differential spec in
+ *    `apps/server/src/studio-agent/studio-agent.registry.spec.ts` feeds one
+ *    maximal fixture per operation kind, per node kind and per exit kind through
+ *    the manifest and the zod schema and demands the same verdict field by
+ *    field, at every depth, with each field deleted in turn. It refuses to run
+ *    with a kind that has no fixture, so a new branch cannot slip past by being
+ *    unexercised, and it is proven to bite at all three union sites.
+ *  - CHECKS cannot drift UNNOTICED — which is a weaker guarantee, and the
+ *    distinction matters. A zod check with no JSON Schema counterpart is dropped
+ *    by `z.toJSONSchema` in silence, so the fixtures above cannot see it.
+ *    `assertStoryPatchProjectionFidelity` runs before this function returns and
+ *    refuses to emit a projection carrying an unprojectable check that
+ *    STORY_PATCH_PROJECTION_GAPS has not accounted for. That converts a silent
+ *    divergence into a failed `@repo/shared` build; it does not, and cannot,
+ *    make the manifest carry a rule JSON Schema has no words for.
+ *    An acknowledgement covers exactly ONE check: a schema whose single
+ *    `.refine` is accounted for and then gains a second one fails the build,
+ *    because the count is taken per schema, not per kind. A schema reused at
+ *    twenty paths still needs only one entry — the count is the max over paths,
+ *    not the sum.
+ *  - Nothing here guarantees the SEMANTICS agree beyond that. The acknowledged
+ *    gaps are arguments, reviewed once and written down, that the manifest stays
+ *    the stricter of the two gates. They are only as good as the argument.
+ *
+ * The one asymmetry every gap is judged against: a manifest STRICTER than the
+ * executor costs the model a correctable rejection at prepare time, while a
+ * manifest LOOSER than the executor tells the model a payload is acceptable and
+ * then refuses it — with the rule nowhere in the document it was given.
+ */
+export function storyPatchActionInputJsonSchema(): JsonSchemaNode {
+  // Refuse to hand a model a document that has quietly lost a rule the executor
+  // still enforces. This runs on the projection path rather than only in a test
+  // so no caller can obtain the lossy schema, and it runs in the package build
+  // (scripts/check-story-patch-projection.mjs) so it lands before deploy.
+  assertStoryPatchProjectionFidelity();
+  // Round-tripped through JSON on purpose. zod hangs a non-enumerable
+  // `~standard` interface off the document it returns, which survives a spread
+  // and trips any consumer that walks own property names; the manifest must be
+  // a plain JSON document because it is persisted, hashed, and shipped to the
+  // model as a tool schema.
+  const schema = JSON.parse(
+    JSON.stringify(
+      z.toJSONSchema(StoryPatchActionInputSchema, {
+        target: "draft-7",
+        io: "output",
+        reused: "inline",
+        unrepresentable: "throw",
+      })
+    )
+  ) as JsonSchemaNode;
+  delete schema.$schema;
+  rewriteOneOfAsAnyOf(schema);
+  demoteServerSuppliedFields(schema, STORY_PATCH_SERVER_SUPPLIED_ACTION_FIELDS, "$");
+  const branches = requireJsonSchemaNode(
+    requireJsonSchemaNode(
+      requireJsonSchemaNode(schema.properties, "$.properties").operations,
+      "$.properties.operations"
+    ).items,
+    "$.properties.operations.items"
+  ).anyOf;
+  if (
+    !Array.isArray(branches) ||
+    branches.length !== StoryPatchOperationShapeSchema.options.length
+  ) {
+    throw new Error(
+      "Story patch operation projection lost the discriminated union of operation kinds."
+    );
+  }
+  branches.forEach((branch, index) => {
+    demoteServerSuppliedFields(
+      requireJsonSchemaNode(branch, `$.properties.operations.items.anyOf[${index}]`),
+      STORY_PATCH_SERVER_SUPPLIED_OPERATION_FIELDS,
+      `$.properties.operations.items.anyOf[${index}]`
+    );
+  });
+  return schema;
+}
+
+function rewriteOneOfAsAnyOf(node: unknown): void {
+  if (Array.isArray(node)) {
+    node.forEach(rewriteOneOfAsAnyOf);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const record = node as JsonSchemaNode;
+  if (Array.isArray(record.oneOf)) {
+    record.anyOf = record.oneOf;
+    delete record.oneOf;
+  }
+  for (const child of Object.values(record)) rewriteOneOfAsAnyOf(child);
+}
+
+function demoteServerSuppliedFields(
+  objectSchema: JsonSchemaNode,
+  fields: Readonly<Record<string, string>>,
+  path: string
+): void {
+  const properties = requireJsonSchemaNode(objectSchema.properties, `${path}.properties`);
+  const required = objectSchema.required;
+  if (!Array.isArray(required)) {
+    throw new Error(`Story patch projection expected a required list at ${path}.`);
+  }
+  for (const [field, description] of Object.entries(fields)) {
+    const property = requireJsonSchemaNode(properties[field], `${path}.properties.${field}`);
+    properties[field] = { ...property, description };
+  }
+  objectSchema.required = required.filter((field) => !(String(field) in fields));
+}
+
+function requireJsonSchemaNode(value: unknown, path: string): JsonSchemaNode {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Story patch projection expected an object at ${path}.`);
+  }
+  return value as JsonSchemaNode;
+}
 
 export const StoryAgentRunStatusSchema = z.enum([
   "authoring",
@@ -939,4 +1407,28 @@ function addDuplicateIdIssues(ids: string[], path: PropertyKey[], context: z.Ref
 
 function addRunIssue(context: z.RefinementCtx, path: PropertyKey[], message: string): void {
   context.addIssue({ code: "custom", path, message });
+}
+
+/**
+ * The nodes a patch WROTE, for a canvas that wants to show the creator what
+ * just changed.
+ *
+ * Only `put_node`. A removed node cannot be focused — it is gone — and a
+ * reorder touches so many that pointing at them is the same as pointing at
+ * nothing. Entry-node changes move a marker, not a node's content. So this is
+ * narrower than "operations that mention a node id" on purpose: it answers
+ * "where did the agent write", which is the only question a viewport can act on.
+ *
+ * Typed over the discriminated union rather than reaching into `payload` by
+ * string, so a new node-writing operation kind fails to compile here instead of
+ * silently never being focused.
+ */
+export function storyPatchWrittenNodeIds(operations: readonly StoryPatchOperation[]): string[] {
+  const written: string[] = [];
+  for (const operation of operations) {
+    if (operation.kind === "story_graph.put_node") {
+      written.push(operation.payload.node.nodeId);
+    }
+  }
+  return [...new Set(written)];
 }

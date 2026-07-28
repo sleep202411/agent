@@ -8,8 +8,11 @@ import {
   Connection,
   WorkflowClient,
   WorkflowExecutionAlreadyStartedError,
+  WorkflowNotFoundError,
+  isGrpcServiceError,
 } from '@temporalio/client';
 import { temporal } from '@temporalio/proto';
+import { status as grpcStatus } from '@grpc/grpc-js';
 import {
   StudioAgentApprovalSignalSchema,
   StudioAgentCancelSignalSchema,
@@ -92,6 +95,40 @@ export class StudioAgentTemporalTransport
     };
   }
 
+  /**
+   * Is this workflow still executing?
+   *
+   * Temporal is the authority on whether a turn is alive; the control plane's
+   * `thread.activeRunId` is a cache of that fact, written when the run is
+   * created and cleared when the workflow reports a terminal. A workflow that
+   * dies WITHOUT reporting — terminated, timed out, a non-retryable failure, a
+   * history it can no longer replay — leaves that cache asserting a liveness
+   * nothing will ever retract, and the thread refuses every later message.
+   *
+   * `absent` is NOT `closed`. A run whose start command has not left the outbox
+   * yet has no execution to find, and treating that as death would kill turns
+   * at the moment they are being born. The caller distinguishes the two from
+   * the outbox's own record of whether it dispatched — a fact, not a timeout.
+   */
+  async executionLiveness(
+    workflowId: string,
+  ): Promise<'open' | 'closed' | 'absent'> {
+    const client = this.requireReadyClient();
+    try {
+      const description = await client.getHandle(workflowId).describe();
+      return description.status.name === 'RUNNING' ? 'open' : 'closed';
+    } catch (error) {
+      if (isWorkflowNotFound(error)) {
+        return 'absent';
+      }
+      // Anything else is a connectivity or permission problem, and guessing
+      // "dead" from it would reap live turns during an outage. Probe and let
+      // the caller keep the thread as it is.
+      this.scheduleProbe(0);
+      throw error;
+    }
+  }
+
   async dispatch(command: StudioAgentTemporalCommand): Promise<void> {
     const client = this.requireReadyClient();
     try {
@@ -124,15 +161,14 @@ export class StudioAgentTemporalTransport
           return;
         }
         case 'signal': {
-          const payload = command.payload as { decision?: unknown };
-          const parsed =
-            'decision' in payload
-              ? StudioAgentApprovalSignalSchema.parse(command.payload)
-              : StudioAgentInputSignalSchema.parse(command.payload);
-          const signalName =
-            'decision' in parsed
-              ? 'studio-agent.approval'
-              : 'studio-agent.input';
+          const payload = command.payload as { decisions?: unknown };
+          const isApproval = 'decisions' in payload;
+          const parsed = isApproval
+            ? StudioAgentApprovalSignalSchema.parse(command.payload)
+            : StudioAgentInputSignalSchema.parse(command.payload);
+          const signalName = isApproval
+            ? 'studio-agent.approval'
+            : 'studio-agent.input';
           await client.getHandle(command.workflowId).signal(signalName, parsed);
           return;
         }
@@ -357,6 +393,18 @@ export function hasFreshDeploymentPoller(
       Math.abs(now.getTime() - millis) <= staleAfterMs
     );
   });
+}
+
+/**
+ * A describe that found no such execution, as opposed to one that failed.
+ *
+ * The SDK raises `WorkflowNotFoundError` for it, but a raw gRPC NOT_FOUND (5)
+ * reaches callers too depending on the path, and confusing the two either reaps
+ * a live turn or leaves a dead one wedged. Both are checked.
+ */
+function isWorkflowNotFound(error: unknown): boolean {
+  if (error instanceof WorkflowNotFoundError) return true;
+  return isGrpcServiceError(error) && error.code === grpcStatus.NOT_FOUND;
 }
 
 function safeErrorMessage(error: unknown): string {

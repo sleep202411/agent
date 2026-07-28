@@ -148,6 +148,67 @@ describe("StudioAgentComposer attachments", () => {
   }
 });
 
+describe("StudioAgentComposer stop button", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("says it is stopping, and refuses a second press, once the cancel is out", async () => {
+    const onStop = vi.fn();
+    await render({ isRunning: true, isCancelling: false, onStop });
+
+    const stop = stopButton();
+    expect(stop?.getAttribute("aria-label")).toBe("Stop");
+    expect(stop?.disabled).toBe(false);
+
+    // The cancel is already on the channel. The button stays — it is the only
+    // place the panel can say the stop landed — but it stops being pressable.
+    await render({ isRunning: true, isCancelling: true, onStop });
+    const stopping = stopButton();
+    expect(stopping).not.toBeNull();
+    expect(stopping?.getAttribute("aria-label")).toBe("Stopping");
+    expect(stopping?.disabled).toBe(true);
+
+    await act(async () => stopping?.click());
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  function stopButton() {
+    return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      ["Stop", "Stopping"].includes(button.getAttribute("aria-label") ?? "")
+    );
+  }
+
+  async function render(props: { isRunning: boolean; isCancelling: boolean; onStop: () => void }) {
+    await act(async () => {
+      root.render(
+        <StudioAgentComposer
+          value=""
+          labels={labels}
+          deliveryMode="steer"
+          isRunning={props.isRunning}
+          isCancelling={props.isCancelling}
+          onStop={props.onStop}
+          onDeliveryModeChange={vi.fn()}
+          onValueChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      );
+    });
+  }
+});
+
 const canonicalAttachment: StudioAgentCanonicalAttachment = {
   type: "attachment",
   attachmentId: "00000000-0000-4000-8000-000000000071",
@@ -173,6 +234,7 @@ const labels = {
   input: "Message",
   placeholder: "Describe the change",
   stop: "Stop",
+  stopping: "Stopping",
   queued: (count: number) => `${count} queued`,
   deliveryModeMenu: "Delivery mode",
   deliveryMode: {

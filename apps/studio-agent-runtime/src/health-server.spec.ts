@@ -67,6 +67,39 @@ describe("runtime worker health", () => {
     expect(failed.alive).toBe(false);
     expect(failed.ready).toBe(false);
   });
+
+  it("fails readiness while the process runs stale code, and says why", () => {
+    const stale = evaluateRuntimeWorkerHealth(
+      "control",
+      workerStatus({ runState: "RUNNING", workflowPollerState: "POLLING" }),
+      false,
+      false,
+      {
+        stale: true,
+        reasons: ["[artifact-drift] @repo/shared was rebuilt after this process loaded it"],
+      }
+    );
+
+    expect(stale.ready).toBe(false);
+    expect(stale.alive).toBe(true);
+    expect(stale.codeStale).toBe(true);
+    expect(stale.staleReasons).toEqual([
+      "[artifact-drift] @repo/shared was rebuilt after this process loaded it",
+    ]);
+  });
+
+  it("stays ready when the loaded code matches the sources", () => {
+    const fresh = evaluateRuntimeWorkerHealth(
+      "control",
+      workerStatus({ runState: "RUNNING", workflowPollerState: "POLLING" }),
+      false,
+      false,
+      { stale: false, reasons: [] }
+    );
+
+    expect(fresh.ready).toBe(true);
+    expect(fresh.codeStale).toBe(false);
+  });
 });
 
 function workerStatus(overrides: Partial<WorkerStatus>): WorkerStatus {

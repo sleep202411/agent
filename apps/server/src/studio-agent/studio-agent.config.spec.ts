@@ -7,6 +7,7 @@ describe('loadStudioAgentServerConfig', () => {
     TEMPORAL_TLS_MODE: 'disabled',
     STUDIO_AGENT_RELEASE: 'git-0123456789abcdef',
     STUDIO_AGENT_RUNTIME_TOKEN: 'x'.repeat(32),
+    ABLY_API_KEY: 'appId.keyId:c2VjcmV0LXZhbHVl',
   } satisfies NodeJS.ProcessEnv;
 
   it('fails loudly when runtime credentials are absent', () => {
@@ -106,8 +107,10 @@ describe('loadStudioAgentServerConfig', () => {
         retryBaseMs: 10_000,
         retryMaxMs: 1_800_000,
       },
-      sseHeartbeatMs: 15_000,
-      sseBatchSize: 250,
+      ably: {
+        apiKey: 'appId.keyId:c2VjcmV0LXZhbHVl',
+        tokenTtlMs: 120_000,
+      },
       model: {
         provider: 'alibaba',
         textModelId: 'qwen3-max',
@@ -126,6 +129,53 @@ describe('loadStudioAgentServerConfig', () => {
         wallTimeMs: 3_600_000,
       },
     });
+  });
+
+  it('refuses to boot without a delivery credential', () => {
+    // Studio Agent delivery IS Ably. A server that came up without this would
+    // accept turns, commit their events, and deliver none of them — a hung
+    // assistant that looks, in the logs, like nothing happened.
+    const withoutKey: NodeJS.ProcessEnv = { ...required };
+    delete withoutKey.ABLY_API_KEY;
+    expect(() => loadStudioAgentServerConfig(withoutKey)).toThrow(
+      /ABLY_API_KEY/,
+    );
+  });
+
+  it.each([
+    ['the public key name alone', 'appId.keyId'],
+    ['a token instead of a key', 'AblyTokenLookingString'],
+    ['an empty secret', 'appId.keyId:'],
+  ])('rejects %s', (_case, value) => {
+    // Both realistic misconfigurations are non-empty strings, so presence is
+    // not a check. Either would pass a `min(1)` and then fail at the first
+    // publish, in production, as a delivery outage instead of a boot failure.
+    expect(() =>
+      loadStudioAgentServerConfig({ ...required, ABLY_API_KEY: value }),
+    ).toThrow(/ABLY_API_KEY/);
+  });
+
+  it('bounds how long a revoked grant can keep receiving frames', () => {
+    // The token TTL is exactly that worst case, so it is bounded on both sides:
+    // no hour-long credential, and none so short that every reconnect stalls.
+    expect(
+      loadStudioAgentServerConfig({
+        ...required,
+        STUDIO_AGENT_ABLY_TOKEN_TTL_MS: '300000',
+      }).ably.tokenTtlMs,
+    ).toBe(300_000);
+    expect(() =>
+      loadStudioAgentServerConfig({
+        ...required,
+        STUDIO_AGENT_ABLY_TOKEN_TTL_MS: '7200000',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadStudioAgentServerConfig({
+        ...required,
+        STUDIO_AGENT_ABLY_TOKEN_TTL_MS: '1000',
+      }),
+    ).toThrow();
   });
 
   it('caps the discovery batch so one sweep cannot monopolize the pool', () => {
@@ -165,6 +215,39 @@ describe('loadStudioAgentServerConfig', () => {
         STUDIO_AGENT_BUDGET_MIN_OUTPUT_TOKEN_UNITS_PER_STEP: '256',
       }),
     ).toThrow(/must not exceed STUDIO_AGENT_MODEL_MAX_OUTPUT_TOKENS/);
+  });
+
+  /**
+   * THE SERVER MUST NOT AUTHOR A PLAN THE WORKER WILL REFUSE.
+   *
+   * `model-runner.ts validatePlanAgainstRuntime` throws on any plan whose
+   * `maxOutputTokens` or `timeoutMs` exceeds the runtime's own ceiling. The two
+   * schemas used to disagree — this side accepted 65 536 tokens and 900 000 ms,
+   * the runtime accepted 32 768 and (now) 780 000 — so a legal server config
+   * produced turns that died at the creator's first prompt with an opaque
+   * "Model plan requests ..." error. The bounds are the same numbers on both
+   * sides now, and a config outside them fails at BOOT.
+   */
+  it('refuses a model budget the studio-agent runtime would reject at the first turn', () => {
+    expect(() =>
+      loadStudioAgentServerConfig({
+        ...required,
+        STUDIO_AGENT_MODEL_MAX_OUTPUT_TOKENS: '65536',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadStudioAgentServerConfig({
+        ...required,
+        STUDIO_AGENT_MODEL_TIMEOUT_MS: '900000',
+      }),
+    ).toThrow();
+
+    const config = loadStudioAgentServerConfig({ ...required });
+    // apps/studio-agent-runtime/src/config.ts — MODEL_TIMEOUT_DEFAULT_MS and
+    // MODEL_MAX_OUTPUT_TOKENS_CEILING. Not imported: the two apps do not depend
+    // on each other, so the agreement is asserted rather than shared.
+    expect(config.model.timeoutMs).toBe(600_000);
+    expect(config.model.maxOutputTokens).toBe(8_192);
   });
 
   it('rejects admission limits that cannot contain the root budget hierarchy', () => {

@@ -21,6 +21,7 @@ describe("createWorkerDeploymentOptions", () => {
           shutdownForceMs: 120_000,
         },
         {
+          role: "control",
           release: "git-0123456789abcdef",
           healthHost: "0.0.0.0",
           healthPort: 3_010,

@@ -16,6 +16,24 @@ export const STUDIO_AGENT_ACTIVITY_TASK_QUEUE = "studio-agent-activities-v1" as 
  */
 export const STUDIO_AGENT_WORKER_DEPLOYMENT_NAME = "fizzdragon-studio-agent" as const;
 
+/**
+ * The `ApplicationFailure.type` an activity raises when the CREATOR cancelled
+ * the turn on the conversation channel.
+ *
+ * The stop button publishes `ai-cancel`; the transport routes it to the run's
+ * `abortSignal` inside whichever activity currently holds the run. That is a
+ * deliberate user decision, not a defect, and Temporal has no vocabulary for
+ * "the outside world cancelled this activity" other than a failure — so the
+ * activity names the failure and the workflow reads the name and takes its
+ * ordinary cancel path (durable `cancel` transition + a `cancelled` terminal on
+ * the channel) instead of recording an error the creator caused on purpose.
+ *
+ * Non-retryable: retrying an activity whose run the creator just stopped would
+ * spend the creator's credits four more times.
+ */
+export const STUDIO_AGENT_CLIENT_CANCELLED_FAILURE_TYPE =
+  "studio_agent_run_cancelled_by_client" as const;
+
 export const StudioAgentSchemaVersionSchema = z.literal(STUDIO_AGENT_SCHEMA_VERSION);
 export const StudioAgentIdSchema = z.uuid();
 export const StudioAgentActorIdSchema = z.string().trim().min(1).max(160);
@@ -26,15 +44,29 @@ export const StudioAgentStableKeySchema = z
   .min(1)
   .max(160)
   .regex(/^[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*$/, "Use a stable lowercase key.");
+/**
+ * A semantic version, with an explicit length ceiling.
+ *
+ * The pattern alone bounds nothing: `1.0.0-` followed by a megabyte of
+ * prerelease identifiers satisfies it. Every publishable frame that names a
+ * manifest carries one of these, so the ceiling is what lets the frame budget
+ * be computed at all.
+ */
 export const StudioAgentManifestVersionSchema = z
   .string()
   .trim()
+  .max(64)
   .regex(
     /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/,
     "Use a semantic version."
   );
+/**
+ * A SHA-256 digest. `.length(64)` restates what the pattern already implies,
+ * because a size guard reads bounds, not regular expressions.
+ */
 export const StudioAgentContentHashSchema = z
   .string()
+  .length(64)
   .regex(/^[a-f0-9]{64}$/, "Use a lowercase SHA-256 digest.");
 
 export type StudioAgentJsonValue =
@@ -247,7 +279,16 @@ export const StudioAgentTaskDescriptorSchema = z
   })
   .strict();
 
-export const StudioAgentRunSchema = z
+/**
+ * A run's fields, without the turn/task consistency rule.
+ *
+ * Split out because zod refuses both `.omit()` and a key-overwriting
+ * `.extend()` on a schema that carries refinements, and the publishable
+ * projection has to replace two of these fields (the embedded permission policy
+ * and the error). Nothing should validate against this directly — parse
+ * {@link StudioAgentRunSchema}, which is this plus the rule.
+ */
+export const StudioAgentRunFieldsSchema = z
   .object({
     schemaVersion: StudioAgentSchemaVersionSchema,
     runId: StudioAgentIdSchema,
@@ -267,23 +308,41 @@ export const StudioAgentRunSchema = z
     completedAt: StudioAgentTimestampSchema.nullable(),
     error: StudioAgentErrorSchema.nullable(),
   })
-  .strict()
-  .superRefine((run, context) => {
-    if (run.kind === "turn" && (run.parentRunId !== null || run.task !== null)) {
-      context.addIssue({
-        code: "custom",
-        message: "A turn run cannot have a parent run or task descriptor.",
-        path: ["kind"],
-      });
-    }
-    if (run.kind === "task" && (run.parentRunId === null || run.task === null)) {
-      context.addIssue({
-        code: "custom",
-        message: "A task run requires a parent run and task descriptor.",
-        path: ["kind"],
-      });
-    }
-  });
+  .strict();
+
+/**
+ * A turn has no parent and no task; a task has both.
+ *
+ * Typed on the three fields it reads so the published projection — which
+ * carries a different policy and a different error shape — enforces the
+ * identical rule instead of a copy that can drift from it.
+ */
+export function refineStudioAgentRunKind(
+  run: {
+    kind: z.infer<typeof StudioAgentRunKindSchema>;
+    parentRunId: string | null;
+    task: unknown;
+  },
+  context: { addIssue: (issue: { code: "custom"; message: string; path: string[] }) => void }
+): void {
+  if (run.kind === "turn" && (run.parentRunId !== null || run.task !== null)) {
+    context.addIssue({
+      code: "custom",
+      message: "A turn run cannot have a parent run or task descriptor.",
+      path: ["kind"],
+    });
+  }
+  if (run.kind === "task" && (run.parentRunId === null || run.task === null)) {
+    context.addIssue({
+      code: "custom",
+      message: "A task run requires a parent run and task descriptor.",
+      path: ["kind"],
+    });
+  }
+}
+
+export const StudioAgentRunSchema =
+  StudioAgentRunFieldsSchema.superRefine(refineStudioAgentRunKind);
 
 export const StudioAgentInputDeliverySchema = z.enum(["steer", "enqueue", "stop_and_send"]);
 export const StudioAgentInputStatusSchema = z.enum([
@@ -326,6 +385,27 @@ export const StudioAgentActionSchema = z
     actionId: StudioAgentIdSchema,
     threadId: StudioAgentIdSchema,
     runId: StudioAgentIdSchema,
+    /**
+     * The model's own call id, and the only identifier this action shares with
+     * the transport.
+     *
+     * It is projected because an approval the creator has not answered yet has
+     * to survive a reload, and the channel cannot carry it: the persisted
+     * message part union is `text | attachment | resource`, so the tool part the
+     * approval renders as is not reconstructible from `messages` alone. The
+     * browser rebuilds that part from this action, and answers it by tool call —
+     * see `StudioAgentToolApprovalInvocationRequestSchema`.
+     */
+    toolCallId: z.string().trim().min(1).max(512),
+    /**
+     * The provider-facing tool name, derived from `capability.id`.
+     *
+     * Derived on the server rather than in the browser on purpose: the
+     * derivation hashes, `packages/shared` is bundled into the browser, and it
+     * has no `node:` imports anywhere the barrel can reach. One implementation
+     * lives in `@repo/shared/studio-agent-tools`; everyone else reads this.
+     */
+    toolName: z.string().trim().min(1).max(128),
     capability: StudioAgentManifestRefSchema,
     effect: StudioAgentCapabilityEffectSchema,
     risk: StudioAgentRiskLevelSchema,
@@ -399,6 +479,38 @@ export const StudioAgentCapabilityManifestSchema = z
   })
   .strict();
 
+/**
+ * The permission policy's verdict on ONE capability, decided before the model
+ * is ever shown it.
+ *
+ * THE ORDERING IS THE WHOLE POINT. The policy used to be evaluated by
+ * `prepareAction`, i.e. after the model had already emitted the tool call — far
+ * too late to set `needsApproval` on the tools registry, which is what makes the
+ * AI SDK emit `tool-approval-request` instead of running the tool. Nothing about
+ * the verdict depends on the call: `StudioAgentPolicyEngine.evaluate` reads the
+ * thread's policy, the capability manifest, the scenario id, the run's
+ * execution-scope resource type and the granted scopes — all of which are
+ * settled when the plan is built. So it is decided there, travels on the plan,
+ * and `prepareAction` re-derives the same verdict for the durable record.
+ */
+export const StudioAgentCapabilityPermissionSchema = z
+  .object({
+    decision: StudioAgentPermissionDecisionSchema,
+    reason: z.string().trim().min(1).max(4_000),
+  })
+  .strict();
+
+/**
+ * A capability as one model step is allowed to see it: the manifest the tool is
+ * built from, plus the verdict that decides whether calling it pauses the turn.
+ */
+export const StudioAgentPlannedCapabilitySchema = z
+  .object({
+    manifest: StudioAgentCapabilityManifestSchema,
+    permission: StudioAgentCapabilityPermissionSchema,
+  })
+  .strict();
+
 export const StudioAgentCapabilityRequirementSchema = z
   .object({
     capability: StudioAgentManifestRefSchema,
@@ -443,6 +555,21 @@ export const StudioAgentScenarioManifestSchema = z
   })
   .strict();
 
+/**
+ * A value object, deliberately without `schemaVersion`.
+ *
+ * Only entities and envelopes carry a version in this contract. A change set is
+ * neither: `changeSetId` is the action id, it has no lifecycle of its own, and
+ * it never travels alone — it is nested in `StudioAgentActionExecution` or in a
+ * `changeset.*` event, both of which are versioned, or stored in the
+ * `change_set` column of an action row alongside `StudioAgentError`, the sibling
+ * value object in `error` that is likewise unversioned. Adding a second version
+ * tag inside an already-versioned envelope would only invite the two to
+ * disagree. Because this object is `.strict()`, sending the key anyway throws
+ * AFTER the capability has written — see the executor's savepoint isolation and
+ * `studio-agent.story-capabilities.postgres.integration.spec.ts` for why that
+ * mattered once.
+ */
 export const StudioAgentChangeSetSummarySchema = z
   .object({
     changeSetId: StudioAgentIdSchema,
@@ -452,6 +579,30 @@ export const StudioAgentChangeSetSummarySchema = z
     targets: z.array(StudioAgentResourceRefSchema).min(1).max(256),
     operationCount: z.number().int().positive(),
     reversible: z.boolean(),
+  })
+  .strict();
+
+/**
+ * What the delivery channel needs to open this run, or null when it has none.
+ *
+ * A TURN is triggered by a user input the client already published to the
+ * thread's channel; `@ably/ai-transport` resolves the run's write-time anchors
+ * from that event, so its id has to travel into the workflow.
+ *
+ * A TASK — a delegated child run — carries null, and that is a statement, not a
+ * gap. A child has no triggering input event, so it has no place on the
+ * conversation the channel represents: the library's tree models edit and
+ * regenerate branching of one linear conversation, and there is no
+ * parent/child delegation edge to hang it from. A task's output is durable
+ * (Postgres) and reaches the browser through `GET threads/:id/snapshot`; the
+ * parent turn is the one that streams.
+ */
+export const StudioAgentDeliveryTriggerSchema = z
+  .object({
+    /** Ably `event-id` of the `ai-input` the client published. */
+    inputEventId: z.string().trim().min(1).max(200),
+    /** The thread's Ably channel — the transport's `sessionName`. */
+    channelName: z.string().trim().min(1).max(200),
   })
   .strict();
 
@@ -469,6 +620,7 @@ export const StudioAgentWorkflowInputSchema = z
     kind: StudioAgentRunKindSchema,
     scenario: StudioAgentManifestRefSchema,
     permissionPolicy: StudioAgentPermissionPolicyRefSchema,
+    delivery: StudioAgentDeliveryTriggerSchema.nullable(),
   })
   .strict();
 
@@ -483,19 +635,59 @@ export const StudioAgentInputSignalSchema = z
   })
   .strict();
 
+export const StudioAgentApprovalDecisionSchema = z
+  .object({
+    approvalId: StudioAgentIdSchema,
+    actionId: StudioAgentIdSchema,
+    actionInputHash: StudioAgentContentHashSchema,
+    decision: z.enum(["approved", "denied"]),
+  })
+  .strict();
+
+/**
+ * One creator answer to a suspended turn, carrying the trigger that resumes it.
+ *
+ * TWO THINGS CHANGED HERE AND BOTH ARE LOAD-BEARING.
+ *
+ * `decisions` is a LIST because the answer is now the library's. A model step
+ * that calls three approval-gated tools emits three `tool-approval-request`
+ * parts at once, and `useChat`'s `lastAssistantMessageIsCompleteWithApprovalResponses`
+ * only fires the continuation once EVERY one of them has been answered. So the
+ * decisions arrive together, in one `ai-input`, and splitting them into three
+ * signals would invent an ordering the creator never expressed.
+ *
+ * `resumeDelivery` is the `ai-input` the browser published to carry those
+ * decisions, and without it the run cannot come back. `@ably/ai-transport`
+ * refuses to adopt a suspended run (`agent-session.ts`: "unable to load run;
+ * run X is suspended, resume via createRun().start()"), and a `createRun` only
+ * publishes `ai-run-resume` instead of a second `ai-run-start` when its
+ * TRIGGER EVENT carries a `run-id` header — `resolveTriggerMetadata` sets
+ * `resolvedContinuation = wireRunId !== undefined`. The library's ChatTransport
+ * stamps that header on a continuation (`sendOpts.runId = continuationRunId`),
+ * so the resume is only reachable through the event id this field names.
+ */
 export const StudioAgentApprovalSignalSchema = z
   .object({
     schemaVersion: StudioAgentSchemaVersionSchema,
-    approvalId: StudioAgentIdSchema,
-    actionId: StudioAgentIdSchema,
+    threadId: StudioAgentIdSchema,
     targetRunId: StudioAgentIdSchema,
-    actionInputHash: StudioAgentContentHashSchema,
-    decision: z.enum(["approved", "denied"]),
+    decisions: z.array(StudioAgentApprovalDecisionSchema).min(1).max(128),
+    resumeDelivery: StudioAgentDeliveryTriggerSchema,
     actorId: StudioAgentActorIdSchema,
     note: z.string().trim().max(2_000).nullable(),
     decidedAt: StudioAgentTimestampSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((signal, context) => {
+    const seen = new Set(signal.decisions.map((entry) => entry.approvalId));
+    if (seen.size !== signal.decisions.length) {
+      context.addIssue({
+        code: "custom",
+        message: "An approval signal must answer each approval at most once.",
+        path: ["decisions"],
+      });
+    }
+  });
 
 export const StudioAgentCancelSignalSchema = z
   .object({
@@ -562,6 +754,39 @@ export const StudioAgentChildRunDescriptorSchema = z
     triggerMessageId: StudioAgentIdSchema.nullable(),
   })
   .strict();
+
+/**
+ * What preparing a `child_run` capability call settles on.
+ *
+ * A delegation is admitted (`started`, carrying the descriptor of the child the
+ * workflow must run) or refused (`refused`, carrying the terminal `failed`
+ * action that says why). The refusal branch exists because the alternative was
+ * an HTTP 400 out of the gateway, which the runtime turns into a non-retryable
+ * Temporal failure — so one malformed delegate call killed the whole turn while
+ * an equally malformed patch call was recorded as feedback the model corrects.
+ * Both are now the same terminal `failed` action, read back as an `error-json`
+ * tool result, counted by the same per-turn correction budget.
+ *
+ * The refusal carries no child run precisely because none was created: the
+ * workflow starts a child only for a `started` preparation, and a redelivered
+ * prepare of a refused delegation replays the same refused action.
+ */
+export const StudioAgentChildRunPreparationSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      schemaVersion: StudioAgentSchemaVersionSchema,
+      outcome: z.literal("started"),
+      descriptor: StudioAgentChildRunDescriptorSchema,
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: StudioAgentSchemaVersionSchema,
+      outcome: z.literal("refused"),
+      action: StudioAgentActionSchema,
+    })
+    .strict(),
+]);
 
 export const StudioAgentModelStepContextSchema = z
   .object({
@@ -749,7 +974,7 @@ const StudioAgentModelExecutionPlanBaseSchema = z
 export const StudioAgentResponseModelExecutionPlanSchema =
   StudioAgentModelExecutionPlanBaseSchema.extend({
     kind: z.literal("response"),
-    capabilities: z.array(StudioAgentCapabilityManifestSchema).max(256),
+    capabilities: z.array(StudioAgentPlannedCapabilitySchema).max(256),
     assistantMessageId: StudioAgentIdSchema,
     segmentId: StudioAgentIdSchema,
   }).strict();
@@ -900,14 +1125,35 @@ export const StudioAgentModelStepOutcomeSchema = z
     providerResponseId: z.string().trim().min(1).max(512).nullable(),
     assistantSegments: z.array(StudioAgentAssistantSegmentOutputSchema).max(128),
     preparedActions: z.array(StudioAgentPreparedActionSchema).max(128),
-    childRuns: z.array(StudioAgentChildRunDescriptorSchema).max(64),
-    directive: z.enum(["continue", "wait_for_input", "complete"]),
+    childRuns: z.array(StudioAgentChildRunPreparationSchema).max(64),
+    /**
+     * `wait_for_approval` is not "there is an ask-gated action in
+     * `preparedActions`" restated — it is the fact that the MODEL stopped for
+     * one. With `needsApproval` on the tools registry the AI SDK never executes
+     * an approval-gated call; it emits `tool-approval-request` and finishes with
+     * `finishReason: 'tool-calls'`, which `vercelRunOutcome` reports as
+     * `suspend`. The workflow has to suspend the run on the channel before it
+     * waits, and this is the flag that tells it to.
+     */
+    directive: z.enum(["continue", "wait_for_approval", "wait_for_input", "complete"]),
     usage: StudioAgentModelUsageSchema,
     completedAt: StudioAgentTimestampSchema,
   })
   .strict();
 
-const StudioAgentEventBaseSchema = z
+/**
+ * What every durable event carries besides its own payload.
+ *
+ * `sequence` is the load-bearing field: it exists only because a row was
+ * committed and the log allocated it in the same transaction as the domain
+ * write. Anything holding one of these is holding a fact.
+ *
+ * It is a JOURNAL, not a delivery queue. Nothing subscribes to it: the browser
+ * reads the conversation off the Ably channel and everything else off
+ * `GET threads/:id/snapshot`. `sequence` orders the journal and drives the
+ * `studio_agent_activities` projection, and that is all it does now.
+ */
+export const StudioAgentEventBaseSchema = z
   .object({
     schemaVersion: StudioAgentSchemaVersionSchema,
     eventId: StudioAgentIdSchema,
@@ -1023,6 +1269,19 @@ const StudioAgentRunCancelledEventSchema = studioAgentEventSchema(
 
 export const StudioAgentAssistantSegmentKindSchema = z.enum(["answer", "commentary"]);
 export const StudioAgentAssistantSegmentFormatSchema = z.enum(["plain_text", "markdown"]);
+/**
+ * Why a segment stopped.
+ *
+ * "length" = the model hit its output-token ceiling and the answer is truncated
+ * (valid content, but incomplete) — distinct from a clean "stop" so it can be
+ * surfaced rather than silently presented as final.
+ */
+export const StudioAgentAssistantSegmentFinishReasonSchema = z.enum([
+  "stop",
+  "length",
+  "cancelled",
+  "error",
+]);
 
 const StudioAgentAssistantSegmentStartedEventSchema = studioAgentEventSchema(
   "assistant.segment.started",
@@ -1036,27 +1295,20 @@ const StudioAgentAssistantSegmentStartedEventSchema = studioAgentEventSchema(
     })
     .strict()
 );
-const StudioAgentAssistantSegmentDeltaEventSchema = studioAgentEventSchema(
-  "assistant.segment.delta",
-  z
-    .object({
-      messageId: StudioAgentIdSchema,
-      segmentId: StudioAgentIdSchema,
-      delta: z.string().min(1).max(64_000),
-    })
-    .strict()
-);
 const StudioAgentAssistantSegmentCompletedEventSchema = studioAgentEventSchema(
   "assistant.segment.completed",
   z
     .object({
       messageId: StudioAgentIdSchema,
       segmentId: StudioAgentIdSchema,
+      /**
+       * The committed body, and the reason this event is never published whole:
+       * 200 000 characters is ~586 KiB of CJK, nine times the transport's
+       * per-message ceiling. The publishable projection carries the identity and
+       * `contentLength`; a client that wants the text replays this event.
+       */
       content: z.string().max(200_000),
-      // "length" = the model hit its output-token ceiling and the answer is
-      // truncated (valid content, but incomplete) — distinct from a clean
-      // "stop" so it can be surfaced rather than silently presented as final.
-      finishReason: z.enum(["stop", "length", "cancelled", "error"]),
+      finishReason: StudioAgentAssistantSegmentFinishReasonSchema,
       providerResponseId: z.string().trim().min(1).max(512).nullable(),
       usage: StudioAgentModelUsageSchema,
       completedAt: StudioAgentTimestampSchema,
@@ -1287,7 +1539,6 @@ export const STUDIO_AGENT_EVENT_TYPES = [
   "run.failed",
   "run.cancelled",
   "assistant.segment.started",
-  "assistant.segment.delta",
   "assistant.segment.completed",
   "activity.started",
   "activity.progress",
@@ -1327,7 +1578,6 @@ export const StudioAgentEventSchema = z.discriminatedUnion("type", [
   StudioAgentRunFailedEventSchema,
   StudioAgentRunCancelledEventSchema,
   StudioAgentAssistantSegmentStartedEventSchema,
-  StudioAgentAssistantSegmentDeltaEventSchema,
   StudioAgentAssistantSegmentCompletedEventSchema,
   StudioAgentActivityStartedEventSchema,
   StudioAgentActivityProgressEventSchema,
@@ -1365,7 +1615,6 @@ export const StudioAgentEventDraftSchema = z.discriminatedUnion("type", [
   StudioAgentRunFailedEventSchema.draft,
   StudioAgentRunCancelledEventSchema.draft,
   StudioAgentAssistantSegmentStartedEventSchema.draft,
-  StudioAgentAssistantSegmentDeltaEventSchema.draft,
   StudioAgentAssistantSegmentCompletedEventSchema.draft,
   StudioAgentActivityStartedEventSchema.draft,
   StudioAgentActivityProgressEventSchema.draft,
@@ -1392,6 +1641,52 @@ export const StudioAgentEventDraftSchema = z.discriminatedUnion("type", [
   StudioAgentTaskCancelledEventSchema.draft,
 ]);
 
+/**
+ * Each durable event type's own schema, addressable by type.
+ *
+ * The publishable projection narrows eleven of these and republishes the rest
+ * unchanged; without this table it would have to restate twenty-three payload
+ * definitions, and the copies would drift the first time a field moved. Keyed
+ * by {@link StudioAgentEventType} so a type added to the union without an entry
+ * here fails to compile.
+ */
+export const STUDIO_AGENT_EVENT_SCHEMAS = {
+  "run.created": StudioAgentRunCreatedEventSchema,
+  "run.started": StudioAgentRunStartedEventSchema,
+  "run.phase_changed": StudioAgentRunPhaseChangedEventSchema,
+  "run.waiting": StudioAgentRunWaitingEventSchema,
+  "run.resumed": StudioAgentRunResumedEventSchema,
+  "run.cancellation_requested": StudioAgentRunCancellationRequestedEventSchema,
+  "run.completed": StudioAgentRunCompletedEventSchema,
+  "run.failed": StudioAgentRunFailedEventSchema,
+  "run.cancelled": StudioAgentRunCancelledEventSchema,
+  "assistant.segment.started": StudioAgentAssistantSegmentStartedEventSchema,
+  "assistant.segment.completed": StudioAgentAssistantSegmentCompletedEventSchema,
+  "activity.started": StudioAgentActivityStartedEventSchema,
+  "activity.progress": StudioAgentActivityProgressEventSchema,
+  "activity.completed": StudioAgentActivityCompletedEventSchema,
+  "activity.failed": StudioAgentActivityFailedEventSchema,
+  "activity.cancelled": StudioAgentActivityCancelledEventSchema,
+  "action.proposed": StudioAgentActionProposedEventSchema,
+  "action.started": StudioAgentActionStartedEventSchema,
+  "action.completed": StudioAgentActionCompletedEventSchema,
+  "approval.requested": StudioAgentApprovalRequestedEventSchema,
+  "approval.resolved": StudioAgentApprovalResolvedEventSchema,
+  "input.accepted": StudioAgentInputAcceptedEventSchema,
+  "input.consumed": StudioAgentInputConsumedEventSchema,
+  "input.promoted": StudioAgentInputPromotedEventSchema,
+  "input.cancelled": StudioAgentInputCancelledEventSchema,
+  "context.compacted": StudioAgentContextCompactedEventSchema,
+  "changeset.proposed": StudioAgentChangeSetProposedEventSchema,
+  "changeset.applied": StudioAgentChangeSetAppliedEventSchema,
+  "changeset.rejected": StudioAgentChangeSetRejectedEventSchema,
+  "task.created": StudioAgentTaskCreatedEventSchema,
+  "task.started": StudioAgentTaskStartedEventSchema,
+  "task.completed": StudioAgentTaskCompletedEventSchema,
+  "task.failed": StudioAgentTaskFailedEventSchema,
+  "task.cancelled": StudioAgentTaskCancelledEventSchema,
+} as const satisfies Record<StudioAgentEventType, z.ZodType>;
+
 export type StudioAgentResourceRef = z.infer<typeof StudioAgentResourceRefSchema>;
 export type StudioAgentManifestRef = z.infer<typeof StudioAgentManifestRefSchema>;
 export type StudioAgentError = z.infer<typeof StudioAgentErrorSchema>;
@@ -1417,15 +1712,20 @@ export type StudioAgentAction = z.infer<typeof StudioAgentActionSchema>;
 export type StudioAgentApprovalStatus = z.infer<typeof StudioAgentApprovalStatusSchema>;
 export type StudioAgentApproval = z.infer<typeof StudioAgentApprovalSchema>;
 export type StudioAgentCapabilityManifest = z.infer<typeof StudioAgentCapabilityManifestSchema>;
+export type StudioAgentCapabilityPermission = z.infer<typeof StudioAgentCapabilityPermissionSchema>;
+export type StudioAgentPlannedCapability = z.infer<typeof StudioAgentPlannedCapabilitySchema>;
 export type StudioAgentSkillManifest = z.infer<typeof StudioAgentSkillManifestSchema>;
 export type StudioAgentScenarioManifest = z.infer<typeof StudioAgentScenarioManifestSchema>;
+export type StudioAgentDeliveryTrigger = z.infer<typeof StudioAgentDeliveryTriggerSchema>;
 export type StudioAgentWorkflowInput = z.infer<typeof StudioAgentWorkflowInputSchema>;
 export type StudioAgentInputSignal = z.infer<typeof StudioAgentInputSignalSchema>;
+export type StudioAgentApprovalDecision = z.infer<typeof StudioAgentApprovalDecisionSchema>;
 export type StudioAgentApprovalSignal = z.infer<typeof StudioAgentApprovalSignalSchema>;
 export type StudioAgentCancelSignal = z.infer<typeof StudioAgentCancelSignalSchema>;
 export type StudioAgentPreparedAction = z.infer<typeof StudioAgentPreparedActionSchema>;
 export type StudioAgentActionExecution = z.infer<typeof StudioAgentActionExecutionSchema>;
 export type StudioAgentChildRunDescriptor = z.infer<typeof StudioAgentChildRunDescriptorSchema>;
+export type StudioAgentChildRunPreparation = z.infer<typeof StudioAgentChildRunPreparationSchema>;
 export type StudioAgentModelStepContext = z.infer<typeof StudioAgentModelStepContextSchema>;
 export type StudioAgentModelMessageJson = z.infer<typeof StudioAgentModelMessageJsonSchema>;
 export type StudioAgentModelExecutionPlan = z.infer<typeof StudioAgentModelExecutionPlanSchema>;

@@ -31,6 +31,7 @@ function run(overrides: Record<string, unknown> = {}) {
     task: null,
     trigger: 'message',
     triggerMessageId: MESSAGE_ID,
+    deliveryInputEventId: 'AAAAA0LrQ:0:0',
     scenarioId: 'story.studio.assistant',
     scenarioVersion: '1.0.0',
     permissionPolicy,
@@ -200,7 +201,7 @@ describe('StudioAgentRunTerminalService', () => {
         },
         NOW,
       ),
-    ).resolves.toMatchObject({ run: { status: 'failed' } });
+    ).resolves.toMatchObject({ status: 'failed' });
 
     expect(transaction.studioAgentThread.updateMany).toHaveBeenCalledWith({
       where: { id: THREAD_ID, activeRunId: RUN_ID },
@@ -311,7 +312,7 @@ describe('StudioAgentRunTerminalService', () => {
         },
         NOW,
       ),
-    ).resolves.toEqual({ run: terminal, events: [] });
+    ).resolves.toEqual(terminal);
 
     expect(transaction.studioAgentRun.update).not.toHaveBeenCalled();
     expect(transaction.studioAgentThread.updateMany).not.toHaveBeenCalled();

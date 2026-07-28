@@ -1,10 +1,15 @@
 "use client";
 
-import { memo } from "react";
+import { memo, type ComponentPropsWithoutRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
+
+import {
+  resolveStudioAgentNodeReference,
+  useStudioAgentNodeLinks,
+} from "./studio-agent-node-links";
 
 const linkClassName =
   "font-medium text-foreground underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white/70";
@@ -22,6 +27,47 @@ function withoutMarkdownNode<Props extends { node?: unknown }>(props: Props): Om
   const { node, ...elementProps } = props;
   void node;
   return elementProps;
+}
+
+/**
+ * An inline code span, and the one case where it is more than that.
+ *
+ * When the surrounding surface knows a node by this name, the span becomes the
+ * way to go and look at it — which is what the creator wants the moment the
+ * agent says it wrote one. Everything else stays exactly what it was: `exit`,
+ * `zh-CN` and `text` appear in the same replies and none of them is a place.
+ */
+function StudioAgentCode({ className, children, ...props }: ComponentPropsWithoutRef<"code">) {
+  const links = useStudioAgentNodeLinks();
+  const text = typeof children === "string" ? children : null;
+  const nodeId = links && text ? resolveStudioAgentNodeReference(text, links) : null;
+  const style = "rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[0.82em] text-foreground";
+
+  if (!links || !nodeId) {
+    return (
+      <code {...props} className={cn(style, className)}>
+        {children}
+      </code>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-slot="studio-agent-node-link"
+      data-node-id={nodeId}
+      onClick={() => links.focus(nodeId)}
+      className={cn(
+        style,
+        // Underlined rather than coloured: this canvas is monochrome by design
+        // and brand red is never a token here, so "you can act on this" has to
+        // be carried by weight and an affordance the pointer confirms.
+        "cursor-pointer underline decoration-white/35 decoration-dotted underline-offset-[3px] transition-colors hover:bg-white/[0.14] hover:decoration-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 const components: Components = {
@@ -49,13 +95,7 @@ const components: Components = {
     />
   ),
   code: ({ className, ...props }) => (
-    <code
-      {...withoutMarkdownNode(props)}
-      className={cn(
-        "rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[0.82em] text-foreground",
-        className
-      )}
-    />
+    <StudioAgentCode {...withoutMarkdownNode(props)} className={className} />
   ),
   h1: ({ className, ...props }) => (
     <h3

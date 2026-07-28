@@ -188,6 +188,16 @@ serverSecrets:
     # HMAC token-signing secret for the self-hosted realtime WS plane
     # (REALTIME_TRANSPORT=self-hosted). PREREQUISITE: create the `realtime-ws-secret`
     # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
+    # Studio Agent delivery. The Nest server uses this ROOT key for exactly one
+    # thing — signing per-thread Ably token requests, locally, with an HMAC. It
+    # opens no Ably connection and publishes nothing; the activity worker does
+    # that, from its own copy of the same key (studioAgentDeliverySecrets).
+    # PREREQUISITE: `ably-api-key` must exist in Key Vault BEFORE this ships.
+    # The CSI projection is fail-closed — a mapping to a missing entry breaks
+    # the WHOLE fizzdragon-server-secrets Secret, taking every other env var in
+    # it down with it (Airwallex, admin MFA, legacy MySQL, the realtime HMAC).
+    - kv: ably-api-key
+      env: ABLY_API_KEY
     - kv: realtime-ws-secret
       env: REALTIME_WS_SECRET
     # Java points-migration bridge shared secret (/internal/points x-service-token).
@@ -217,6 +227,19 @@ studioAgentModelSecrets:
   mapping:
     - kv: alibaba-api-key
       env: ALIBABA_API_KEY
+# Studio Agent DELIVERY credential, projected for the ACTIVITY worker only.
+# That worker is the single publisher: it opens an `@ably/ai-transport`
+# AgentSession on the thread's channel and streams the turn onto it. The CONTROL
+# worker runs workflows, which are deterministic and never touch the network, so
+# it is deliberately not given the key.
+# PREREQUISITE: create `ably-api-key` in Key Vault BEFORE deploying. CSI is
+# fail-closed; its own projection is small on purpose, so a missing entry costs
+# delivery rather than also taking the model key and the gateway token down.
+studioAgentDeliverySecrets:
+  projectedName: fizzdragon-studio-agent-delivery-secrets
+  mapping:
+    - kv: ably-api-key
+      env: ABLY_API_KEY
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
 # exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
@@ -625,10 +648,10 @@ studioAgentRuntime:
     baseUrl: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
     textId: qwen3-max
     visionId: qwen3-vl-plus
-    timeoutMs: 120000
+    # Total timeout on one streaming model call. Bounded by the model
+    # activity's 16-minute startToClose; see apps/studio-agent-runtime/src/config.ts.
+    timeoutMs: 600000
     maxOutputTokens: 8192
-    deltaBytes: 1024
-    deltaIntervalMs: 50
   # Runtime egress is default-denied. Kubernetes NetworkPolicy cannot select a
   # public dependency by DNS name, so operators must provide the exact
   # environment-specific destination CIDRs. The template rejects missing or
@@ -670,12 +693,16 @@ studioAgentRuntime:
       port: 3001
   # Immutable per-root-turn envelope. The server snapshots these values when
   # it creates or promotes a turn; child tasks share that one durable budget.
+  # `maxCapabilityInputRejectionsPerRoot` is the exception: it bounds how many
+  # malformed tool inputs one turn tree may be told to correct, charges nothing,
+  # and is read live at each gate rather than snapshotted.
   budget:
     maxChildDepth: 4
     maxChildRuns: 24
     maxConcurrentChildRuns: 8
     maxModelStepsPerRun: 32
     maxModelStepsPerRoot: 128
+    maxCapabilityInputRejectionsPerRoot: 3
     maxTotalTokenUnits: 1000000
     maxContextBytesPerStep: 2000000
     imageTokenReserveUnits: 8192

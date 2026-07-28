@@ -10,6 +10,7 @@ import {
   StudioAgentActionExecutionSchema,
   StudioAgentApprovalSignalSchema,
   StudioAgentChildRunDescriptorSchema,
+  StudioAgentChildRunPreparationSchema,
   StudioAgentCompleteContextCompactionRequestSchema,
   StudioAgentContextCompactionCommitResultSchema,
   StudioAgentContextCompactionModelExecutionPlanSchema,
@@ -27,8 +28,11 @@ import {
   type StudioAgentAction,
   type StudioAgentActionExecution,
   type StudioAgentApproval,
+  type StudioAgentApprovalDecision,
   type StudioAgentApprovalSignal,
+  type StudioAgentCapabilityManifest,
   type StudioAgentChildRunDescriptor,
+  type StudioAgentChildRunPreparation,
   type StudioAgentCompleteContextCompactionRequest,
   type StudioAgentContextCompactionCommitResult,
   type StudioAgentContextCompactionDescriptor,
@@ -44,6 +48,7 @@ import {
   type StudioAgentMessagePart,
   type StudioAgentModelExecutionPlan,
   type StudioAgentModelMessageJson,
+  type StudioAgentPlannedCapability,
   type StudioAgentPrepareActionRequest,
   type StudioAgentPreparedAction,
   type StudioAgentRun,
@@ -60,10 +65,21 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
+import { prepareStudioAgentActionInput } from './studio-agent.action-input';
+import {
+  capabilityInputRejectionError,
+  type StudioAgentCapabilityInputIssue,
+} from './studio-agent.capability-error';
 import { StudioAgentCapabilityExecutor } from './studio-agent.capability-executor';
 import { StudioAgentConfigService } from './studio-agent.config';
 import { StudioAgentEventStore } from './studio-agent.events';
 import { hashStudioAgentJson } from './studio-agent.hash';
+import {
+  findExhaustedInputCorrections,
+  inputCorrectionExhaustedConflict,
+  inputCorrectionExhaustedError,
+  inputCorrectionExhaustedReason,
+} from './studio-agent.input-correction';
 import {
   toStudioAgentAction,
   toStudioAgentApproval,
@@ -76,6 +92,11 @@ import { StudioAgentRegistry } from './studio-agent.registry';
 import { StudioAgentRunTerminalService } from './studio-agent-run-terminal.service';
 import { projectStudioAgentDocumentAttachment } from './studio-agent-document-projection';
 import { StudioAgentScopeAuthorizer } from './studio-agent.scope';
+import {
+  findTerminalWriteFailure,
+  terminalWriteFailureConflict,
+  terminalWriteFailureReason,
+} from './studio-agent.write-failure';
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -172,9 +193,6 @@ export class StudioAgentRuntimeService {
       const event = await this.events.appendInTransaction(transaction, draft);
       return { event, created: true };
     });
-    if (result.created) {
-      this.events.publish(result.event);
-    }
     return result.event;
   }
 
@@ -196,8 +214,48 @@ export class StudioAgentRuntimeService {
           message: `Run ${run.id} cannot start a model step while ${run.status}.`,
         });
       }
+      // The structural half of "the agent must not announce work it has not
+      // done". A prompt rule cannot stop a model from narrating past a failed
+      // write — refusing it the next model step can. Once this turn tree has
+      // lost a non-retryable mutation there is nothing left to say, including
+      // from a task the same step already delegated: the child inherits the
+      // root and is refused its very first step.
+      const modelStepWriteFailure = await findTerminalWriteFailure(
+        transaction,
+        run.rootRunId,
+      );
+      if (modelStepWriteFailure) {
+        throw terminalWriteFailureConflict(
+          modelStepWriteFailure,
+          `Run ${run.id} cannot start another model step:`,
+        );
+      }
 
       const budget = await requireRootBudget(transaction, run);
+      // The correction budget is spent here, at the only door a new model step
+      // can come through. A rejected capability input is deliberately NOT a
+      // terminal write failure — it wrote nothing and the model is expected to
+      // fix it — but "expected to fix it" cannot mean "forever": once the
+      // rejections reach the turn's ceiling there is nothing left to try, and
+      // another step would only spend the creator's quota re-deriving that.
+      const exhaustedCorrections = await this.findExhaustedCorrections(
+        transaction,
+        run,
+      );
+      if (exhaustedCorrections) {
+        throw inputCorrectionExhaustedConflict(
+          exhaustedCorrections,
+          `Run ${run.id} cannot start another model step:`,
+        );
+      }
+      // Read under the same thread lock the allocation holds, because the
+      // permission verdict this feeds (`planCapabilities`) is part of the plan:
+      // a capability offered with no approval gate must have been decided
+      // against the same state the plan was built from.
+      const planThread = await transaction.studioAgentThread.findUniqueOrThrow({
+        where: { id: run.threadId },
+        select: { ownerActorId: true, surfaceId: true, workspaceId: true },
+      });
       const existing = await transaction.studioAgentModelAttempt.findFirst({
         where: { runId: run.id, status: 'running' },
         include: { assistantMessage: true },
@@ -228,6 +286,7 @@ export class StudioAgentRuntimeService {
         return {
           plan: null,
           run,
+          thread: planThread,
           attempt: existing,
           assistantMessage: existing.assistantMessage,
           context,
@@ -409,6 +468,7 @@ export class StudioAgentRuntimeService {
       return {
         plan: null,
         run,
+        thread: planThread,
         attempt,
         assistantMessage,
         context,
@@ -423,13 +483,18 @@ export class StudioAgentRuntimeService {
       id: allocation.run.scenarioId,
       version: allocation.run.scenarioVersion,
     });
-    const capabilities = this.registry.scenarioCapabilities(scenario);
     const skills = this.registry.scenarioSkills(scenario);
     const context = allocation.context;
     const system = this.systemInstructions(
       allocation.run,
       scenario,
       context.taskInstruction,
+    );
+    const capabilities = await this.planCapabilities(
+      allocation.run,
+      allocation.thread,
+      this.registry.scenarioCapabilities(scenario),
+      workflow.delivery !== null,
     );
 
     return StudioAgentModelExecutionPlanSchema.parse({
@@ -447,7 +512,9 @@ export class StudioAgentRuntimeService {
         contextRevision: context.contextRevision,
         contextCheckpointId: context.contextCheckpointId,
         messageIds: context.messageIds,
-        capabilities: capabilities.map(manifestReferenceForCapability),
+        capabilities: capabilities.map((planned) =>
+          manifestReferenceForCapability(planned.manifest),
+        ),
         skills: skills.map(manifestReferenceForSkill),
         locale: context.locale,
       },
@@ -461,6 +528,80 @@ export class StudioAgentRuntimeService {
       maxOutputTokens: allocation.maxOutputTokens,
       timeoutMs: this.config.value.model.timeoutMs,
     });
+  }
+
+  /**
+   * Decide the permission verdict for every capability BEFORE the model sees it.
+   *
+   * THIS IS THE PREREQUISITE FOR LIBRARY-NATIVE APPROVAL, AND IT USED TO BE
+   * IMPOSSIBLE. `needsApproval` lives on the tools registry handed to
+   * `streamText`, so it has to be known at offer time — but the only evaluation
+   * of `StudioAgentPolicyEngine` ran inside `prepareAction`, i.e. after the
+   * model had already emitted the call. Nothing in the verdict actually needed
+   * the call: `evaluate` reads the policy, the manifest, the scenario id, the
+   * run's execution-scope resource type and the granted scopes, all of which are
+   * settled here.
+   *
+   * THE POLICY IS THE RUN'S, NOT THE THREAD'S CURRENT ONE. `assertWorkflow`
+   * already treats `StudioAgentRun.permissionPolicy` as part of the run's
+   * identity, and reading a different policy here than `prepareAction` reads
+   * later is how the offer and the record diverge: plan says `allow`, so the
+   * model gets no approval gate and the browser renders nothing to answer, while
+   * prepare says `ask` and parks the run on an approval no one can see. One
+   * policy per run makes that unrepresentable.
+   *
+   * A CHANNEL-LESS RUN IS OFFERED NO ASK-GATED CAPABILITY AT ALL. A delegated
+   * task has no triggering input event, so it has no identity on the
+   * conversation channel and there is nowhere for a creator to answer. Offering
+   * it an approval-gated tool is offering a question that can only ever time
+   * out; withholding it makes the task fail fast with "unregistered tool"
+   * instead of parking a child workflow for the approval's whole TTL.
+   */
+  private async planCapabilities(
+    run: Awaited<ReturnType<typeof requireRun>>,
+    thread: { ownerActorId: string; surfaceId: string; workspaceId: string },
+    capabilities: readonly StudioAgentCapabilityManifest[],
+    answerable: boolean,
+  ): Promise<StudioAgentPlannedCapability[]> {
+    const policy = StudioAgentPermissionPolicySchema.parse(
+      run.permissionPolicy,
+    );
+    const scope = {
+      workspaceId: thread.workspaceId,
+      container: StudioAgentResourceRefSchema.parse(
+        run.executionScopeContainer,
+      ),
+      focus:
+        run.executionScopeFocus === null
+          ? null
+          : StudioAgentResourceRefSchema.parse(run.executionScopeFocus),
+    };
+    const authorized = await this.scopes.authorize(
+      thread.ownerActorId,
+      thread.surfaceId,
+      { id: run.scenarioId, version: run.scenarioVersion },
+      scope,
+    );
+    const target = scope.focus ?? scope.container;
+    const planned: StudioAgentPlannedCapability[] = [];
+    for (const manifest of capabilities) {
+      const permission = this.policy.evaluate(policy, manifest, {
+        scenarioId: run.scenarioId,
+        resourceType: target.resourceType,
+        grantedScopes: authorized.grantedScopes,
+      });
+      if (permission.decision === 'ask' && !answerable) {
+        continue;
+      }
+      planned.push({
+        manifest,
+        permission: {
+          decision: permission.decision,
+          reason: permission.reason,
+        },
+      });
+    }
+    return planned;
   }
 
   async completeContextCompaction(
@@ -508,15 +649,12 @@ export class StudioAgentRuntimeService {
               },
             },
           });
-          return {
-            result: StudioAgentContextCompactionCommitResultSchema.parse({
-              schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-              checkpointId: attempt.contextCheckpoint.id,
-              event: toStudioAgentEvent(event),
-              created: false,
-            }),
-            publish: [] as StudioAgentEvent[],
-          };
+          return StudioAgentContextCompactionCommitResultSchema.parse({
+            schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+            checkpointId: attempt.contextCheckpoint.id,
+            event: toStudioAgentEvent(event),
+            created: false,
+          });
         }
         if (attempt.status !== 'running') {
           throw new ConflictException({
@@ -614,7 +752,7 @@ export class StudioAgentRuntimeService {
             compactedAt,
           },
         });
-        const activityEvent = await this.events.appendInTransaction(
+        await this.events.appendInTransaction(
           transaction,
           eventForRun(
             run,
@@ -628,19 +766,15 @@ export class StudioAgentRuntimeService {
             compactedAt,
           ),
         );
-        return {
-          result: StudioAgentContextCompactionCommitResultSchema.parse({
-            schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-            checkpointId: plan.compaction.checkpointId,
-            event: contextEvent,
-            created: true,
-          }),
-          publish: [contextEvent, activityEvent],
-        };
+        return StudioAgentContextCompactionCommitResultSchema.parse({
+          schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+          checkpointId: plan.compaction.checkpointId,
+          event: contextEvent,
+          created: true,
+        });
       },
     );
-    transactionResult.publish.forEach((event) => this.events.publish(event));
-    return transactionResult.result;
+    return transactionResult;
   }
 
   async failContextCompaction(
@@ -730,9 +864,6 @@ export class StudioAgentRuntimeService {
         return { event, created: true };
       },
     );
-    if (transactionResult.created) {
-      this.events.publish(transactionResult.event);
-    }
     return transactionResult.event;
   }
 
@@ -748,10 +879,22 @@ export class StudioAgentRuntimeService {
         message: `${capability.capabilityId} must be prepared as a child run.`,
       });
     }
-    const input = this.registry.validateCapabilityInput(
+    const prepared = prepareStudioAgentActionInput({
+      capability,
+      scope: authorization.scope,
+      runId: request.runId,
+      stepId: request.stepId,
+      toolCallId: request.toolCallId,
+      input: request.input,
+    });
+    const checked = this.registry.checkCapabilityInput(
       manifestReferenceForCapability(capability),
-      request.input,
+      prepared,
     );
+    // The rejected bytes are what gets persisted, hashed and shown back. A
+    // rejection that dropped the input would leave the creator a failure they
+    // cannot read and the replay contract nothing to compare.
+    const input = checked.ok ? checked.input : prepared;
     const inputHash = hashStudioAgentJson(input);
     const result = await this.prisma.$transaction(async (transaction) => {
       await lockThread(transaction, request.threadId);
@@ -783,13 +926,41 @@ export class StudioAgentRuntimeService {
               ? toStudioAgentApproval(existing.approval)
               : null,
           permissionDecision,
-          events: [] as StudioAgentEvent[],
         };
       }
 
-      const currentPermissionPolicy = await requireCurrentPermissionPolicy(
-        transaction,
-        run.threadId,
+      // Placed after the replay short-circuit, like the write-failure gate: a
+      // redelivered prepare for an action that already exists must still find
+      // it. Past this point a new action is being admitted, and a turn whose
+      // corrections are spent admits nothing further — not a fresh rejection,
+      // and not a valid sibling of one, because the turn is over either way.
+      const exhausted = await this.findExhaustedCorrections(transaction, run);
+      if (exhausted) {
+        throw inputCorrectionExhaustedConflict(
+          exhausted,
+          `Run ${run.id} cannot prepare another action:`,
+        );
+      }
+      if (!checked.ok) {
+        return this.recordRejectedActionInput(transaction, {
+          request,
+          run,
+          capability,
+          authorization,
+          input,
+          inputHash,
+          issues: checked.issues,
+        });
+      }
+
+      // THE RUN'S POLICY, NOT THE THREAD'S CURRENT ONE — the same value
+      // `planCapabilities` evaluated before this capability was ever offered to
+      // the model. Reading the live thread policy here would let a mid-turn mode
+      // change hand the model a tool with no approval gate and then park the run
+      // on an approval the browser has nothing to render, or the reverse.
+      // `assertWorkflow` already treats this field as run identity.
+      const currentPermissionPolicy = StudioAgentPermissionPolicySchema.parse(
+        run.permissionPolicy,
       );
       const permission = this.policy.evaluate(
         currentPermissionPolicy,
@@ -850,33 +1021,29 @@ export class StudioAgentRuntimeService {
       });
       const canonicalApproval =
         approval === null ? null : toStudioAgentApproval(approval);
-      const appended = [
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          run,
+          'action.proposed',
+          {
+            action: canonicalAction,
+          },
+          `action:${action.id}:proposed`,
+          now,
+        ),
+      );
+      if (canonicalApproval) {
         await this.events.appendInTransaction(
           transaction,
           eventForRun(
             run,
-            'action.proposed',
+            'approval.requested',
             {
-              action: canonicalAction,
+              approval: canonicalApproval,
             },
-            `action:${action.id}:proposed`,
+            `approval:${approval!.id}:requested`,
             now,
-          ),
-        ),
-      ];
-      if (canonicalApproval) {
-        appended.push(
-          await this.events.appendInTransaction(
-            transaction,
-            eventForRun(
-              run,
-              'approval.requested',
-              {
-                approval: canonicalApproval,
-              },
-              `approval:${approval!.id}:requested`,
-              now,
-            ),
           ),
         );
       }
@@ -884,10 +1051,8 @@ export class StudioAgentRuntimeService {
         action: canonicalAction,
         approval: canonicalApproval,
         permissionDecision: permission.decision,
-        events: appended,
       };
     });
-    result.events.forEach((event) => this.events.publish(event));
     return {
       schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
       action: result.action,
@@ -896,9 +1061,150 @@ export class StudioAgentRuntimeService {
     };
   }
 
+  /**
+   * Records a tool call the manifest refused as a terminal `failed` action.
+   *
+   * This is the shallow validation gate's whole fix. It used to throw
+   * `BadRequestException` before any row existed, so the gateway answered 400,
+   * the runtime raised a non-retryable Temporal failure and the turn died — the
+   * observed case was one `operations` field sent as an object instead of an
+   * array. The model never saw the message and the creator got nothing.
+   *
+   * The row is written in the same shape the executor writes when its own zod
+   * gate rejects an input mid-attempt: `failed`, no output, no change set, the
+   * shared `studio_agent.invalid_action_input` error with its issue paths. The
+   * model reads it as an `error-json` tool result on its next step (see
+   * `projectToolMessage`) and can correct the call; the creator sees a failed
+   * action in the timeline. `studio_agent_actions_lifecycle_chk` requires a
+   * failed row to carry both timestamps, and they are honest: validating this
+   * input is the only work the action ever had, and it began and ended here.
+   * All three come from one clock so `started_at >= created_at` cannot fail on
+   * app/database clock skew.
+   *
+   * `permissionDecision` is `allow` because the field tells the runtime what to
+   * do next, and there is nothing here to approve or deny: the workflow calls
+   * `executeAction`, which replays the terminal result without dispatching
+   * anything — exactly what a redelivered prepare of any finished action already
+   * does (`permissionDecisionForPersistedAction`).
+   *
+   * `prepareChildRun` writes its refusals through here too, and reads only the
+   * action and the events: a refused delegation is reported as
+   * `{ outcome: 'refused' }`, the workflow starts nothing and calls nothing, so
+   * `permissionDecision` is meaningless on that path. Sharing the writer is the
+   * point — one row shape, one error code, one correction budget, whichever
+   * execution mode the model got wrong.
+   */
+  private async recordRejectedActionInput(
+    transaction: TransactionClient,
+    context: {
+      request: StudioAgentPrepareActionRequest;
+      run: Awaited<ReturnType<typeof requireRun>>;
+      capability: StudioAgentCapabilityManifest;
+      authorization: { target: unknown };
+      input: StudioAgentJsonObject;
+      inputHash: string;
+      issues: readonly StudioAgentCapabilityInputIssue[];
+    },
+  ): Promise<{
+    action: StudioAgentAction;
+    approval: null;
+    permissionDecision: 'allow';
+  }> {
+    const { request, run, capability } = context;
+    const now = new Date();
+    const error = capabilityInputRejectionError(context.issues);
+    const action = await transaction.studioAgentAction.create({
+      data: {
+        threadId: request.threadId,
+        runId: request.runId,
+        stepId: request.stepId,
+        toolCallId: request.toolCallId,
+        capabilityId: capability.capabilityId,
+        capabilityVersion: capability.version,
+        effect: capability.effect,
+        risk: capability.risk,
+        status: 'failed',
+        title: capability.name,
+        summary: capability.description,
+        target:
+          context.authorization.target === null
+            ? Prisma.DbNull
+            : (context.authorization.target as Prisma.InputJsonValue),
+        input: context.input as unknown as Prisma.InputJsonValue,
+        inputHash: context.inputHash,
+        idempotencyKey:
+          capability.idempotency === 'none'
+            ? null
+            : actionIdempotencyKey(request),
+        error: error as unknown as Prisma.InputJsonObject,
+        createdAt: now,
+        startedAt: now,
+        completedAt: now,
+      },
+    });
+    const canonicalAction = toStudioAgentAction({ ...action, approval: null });
+    const execution = StudioAgentActionExecutionSchema.parse({
+      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      executionId: action.id,
+      actionId: action.id,
+      status: 'failed',
+      output: null,
+      error,
+      changeSet: null,
+      startedAt: now.toISOString(),
+      completedAt: now.toISOString(),
+    });
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        run,
+        'action.proposed',
+        { action: canonicalAction },
+        `action:${action.id}:proposed`,
+        now,
+      ),
+    );
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        run,
+        'action.completed',
+        { execution },
+        `action:${action.id}:completed`,
+        now,
+      ),
+    );
+    return {
+      action: canonicalAction,
+      approval: null,
+      permissionDecision: 'allow',
+    };
+  }
+
+  /**
+   * Prepares a `child_run` capability call: a delegation the workflow starts, or
+   * a refusal it reads back as a tool result.
+   *
+   * The refusal branch is why this returns a union rather than a bare
+   * descriptor. A malformed delegate call used to throw `BadRequestException`
+   * before any row existed — 400 from the gateway, `ApplicationFailure`
+   * (non-retryable) in the runtime, dead turn — while a malformed
+   * `story.canvas.apply_patch` was recorded as a `failed` action the model reads
+   * and corrects. Same mistake, two fates, and the delegate one was fatal.
+   *
+   * A refused delegation is now the identical terminal `failed` action
+   * {@link recordRejectedActionInput} writes for an action-mode capability: same
+   * `studio_agent.invalid_action_input` code with its issue paths, same
+   * `action.proposed` + `action.completed` events, same `error-json` tool result
+   * on the model's next step, and counted by the same per-turn correction budget
+   * — so a model cannot escape the correction bound by delegating instead of
+   * patching. Nothing about the accepted path changed: it still creates the
+   * action and the child run in one transaction and hands the workflow a
+   * descriptor to start.
+   */
   async prepareChildRun(
     rawRequest: StudioAgentPrepareActionRequest,
-  ): Promise<StudioAgentChildRunDescriptor> {
+  ): Promise<StudioAgentChildRunPreparation> {
     const request = StudioAgentPrepareActionRequestSchema.parse(rawRequest);
     const authorization = await this.authorizeRequest(request);
     const capability = authorization.capability;
@@ -908,13 +1214,15 @@ export class StudioAgentRuntimeService {
         message: `${capability.capabilityId} must be prepared as an action.`,
       });
     }
-    const input = this.registry.validateCapabilityInput(
+    const checked = this.registry.checkCapabilityInput(
       manifestReferenceForCapability(capability),
       request.input,
     );
+    // The rejected bytes are what gets persisted, hashed and shown back, exactly
+    // as on the action path: a redelivered refusal recomputes the same hash and
+    // recognises its own action instead of raising an idempotency conflict.
+    const input = checked.ok ? checked.input : request.input;
     const inputHash = hashStudioAgentJson(input);
-    const taskKey = requireString(input, 'taskKey');
-    const title = requireString(input, 'title');
     const result = await this.prisma.$transaction(async (transaction) => {
       await lockThread(transaction, request.threadId);
       const parent = await requireRun(
@@ -933,27 +1241,87 @@ export class StudioAgentRuntimeService {
         );
       }
 
-      const existing = await transaction.studioAgentRun.findFirst({
+      // One replay short-circuit for both outcomes. The action row is written in
+      // the same transaction as the child run, so it exists for an accepted
+      // delegation and for a refused one, and it is the only record a refusal
+      // leaves — keying the short-circuit off the child run alone would let an
+      // at-least-once redelivery record a second refusal and spend a correction
+      // the model never used.
+      const existingAction = await transaction.studioAgentAction.findFirst({
         where: {
-          parentRunId: parent.id,
-          sourceStepId: request.stepId,
-          sourceToolCallId: request.toolCallId,
+          runId: parent.id,
+          stepId: request.stepId,
+          toolCallId: request.toolCallId,
         },
       });
-      if (existing) {
-        const action = await transaction.studioAgentAction.findFirstOrThrow({
+      if (existingAction) {
+        assertSamePreparedAction(existingAction, request, inputHash);
+        if (existingAction.status === 'failed') {
+          return refusedChildRun(
+            toStudioAgentAction({ ...existingAction, approval: null }),
+          );
+        }
+        const existingChild = await transaction.studioAgentRun.findFirst({
           where: {
-            runId: parent.id,
-            stepId: request.stepId,
-            toolCallId: request.toolCallId,
+            parentRunId: parent.id,
+            sourceStepId: request.stepId,
+            sourceToolCallId: request.toolCallId,
           },
         });
-        assertSamePreparedAction(action, request, inputHash);
-        return {
-          descriptor: childDescriptor(existing),
-          events: [] as StudioAgentEvent[],
-        };
+        if (!existingChild) {
+          throw dataIntegrity(
+            `Delegation action ${existingAction.id} has no child run.`,
+          );
+        }
+        return startedChildRun(childDescriptor(existingChild));
       }
+      // Delegation after a terminal write failure is the escape hatch the
+      // recorded incident actually used: two failed `story.canvas.apply_patch`
+      // calls, then a `studio.task.delegate` four seconds later, in the same
+      // run, and the turn still landed `succeeded`. This gate is placed after
+      // the replay short-circuit above so an at-least-once redelivery of a
+      // delegation prepared while the tree was healthy stays idempotent.
+      const delegationWriteFailure = await findTerminalWriteFailure(
+        transaction,
+        parent.rootRunId,
+      );
+      if (delegationWriteFailure) {
+        throw terminalWriteFailureConflict(
+          delegationWriteFailure,
+          `Run ${parent.id} cannot delegate a task:`,
+        );
+      }
+
+      // Delegating out of a turn whose corrections are spent is the same escape
+      // hatch by another name: the child inherits the parent's capabilities and
+      // would resume work the turn has already been stopped for. Ahead of the
+      // refusal branch for the reason the action path puts it there: a turn
+      // whose corrections are spent admits nothing further, not even a fresh
+      // rejection to count.
+      const delegationCorrections = await this.findExhaustedCorrections(
+        transaction,
+        parent,
+      );
+      if (delegationCorrections) {
+        throw inputCorrectionExhaustedConflict(
+          delegationCorrections,
+          `Run ${parent.id} cannot delegate a task:`,
+        );
+      }
+      if (!checked.ok) {
+        const rejected = await this.recordRejectedActionInput(transaction, {
+          request,
+          run: parent,
+          capability,
+          authorization,
+          input,
+          inputHash,
+          issues: checked.issues,
+        });
+        return refusedChildRun(rejected.action);
+      }
+      const taskKey = requireString(input, 'taskKey');
+      const title = requireString(input, 'title');
 
       const budget = await requireRootBudget(transaction, parent);
       const now = new Date();
@@ -998,9 +1366,9 @@ export class StudioAgentRuntimeService {
         );
       }
 
-      const currentPermissionPolicy = await requireCurrentPermissionPolicy(
-        transaction,
-        parent.threadId,
+      // See `prepareAction`: one policy per run, frozen on the run row.
+      const currentPermissionPolicy = StudioAgentPermissionPolicySchema.parse(
+        parent.permissionPolicy,
       );
       const permission = this.policy.evaluate(
         currentPermissionPolicy,
@@ -1071,39 +1439,33 @@ export class StudioAgentRuntimeService {
       });
       const canonicalAction = toStudioAgentAction(action);
       const canonicalChild = toStudioAgentRun(child);
-      const appended = [
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            parent,
-            'action.proposed',
-            {
-              action: canonicalAction,
-            },
-            `action:${action.id}:proposed`,
-            now,
-          ),
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          parent,
+          'action.proposed',
+          {
+            action: canonicalAction,
+          },
+          `action:${action.id}:proposed`,
+          now,
         ),
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            child,
-            'task.created',
-            {
-              taskRun: canonicalChild,
-            },
-            `run:${child.id}:task-created`,
-            now,
-          ),
+      );
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          child,
+          'task.created',
+          {
+            taskRun: canonicalChild,
+          },
+          `run:${child.id}:task-created`,
+          now,
         ),
-      ];
-      return {
-        descriptor: childDescriptor(child),
-        events: appended,
-      };
+      );
+      return startedChildRun(childDescriptor(child));
     });
-    result.events.forEach((event) => this.events.publish(event));
-    return result.descriptor;
+    return result;
   }
 
   async executeAction(
@@ -1160,10 +1522,7 @@ export class StudioAgentRuntimeService {
       const requestedStatus =
         request.disposition === 'denied' ? 'denied' : 'cancelled';
       if (action.status === requestedStatus) {
-        return {
-          action: toStudioAgentAction(action),
-          events: [] as StudioAgentEvent[],
-        };
+        return toStudioAgentAction(action);
       }
       if (isTerminalAction(action.status)) {
         // A deny that loses the race — the action already resolved, typically
@@ -1171,10 +1530,7 @@ export class StudioAgentRuntimeService {
         // expiry/steer deny reached the server — is a no-op, not a conflict.
         // Returning the settled action lets the workflow proceed instead of
         // turning the lost race into a nonRetryable 409 that fails the run.
-        return {
-          action: toStudioAgentAction(action),
-          events: [] as StudioAgentEvent[],
-        };
+        return toStudioAgentAction(action);
       }
       if (!action.approval || action.approval.id !== request.approvalId) {
         throw new ConflictException({
@@ -1189,10 +1545,7 @@ export class StudioAgentRuntimeService {
         // The approval was already decided the other way (the user approved
         // while this deny was in flight). Honor the settled action rather than
         // 409-failing the run; the approval transaction won the race.
-        return {
-          action: toStudioAgentAction(action),
-          events: [] as StudioAgentEvent[],
-        };
+        return toStudioAgentAction(action);
       }
 
       const decidedAt = new Date(request.decidedAt);
@@ -1229,108 +1582,117 @@ export class StudioAgentRuntimeService {
         request.reason,
         decidedAt,
       );
-      const appended = [
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            action.run,
-            'approval.resolved',
-            {
-              approval: canonicalApproval,
-            },
-            `approval:${approval.id}:resolved`,
-            decidedAt,
-          ),
-        ),
-        await this.events.appendInTransaction(
-          transaction,
-          eventForRun(
-            action.run,
-            'action.completed',
-            {
-              execution,
-            },
-            `action:${action.id}:terminal`,
-            decidedAt,
-          ),
-        ),
-      ];
-      return { action: canonicalAction, events: appended };
-    });
-    result.events.forEach((event) => this.events.publish(event));
-    return result.action;
-  }
-
-  async resolveApproval(
-    rawSignal: StudioAgentApprovalSignal,
-  ): Promise<StudioAgentApproval> {
-    const signal = StudioAgentApprovalSignalSchema.parse(rawSignal);
-    const result = await this.prisma.$transaction(async (transaction) => {
-      const initial = await transaction.studioAgentApproval.findUnique({
-        where: { id: signal.approvalId },
-      });
-      if (!initial) {
-        throw new NotFoundException({
-          code: 'STUDIO_AGENT_APPROVAL_NOT_FOUND',
-          message: 'Approval request not found.',
-        });
-      }
-      await lockThread(transaction, initial.threadId);
-      const approval = await transaction.studioAgentApproval.findUniqueOrThrow({
-        where: { id: signal.approvalId },
-        include: { action: true, run: true },
-      });
-      assertApprovalSignalIdentity(approval, signal);
-      const desiredStatus =
-        signal.decision === 'approved' ? 'approved' : 'denied';
-      if (approval.status === desiredStatus) {
-        return {
-          approval: toStudioAgentApproval(approval),
-          events: [] as StudioAgentEvent[],
-        };
-      }
-      if (approval.status !== 'pending') {
-        throw new ConflictException({
-          code: 'STUDIO_AGENT_APPROVAL_ALREADY_RESOLVED',
-          message: `Approval is already ${approval.status}.`,
-        });
-      }
-      const decision = {
-        decision: signal.decision,
-        actorId: signal.actorId,
-        note: signal.note,
-        decidedAt: signal.decidedAt,
-      };
-      const row = await transaction.studioAgentApproval.update({
-        where: { id: approval.id },
-        data: { status: desiredStatus, decision },
-      });
-      await transaction.studioAgentAction.update({
-        where: { id: approval.actionId },
-        data: {
-          status: signal.decision === 'approved' ? 'queued' : 'denied',
-          ...(signal.decision === 'denied'
-            ? { completedAt: new Date(signal.decidedAt) }
-            : {}),
-        },
-      });
-      const canonical = toStudioAgentApproval(row);
-      const event = await this.events.appendInTransaction(
+      await this.events.appendInTransaction(
         transaction,
         eventForRun(
-          approval.run,
+          action.run,
           'approval.resolved',
           {
-            approval: canonical,
+            approval: canonicalApproval,
           },
           `approval:${approval.id}:resolved`,
-          new Date(signal.decidedAt),
+          decidedAt,
         ),
       );
-      return { approval: canonical, events: [event] };
+      await this.events.appendInTransaction(
+        transaction,
+        eventForRun(
+          action.run,
+          'action.completed',
+          {
+            execution,
+          },
+          `action:${action.id}:terminal`,
+          decidedAt,
+        ),
+      );
+      return canonicalAction;
     });
-    result.events.forEach((event) => this.events.publish(event));
-    return result.approval;
+    return result;
+  }
+
+  /**
+   * Commit the creator's approval decisions, all of them, in one transaction.
+   *
+   * A LIST BECAUSE THE LIBRARY ANSWERS IN A LIST. A model step that calls three
+   * approval-gated tools emits three `tool-approval-request` parts at once, and
+   * `useChat` only fires the resuming continuation once every one of them has
+   * been answered — so the decisions arrive together, on one `ai-input`, and
+   * committing them one signal at a time would invent an ordering the creator
+   * never expressed and could leave the run half-answered if the second write
+   * failed.
+   *
+   * Idempotent against Temporal's at-least-once signal delivery: an approval
+   * already carrying the SAME decision is returned as-is; one carrying a
+   * different decision is a genuine conflict and refuses.
+   */
+  async resolveApproval(
+    rawSignal: StudioAgentApprovalSignal,
+  ): Promise<StudioAgentApproval[]> {
+    const signal = StudioAgentApprovalSignalSchema.parse(rawSignal);
+    return this.prisma.$transaction(async (transaction) => {
+      await lockThread(transaction, signal.threadId);
+      const resolved: StudioAgentApproval[] = [];
+      for (const entry of signal.decisions) {
+        const approval = await transaction.studioAgentApproval.findFirst({
+          where: { id: entry.approvalId, threadId: signal.threadId },
+          include: { action: true, run: true },
+        });
+        if (!approval) {
+          throw new NotFoundException({
+            code: 'STUDIO_AGENT_APPROVAL_NOT_FOUND',
+            message: 'Approval request not found.',
+          });
+        }
+        assertApprovalSignalIdentity(approval, signal.targetRunId, entry);
+        const desiredStatus =
+          entry.decision === 'approved' ? 'approved' : 'denied';
+        if (approval.status === desiredStatus) {
+          resolved.push(toStudioAgentApproval(approval));
+          continue;
+        }
+        if (approval.status !== 'pending') {
+          throw new ConflictException({
+            code: 'STUDIO_AGENT_APPROVAL_ALREADY_RESOLVED',
+            message: `Approval is already ${approval.status}.`,
+          });
+        }
+        const decision = {
+          decision: entry.decision,
+          actorId: signal.actorId,
+          note: signal.note,
+          decidedAt: signal.decidedAt,
+        };
+        const row = await transaction.studioAgentApproval.update({
+          where: { id: approval.id },
+          data: { status: desiredStatus, decision },
+        });
+        await transaction.studioAgentAction.update({
+          where: { id: approval.actionId },
+          data: {
+            status: entry.decision === 'approved' ? 'queued' : 'denied',
+            ...(entry.decision === 'denied'
+              ? { completedAt: new Date(signal.decidedAt) }
+              : {}),
+          },
+        });
+        const canonical = toStudioAgentApproval(row);
+        await this.events.appendInTransaction(
+          transaction,
+          eventForRun(
+            approval.run,
+            'approval.resolved',
+            {
+              approval: canonical,
+            },
+            `approval:${approval.id}:resolved`,
+            new Date(signal.decidedAt),
+          ),
+        );
+        resolved.push(canonical);
+      }
+      return resolved;
+    });
   }
 
   async consumeInput(
@@ -1351,10 +1713,7 @@ export class StudioAgentRuntimeService {
       }
       assertInputSignalIdentity(input, signal);
       if (input.status === 'consumed') {
-        return {
-          input: toStudioAgentInput(input),
-          events: [] as StudioAgentEvent[],
-        };
+        return toStudioAgentInput(input);
       }
       if (input.status !== 'accepted') {
         throw new ConflictException({
@@ -1367,7 +1726,7 @@ export class StudioAgentRuntimeService {
         where: { id: input.id },
         data: { status: 'consumed', consumedAt },
       });
-      const event = await this.events.appendInTransaction(
+      await this.events.appendInTransaction(
         transaction,
         eventForRun(
           input.targetRun,
@@ -1380,10 +1739,9 @@ export class StudioAgentRuntimeService {
           consumedAt,
         ),
       );
-      return { input: toStudioAgentInput(row), events: [event] };
+      return toStudioAgentInput(row);
     });
-    result.events.forEach((event) => this.events.publish(event));
-    return result.input;
+    return result;
   }
 
   async transitionRun(
@@ -1399,14 +1757,13 @@ export class StudioAgentRuntimeService {
       );
       assertWorkflow(run, request.workflow);
       const now = effectiveTransitionTime(request, run);
-      const events: StudioAgentEvent[] = [];
 
       if (
         isIdempotentTransition(run.status, request.transition) ||
         (TERMINAL_RUN_STATUSES.has(run.status) &&
           isTerminalTransition(request.transition))
       ) {
-        return { run: toStudioAgentRun(run), events };
+        return toStudioAgentRun(run);
       }
 
       // A cancellation request is a monotonic state transition. Provider/model
@@ -1426,11 +1783,7 @@ export class StudioAgentRuntimeService {
           },
           now,
         );
-        events.push(...cancellation.events);
-        return {
-          run: toStudioAgentRun(cancellation.run),
-          events,
-        };
+        return toStudioAgentRun(cancellation);
       }
 
       let updated: Parameters<typeof toStudioAgentRun>[0];
@@ -1443,35 +1796,31 @@ export class StudioAgentRuntimeService {
             where: { id: run.id },
             data: { status: 'running', startedAt: now },
           });
-          events.push(
+          await this.events.appendInTransaction(
+            transaction,
+            eventForRun(
+              run,
+              'run.started',
+              {
+                startedAt: now.toISOString(),
+              },
+              `run:${run.id}:started`,
+              now,
+            ),
+          );
+          if (run.kind === 'task') {
+            await this.startChildAction(transaction, run, now);
             await this.events.appendInTransaction(
               transaction,
               eventForRun(
                 run,
-                'run.started',
+                'task.started',
                 {
+                  task: requireTask(run),
                   startedAt: now.toISOString(),
                 },
-                `run:${run.id}:started`,
+                `run:${run.id}:task-started`,
                 now,
-              ),
-            ),
-          );
-          if (run.kind === 'task') {
-            events.push(
-              ...(await this.startChildAction(transaction, run, now)),
-              await this.events.appendInTransaction(
-                transaction,
-                eventForRun(
-                  run,
-                  'task.started',
-                  {
-                    task: requireTask(run),
-                    startedAt: now.toISOString(),
-                  },
-                  `run:${run.id}:task-started`,
-                  now,
-                ),
               ),
             );
           }
@@ -1488,7 +1837,7 @@ export class StudioAgentRuntimeService {
             // state at a time, so a matching status means this exact wait
             // already landed — treat the replay as a no-op instead of a 409
             // that would fail the whole turn.
-            return { run: toStudioAgentRun(run), events };
+            return toStudioAgentRun(run);
           }
           if (run.status !== 'running') {
             throw invalidTransition(run, request.transition);
@@ -1497,19 +1846,17 @@ export class StudioAgentRuntimeService {
             where: { id: run.id },
             data: { status },
           });
-          events.push(
-            await this.events.appendInTransaction(
-              transaction,
-              eventForRun(
-                run,
-                'run.waiting',
-                {
-                  reason: request.reason,
-                  referenceId: request.referenceId,
-                },
-                `run:${run.id}:wait:${request.reason}:${request.referenceId}`,
-                now,
-              ),
+          await this.events.appendInTransaction(
+            transaction,
+            eventForRun(
+              run,
+              'run.waiting',
+              {
+                reason: request.reason,
+                referenceId: request.referenceId,
+              },
+              `run:${run.id}:wait:${request.reason}:${request.referenceId}`,
+              now,
             ),
           );
           break;
@@ -1523,7 +1870,7 @@ export class StudioAgentRuntimeService {
             // Idempotent replay of an already-applied resume (at-least-once
             // delivery). Returning the running run keeps the workflow moving
             // instead of 409-failing the turn on a duplicated callback.
-            return { run: toStudioAgentRun(run), events };
+            return toStudioAgentRun(run);
           }
           if (run.status !== expected) {
             throw invalidTransition(run, request.transition);
@@ -1532,20 +1879,18 @@ export class StudioAgentRuntimeService {
             where: { id: run.id },
             data: { status: 'running' },
           });
-          events.push(
-            await this.events.appendInTransaction(
-              transaction,
-              eventForRun(
-                run,
-                'run.resumed',
-                {
-                  resumedFrom: request.resumedFrom,
-                  referenceId: request.referenceId,
-                  resumedAt: now.toISOString(),
-                },
-                `run:${run.id}:resume:${request.resumedFrom}:${request.referenceId}`,
-                now,
-              ),
+          await this.events.appendInTransaction(
+            transaction,
+            eventForRun(
+              run,
+              'run.resumed',
+              {
+                resumedFrom: request.resumedFrom,
+                referenceId: request.referenceId,
+                resumedAt: now.toISOString(),
+              },
+              `run:${run.id}:resume:${request.resumedFrom}:${request.referenceId}`,
+              now,
             ),
           );
           break;
@@ -1555,8 +1900,50 @@ export class StudioAgentRuntimeService {
             throw invalidTransition(run, request.transition);
           }
           await assertOutcomePersisted(transaction, run, request.outcome);
+          // The load-bearing half of the failure contract, and the only place
+          // in the system that writes `succeeded`. A turn that lost a
+          // non-retryable mutation did not do what it told the creator it did,
+          // so it terminalizes `failed` carrying the capability's own error —
+          // the issue paths the creator needs, not a generic runtime string.
+          const completionWriteFailure = await findTerminalWriteFailure(
+            transaction,
+            run.rootRunId,
+          );
+          if (completionWriteFailure) {
+            updated = await this.runTerminal.terminalizeInTransaction(
+              transaction,
+              run,
+              {
+                status: 'failed',
+                error: completionWriteFailure.error,
+                reason: terminalWriteFailureReason(completionWriteFailure),
+              },
+              now,
+            );
+            break;
+          }
+          // The same rule for the other terminal contract: a turn that spent
+          // every correction on inputs the schema refused produced nothing, and
+          // `succeeded` is the one thing it must never be recorded as.
+          const completionCorrections = await this.findExhaustedCorrections(
+            transaction,
+            run,
+          );
+          if (completionCorrections) {
+            updated = await this.runTerminal.terminalizeInTransaction(
+              transaction,
+              run,
+              {
+                status: 'failed',
+                error: inputCorrectionExhaustedError(completionCorrections),
+                reason: inputCorrectionExhaustedReason(completionCorrections),
+              },
+              now,
+            );
+            break;
+          }
           const summary = outcomeSummary(request.outcome);
-          const completion = await this.runTerminal.terminalizeInTransaction(
+          updated = await this.runTerminal.terminalizeInTransaction(
             transaction,
             run,
             {
@@ -1570,8 +1957,6 @@ export class StudioAgentRuntimeService {
             },
             now,
           );
-          updated = completion.run;
-          events.push(...completion.events);
           break;
         }
         case 'fail': {
@@ -1583,22 +1968,45 @@ export class StudioAgentRuntimeService {
           if (TERMINAL_RUN_STATUSES.has(run.status)) {
             throw invalidTransition(run, request.transition);
           }
-          const failure = await this.runTerminal.terminalizeInTransaction(
+          // Every gate this contract adds refuses with a 409, which the
+          // workflow converts into `runtime.workflow_failed` plus a Temporal
+          // root cause. That string is useless to a creator, and it is the
+          // only thing the studio would render. When the tree is poisoned the
+          // capability's own error is the true cause and the useful one, so it
+          // wins over whatever the workflow reported.
+          const runWriteFailure = await findTerminalWriteFailure(
+            transaction,
+            run.rootRunId,
+          );
+          // Same substitution for a turn stopped by the correction budget: the
+          // 409 the gateway raised reaches the workflow as
+          // `runtime.workflow_failed`, and the creator needs the schema issue
+          // the assistant could not satisfy, not a Temporal root cause.
+          const runCorrections = runWriteFailure
+            ? null
+            : await this.findExhaustedCorrections(transaction, run);
+          updated = await this.runTerminal.terminalizeInTransaction(
             transaction,
             run,
             {
               status: 'failed',
-              error: request.error,
-              reason: 'Run failed before the operation completed.',
+              error:
+                runWriteFailure?.error ??
+                (runCorrections
+                  ? inputCorrectionExhaustedError(runCorrections)
+                  : request.error),
+              reason: runWriteFailure
+                ? terminalWriteFailureReason(runWriteFailure)
+                : runCorrections
+                  ? inputCorrectionExhaustedReason(runCorrections)
+                  : 'Run failed before the operation completed.',
             },
             now,
           );
-          updated = failure.run;
-          events.push(...failure.events);
           break;
         }
         case 'cancel': {
-          const cancellation = await this.runTerminal.terminalizeInTransaction(
+          updated = await this.runTerminal.terminalizeInTransaction(
             transaction,
             run,
             { status: 'cancelled', reason: request.reason },
@@ -1607,15 +2015,12 @@ export class StudioAgentRuntimeService {
               ? {}
               : { requestedInputId: request.requestedByInputId },
           );
-          updated = cancellation.run;
-          events.push(...cancellation.events);
           break;
         }
       }
-      return { run: toStudioAgentRun(updated), events };
+      return toStudioAgentRun(updated);
     });
-    result.events.forEach((event) => this.events.publish(event));
-    return result.run;
+    return result;
   }
 
   private async projectRuntimeEvent(
@@ -1624,7 +2029,6 @@ export class StudioAgentRuntimeService {
   ): Promise<void> {
     if (
       draft.type !== 'assistant.segment.started' &&
-      draft.type !== 'assistant.segment.delta' &&
       draft.type !== 'assistant.segment.completed'
     ) {
       return;
@@ -1682,22 +2086,6 @@ export class StudioAgentRuntimeService {
           });
         }
         return;
-      case 'assistant.segment.delta': {
-        const text = `${textPart.text}${draft.payload.delta}`;
-        if (text.length > 200_000) {
-          throw new BadRequestException({
-            code: 'STUDIO_AGENT_MODEL_SEGMENT_TOO_LARGE',
-            message: 'Assistant segment exceeded the canonical message limit.',
-          });
-        }
-        await transaction.studioAgentMessage.update({
-          where: { id: messageId },
-          data: {
-            parts: [{ ...textPart, text }] as unknown as Prisma.InputJsonValue,
-          },
-        });
-        return;
-      }
       case 'assistant.segment.completed': {
         // A "length" truncation still produced valid (if incomplete) content —
         // it completes the message rather than failing it; the finishReason on
@@ -1794,8 +2182,31 @@ export class StudioAgentRuntimeService {
     return {
       capability,
       grantedScopes: authorized.grantedScopes,
+      scope,
       target: scope.focus ?? scope.container,
     };
+  }
+
+  /**
+   * The correction budget, read once per gate against this turn TREE.
+   *
+   * The ceiling comes from configuration rather than the frozen
+   * `StudioAgentRunBudget` row, deliberately: that row exists for accounting a
+   * retry or reconciler must not re-derive — token reservations, wall-clock
+   * deadlines, child-run counts — where mid-turn drift would double-charge or
+   * overrun something a creator paid for. A correction ceiling charges nothing.
+   * A redeploy that changes it can only give an in-flight turn one more or one
+   * fewer attempt at the same schema, and leaves no state behind either way.
+   */
+  private findExhaustedCorrections(
+    transaction: TransactionClient,
+    run: { rootRunId: string },
+  ) {
+    return findExhaustedInputCorrections(
+      transaction,
+      run.rootRunId,
+      this.config.value.budget.maxCapabilityInputRejectionsPerRoot,
+    );
   }
 
   private async loadModelContext(
@@ -2440,10 +2851,10 @@ export class StudioAgentRuntimeService {
     transaction: TransactionClient,
     run: Awaited<ReturnType<typeof requireRun>>,
     now: Date,
-  ): Promise<StudioAgentEvent[]> {
+  ): Promise<void> {
     const action = await requireParentAction(transaction, run);
     if (action.status === 'running') {
-      return [];
+      return;
     }
     if (action.status !== 'queued') {
       throw dataIntegrity(`Child action is ${action.status}, expected queued.`);
@@ -2452,22 +2863,20 @@ export class StudioAgentRuntimeService {
       where: { id: action.id },
       data: { status: 'running', startedAt: now },
     });
-    return [
-      await this.events.appendInTransaction(
-        transaction,
-        eventForRun(
-          action.run,
-          'action.started',
-          {
-            actionId: action.id,
-            executionId: run.id,
-            startedAt: now.toISOString(),
-          },
-          `action:${action.id}:started`,
-          now,
-        ),
+    await this.events.appendInTransaction(
+      transaction,
+      eventForRun(
+        action.run,
+        'action.started',
+        {
+          actionId: action.id,
+          executionId: run.id,
+          startedAt: now.toISOString(),
+        },
+        `action:${action.id}:started`,
+        now,
       ),
-    ];
+    );
   }
 }
 
@@ -2621,17 +3030,6 @@ async function requireRun(
   return run;
 }
 
-async function requireCurrentPermissionPolicy(
-  transaction: TransactionClient,
-  threadId: string,
-) {
-  const thread = await transaction.studioAgentThread.findUniqueOrThrow({
-    where: { id: threadId },
-    select: { permissionPolicy: true },
-  });
-  return StudioAgentPermissionPolicySchema.parse(thread.permissionPolicy);
-}
-
 function assertWorkflow(
   run: Awaited<ReturnType<typeof requireRun>>,
   workflow: StudioAgentWorkflowInput,
@@ -2759,6 +3157,26 @@ function actionIdempotencyKey(
   return `action:${request.runId}:${request.stepId}:${request.toolCallId}`;
 }
 
+function startedChildRun(
+  descriptor: StudioAgentChildRunDescriptor,
+): StudioAgentChildRunPreparation {
+  return StudioAgentChildRunPreparationSchema.parse({
+    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+    outcome: 'started',
+    descriptor,
+  });
+}
+
+function refusedChildRun(
+  action: StudioAgentAction,
+): StudioAgentChildRunPreparation {
+  return StudioAgentChildRunPreparationSchema.parse({
+    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+    outcome: 'refused',
+    action,
+  });
+}
+
 function childDescriptor(
   run: Awaited<ReturnType<typeof requireRun>>,
 ): StudioAgentChildRunDescriptor {
@@ -2843,13 +3261,14 @@ function assertApprovalSignalIdentity(
     runId: string;
     actionInputHash: string;
   },
-  signal: StudioAgentApprovalSignal,
+  targetRunId: string,
+  entry: StudioAgentApprovalDecision,
 ): void {
   if (
-    approval.id !== signal.approvalId ||
-    approval.actionId !== signal.actionId ||
-    approval.runId !== signal.targetRunId ||
-    approval.actionInputHash !== signal.actionInputHash
+    approval.id !== entry.approvalId ||
+    approval.actionId !== entry.actionId ||
+    approval.runId !== targetRunId ||
+    approval.actionInputHash !== entry.actionInputHash
   ) {
     throw new ConflictException({
       code: 'STUDIO_AGENT_APPROVAL_SIGNAL_MISMATCH',

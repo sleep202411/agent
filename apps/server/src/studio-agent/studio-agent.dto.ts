@@ -20,26 +20,6 @@ export const StudioAgentArtifactParamsSchema = z
   })
   .strict();
 
-export const StudioAgentApprovalParamsSchema = z
-  .object({
-    threadId: z.uuid(),
-    approvalId: z.uuid(),
-  })
-  .strict();
-
-export const StudioAgentEventQuerySchema = z
-  .object({
-    afterSequence: z.coerce.number().int().nonnegative().default(0),
-    limit: z.coerce.number().int().min(1).max(500).default(200),
-  })
-  .strict();
-
-export const StudioAgentEventStreamQuerySchema = z
-  .object({
-    afterSequence: z.coerce.number().int().nonnegative().default(0),
-  })
-  .strict();
-
 export const StudioAgentSnapshotQuerySchema = z
   .object({
     /**
@@ -56,13 +36,6 @@ export type StudioAgentThreadParams = z.infer<
 export type StudioAgentRunParams = z.infer<typeof StudioAgentRunParamsSchema>;
 export type StudioAgentArtifactParams = z.infer<
   typeof StudioAgentArtifactParamsSchema
->;
-export type StudioAgentApprovalParams = z.infer<
-  typeof StudioAgentApprovalParamsSchema
->;
-export type StudioAgentEventQuery = z.infer<typeof StudioAgentEventQuerySchema>;
-export type StudioAgentEventStreamQuery = z.infer<
-  typeof StudioAgentEventStreamQuerySchema
 >;
 export type StudioAgentSnapshotQuery = z.infer<
   typeof StudioAgentSnapshotQuerySchema

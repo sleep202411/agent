@@ -49,7 +49,6 @@ describe("StudioAgentTimeline attachment metadata", () => {
             {
               kind: "message",
               id: "message-1",
-              sequence: 1,
               message: {
                 id: "message-1",
                 messageId: "message-1",
@@ -69,14 +68,13 @@ describe("StudioAgentTimeline attachment metadata", () => {
                   },
                 ],
                 status: "completed",
+                streaming: false,
                 createdAt: "2026-07-24T12:00:00.000Z",
-                sequence: 1,
               },
             },
           ]}
           labels={labels}
-          renderApproval={() => null}
-          renderContextCompaction={() => null}
+          renderToolApproval={() => null}
         />
       );
     });
@@ -85,6 +83,73 @@ describe("StudioAgentTimeline attachment metadata", () => {
     expect(container.textContent).toContain("image/webp");
     expect(container.textContent).toContain("4 KB");
     expect(container.textContent).toContain("Ready");
+  });
+});
+
+describe("StudioAgentTimeline in-flight assistant text", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  async function renderReply(streaming: boolean, text: string) {
+    await act(async () => {
+      root.render(
+        <StudioAgentTimeline
+          items={[
+            {
+              kind: "message",
+              id: "message-1",
+              message: {
+                id: "message-1",
+                messageId: "message-1",
+                clientMessageId: null,
+                runId: "run-1",
+                role: "assistant",
+                format: "plain_text",
+                text,
+                attachments: [],
+                status: streaming ? "streaming" : "completed",
+                streaming,
+                createdAt: "2026-07-24T12:00:00.000Z",
+              },
+            },
+          ]}
+          labels={labels}
+          renderToolApproval={() => null}
+        />
+      );
+    });
+    return container.querySelector<HTMLElement>('article[data-role="assistant"]');
+  }
+
+  it("marks a reply that is still arriving as busy and renders it a tone step back", async () => {
+    const reply = await renderReply(true, "金陵的雨");
+
+    expect(reply?.getAttribute("data-streaming")).toBe("true");
+    expect(reply?.getAttribute("aria-busy")).toBe("true");
+    expect(reply?.className).toContain("text-white/56");
+    expect(reply?.querySelector(".animate-pulse")).not.toBeNull();
+    expect(reply?.textContent).toContain("金陵的雨");
+  });
+
+  it("drops every in-flight cue the moment the reply settles", async () => {
+    const reply = await renderReply(false, "金陵的雨停了。");
+
+    expect(reply?.getAttribute("data-streaming")).toBeNull();
+    expect(reply?.getAttribute("aria-busy")).toBeNull();
+    expect(reply?.className).not.toContain("text-white/56");
+    expect(reply?.querySelector(".animate-pulse")).toBeNull();
   });
 });
 
@@ -111,8 +176,7 @@ describe("StudioAgentTimeline earlier-turn control", () => {
           items={[]}
           labels={labels}
           earlier={earlier}
-          renderApproval={() => null}
-          renderContextCompaction={() => null}
+          renderToolApproval={() => null}
         />
       );
     });

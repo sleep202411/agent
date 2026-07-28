@@ -1,7 +1,13 @@
+import type { Prisma } from '@prisma/client';
 import { STUDIO_AGENT_SCHEMA_VERSION } from '@repo/shared/studio-agent';
 import type { AuthUser } from '../auth';
 import { studioAgentScopeKey } from './studio-agent.hash';
 import { StudioAgentService } from './studio-agent.service';
+import {
+  anyFunction,
+  anyString,
+  objectContaining,
+} from './__tests__/typed-expect';
 
 const ACTOR_ID = 'actor-activity-snapshot';
 const THREAD_ID = '019f8d10-0000-7000-8000-000000000001';
@@ -26,8 +32,10 @@ function snapshotFixture(
   } = {},
 ) {
   const thread = threadRow();
+  // Typed with the real query args so an assertion below reads the `where`
+  // the service actually built, not an `any` that would accept any key at all.
   const runFindMany = jest
-    .fn()
+    .fn<Promise<unknown[]>, [Prisma.StudioAgentRunFindManyArgs]>()
     .mockResolvedValueOnce(options.rootRuns ?? [])
     .mockResolvedValueOnce(options.subtreeRuns ?? []);
   const transaction = {
@@ -74,6 +82,9 @@ function snapshotFixture(
     {} as never,
     {} as never,
     {} as never,
+    // The reaper is best-effort on this path; a double that finds nothing
+    // keeps these tests about admission rather than about liveness.
+    { reconcileThread: jest.fn().mockResolvedValue(null) } as never,
   );
   return { prisma, transaction, service, runFindMany };
 }
@@ -206,8 +217,8 @@ describe('StudioAgentService snapshot', () => {
       test.transaction.studioAgentActivity,
     ]) {
       expect(collection.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
+        objectContaining({
+          where: objectContaining({
             runId: { in: [rootId, childId] },
           }),
         }),
@@ -249,8 +260,8 @@ describe('StudioAgentService snapshot', () => {
     );
 
     expect(test.transaction.studioAgentInput.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           OR: [
             { targetRunId: { in: [promotedRunId] } },
             { promotedToRunId: { in: [promotedRunId] } },
@@ -259,8 +270,8 @@ describe('StudioAgentService snapshot', () => {
       }),
     );
     expect(test.transaction.studioAgentMessage.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           OR: [
             { runId: { in: [promotedRunId] } },
             { id: { in: [promptMessageId] } },
@@ -302,8 +313,8 @@ describe('StudioAgentService snapshot', () => {
     );
 
     expect(test.transaction.studioAgentMessage.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           OR: [
             { runId: { in: [liveRunId] } },
             { id: { in: [queuedMessageId] } },
@@ -366,10 +377,9 @@ describe('StudioAgentService snapshot', () => {
       {},
     );
 
-    expect(test.prisma.$transaction).toHaveBeenCalledWith(
-      expect.any(Function),
-      { isolationLevel: 'RepeatableRead' },
-    );
+    expect(test.prisma.$transaction).toHaveBeenCalledWith(anyFunction(), {
+      isolationLevel: 'RepeatableRead',
+    });
     expect(snapshot.latestEventSequence).toBe(20);
   });
 });
@@ -379,7 +389,10 @@ describe('StudioAgentService root admission', () => {
     const order: string[] = [];
     const thread = threadRow();
     const request = {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      kind: 'submission' as const,
+      inputEventId: 'AAAAA0LrQ:0:0',
+      sessionName: `studio-agent:thread:${THREAD_ID}`,
+      threadId: THREAD_ID,
       clientMessageId: CLIENT_MESSAGE_ID,
       parts: [
         {
@@ -436,7 +449,7 @@ describe('StudioAgentService root admission', () => {
           createdAt: CREATED_AT,
           completedAt: CREATED_AT,
         }),
-        update: jest.fn().mockImplementation(({ data }) =>
+        update: jest.fn(({ data }: { data: { runId: string | null } }) =>
           Promise.resolve({
             id: MESSAGE_ID,
             threadId: THREAD_ID,
@@ -510,7 +523,6 @@ describe('StudioAgentService root admission', () => {
       appendInTransaction: jest.fn().mockResolvedValue({
         eventId: '019f8d10-0000-7000-8000-000000000011',
       }),
-      publish: jest.fn(),
     };
     const artifacts = {
       bindMessageAttachmentsInTransaction: jest
@@ -543,28 +555,31 @@ describe('StudioAgentService root admission', () => {
       artifacts as never,
       rootBudgetConfig() as never,
       quota as never,
+      {
+        reconcileThread: jest.fn().mockImplementation(() => {
+          order.push('admission:reconcile');
+          return Promise.resolve(null);
+        }),
+      } as never,
     );
 
     await expect(
-      service.submitMessage(
-        { userId: ACTOR_ID } as AuthUser,
-        THREAD_ID,
-        request,
-      ),
+      service.startInvocation({ userId: ACTOR_ID } as AuthUser, request),
     ).resolves.toMatchObject({
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      message: {
-        clientMessageId: CLIENT_MESSAGE_ID,
-        runId: expect.any(String),
-      },
-      run: {
-        runId: expect.any(String),
-        status: 'queued',
-      },
-      input: null,
+      threadId: THREAD_ID,
+      messageId: MESSAGE_ID,
+      runId: anyString(),
+      inputId: null,
+      channelName: `studio-agent:thread:${THREAD_ID}`,
     });
 
     expect(order).toEqual([
+      // FIRST, and the position is the point. The capacity gate reads
+      // `thread.activeRunId` itself and throws RUN_ALREADY_ACTIVE on a stale
+      // one, so a reconciliation placed after it would never be reached by the
+      // requests it exists to rescue — the thread would stay wedged forever
+      // with the fix sitting one line too late.
+      'admission:reconcile',
       'admission:rate',
       'admission:capacity',
       'admission:debit',
@@ -575,8 +590,101 @@ describe('StudioAgentService root admission', () => {
     expect(quota.attachRootInTransaction).toHaveBeenCalledWith(
       transaction,
       QUOTA_CHARGE_ID,
-      expect.any(String),
+      anyString(),
     );
+  });
+});
+
+describe('StudioAgentService invocation channel binding', () => {
+  /**
+   * `sessionName` arrives in the request body, and the client publishes to it
+   * BEFORE the server is consulted. A caller holding a perfectly valid token
+   * for their own thread can therefore name a DIFFERENT thread's channel — and
+   * if the server believed it, the worker would open this run and stream this
+   * answer onto somebody else's conversation. The channel is not a credential.
+   */
+  function invocation(sessionName: string) {
+    return {
+      kind: 'submission' as const,
+      inputEventId: 'AAAAA0LrQ:0:0',
+      sessionName,
+      threadId: THREAD_ID,
+      clientMessageId: CLIENT_MESSAGE_ID,
+      parts: [
+        {
+          type: 'text' as const,
+          format: 'plain_text' as const,
+          text: 'Continue the story.',
+        },
+      ],
+      scope: threadScope(),
+      locale: 'en-US',
+      targetRunId: null,
+      delivery: null,
+    };
+  }
+
+  function service() {
+    const requireThread = jest.fn(() => Promise.resolve(threadRow()));
+    const subject = new StudioAgentService(
+      {} as never,
+      { authorize: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { assertRateLimit: jest.fn(), findAttempt: jest.fn() } as never,
+      // The reaper is best-effort on this path; a double that finds nothing
+      // keeps these tests about admission rather than about liveness.
+      { reconcileThread: jest.fn().mockResolvedValue(null) } as never,
+    );
+    (subject as unknown as { requireThread: unknown }).requireThread =
+      requireThread;
+    return { subject, requireThread };
+  }
+
+  it.each([
+    [
+      'another thread',
+      'studio-agent:thread:019f8d10-0000-7000-8000-0000000000ff',
+    ],
+    ['a foreign namespace', `conversations:thread:${THREAD_ID}`],
+    ['a bare thread id', THREAD_ID],
+    ['a wildcard', 'studio-agent:thread:*'],
+  ])('refuses an invocation that names %s', async (_label, sessionName) => {
+    const { subject, requireThread } = service();
+
+    const failure = await subject
+      .startInvocation(
+        { userId: ACTOR_ID } as AuthUser,
+        invocation(sessionName),
+      )
+      .then(
+        () => null,
+        (error: unknown) => error as { response?: { code?: string } },
+      );
+
+    expect(failure?.response?.code).toBe(
+      'STUDIO_AGENT_INVOCATION_CHANNEL_MISMATCH',
+    );
+    // Refused before any thread lookup: the mismatch is decidable from the
+    // request alone, and a rejection that costs a query is a rejection that
+    // can be used to probe.
+    expect(requireThread).not.toHaveBeenCalled();
+  });
+
+  it('accepts the channel that belongs to the thread', async () => {
+    // The positive case has to be here too, or "refuse everything" would pass
+    // the four cases above.
+    const { subject, requireThread } = service();
+
+    await subject
+      .startInvocation(
+        { userId: ACTOR_ID } as AuthUser,
+        invocation(`studio-agent:thread:${THREAD_ID}`),
+      )
+      .catch(() => undefined);
+
+    expect(requireThread).toHaveBeenCalledWith({ userId: ACTOR_ID }, THREAD_ID);
   });
 });
 
@@ -648,3 +756,348 @@ function rootBudgetConfig() {
     },
   };
 }
+
+/**
+ * THE DECISION ARRIVES ON THE INVOCATION POST, AND NOWHERE ELSE.
+ *
+ * `POST threads/:id/approvals/:approvalId/resolve` is gone: it was a second
+ * authorization path for one decision, and it never worked (the workflow it
+ * signalled resumed the run's status only after trying to execute, so the
+ * executor answered 409 `STUDIO_AGENT_RUN_NOT_EXECUTABLE`). The browser now
+ * answers through `useChat.addToolApprovalResponse`, and the library's
+ * ChatTransport publishes the `tool-approval-response` and wakes this endpoint.
+ */
+describe('StudioAgentService tool approval invocations', () => {
+  const ACTION_ID = '019f8d10-0000-7000-8000-000000000021';
+  const APPROVAL_ID = '019f8d10-0000-7000-8000-000000000022';
+  const RESUME_EVENT_ID = 'AAAAA0LrQ:9:0';
+  const ACTION_INPUT_HASH = 'b'.repeat(64);
+
+  function approvalFixture(
+    options: {
+      runStatus?: string;
+      action?: Record<string, unknown> | null;
+    } = {},
+  ) {
+    const outboxCreate = jest.fn().mockResolvedValue({ id: 'outbox-1' });
+    const transaction = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: THREAD_ID }]),
+      studioAgentRun: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: RUN_ID,
+          threadId: THREAD_ID,
+          status: options.runStatus ?? 'waiting_for_approval',
+        }),
+      },
+      studioAgentAction: {
+        findFirst: jest.fn().mockResolvedValue(
+          options.action === undefined
+            ? {
+                id: ACTION_ID,
+                approval: {
+                  id: APPROVAL_ID,
+                  actionInputHash: ACTION_INPUT_HASH,
+                },
+              }
+            : options.action,
+        ),
+      },
+      studioAgentCommandOutbox: { create: outboxCreate },
+    };
+    const prisma = {
+      $transaction: jest.fn(
+        (callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+      ),
+    };
+    const service = new StudioAgentService(
+      prisma as never,
+      { authorize: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      // The reaper is best-effort on this path; a double that finds nothing
+      // keeps these tests about admission rather than about liveness.
+      { reconcileThread: jest.fn().mockResolvedValue(null) } as never,
+    );
+    (service as unknown as { requireThread: unknown }).requireThread = jest
+      .fn()
+      .mockResolvedValue(threadRow());
+    return { service, transaction, outboxCreate };
+  }
+
+  function request(approved = true) {
+    return {
+      kind: 'tool_approval' as const,
+      inputEventId: RESUME_EVENT_ID,
+      sessionName: `studio-agent:thread:${THREAD_ID}`,
+      threadId: THREAD_ID,
+      targetRunId: RUN_ID,
+      decisions: [{ toolCallId: 'call-1', approved }],
+    };
+  }
+
+  /**
+   * THE FIELD WITHOUT WHICH THE TURN CANNOT COME BACK. `adoptRun()` refuses a
+   * suspended run, and `createRun().start()` only publishes `ai-run-resume`
+   * rather than a duplicate `ai-run-start` when its TRIGGER carries a `run-id`
+   * header. That trigger is the `ai-input` this POST points at, so it has to
+   * travel on the signal.
+   */
+  it('signals the workflow with the decision AND the trigger that resumes the run', async () => {
+    const test = approvalFixture();
+
+    await expect(
+      test.service.startInvocation({ userId: ACTOR_ID } as AuthUser, request()),
+    ).resolves.toMatchObject({
+      kind: 'tool_approval',
+      runId: RUN_ID,
+      approvalIds: [APPROVAL_ID],
+    });
+
+    expect(test.outboxCreate).toHaveBeenCalledTimes(1);
+    expect((test.outboxCreate.mock.calls[0] as unknown[])?.[0]).toMatchObject({
+      data: {
+        type: 'signal',
+        runId: RUN_ID,
+        idempotencyKey: `approval:${RUN_ID}:${RESUME_EVENT_ID}`,
+        payload: objectContaining({
+          targetRunId: RUN_ID,
+          decisions: [
+            {
+              approvalId: APPROVAL_ID,
+              actionId: ACTION_ID,
+              actionInputHash: ACTION_INPUT_HASH,
+              decision: 'approved',
+            },
+          ],
+          resumeDelivery: {
+            inputEventId: RESUME_EVENT_ID,
+            channelName: `studio-agent:thread:${THREAD_ID}`,
+          },
+        }),
+      },
+    });
+  });
+
+  it('carries a refusal as a denial rather than dropping it', async () => {
+    const test = approvalFixture();
+
+    await test.service.startInvocation(
+      { userId: ACTOR_ID } as AuthUser,
+      request(false),
+    );
+
+    expect((test.outboxCreate.mock.calls[0] as unknown[])?.[0]).toMatchObject({
+      data: {
+        payload: objectContaining({
+          decisions: [objectContaining({ decision: 'denied' })],
+        }),
+      },
+    });
+  });
+
+  /**
+   * Addressed by tool call, resolved to the durable approval: the browser only
+   * ever knows the AI SDK's own per-stream `approval.id`, which means nothing to
+   * Postgres. `toolCallId` is the column both stores share.
+   */
+  it('resolves the tool call against this run only', async () => {
+    const test = approvalFixture();
+
+    await test.service.startInvocation(
+      { userId: ACTOR_ID } as AuthUser,
+      request(),
+    );
+
+    expect(test.transaction.studioAgentAction.findFirst).toHaveBeenCalledWith(
+      objectContaining({
+        where: { threadId: THREAD_ID, runId: RUN_ID, toolCallId: 'call-1' },
+      }),
+    );
+  });
+
+  it('refuses a decision for a run that is not waiting on one', async () => {
+    const test = approvalFixture({ runStatus: 'running' });
+
+    await expect(
+      test.service.startInvocation({ userId: ACTOR_ID } as AuthUser, request()),
+    ).rejects.toMatchObject({
+      response: { code: 'STUDIO_AGENT_RUN_NOT_AWAITING_APPROVAL' },
+    });
+    expect(test.outboxCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tool call that has no pending approval', async () => {
+    const test = approvalFixture({ action: null });
+
+    await expect(
+      test.service.startInvocation({ userId: ACTOR_ID } as AuthUser, request()),
+    ).rejects.toMatchObject({
+      response: { code: 'STUDIO_AGENT_APPROVAL_NOT_FOUND' },
+    });
+    expect(test.outboxCreate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * "NEW CONVERSATION" IS A STATUS FLIP, AND ITS ESCAPE-HATCH PROPERTY.
+ *
+ * `findActiveThread` filters on `status: 'active'`, so archiving is the entire
+ * mechanism: the next resolve finds nothing and mints a fresh thread. Nothing is
+ * deleted — the retired thread keeps every row it owns.
+ *
+ * The unconditional part is load-bearing, not laziness. A workflow that dies
+ * without reporting leaves `activeRunId` pointing at a run that never
+ * terminalizes, and every later message on that thread 409s. If this refused
+ * while a run looked live, the creator would be stranded in exactly the thread
+ * they are trying to leave. So it terminalizes what it finds directly rather
+ * than asking a runtime that may already be gone.
+ */
+describe('StudioAgentService archive thread', () => {
+  function archiveFixture(liveRuns: Array<Record<string, unknown>> = []) {
+    const runUpdate = jest.fn().mockResolvedValue({});
+    const threadUpdate = jest.fn().mockResolvedValue({});
+    const transaction = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: THREAD_ID }]),
+      studioAgentRun: {
+        findMany: jest.fn().mockResolvedValue(liveRuns),
+        update: runUpdate,
+      },
+      studioAgentThread: { update: threadUpdate },
+    };
+    const prisma = {
+      $transaction: jest.fn(
+        (callback: (tx: typeof transaction) => Promise<unknown>) =>
+          callback(transaction),
+      ),
+    };
+    const events = { appendInTransaction: jest.fn().mockResolvedValue({}) };
+    const service = new StudioAgentService(
+      prisma as never,
+      { authorize: jest.fn() } as never,
+      events as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      // The reaper is best-effort on this path; a double that finds nothing
+      // keeps these tests about admission rather than about liveness.
+      { reconcileThread: jest.fn().mockResolvedValue(null) } as never,
+    );
+    (service as unknown as { requireThread: unknown }).requireThread = jest
+      .fn()
+      .mockResolvedValue(threadRow());
+    return { service, transaction, runUpdate, threadUpdate, events };
+  }
+
+  it('retires the thread instead of deleting it, so the next resolve opens a fresh one', async () => {
+    const test = archiveFixture();
+
+    await expect(
+      test.service.archiveThread({ userId: ACTOR_ID } as AuthUser, THREAD_ID),
+    ).resolves.toMatchObject({ threadId: THREAD_ID, cancelledRunIds: [] });
+
+    expect(test.threadUpdate).toHaveBeenCalledWith({
+      where: { id: THREAD_ID },
+      data: { status: 'archived', activeRunId: null },
+    });
+  });
+
+  it('ends a run nothing else was going to end, which is the only way out of a wedged thread', async () => {
+    const test = archiveFixture([
+      { id: RUN_ID, rootRunId: RUN_ID, parentRunId: null },
+    ]);
+
+    await expect(
+      test.service.archiveThread({ userId: ACTOR_ID } as AuthUser, THREAD_ID),
+    ).resolves.toMatchObject({ cancelledRunIds: [RUN_ID] });
+
+    // Terminalized DIRECTLY. Going through the cancel signal would wait on a
+    // runtime that, in the case this exists for, is already gone.
+    expect(test.runUpdate).toHaveBeenCalledWith(
+      objectContaining({
+        where: { id: RUN_ID },
+        data: objectContaining({ status: 'cancelled' }),
+      }),
+    );
+    expect(test.events.appendInTransaction).toHaveBeenCalledWith(
+      test.transaction,
+      objectContaining({ type: 'run.cancelled' }),
+    );
+  });
+});
+
+/**
+ * THE PATH THE FIRST FIX MISSED, AND WHY IT FAILS WORSE THAN THE ONE IT COVERED.
+ *
+ * A dead run wedges a thread two ways. A FRESH turn 409s — loud, and the
+ * creator at least knows. But the panel, seeing an "active" run, does not send
+ * a fresh turn at all: it QUEUES the message against that run. So the creator
+ * gets no error, and their prompt waits forever on a workflow that will never
+ * consume it. Silence is the worse failure.
+ *
+ * The reconciliation therefore runs for EVERY submission, before the branch
+ * that tells the two apart. An end-to-end drive is what caught this: the fix
+ * looked right, its tests were green, and the message still vanished into a
+ * queue behind a workflow that had been terminated.
+ */
+describe('StudioAgentService reconciles before it branches', () => {
+  it('verifies liveness for a queued submission too, not only a fresh turn', async () => {
+    const reconcileThread = jest.fn().mockResolvedValue(null);
+    const quota = {
+      assertRateLimit: jest.fn().mockResolvedValue({}),
+      findAttempt: jest.fn().mockResolvedValue(null),
+    };
+    const service = new StudioAgentService(
+      {} as never,
+      {
+        authorize: jest.fn().mockResolvedValue({
+          scenario: { scenarioId: 'story.studio.assistant', version: '1.0.0' },
+          scope: threadScope(),
+          grantedScopes: new Set(['studio.write']),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      quota as never,
+      { reconcileThread } as never,
+    );
+    (service as unknown as { requireThread: unknown }).requireThread = jest
+      .fn()
+      .mockResolvedValue(threadRow());
+    (service as unknown as { existingSubmission: unknown }).existingSubmission =
+      jest.fn().mockResolvedValue(null);
+    // Stop right after the branch — this test is about what runs BEFORE it.
+    (service as unknown as { createRunInput: unknown }).createRunInput = jest
+      .fn()
+      .mockResolvedValue({ kind: 'input' });
+
+    await service.startInvocation(
+      { userId: ACTOR_ID } as AuthUser,
+      {
+        kind: 'submission',
+        inputEventId: 'AAAAA0LrQ:9:0',
+        sessionName: `studio-agent:thread:${THREAD_ID}`,
+        threadId: THREAD_ID,
+        clientMessageId: CLIENT_MESSAGE_ID,
+        // NOT null: this is the queue/steer path, the one that used to swallow
+        // the message silently.
+        targetRunId: RUN_ID,
+        delivery: 'enqueue',
+        parts: [
+          {
+            type: 'text',
+            format: 'plain_text',
+            text: 'Queued behind a corpse.',
+          },
+        ],
+        scope: threadScope(),
+        locale: 'en-US',
+      } as never,
+    );
+
+    expect(reconcileThread).toHaveBeenCalledWith(THREAD_ID);
+  });
+});

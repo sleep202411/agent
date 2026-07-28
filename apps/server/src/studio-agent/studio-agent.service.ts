@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, StudioAgentRunStatus } from '@prisma/client';
 import {
   STUDIO_AGENT_SCHEMA_VERSION,
   StudioAgentActionExecutionSchema,
@@ -13,30 +13,33 @@ import {
   StudioAgentCancelSignalSchema,
   StudioAgentInputSignalSchema,
   StudioAgentPermissionPolicySchema,
-  StudioAgentResourceRefSchema,
   StudioAgentWorkflowInputSchema,
-  type StudioAgentApproval,
-  type StudioAgentEvent,
+  type StudioAgentApprovalDecision,
   type StudioAgentJsonValue,
   type StudioAgentPermissionPolicy,
   type StudioAgentRun,
   type StudioAgentThreadScope,
 } from '@repo/shared/studio-agent';
 import {
+  StudioAgentArchiveThreadResponseSchema,
   StudioAgentCancelRunRequestSchema,
-  StudioAgentResolveApprovalRequestSchema,
   StudioAgentResolveThreadRequestSchema,
-  StudioAgentSubmitMessageRequestSchema,
   StudioAgentUpdatePermissionPolicyRequestSchema,
-  type StudioAgentResolveApprovalRequest,
-  type StudioAgentResolveApprovalResult,
+  type StudioAgentArchiveThreadResponse,
   type StudioAgentResolveThreadRequest,
   type StudioAgentResolveThreadResult,
-  type StudioAgentSubmitMessageRequest,
-  type StudioAgentSubmitMessageResult,
   type StudioAgentThreadSnapshot,
   type StudioAgentUpdatePermissionPolicyRequest,
 } from '@repo/shared/studio-agent-api';
+import {
+  StudioAgentInvocationRequestSchema,
+  studioAgentThreadChannel,
+  studioAgentThreadIdFromChannel,
+  type StudioAgentInvocationRequest,
+  type StudioAgentInvocationResult,
+  type StudioAgentSubmissionInvocationRequest,
+  type StudioAgentToolApprovalInvocationRequest,
+} from '@repo/shared/studio-agent-transport';
 import { randomUUID } from 'node:crypto';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -59,18 +62,21 @@ import {
 } from './studio-agent.mapper';
 import { StudioAgentEventStore } from './studio-agent.events';
 import { StudioAgentQuotaService } from './studio-agent-quota.service';
+import { StudioAgentRunReaper } from './studio-agent-run-reaper.service';
 import { StudioAgentScopeAuthorizer } from './studio-agent.scope';
 
 type TransactionClient = Prisma.TransactionClient;
 
-const ACTIVE_RUN_STATUSES = new Set<string>([
-  'queued',
-  'running',
-  'waiting_for_approval',
-  'waiting_for_input',
-  'cancelling',
-]);
-const PERSISTENT_APPROVAL_GRANT_PRIORITY = 2_147_483_647;
+// Prisma's `in` wants the generated enum and a mutable array; the Set is what
+// the rest of this service reads. One source, two shapes it has to satisfy.
+const ACTIVE_RUN_STATUS_VALUES: StudioAgentRunStatus[] = [
+  StudioAgentRunStatus.queued,
+  StudioAgentRunStatus.running,
+  StudioAgentRunStatus.waiting_for_approval,
+  StudioAgentRunStatus.waiting_for_input,
+  StudioAgentRunStatus.cancelling,
+];
+const ACTIVE_RUN_STATUSES = new Set<string>(ACTIVE_RUN_STATUS_VALUES);
 /**
  * Turns per snapshot page. A thread is a conversation that never ends, so the
  * snapshot is a tail of whole turns and the client pages backwards from it.
@@ -86,6 +92,7 @@ export class StudioAgentService {
     private readonly artifacts: StudioAgentArtifactService,
     private readonly config: StudioAgentConfigService,
     private readonly quota: StudioAgentQuotaService,
+    private readonly reaper: StudioAgentRunReaper,
   ) {}
 
   async resolveThread(
@@ -297,12 +304,33 @@ export class StudioAgentService {
     );
   }
 
-  async submitMessage(
+  /**
+   * Authorize and schedule the turn whose prompt is already on the channel.
+   *
+   * THE CHANNEL IS NOT A CREDENTIAL, AND `sessionName` IS UNTRUSTED INPUT. The
+   * invocation body names its own channel, so a caller holding a valid token
+   * for thread A can put thread B's channel name in `sessionName` and, if this
+   * believed it, have the worker open A's run and stream A's answer onto B —
+   * a cross-thread write with an entirely legitimate-looking token. The channel
+   * is therefore never taken from the body: it is derived from the thread that
+   * was actually authorized, and the submitted name has to match it exactly.
+   */
+  async startInvocation(
     user: AuthUser,
-    threadId: string,
-    rawRequest: StudioAgentSubmitMessageRequest,
-  ): Promise<StudioAgentSubmitMessageResult> {
-    const request = StudioAgentSubmitMessageRequestSchema.parse(rawRequest);
+    rawRequest: StudioAgentInvocationRequest,
+  ): Promise<StudioAgentInvocationResult> {
+    const request = StudioAgentInvocationRequestSchema.parse(rawRequest);
+    const threadId = request.threadId;
+    if (studioAgentThreadIdFromChannel(request.sessionName) !== threadId) {
+      throw new BadRequestException({
+        code: 'STUDIO_AGENT_INVOCATION_CHANNEL_MISMATCH',
+        message:
+          'The invocation names a channel that does not belong to this conversation.',
+      });
+    }
+    if (request.kind === 'tool_approval') {
+      return this.resolveToolApprovals(user, request);
+    }
     const thread = await this.requireThread(user, threadId);
     const authorized = await this.scopes.authorize(
       user.userId,
@@ -336,10 +364,42 @@ export class StudioAgentService {
       return existing;
     }
 
-    if (request.targetRunId === null) {
+    // BEFORE anything reads `thread.activeRunId`, and before the branch, because
+    // BOTH branches are wedged by a dead run and the second one fails WORSE.
+    //
+    // `activeRunId` caches a fact Temporal owns. A workflow that dies without
+    // reporting a terminal leaves it asserting a liveness nothing retracts.
+    // A fresh turn then 409s forever — but the panel, seeing an "active" run,
+    // does not even send a fresh turn: it QUEUES the message against that run,
+    // and the creator gets no error at all while their prompt waits on a
+    // workflow that will never consume it. Silence is the worse failure, so the
+    // reconciliation has to happen for every submission, not just root ones.
+    //
+    // It must also precede `prepareRootAttempt`, which reads `activeRunId`
+    // itself and throws the same RUN_ALREADY_ACTIVE — a reconciliation placed
+    // after it would never be reached by the requests it exists to rescue.
+    //
+    // Best effort by design: it corrects the cache or leaves it exactly as it
+    // was, and the gates below remain the arbiters of admission.
+    const reapedRunId = await this.reaper
+      .reconcileThread(threadId)
+      .catch(() => null);
+    // Deliberately NOT rewritten into a root turn here, though it is tempting:
+    // the client published its input event to the channel BEFORE asking for
+    // authorization, stamped with the run it was aiming at. Converting on this
+    // side produces a turn the control plane calls fresh and the channel calls a
+    // continuation of a run that no longer exists — the worker then waits for an
+    // `ai-run-start` that never comes and the turn dies at
+    // `run-start ... not observed`. Measured, not reasoned about.
+    //
+    // Only the client can publish a correctly shaped fresh input, so the retry
+    // belongs there; `STUDIO_AGENT_TARGET_RUN_INACTIVE` is what tells it to.
+    void reapedRunId;
+    const submission = request;
+    if (submission.targetRunId === null) {
       let attempt = await this.quota.findAttempt(
         threadId,
-        request.clientMessageId,
+        submission.clientMessageId,
         requestHash,
       );
       // A previous submit for this clientMessageId that was deterministically
@@ -360,7 +420,7 @@ export class StudioAgentService {
           userId: user.userId,
           workspaceId: thread.workspaceId,
           threadId,
-          clientMessageId: request.clientMessageId,
+          clientMessageId: submission.clientMessageId,
           requestHash,
           quotaProfile: profile,
         });
@@ -369,7 +429,7 @@ export class StudioAgentService {
       return this.createRootRun(
         user.userId,
         threadId,
-        request,
+        submission,
         requestHash,
         authorized.scope,
         charged.id,
@@ -379,7 +439,7 @@ export class StudioAgentService {
     return this.createRunInput(
       user.userId,
       threadId,
-      request,
+      submission,
       requestHash,
       authorized.scope,
     );
@@ -426,159 +486,114 @@ export class StudioAgentService {
     return updated;
   }
 
-  async resolveApproval(
+  /**
+   * Commit the creator's answers to a suspended turn and wake the workflow.
+   *
+   * THIS IS THE ONLY WAY AN APPROVAL IS ANSWERED, AND IT IS NOT AN ENDPOINT OF
+   * ITS OWN. `POST threads/:id/approvals/:approvalId/resolve` used to be, and it
+   * was a second authorization path for one decision — plus it never worked: it
+   * signalled the workflow, which resumed the run's DB status only AFTER trying
+   * to execute the approved action, so the executor saw `waiting_for_approval`
+   * and answered 409 `STUDIO_AGENT_RUN_NOT_EXECUTABLE`. The decision now arrives
+   * on the same invocation POST every other turn uses, because the browser
+   * answers through `useChat.addToolApprovalResponse` and the library's
+   * ChatTransport publishes the `tool-approval-response` and wakes us exactly
+   * once.
+   *
+   * WHAT THIS OWES THE WORKFLOW. Not just the decisions — the TRIGGER. A
+   * suspended run cannot be adopted (`@ably/ai-transport` refuses: "resume via
+   * createRun().start()"), and a `createRun` only publishes `ai-run-resume`
+   * rather than a duplicate `ai-run-start` when its trigger event carries a
+   * `run-id` header. That trigger is the `ai-input` this POST points at, so
+   * `resumeDelivery` travels on the signal; without it the turn can be decided
+   * and still never come back.
+   *
+   * Idempotent: the outbox key is the run plus the input event, so a retried
+   * POST for the same published decision enqueues one signal, and
+   * `StudioAgentRuntimeService.resolveApproval` treats an approval already
+   * carrying the same decision as done.
+   */
+  private async resolveToolApprovals(
     user: AuthUser,
-    threadId: string,
-    approvalId: string,
-    rawRequest: StudioAgentResolveApprovalRequest,
-  ): Promise<StudioAgentResolveApprovalResult> {
-    const request = StudioAgentResolveApprovalRequestSchema.parse(rawRequest);
+    request: StudioAgentToolApprovalInvocationRequest,
+  ): Promise<StudioAgentInvocationResult> {
+    const threadId = request.threadId;
     await this.requireThread(user, threadId);
-    const transactionResult = await this.prisma.$transaction(
-      async (transaction) => {
-        await lockThread(transaction, threadId);
-        const thread = await transaction.studioAgentThread.findUniqueOrThrow({
-          where: { id: threadId },
-          select: { permissionPolicy: true },
+    const decidedAt = new Date();
+    const approvalIds = await this.prisma.$transaction(async (transaction) => {
+      await lockThread(transaction, threadId);
+      const run = await transaction.studioAgentRun.findFirst({
+        where: { id: request.targetRunId, threadId },
+      });
+      if (!run) {
+        throw new NotFoundException({
+          code: 'STUDIO_AGENT_RUN_NOT_FOUND',
+          message: 'Studio Agent run not found.',
         });
-        const currentPolicy = StudioAgentPermissionPolicySchema.parse(
-          thread.permissionPolicy,
-        );
-        const approval = await transaction.studioAgentApproval.findFirst({
-          where: { id: approvalId, threadId },
-          include: { action: true, run: true },
+      }
+      if (run.status !== 'waiting_for_approval') {
+        throw new ConflictException({
+          code: 'STUDIO_AGENT_RUN_NOT_AWAITING_APPROVAL',
+          message: `Run ${run.id} is ${run.status}, not waiting for an approval.`,
         });
-        if (!approval) {
+      }
+      const decisions: StudioAgentApprovalDecision[] = [];
+      for (const entry of request.decisions) {
+        // Addressed by tool call, resolved to the durable approval. The
+        // browser only ever knows the AI SDK's own `approval.id`, which means
+        // nothing to Postgres; `toolCallId` is the one identifier both stores
+        // share.
+        const action = await transaction.studioAgentAction.findFirst({
+          where: {
+            threadId,
+            runId: run.id,
+            toolCallId: entry.toolCallId,
+          },
+          include: { approval: true },
+        });
+        if (!action?.approval) {
           throw new NotFoundException({
             code: 'STUDIO_AGENT_APPROVAL_NOT_FOUND',
-            message: 'Approval request not found.',
+            message: `No approval is pending for tool call ${entry.toolCallId}.`,
           });
         }
-        if (approval.actionInputHash !== request.actionInputHash) {
-          throw new ConflictException({
-            code: 'STUDIO_AGENT_APPROVAL_INPUT_CHANGED',
-            message: 'The action changed after this approval was shown.',
-          });
-        }
-
-        if (approval.status !== 'pending') {
-          const canonical = toStudioAgentApproval(approval);
-          if (
-            isSameApprovalResolution(
-              canonical,
-              currentPolicy,
-              approval,
-              request,
-              user.userId,
-            )
-          ) {
-            return {
-              approval: canonical,
-              permissionPolicy: currentPolicy,
-              event: null,
-            };
-          }
-          throw new ConflictException({
-            code: 'STUDIO_AGENT_APPROVAL_ALREADY_RESOLVED',
-            message: 'This approval request has already been resolved.',
-          });
-        }
-
-        const decidedAt = new Date();
-        const permissionPolicy = applyPersistentGrant(
-          currentPolicy,
-          approval,
-          request,
-          decidedAt,
-        );
-        if (permissionPolicy !== currentPolicy) {
-          await transaction.studioAgentThread
-            .updateMany({
-              where: {
-                id: threadId,
-                permissionPolicy: {
-                  path: ['revision'],
-                  equals: request.persistentGrant!.expectedPolicyRevision,
-                },
-              },
-              data: {
-                permissionPolicy:
-                  permissionPolicy as unknown as Prisma.InputJsonValue,
-              },
-            })
-            .then((updated) => {
-              if (updated.count !== 1) {
-                throw new ConflictException({
-                  code: 'STUDIO_AGENT_POLICY_REVISION_CONFLICT',
-                  message: 'The permission policy changed in another session.',
-                });
-              }
-            });
-        }
-        const decision = {
-          decision: request.decision,
-          actorId: user.userId,
-          note: request.note,
-          decidedAt: decidedAt.toISOString(),
-        };
-        const row = await transaction.studioAgentApproval.update({
-          where: { id: approval.id },
-          data: {
-            status: request.decision === 'approved' ? 'approved' : 'denied',
-            decision,
-          },
+        decisions.push({
+          approvalId: action.approval.id,
+          actionId: action.id,
+          actionInputHash: action.approval.actionInputHash,
+          decision: entry.approved ? 'approved' : 'denied',
         });
-        await transaction.studioAgentAction.update({
-          where: { id: approval.actionId },
-          data: {
-            status: request.decision === 'approved' ? 'queued' : 'denied',
-            ...(request.decision === 'denied'
-              ? { completedAt: decidedAt }
-              : {}),
-          },
-        });
-        const canonical = toStudioAgentApproval(row);
-        const signal = StudioAgentApprovalSignalSchema.parse({
-          schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-          approvalId: approval.id,
-          actionId: approval.actionId,
-          targetRunId: approval.runId,
-          actionInputHash: approval.actionInputHash,
-          decision: request.decision,
-          actorId: user.userId,
-          note: request.note,
-          decidedAt: decidedAt.toISOString(),
-        });
-        await transaction.studioAgentCommandOutbox.create({
-          data: {
-            threadId,
-            runId: approval.runId,
-            type: 'signal',
-            payload: signal as unknown as Prisma.InputJsonValue,
-            idempotencyKey: `approval:${approval.id}:${request.decision}`,
-          },
-        });
-        const event = await this.events.appendInTransaction(transaction, {
-          schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      }
+      const signal = StudioAgentApprovalSignalSchema.parse({
+        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+        threadId,
+        targetRunId: run.id,
+        decisions,
+        resumeDelivery: {
+          inputEventId: request.inputEventId,
+          channelName: request.sessionName,
+        },
+        actorId: user.userId,
+        note: null,
+        decidedAt: decidedAt.toISOString(),
+      });
+      await transaction.studioAgentCommandOutbox.create({
+        data: {
           threadId,
-          runId: approval.runId,
-          rootRunId: approval.run.rootRunId,
-          parentRunId: approval.run.parentRunId,
-          type: 'approval.resolved',
-          payload: { approval: canonical },
-          occurredAt: decidedAt.toISOString(),
-          idempotencyKey: `approval:${approval.id}:resolved`,
-        });
-        return { approval: canonical, permissionPolicy, event };
-      },
-    );
-    if (transactionResult.event) {
-      this.events.publish(transactionResult.event);
-    }
+          runId: run.id,
+          type: 'signal',
+          payload: signal as unknown as Prisma.InputJsonValue,
+          idempotencyKey: `approval:${run.id}:${request.inputEventId}`,
+        },
+      });
+      return decisions.map((decision) => decision.approvalId);
+    });
     return {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      approval: transactionResult.approval,
-      permissionPolicy: transactionResult.permissionPolicy,
+      kind: 'tool_approval',
+      threadId,
+      runId: request.targetRunId,
+      approvalIds,
+      channelName: studioAgentThreadChannel(threadId),
     };
   }
 
@@ -602,7 +617,7 @@ export class StudioAgentService {
         });
       }
       if (!ACTIVE_RUN_STATUSES.has(run.status)) {
-        return { run: toStudioAgentRun(run), event: null };
+        return toStudioAgentRun(run);
       }
       const requestedAt = new Date();
       const row = await transaction.studioAgentRun.update({
@@ -628,7 +643,7 @@ export class StudioAgentService {
         },
         update: {},
       });
-      const event = await this.events.appendInTransaction(transaction, {
+      await this.events.appendInTransaction(transaction, {
         schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
         threadId,
         runId: run.id,
@@ -642,12 +657,75 @@ export class StudioAgentService {
         occurredAt: requestedAt.toISOString(),
         idempotencyKey: `run:${run.id}:cancellation-requested`,
       });
-      return { run: toStudioAgentRun(row), event };
+      return toStudioAgentRun(row);
     });
-    if (result.event) {
-      this.events.publish(result.event);
-    }
-    return result.run;
+    return result;
+  }
+
+  /**
+   * Retire this thread. The next resolve opens a fresh one.
+   *
+   * This is the whole of "new conversation": `findActiveThread` filters on
+   * `status: 'active'` and nothing enforces one thread per scope, so flipping
+   * the status is what makes the next resolve mint a new thread — new id, new
+   * channel, empty transcript. Nothing is deleted. Every row this thread owns
+   * keeps its composite foreign keys; it simply stops being reachable, because
+   * nothing lists archived threads.
+   *
+   * IT DOES NOT REFUSE A LIVE TURN, AND THAT IS THE POINT. A creator asking for
+   * a new conversation has decided this one is over. More importantly this is
+   * the only escape from a WEDGED thread: when a workflow dies without reporting
+   * a terminal, `activeRunId` keeps pointing at a run that will never
+   * terminalize and every later message on that thread 409s. So the archive
+   * terminalizes what it finds directly rather than going through `cancelRun`,
+   * which asks the runtime nicely and would wait forever on a runtime that is
+   * already gone.
+   */
+  async archiveThread(
+    user: AuthUser,
+    threadId: string,
+  ): Promise<StudioAgentArchiveThreadResponse> {
+    await this.requireThread(user, threadId);
+    const cancelledRunIds = await this.prisma.$transaction(
+      async (transaction) => {
+        await lockThread(transaction, threadId);
+        const live = await transaction.studioAgentRun.findMany({
+          where: { threadId, status: { in: ACTIVE_RUN_STATUS_VALUES } },
+          select: { id: true, rootRunId: true, parentRunId: true },
+        });
+        const cancelledAt = new Date();
+        for (const run of live) {
+          await transaction.studioAgentRun.update({
+            where: { id: run.id },
+            data: { status: 'cancelled', completedAt: cancelledAt },
+          });
+          await this.events.appendInTransaction(transaction, {
+            schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+            threadId,
+            runId: run.id,
+            rootRunId: run.rootRunId,
+            parentRunId: run.parentRunId,
+            type: 'run.cancelled',
+            payload: {
+              reason: 'The creator started a new conversation.',
+              cancelledAt: cancelledAt.toISOString(),
+            },
+            occurredAt: cancelledAt.toISOString(),
+            idempotencyKey: `run:${run.id}:archived`,
+          });
+        }
+        await transaction.studioAgentThread.update({
+          where: { id: threadId },
+          data: { status: 'archived', activeRunId: null },
+        });
+        return live.map((run) => run.id);
+      },
+    );
+    return StudioAgentArchiveThreadResponseSchema.parse({
+      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      threadId,
+      cancelledRunIds,
+    });
   }
 
   async requireThread(user: AuthUser, threadId: string) {
@@ -695,7 +773,7 @@ export class StudioAgentService {
     threadId: string,
     clientMessageId: string,
     expectedRequestHash: string,
-  ): Promise<StudioAgentSubmitMessageResult | null> {
+  ): Promise<StudioAgentInvocationResult | null> {
     const message = await this.prisma.studioAgentMessage.findFirst({
       where: { threadId, clientMessageId },
       include: {
@@ -714,25 +792,23 @@ export class StudioAgentService {
       });
     }
     return {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      message: toStudioAgentMessage(message),
-      run: message.triggeredRuns[0]
-        ? toStudioAgentRun(message.triggeredRuns[0])
-        : null,
-      input: message.deliveredInputs[0]
-        ? toStudioAgentInput(message.deliveredInputs[0])
-        : null,
+      kind: 'submission',
+      threadId,
+      messageId: message.id,
+      runId: message.triggeredRuns[0]?.id ?? null,
+      inputId: message.deliveredInputs[0]?.id ?? null,
+      channelName: studioAgentThreadChannel(threadId),
     };
   }
 
   private async createRootRun(
     actorId: string,
     threadId: string,
-    request: StudioAgentSubmitMessageRequest,
+    request: StudioAgentSubmissionInvocationRequest,
     requestHash: string,
     submissionScope: StudioAgentThreadScope,
     quotaChargeAttemptId: string,
-  ): Promise<StudioAgentSubmitMessageResult> {
+  ): Promise<StudioAgentInvocationResult> {
     const runId = randomUUID();
     const now = new Date();
     try {
@@ -777,6 +853,11 @@ export class StudioAgentService {
             kind: 'turn',
             trigger: 'message',
             triggerMessageId: message.id,
+            // The anchor that lets the worker open this run on the channel.
+            // Recorded in the SAME transaction as the run, so a run can never
+            // exist in a state where the workflow cannot address its own
+            // conversation.
+            deliveryInputEventId: request.inputEventId,
             scenarioId: allocation.scenarioId,
             scenarioVersion: allocation.scenarioVersion,
             executionScopeContainer:
@@ -824,7 +905,7 @@ export class StudioAgentService {
           },
         });
         const canonicalRun = toStudioAgentRun(run);
-        const event = await this.events.appendInTransaction(transaction, {
+        await this.events.appendInTransaction(transaction, {
           schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
           threadId,
           runId,
@@ -835,18 +916,15 @@ export class StudioAgentService {
           occurredAt: now.toISOString(),
           idempotencyKey: `run:${runId}:created`,
         });
-        return {
-          message: toStudioAgentMessage(linkedMessage),
-          run: canonicalRun,
-          event,
-        };
+        return { messageId: linkedMessage.id, runId: canonicalRun.runId };
       });
-      this.events.publish(result.event);
       return {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        message: result.message,
-        run: result.run,
-        input: null,
+        kind: 'submission',
+        threadId,
+        messageId: result.messageId,
+        runId: result.runId,
+        inputId: null,
+        channelName: studioAgentThreadChannel(threadId),
       };
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -876,10 +954,10 @@ export class StudioAgentService {
   private async createRunInput(
     actorId: string,
     threadId: string,
-    request: StudioAgentSubmitMessageRequest,
+    request: StudioAgentSubmissionInvocationRequest,
     requestHash: string,
     submissionScope: StudioAgentThreadScope,
-  ): Promise<StudioAgentSubmitMessageResult> {
+  ): Promise<StudioAgentInvocationResult> {
     if (request.targetRunId === null || request.delivery === null) {
       throw new BadRequestException({
         code: 'STUDIO_AGENT_INPUT_DELIVERY_INVALID',
@@ -952,15 +1030,14 @@ export class StudioAgentService {
             acceptedAt: now,
           },
         });
-        const supersededApprovalEvents =
-          request.delivery === 'enqueue'
-            ? []
-            : await cancelPendingApprovalsForInterrupt(
-                transaction,
-                this.events,
-                target,
-                now,
-              );
+        if (request.delivery !== 'enqueue') {
+          await cancelPendingApprovalsForInterrupt(
+            transaction,
+            this.events,
+            target,
+            now,
+          );
+        }
         const canonicalInput = toStudioAgentInput(input);
         const signal = StudioAgentInputSignalSchema.parse({
           schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
@@ -982,7 +1059,7 @@ export class StudioAgentService {
             },
           });
         }
-        const event = await this.events.appendInTransaction(transaction, {
+        await this.events.appendInTransaction(transaction, {
           schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
           threadId,
           runId: target.id,
@@ -993,18 +1070,15 @@ export class StudioAgentService {
           occurredAt: now.toISOString(),
           idempotencyKey: `input:${input.id}:accepted`,
         });
-        return {
-          message: toStudioAgentMessage(message),
-          input: canonicalInput,
-          events: [...supersededApprovalEvents, event],
-        };
+        return { messageId: message.id, inputId: canonicalInput.inputId };
       });
-      result.events.forEach((event) => this.events.publish(event));
       return {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        message: result.message,
-        run: null,
-        input: result.input,
+        kind: 'submission',
+        threadId,
+        messageId: result.messageId,
+        runId: null,
+        inputId: result.inputId,
+        channelName: studioAgentThreadChannel(threadId),
       };
     } catch (error) {
       if (!isUniqueViolation(error)) {
@@ -1037,7 +1111,7 @@ function createPermissionPolicy(
 }
 
 function submissionRequestHash(
-  request: StudioAgentSubmitMessageRequest,
+  request: StudioAgentSubmissionInvocationRequest,
 ): string {
   return hashStudioAgentJson({
     parts: request.parts,
@@ -1058,12 +1132,11 @@ async function cancelPendingApprovalsForInterrupt(
     parentRunId: string | null;
   },
   cancelledAt: Date,
-): Promise<StudioAgentEvent[]> {
+): Promise<void> {
   const pending = await transaction.studioAgentApproval.findMany({
     where: { runId: run.id, status: 'pending' },
     orderBy: [{ requestedAt: 'asc' }, { id: 'asc' }],
   });
-  const appended: StudioAgentEvent[] = [];
 
   for (const approval of pending) {
     const canonicalApproval = toStudioAgentApproval(
@@ -1093,171 +1166,29 @@ async function cancelPendingApprovalsForInterrupt(
       startedAt: cancelledAt.toISOString(),
       completedAt: cancelledAt.toISOString(),
     });
-    appended.push(
-      await events.appendInTransaction(transaction, {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        threadId: run.threadId,
-        runId: run.id,
-        rootRunId: run.rootRunId,
-        parentRunId: run.parentRunId,
-        type: 'approval.resolved',
-        payload: { approval: canonicalApproval },
-        occurredAt: cancelledAt.toISOString(),
-        idempotencyKey: `approval:${approval.id}:resolved`,
-      }),
-      await events.appendInTransaction(transaction, {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        threadId: run.threadId,
-        runId: run.id,
-        rootRunId: run.rootRunId,
-        parentRunId: run.parentRunId,
-        type: 'action.completed',
-        payload: { execution },
-        occurredAt: cancelledAt.toISOString(),
-        idempotencyKey: `action:${approval.actionId}:terminal`,
-      }),
-    );
-  }
-
-  return appended;
-}
-
-type ApprovalWithCapability = {
-  id: string;
-  action: {
-    capabilityId: string;
-    capabilityVersion: string;
-    effect: string;
-    risk: string;
-    target: Prisma.JsonValue | null;
-  };
-  run: {
-    scenarioId: string;
-  };
-};
-
-function applyPersistentGrant(
-  current: StudioAgentPermissionPolicy,
-  approval: ApprovalWithCapability,
-  request: StudioAgentResolveApprovalRequest,
-  decidedAt: Date,
-): StudioAgentPermissionPolicy {
-  const grant = request.persistentGrant;
-  if (grant === null) {
-    return current;
-  }
-  assertPersistentGrantCapability(approval, grant.capability);
-  if (current.revision !== grant.expectedPolicyRevision) {
-    throw new ConflictException({
-      code: 'STUDIO_AGENT_POLICY_REVISION_CONFLICT',
-      message: 'The permission policy changed in another session.',
+    await events.appendInTransaction(transaction, {
+      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      threadId: run.threadId,
+      runId: run.id,
+      rootRunId: run.rootRunId,
+      parentRunId: run.parentRunId,
+      type: 'approval.resolved',
+      payload: { approval: canonicalApproval },
+      occurredAt: cancelledAt.toISOString(),
+      idempotencyKey: `approval:${approval.id}:resolved`,
+    });
+    await events.appendInTransaction(transaction, {
+      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
+      threadId: run.threadId,
+      runId: run.id,
+      rootRunId: run.rootRunId,
+      parentRunId: run.parentRunId,
+      type: 'action.completed',
+      payload: { execution },
+      occurredAt: cancelledAt.toISOString(),
+      idempotencyKey: `action:${approval.actionId}:terminal`,
     });
   }
-
-  const existing = current.rules.find((rule) => rule.ruleId === approval.id);
-  if (existing) {
-    if (matchesPersistentGrantRule(existing, approval)) {
-      return current;
-    }
-    throw new ConflictException({
-      code: 'STUDIO_AGENT_PERSISTENT_GRANT_CONFLICT',
-      message: 'This approval already owns a different persistent grant.',
-    });
-  }
-  if (current.rules.length >= 256) {
-    throw new BadRequestException({
-      code: 'STUDIO_AGENT_PERMISSION_RULE_LIMIT',
-      message: 'The permission policy already contains the maximum 256 rules.',
-    });
-  }
-
-  return StudioAgentPermissionPolicySchema.parse({
-    ...current,
-    revision: current.revision + 1,
-    rules: [...current.rules, persistentGrantRule(approval)],
-    createdAt: decidedAt.toISOString(),
-  });
-}
-
-function isSameApprovalResolution(
-  canonical: StudioAgentApproval,
-  currentPolicy: StudioAgentPermissionPolicy,
-  approval: ApprovalWithCapability,
-  request: StudioAgentResolveApprovalRequest,
-  actorId: string,
-): boolean {
-  const decision = canonical.decision;
-  if (
-    decision?.decision !== request.decision ||
-    decision.actorId !== actorId ||
-    decision.note !== request.note
-  ) {
-    return false;
-  }
-  const persistedGrant = currentPolicy.rules.find(
-    (rule) => rule.ruleId === approval.id,
-  );
-  if (request.persistentGrant === null) {
-    return persistedGrant === undefined;
-  }
-  assertPersistentGrantCapability(approval, request.persistentGrant.capability);
-  return (
-    persistedGrant !== undefined &&
-    matchesPersistentGrantRule(persistedGrant, approval)
-  );
-}
-
-function assertPersistentGrantCapability(
-  approval: ApprovalWithCapability,
-  capability: { id: string; version: string },
-): void {
-  if (
-    capability.id !== approval.action.capabilityId ||
-    capability.version !== approval.action.capabilityVersion
-  ) {
-    throw new ConflictException({
-      code: 'STUDIO_AGENT_PERSISTENT_GRANT_CAPABILITY_MISMATCH',
-      message:
-        'The persistent grant must exactly match the approved capability and version.',
-    });
-  }
-}
-
-function persistentGrantRule(approval: ApprovalWithCapability) {
-  const target =
-    approval.action.target === null
-      ? null
-      : StudioAgentResourceRefSchema.parse(approval.action.target);
-  return {
-    ruleId: approval.id,
-    priority: PERSISTENT_APPROVAL_GRANT_PRIORITY,
-    selector: {
-      scenarioId: approval.run.scenarioId,
-      capabilityId: approval.action.capabilityId,
-      capabilityVersion: approval.action.capabilityVersion,
-      resourceType: target?.resourceType ?? null,
-      effect: approval.action.effect,
-      risk: approval.action.risk,
-    },
-    decision: 'allow' as const,
-  };
-}
-
-function matchesPersistentGrantRule(
-  rule: StudioAgentPermissionPolicy['rules'][number],
-  approval: ApprovalWithCapability,
-): boolean {
-  const expected = persistentGrantRule(approval);
-  return (
-    rule.priority === expected.priority &&
-    rule.decision === expected.decision &&
-    rule.selector.scenarioId === expected.selector.scenarioId &&
-    rule.selector.capabilityId === expected.selector.capabilityId &&
-    rule.selector.capabilityVersion === expected.selector.capabilityVersion &&
-    rule.selector.resourceType === expected.selector.resourceType &&
-    rule.selector.effect === expected.selector.effect &&
-    rule.selector.risk === expected.selector.risk
-  );
 }
 
 async function allocateMessageOrdinal(

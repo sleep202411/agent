@@ -120,7 +120,18 @@ below are the binding constraints it must honor.
      labels; `dense` for compact dialogs); use `RequiredMark` directly only
      in non-Field contexts (e.g. a fieldset legend).
 
-   In all three uses red still never joins the neutral token set and never
+   - **Terminal failure surface** (signed off 2026-07-27): the one state
+     that has to stop the creator —
+     `components/studio-agent/studio-agent-turn-failure.tsx`, the pinned
+     notice for a StoryOS turn that died. Frosted panel, the same red
+     `GlassRim` recipe as option-card selection, a ≤10% red wash
+     (`bg-[#E52227]/[0.07]`), and a brand-red warning glyph. No red fill,
+     no red shadow/glow, and the action pill stays white-alpha — red marks
+     the state, not the button. Reserved for a TERMINAL failure the
+     creator must act on; a transient or inline error keeps
+     `destructive`/white-alpha (see rule 2).
+
+   In all four uses red still never joins the neutral token set and never
    tints a passive surface. Generated imagery is the only saturated content
    by default.
 

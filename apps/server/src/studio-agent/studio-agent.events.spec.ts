@@ -129,7 +129,7 @@ function harness() {
   return {
     activities,
     transaction,
-    store: new StudioAgentEventStore({} as never, {} as never),
+    store: new StudioAgentEventStore({} as never),
   };
 }
 

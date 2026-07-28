@@ -160,10 +160,6 @@ spec:
               value: {{ $runtime.model.timeoutMs | quote }}
             - name: STUDIO_AGENT_MODEL_MAX_OUTPUT_TOKENS
               value: {{ $runtime.model.maxOutputTokens | quote }}
-            - name: STUDIO_AGENT_MODEL_DELTA_BYTES
-              value: {{ $runtime.model.deltaBytes | quote }}
-            - name: STUDIO_AGENT_MODEL_DELTA_INTERVAL_MS
-              value: {{ $runtime.model.deltaIntervalMs | quote }}
             {{- end }}
           envFrom:
             {{- if $mtls }}
@@ -175,6 +171,8 @@ spec:
                 name: {{ $.Values.studioAgentGatewaySecrets.projectedName }}
             - secretRef:
                 name: {{ $.Values.studioAgentModelSecrets.projectedName }}
+            - secretRef:
+                name: {{ $.Values.studioAgentDeliverySecrets.projectedName }}
             {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -194,6 +192,9 @@ spec:
               readOnly: true
             - name: studio-agent-model-secrets
               mountPath: /mnt/studio-agent-model-secrets
+              readOnly: true
+            - name: studio-agent-delivery-secrets
+              mountPath: /mnt/studio-agent-delivery-secrets
               readOnly: true
             {{- end }}
           {{- end }}
@@ -243,6 +244,15 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ $.Release.Name }}-studio-agent-model-kv
+        # Delivery credential, ACTIVITY worker only. This worker is the single
+        # publisher; the control worker runs deterministic workflows and is
+        # deliberately not given the key.
+        - name: studio-agent-delivery-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ $.Release.Name }}-studio-agent-delivery-kv
         {{- end }}
       {{- end }}
       {{- with $runtime.nodeSelector }}

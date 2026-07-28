@@ -10,6 +10,7 @@ import type { QuotaService } from '../quota/quota.service';
 import type { QuotaProfile } from '../quota/quota.types';
 import type { StudioAgentConfigService } from './studio-agent.config';
 import { StudioAgentQuotaService } from './studio-agent-quota.service';
+import { anyDate, objectContaining } from './__tests__/typed-expect';
 
 const ATTEMPT_ID = '019f8f00-0000-7000-8000-000000000001';
 const THREAD_ID = '019f8f00-0000-7000-8000-000000000002';
@@ -163,7 +164,7 @@ describe('StudioAgentQuotaService', () => {
       status: StudioAgentQuotaChargeStatus.charged,
     });
     expect(quota.consume).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         userId: USER_ID,
         profile: PROFILE,
         dimension: 'chat',
@@ -278,7 +279,7 @@ describe('StudioAgentQuotaService', () => {
     await expect(service.reconcileAttempt(ATTEMPT_ID)).resolves.toBe(true);
     expect(order).toEqual(['pg:begin', 'pg:lock', 'pg:commit', 'redis:refund']);
     expect(quota.refundFor).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         idempotencyKey: OPERATION_KEY,
         reason: 'studio_agent_failed',
         terminalFence: true,
@@ -291,7 +292,7 @@ describe('StudioAgentQuotaService', () => {
     });
     expect(attempt).toMatchObject({
       status: StudioAgentQuotaChargeStatus.refunded,
-      redisFinalizedAt: expect.any(Date),
+      redisFinalizedAt: anyDate(),
     });
   });
 
@@ -305,14 +306,14 @@ describe('StudioAgentQuotaService', () => {
 
     await expect(service.reconcileAttempt(ATTEMPT_ID)).resolves.toBe(true);
     expect(quota.consume).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         idempotencyKey: OPERATION_KEY,
         idempotencyTtlSeconds: 'persistent',
         reason: 'studio_agent_root_turn_recovery',
       }),
     );
     expect(quota.refundFor).toHaveBeenCalledWith(
-      expect.objectContaining({
+      objectContaining({
         idempotencyKey: OPERATION_KEY,
         terminalFence: true,
       }),
@@ -452,16 +453,29 @@ function prismaMock(attempt: StudioAgentQuotaChargeAttempt) {
     findFirst: jest.fn().mockImplementation(() => Promise.resolve(attempt)),
     findMany: jest.fn().mockResolvedValue([]),
     delete: jest.fn().mockResolvedValue(attempt),
-    create: jest.fn().mockResolvedValue(attempt),
-    update: jest.fn().mockImplementation(({ data }) => {
+    create: jest
+      .fn<
+        Promise<StudioAgentQuotaChargeAttempt>,
+        [Prisma.StudioAgentQuotaChargeAttemptCreateArgs]
+      >()
+      .mockResolvedValue(attempt),
+    update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
       Object.assign(attempt, data);
       return Promise.resolve(attempt);
     }),
-    updateMany: jest.fn().mockImplementation(({ where, data }) => {
-      const accepted = matches(where);
-      if (accepted) Object.assign(attempt, data);
-      return Promise.resolve({ count: accepted ? 1 : 0 });
-    }),
+    updateMany: jest.fn(
+      ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        const accepted = matches(where);
+        if (accepted) Object.assign(attempt, data);
+        return Promise.resolve({ count: accepted ? 1 : 0 });
+      },
+    ),
   };
   const prisma = {
     $executeRaw: jest.fn().mockResolvedValue(1),

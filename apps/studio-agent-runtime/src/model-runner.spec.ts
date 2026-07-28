@@ -5,16 +5,51 @@ import {
   type StudioAgentCapabilityManifest,
   type StudioAgentModelMessageJson,
 } from "@repo/shared/studio-agent";
-import { createToolBindings, toModelMessages, toStudioAgentError } from "./model-runner.js";
+import {
+  createCapabilityTools,
+  createToolBindings,
+  toModelMessages,
+  toStudioAgentError,
+} from "./model-runner.js";
 
 describe("model runner boundaries", () => {
   it("creates deterministic provider-safe aliases without losing capability identity", () => {
     const capability = manifest("story.canvas.apply_change_set");
-    const [binding] = createToolBindings([capability]);
+    const [binding] = createToolBindings([
+      { manifest: capability, permission: { decision: "allow", reason: "Test." } },
+    ]);
 
     expect(binding?.providerName).toMatch(/^cap_story_canvas_apply_change_set_[a-f0-9]{12}$/);
     expect(binding?.capability).toBe(capability);
     expect(binding?.providerName.length).toBeLessThanOrEqual(64);
+  });
+
+  /**
+   * THE PREREQUISITE FOR LIBRARY-NATIVE APPROVAL, AS A TEST.
+   *
+   * `needsApproval` is what makes `streamText` emit `tool-approval-request` and
+   * NOT run the tool. It has to be set when the tool is OFFERED, so the verdict
+   * has to travel on the plan — deciding it in `prepareAction`, after the model
+   * has already emitted the call, is too late by construction. Drop the flag and
+   * the model executes an action nobody approved; there is no second gate behind
+   * it, because the whole approval mechanism is this one property.
+   */
+  it("gates an ask-verdict capability with needsApproval and leaves an allow-verdict one open", () => {
+    const gated = manifest("story.canvas.delete_scene");
+    const open = manifest("story.canvas.read");
+    const tools = createCapabilityTools(
+      createToolBindings([
+        { manifest: gated, permission: { decision: "ask", reason: "Deletions confirm." } },
+        { manifest: open, permission: { decision: "allow", reason: "Low-risk read." } },
+      ])
+    );
+    const [gatedName, openName] = Object.keys(tools);
+
+    expect(tools[gatedName!]?.needsApproval).toBe(true);
+    expect(tools[openName!]?.needsApproval).toBe(false);
+    // No `execute` on either: this runtime owns its own tool loop, so the SDK
+    // must stop after emitting the call whatever the verdict was.
+    expect(tools[gatedName!]?.execute).toBeUndefined();
   });
 
   it("projects JSON-safe multimodal messages into AI SDK messages", () => {

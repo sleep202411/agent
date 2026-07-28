@@ -2,7 +2,7 @@ import {
   StudioAgentActionExecutionSchema,
   StudioAgentActionSchema,
   StudioAgentApprovalSchema,
-  StudioAgentChildRunDescriptorSchema,
+  StudioAgentChildRunPreparationSchema,
   StudioAgentCompleteContextCompactionRequestSchema,
   StudioAgentContextCompactionCommitResultSchema,
   StudioAgentEventDraftSchema,
@@ -16,7 +16,7 @@ import {
   type StudioAgentActionExecution,
   type StudioAgentApproval,
   type StudioAgentApprovalSignal,
-  type StudioAgentChildRunDescriptor,
+  type StudioAgentChildRunPreparation,
   type StudioAgentCompleteContextCompactionRequest,
   type StudioAgentContextCompactionCommitResult,
   type StudioAgentEvent,
@@ -39,7 +39,7 @@ import {
   type StudioAgentExecuteActionRequest,
   type StudioAgentRunTransitionRequest,
 } from "@repo/shared/studio-agent-api";
-import type { z } from "zod";
+import { z } from "zod";
 import type { RuntimeGatewayConfig } from "./config.js";
 
 const RUNTIME_API_PREFIX = "internal/studio-agent/runtime/";
@@ -77,7 +77,7 @@ export interface StudioAgentRuntimeGateway {
   prepareChildRun(
     request: StudioAgentPrepareActionRequest,
     signal?: AbortSignal
-  ): Promise<StudioAgentChildRunDescriptor>;
+  ): Promise<StudioAgentChildRunPreparation>;
   executeAction(
     request: StudioAgentExecuteActionRequest,
     signal?: AbortSignal
@@ -89,7 +89,7 @@ export interface StudioAgentRuntimeGateway {
   resolveApproval(
     signalValue: StudioAgentApprovalSignal,
     signal?: AbortSignal
-  ): Promise<StudioAgentApproval>;
+  ): Promise<StudioAgentApproval[]>;
   consumeInput(
     signalValue: StudioAgentInputSignal,
     signal?: AbortSignal
@@ -184,8 +184,8 @@ export class RuntimeGatewayClient implements StudioAgentRuntimeGateway {
   prepareChildRun(
     request: StudioAgentPrepareActionRequest,
     signal?: AbortSignal
-  ): Promise<StudioAgentChildRunDescriptor> {
-    return this.#post("child-runs/prepare", request, StudioAgentChildRunDescriptorSchema, signal);
+  ): Promise<StudioAgentChildRunPreparation> {
+    return this.#post("child-runs/prepare", request, StudioAgentChildRunPreparationSchema, signal);
   }
 
   executeAction(
@@ -215,8 +215,8 @@ export class RuntimeGatewayClient implements StudioAgentRuntimeGateway {
   resolveApproval(
     signalValue: StudioAgentApprovalSignal,
     signal?: AbortSignal
-  ): Promise<StudioAgentApproval> {
-    return this.#post("approvals/resolve", signalValue, StudioAgentApprovalSchema, signal);
+  ): Promise<StudioAgentApproval[]> {
+    return this.#post("approvals/resolve", signalValue, z.array(StudioAgentApprovalSchema), signal);
   }
 
   consumeInput(

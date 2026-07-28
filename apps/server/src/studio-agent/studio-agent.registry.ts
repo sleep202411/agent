@@ -16,8 +16,32 @@ import {
   type StudioAgentScenarioManifest,
   type StudioAgentSkillManifest,
 } from '@repo/shared/studio-agent';
+import { storyPatchActionInputJsonSchema } from '@repo/shared/story-agent';
 import Ajv, { type ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
+import {
+  StudioAgentCapabilityInputError,
+  jsonSchemaCapabilityIssues,
+  zodCapabilityIssues,
+  type StudioAgentCapabilityInputIssue,
+} from './studio-agent.capability-error';
+
+export type StudioAgentCapabilityInputCheck =
+  | { ok: true; input: StudioAgentJsonObject }
+  | { ok: false; issues: StudioAgentCapabilityInputIssue[] };
+
+/**
+ * What a capability input is allowed to weigh, in serialized bytes.
+ *
+ * The action row is where every accepted AND every rejected input lands, and
+ * `studio_agent_actions_payload_chk` caps that column at 4 MiB. An input over
+ * the cap can no longer be answered with a 400 — it is recorded — so an
+ * unbounded one would fail its own INSERT, and a failed INSERT is a 500 the
+ * runtime is entitled to retry forever. A quarter of the hard cap leaves room
+ * for the row's bookkeeping and is far above any real patch: the Story
+ * operation list has its own 512 KiB ceiling.
+ */
+const STUDIO_AGENT_CAPABILITY_INPUT_MAX_BYTES = 1_048_576;
 
 const OBJECT_SCHEMA = {
   type: 'object',
@@ -222,6 +246,20 @@ const STORY_CANVAS_READ_OUTPUT_SCHEMA: StudioAgentJsonObject = {
   },
 };
 
+/**
+ * The whole `story.canvas.apply_patch` input, GENERATED from the zod schema the
+ * server validates with — never transcribed.
+ *
+ * A hand-written manifest is what broke this capability: it described the
+ * operation list as `items: { type: "object" }`, so the model had to guess ten
+ * per-kind payloads and learned the contract one rejection at a time. The
+ * projection also demotes the fields the server fills in
+ * (`prepareStudioAgentActionInput`), which is why an input the model sends
+ * without them still validates.
+ */
+const STORY_CANVAS_PATCH_INPUT_SCHEMA: StudioAgentJsonObject =
+  StudioAgentJsonObjectSchema.parse(storyPatchActionInputJsonSchema());
+
 const STORY_CANVAS_PATCH_OUTPUT_SCHEMA: StudioAgentJsonObject = {
   ...OBJECT_SCHEMA,
   required: [
@@ -348,28 +386,7 @@ const CAPABILITIES = [
     streaming: false,
     idempotency: 'required',
     requiredScopes: ['story.edit'],
-    inputSchema: {
-      ...OBJECT_SCHEMA,
-      required: [
-        'projectId',
-        'chapterId',
-        'baseDraftRevision',
-        'baseLayoutRevision',
-        'operations',
-      ],
-      properties: {
-        projectId: { type: 'string', format: 'uuid' },
-        chapterId: { type: 'string', format: 'uuid' },
-        baseDraftRevision: { type: 'integer', minimum: 0 },
-        baseLayoutRevision: { type: 'integer', minimum: 0 },
-        operations: {
-          type: 'array',
-          minItems: 1,
-          maxItems: 100,
-          items: { type: 'object' },
-        },
-      },
-    },
+    inputSchema: STORY_CANVAS_PATCH_INPUT_SCHEMA,
     outputSchema: STORY_CANVAS_PATCH_OUTPUT_SCHEMA,
   },
 ] as const satisfies readonly StudioAgentCapabilityManifest[];
@@ -595,18 +612,61 @@ export class StudioAgentRegistry {
     return [scenarioInstructions, ...skillInstructions].join('\n\n');
   }
 
-  validateCapabilityInput(
+  /**
+   * Check a tool-call input against the capability manifest WITHOUT throwing.
+   *
+   * A malformed tool call is feedback, not a fatal error, and the caller decides
+   * how to deliver it. This used to raise `BadRequestException` from inside
+   * `prepareAction`, before any action row existed: the gateway answered 400,
+   * the runtime turned that into a non-retryable Temporal failure, and the whole
+   * turn died over a single mistyped field the model would have fixed on its
+   * next step. The rejection is now reported the same way the executor's zod
+   * gate reports one — as a `failed` action carrying the issue paths.
+   */
+  checkCapabilityInput(
+    reference: StudioAgentManifestRef,
+    rawInput: unknown,
+  ): StudioAgentCapabilityInputCheck {
+    const parsed = StudioAgentJsonObjectSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return { ok: false, issues: zodCapabilityIssues(parsed.error) };
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(parsed.data), 'utf8');
+    if (bytes > STUDIO_AGENT_CAPABILITY_INPUT_MAX_BYTES) {
+      return {
+        ok: false,
+        issues: [
+          {
+            path: '',
+            message: `must serialize to at most ${STUDIO_AGENT_CAPABILITY_INPUT_MAX_BYTES} bytes; this input is ${bytes}`,
+          },
+        ],
+      };
+    }
+    const validate = this.requireValidator(
+      this.capabilityInputValidators,
+      reference,
+    );
+    if (validate(parsed.data)) {
+      return { ok: true, input: parsed.data };
+    }
+    return { ok: false, issues: jsonSchemaCapabilityIssues(validate.errors) };
+  }
+
+  /**
+   * The same gate for callers already inside an execution attempt, where the
+   * canonical way to report a bad input is to throw the shared input error: the
+   * executor rolls the attempt back and records it as a correctable failure.
+   */
+  requireCapabilityInput(
     reference: StudioAgentManifestRef,
     rawInput: unknown,
   ): StudioAgentJsonObject {
-    const input = StudioAgentJsonObjectSchema.parse(rawInput);
-    this.assertSchema(
-      this.capabilityInputValidators,
-      reference,
-      input,
-      'STUDIO_AGENT_CAPABILITY_INPUT_INVALID',
-    );
-    return input;
+    const checked = this.checkCapabilityInput(reference, rawInput);
+    if (checked.ok) {
+      return checked.input;
+    }
+    throw new StudioAgentCapabilityInputError(checked.issues);
   }
 
   validateCapabilityOutput(
@@ -628,6 +688,21 @@ export class StudioAgentRegistry {
     value: unknown,
     code: string,
   ): void {
+    const validate = this.requireValidator(validators, reference);
+    if (validate(value)) {
+      return;
+    }
+    throw new BadRequestException({
+      code,
+      message: `Payload does not satisfy capability schema ${manifestKey(reference)}.`,
+      details: validate.errors ?? [],
+    });
+  }
+
+  private requireValidator(
+    validators: ReadonlyMap<string, ValidateFunction>,
+    reference: StudioAgentManifestRef,
+  ): ValidateFunction {
     const key = manifestKey(reference);
     const validate = validators.get(key);
     if (!validate) {
@@ -636,14 +711,7 @@ export class StudioAgentRegistry {
         message: `Manifest ${key} is not registered.`,
       });
     }
-    if (validate(value)) {
-      return;
-    }
-    throw new BadRequestException({
-      code,
-      message: `Payload does not satisfy capability schema ${key}.`,
-      details: validate.errors ?? [],
-    });
+    return validate;
   }
 }
 

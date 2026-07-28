@@ -55,7 +55,6 @@ function dispatchHarness(commands: ReturnType<typeof command>[]) {
     } as never,
     transport as never,
     {} as never,
-    {} as never,
   );
   return { dispatcher, prisma, transport };
 }
@@ -170,7 +169,6 @@ describe('Studio Agent command outbox dead-letter', () => {
       prisma as never,
       {} as never,
       {} as never,
-      {} as never,
       { terminalizeInTransaction } as never,
     );
 
@@ -180,7 +178,7 @@ describe('Studio Agent command outbox dead-letter', () => {
           deadLetter: (
             command: Record<string, unknown>,
             error: Record<string, unknown>,
-          ) => Promise<unknown[]>;
+          ) => Promise<void>;
         }
       ).deadLetter(
         {
@@ -201,7 +199,7 @@ describe('Studio Agent command outbox dead-letter', () => {
           details: null,
         },
       ),
-    ).resolves.toEqual([]);
+    ).resolves.toBeUndefined();
 
     expect(terminalizeInTransaction).not.toHaveBeenCalled();
     expect(transaction.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
@@ -240,7 +238,6 @@ describe('Studio Agent command outbox dead-letter', () => {
         prisma as never,
         {} as never,
         {} as never,
-        {} as never,
         { terminalizeInTransaction } as never,
       );
 
@@ -250,7 +247,7 @@ describe('Studio Agent command outbox dead-letter', () => {
             deadLetter: (
               command: Record<string, unknown>,
               error: Record<string, unknown>,
-            ) => Promise<unknown[]>;
+            ) => Promise<void>;
           }
         ).deadLetter(
           {
@@ -271,7 +268,7 @@ describe('Studio Agent command outbox dead-letter', () => {
             details: null,
           },
         ),
-      ).resolves.toEqual([]);
+      ).resolves.toBeUndefined();
 
       expect(transaction.studioAgentRun.findUnique).toHaveBeenCalledTimes(1);
       expect(terminalizeInTransaction).not.toHaveBeenCalled();

@@ -11,6 +11,16 @@ const requiredString = z.string().trim().min(1);
 const positiveInteger = z.coerce.number().int().positive();
 const nonnegativeInteger = z.coerce.number().int().nonnegative();
 const ratio = z.coerce.number().min(0.5).max(0.95);
+/**
+ * `<appId>.<keyId>:<secret>` — a complete Ably API key.
+ *
+ * The shape is checked, not just the presence, because the two ways this gets
+ * misconfigured both produce a string: pasting the public key NAME (the part
+ * before the colon, which is what Ably's dashboard shows first) or pasting a
+ * token. Either would sail past a `min(1)` and then fail at the first publish,
+ * in production, as a delivery outage rather than a boot failure.
+ */
+const ABLY_API_KEY_PATTERN = /^[\w-]+\.[\w-]+:[\w+/=-]+$/;
 const StudioAgentServerEnvironmentSchema = z
   .object({
     TEMPORAL_ADDRESS: requiredString,
@@ -50,6 +60,43 @@ const StudioAgentServerEnvironmentSchema = z
     STUDIO_AGENT_COMMAND_POLL_INTERVAL_MS: positiveInteger.default(250),
     STUDIO_AGENT_COMMAND_LEASE_MS: positiveInteger.default(30_000),
     STUDIO_AGENT_COMMAND_BATCH_SIZE: positiveInteger.max(100).default(20),
+    /**
+     * Delivery credential. Required, with no default and no "disabled" mode.
+     *
+     * Studio Agent delivery IS Ably. A server that booted without this would
+     * still accept turns, still commit events, and deliver none of them — the
+     * silent failure that looks like a hung assistant and reads, from the logs,
+     * like nothing happened. So it fails here instead, at boot, with the
+     * variable named.
+     */
+    ABLY_API_KEY: z
+      .string({
+        error:
+          'ABLY_API_KEY is required: Studio Agent delivery runs on Ably and cannot start without it.',
+      })
+      .trim()
+      .regex(
+        ABLY_API_KEY_PATTERN,
+        'ABLY_API_KEY must be a complete Ably API key of the form "<appId>.<keyId>:<secret>" — a key name or a token is not enough to publish or to sign tokens.',
+      ),
+    /**
+     * Lifetime of a browser's subscribe token, and therefore the worst case for
+     * how long a REVOKED grant keeps receiving frames: the full TTL, if the
+     * grant is withdrawn one millisecond after a mint. Two minutes.
+     *
+     * Two minutes rather than Ably's hour default because a mint costs one
+     * authorized HTTP request against a thread the caller already has open, and
+     * two minutes rather than seconds because a token that expires faster than
+     * a laptop lid closes turns every reconnect into a visible stall. The blast
+     * radius of the window is bounded by design as well as by time: a frame
+     * carries identity and metadata only, and every body fetch re-authorizes
+     * through the same read path, so what leaks in the worst case is which
+     * events occurred, never their content.
+     */
+    STUDIO_AGENT_ABLY_TOKEN_TTL_MS: positiveInteger
+      .min(30_000)
+      .max(3_600_000)
+      .default(120_000),
     STUDIO_AGENT_ADMISSION_LEASE_MS: positiveInteger
       .min(10_000)
       .max(900_000)
@@ -133,24 +180,32 @@ const StudioAgentServerEnvironmentSchema = z
       .min(1)
       .max(16)
       .default(4),
-    STUDIO_AGENT_SSE_HEARTBEAT_MS: positiveInteger.default(15_000),
-    STUDIO_AGENT_SSE_BATCH_SIZE: positiveInteger.max(1_000).default(250),
     STUDIO_AGENT_MODEL_PROVIDER: requiredString.default('alibaba'),
     STUDIO_AGENT_MODEL: requiredString.default('qwen3-max'),
     STUDIO_AGENT_VISION_MODEL: requiredString.default('qwen3-vl-plus'),
+    // These four numbers are the SAME knobs the runtime validates, and the
+    // runtime rejects any plan that exceeds its own copy
+    // (`model-runner.ts validatePlanAgainstRuntime`). They used to disagree —
+    // the server would accept 65 536 output tokens and 900 000 ms and then emit
+    // plans the worker refused at the creator's first turn. Bounds now match
+    // `apps/studio-agent-runtime/src/config.ts`, where the reasoning for each
+    // number is written down: 720 000 ms is what fits inside the model
+    // activity's 16-minute Temporal envelope, and 32 768 tokens is qwen3-max's
+    // own per-response output ceiling (no longer also a transport limit, now
+    // that a long reply rolls onto a fresh Ably message).
     STUDIO_AGENT_MODEL_TIMEOUT_MS: positiveInteger
       .min(1_000)
-      .max(900_000)
-      .default(120_000),
+      .max(720_000)
+      .default(600_000),
     STUDIO_AGENT_MODEL_MAX_OUTPUT_TOKENS: positiveInteger
-      .max(65_536)
+      .max(32_768)
       .default(8_192),
     STUDIO_AGENT_CONTEXT_COMPACTION_TRIGGER_RATIO: ratio.default(0.82),
     STUDIO_AGENT_CONTEXT_COMPACTION_RETAIN_TAIL_UNITS: positiveInteger
       .max(1_024)
       .default(8),
     STUDIO_AGENT_CONTEXT_COMPACTION_MAX_OUTPUT_TOKENS: positiveInteger
-      .max(65_536)
+      .max(32_768)
       .default(2_048),
     STUDIO_AGENT_BUDGET_MAX_CHILD_DEPTH: positiveInteger.max(64).default(4),
     STUDIO_AGENT_BUDGET_MAX_CHILD_RUNS: positiveInteger.max(10_000).default(24),
@@ -163,6 +218,19 @@ const StudioAgentServerEnvironmentSchema = z
     STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT: positiveInteger
       .max(100_000)
       .default(128),
+    /**
+     * How many rejected capability inputs one turn tree may accumulate.
+     *
+     * A malformed tool call is feedback: it is recorded as a failed action and
+     * the model corrects it on its next step. Three is the deliberate ceiling.
+     * The model authors a valid `story.canvas.apply_patch` on its first attempt
+     * in the measured case, so a rejection is an outlier and a second is a slip;
+     * three in one turn means the schema is not being understood, and further
+     * steps would spend a creator's quota re-deriving that. Reaching it stops
+     * the turn with the last rejection's own issue paths.
+     */
+    STUDIO_AGENT_BUDGET_MAX_CAPABILITY_INPUT_REJECTIONS_PER_ROOT:
+      positiveInteger.max(64).default(3),
     STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS: positiveInteger
       .max(2_000_000_000)
       .default(1_000_000),
@@ -418,8 +486,10 @@ export interface StudioAgentServerConfig {
       stackSizeMb: number;
     };
   };
-  sseHeartbeatMs: number;
-  sseBatchSize: number;
+  ably: {
+    apiKey: string;
+    tokenTtlMs: number;
+  };
   model: {
     provider: string;
     textModelId: string;
@@ -438,6 +508,7 @@ export interface StudioAgentServerConfig {
     maxConcurrentChildRuns: number;
     maxModelStepsPerRun: number;
     maxModelStepsPerRoot: number;
+    maxCapabilityInputRejectionsPerRoot: number;
     maxTotalTokenUnits: number;
     maxContextBytesPerStep: number;
     imageTokenReserveUnits: number;
@@ -503,6 +574,8 @@ export function loadStudioAgentServerConfig(
     STUDIO_AGENT_COMMAND_LEASE_MS: environment.STUDIO_AGENT_COMMAND_LEASE_MS,
     STUDIO_AGENT_COMMAND_BATCH_SIZE:
       environment.STUDIO_AGENT_COMMAND_BATCH_SIZE,
+    ABLY_API_KEY: environment.ABLY_API_KEY,
+    STUDIO_AGENT_ABLY_TOKEN_TTL_MS: environment.STUDIO_AGENT_ABLY_TOKEN_TTL_MS,
     STUDIO_AGENT_ADMISSION_LEASE_MS:
       environment.STUDIO_AGENT_ADMISSION_LEASE_MS,
     STUDIO_AGENT_ADMISSION_RECONCILE_INTERVAL_MS:
@@ -550,8 +623,6 @@ export function loadStudioAgentServerConfig(
       environment.STUDIO_AGENT_DOCUMENT_PARSER_CODE_RANGE_MB,
     STUDIO_AGENT_DOCUMENT_PARSER_STACK_MB:
       environment.STUDIO_AGENT_DOCUMENT_PARSER_STACK_MB,
-    STUDIO_AGENT_SSE_HEARTBEAT_MS: environment.STUDIO_AGENT_SSE_HEARTBEAT_MS,
-    STUDIO_AGENT_SSE_BATCH_SIZE: environment.STUDIO_AGENT_SSE_BATCH_SIZE,
     STUDIO_AGENT_MODEL_PROVIDER: environment.STUDIO_AGENT_MODEL_PROVIDER,
     STUDIO_AGENT_MODEL: environment.STUDIO_AGENT_MODEL,
     STUDIO_AGENT_VISION_MODEL: environment.STUDIO_AGENT_VISION_MODEL,
@@ -574,6 +645,8 @@ export function loadStudioAgentServerConfig(
       environment.STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_RUN,
     STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT:
       environment.STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT,
+    STUDIO_AGENT_BUDGET_MAX_CAPABILITY_INPUT_REJECTIONS_PER_ROOT:
+      environment.STUDIO_AGENT_BUDGET_MAX_CAPABILITY_INPUT_REJECTIONS_PER_ROOT,
     STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS:
       environment.STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS,
     STUDIO_AGENT_BUDGET_MAX_CONTEXT_BYTES_PER_STEP:
@@ -658,8 +731,10 @@ export function loadStudioAgentServerConfig(
         stackSizeMb: parsed.STUDIO_AGENT_DOCUMENT_PARSER_STACK_MB,
       },
     },
-    sseHeartbeatMs: parsed.STUDIO_AGENT_SSE_HEARTBEAT_MS,
-    sseBatchSize: parsed.STUDIO_AGENT_SSE_BATCH_SIZE,
+    ably: {
+      apiKey: parsed.ABLY_API_KEY,
+      tokenTtlMs: parsed.STUDIO_AGENT_ABLY_TOKEN_TTL_MS,
+    },
     model: {
       provider: parsed.STUDIO_AGENT_MODEL_PROVIDER,
       textModelId: parsed.STUDIO_AGENT_MODEL,
@@ -679,6 +754,8 @@ export function loadStudioAgentServerConfig(
         parsed.STUDIO_AGENT_BUDGET_MAX_CONCURRENT_CHILD_RUNS,
       maxModelStepsPerRun: parsed.STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_RUN,
       maxModelStepsPerRoot: parsed.STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT,
+      maxCapabilityInputRejectionsPerRoot:
+        parsed.STUDIO_AGENT_BUDGET_MAX_CAPABILITY_INPUT_REJECTIONS_PER_ROOT,
       maxTotalTokenUnits: parsed.STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS,
       maxContextBytesPerStep:
         parsed.STUDIO_AGENT_BUDGET_MAX_CONTEXT_BYTES_PER_STEP,

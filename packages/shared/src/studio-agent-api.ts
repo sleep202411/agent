@@ -6,13 +6,11 @@ import {
   StudioAgentApprovalSchema,
   StudioAgentAttachmentMessagePartSchema,
   StudioAgentContentHashSchema,
+  StudioAgentDeliveryTriggerSchema,
   StudioAgentErrorSchema,
-  StudioAgentEventSchema,
   StudioAgentIdSchema,
-  StudioAgentInputDeliverySchema,
   StudioAgentInputSchema,
   StudioAgentManifestRefSchema,
-  StudioAgentMessagePartSchema,
   StudioAgentMessageSchema,
   StudioAgentModelStepOutcomeSchema,
   StudioAgentPermissionModeSchema,
@@ -141,52 +139,6 @@ export const StudioAgentThreadSnapshotSchema = z
   })
   .strict();
 
-export const StudioAgentSubmitMessageRequestSchema = z
-  .object({
-    schemaVersion: StudioAgentSchemaVersionSchema,
-    clientMessageId: StudioAgentIdSchema,
-    parts: z.array(StudioAgentMessagePartSchema).min(1).max(128),
-    /**
-     * The product context that the actor is submitting from.
-     *
-     * A thread is container-scoped and may be shared by several tabs. Focus
-     * and locale therefore belong to this command, not to mutable thread
-     * state. The server re-authorizes and freezes both values on the run/input.
-     */
-    scope: StudioAgentThreadScopeSchema,
-    locale: z.string().trim().min(2).max(32),
-    targetRunId: StudioAgentIdSchema.nullable(),
-    delivery: StudioAgentInputDeliverySchema.nullable(),
-  })
-  .strict()
-  .superRefine((request, context) => {
-    if ((request.targetRunId === null) !== (request.delivery === null)) {
-      context.addIssue({
-        code: "custom",
-        message: "targetRunId and delivery must either both be present or both be null.",
-        path: ["delivery"],
-      });
-    }
-  });
-
-export const StudioAgentSubmitMessageResultSchema = z
-  .object({
-    schemaVersion: StudioAgentSchemaVersionSchema,
-    message: StudioAgentMessageSchema,
-    run: StudioAgentRunSchema.nullable(),
-    input: StudioAgentInputSchema.nullable(),
-  })
-  .strict()
-  .superRefine((result, context) => {
-    if ((result.run === null) === (result.input === null)) {
-      context.addIssue({
-        code: "custom",
-        message: "A submitted message must create exactly one run or one input.",
-        path: ["run"],
-      });
-    }
-  });
-
 /**
  * Composer uploads are confirmed by the media domain first, then registered
  * as an actor-owned, thread-scoped Studio Agent artifact. The returned
@@ -216,15 +168,6 @@ export const StudioAgentDeleteAttachmentResultSchema = z
   })
   .strict();
 
-export const StudioAgentEventPageSchema = z
-  .object({
-    schemaVersion: StudioAgentSchemaVersionSchema,
-    events: z.array(StudioAgentEventSchema),
-    latestSequence: z.number().int().nonnegative(),
-    hasMore: z.boolean(),
-  })
-  .strict();
-
 export const StudioAgentUpdatePermissionPolicyRequestSchema = z
   .object({
     schemaVersion: StudioAgentSchemaVersionSchema,
@@ -234,43 +177,38 @@ export const StudioAgentUpdatePermissionPolicyRequestSchema = z
   })
   .strict();
 
-export const StudioAgentResolveApprovalRequestSchema = z
-  .object({
-    schemaVersion: StudioAgentSchemaVersionSchema,
-    decision: z.enum(["approved", "denied"]),
-    actionInputHash: StudioAgentContentHashSchema,
-    note: z.string().trim().max(2_000).nullable(),
-    persistentGrant: z
-      .object({
-        expectedPolicyRevision: z.number().int().positive(),
-        capability: StudioAgentManifestRefSchema,
-      })
-      .strict()
-      .nullable(),
-  })
-  .strict()
-  .superRefine((request, context) => {
-    if (request.decision === "denied" && request.persistentGrant !== null) {
-      context.addIssue({
-        code: "custom",
-        message: "A denied action cannot create a persistent allow grant.",
-        path: ["persistentGrant"],
-      });
-    }
-  });
-
-export const StudioAgentResolveApprovalResultSchema = z
-  .object({
-    schemaVersion: StudioAgentSchemaVersionSchema,
-    approval: StudioAgentApprovalSchema,
-    permissionPolicy: StudioAgentPermissionPolicySchema,
-  })
-  .strict();
-
 export const StudioAgentCancelRunRequestSchema = z
   .object({
     schemaVersion: StudioAgentSchemaVersionSchema,
     reason: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+/**
+ * Retire this thread so the next resolve opens a fresh one.
+ *
+ * "New conversation" is a status flip, not a delete. `findActiveThread` filters
+ * on `status: 'active'` and nothing enforces one thread per scope, so archiving
+ * is the whole mechanism: the next resolve finds nothing active and creates a
+ * new thread, with a new id, a new Ably channel, and an empty transcript. The
+ * retired thread keeps every row it owns — runs, actions, approvals and their
+ * composite foreign keys are untouched — it simply stops being reachable,
+ * because nothing lists archived threads.
+ *
+ * Deliberately unconditional, even mid-turn. A creator who asks for a new
+ * conversation has already decided this one is over, and refusing while a run
+ * looks live would strand anyone whose thread is wedged — a workflow that dies
+ * without reporting leaves `activeRunId` pointing at a run that never
+ * terminalizes, and every later message on that thread 409s. This endpoint is
+ * that escape hatch, so it terminalizes what it finds rather than depending on
+ * it being terminalizable.
+ */
+export const StudioAgentArchiveThreadResponseSchema = z
+  .object({
+    schemaVersion: StudioAgentSchemaVersionSchema,
+    threadId: StudioAgentIdSchema,
+    /** Runs this archive had to end because nothing else was going to. */
+    cancelledRunIds: z.array(StudioAgentIdSchema),
   })
   .strict();
 
@@ -336,6 +274,80 @@ export const StudioAgentRunTransitionRequestSchema = z.discriminatedUnion("trans
   }).strict(),
 ]);
 
+/**
+ * Workflow to delivery: publish the run's terminal on the conversation channel.
+ *
+ * Not an HTTP contract — it is the argument of the `closeAgentRun` Temporal
+ * activity, and it lives here because the workflow (which may not import the
+ * transport) and the activity (which does) both need its shape.
+ *
+ * `reason` is deliberately the transport's vocabulary, not ours: a run ends
+ * `complete`, `cancelled` or `error` on the wire, while Postgres keeps the
+ * richer `StudioAgentRun.status`.
+ *
+ * `error` is the COARSE failure, stamped on `ai-run-end` as an
+ * `Ably.ErrorInfo`. It is not a duplicate of the rich
+ * `data-studio-agent-failure` part: that part is published by the model step,
+ * so a run that failed BEFORE its first step — an open that failed, a control
+ * plane that refused the turn — has no step to publish it and the terminal is
+ * the only thing the creator will ever receive. Null for `complete` and
+ * `cancelled`, and for an error whose detail already travelled as a part.
+ */
+export const StudioAgentCloseRunRequestSchema = z
+  .object({
+    schemaVersion: StudioAgentSchemaVersionSchema,
+    workflow: StudioAgentWorkflowInputSchema,
+    reason: z.enum(["complete", "cancelled", "error"]),
+    error: StudioAgentErrorSchema.nullable(),
+  })
+  .strict();
+
+/**
+ * Workflow to delivery: put the run on the channel, or put it back.
+ *
+ * ONE ACTIVITY, TWO LIFECYCLE EVENTS, AND THE LIBRARY PICKS WHICH. `createRun`
+ * publishes `ai-run-start` for a fresh trigger and `ai-run-resume` for one whose
+ * `ai-input` carries a `run-id` header — `agent-session.ts`'s
+ * `resolveTriggerMetadata` sets `resolvedContinuation` from exactly that, and
+ * `startRun` branches on it. The worker therefore does NOT choose; it hands over
+ * the trigger it was given and the wire says what this is. Which is why the
+ * trigger is a parameter and not read off `workflow.delivery`: the resume's
+ * trigger is a different event, minted by the browser when the creator answered.
+ */
+export const StudioAgentOpenRunRequestSchema = z
+  .object({
+    schemaVersion: StudioAgentSchemaVersionSchema,
+    workflow: StudioAgentWorkflowInputSchema,
+    trigger: StudioAgentDeliveryTriggerSchema,
+  })
+  .strict();
+
+/**
+ * Workflow to delivery: publish `ai-run-suspend` so the panel stops saying
+ * "working".
+ *
+ * The gap this closes was measured, not imagined: a run parked on an approval
+ * sat 90+ seconds with the run still OPEN on the channel, so every subscriber
+ * — including a second creator watching the same thread — rendered a spinner
+ * for a turn that was waiting on a button nobody had told them about. A suspend
+ * is not a terminal: the run stays live and `createRun().start()` on the
+ * approval's trigger resumes it under the same run id.
+ */
+export const StudioAgentSuspendRunRequestSchema = z
+  .object({
+    schemaVersion: StudioAgentSchemaVersionSchema,
+    workflow: StudioAgentWorkflowInputSchema,
+  })
+  .strict();
+
+/** Runtime to control plane: commit the creator's approval decisions. */
+export const StudioAgentResolveApprovalResultSchema = z
+  .object({
+    schemaVersion: StudioAgentSchemaVersionSchema,
+    approvals: z.array(StudioAgentApprovalSchema).min(1).max(128),
+  })
+  .strict();
+
 export const StudioAgentEnvelopeSchema = <T extends z.ZodType>(data: T) =>
   z
     .object({
@@ -349,8 +361,6 @@ export type StudioAgentResolveThreadResult = z.infer<typeof StudioAgentResolveTh
 export type StudioAgentActivitySnapshot = z.infer<typeof StudioAgentActivitySnapshotSchema>;
 export type StudioAgentTurnWindow = z.infer<typeof StudioAgentTurnWindowSchema>;
 export type StudioAgentThreadSnapshot = z.infer<typeof StudioAgentThreadSnapshotSchema>;
-export type StudioAgentSubmitMessageRequest = z.infer<typeof StudioAgentSubmitMessageRequestSchema>;
-export type StudioAgentSubmitMessageResult = z.infer<typeof StudioAgentSubmitMessageResultSchema>;
 export type StudioAgentRegisterAttachmentRequest = z.infer<
   typeof StudioAgentRegisterAttachmentRequestSchema
 >;
@@ -360,19 +370,21 @@ export type StudioAgentRegisterAttachmentResult = z.infer<
 export type StudioAgentDeleteAttachmentResult = z.infer<
   typeof StudioAgentDeleteAttachmentResultSchema
 >;
-export type StudioAgentEventPage = z.infer<typeof StudioAgentEventPageSchema>;
 export type StudioAgentUpdatePermissionPolicyRequest = z.infer<
   typeof StudioAgentUpdatePermissionPolicyRequestSchema
->;
-export type StudioAgentResolveApprovalRequest = z.infer<
-  typeof StudioAgentResolveApprovalRequestSchema
 >;
 export type StudioAgentResolveApprovalResult = z.infer<
   typeof StudioAgentResolveApprovalResultSchema
 >;
 export type StudioAgentCancelRunRequest = z.infer<typeof StudioAgentCancelRunRequestSchema>;
+export type StudioAgentArchiveThreadResponse = z.infer<
+  typeof StudioAgentArchiveThreadResponseSchema
+>;
 export type StudioAgentExecuteActionRequest = z.infer<typeof StudioAgentExecuteActionRequestSchema>;
 export type StudioAgentDenyActionRequest = z.infer<typeof StudioAgentDenyActionRequestSchema>;
 export type StudioAgentRunTransitionRequest = z.infer<typeof StudioAgentRunTransitionRequestSchema>;
+export type StudioAgentCloseRunRequest = z.infer<typeof StudioAgentCloseRunRequestSchema>;
+export type StudioAgentOpenRunRequest = z.infer<typeof StudioAgentOpenRunRequestSchema>;
+export type StudioAgentSuspendRunRequest = z.infer<typeof StudioAgentSuspendRunRequestSchema>;
 
 export { STUDIO_AGENT_SCHEMA_VERSION };

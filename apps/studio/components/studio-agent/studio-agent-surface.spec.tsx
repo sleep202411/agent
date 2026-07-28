@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StudioAgentSurface } from "./studio-agent-surface";
 
-const labels = { surface: "Agent surface", close: "Close" };
+const labels = { surface: "Agent surface", close: "Close", newConversation: "New conversation" };
 
 describe("StudioAgentSurface", () => {
   let container: HTMLDivElement;
@@ -64,6 +64,47 @@ describe("StudioAgentSurface", () => {
       close?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  /**
+   * "New conversation" is destructive-looking but recoverable, and it is the
+   * creator's only way out of a thread whose turn is wedged — so it has to be
+   * reachable from the header, not buried, and it must not appear before there
+   * is a thread to retire.
+   */
+  it("offers a new conversation, and hides it when there is nothing to retire", async () => {
+    const onNewConversation = vi.fn();
+    await act(async () => {
+      root.render(
+        <StudioAgentSurface
+          open
+          title="StoryOS"
+          labels={labels}
+          onNewConversation={onNewConversation}
+          onOpenChange={vi.fn()}
+        >
+          <div>timeline</div>
+        </StudioAgentSurface>
+      );
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(
+      `[aria-label="${labels.newConversation}"]`
+    );
+    expect(button).not.toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        <StudioAgentSurface open title="StoryOS" labels={labels} onOpenChange={vi.fn()}>
+          <div>timeline</div>
+        </StudioAgentSurface>
+      );
+    });
+    expect(container.querySelector(`[aria-label="${labels.newConversation}"]`)).toBeNull();
   });
 
   it("renders nothing when closed", async () => {

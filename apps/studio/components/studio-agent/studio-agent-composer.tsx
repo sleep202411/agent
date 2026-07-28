@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   IconAlertCircle,
@@ -42,6 +43,8 @@ export interface StudioAgentComposerLabels {
   input: string;
   placeholder: string;
   stop: string;
+  /** The stop button once a cancel is published and the turn has not settled. */
+  stopping: string;
   queued: (count: number) => string;
   deliveryModeMenu: string;
   deliveryMode: Record<
@@ -85,6 +88,15 @@ export interface StudioAgentComposerProps {
   ) => void | Promise<void>;
   onStop?: () => void;
   isRunning?: boolean;
+  /**
+   * A cancel is published and the turn has not reached a terminal yet.
+   *
+   * The stop button stays visible and states this rather than disappearing: it
+   * is the only place the panel can say "your stop was sent, the agent is
+   * unwinding", and a control that vanished would leave the creator unsure
+   * whether the click landed.
+   */
+  isCancelling?: boolean;
   isSubmitting?: boolean;
   queuedCount?: number;
   disabled?: boolean;
@@ -93,6 +105,13 @@ export interface StudioAgentComposerProps {
   /** Rendered in the action row next to the attachment button (permission menu). */
   permission?: ReactNode;
   attachments?: StudioAgentComposerAttachmentControls;
+  /**
+   * The host's handle on the input, for surfaces that hand the creator a draft
+   * to edit (the turn-failure notice) rather than one to send. Filling the
+   * composer without moving the caret into it leaves the creator hunting for
+   * what changed.
+   */
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
 }
 
@@ -107,6 +126,7 @@ export function StudioAgentComposer({
   onSubmit,
   onStop,
   isRunning = false,
+  isCancelling = false,
   isSubmitting = false,
   queuedCount = 0,
   disabled = false,
@@ -114,9 +134,11 @@ export function StudioAgentComposer({
   chips,
   permission,
   attachments,
+  inputRef,
   className,
 }: StudioAgentComposerProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const ownTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = inputRef ?? ownTextareaRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const submissionRef = useRef<Promise<void> | null>(null);
@@ -137,7 +159,7 @@ export function StudioAgentComposer({
     if (!textarea) return;
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(200, Math.max(56, textarea.scrollHeight))}px`;
-  }, [value]);
+  }, [textareaRef, value]);
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -283,12 +305,24 @@ export function StudioAgentComposer({
         {isRunning && onStop ? (
           <button
             type="button"
-            aria-label={labels.stop}
+            data-cancelling={isCancelling || undefined}
+            aria-label={isCancelling ? labels.stopping : labels.stop}
+            // Disabled rather than hidden: the cancel is already on the
+            // channel, so a second press has nothing to add — but the button is
+            // still the thing that says what is happening.
+            aria-disabled={isCancelling || undefined}
             onClick={onStop}
-            disabled={disabled}
+            disabled={disabled || isCancelling}
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-white/48 transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
           >
-            <IconPlayerStop aria-hidden="true" className="size-3.5" />
+            {isCancelling ? (
+              <IconLoader2
+                aria-hidden="true"
+                className="size-3.5 animate-spin motion-reduce:animate-none"
+              />
+            ) : (
+              <IconPlayerStop aria-hidden="true" className="size-3.5" />
+            )}
           </button>
         ) : null}
 

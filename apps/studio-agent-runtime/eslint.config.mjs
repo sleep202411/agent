@@ -6,7 +6,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "scripts/**/*.ts"],
     languageOptions: {
       globals: globals.node,
     },
@@ -17,5 +17,5 @@ export default tseslint.config(
   },
   {
     ignores: ["dist/**"],
-  },
+  }
 );

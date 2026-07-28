@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped. */
 import { Logger } from '@nestjs/common';
 import {
   MediaAssetKind,
@@ -8,6 +7,11 @@ import {
   StudioAgentArtifactCleanupStatus,
 } from '@prisma/client';
 import { StudioAgentArtifactCleanupWorker } from './studio-agent-artifact-cleanup.service';
+import {
+  anyDate,
+  objectContaining,
+  type RawSqlCall,
+} from './__tests__/typed-expect';
 
 const ARTIFACT_ID = '019f8c00-0000-7000-8000-000000000005';
 const ASSET_ID = '019f8c00-0000-7000-8000-000000000004';
@@ -63,7 +67,7 @@ function fixture(
     attemptCount: options.attemptCount ?? 1,
   };
   const tx = {
-    $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRaw: jest.fn<Promise<number>, RawSqlCall>().mockResolvedValue(1),
     $queryRaw: jest
       .fn()
       .mockResolvedValueOnce([])
@@ -92,7 +96,7 @@ function fixture(
     },
   };
   const prisma = {
-    $executeRaw: jest.fn().mockResolvedValue(0),
+    $executeRaw: jest.fn<Promise<number>, RawSqlCall>().mockResolvedValue(0),
     $queryRaw: jest
       .fn()
       .mockResolvedValueOnce([
@@ -133,7 +137,7 @@ function orphanFixture(
     attemptCount: 1,
   };
   const tx = {
-    $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRaw: jest.fn<Promise<number>, RawSqlCall>().mockResolvedValue(1),
     $queryRaw: jest
       .fn()
       .mockResolvedValueOnce([])
@@ -161,7 +165,7 @@ function orphanFixture(
     },
   };
   const prisma = {
-    $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRaw: jest.fn<Promise<number>, RawSqlCall>().mockResolvedValue(1),
     $queryRaw: jest
       .fn()
       .mockResolvedValueOnce([
@@ -200,7 +204,7 @@ describe('StudioAgentArtifactCleanupWorker', () => {
       where: { id: ASSET_ID },
       data: {
         status: MediaAssetStatus.deleted,
-        deletedAt: expect.any(Date),
+        deletedAt: anyDate(),
       },
     });
     expect(test.storage.deleteObject).toHaveBeenCalledWith({
@@ -210,16 +214,16 @@ describe('StudioAgentArtifactCleanupWorker', () => {
       objectKey: 'media/studio-agent-image-final/reference.png',
     });
     expect(test.tx.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           id: ARTIFACT_ID,
           cleanupStatus: StudioAgentArtifactCleanupStatus.leased,
           cleanupLeaseToken: LEASE_TOKEN,
         }),
-        data: expect.objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.cleaned,
           mediaAssetId: null,
-          cleanupCompletedAt: expect.any(Date),
+          cleanupCompletedAt: anyDate(),
         }),
       }),
     );
@@ -233,8 +237,8 @@ describe('StudioAgentArtifactCleanupWorker', () => {
     expect(test.tx.mediaAsset.update).not.toHaveBeenCalled();
     expect(test.storage.deleteObject).not.toHaveBeenCalled();
     expect(test.tx.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.cleaned,
           mediaAssetId: null,
         }),
@@ -253,13 +257,13 @@ describe('StudioAgentArtifactCleanupWorker', () => {
 
     expect(test.tx.mediaAsset.update).toHaveBeenCalled();
     expect(test.prisma.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           cleanupLeaseToken: LEASE_TOKEN,
         }),
-        data: expect.objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.scheduled,
-          cleanupNextAttemptAt: expect.any(Date),
+          cleanupNextAttemptAt: anyDate(),
           cleanupLastErrorCode: 'STORAGE_UNAVAILABLE',
         }),
       }),
@@ -276,8 +280,8 @@ describe('StudioAgentArtifactCleanupWorker', () => {
     await test.worker.drainOnce();
 
     expect(test.prisma.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.dead_letter,
           cleanupNextAttemptAt: null,
           cleanupLastErrorCode: 'STUDIO_AGENT_ATTACHMENT_CLEANUP_FAILED',
@@ -296,7 +300,7 @@ describe('StudioAgentArtifactCleanupWorker', () => {
       where: { id: ASSET_ID },
       data: {
         status: MediaAssetStatus.deleted,
-        deletedAt: expect.any(Date),
+        deletedAt: anyDate(),
       },
     });
     expect(test.storage.deleteObject).toHaveBeenCalledWith({
@@ -308,16 +312,16 @@ describe('StudioAgentArtifactCleanupWorker', () => {
     expect(
       test.tx.studioAgentOrphanMediaCleanupJob.updateMany,
     ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           id: ORPHAN_JOB_ID,
           mediaAssetId: ASSET_ID,
           leaseToken: LEASE_TOKEN,
         }),
-        data: expect.objectContaining({
+        data: objectContaining({
           status: StudioAgentArtifactCleanupStatus.cleaned,
           nextAttemptAt: null,
-          completedAt: expect.any(Date),
+          completedAt: anyDate(),
         }),
       }),
     );
@@ -333,10 +337,10 @@ describe('StudioAgentArtifactCleanupWorker', () => {
     expect(
       test.tx.studioAgentOrphanMediaCleanupJob.updateMany,
     ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           status: StudioAgentArtifactCleanupStatus.cleaned,
-          completedAt: expect.any(Date),
+          completedAt: anyDate(),
         }),
       }),
     );
@@ -345,7 +349,7 @@ describe('StudioAgentArtifactCleanupWorker', () => {
 
 describe('StudioAgentArtifactCleanupWorker orphan discovery', () => {
   function discoverySql(test: ReturnType<typeof orphanFixture>): string {
-    return (test.prisma.$executeRaw.mock.calls[0][0] as string[]).join('?');
+    return test.prisma.$executeRaw.mock.calls[0][0].join('?');
   }
 
   it('scans only the unadjudicated (created_at, id) range', async () => {
@@ -443,15 +447,13 @@ describe('StudioAgentArtifactCleanupWorker ownership handoff', () => {
 
     // Discovery adjudicates once and has already passed this asset, so without
     // a durable job nothing would ever reclaim it.
-    const handoff = (test.tx.$executeRaw.mock.calls[0][0] as string[]).join(
-      '?',
-    );
+    const handoff = test.tx.$executeRaw.mock.calls[0][0].join('?');
     expect(handoff).toContain('studio_agent_orphan_media_cleanup_jobs');
     expect(handoff).toContain('ON CONFLICT');
     expect(test.storage.deleteObject).not.toHaveBeenCalled();
     expect(test.tx.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.cleaned,
           mediaAssetId: null,
         }),
@@ -468,8 +470,8 @@ describe('StudioAgentArtifactCleanupWorker ownership handoff', () => {
     // ON DELETE RESTRICT edge.
     expect(test.tx.$executeRaw).not.toHaveBeenCalled();
     expect(test.tx.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           cleanupStatus: StudioAgentArtifactCleanupStatus.cleaned,
         }),
       }),
@@ -487,10 +489,10 @@ describe('StudioAgentArtifactCleanupWorker ownership handoff', () => {
     expect(
       test.tx.studioAgentOrphanMediaCleanupJob.updateMany,
     ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           status: StudioAgentArtifactCleanupStatus.scheduled,
-          nextAttemptAt: expect.any(Date),
+          nextAttemptAt: anyDate(),
           attemptCount: 0,
           completedAt: null,
         }),

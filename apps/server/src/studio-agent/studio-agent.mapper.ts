@@ -1,3 +1,4 @@
+import { studioAgentProviderToolName } from '@repo/shared/studio-agent-tools';
 import {
   STUDIO_AGENT_SCHEMA_VERSION,
   StudioAgentActionSchema,
@@ -27,6 +28,7 @@ import {
   StudioAgentActivitySnapshotSchema,
   type StudioAgentActivitySnapshot,
 } from '@repo/shared/studio-agent-api';
+import { studioAgentThreadChannel } from '@repo/shared/studio-agent-transport';
 
 /**
  * These mappers are the corruption boundary between PostgreSQL and the public
@@ -37,6 +39,13 @@ import {
  * Structural row types keep this file independently testable and prevent
  * Prisma's generated JsonValue types from becoming part of the public domain
  * model.
+ *
+ * Every `jsonb` column is typed `unknown` rather than a JSON shape: what
+ * PostgreSQL hands back is untrusted until the schema below has parsed it, and
+ * `unknown` is the only type that forces that parse. A SQL NULL arrives as
+ * `null`, which `unknown` already admits — the `nullable` comments record which
+ * columns can be NULL, because `unknown | null` is the same type as `unknown`
+ * and would only pretend to say more.
  */
 
 interface ThreadRow {
@@ -46,7 +55,8 @@ interface ThreadRow {
   scenarioId: string;
   scenarioVersion: string;
   scopeContainer: unknown;
-  scopeFocus: unknown | null;
+  /** nullable */
+  scopeFocus: unknown;
   ownerActorId: string;
   title: string | null;
   status: string;
@@ -75,9 +85,11 @@ interface RunRow {
   rootRunId: string;
   parentRunId: string | null;
   kind: string;
-  task: unknown | null;
+  /** nullable */
+  task: unknown;
   trigger: string;
   triggerMessageId: string | null;
+  deliveryInputEventId: string | null;
   scenarioId: string;
   scenarioVersion: string;
   permissionPolicy: unknown;
@@ -86,7 +98,8 @@ interface RunRow {
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
-  error: unknown | null;
+  /** nullable */
+  error: unknown;
 }
 
 interface InputRow {
@@ -106,6 +119,7 @@ interface ActionRow {
   id: string;
   threadId: string;
   runId: string;
+  toolCallId: string;
   capabilityId: string;
   capabilityVersion: string;
   effect: string;
@@ -113,12 +127,15 @@ interface ActionRow {
   status: string;
   title: string;
   summary: string;
-  target: unknown | null;
+  /** nullable */
+  target: unknown;
   input: unknown;
   inputHash: string;
   idempotencyKey: string | null;
-  output: unknown | null;
-  error: unknown | null;
+  /** nullable */
+  output: unknown;
+  /** nullable */
+  error: unknown;
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -135,7 +152,8 @@ interface ApprovalRow {
   actionInputHash: string;
   requestedAt: Date;
   expiresAt: Date | null;
-  decision: unknown | null;
+  /** nullable */
+  decision: unknown;
 }
 
 interface EventRow {
@@ -262,6 +280,8 @@ export function toStudioAgentAction(row: ActionRow): StudioAgentAction {
     actionId: row.id,
     threadId: row.threadId,
     runId: row.runId,
+    toolCallId: row.toolCallId,
+    toolName: studioAgentProviderToolName(row.capabilityId),
     capability: {
       id: row.capabilityId,
       version: row.capabilityVersion,
@@ -365,6 +385,16 @@ export function toStudioAgentWorkflowInput(
       revision: StudioAgentPermissionPolicySchema.parse(row.permissionPolicy)
         .revision,
     },
+    // The channel name is DERIVED, never read from a column. It is a pure
+    // function of the thread id, and the one way a thread acquires two
+    // spellings of its own channel is by storing one of them.
+    delivery:
+      row.deliveryInputEventId === null
+        ? null
+        : {
+            inputEventId: row.deliveryInputEventId,
+            channelName: studioAgentThreadChannel(row.threadId),
+          },
   };
 }
 

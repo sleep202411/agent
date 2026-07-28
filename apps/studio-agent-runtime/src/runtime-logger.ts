@@ -1,30 +1,61 @@
-import { DefaultLogger, Runtime, type LogEntry } from "@temporalio/worker";
-import type { RuntimeWorkerRole } from "./health-server.js";
+import { DefaultLogger, Runtime, type LogEntry, type RuntimeOptions } from "@temporalio/worker";
+import { formatRoleEndpointDefaults } from "./config.js";
+import type { RuntimeWorkerRole } from "./runtime-role.js";
 
 export function installTemporalRuntimeLogger(
   role: RuntimeWorkerRole,
-  metricsBindAddress: string
+  metricsBindAddress: string,
+  install: (options: RuntimeOptions) => void = (options) => Runtime.install(options)
 ): void {
-  Runtime.install({
-    logger: new DefaultLogger("INFO", (entry) => {
-      process.stderr.write(`${serializeLogEntry(role, entry)}\n`);
-    }),
-    telemetryOptions: {
-      logging: {
-        filter: { core: "INFO", other: "WARN" },
-        forward: {},
-      },
-      metrics: {
-        prometheus: {
-          bindAddress: metricsBindAddress,
-          countersTotalSuffix: true,
-          unitSuffix: true,
-          useSecondsForDurations: true,
+  try {
+    install({
+      logger: new DefaultLogger("INFO", (entry) => {
+        process.stderr.write(`${serializeLogEntry(role, entry)}\n`);
+      }),
+      telemetryOptions: {
+        logging: {
+          filter: { core: "INFO", other: "WARN" },
+          forward: {},
+        },
+        metrics: {
+          prometheus: {
+            bindAddress: metricsBindAddress,
+            countersTotalSuffix: true,
+            unitSuffix: true,
+            useSecondsForDurations: true,
+          },
         },
       },
-    },
-    workerHeartbeatInterval: "30 seconds",
-  });
+      workerHeartbeatInterval: "30 seconds",
+    });
+  } catch (error) {
+    throw describeMetricsBindFailure(error, role, metricsBindAddress);
+  }
+}
+
+/**
+ * The Prometheus exporter binds inside Temporal's native runtime, before any of
+ * this app's own listeners, so a metrics-address collision is the first thing a
+ * developer running both roles on one host hits. The SDK reports it as a bare
+ * "Address already in use", which names neither the address nor the variable.
+ */
+export function describeMetricsBindFailure(
+  error: unknown,
+  role: RuntimeWorkerRole,
+  metricsBindAddress: string
+): Error {
+  const cause = error instanceof Error ? error : new Error(String(error));
+  if (!/address already in use/i.test(cause.message)) {
+    return cause;
+  }
+  return new Error(
+    [
+      `The ${role} worker cannot export metrics on ${metricsBindAddress} — the address is already in use.`,
+      "Each worker role needs its own metrics bind address.",
+      `Unset STUDIO_AGENT_METRICS_BIND_ADDRESS to use the per-role defaults (${formatRoleEndpointDefaults()}), or give this role its own value.`,
+    ].join("\n"),
+    { cause }
+  );
 }
 
 export function writeRuntimeLog(

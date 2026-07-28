@@ -13,11 +13,10 @@ import {
 } from "@/components/ui/message-scroller";
 import { cn } from "@/lib/utils";
 import type {
-  StudioAgentApprovalView,
-  StudioAgentContextCompactionView,
   StudioAgentMessageView,
   StudioAgentTerminalRunView,
   StudioAgentTimelineItemView,
+  StudioAgentToolApprovalView,
 } from "@/lib/studio-agent";
 
 import {
@@ -47,8 +46,8 @@ export interface StudioAgentTimelineProps {
   busy?: boolean;
   empty?: ReactNode;
   renderMessage?: (message: StudioAgentMessageView) => ReactNode;
-  renderApproval: (approval: StudioAgentApprovalView) => ReactNode;
-  renderContextCompaction: (compaction: StudioAgentContextCompactionView) => ReactNode;
+  /** The library's suspended tool call. See `StudioAgentToolApproval`. */
+  renderToolApproval: (approval: StudioAgentToolApprovalView) => ReactNode;
   /** Earlier-turn pagination. Absent when the surface loads whole threads. */
   earlier?: { hasMore: boolean; loading: boolean; onLoad: () => void };
   className?: string;
@@ -60,8 +59,7 @@ export function StudioAgentTimeline({
   busy = false,
   empty,
   renderMessage = renderPlainMessage,
-  renderApproval,
-  renderContextCompaction,
+  renderToolApproval,
   earlier,
   className,
 }: StudioAgentTimelineProps) {
@@ -123,14 +121,22 @@ export function StudioAgentTimeline({
                   {item.kind === "message" ? (
                     <article
                       aria-label={labels.messageRole[item.message.role]}
+                      // Text that is still arriving is announced as busy and
+                      // rendered a tone step back, so "still arriving" is never
+                      // mistaken for "this is what the assistant said". Both
+                      // revert the moment the part settles to `done`.
+                      aria-busy={item.message.streaming || undefined}
                       data-role={item.message.role}
+                      data-streaming={item.message.streaming ? "true" : undefined}
                       className={cn(
                         "min-w-0 text-sm/relaxed text-white/82",
                         item.message.role === "user" &&
-                          "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-white/[0.07] px-3.5 py-2.5 text-white/88"
+                          "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-white/[0.07] px-3.5 py-2.5 text-white/88",
+                        item.message.streaming && "text-white/56"
                       )}
                     >
                       {renderMessage(item.message)}
+                      {item.message.streaming ? <StreamingPulse /> : null}
                       {item.message.attachments.length > 0 ? (
                         <MessageAttachments
                           attachments={item.message.attachments}
@@ -140,12 +146,10 @@ export function StudioAgentTimeline({
                     </article>
                   ) : item.kind === "activity" ? (
                     <StudioAgentActivityRow activity={item.activity} labels={labels.activity} />
-                  ) : item.kind === "approval" ? (
-                    renderApproval(item.approval)
-                  ) : item.kind === "run" ? (
-                    <RunOutcome run={item.run} label={labels.runStatus[item.run.status]} />
+                  ) : item.kind === "toolApproval" ? (
+                    renderToolApproval(item.toolApproval)
                   ) : (
-                    renderContextCompaction(item.compaction)
+                    <RunOutcome run={item.run} label={labels.runStatus[item.run.status]} />
                   )}
                 </MessageScrollerItem>
               ))
@@ -176,6 +180,24 @@ function RunOutcome({ run, label }: { run: StudioAgentTerminalRunView; label: st
         ) : null}
       </span>
     </div>
+  );
+}
+
+/**
+ * The in-flight marker for a reply that is still arriving.
+ *
+ * Monochrome and tiny by design (DESIGN.md rules 2 and 4): it encodes state, so
+ * it is a tone step and a motion cue, never a color or an outline. `aria-hidden`
+ * because the `aria-busy` on the message already carries this to assistive
+ * technology.
+ */
+function StreamingPulse(): ReactNode {
+  return (
+    <span aria-hidden="true" className="mt-1.5 flex items-center gap-1">
+      <span className="size-1 animate-pulse rounded-full bg-white/40" />
+      <span className="size-1 animate-pulse rounded-full bg-white/40 [animation-delay:180ms]" />
+      <span className="size-1 animate-pulse rounded-full bg-white/40 [animation-delay:360ms]" />
+    </span>
   );
 }
 

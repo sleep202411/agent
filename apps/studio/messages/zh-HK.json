@@ -1869,13 +1869,13 @@
         "title": "StoryOS",
         "surface": "StoryOS 助手",
         "close": "關閉 StoryOS",
+        "newConversation": "新增對話",
         "retry": "重試",
         "dismissError": "關閉",
         "timeline": {
           "log": "StoryOS 對話",
           "empty": "描述你想完善的故事、抉擇或玩家體驗。",
           "loading": "正在載入對話……",
-          "contextCompacted": "上下文已自動壓縮",
           "scrollToLatest": "捲動到最新進展",
           "loadEarlier": "載入更早的對話",
           "loadingEarlier": "正在載入更早的對話……",
@@ -1915,6 +1915,30 @@
           "failed": "失敗",
           "cancelled": "已取消"
         },
+        "turnFailure": {
+          "region": "StoryOS 本輪失敗",
+          "title": {
+            "inputRejected": "StoryOS 發出的請求被本故事拒絕",
+            "notRecorded": "改動已執行，但未能記錄",
+            "failed": "本輪失敗"
+          },
+          "explanation": {
+            "inputRejected": "StoryOS 建立了無效的工具呼叫，因此沒有任何改動生效。重新傳送請求可讓它再試一次。",
+            "notRecorded": "該操作已到達你的故事，但伺服器未能記錄結果，因此你的故事沒有任何改動。伺服器已將這次故障標記為重發也無法解決，請編輯這條請求，換一種方式描述你要的改動。",
+            "failed": "本輪在完成前中止，因此它承諾的改動均未生效。"
+          },
+          "issues": "伺服器拒絕的內容",
+          "code": "錯誤碼",
+          "retry": "重新傳送該請求",
+          "reword": "編輯這條請求",
+          "openSurface": "開啟 StoryOS"
+        },
+        "stall": {
+          "region": "本輪無回應",
+          "title": "本輪已停止回報進度",
+          "explanation": "對話頻道已超過兩分鐘沒有任何訊息。本輪可能仍在執行，也可能是處理它的工作行程已經結束。可以繼續等待，或停止後重試。",
+          "stop": "停止本輪"
+        },
         "childRuns": {
           "group": "委派任務"
         },
@@ -1922,6 +1946,7 @@
           "input": "向 StoryOS 傳送訊息",
           "placeholder": "讓 StoryOS 分析、規劃或修改這個故事……",
           "stop": "停止目前任務",
+          "stopping": "正在停止目前執行…",
           "cancelReason": "創作者已取消目前任務。",
           "queued": "{count} 則訊息等待處理",
           "deliveryModeMenu": "選擇訊息處理方式",
@@ -1975,23 +2000,39 @@
             }
           }
         },
-        "approval": {
-          "capability": "能力",
-          "approveOnce": "僅批准一次",
-          "approveAlways": "一律允許",
-          "reject": "拒絕",
-          "status": {
-            "pending": "等待批准",
-            "approved": "已批准",
-            "denied": "已拒絕",
-            "expired": "已過期",
-            "cancelled": "已取消"
+        "toolApproval": {
+          "title": "StoryOS 要求執行 {toolName}。",
+          "approve": "允許",
+          "deny": "拒絕",
+          "showInput": "查看執行參數",
+          "hideInput": "隱藏執行參數",
+          "resuming": "正在繼續本輪",
+          "decision": {
+            "approved": "已允許",
+            "denied": "已拒絕"
+          }
+        }
+      },
+      "firstOpen": {
+        "title": "讓每個選擇，改寫故事",
+        "description": "把你想創作的故事告訴 StoryOS，或選擇一種導演 Skill，由它草擬第一版。",
+        "start": "描述你自己的故事",
+        "skillsTitle": "或從一種導演 Skill 開始",
+        "connecting": "正在連接 StoryOS……",
+        "unavailable": "StoryOS 暫時無法使用，目前無法草擬任何內容。畫布仍然可以手動搭建。",
+        "retry": "重試",
+        "skills": {
+          "halftoneCollage": {
+            "title": "半調紙拼貼",
+            "description": "純色紙底、半調剪貼與卡紙點綴，每個選擇拼裝成一個視覺隱喻。",
+            "prompt": "創作一個互動短篇：一隻裝滿舊車票與照片的手提箱在午夜自動打開，每個剪貼物件都是一段被摺疊的記憶。劇情：主人公整理遺物時，逐漸拼出母親隱瞞一生的旅程。整體節奏：10-14 個節點，開場 2 個節點內拋出懸念，之後每 2-3 個節點一次關鍵選擇。結局：3 個——啟程、留下、把箱子重新鎖上，分別對應玩家把哪些記憶拼回、哪些撕碎。",
+            "styleBrief": "美術方向：純色紙底、黑白半調剪貼與卡紙點綴，每個節點用三至六件物件拼出一個視覺隱喻。不要文字排版、不要 3D、不要寫實照片感。"
           },
-          "risk": {
-            "low": "低風險",
-            "medium": "中等風險",
-            "high": "高風險",
-            "critical": "嚴重風險"
+          "symmetricalStorybook": {
+            "title": "對稱童話電影",
+            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
+            "prompt": "創作一個互動短篇：粉色山間旅館迎來一位從不摘帽的神秘住客，門童奉命查明緣由。劇情：按章節推進，每章一次關鍵選擇，讓旅館秩序更荒誕一分、真相更近一步。整體節奏：12 個節點左右，三幕結構，每幕收在一個小反轉。結局：3 個——揭開帽子、替他守密、成為下一個戴帽人，分別改寫門童與旅館的關係。",
+            "styleBrief": "美術方向：刻意對稱的置中構圖，每一幕一個章節母題，克制的復古配色，揭示時機精準而收斂。"
           }
         }
       },

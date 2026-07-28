@@ -1,14 +1,24 @@
 import { hostname } from "node:os";
-import { fileURLToPath } from "node:url";
 import { Worker } from "@temporalio/worker";
-import { loadRuntimeProcessConfig, loadTemporalRuntimeConfig } from "./config.js";
-import { installTemporalRuntimeLogger } from "./runtime-logger.js";
+import { loadTemporalRuntimeConfig } from "./config.js";
+import { installTemporalRuntimeLogger, writeRuntimeLog } from "./runtime-logger.js";
+import { resolveWorkflowSource } from "./runtime-paths.js";
 import { connectTemporal } from "./temporal-connection.js";
+import { bootstrapWorker } from "./worker-bootstrap.js";
 import { createWorkerDeploymentOptions } from "./worker-deployment.js";
 import { runWorkerProcess } from "./worker-process.js";
 
-const processConfig = loadRuntimeProcessConfig();
+const { paths, processConfig, freshness } = bootstrapWorker("control", import.meta.url);
 const config = loadTemporalRuntimeConfig();
+const workflowSource = resolveWorkflowSource(paths);
+if (workflowSource.kind === "source") {
+  writeRuntimeLog(
+    "control",
+    "WARN",
+    "Bundling deterministic workflow code from TypeScript at startup. This is the local development entrypoint; compiled output loads the precompiled bundle.",
+    { workflowsPath: workflowSource.workflowsPath }
+  );
+}
 installTemporalRuntimeLogger("control", processConfig.metricsBindAddress);
 const connection = await connectTemporal(config);
 try {
@@ -18,9 +28,9 @@ try {
     taskQueue: config.controlTaskQueue,
     identity: `studio-agent-control:${hostname()}:${process.pid}`,
     workerDeploymentOptions: createWorkerDeploymentOptions(config, processConfig),
-    workflowBundle: {
-      codePath: fileURLToPath(new URL("./studio-agent-workflow-bundle.js", import.meta.url)),
-    },
+    ...(workflowSource.kind === "bundle"
+      ? { workflowBundle: { codePath: workflowSource.codePath } }
+      : { workflowsPath: workflowSource.workflowsPath }),
     maxConcurrentWorkflowTaskExecutions: config.controlMaxConcurrentWorkflowTasks,
     maxConcurrentWorkflowTaskPolls: config.controlMaxConcurrentWorkflowPolls,
     shutdownGraceTime: config.shutdownGraceMs,
@@ -30,6 +40,7 @@ try {
     role: "control",
     worker,
     processConfig,
+    freshness,
   });
 } finally {
   await connection.close();

@@ -1,0 +1,94 @@
+-- Drop the last remains of the deleted Postgres event relay.
+--
+-- WHAT HAPPENED. The relay kept a per-event publish watermark on
+-- `studio_agent_events` — `published_at`, plus a partial index over the rows
+-- that had not been published yet. It was created by a migration named
+-- `20260727210000_studio_agent_event_relay_published_at`, and when the relay
+-- was demolished in favour of `@ably/ai-transport` that migration's FOLDER was
+-- deleted from the tree. The previous migration
+-- (`20260728090000_studio_agent_ably_transport`) states in its header that the
+-- column "never reached migration history ... so there is nothing to drop".
+-- That is false. Deleting an applied migration's folder does not un-apply it:
+-- every database that ran it still has the column, still has the index, and
+-- still has the bookkeeping row. On this repo's local development database, at
+-- the time of writing, all three are present.
+--
+-- WHY A FORWARD MIGRATION AND NOT A RESTORED FOLDER. Restoring the deleted
+-- folder would be the textbook fix — history stops having a hole and the
+-- orphan bookkeeping row stops being orphaned. It is not available here:
+-- Prisma stores a CHECKSUM of each `migration.sql` it applies, and the
+-- original file's bytes are gone (it never reached git). Any reconstruction
+-- would checksum differently and every database that ran the original would
+-- then refuse to migrate with "the migration was modified after it was
+-- applied" — trading a dormant column for a hard stop. So the column is
+-- dropped forwards, defensively, and the bookkeeping row is dealt with by the
+-- operator note below.
+--
+-- SAFE IN EVERY ENVIRONMENT, WHICHEVER SIDE OF THE DRIFT IT IS ON:
+--   * a database that ran the deleted migration  -> index and column go away;
+--   * a database that never saw it (prod, CI, any fresh replay of this
+--     history) -> both statements are no-ops.
+-- No data is at risk: nothing reads or writes `published_at` — the relay that
+-- did was deleted, and `StudioAgentEvent` in schema.prisma has no such field.
+--
+-- LOCKING: `DROP INDEX` and `DROP COLUMN` are catalog updates. They take an
+-- ACCESS EXCLUSIVE lock on `studio_agent_events` for the duration of the
+-- catalog write only — no table rewrite and no row scan, so the lock is held
+-- for microseconds regardless of how many events the table holds. The column's
+-- storage is reclaimed lazily by VACUUM, which is why this is not a rewrite.
+--
+-- ===========================================================================
+-- WHAT AN OPERATOR MUST RUN AGAINST AN EXISTING DATABASE — TWO STEPS, IN ORDER
+-- ===========================================================================
+--
+--   1)  cd apps/server && npx prisma migrate deploy
+--
+--       Applies this migration. Idempotent by construction (both statements are
+--       IF EXISTS), so it is safe whether or not the database ever ran the
+--       deleted one.
+--
+--   2)  ONLY on a database that DID run the deleted migration — today that
+--       means local development databases; NOT prod, NOT CI, which never saw
+--       it — remove its orphaned bookkeeping row:
+--
+--         psql "$DATABASE_URL" -c "DELETE FROM \"_prisma_migrations\"
+--           WHERE migration_name = '20260727210000_studio_agent_event_relay_published_at';"
+--
+--       Expect `DELETE 1` there and `DELETE 0` everywhere else. This migration
+--       cannot do it: Prisma's bookkeeping table is Prisma's to write, and a
+--       migration that edited it would be lying about what it did.
+--
+--   VERIFY (either kind of database):
+--
+--     psql "$DATABASE_URL" -c "SELECT count(*) FROM information_schema.columns
+--       WHERE table_name='studio_agent_events' AND column_name='published_at';"   -- 0
+--     psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_indexes
+--       WHERE indexname='studio_agent_events_unpublished_idx';"                   -- 0
+--     cd apps/server && npx prisma migrate status                                 -- "up to date"
+--
+-- Skipping step 2 is not dangerous — Prisma 6 `migrate status` and
+-- `migrate deploy` both tolerate an applied row with no folder, which is exactly
+-- why this drift went unnoticed for a day. It is untidy, and `migrate dev` will
+-- keep offering to reset over it.
+--
+-- VALIDATED, both directions, on a throwaway `postgres:17-alpine` container
+-- (created, used, removed — never against prod):
+--   * full replay from empty: 175 migrations applied, 0 unfinished/rolled-back
+--     rows, `published_at` absent, the partial index absent, and
+--     `studio_agent_runs.delivery_input_event_id` present;
+--   * the DRIFTED case a fresh replay can never surface: history replayed, then
+--     the deleted migration's column + partial index + bookkeeping row
+--     re-created by hand, then the two steps above run — `migrate deploy`
+--     applied this migration, `DELETE 1` removed the orphan, and
+--     `migrate status` reported "Database schema is up to date!".
+--
+-- THE DESTRUCTIVE RESET IS DELIBERATELY NOT HERE AND IS NOT AUTOMATED.
+-- Wiping studio-agent conversation history lives in
+-- `apps/server/prisma/scripts/reset-studio-agent-history.sql`, run by hand at
+-- cutover. A TRUNCATE that rode a deploy has already cost this repo a PITR
+-- restore once. Nothing in this file truncates anything.
+
+DROP INDEX IF EXISTS "studio_agent_events_unpublished_idx";
+
+ALTER TABLE "studio_agent_events"
+  DROP COLUMN IF EXISTS "published_at";

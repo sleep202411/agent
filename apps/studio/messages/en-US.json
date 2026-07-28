@@ -1869,13 +1869,13 @@
         "title": "StoryOS",
         "surface": "StoryOS assistant",
         "close": "Close StoryOS",
+        "newConversation": "New conversation",
         "retry": "Try again",
         "dismissError": "Dismiss",
         "timeline": {
           "log": "StoryOS conversation",
           "empty": "Describe the story, decision, or player experience you want to develop.",
           "loading": "Loading this conversation…",
-          "contextCompacted": "Context automatically compacted",
           "scrollToLatest": "Scroll to the latest update",
           "loadEarlier": "Load earlier turns",
           "loadingEarlier": "Loading earlier turns…",
@@ -1915,6 +1915,30 @@
           "failed": "Failed",
           "cancelled": "Cancelled"
         },
+        "turnFailure": {
+          "region": "StoryOS turn failed",
+          "title": {
+            "inputRejected": "StoryOS sent a request this story rejected",
+            "notRecorded": "The change ran but could not be recorded",
+            "failed": "This turn failed"
+          },
+          "explanation": {
+            "inputRejected": "StoryOS built an invalid tool call, so nothing was applied. Sending the request again gives it another attempt.",
+            "notRecorded": "The action reached your story but the server could not record its result, so nothing in your story changed. The server marked this failure as one that repeating will not fix — edit the request and describe the change a different way.",
+            "failed": "The turn stopped before it finished, so nothing it promised was applied."
+          },
+          "issues": "What the server rejected",
+          "code": "Code",
+          "retry": "Send this request again",
+          "reword": "Edit this request",
+          "openSurface": "Open StoryOS"
+        },
+        "stall": {
+          "region": "Turn not responding",
+          "title": "This turn has not reported progress",
+          "explanation": "Nothing has arrived on the conversation channel for over two minutes. The turn may still be running — or the worker handling it may have died. Wait, or stop it and try again.",
+          "stop": "Stop this turn"
+        },
         "childRuns": {
           "group": "Delegated tasks"
         },
@@ -1922,6 +1946,7 @@
           "input": "Message StoryOS",
           "placeholder": "Ask StoryOS to analyze, plan, or change this story…",
           "stop": "Stop the current run",
+          "stopping": "Stopping the current run…",
           "cancelReason": "Cancelled by the creator.",
           "queued": "{count, plural, one {# queued message} other {# queued messages}}",
           "deliveryModeMenu": "Choose how this message is delivered",
@@ -1975,23 +2000,39 @@
             }
           }
         },
-        "approval": {
-          "capability": "Capability",
-          "approveOnce": "Approve once",
-          "approveAlways": "Always allow",
-          "reject": "Reject",
-          "status": {
-            "pending": "Waiting for approval",
+        "toolApproval": {
+          "title": "StoryOS wants to run {toolName}.",
+          "approve": "Approve",
+          "deny": "Deny",
+          "showInput": "Show what it will run with",
+          "hideInput": "Hide what it will run with",
+          "resuming": "Resuming the turn",
+          "decision": {
             "approved": "Approved",
-            "denied": "Rejected",
-            "expired": "Expired",
-            "cancelled": "Cancelled"
+            "denied": "Denied"
+          }
+        }
+      },
+      "firstOpen": {
+        "title": "Every choice rewrites the story",
+        "description": "Tell StoryOS what you want to build, or start from a directing skill that shapes the first draft.",
+        "start": "Describe your own story",
+        "skillsTitle": "Or start from a directing skill",
+        "connecting": "Connecting to StoryOS…",
+        "unavailable": "StoryOS is unavailable, so it can’t draft anything yet. The canvas is still yours to build by hand.",
+        "retry": "Try again",
+        "skills": {
+          "halftoneCollage": {
+            "title": "Halftone collage",
+            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
+            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Pacing: 10-14 beats, hook within the first 2, then a meaningful choice every 2-3 beats. Endings: 3 — departing, staying, locking the case again — each decided by which memories the player restores or tears up.",
+            "styleBrief": "Art direction: flat paper fields, black-and-white halftone cutouts and cardstock accents, one visual metaphor per beat assembled from a few objects. No typography, no 3D, no photoreal."
           },
-          "risk": {
-            "low": "Low risk",
-            "medium": "Medium risk",
-            "high": "High risk",
-            "critical": "Critical risk"
+          "symmetricalStorybook": {
+            "title": "Symmetrical storybook cinema",
+            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
+            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Plot: advance in chapters, one pivotal choice per chapter, each making the hotel more absurd and the truth closer. Pacing: around 12 beats in three acts, each act closing on a small reversal. Endings: 3 — lifting the hat, keeping his secret, becoming the next hat-wearer — each rewriting the bellboy’s place in the hotel.",
+            "styleBrief": "Art direction: deliberate symmetry and centered compositions, one chapter motif per act, a controlled vintage palette, and precise, restrained reveals."
           }
         }
       },

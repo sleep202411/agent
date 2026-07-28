@@ -48,6 +48,7 @@ event, permission, cancellation, and usage-accounting semantics.
 Run from the repository root:
 
 ```bash
+npm run dev -w studio-agent-runtime          # run the local stack (see below)
 npm run check-types -w studio-agent-runtime
 npm run lint -w studio-agent-runtime
 npm run test -w studio-agent-runtime
@@ -56,6 +57,27 @@ npm run build -w studio-agent-runtime
 
 The build precompiles `dist/studio-agent-workflow-bundle.js`; production must
 not bundle workflow code at startup. Generated `dist/` output is ignored.
+
+## Never measure against a stale worker
+
+`npm run dev -w studio-agent-runtime` is the only supported way to run this app
+locally, and it is one command deliberately: it loads this app's `.env`, keeps
+`@repo/shared` compiled, refuses to start anything until that build succeeds,
+gives each role its own health/metrics ports, restarts a worker when the code it
+loaded changes, and reports each role's `/ready`. Do not replace it with a
+sequence of commands to be run in the right order — that ordering requirement is
+the defect it removes. `README.md` § Running it locally is the reference.
+
+If you run compiled output instead (`node dist/worker-*.js`), the worker aborts
+at startup when a source file is newer than the build it would load, and turns
+`/ready` into `503 stale` when someone rebuilds underneath it. A worker whose
+readiness is red must not be used to verify anything: it is running the previous
+build. This is not a nicety — measurements were once taken against pre-fix
+modules because nothing said so.
+
+Anything that changes `packages/shared` or this app therefore needs a rebuild and
+a restart before it is measured. The dev launcher does both; the compiled path
+tells you when it did not happen.
 
 ## Change checklist
 

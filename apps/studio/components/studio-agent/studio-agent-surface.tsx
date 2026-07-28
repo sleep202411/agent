@@ -1,13 +1,14 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { IconLoader2, IconX } from "@tabler/icons-react";
+import { IconLoader2, IconPencilPlus, IconX } from "@tabler/icons-react";
 
 import { cn } from "@/lib/utils";
 
 export interface StudioAgentSurfaceLabels {
   surface: string;
   close: string;
+  newConversation: string;
 }
 
 export interface StudioAgentSurfaceProps {
@@ -17,6 +18,11 @@ export interface StudioAgentSurfaceProps {
   children: ReactNode;
   composer?: ReactNode;
   busy?: boolean;
+  /**
+   * Retire this conversation and open an empty one. Omit to hide the control —
+   * a surface with no thread has nothing to retire.
+   */
+  onNewConversation?: () => void;
   onOpenChange: (open: boolean) => void;
   className?: string;
 }
@@ -36,6 +42,7 @@ export function StudioAgentSurface({
   children,
   composer,
   busy = false,
+  onNewConversation,
   onOpenChange,
   className,
 }: StudioAgentSurfaceProps) {
@@ -62,6 +69,18 @@ export function StudioAgentSurface({
               />
             ) : null}
           </div>
+
+          {onNewConversation ? (
+            <button
+              type="button"
+              aria-label={labels.newConversation}
+              title={labels.newConversation}
+              onClick={onNewConversation}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+            >
+              <IconPencilPlus aria-hidden="true" className="size-4" />
+            </button>
+          ) : null}
 
           <button
             type="button"

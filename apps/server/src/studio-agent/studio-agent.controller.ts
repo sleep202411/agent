@@ -2,57 +2,42 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
+  Header,
   Param,
   Patch,
   Post,
   Query,
-  Req,
-  Res,
 } from '@nestjs/common';
 import {
   StudioAgentCancelRunRequestSchema,
-  StudioAgentResolveApprovalRequestSchema,
   StudioAgentResolveThreadRequestSchema,
-  StudioAgentSubmitMessageRequestSchema,
   StudioAgentUpdatePermissionPolicyRequestSchema,
   type StudioAgentCancelRunRequest,
-  type StudioAgentResolveApprovalRequest,
   type StudioAgentResolveThreadRequest,
-  type StudioAgentSubmitMessageRequest,
   type StudioAgentUpdatePermissionPolicyRequest,
 } from '@repo/shared/studio-agent-api';
-import type { Request, Response } from 'express';
+import {
+  StudioAgentInvocationRequestSchema,
+  type StudioAgentInvocationRequest,
+} from '@repo/shared/studio-agent-transport';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
-import { StudioAgentConfigService } from './studio-agent.config';
 import {
-  StudioAgentApprovalParamsSchema,
-  StudioAgentEventQuerySchema,
-  StudioAgentEventStreamQuerySchema,
   StudioAgentRunParamsSchema,
   StudioAgentSnapshotQuerySchema,
   StudioAgentThreadParamsSchema,
-  type StudioAgentApprovalParams,
-  type StudioAgentEventQuery,
-  type StudioAgentEventStreamQuery,
   type StudioAgentRunParams,
   type StudioAgentSnapshotQuery,
   type StudioAgentThreadParams,
 } from './studio-agent.dto';
-import {
-  StudioAgentEventNotifier,
-  StudioAgentEventStore,
-} from './studio-agent.events';
+import { StudioAgentAblyTokenIssuer } from './studio-agent.realtime';
 import { StudioAgentService } from './studio-agent.service';
 
 @Controller('studio-agent')
 export class StudioAgentController {
   constructor(
     private readonly studioAgent: StudioAgentService,
-    private readonly events: StudioAgentEventStore,
-    private readonly notifier: StudioAgentEventNotifier,
-    private readonly config: StudioAgentConfigService,
+    private readonly realtimeTokens: StudioAgentAblyTokenIssuer,
   ) {}
 
   @Post('threads/resolve')
@@ -81,122 +66,82 @@ export class StudioAgentController {
     };
   }
 
-  @Post('threads/:threadId/messages')
-  async submitMessage(
+  /**
+   * Wake a turn whose prompt is ALREADY on the channel.
+   *
+   * This is the endpoint `@ably/ai-transport`'s `ChatTransport` POSTs to, and
+   * its shape is dictated by the library: `ClientView.send()` publishes the
+   * user's `ai-input` first and only then issues this request, fire-and-forget.
+   * Read that twice, because it inverts the usual order — by the time this
+   * method runs, the message is on the channel and on every subscriber's
+   * screen, and every refusal below refuses something already visible.
+   *
+   * That is not as loose as it sounds. The Ably capability is the first gate: a
+   * token is minted for exactly one thread's channel, so a caller cannot
+   * address a thread they did not prove access to, and the worst they can do is
+   * put text on their own conversation. This endpoint is the second, and it is
+   * where everything a capability cannot express is decided — ownership, scope,
+   * quota, one-active-run, `clientMessageId` idempotency. A rejection reaches
+   * the browser through the session's error emitter; the UI marks that message
+   * failed rather than leaving it looking committed.
+   *
+   * There is no sibling route. `POST threads/:id/messages` is gone: two ways to
+   * start a turn is two authorization paths to keep in step, and this one has
+   * to exist because the library calls it.
+   */
+  @Post('invocations')
+  async startInvocation(
     @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StudioAgentThreadParamsSchema))
-    params: StudioAgentThreadParams,
-    @Body(new ZodValidationPipe(StudioAgentSubmitMessageRequestSchema))
-    body: StudioAgentSubmitMessageRequest,
+    @Body(new ZodValidationPipe(StudioAgentInvocationRequestSchema))
+    body: StudioAgentInvocationRequest,
   ) {
     return {
       code: 200,
-      data: await this.studioAgent.submitMessage(user, params.threadId, body),
+      data: await this.studioAgent.startInvocation(user, body),
     };
   }
 
-  @Get('threads/:threadId/events')
-  async eventPage(
+  /**
+   * Mint a short-lived Ably credential for exactly one thread.
+   *
+   * WHY THIS EXISTS AT ALL. The key in the server's environment is a ROOT key.
+   * It can publish to, and read, every channel of every tenant, so it must
+   * never reach a browser. The alternative people reach for — shipping a
+   * separate subscribe-only key to the client — is not a smaller grant in the
+   * way it sounds: its capability is `{"*": ["subscribe"]}`, i.e. every channel
+   * of every tenant, forever, with no way to withdraw it from one user. A
+   * minted token is the only shape that says "this person, this thread, until
+   * it expires".
+   *
+   * AUTHORIZATION IS RE-RUN HERE, ON EVERY MINT. `requireThread` is the exact
+   * check the thread read path above performs — ownership, active status, and
+   * the scope authorizer. A grant withdrawn between two refreshes therefore
+   * stops working at the next one; the window is the token TTL and nothing
+   * longer, because Ably will not renew a token by itself.
+   *
+   * 404, NEVER 403, for a caller with no access: `requireThread` throws
+   * `NotFoundException` and this route deliberately does not catch it, so a
+   * thread you may not read is indistinguishable from a thread that does not
+   * exist. Matching the rest of the module keeps thread ids unprobeable.
+   *
+   * `Cache-Control: no-store` because the response is a bearer credential and
+   * this is a GET; nothing between here and the browser may keep a copy.
+   */
+  @Get('threads/:threadId/realtime-token')
+  @Header('Cache-Control', 'no-store')
+  async realtimeToken(
     @CurrentUser() user: AuthUser,
     @Param(new ZodValidationPipe(StudioAgentThreadParamsSchema))
     params: StudioAgentThreadParams,
-    @Query(new ZodValidationPipe(StudioAgentEventQuerySchema))
-    query: StudioAgentEventQuery,
   ) {
     await this.studioAgent.requireThread(user, params.threadId);
-    const page = await this.events.page(
-      params.threadId,
-      query.afterSequence,
-      query.limit,
-    );
     return {
       code: 200,
-      data: {
-        schemaVersion: 'studio-agent-v1',
-        ...page,
-      },
+      data: await this.realtimeTokens.issueThreadToken(
+        params.threadId,
+        user.userId,
+      ),
     };
-  }
-
-  @Get('threads/:threadId/events/stream')
-  async eventStream(
-    @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StudioAgentThreadParamsSchema))
-    params: StudioAgentThreadParams,
-    @Query(new ZodValidationPipe(StudioAgentEventStreamQuerySchema))
-    query: StudioAgentEventStreamQuery,
-    @Headers('last-event-id') lastEventId: string | undefined,
-    @Req() request: Request,
-    @Res() response: Response,
-  ): Promise<void> {
-    await this.studioAgent.requireThread(user, params.threadId);
-    let cursor = Math.max(query.afterSequence, parseLastEventId(lastEventId));
-    response.status(200);
-    response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    response.setHeader('Cache-Control', 'no-cache, no-transform');
-    response.setHeader('Connection', 'keep-alive');
-    response.setHeader('X-Accel-Buffering', 'no');
-    response.flushHeaders();
-
-    let closed = false;
-    let pendingWake = true;
-    let wake: (() => void) | null = null;
-    request.on('close', () => {
-      closed = true;
-      wake?.();
-    });
-    const subscription = this.notifier.notifications().subscribe((event) => {
-      if (event.threadId !== params.threadId || event.sequence <= cursor) {
-        return;
-      }
-      pendingWake = true;
-      wake?.();
-    });
-
-    try {
-      while (!closed) {
-        if (pendingWake) {
-          pendingWake = false;
-          do {
-            const page = await this.events.page(
-              params.threadId,
-              cursor,
-              this.config.value.sseBatchSize,
-            );
-            for (const event of page.events) {
-              if (closed) {
-                break;
-              }
-              await writeSse(
-                response,
-                `id: ${event.sequence}\ndata: ${JSON.stringify(event)}\n\n`,
-              );
-              cursor = event.sequence;
-            }
-            if (!page.hasMore) {
-              break;
-            }
-          } while (!closed);
-          continue;
-        }
-
-        const wokeFromEvent = await waitForWake((resolve) => {
-          wake = resolve;
-        }, this.config.value.sseHeartbeatMs);
-        wake = null;
-        if (!wokeFromEvent && !closed) {
-          await writeSse(response, ': heartbeat\n\n');
-          // The heartbeat is also a durable catch-up poll in case Redis
-          // notification delivery was interrupted.
-          pendingWake = true;
-        }
-      }
-    } finally {
-      subscription.unsubscribe();
-      if (!response.writableEnded) {
-        response.end();
-      }
-    }
   }
 
   @Patch('threads/:threadId/permission-policy')
@@ -217,22 +162,19 @@ export class StudioAgentController {
     };
   }
 
-  @Post('threads/:threadId/approvals/:approvalId/resolve')
-  async resolveApproval(
+  /**
+   * "New conversation": retire this thread so the next resolve opens a fresh
+   * one. No body — there is nothing to say about it beyond which thread.
+   */
+  @Post('threads/:threadId/archive')
+  async archiveThread(
     @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StudioAgentApprovalParamsSchema))
-    params: StudioAgentApprovalParams,
-    @Body(new ZodValidationPipe(StudioAgentResolveApprovalRequestSchema))
-    body: StudioAgentResolveApprovalRequest,
+    @Param(new ZodValidationPipe(StudioAgentThreadParamsSchema))
+    params: StudioAgentThreadParams,
   ) {
     return {
       code: 200,
-      data: await this.studioAgent.resolveApproval(
-        user,
-        params.threadId,
-        params.approvalId,
-        body,
-      ),
+      data: await this.studioAgent.archiveThread(user, params.threadId),
     };
   }
 
@@ -254,56 +196,4 @@ export class StudioAgentController {
       ),
     };
   }
-}
-
-function parseLastEventId(value: string | undefined): number {
-  if (!value) {
-    return 0;
-  }
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
-}
-
-function waitForWake(
-  register: (resolve: () => void) => void,
-  timeoutMs: number,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    let completed = false;
-    const timeout = setTimeout(() => {
-      if (!completed) {
-        completed = true;
-        resolve(false);
-      }
-    }, timeoutMs);
-    register(() => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timeout);
-        resolve(true);
-      }
-    });
-  });
-}
-
-async function writeSse(response: Response, chunk: string): Promise<void> {
-  if (response.write(chunk)) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    const onDrain = () => {
-      cleanup();
-      resolve();
-    };
-    const onClose = () => {
-      cleanup();
-      resolve();
-    };
-    const cleanup = () => {
-      response.off('drain', onDrain);
-      response.off('close', onClose);
-    };
-    response.once('drain', onDrain);
-    response.once('close', onClose);
-  });
 }

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped in persistence assertions. */
 import { UnprocessableEntityException } from '@nestjs/common';
 import {
   MediaAssetKind,
@@ -12,6 +11,7 @@ import {
 } from '@prisma/client';
 import { STUDIO_AGENT_SCHEMA_VERSION } from '@repo/shared/studio-agent';
 import { StudioAgentArtifactService } from './studio-agent-artifact.service';
+import { anyDate, anything, objectContaining } from './__tests__/typed-expect';
 
 const ACTOR_ID = 'actor-1';
 const THREAD_ID = '019f8c00-0000-7000-8000-000000000001';
@@ -253,15 +253,15 @@ describe('StudioAgentArtifactService', () => {
 
     expect(fixture.scopes.authorize).toHaveBeenCalledTimes(1);
     expect(fixture.tx.studioAgentArtifact.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           threadId: THREAD_ID,
           createdByActorId: ACTOR_ID,
           mediaAssetId: ASSET_ID,
           kind: StudioAgentArtifactKind.media,
           status: StudioAgentArtifactStatus.ready,
           cleanupStatus: StudioAgentArtifactCleanupStatus.active,
-          cleanupExpiresAt: expect.any(Date),
+          cleanupExpiresAt: anyDate(),
         }),
       }),
     );
@@ -326,11 +326,11 @@ describe('StudioAgentArtifactService', () => {
     });
     expect(fixture.documents.extract).toHaveBeenCalledTimes(1);
     expect(fixture.tx.studioAgentArtifact.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      objectContaining({
+        data: objectContaining({
           kind: StudioAgentArtifactKind.document,
           status: StudioAgentArtifactStatus.pending,
-          value: expect.anything(),
+          value: anything(),
           contentHash: null,
         }),
       }),
@@ -341,11 +341,11 @@ describe('StudioAgentArtifactService', () => {
         status: StudioAgentArtifactStatus.pending,
         cleanupStatus: StudioAgentArtifactCleanupStatus.active,
       },
-      data: expect.objectContaining({
+      data: objectContaining({
         status: StudioAgentArtifactStatus.ready,
         value: projection,
         contentHash: 'b'.repeat(64),
-        readyAt: expect.any(Date),
+        readyAt: anyDate(),
       }),
     });
   });
@@ -440,8 +440,8 @@ describe('StudioAgentArtifactService', () => {
       created: false,
     });
     expect(fixture.prisma.studioAgentArtifact.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
+      objectContaining({
+        where: objectContaining({
           id: ARTIFACT_ID,
           status: StudioAgentArtifactStatus.pending,
         }),
@@ -484,10 +484,10 @@ describe('StudioAgentArtifactService', () => {
         status: StudioAgentArtifactStatus.pending,
         cleanupStatus: StudioAgentArtifactCleanupStatus.active,
       },
-      data: expect.objectContaining({
+      data: objectContaining({
         status: StudioAgentArtifactStatus.failed,
         readyAt: null,
-        error: expect.objectContaining({
+        error: objectContaining({
           code: 'STUDIO_AGENT_DOCUMENT_PARSE_FAILED',
           message: 'The PDF is malformed.',
           retryable: false,
@@ -576,9 +576,9 @@ describe('StudioAgentArtifactService', () => {
         status: StudioAgentArtifactStatus.failed,
         cleanupStatus: StudioAgentArtifactCleanupStatus.active,
       },
-      data: expect.objectContaining({
+      data: objectContaining({
         status: StudioAgentArtifactStatus.pending,
-        error: expect.anything(),
+        error: anything(),
       }),
     });
     expect(fixture.documents.extract).toHaveBeenCalledTimes(1);
@@ -741,11 +741,11 @@ describe('StudioAgentArtifactService', () => {
     });
     expect(fixture.tx.studioAgentArtifact.update).toHaveBeenCalledWith({
       where: { id: ARTIFACT_ID },
-      data: expect.objectContaining({
+      data: objectContaining({
         cleanupStatus: StudioAgentArtifactCleanupStatus.scheduled,
         cleanupReason: 'user_abandoned',
-        cleanupRequestedAt: expect.any(Date),
-        cleanupNextAttemptAt: expect.any(Date),
+        cleanupRequestedAt: anyDate(),
+        cleanupNextAttemptAt: anyDate(),
       }),
     });
   });

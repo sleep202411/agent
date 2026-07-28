@@ -35,6 +35,15 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   clipVideo?: StoryClipVideoSummary;
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
+  /**
+   * StoryOS wrote this node moments ago.
+   *
+   * Transient and view-only — it is never persisted and never read back. The
+   * canvas sets it when an agent write lands and clears it a couple of seconds
+   * later, so a node carrying it means "look here now", not "this node was once
+   * written by the agent".
+   */
+  agentWrote?: boolean;
 }
 
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;

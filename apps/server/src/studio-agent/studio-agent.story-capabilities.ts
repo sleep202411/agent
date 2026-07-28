@@ -7,14 +7,13 @@ import {
 } from '@nestjs/common';
 import { Prisma, type StudioAgentAction } from '@prisma/client';
 import {
-  STUDIO_AGENT_SCHEMA_VERSION,
   StudioAgentChangeSetSummarySchema,
   StudioAgentJsonObjectSchema,
   StudioAgentThreadScopeSchema,
   type StudioAgentChangeSetSummary,
   type StudioAgentJsonValue,
 } from '@repo/shared/studio-agent';
-import { StoryPatchOperationsSchema } from '@repo/shared/story-agent';
+import { StoryPatchActionInputSchema } from '@repo/shared/story-agent';
 import { z } from 'zod';
 import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -33,18 +32,9 @@ import {
 } from '../story-studio/story-agent-patch.executor';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { StoryProjectWriteGuardService } from '../story-studio/story-project-write-guard.service';
+import { parseCapabilityInput } from './studio-agent.capability-error';
 
 type TransactionClient = Prisma.TransactionClient;
-
-const StoryPatchActionInputSchema = z
-  .object({
-    projectId: z.uuid(),
-    chapterId: z.uuid(),
-    baseDraftRevision: z.number().int().nonnegative(),
-    baseLayoutRevision: z.number().int().nonnegative(),
-    operations: StoryPatchOperationsSchema,
-  })
-  .strict();
 
 const EmptyActionInputSchema = z.object({}).strict();
 
@@ -54,8 +44,11 @@ interface StoryActionContext {
     StudioAgentAction,
     'id' | 'threadId' | 'runId' | 'title' | 'summary' | 'input'
   >;
+  // Both scopes arrive straight off a `jsonb` column and stay `unknown` until
+  // `StudioAgentThreadScopeSchema` has parsed them below. `rawScopeFocus` may be
+  // a SQL NULL, which `unknown` already admits.
   rawScopeContainer: unknown;
-  rawScopeFocus: unknown | null;
+  rawScopeFocus: unknown;
   workspaceId: string;
 }
 
@@ -141,7 +134,7 @@ export class StudioAgentStoryCapabilities {
     tx: TransactionClient,
     context: StoryActionContext,
   ): Promise<StudioAgentCapabilityResult> {
-    EmptyActionInputSchema.parse(context.action.input);
+    parseCapabilityInput(EmptyActionInputSchema, context.action.input);
     const { projectId, chapterId } = requireStoryScope(context);
     await this.permissions.requireProjectInTransaction(
       tx,
@@ -183,7 +176,10 @@ export class StudioAgentStoryCapabilities {
     tx: TransactionClient,
     context: StoryActionContext,
   ): Promise<StudioAgentCapabilityResult> {
-    const input = StoryPatchActionInputSchema.parse(context.action.input);
+    const input = parseCapabilityInput(
+      StoryPatchActionInputSchema,
+      context.action.input,
+    );
     const scope = requireStoryScope(context);
     if (
       input.projectId !== scope.projectId ||
@@ -288,7 +284,6 @@ export class StudioAgentStoryCapabilities {
     const nextLayoutRevision =
       state.layout.revision + (result.layoutChanged ? 1 : 0);
     const changeSet = StudioAgentChangeSetSummarySchema.parse({
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
       changeSetId: context.action.id,
       actionId: context.action.id,
       title: context.action.title,

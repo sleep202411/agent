@@ -8,14 +8,23 @@ from the legacy Mastra agent.
 
 One immutable image is deployed as two independently scalable worker roles:
 
-| Role       | Entrypoint                       | Task queue                   | Responsibility                                                |
-| ---------- | -------------------------------- | ---------------------------- | ------------------------------------------------------------- |
-| Control    | `node dist/worker-control.js`    | `studio-agent-control-v1`    | Executes only the precompiled deterministic Temporal workflow |
-| Activities | `node dist/worker-activities.js` | `studio-agent-activities-v1` | Calls Qwen, the Nest control plane, and approved capabilities |
+| Role       | Entrypoint                       | Task queue                   | Health / metrics default | Responsibility                                                |
+| ---------- | -------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------------------------- |
+| Control    | `node dist/worker-control.js`    | `studio-agent-control-v1`    | `3010` / `0.0.0.0:9464`  | Executes only the precompiled deterministic Temporal workflow |
+| Activities | `node dist/worker-activities.js` | `studio-agent-activities-v1` | `3011` / `0.0.0.0:9465`  | Calls Qwen, the Nest control plane, and approved capabilities |
 
 `npm run build -w studio-agent-runtime` creates
-`dist/studio-agent-workflow-bundle.js`. The production control worker loads
-that artifact and never invokes the workflow bundler at startup.
+`dist/studio-agent-workflow-bundle.js`. A compiled entrypoint loads that
+artifact and never invokes the workflow bundler at startup; a missing bundle
+fails with the build command instead of an opaque resolution error. Running the
+TypeScript entrypoint (`tsx src/worker-control.ts`, which is what the local
+launcher does) bundles from source at startup and says so at `WARN`. The mode is
+derived from the extension of the running module, so the image — which contains
+`dist` only — cannot select it by configuration.
+
+The per-role endpoint defaults differ because both roles are separate pods in
+production but two processes on one host locally. Helm sets both values
+explicitly per pod, so the defaults never apply there.
 
 Nest/Postgres is the canonical control plane. It owns authentication, threads,
 messages, run state, manifests, permission evaluation, actions, approvals,
@@ -34,13 +43,17 @@ missing credential, unknown TLS mode, invalid URL, contract-drifting task
 queue, or unsafe shutdown window terminates the process. There are no
 credential or plaintext fallbacks.
 
+Both worker roles load `apps/studio-agent-runtime/.env` themselves before
+validating anything, so every documented command works without an `--env-file`
+flag. A variable already present in the process environment always wins, and the
+startup log names the file, the keys it contributed, and the keys it did not
+override. The production image ships no `.env`, so there the load is a reported
+no-op.
+
 Required by both worker roles:
 
 - `STUDIO_AGENT_RELEASE`: immutable image/source revision shown in diagnostics
   and assigned as the Temporal Worker Deployment build ID.
-- `STUDIO_AGENT_WORKER_DEPLOYMENT_NAME`: stable deployment identity. The
-  shared contract currently requires `fizzdragon-studio-agent`; changing it
-  would strand workflow histories pinned to the old deployment.
 - `TEMPORAL_ADDRESS`
 - `TEMPORAL_NAMESPACE`
 - `TEMPORAL_TLS_MODE`: exactly `mtls` or `disabled`.
@@ -73,12 +86,29 @@ Each worker exposes a private process endpoint on
 
 - `GET /healthz` is live unless the Temporal worker has entered a fatal state.
 - `GET /ready` succeeds only while the role-specific Temporal poller is
-  actively polling. It fails during startup, drain, and failure.
+  actively polling **and** the loaded code still matches the build on disk. It
+  fails during startup, drain, failure, and staleness (`status: "stale"`).
 - `HEAD` is supported for both endpoints. Other methods are rejected.
 
 Responses are non-cacheable JSON containing only service, role, immutable
-release, lifecycle status, worker state, and poller state. No secret or
-provider payload is exposed.
+release, lifecycle status, worker state, poller state, and — when stale — the
+reason. No secret or provider payload is exposed.
+
+### Stale code cannot pass silently
+
+Measuring a fix against a worker that is still running the previous build is how
+a false "verified" result gets produced, so the runtime treats it as a fault:
+
+- at startup a source file newer than the build output that would be loaded, or
+  a missing build output, **aborts the process** with the offending file and the
+  exact rebuild command;
+- while running, a rebuild of `apps/studio-agent-runtime/dist` or
+  `packages/shared/dist` underneath the process logs `ERROR` and turns `/ready`
+  into `503 stale` — the process is alive, its code is out of date, restart it.
+
+Both checks are `stat`-only and compare exactly the two build outputs the process
+loads. In the production image no source tree exists, so the source comparison
+reports itself as skipped instead of guessing.
 
 Temporal SDK metrics use its Prometheus exporter at
 `STUDIO_AGENT_METRICS_BIND_ADDRESS` (default `0.0.0.0:9464`). The Helm chart
@@ -197,21 +227,49 @@ Queue names and shared wire contracts are versioned boundaries. A breaking
 queue/schema change requires a new queue/contract version and a coordinated
 server/runtime rollout, not an in-place rename.
 
-## Local validation
+## Running it locally
 
-Run a local Temporal development server and opt into plaintext explicitly:
+Two prerequisites, both outside this app: a Temporal dev server
+(`temporal server start-dev`, which listens on `127.0.0.1:7233`) and the Nest
+control plane (`npm run dev -w server`) if you want the activities role to do
+anything. Then copy [`.env.example`](./.env.example) to `.env` and fill it in —
+`TEMPORAL_TLS_MODE=disabled` is the deliberate local plaintext opt-in.
 
 ```bash
-TEMPORAL_ADDRESS=127.0.0.1:7233 \
-TEMPORAL_NAMESPACE=default \
-TEMPORAL_TLS_MODE=disabled \
-STUDIO_AGENT_RELEASE=local-dev \
-npm run start:control -w studio-agent-runtime
+npm run dev -w studio-agent-runtime              # both roles
+npm run dev:control -w studio-agent-runtime      # one role
+npm run dev:activities -w studio-agent-runtime
 ```
 
-The activities process additionally needs the Nest internal origin, a runtime
-service token, and an Alibaba API key. See [`.env.example`](./.env.example);
-Node does not implicitly load that file.
+That single command is the whole procedure, and it is one command on purpose:
+
+1. loads `.env` exactly as the workers will and prints what it contributed;
+2. compiles `@repo/shared` with `tsc --watch` and **starts nothing until that
+   first build succeeds** — the workers load its build output, not its sources;
+3. validates the configuration of every role about to start, including that the
+   two roles cannot collide on a health port or metrics bind address, and starts
+   nothing if it does not hold;
+4. runs each worker under `tsx watch`, watching this app's `src` and
+   `packages/shared/dist`, so an edit in either place restarts the worker that
+   loaded it;
+5. polls each `/ready` and prints every role state transition, so
+   "half of the stack is up" is visible instead of assumed;
+6. takes the whole stack down together — on Ctrl-C, and on any child exiting.
+
+Output is line-prefixed per process (`[shared]`, `[control]`, `[activities]`,
+`[dev-stack]`).
+
+Do not pin `STUDIO_AGENT_HEALTH_PORT` or `STUDIO_AGENT_METRICS_BIND_ADDRESS` in
+`.env`: one file feeds both roles, so a pin makes the second worker fail to bind.
+Each role has its own default instead.
+
+To run compiled output the way production does, build first — the worker refuses
+to start against a stale or missing build and tells you which command to run:
+
+```bash
+npm run build -w studio-agent-runtime
+npm run start:control -w studio-agent-runtime
+```
 
 Repository checks:
 
@@ -234,6 +292,11 @@ bash deploy/helm/fizzdragon/tests/studio-agent-runtime-render.sh
   to a new root run.
 - Direct actions are bounded, idempotent transactions. Long-running work is a
   cancellable child run.
+- Preparing a child run settles either way: `started` carries the descriptor the
+  workflow must run, `refused` carries the terminal `failed` action the control
+  plane recorded for an input the capability manifest rejected. A refusal starts
+  no child — the model reads it back as a tool result and corrects the call, and
+  it counts against the same per-turn correction budget as any other rejection.
 - Approval decisions atomically resolve Approval and Action. Timeout uses
   `expired`; supersession uses `cancelled`.
 

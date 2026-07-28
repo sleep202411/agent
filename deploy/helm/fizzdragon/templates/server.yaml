@@ -116,6 +116,8 @@ spec:
               value: {{ .Values.studioAgentRuntime.budget.maxModelStepsPerRun | quote }}
             - name: STUDIO_AGENT_BUDGET_MAX_MODEL_STEPS_PER_ROOT
               value: {{ .Values.studioAgentRuntime.budget.maxModelStepsPerRoot | quote }}
+            - name: STUDIO_AGENT_BUDGET_MAX_CAPABILITY_INPUT_REJECTIONS_PER_ROOT
+              value: {{ .Values.studioAgentRuntime.budget.maxCapabilityInputRejectionsPerRoot | quote }}
             - name: STUDIO_AGENT_BUDGET_MAX_TOTAL_TOKEN_UNITS
               value: {{ .Values.studioAgentRuntime.budget.maxTotalTokenUnits | quote }}
             - name: STUDIO_AGENT_BUDGET_MAX_CONTEXT_BYTES_PER_STEP

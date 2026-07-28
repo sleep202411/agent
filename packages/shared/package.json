@@ -82,9 +82,21 @@
       "types": "./dist/story-agent.d.ts",
       "default": "./dist/story-agent.js"
     },
+    "./zod-json-schema-fidelity": {
+      "types": "./dist/zod-json-schema-fidelity.d.ts",
+      "default": "./dist/zod-json-schema-fidelity.js"
+    },
+    "./zod-serialized-size": {
+      "types": "./dist/zod-serialized-size.d.ts",
+      "default": "./dist/zod-serialized-size.js"
+    },
     "./studio-agent": {
       "types": "./dist/studio-agent.d.ts",
       "default": "./dist/studio-agent.js"
+    },
+    "./studio-agent-transport": {
+      "types": "./dist/studio-agent-transport.d.ts",
+      "default": "./dist/studio-agent-transport.js"
     },
     "./studio-agent-api": {
       "types": "./dist/studio-agent-api.d.ts",
@@ -97,19 +109,25 @@
     "./copilot-documents": {
       "types": "./dist/copilot-documents.d.ts",
       "default": "./dist/copilot-documents.js"
+    },
+    "./studio-agent-tools": {
+      "types": "./dist/studio-agent-tools.d.ts",
+      "default": "./dist/studio-agent-tools.js"
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/check-story-patch-projection.mjs",
     "contracts:experience": "npm run build && node scripts/export-experience-contracts.mjs",
     "dev": "tsc --watch",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   }
 }

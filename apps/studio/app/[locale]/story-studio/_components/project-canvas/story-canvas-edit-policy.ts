@@ -76,10 +76,10 @@ export function storyProjectionQueryKey(
 /**
  * Matches any canonical projection query (workbench or canvas-layout, any
  * chapter) for a project. Used to invalidate the canvas when an out-of-band
- * mutation (e.g. a Studio Agent applied change-set) bumps the draft revision,
- * so it refetches instead of showing stale draft/layout. Matched on projectId
- * (globally unique) rather than workspaceId to stay robust to a null-vs-string
- * workspace key.
+ * mutation may have bumped the draft revision, so it refetches instead of
+ * showing a stale draft/layout — see `requiresStoryProjectionReconcile` for the
+ * triggers. Matched on projectId (globally unique) rather than workspaceId to
+ * stay robust to a null-vs-string workspace key.
  */
 export function matchesStoryProjectionQueryKey(
   queryKey: readonly unknown[],

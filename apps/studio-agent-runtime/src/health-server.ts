@@ -1,11 +1,17 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { WorkerStatus } from "@temporalio/worker";
+import type { BuildFreshnessSnapshot } from "./build-freshness.js";
 import type { RuntimeProcessConfig } from "./config.js";
+import type { RuntimeWorkerRole } from "./runtime-role.js";
 
-export type RuntimeWorkerRole = "control" | "activities";
+export type { RuntimeWorkerRole };
 
 export interface WorkerStatusProvider {
   getStatus(): WorkerStatus;
+}
+
+export interface CodeFreshnessProvider {
+  snapshot(): BuildFreshnessSnapshot;
 }
 
 export interface RuntimeWorkerHealth {
@@ -13,29 +19,39 @@ export interface RuntimeWorkerHealth {
   ready: boolean;
   workerState: WorkerStatus["runState"] | "UNAVAILABLE";
   pollerState: WorkerStatus["workflowPollerState"] | "UNAVAILABLE";
+  codeStale: boolean;
+  staleReasons: readonly string[];
 }
 
 interface HealthSnapshot {
   service: "studio-agent-runtime";
   role: RuntimeWorkerRole;
   release: string;
-  status: "alive" | "ready" | "starting" | "draining" | "failed";
+  status: "alive" | "ready" | "starting" | "draining" | "failed" | "stale";
   workerState: WorkerStatus["runState"] | "UNAVAILABLE";
   pollerState: WorkerStatus["workflowPollerState"] | "UNAVAILABLE";
+  codeStale: boolean;
+  staleReasons?: readonly string[];
 }
 
 export class RuntimeHealthServer {
   readonly #role: RuntimeWorkerRole;
   readonly #config: RuntimeProcessConfig;
   readonly #server: Server;
+  readonly #freshness: CodeFreshnessProvider | undefined;
   #worker: WorkerStatusProvider | undefined;
   #draining = false;
   #failed = false;
   #listening = false;
 
-  constructor(role: RuntimeWorkerRole, config: RuntimeProcessConfig) {
+  constructor(
+    role: RuntimeWorkerRole,
+    config: RuntimeProcessConfig,
+    freshness?: CodeFreshnessProvider
+  ) {
     this.#role = role;
     this.#config = config;
+    this.#freshness = freshness;
     this.#server = createServer((request, response) => {
       if (request.method !== "GET" && request.method !== "HEAD") {
         response.setHeader("allow", "GET, HEAD");
@@ -65,7 +81,9 @@ export class RuntimeHealthServer {
                 ? "failed"
                 : this.#draining
                   ? "draining"
-                  : "starting",
+                  : health.codeStale
+                    ? "stale"
+                    : "starting",
             health
           )
         );
@@ -137,7 +155,8 @@ export class RuntimeHealthServer {
       this.#role,
       this.#worker?.getStatus(),
       this.#draining,
-      this.#failed
+      this.#failed,
+      this.#freshness?.snapshot()
     );
   }
 
@@ -152,6 +171,8 @@ export class RuntimeHealthServer {
       status,
       workerState: health.workerState,
       pollerState: health.pollerState,
+      codeStale: health.codeStale,
+      ...(health.codeStale ? { staleReasons: health.staleReasons } : {}),
     };
   }
 
@@ -174,17 +195,25 @@ export function evaluateRuntimeWorkerHealth(
   role: RuntimeWorkerRole,
   workerStatus: WorkerStatus | undefined,
   draining: boolean,
-  failed: boolean
+  failed: boolean,
+  freshness: BuildFreshnessSnapshot | undefined = undefined
 ): RuntimeWorkerHealth {
   const workerState = workerStatus?.runState ?? "UNAVAILABLE";
   const pollerState =
     (role === "control" ? workerStatus?.workflowPollerState : workerStatus?.activityPollerState) ??
     "UNAVAILABLE";
   const alive = !failed && workerState !== "FAILED";
+  const codeStale = freshness?.stale === true;
   return {
     alive,
-    ready: alive && !draining && workerState === "RUNNING" && pollerState === "POLLING",
+    // A worker that no longer runs the code on disk is not a worker anyone
+    // should trust a measurement from, so readiness fails while it is stale.
+    // Liveness stays true: the process is healthy, the build is not.
+    ready:
+      alive && !draining && !codeStale && workerState === "RUNNING" && pollerState === "POLLING",
     workerState,
     pollerState,
+    codeStale,
+    staleReasons: freshness?.reasons ?? [],
   };
 }

@@ -151,6 +151,7 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
+import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-agent-reconcile";
 import { StoryChapterDropdown } from "./story-chapter-dropdown";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
@@ -580,8 +581,6 @@ function StoryProjectCanvasInner({
   const projectionPair = useLastDefinedData(projectionPairCandidate);
   const workbenchProjection = projectionPair?.workbench;
   const layoutProjection = projectionPair?.layout;
-  // The Story World card presence is layout-owned (layout v2): legacy projects
-  // (and any layout that predates the flag) keep the card; fresh projects start
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -608,16 +607,26 @@ function StoryProjectCanvasInner({
     if (!workbenchProjection) return;
     const workbench = workbenchProjection;
     const chapterChanged = hydratedChapterIdRef.current !== workbench.chapter.id;
-    if (hydratedRef.current && !chapterChanged) {
-      if (workbench.draft.revision <= revisionRef.current || conflictRef.current) return;
-      const latest = latestContentRef.current;
-      const hasLocalChanges = Boolean(
-        recoveryContentRef.current ||
-        saveInFlightRef.current ||
-        (latest && canonicalJsonString(latest) !== savedSignatureRef.current)
-      );
-      if (hasLocalChanges) return;
-    }
+    // Every canonical read arrives here, including the refetch a terminalized
+    // Studio Agent turn forces. Adoption is the gate that makes that safe: a
+    // newer canonical draft is taken only when this canvas holds nothing
+    // unsaved of its own.
+    const adopt = shouldAdoptAuthoritativeStoryDraft({
+      hydrated: hydratedRef.current,
+      chapterChanged,
+      authoritativeRevision: workbench.draft.revision,
+      currentRevision: revisionRef.current,
+      hasConflict: Boolean(conflictRef.current),
+      hasLocalChanges: () => {
+        const latest = latestContentRef.current;
+        return Boolean(
+          recoveryContentRef.current ||
+          saveInFlightRef.current ||
+          (latest && canonicalJsonString(latest) !== savedSignatureRef.current)
+        );
+      },
+    });
+    if (!adopt) return;
     if (chapterChanged) {
       // Navigation is leave-guarded, so these queues should already be clean.
       // Reset them defensively because revisions are chapter-local and two
@@ -1958,13 +1967,90 @@ function StoryProjectCanvasInner({
     ]
   );
   const authoringLocale = project?.defaultLocale ?? "en-US";
+
+  /**
+   * Nodes StoryOS just wrote, held only long enough to be noticed.
+   *
+   * The canvas re-reads its draft when an agent write lands, so without this the
+   * graph simply changes under the creator with nothing to say where. The
+   * highlight is transient on purpose: it answers "what just happened", and a
+   * permanent marker would answer "what happened at some point", which is a
+   * different and less useful question.
+   */
+  const [agentWrittenNodeIds, setAgentWrittenNodeIds] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (agentWrittenNodeIds.length === 0) return;
+    const timer = window.setTimeout(() => setAgentWrittenNodeIds([]), 2_200);
+    return () => window.clearTimeout(timer);
+  }, [agentWrittenNodeIds]);
+
+  /**
+   * Take the creator to a node, without ever taking the canvas out of their
+   * hands.
+   *
+   * One path for both callers — the announcement after an agent write, and a
+   * click on a node named in the reply — because they are the same request and
+   * a second implementation would drift on the part that matters: the refusal
+   * to move the viewport while someone is dragging or typing.
+   */
+  const focusCanvasNodes = useCallback(
+    (nodeIds: readonly string[], options: { highlight: boolean }) => {
+      const present = nodeIds.filter((nodeId) =>
+        canvasNodesRef.current.some((node) => node.id === nodeId)
+      );
+      if (present.length === 0) return;
+      if (options.highlight) setAgentWrittenNodeIds(present);
+      // NEVER while the creator is doing something. Yanking the viewport out
+      // from under a drag, or away from the field someone is typing in, is a
+      // worse failure than not showing them where the edit landed — they can
+      // always look. The highlight above still fires, so the information is not
+      // lost, only the movement is withheld.
+      const active = document.activeElement;
+      const typing =
+        active instanceof HTMLElement &&
+        (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+      if (typing || canvasNodesRef.current.some((node) => node.dragging)) return;
+      void fitView({
+        nodes: present.map((nodeId) => ({ id: nodeId })),
+        duration: 520,
+        padding: 0.6,
+        maxZoom: 1.1,
+        minZoom: 0.5,
+      });
+    },
+    [fitView]
+  );
+
+  const handleAgentWrote = useCallback(
+    (nodeIds: readonly string[]) => focusCanvasNodes(nodeIds, { highlight: true }),
+    [focusCanvasNodes]
+  );
+
+  /**
+   * A node named in the assistant's reply, resolved against the graph that
+   * actually exists. See `StudioAgentNodeLinkProvider` for why resolution is
+   * never a pattern.
+   */
+  const nodeLinks = useMemo(
+    () => ({
+      has: (nodeId: string) => canvasNodesRef.current.some((node) => node.id === nodeId),
+      focus: (nodeId: string) => {
+        selectCanvasNodeExclusively(nodeId);
+        focusCanvasNodes([nodeId], { highlight: true });
+      },
+    }),
+    [focusCanvasNodes, selectCanvasNodeExclusively]
+  );
+
   const layeredCanvasNodes = useMemo(
     () =>
       canvasNodes.map((node) => {
         const zIndex = node.id === focusedNodeId ? 1 : 0;
-        return node.zIndex === zIndex ? node : { ...node, zIndex };
+        const agentWrote = agentWrittenNodeIds.includes(node.id);
+        if (node.zIndex === zIndex && Boolean(node.data.agentWrote) === agentWrote) return node;
+        return { ...node, zIndex, data: { ...node.data, agentWrote } };
       }),
-    [canvasNodes, focusedNodeId]
+    [agentWrittenNodeIds, canvasNodes, focusedNodeId]
   );
   const displayEdges = useMemo(
     () =>
@@ -3028,6 +3114,26 @@ function StoryProjectCanvasInner({
         open={assistantOpen}
         onOpenChange={setAssistantOpen}
         suspended={Boolean(productionCanvasSession)}
+        onAgentWrote={handleAgentWrote}
+        nodeLinks={nodeLinks}
+        // A brand-new project renders an empty graph on purpose, and this hero
+        // is what fills that space until the first node exists.
+        //
+        // It replaces the `storyWorldNodePresent` layout flag, which is NOT
+        // being reinstated. That flag defaulted a fresh project's canvas to
+        // "no Story World card" precisely so the old launcher could own the
+        // first-open screen; the 2026-07-24 Studio Agent rewrite deleted the
+        // flag, the layout field, and the canvas card together — the layout
+        // payload is `{ nodePositions }` only and Story World is now a
+        // header-toggled inspector. Bringing the default back would mean
+        // reviving a layout field nothing reads, plus a layout-schema
+        // migration, to gate a card that no longer exists. The emptiness it
+        // used to arrange for is now stated directly, right here.
+        firstOpen={{
+          chapters: workbenchProjection.chapters,
+          canvasNodeCount: model.nodes.length,
+          canEdit: canMutateCanvasLayout,
+        }}
       >
         <CanvasHeader
           title={project.title}
@@ -3644,7 +3750,20 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
           : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
-    <div className="relative pt-10" data-story-node-id={id}>
+    <div
+      className={cn(
+        "relative pt-10",
+        // What StoryOS just wrote. A rim rather than a fill or a coloured
+        // border: DESIGN.md keeps this canvas monochrome and reserves brand red
+        // for nothing at all, and a ring is the one affordance that reads as
+        // "look here" without claiming to be a state the node is in. It fades
+        // itself out — see `agentWrittenNodeIds`.
+        data.agentWrote &&
+          "after:pointer-events-none after:absolute after:inset-x-0 after:top-10 after:bottom-0 after:rounded-[26px] after:ring-2 after:ring-white/70 after:transition-opacity after:duration-700 motion-safe:after:animate-pulse"
+      )}
+      data-story-node-id={id}
+      data-agent-wrote={data.agentWrote ? "" : undefined}
+    >
       <FrostedPanel
         rim={false}
         className={cn(

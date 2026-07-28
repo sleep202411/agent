@@ -37,13 +37,37 @@ describe("StudioAgentSignalInbox", () => {
     inbox.addApproval(approval);
     inbox.addApproval(laterDenial);
 
-    expect(inbox.hasApproval(approval.approvalId, approval.actionId, "b".repeat(64))).toBe(false);
-    expect(
-      inbox.takeApproval(approval.approvalId, approval.actionId, approval.actionInputHash)?.decision
-    ).toBe("denied");
-    expect(
-      inbox.takeApproval(approval.approvalId, approval.actionId, approval.actionInputHash)
-    ).toBeNull();
+    expect(inbox.hasApprovals([{ ...challenge(), actionInputHash: "b".repeat(64) }])).toBe(false);
+    expect(inbox.takeApprovals([challenge()])?.decisions[0]?.decision).toBe("denied");
+    expect(inbox.takeApprovals([challenge()])).toBeNull();
+  });
+
+  /**
+   * The library answers every gated call of one step together, so a partial
+   * answer must NOT wake the workflow: resuming there would run a tool whose
+   * sibling call still has no decision.
+   */
+  it("stays asleep until every gated call of the step has an answer", () => {
+    const inbox = new StudioAgentSignalInbox();
+    const both = [challenge(), secondChallenge()];
+
+    inbox.addApproval(approvalSignal("2026-07-24T01:00:00.000Z", "approved"));
+
+    expect(inbox.hasApprovals(both)).toBe(false);
+    expect(inbox.takeApprovals(both)).toBeNull();
+
+    inbox.addApproval({
+      ...approvalSignal("2026-07-24T01:00:02.000Z", "approved"),
+      decisions: [
+        { ...challenge(), decision: "approved" },
+        { ...secondChallenge(), decision: "denied" },
+      ],
+    });
+
+    expect(inbox.hasApprovals(both)).toBe(true);
+    const answered = inbox.takeApprovals(both);
+    expect(answered?.decisions.map((entry) => entry.decision)).toEqual(["approved", "denied"]);
+    expect(answered?.resumeDelivery.inputEventId).toBe(RESUME_EVENT_ID);
   });
 
   it("retains the latest cancellation request deterministically", () => {
@@ -69,17 +93,37 @@ function input(
   };
 }
 
+const RESUME_EVENT_ID = "evt-resume-000000000000";
+
+function challenge() {
+  return {
+    approvalId: "66666666-6666-4666-8666-666666666666",
+    actionId: "77777777-7777-4777-8777-777777777777",
+    actionInputHash: HASH,
+  };
+}
+
+function secondChallenge() {
+  return {
+    approvalId: "88888888-8888-4888-8888-888888888888",
+    actionId: "99999999-9999-4999-8999-999999999999",
+    actionInputHash: HASH,
+  };
+}
+
 function approvalSignal(
   decidedAt: string,
-  decision: StudioAgentApprovalSignal["decision"]
+  decision: StudioAgentApprovalSignal["decisions"][number]["decision"]
 ): StudioAgentApprovalSignal {
   return {
     schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    approvalId: "66666666-6666-4666-8666-666666666666",
-    actionId: "77777777-7777-4777-8777-777777777777",
+    threadId: THREAD_ID,
     targetRunId: RUN_ID,
-    actionInputHash: HASH,
-    decision,
+    decisions: [{ ...challenge(), decision }],
+    resumeDelivery: {
+      inputEventId: RESUME_EVENT_ID,
+      channelName: `studio-agent:thread:${THREAD_ID}`,
+    },
     actorId: "user:test",
     note: null,
     decidedAt,

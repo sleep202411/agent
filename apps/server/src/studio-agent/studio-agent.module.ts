@@ -14,13 +14,15 @@ import { StudioAgentRuntimeService } from './studio-agent-runtime.service';
 import { StudioAgentCapabilityExecutor } from './studio-agent.capability-executor';
 import { StudioAgentConfigService } from './studio-agent.config';
 import { StudioAgentController } from './studio-agent.controller';
+import { StudioAgentEventStore } from './studio-agent.events';
 import {
-  StudioAgentEventNotifier,
-  StudioAgentEventStore,
-} from './studio-agent.events';
+  StudioAgentAblyTokenIssuer,
+  studioAgentAblyTokenSignerProvider,
+} from './studio-agent.realtime';
 import { StudioAgentCommandOutboxDispatcher } from './studio-agent.outbox';
 import { StudioAgentPolicyEngine } from './studio-agent.policy';
 import { StudioAgentQuotaService } from './studio-agent-quota.service';
+import { StudioAgentRunReaper } from './studio-agent-run-reaper.service';
 import { StudioAgentRegistry } from './studio-agent.registry';
 import { StudioAgentRunTerminalService } from './studio-agent-run-terminal.service';
 import { StudioAgentScopeAuthorizer } from './studio-agent.scope';
@@ -39,7 +41,13 @@ const STUDIO_AGENT_PROVIDERS = [
   StudioAgentRegistry,
   StudioAgentPolicyEngine,
   StudioAgentScopeAuthorizer,
-  StudioAgentEventNotifier,
+  // The server's ENTIRE relationship with Ably: it signs per-thread token
+  // requests and never opens a connection. Delivery is the Temporal worker's,
+  // inside the run it owns. Built from the credential at boot, so a deployment
+  // without ABLY_API_KEY fails here rather than accepting turns whose creators
+  // can never be handed a credential to watch them.
+  studioAgentAblyTokenSignerProvider,
+  StudioAgentAblyTokenIssuer,
   StudioAgentEventStore,
   StudioAgentStoryCapabilities,
   StudioAgentCapabilityExecutor,
@@ -48,6 +56,7 @@ const STUDIO_AGENT_PROVIDERS = [
   StudioAgentDocumentService,
   StudioAgentArtifactCleanupWorker,
   StudioAgentQuotaService,
+  StudioAgentRunReaper,
   StudioAgentService,
   StudioAgentRunTerminalService,
   StudioAgentRuntimeService,
