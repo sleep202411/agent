@@ -235,7 +235,7 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "74",
+      buildNumber: "75",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -245,7 +245,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 74,
+      versionCode: 75,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
@@ -258,7 +258,6 @@ module.exports = ({ config }) => {
     },
     web: {
       bundler: "metro",
-      // Not "server": EAS iOS export:embed fails without Expo API routes.
       output: "static",
       favicon: "./assets/images/favicon.png",
       themeColor: THEME_COLORS.canvas,

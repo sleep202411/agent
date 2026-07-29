@@ -195,7 +195,7 @@
   "deleteAccount.submittedTitle": "Request submitted",
   "deleteAccount.submittedMessage": "Your account is under review. Once verified, your account will be deleted.",
   "consent.title": "Terms of Service & Privacy Policy",
-  "consent.message": "Please read and fully understand our Terms of Service and Privacy Policy. By tapping \"Agree & continue\" you confirm you have read and agree to them.",
+  "consent.message": "Please read and fully understand our Terms of Service and Privacy Policy. After you agree, the app runtime may access device identifiers (including MAC address), the list of installed apps, and device sensor lists as needed for compatibility, playback, and basic analytics. Details are in the Privacy Policy. By tapping \"Agree & continue\" you confirm you have read and agree to them.",
   "consent.agree": "Agree & continue",
   "consent.refuse": "Not now",
   "crews.title": "Crews",
