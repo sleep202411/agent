@@ -1,0 +1,339 @@
+import { CrewInvitationStatus } from '@prisma/client';
+import {
+  CreateCrewInvitationSchema,
+  ListCrewInvitationsQuerySchema,
+} from '../dto';
+import { CrewInvitationsService } from './invitations.service';
+
+const CREW_ID = 'crew-1';
+const OWNER_ID = 'owner-1';
+const INVITEE_ID = 'member-1';
+const INVITATION_ID = 'invitation-1';
+
+function invitation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: INVITATION_ID,
+    crewId: CREW_ID,
+    inviteeUserId: INVITEE_ID,
+    invitedByUserId: OWNER_ID,
+    roleType: 'storyboardArtist',
+    status: CrewInvitationStatus.pending,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    acceptedAt: null,
+    declinedAt: null,
+    revokedAt: null,
+    agreementTitle: null,
+    agreementSignerName: null,
+    agreementSignerEmail: null,
+    agreement: null,
+    createdAt: new Date('2026-07-29T09:00:00.000Z'),
+    updatedAt: new Date('2026-07-29T09:00:00.000Z'),
+    crew: {
+      id: CREW_ID,
+      founderId: OWNER_ID,
+      name: 'Night Shift',
+    },
+    ...overrides,
+  };
+}
+
+function build() {
+  const member = {
+    id: 'crew-member-1',
+    crewId: CREW_ID,
+    userId: INVITEE_ID,
+    roleType: 'storyboardArtist',
+    via: 'invitation',
+  };
+  const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    crewInvitation: {
+      findUnique: jest.fn().mockResolvedValue(invitation()),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest
+        .fn()
+        .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve(invitation(data)),
+        ),
+      update: jest.fn().mockResolvedValue(
+        invitation({
+          status: CrewInvitationStatus.accepted,
+          acceptedAt: new Date(),
+        }),
+      ),
+    },
+    crewMember: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue(member),
+    },
+  };
+  const prisma = {
+    crewInvitation: {
+      findUnique: jest.fn().mockResolvedValue(invitation()),
+      findFirst: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+    },
+    crew: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: CREW_ID,
+        founderId: OWNER_ID,
+        name: 'Night Shift',
+      }),
+    },
+    $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+      callback(tx),
+    ),
+  };
+  const users = { lookupByContact: jest.fn() };
+  const notifications = { send: jest.fn().mockResolvedValue({}) };
+  const conversations = {
+    openCrewConversation: jest.fn().mockResolvedValue({ id: 'conversation-1' }),
+    syncCrewParticipant: jest.fn().mockResolvedValue(undefined),
+    persistSystem: jest.fn().mockResolvedValue({ id: 'message-1' }),
+    broadcastMessage: jest.fn().mockResolvedValue(undefined),
+  };
+  const collaboration = {
+    addCrewMemberAccess: jest.fn().mockResolvedValue(undefined),
+  };
+  const agreements = {
+    requireDispatchConfigured: jest.fn(),
+    stageInvitationAgreement: jest.fn().mockResolvedValue(null),
+  };
+  return {
+    tx,
+    prisma,
+    users,
+    notifications,
+    conversations,
+    collaboration,
+    agreements,
+    service: new CrewInvitationsService(
+      prisma as never,
+      users as never,
+      notifications as never,
+      conversations as never,
+      collaboration as never,
+      agreements as never,
+    ),
+  };
+}
+
+describe('CrewInvitationsService', () => {
+  it('validates bounded invitation list pagination', () => {
+    expect(ListCrewInvitationsQuerySchema.parse({})).toEqual({ limit: 30 });
+    expect(
+      ListCrewInvitationsQuerySchema.parse({
+        limit: '100',
+        cursor: INVITATION_ID,
+      }),
+    ).toEqual({ limit: 100, cursor: INVITATION_ID });
+    expect(
+      ListCrewInvitationsQuerySchema.safeParse({ limit: 101 }).success,
+    ).toBe(false);
+    expect(
+      CreateCrewInvitationSchema.parse({
+        account: 'mina@example.com',
+        roleType: 'storyboard',
+        agreement: {
+          title: 'Storyboard agreement',
+          signerName: 'Mina Chen',
+          signerEmail: 'MINA@example.com',
+        },
+      }),
+    ).toMatchObject({
+      expiresInDays: 7,
+      agreement: {
+        title: 'Storyboard agreement',
+        signerName: 'Mina Chen',
+        signerEmail: 'MINA@example.com',
+      },
+    });
+  });
+
+  it('returns pending crew invitations as a stable page with an authoritative total', async () => {
+    const t = build();
+    const first = invitation({
+      id: 'invitation-3',
+      createdAt: new Date('2026-07-29T11:00:00.000Z'),
+    });
+    const second = invitation({
+      id: 'invitation-2',
+      createdAt: new Date('2026-07-29T10:00:00.000Z'),
+    });
+    const lookahead = invitation({
+      id: 'invitation-1',
+      createdAt: new Date('2026-07-29T09:00:00.000Z'),
+    });
+    t.prisma.crewInvitation.findMany.mockResolvedValue([
+      first,
+      second,
+      lookahead,
+    ]);
+    t.prisma.crewInvitation.count.mockResolvedValue(7);
+
+    const result = await t.service.listForCrew(CREW_ID, OWNER_ID, {
+      limit: 2,
+    });
+
+    expect(result).toMatchObject({
+      total: 7,
+      nextCursor: 'invitation-2',
+      items: [{ id: 'invitation-3' }, { id: 'invitation-2' }],
+    });
+    expect(t.prisma.crewInvitation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 3,
+      }),
+    );
+  });
+
+  it('rejects a crew invitation cursor outside the visible pending scope', async () => {
+    const t = build();
+
+    await expect(
+      t.service.listForCrew(CREW_ID, OWNER_ID, {
+        limit: 30,
+        cursor: 'other-invitation',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: expect.stringContaining('cursor is invalid'),
+      }),
+    });
+    expect(t.prisma.crewInvitation.findMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts an invitation and grants collaboration plus group-chat access atomically', async () => {
+    const t = build();
+
+    await expect(t.service.accept(INVITATION_ID, INVITEE_ID)).resolves.toEqual({
+      crewId: CREW_ID,
+      memberId: 'crew-member-1',
+      accepted: true,
+      agreementId: null,
+      agreementQueued: false,
+      workspaceHref: `/crews/${CREW_ID}/workspace`,
+    });
+
+    const [createMemberInput] = t.tx.crewMember.create.mock
+      .calls[0] as unknown as [
+      {
+        data: {
+          id: string;
+          crewId: string;
+          userId: string;
+          roleType: string;
+          via: string;
+        };
+      },
+    ];
+    expect(createMemberInput.data).toMatchObject({
+      crewId: CREW_ID,
+      userId: INVITEE_ID,
+      roleType: 'storyboardArtist',
+      via: 'invitation',
+    });
+    expect(t.collaboration.addCrewMemberAccess).toHaveBeenCalledWith(
+      CREW_ID,
+      INVITEE_ID,
+      OWNER_ID,
+      t.tx,
+    );
+    expect(t.conversations.syncCrewParticipant).toHaveBeenCalledWith(
+      CREW_ID,
+      INVITEE_ID,
+      'join',
+      t.tx,
+    );
+    expect(t.conversations.persistSystem).toHaveBeenCalledWith(
+      'conversation-1',
+      'crew.member.joined',
+      { userId: INVITEE_ID },
+      t.tx,
+    );
+    expect(t.conversations.broadcastMessage).toHaveBeenCalledWith({
+      id: 'message-1',
+    });
+  });
+
+  it('persists and discloses an optional agreement on the invitation', async () => {
+    const t = build();
+    t.users.lookupByContact.mockResolvedValue({
+      userId: INVITEE_ID,
+      isCrewFounder: false,
+      isCrewMember: false,
+    });
+
+    await expect(
+      t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', {
+        account: 'mina@example.com',
+        roleType: 'storyboard',
+        expiresInDays: 7,
+        agreement: {
+          title: 'Storyboard agreement',
+          signerName: 'Mina Chen',
+          signerEmail: 'MINA@example.com',
+        },
+      }),
+    ).resolves.toMatchObject({
+      agreementRequest: {
+        title: 'Storyboard agreement',
+        signerName: 'Mina Chen',
+        signerEmail: 'mina@example.com',
+      },
+    });
+    expect(t.agreements.requireDispatchConfigured).toHaveBeenCalledTimes(1);
+    expect(t.tx.crewInvitation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        agreementTitle: 'Storyboard agreement',
+        agreementSignerName: 'Mina Chen',
+        agreementSignerEmail: 'mina@example.com',
+      }),
+    });
+  });
+
+  it('rejects an invitation opened by a different account before changing membership', async () => {
+    const t = build();
+
+    await expect(
+      t.service.accept(INVITATION_ID, 'another-user'),
+    ).rejects.toMatchObject({
+      response: { message: 'This invitation belongs to another account.' },
+    });
+    expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+    expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
+  });
+
+  it('queues the disclosed optional agreement only after membership is accepted', async () => {
+    const t = build();
+    t.tx.crewInvitation.findUnique.mockResolvedValue(
+      invitation({
+        agreementTitle: 'Storyboard agreement',
+        agreementSignerName: 'Mina Chen',
+        agreementSignerEmail: 'mina@example.com',
+      }),
+    );
+    t.agreements.stageInvitationAgreement.mockResolvedValue({
+      id: 'agreement-1',
+    });
+
+    await expect(t.service.accept(INVITATION_ID, INVITEE_ID)).resolves.toEqual(
+      expect.objectContaining({
+        accepted: true,
+        agreementId: 'agreement-1',
+        agreementQueued: true,
+      }),
+    );
+    expect(t.agreements.stageInvitationAgreement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: INVITATION_ID,
+        agreementTitle: 'Storyboard agreement',
+      }),
+      t.tx,
+    );
+  });
+});

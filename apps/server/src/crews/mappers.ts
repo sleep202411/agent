@@ -14,18 +14,13 @@ import type {
   CrewApplication,
   CrewMember,
   CrewPosition,
-  Episode,
-  EpisodeActivity,
-  EpisodeAssignment,
 } from '@prisma/client';
 import type {
   CrewApplicationDTO,
+  CrewApplicationStatusCounts,
   CrewDTO,
   CrewMemberDTO,
   CrewPositionDTO,
-  EpisodeActivityDTO,
-  EpisodeAssignmentDTO,
-  EpisodeDTO,
 } from '@repo/shared/crew';
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
@@ -74,7 +69,10 @@ export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
   };
 }
 
-export function toPositionDTO(p: CrewPosition): CrewPositionDTO {
+export function toPositionDTO(
+  p: CrewPosition,
+  applicationStats?: CrewApplicationStatusCounts,
+): CrewPositionDTO {
   return {
     id: p.id,
     crewId: p.crewId,
@@ -102,6 +100,7 @@ export function toPositionDTO(p: CrewPosition): CrewPositionDTO {
     revenueSharePercent:
       p.revenueShareBp !== null ? p.revenueShareBp / 100 : null,
     closeDate: p.closeDate ? p.closeDate.toISOString().slice(0, 10) : null,
+    ...(applicationStats ? { applicationStats } : {}),
     createdAt: isoReq(p.createdAt),
   };
 }
@@ -149,77 +148,5 @@ export function toApplicationDTO(a: CrewApplication): CrewApplicationDTO {
     createdAt: isoReq(a.createdAt),
     reviewedAt: iso(a.reviewedAt),
     reviewerId: a.reviewerId,
-  };
-}
-
-export function toEpisodeDTO(e: Episode): EpisodeDTO {
-  return {
-    id: e.id,
-    crewId: e.crewId,
-    number: e.number,
-    title: e.title,
-    description: e.description,
-    status: e.status as EpisodeDTO['status'],
-    deadline: e.deadline ? e.deadline.toISOString().slice(0, 10) : null,
-    approvedAt: iso(e.approvedAt),
-    createdAt: isoReq(e.createdAt),
-    updatedAt: isoReq(e.updatedAt),
-  };
-}
-
-export function toAssignmentDTO(a: EpisodeAssignment): EpisodeAssignmentDTO {
-  return {
-    id: a.id,
-    crewId: a.crewId,
-    episodeId: a.episodeId,
-    userId: a.userId,
-    positionId: a.positionId ?? null,
-    roleName: a.roleName,
-    status: a.status as EpisodeAssignmentDTO['status'],
-    submission: a.submittedAt
-      ? {
-          url: a.submissionUrl,
-          note: a.submissionNote,
-          submittedAt: isoReq(a.submittedAt),
-        }
-      : null,
-    reviewNote: a.rejectedAt
-      ? {
-          reason: a.rejectReason ?? '',
-          suggestion: a.rejectSuggestion,
-          rejectedAt: isoReq(a.rejectedAt),
-        }
-      : null,
-    revenue:
-      a.revenueAmount !== null && a.revenueSetAt
-        ? {
-            amount: Number(a.revenueAmount),
-            // DB column is VARCHAR(8) constrained to ALL_CURRENCIES;
-            // legacy rows default to "CNY". The cast is safe because
-            // the CHECK constraint upstream guarantees the value.
-            currency: (a.revenueCurrency ??
-              'CNY') as EpisodeAssignmentDTO['revenue'] extends infer R
-              ? R extends { currency: infer C }
-                ? C
-                : never
-              : never,
-            setAt: isoReq(a.revenueSetAt),
-            setByUserId: a.revenueSetById ?? '',
-          }
-        : null,
-    updatedAt: isoReq(a.updatedAt),
-  };
-}
-
-export function toActivityDTO(a: EpisodeActivity): EpisodeActivityDTO {
-  return {
-    id: a.id,
-    crewId: a.crewId,
-    episodeId: a.episodeId,
-    type: a.type,
-    actorUserId: a.actorUserId,
-    actorName: a.actorName,
-    payload: (a.payload ?? {}) as Record<string, unknown>,
-    createdAt: isoReq(a.createdAt),
   };
 }

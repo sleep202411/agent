@@ -14,7 +14,7 @@ const OPEN = { entitled: true, reachable: true };
 
 /**
  * `?tab=` is a wire contract: the server puts it in crew notification
- * deeplinks (`/crews/{id}/workspace?tab=episodes&episode={id}`), so the
+ * deeplinks (`/crews/{id}/workspace?tab=tasks&task={id}`), so the
  * spellings below are not free to change without changing the emitter.
  */
 describe("resolveWorkspaceTab", () => {
@@ -22,9 +22,9 @@ describe("resolveWorkspaceTab", () => {
     expect(resolveWorkspaceTab(id, OPEN)).toBe(id);
   });
 
-  it("seeds the episodes tab from the notification deeplink", () => {
-    const params = new URLSearchParams("tab=episodes&episode=ep_42&assignment=as_7");
-    expect(resolveWorkspaceTab(params.get("tab"), OPEN)).toBe("episodes");
+  it("seeds the tasks tab from the notification deeplink", () => {
+    const params = new URLSearchParams("tab=tasks&task=task_42");
+    expect(resolveWorkspaceTab(params.get("tab"), OPEN)).toBe("tasks");
   });
 
   it.each([null, undefined, "", "Episodes", "finance", "__proto__"])(
@@ -64,15 +64,10 @@ describe("chat is members-only", () => {
   });
 
   it("hides the chat entry from the nav for an outsider", () => {
-    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual([
-      "episodes",
-      "members",
-      "roles",
-      "overview",
-    ]);
+    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual(["members", "roles", "overview"]);
     expect(workspaceTabsFor(true).map((t) => t.id)).toEqual([
       "chat",
-      "episodes",
+      "tasks",
       "assets",
       "members",
       "roles",
@@ -132,14 +127,14 @@ describe("?tab= round-trip", () => {
     // while chat opens. If the 群聊 button wrote the bare URL, clicking
     // it during an outage would resolve straight back to the overview —
     // a button that visibly does nothing.
-    const params = new URLSearchParams("tab=episodes&episode=ep_42");
+    const params = new URLSearchParams("tab=tasks&task=task_42");
     applyWorkspaceTab(params, "chat");
     expect(params.get("tab")).toBe("chat");
     expect(resolveWorkspaceTab(params.get("tab"), { entitled: true, reachable: false })).toBe(
       "chat"
     );
     // Deeplink params riding alongside are not the tab's to discard.
-    expect(params.get("episode")).toBe("ep_42");
+    expect(params.get("task")).toBe("task_42");
   });
 
   it("replaces a previous tab rather than appending one", () => {
@@ -151,17 +146,18 @@ describe("?tab= round-trip", () => {
 
 describe("isWorkspaceTabId", () => {
   it("accepts only the six rendered tabs, in doc §4 order", () => {
-    // 群聊 / 剧集制作 / 资产中心 / 成员 / 招募 / 概览.
+    // 群聊 / 任务 / 资产中心 / 成员 / 招募 / 概览.
     expect(WORKSPACE_TABS.map((tab) => tab.id)).toEqual([
       "chat",
-      "episodes",
+      "tasks",
       "assets",
       "members",
       "roles",
       "overview",
     ]);
     expect(isWorkspaceTabId("chat")).toBe(true);
-    expect(isWorkspaceTabId("episodes")).toBe(true);
+    expect(isWorkspaceTabId("tasks")).toBe(true);
+    expect(isWorkspaceTabId("episodes")).toBe(false);
     expect(isWorkspaceTabId("assets")).toBe(true);
     expect(isWorkspaceTabId("files")).toBe(false);
     expect(isWorkspaceTabId("revenue")).toBe(false);

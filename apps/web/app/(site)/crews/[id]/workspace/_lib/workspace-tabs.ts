@@ -3,12 +3,12 @@
  *
  * The active tab is URL state rather than component state because crew
  * notifications deeplink into a specific tab
- * (`/crews/{id}/workspace?tab=episodes&episode={id}`). Keeping the id
+ * (`/crews/{id}/workspace?tab=tasks&task={id}`). Keeping the id
  * list and its validator here — free of React and of the icon imports —
  * means the nav renderer and the deeplink reader agree on exactly one
  * spelling, and the validator is testable on its own.
  *
- * Order and default come from the product doc §4: 群聊 / 剧集制作 /
+ * Order and default come from the product flow: 群聊 / 任务 /
  * 资产中心 / 成员 / 招募 / 概览, chat first and entered by default, because
  * the crew's day-to-day is the conversation and everything else is a
  * surface you go looking for. The asset center is members-only because
@@ -35,6 +35,8 @@
  * open, not a silent bounce to another tab.
  */
 
+export type WorkspaceTabId = "chat" | "tasks" | "assets" | "members" | "roles" | "overview";
+
 export interface WorkspaceTab {
   id: WorkspaceTabId;
   labelKey: string;
@@ -44,14 +46,12 @@ export interface WorkspaceTab {
 
 export const WORKSPACE_TABS = [
   { id: "chat", labelKey: "tabChat", membersOnly: true },
-  { id: "episodes", labelKey: "tabEpisodes", membersOnly: false },
+  { id: "tasks", labelKey: "tabTasks", membersOnly: true },
   { id: "assets", labelKey: "tabAssets", membersOnly: true },
   { id: "members", labelKey: "tabMembers", membersOnly: false },
   { id: "roles", labelKey: "tabRecruitment", membersOnly: false },
   { id: "overview", labelKey: "tabOverview", membersOnly: false },
 ] as const satisfies readonly WorkspaceTab[];
-
-export type WorkspaceTabId = "chat" | "episodes" | "assets" | "members" | "roles" | "overview";
 
 /** Tab a bare `/crews/{id}/workspace` opens on. */
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTabId = "chat";
@@ -114,8 +114,8 @@ export function resolveWorkspaceTab(
  * that resolves to the overview whenever the conversation is down, i.e.
  * a button that does nothing.
  *
- * Deeplink params riding alongside (`episode`, `assignment`,
- * `application`) are not this function's to discard.
+ * Deeplink params riding alongside (`task`, `application`) are not this
+ * function's to discard.
  */
 export function applyWorkspaceTab(params: URLSearchParams, tab: WorkspaceTabId): void {
   params.set("tab", tab);

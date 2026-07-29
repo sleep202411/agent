@@ -5,7 +5,7 @@
  * These are not "does the constant exist" busywork. Each one pins a
  * decision that is cheap to undo by accident and expensive to discover
  * in production:
- *   - the six crew system kinds exist AND the client i18n keys derived
+ *   - the narrow crew-chat system kinds exist AND the client i18n keys derived
  *     from them are the ones the web agent was told to add;
  *   - crew participants get exactly ONE role, so the order gates keep
  *     failing closed (see crew-chat-order-flow.spec.ts);
@@ -23,10 +23,6 @@ import {
 const CREW_KINDS: SystemMessageKind[] = [
   'crew.member.joined',
   'crew.member.left',
-  'crew.episode.assigned',
-  'crew.episode.submitted',
-  'crew.episode.approved',
-  'crew.episode.rejected',
 ];
 
 describe('conversation contract — crew context', () => {
@@ -46,9 +42,21 @@ describe('conversation contract — crew context', () => {
 });
 
 describe('conversation contract — crew system message kinds', () => {
-  it('publishes all six crew kinds', () => {
+  it('publishes every crew collaboration kind', () => {
     for (const kind of CREW_KINDS) {
       expect(SYSTEM_MESSAGE_KINDS).toContain(kind);
+    }
+  });
+
+  it('keeps task lifecycle in task activity instead of chat messages', () => {
+    for (const kind of [
+      'crew.task.created',
+      'crew.task.submitted',
+      'crew.task.revision_requested',
+      'crew.task.approved',
+      'crew.task.settled',
+    ]) {
+      expect(SYSTEM_MESSAGE_KINDS).not.toContain(kind);
     }
   });
 
@@ -85,10 +93,6 @@ describe('conversation contract — crew system message kinds', () => {
     expect(CREW_KINDS.map((k) => `messages.system.${k}`)).toEqual([
       'messages.system.crew.member.joined',
       'messages.system.crew.member.left',
-      'messages.system.crew.episode.assigned',
-      'messages.system.crew.episode.submitted',
-      'messages.system.crew.episode.approved',
-      'messages.system.crew.episode.rejected',
     ]);
   });
 });

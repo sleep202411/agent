@@ -129,6 +129,9 @@ function build(
     ),
     broadcastMessage: jest.fn().mockResolvedValue(undefined),
   };
+  const collaboration = {
+    transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
+  };
 
   return {
     prisma,
@@ -136,6 +139,7 @@ function build(
     conversations,
     syncCalls,
     systemCalls,
+    collaboration,
     // The real role resolver over the same prisma double — the crew
     // chat resolver gates on it, and a stub would be a second, laxer
     // copy of the predicate these tests care about.
@@ -143,6 +147,7 @@ function build(
       prisma as never,
       conversations as never,
       new CrewRoleService(prisma as never),
+      collaboration as never,
     ),
   };
 }
@@ -168,28 +173,6 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
     await t.service.create(FOUNDER, CREATE_INPUT as never);
 
     expect(t.systemCalls).toEqual([]);
-  });
-
-  it('keeps core crew creation available during the production rollout gate', async () => {
-    const previous = process.env.CREW_CHAT_WRITES_ENABLED;
-    process.env.CREW_CHAT_WRITES_ENABLED = 'false';
-    try {
-      const t = build();
-
-      await expect(
-        t.service.create(FOUNDER, CREATE_INPUT as never),
-      ).resolves.toMatchObject({ id: CREW_ID });
-
-      expect(t.tx.crewMember.create).toHaveBeenCalled();
-      expect(t.conversations.openCrewConversation).not.toHaveBeenCalled();
-      expect(t.syncCalls).toEqual([]);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.CREW_CHAT_WRITES_ENABLED;
-      } else {
-        process.env.CREW_CHAT_WRITES_ENABLED = previous;
-      }
-    }
   });
 
   it('rolls the crew back when the chat sync fails', async () => {
@@ -302,5 +285,45 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
     await t.service.transferOwnership(CREW_ID, SUCCESSOR);
 
     expect(order).toEqual(['commit', 'broadcast']);
+  });
+
+  it('moves the collaboration ownership graph inside the crew transaction', async () => {
+    const t = build({
+      members: {
+        [FOUNDER]: { id: 'm-founder' },
+        [SUCCESSOR]: { id: 'm-succ' },
+      },
+    });
+
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+
+    expect(t.collaboration.transferCrewOwnershipAccess).toHaveBeenCalledWith(
+      CREW_ID,
+      FOUNDER,
+      SUCCESSOR,
+      false,
+      t.tx,
+    );
+  });
+
+  it('revokes the outgoing owner collaboration access when they leave', async () => {
+    const t = build({
+      members: {
+        [FOUNDER]: { id: 'm-founder' },
+        [SUCCESSOR]: { id: 'm-succ' },
+      },
+    });
+
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, {
+      removeOldOwner: true,
+    });
+
+    expect(t.collaboration.transferCrewOwnershipAccess).toHaveBeenCalledWith(
+      CREW_ID,
+      FOUNDER,
+      SUCCESSOR,
+      true,
+      t.tx,
+    );
   });
 });

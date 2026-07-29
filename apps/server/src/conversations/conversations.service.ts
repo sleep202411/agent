@@ -1,30 +1,33 @@
 /**
- * ConversationsService — persistence + WS publish for conversations,
- * messages, and read-cursor advancement.
+ * ConversationsService — persistence + durable Ably delivery for
+ * conversations, messages, and read-cursor advancement.
  *
  * Realtime model:
- *   - DB is authoritative; every message persists first.
- *   - Then publish to `conversation:user:{userId}` on Redis pub/sub,
- *     one publish per recipient (gateway fans out to all of that
- *     user's connected tabs).
- *   - WS push is best-effort. Clients reconnect → REST cursor
- *     refetches messages since their last-seen, so no message ever
- *     "disappears" because a WS was down.
+ *   - DB is authoritative; every message and its realtime outbox row commit
+ *     atomically.
+ *   - The request path publishes immediately to minimize latency, then marks
+ *     the outbox row dispatched. A dispatcher retries anything left pending.
+ *   - Every Ably publish has a deterministic idempotency key, so recovery
+ *     after a crash can safely replay a partially-completed fan-out.
+ *   - Crew messages are also copied once to the crew's Ably Chat room,
+ *     which owns room continuity, presence, reactions and 30-day history.
+ *   - REST cursor recovery remains the final source-of-truth repair path.
  *
  * Transaction boundary (important):
  *   Persist methods accept an optional `db?: DbClient` last arg.
  *   When called WITH a tx (inside another module's
  *   `prisma.$transaction((tx) => …)`), they persist using that tx
- *   and DO NOT broadcast — the caller is responsible for invoking
- *   `broadcastMessage(...)` / `broadcastContextChange(...)` AFTER
- *   the outer tx commits. This avoids the "ghost message" bug where
- *   we'd publish a WS frame before the row was actually committed.
+ *   and DO NOT take the realtime fast path — the caller may invoke
+ *   `broadcastMessage(...)` AFTER the outer tx commits to reduce latency,
+ *   but delivery correctness no longer depends on it because the outbox row
+ *   was committed with the message. Publishing before commit remains
+ *   forbidden because it creates ghost messages.
  *
- *   Convenience wrappers (`sendText`, `sendProposal`, `postSystem`,
- *   `evolveToOrderContext`, `patchProposalStatus`) call the persist
- *   methods without a tx and then immediately broadcast — these are
- *   the right entry points for controllers that have no
- *   surrounding business transaction.
+ *   Convenience wrappers (`sendText`, `sendAttachments`, `sendTaskCard`,
+ *   `sendProposal`, `postSystem`, `evolveToOrderContext`,
+ *   `patchProposalStatus`) call the persist methods without a tx and
+ *   then immediately broadcast — these are the right entry points for
+ *   controllers that have no surrounding business transaction.
  *
  * Conversation identity:
  *   - service inquiry: lookup key `service:<serviceId>:<buyerId>:<creatorId>`
@@ -91,26 +94,40 @@ import {
 import {
   ConversationContextType,
   ConversationParticipantRole,
+  CrewAssetNodeKind,
+  CrewAssetNodeStatus,
+  MediaAssetStatus,
   type Conversation as PrismaConversation,
   type ConversationParticipant as PrismaConversationParticipant,
   type Message as PrismaMessage,
   Prisma,
 } from '@prisma/client';
-import Redis from 'ioredis';
 import {
-  conversationChannel,
+  type ConversationAttachmentPayload,
   type ConversationFrame,
+  type ConversationMentionPayload,
   type ConversationMessageType,
+  type ConversationTaskCardPayload,
   type MessagePayload,
   type ProposalPayload,
   type SystemMessageKind,
   type SystemMessagePayload,
 } from '@repo/shared/conversation';
+import { randomUUID } from 'node:crypto';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
-import { REDIS } from '../infra/redis/redis.module';
-import { requireCrewChatWritesEnabled } from './crew-chat-rollout';
-import type { SendProposalInput } from './dto';
+import { NotificationService } from '../notification';
+import { lockCrewAssetUploads } from '../crews/assets/upload-lock';
+import { availableCrewAssetName } from '../crews/assets/asset-name';
+import {
+  CONVERSATION_REALTIME,
+  type ConversationRealtimePublisher,
+} from './conversation-realtime.service';
+import type {
+  SendAttachmentsInput,
+  SendProposalInput,
+  SendTaskCardInput,
+} from './dto';
 
 type TxClient = Prisma.TransactionClient;
 type DbClient = TxClient | PrismaService;
@@ -150,7 +167,9 @@ export class ConversationsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(REDIS) private readonly redis: Redis,
+    @Inject(CONVERSATION_REALTIME)
+    private readonly realtime: ConversationRealtimePublisher,
+    private readonly notifications: NotificationService,
   ) {}
 
   // ─── Find / create ────────────────────────────────────────
@@ -264,7 +283,6 @@ export class ConversationsService {
     crewId: string,
     db: DbClient = this.prisma,
   ): Promise<PrismaConversation> {
-    requireCrewChatWritesEnabled();
     const lookupKey = crewLookupKey(crewId);
 
     // Fast path — same argument as the service variant: a crew
@@ -346,7 +364,6 @@ export class ConversationsService {
     action: 'join' | 'leave',
     tx: TxClient,
   ): Promise<void> {
-    requireCrewChatWritesEnabled();
     // Membership changes and authored crew-message writes share this
     // lock. Whichever transaction acquires it first is the operation
     // that happened first: a send can no longer pass the membership
@@ -677,13 +694,16 @@ export class ConversationsService {
     authorId: string,
     body: string,
     clientKey: string | null,
+    mentions: ConversationMentionPayload[] = [],
   ): Promise<PersistResult> {
+    const payload: MessagePayload | null =
+      mentions.length > 0 ? { kind: 'text', mentions } : null;
     return this.persist(
       conversationId,
       authorId,
       'text',
       body,
-      null,
+      payload,
       this.prisma,
       clientKey,
     );
@@ -839,11 +859,43 @@ export class ConversationsService {
    * (packages/shared/src/conversation.ts) and drives the nav bell
    * badge without a follow-up request.
    *
-   * Send failures are logged but never throw: WS is best-effort and
-   * the client will reconnect → REST-recover. Don't break a
-   * successful write because of a pub/sub blip.
+   * This wrapper is the request-path fast path. It never turns a committed
+   * message into an HTTP failure: on success it acknowledges the durable
+   * outbox row, and on failure it leaves that row pending for the dispatcher.
    */
   async broadcastMessage(message: PrismaMessage): Promise<void> {
+    try {
+      await this.deliverMessageRealtime(message);
+      await this.prisma.conversationRealtimeOutbox.updateMany({
+        where: {
+          messageId: message.id,
+          dispatchedAt: null,
+          deadAt: null,
+          lockedAt: null,
+        },
+        data: {
+          dispatchedAt: new Date(),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: null,
+          nextAttemptAt: null,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `conversation realtime fast-path failed conversationId=${message.conversationId} messageId=${message.id}; durable outbox will retry: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Deliver one committed message to Ably. Unlike `broadcastMessage`, this
+   * method deliberately throws on any room or user-channel failure so the
+   * durable dispatcher can retry the whole idempotent fan-out.
+   */
+  async deliverMessageRealtime(message: PrismaMessage): Promise<void> {
     const conv = await this.prisma.conversation.findUnique({
       where: { id: message.conversationId },
       include: { participants: { where: { leftAt: null } } },
@@ -877,6 +929,25 @@ export class ConversationsService {
     };
     const lastMessageAt = conv.lastMessageAt.toISOString();
 
+    if (conv.contextType === ConversationContextType.crew) {
+      const roomFrame: ConversationFrame = {
+        event: 'message.created',
+        data: {
+          conversationId: conv.id,
+          message: dto,
+          lastMessageAt,
+          // Shared room signal; the private user channel carries the
+          // personalized unread count.
+          unreadCount: 0,
+        },
+      };
+      await this.realtime.publishCrewMessage(
+        conv.id,
+        roomFrame,
+        `conversation:${conv.id}:message:${message.id}`,
+      );
+    }
+
     await Promise.all(
       participants.map((p) => {
         const frame: ConversationFrame = {
@@ -888,7 +959,11 @@ export class ConversationsService {
             unreadCount: unread.get(p.userId) ?? 0,
           },
         };
-        return this.publishToUser(p.userId, frame);
+        return this.realtime.publishUserFrame(
+          p.userId,
+          frame,
+          `conversation:${conv.id}:message:${message.id}:user:${p.userId}`,
+        );
       }),
     );
   }
@@ -917,8 +992,181 @@ export class ConversationsService {
       },
     };
     await Promise.all(
-      participants.map((p) => this.publishToUser(p.userId, frame)),
+      participants.map((p) =>
+        this.publishToUser(
+          p.userId,
+          frame,
+          `conversation:${change.conversation.id}:context:${change.to}:user:${p.userId}`,
+        ),
+      ),
     );
+  }
+
+  /**
+   * Domain invalidation frame for the Issue-style crew task surface.
+   * Carries no protected task content: clients refetch the authoritative
+   * permission-filtered REST resource. Recipients come from the live crew
+   * roster rather than the chat participant projection.
+   */
+  async broadcastCrewTaskChange(
+    crewId: string,
+    taskId: string,
+    action:
+      | 'created'
+      | 'updated'
+      | 'commented'
+      | 'submitted'
+      | 'reviewed'
+      | 'settled',
+    actorUserId: string | null,
+  ): Promise<void> {
+    try {
+      const [crew, members] = await Promise.all([
+        this.prisma.crew.findFirst({
+          where: { id: crewId, deletedAt: null },
+          select: { founderId: true },
+        }),
+        this.prisma.crewMember.findMany({
+          where: { crewId, removedAt: null },
+          select: { userId: true },
+        }),
+      ]);
+      if (!crew) return;
+      const recipientIds = new Set([
+        crew.founderId,
+        ...members.map((member) => member.userId),
+      ]);
+      const frame: ConversationFrame = {
+        event: 'crew.task.changed',
+        data: { crewId, taskId, action, actorUserId },
+      };
+      const eventId = newShortId();
+      await Promise.all(
+        [...recipientIds].map((recipientId) =>
+          this.publishToUser(
+            recipientId,
+            frame,
+            `crew:${crewId}:task:${taskId}:${action}:event:${eventId}:user:${recipientId}`,
+          ),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `crew task publish failed crewId=${crewId} taskId=${taskId} err=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Shared planning configuration invalidation. Project settings are
+   * collaborative state too: another open browser must not keep stale labels,
+   * cycles, workflow columns, fields, or saved views after an admin changes
+   * them. The frame carries identifiers only; every client refetches the
+   * permission-filtered project and task views from PostgreSQL.
+   */
+  async broadcastCrewTaskProjectChange(
+    crewId: string,
+    resource: 'view' | 'workflow' | 'cycle' | 'label' | 'field',
+    resourceId: string,
+    action: 'created' | 'updated' | 'deleted' | 'reordered',
+    actorUserId: string | null,
+  ): Promise<void> {
+    try {
+      const [crew, members] = await Promise.all([
+        this.prisma.crew.findFirst({
+          where: { id: crewId, deletedAt: null },
+          select: { founderId: true },
+        }),
+        this.prisma.crewMember.findMany({
+          where: { crewId, removedAt: null },
+          select: { userId: true },
+        }),
+      ]);
+      if (!crew) return;
+      const recipientIds = new Set([
+        crew.founderId,
+        ...members.map((member) => member.userId),
+      ]);
+      const frame: ConversationFrame = {
+        event: 'crew.task.project.changed',
+        data: { crewId, resource, resourceId, action, actorUserId },
+      };
+      const eventId = newShortId();
+      await Promise.all(
+        [...recipientIds].map((recipientId) =>
+          this.publishToUser(
+            recipientId,
+            frame,
+            `crew:${crewId}:task-project:${resource}:${resourceId}:${action}:event:${eventId}:user:${recipientId}`,
+          ),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `crew task project publish failed crewId=${crewId} resource=${resource} resourceId=${resourceId} err=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Crew asset metadata and access changes are collaborative state. The
+   * payload intentionally contains no file metadata or signed URL: recipients
+   * invalidate their permission-filtered asset queries and refetch from
+   * PostgreSQL.
+   */
+  async broadcastCrewAssetChange(
+    crewId: string,
+    nodeId: string,
+    action:
+      | 'created'
+      | 'updated'
+      | 'trashed'
+      | 'restored'
+      | 'deleted'
+      | 'permissions_updated',
+    actorUserId: string | null,
+  ): Promise<void> {
+    try {
+      const [crew, members] = await Promise.all([
+        this.prisma.crew.findFirst({
+          where: { id: crewId, deletedAt: null },
+          select: { founderId: true },
+        }),
+        this.prisma.crewMember.findMany({
+          where: { crewId, removedAt: null },
+          select: { userId: true },
+        }),
+      ]);
+      if (!crew) return;
+      const recipientIds = new Set([
+        crew.founderId,
+        ...members.map((member) => member.userId),
+      ]);
+      const frame: ConversationFrame = {
+        event: 'crew.asset.changed',
+        data: { crewId, nodeId, action, actorUserId },
+      };
+      const eventId = newShortId();
+      await Promise.all(
+        [...recipientIds].map((recipientId) =>
+          this.publishToUser(
+            recipientId,
+            frame,
+            `crew:${crewId}:asset:${nodeId}:${action}:event:${eventId}:user:${recipientId}`,
+          ),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `crew asset publish failed crewId=${crewId} nodeId=${nodeId} action=${action} err=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   // ─── Convenience wrappers (persist + broadcast) ──────────
@@ -941,16 +1189,356 @@ export class ConversationsService {
     authorId: string,
     body: string,
     clientKey: string | null = null,
+    mentions: ConversationMentionPayload[] = [],
   ): Promise<PrismaMessage> {
+    const validatedMentions = await this.validateMentions(
+      conversationId,
+      authorId,
+      body,
+      mentions,
+    );
     const result = await this.persistTextResult(
       conversationId,
       authorId,
       body,
       clientKey,
+      validatedMentions,
     );
+    await this.notifyMentions(result.message, authorId, validatedMentions);
     if (result.created) {
       await this.broadcastMessage(result.message);
     }
+    return result.message;
+  }
+
+  async sendAttachments(
+    conversationId: string,
+    authorId: string,
+    input: SendAttachmentsInput,
+  ): Promise<PrismaMessage> {
+    const access = await this.assertConversationAccess(
+      conversationId,
+      authorId,
+    );
+    if (access.conversation.contextType !== ConversationContextType.crew) {
+      throw new BadRequestException(
+        'Attachments are currently available in crew conversations only',
+      );
+    }
+    const mentions = await this.validateMentions(
+      conversationId,
+      authorId,
+      input.body,
+      input.mentions,
+    );
+    const crewId = access.conversation.contextId;
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockCrewMembership(crewId, authorId, tx);
+      await this.assertConversationAccess(conversationId, authorId, tx);
+
+      if (input.clientKey) {
+        // Unlike the generic message path, attachment sends also create asset
+        // nodes. Serialize one logical send before checking the message row so
+        // two in-flight retries cannot each create a visible copy.
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
+            hashtextextended(
+              ${`conversation-attachment-send:${conversationId}:${authorId}:${input.clientKey}`},
+              0
+            )
+          )`,
+        );
+        const existing = await tx.message.findFirst({
+          where: {
+            conversationId,
+            authorId,
+            clientKey: input.clientKey,
+          },
+        });
+        if (existing) {
+          this.assertAttachmentReplay(existing, input, mentions);
+          return { message: existing, created: false };
+        }
+      }
+
+      const existingIds = input.attachments
+        .filter(
+          (
+            item,
+          ): item is Extract<
+            SendAttachmentsInput['attachments'][number],
+            { source: 'asset' }
+          > => item.source === 'asset',
+        )
+        .map((item) => item.assetNodeId);
+      const uploadIds = input.attachments
+        .filter(
+          (
+            item,
+          ): item is Extract<
+            SendAttachmentsInput['attachments'][number],
+            { source: 'upload' }
+          > => item.source === 'upload',
+        )
+        .map((item) => item.mediaAssetId);
+
+      await lockCrewAssetUploads(tx, uploadIds);
+      const [nodes, uploadedMedia] = await Promise.all([
+        tx.crewAssetNode.findMany({
+          where: {
+            id: { in: existingIds },
+            crewId,
+            kind: CrewAssetNodeKind.file,
+            status: CrewAssetNodeStatus.active,
+            mediaAssetId: { not: null },
+            mediaAsset: { status: MediaAssetStatus.ready },
+          },
+          include: { mediaAsset: true },
+        }),
+        tx.mediaAsset.findMany({
+          where: {
+            id: { in: uploadIds },
+            status: MediaAssetStatus.ready,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            kind: true,
+            contentType: true,
+            sizeBytes: true,
+            createdByUserId: true,
+            metadata: true,
+          },
+        }),
+      ]);
+      if (nodes.length !== existingIds.length) {
+        throw new BadRequestException({
+          message: 'One or more attached crew assets are unavailable.',
+        });
+      }
+      if (uploadedMedia.length !== uploadIds.length) {
+        throw new BadRequestException({
+          message: 'One or more uploaded files are unavailable.',
+        });
+      }
+
+      const nodeById = new Map(nodes.map((node) => [node.id, node]));
+      const uploadById = new Map(
+        uploadedMedia.map((media) => [media.id, media]),
+      );
+      for (const media of uploadedMedia) {
+        const metadata =
+          media.metadata &&
+          typeof media.metadata === 'object' &&
+          !Array.isArray(media.metadata)
+            ? media.metadata
+            : {};
+        if (
+          media.createdByUserId !== authorId ||
+          metadata.crewId !== crewId ||
+          metadata.uploadKind !== 'crew_asset_file'
+        ) {
+          throw new ForbiddenException({
+            code: 'CREW_CHAT_UPLOAD_SCOPE_MISMATCH',
+            message:
+              'One or more uploaded files do not belong to this crew and user.',
+          });
+        }
+      }
+
+      const requestedUploads = input.attachments.filter(
+        (item) => item.source === 'upload',
+      );
+      const usedNames = new Set<string>();
+      if (requestedUploads.length > 0) {
+        // Root naming is a shared namespace. Lock it before choosing suffixes
+        // so simultaneous "shot.png" sends converge to shot.png / shot (2).png
+        // instead of racing the partial unique index.
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
+            hashtextextended(${`crew-asset-root-names:${crewId}`}, 0)
+          )`,
+        );
+        const rootNodes = await tx.crewAssetNode.findMany({
+          where: {
+            crewId,
+            parentId: null,
+            status: CrewAssetNodeStatus.active,
+          },
+          select: { name: true },
+        });
+        rootNodes.forEach((node) => usedNames.add(node.name.toLowerCase()));
+      }
+
+      const attachments: ConversationAttachmentPayload[] = [];
+      for (const item of input.attachments) {
+        if (item.source === 'asset') {
+          const node = nodeById.get(item.assetNodeId)!;
+          const media = node.mediaAsset!;
+          attachments.push({
+            assetNodeId: node.id,
+            mediaAssetId: media.id,
+            name: node.name,
+            mediaKind: media.kind,
+            contentType: media.contentType,
+            sizeBytes: media.sizeBytes == null ? null : Number(media.sizeBytes),
+          });
+          continue;
+        }
+
+        const media = uploadById.get(item.mediaAssetId)!;
+        const name = availableCrewAssetName(item.name, usedNames);
+        usedNames.add(name.toLowerCase());
+        const node = await tx.crewAssetNode.create({
+          data: {
+            crewId,
+            parentId: null,
+            kind: CrewAssetNodeKind.file,
+            name,
+            mediaAssetId: media.id,
+            createdByUserId: authorId,
+            updatedByUserId: authorId,
+          },
+          select: { id: true },
+        });
+        attachments.push({
+          assetNodeId: node.id,
+          mediaAssetId: media.id,
+          name,
+          mediaKind: media.kind,
+          contentType: media.contentType,
+          sizeBytes: media.sizeBytes == null ? null : Number(media.sizeBytes),
+        });
+      }
+
+      const payload: MessagePayload = {
+        kind: 'attachments',
+        attachments,
+        ...(mentions.length > 0 ? { mentions } : {}),
+      };
+      const type = attachments.every((item) => item.mediaKind === 'image')
+        ? 'image'
+        : 'file';
+      const created = await tx.message.create({
+        data: {
+          id: newShortId(),
+          conversationId,
+          authorId,
+          type,
+          body: input.body,
+          payload: payload as unknown as Prisma.InputJsonValue,
+          clientKey: input.clientKey ?? null,
+        },
+      });
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE conversations AS c
+        SET last_message_at = GREATEST(c.last_message_at, m.created_at)
+        FROM messages AS m
+        WHERE c.id = ${conversationId}
+          AND m.id = ${created.id}
+          AND m.conversation_id = c.id
+      `);
+      await this.enqueueMessageRealtime(tx, created);
+      return { message: created, created: true };
+    });
+    await this.notifyMentions(result.message, authorId, mentions, crewId);
+    if (result.created) await this.broadcastMessage(result.message);
+    return result.message;
+  }
+
+  private assertAttachmentReplay(
+    existing: PrismaMessage,
+    input: SendAttachmentsInput,
+    mentions: ConversationMentionPayload[],
+  ): void {
+    const payload = (existing.payload ?? null) as MessagePayload | null;
+    const sameAttachments =
+      payload?.kind === 'attachments' &&
+      payload.attachments.length === input.attachments.length &&
+      input.attachments.every((item, index) => {
+        const persisted = payload.attachments[index];
+        return item.source === 'asset'
+          ? persisted?.assetNodeId === item.assetNodeId
+          : persisted?.mediaAssetId === item.mediaAssetId;
+      });
+    const persistedMentions =
+      payload?.kind === 'attachments' ? (payload.mentions ?? []) : [];
+    if (
+      (existing.type === 'image' || existing.type === 'file') &&
+      existing.body === input.body &&
+      sameAttachments &&
+      JSON.stringify(persistedMentions) === JSON.stringify(mentions)
+    ) {
+      return;
+    }
+    throw new ConflictException({
+      message: 'Idempotency key was already used for a different message',
+      existingMessageId: existing.id,
+    });
+  }
+
+  async sendTaskCard(
+    conversationId: string,
+    authorId: string,
+    input: SendTaskCardInput,
+  ): Promise<PrismaMessage> {
+    const access = await this.assertConversationAccess(
+      conversationId,
+      authorId,
+    );
+    if (access.conversation.contextType !== ConversationContextType.crew) {
+      throw new BadRequestException(
+        'Task cards are available in crew conversations only',
+      );
+    }
+    const task = await this.prisma.crewTask.findFirst({
+      where: {
+        id: input.taskId,
+        crewId: access.conversation.contextId,
+      },
+      include: {
+        assignees: { select: { id: true } },
+      },
+    });
+    if (!task) {
+      throw new NotFoundException('Task not found in this crew');
+    }
+    const taskPayload: ConversationTaskCardPayload = {
+      taskId: task.id,
+      crewId: task.crewId,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      assigneeCount: task.assignees.length,
+      dueAt: task.dueAt?.toISOString() ?? null,
+    };
+    const mentions = await this.validateMentions(
+      conversationId,
+      authorId,
+      input.body,
+      input.mentions,
+    );
+    const payload: MessagePayload = {
+      kind: 'task',
+      task: taskPayload,
+      ...(mentions.length > 0 ? { mentions } : {}),
+    };
+    const result = await this.persist(
+      conversationId,
+      authorId,
+      'task',
+      input.body,
+      payload,
+      this.prisma,
+      input.clientKey ?? null,
+    );
+    await this.notifyMentions(
+      result.message,
+      authorId,
+      mentions,
+      access.conversation.contextId,
+    );
+    if (result.created) await this.broadcastMessage(result.message);
     return result.message;
   }
 
@@ -1199,12 +1787,124 @@ export class ConversationsService {
       },
     };
     await Promise.all(
-      recipients.map((p) => this.publishToUser(p.userId, frame)),
+      recipients.map((p) =>
+        this.publishToUser(
+          p.userId,
+          frame,
+          `conversation:${conversationId}:read:${userId}:${message.id}:user:${p.userId}`,
+        ),
+      ),
     );
     return advanced;
   }
 
   // ─── Internals ───────────────────────────────────────────
+
+  /**
+   * Resolve the structured identities behind inline @labels.
+   *
+   * Mentions are crew-only today: two-party service/order threads do
+   * not need a picker, while crew notifications must never target an
+   * id that is outside the live roster. The human-readable label must
+   * also still exist in the submitted body; this keeps the payload and
+   * what readers actually see from drifting apart after an edited draft.
+   */
+  private async validateMentions(
+    conversationId: string,
+    authorId: string,
+    body: string,
+    mentions: ConversationMentionPayload[],
+  ): Promise<ConversationMentionPayload[]> {
+    if (mentions.length === 0) return [];
+
+    const { conversation } = await this.assertConversationAccess(
+      conversationId,
+      authorId,
+    );
+    if (conversation.contextType !== ConversationContextType.crew) {
+      throw new BadRequestException(
+        'Mentions are currently available in crew conversations only',
+      );
+    }
+
+    const unique = new Map<string, ConversationMentionPayload>();
+    for (const mention of mentions) {
+      if (mention.userId === authorId) {
+        throw new BadRequestException('You cannot mention yourself');
+      }
+      if (!body.includes(`@${mention.label}`)) {
+        throw new BadRequestException(
+          `Mention @${mention.label} is not present in the message body`,
+        );
+      }
+      const prior = unique.get(mention.userId);
+      if (prior && prior.label !== mention.label) {
+        throw new BadRequestException(
+          'A mentioned member cannot carry multiple display labels',
+        );
+      }
+      unique.set(mention.userId, mention);
+    }
+
+    const normalized = [...unique.values()];
+    const live = await this.liveCrewRecipients(
+      conversation.contextId,
+      normalized.map((mention) => mention.userId),
+    );
+    if (live.size !== normalized.length) {
+      throw new BadRequestException(
+        'One or more mentioned users are no longer active crew members',
+      );
+    }
+    return normalized;
+  }
+
+  /**
+   * Mentions are durable product events, not a transient WebSocket hint.
+   * The notification service writes an inbox row and outbox record; its
+   * deterministic key means retries repair a failed notification attempt
+   * without creating a second bell item.
+   */
+  private async notifyMentions(
+    message: PrismaMessage,
+    authorId: string,
+    mentions: ConversationMentionPayload[],
+    knownCrewId?: string,
+  ): Promise<void> {
+    const recipients = mentions.filter(
+      (mention) => mention.userId !== authorId,
+    );
+    if (recipients.length === 0) return;
+
+    const crewId =
+      knownCrewId ??
+      (
+        await this.prisma.conversation.findUnique({
+          where: { id: message.conversationId },
+          select: { contextType: true, contextId: true },
+        })
+      )?.contextId;
+    if (!crewId) return;
+
+    await Promise.all(
+      recipients.map((mention) =>
+        this.notifications.send({
+          userId: mention.userId,
+          type: 'crew.chat.mentioned',
+          title: 'You were mentioned in crew chat',
+          body: message.body,
+          meta: {
+            crewId,
+            conversationId: message.conversationId,
+            messageId: message.id,
+            authorId,
+            deeplink: `/crews/${crewId}/workspace?tab=chat`,
+          },
+          idempotencyKey: `crew.chat.mentioned:${message.id}:${mention.userId}`,
+        }),
+      ),
+    );
+  }
 
   /**
    * `clientKey` dedupe: pre-check, then treat the unique violation
@@ -1221,7 +1921,7 @@ export class ConversationsService {
   private async persist(
     conversationId: string,
     authorId: string | null,
-    type: 'text' | 'proposal' | 'system' | 'image' | 'file',
+    type: 'text' | 'proposal' | 'system' | 'image' | 'file' | 'task',
     body: string,
     payload: MessagePayload | null,
     db: DbClient = this.prisma,
@@ -1249,7 +1949,6 @@ export class ConversationsService {
           });
           if (!context) throw new NotFoundException('Conversation not found');
           if (context.contextType === ConversationContextType.crew) {
-            requireCrewChatWritesEnabled();
             await this.lockCrewMembership(context.contextId, authorId, tx);
           }
           // Re-check after taking the membership lock. A concurrent
@@ -1263,7 +1962,7 @@ export class ConversationsService {
             where: { conversationId, authorId, clientKey },
           });
           if (existing) {
-            this.assertIdempotentReplay(existing, type, body);
+            this.assertIdempotentReplay(existing, type, body, payload);
             return { message: existing, created: false };
           }
         }
@@ -1290,6 +1989,7 @@ export class ConversationsService {
             AND m.id = ${created.id}
             AND m.conversation_id = c.id
         `);
+        await this.enqueueMessageRealtime(tx, created);
         return { message: created, created: true };
       });
     } catch (err) {
@@ -1298,7 +1998,7 @@ export class ConversationsService {
         where: { conversationId, authorId, clientKey },
       });
       if (winner) {
-        this.assertIdempotentReplay(winner, type, body);
+        this.assertIdempotentReplay(winner, type, body, payload);
         return { message: winner, created: false };
       }
       throw err;
@@ -1323,6 +2023,33 @@ export class ConversationsService {
   }
 
   /**
+   * Enqueue within the caller's transaction. Raw SQL keeps this primitive
+   * usable with both PrismaService and TransactionClient while the unique
+   * message key makes historical/idempotent replays harmless.
+   */
+  private async enqueueMessageRealtime(
+    tx: TxClient,
+    message: Pick<PrismaMessage, 'id' | 'conversationId'>,
+  ): Promise<void> {
+    const idempotencyKey = `conversation:${message.conversationId}:message:${message.id}`;
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO conversation_realtime_outbox (
+        id,
+        conversation_id,
+        message_id,
+        idempotency_key
+      )
+      VALUES (
+        ${randomUUID()}::uuid,
+        ${message.conversationId},
+        ${message.id},
+        ${idempotencyKey}
+      )
+      ON CONFLICT (message_id) DO NOTHING
+    `);
+  }
+
+  /**
    * An idempotency key identifies one logical write, not an arbitrary
    * slot whose old response should replace new content. Returning the
    * first row for a reused key with a different body makes the caller
@@ -1330,22 +2057,30 @@ export class ConversationsService {
    */
   private assertIdempotentReplay(
     existing: PrismaMessage,
-    type: 'text' | 'proposal' | 'system' | 'image' | 'file',
+    type: 'text' | 'proposal' | 'system' | 'image' | 'file' | 'task',
     body: string,
+    payload: MessagePayload | null,
   ): void {
-    if (existing.type === type && existing.body === body) return;
+    if (
+      existing.type === type &&
+      existing.body === body &&
+      JSON.stringify(existing.payload ?? null) === JSON.stringify(payload)
+    ) {
+      return;
+    }
     throw new ConflictException({
       message: 'Idempotency key was already used for a different message',
       existingMessageId: existing.id,
     });
   }
 
-  private async publishToUser(userId: string, frame: ConversationFrame) {
+  private async publishToUser(
+    userId: string,
+    frame: ConversationFrame,
+    idempotencyKey: string,
+  ) {
     try {
-      await this.redis.publish(
-        conversationChannel(userId),
-        JSON.stringify(frame),
-      );
+      await this.realtime.publishUserFrame(userId, frame, idempotencyKey);
     } catch (err) {
       this.logger.warn(
         `conversation publish failed userId=${userId} err=${

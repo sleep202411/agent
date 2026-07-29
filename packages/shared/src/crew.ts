@@ -52,10 +52,8 @@ export function isValidRoleType(value: string): boolean {
 
 export type CrewPositionStatus = "open" | "frozen" | "full";
 export type CrewListingStatus = "unlisted" | "listed";
-export type CrewMemberVia = "founder" | "application" | "manual";
+export type CrewMemberVia = "founder" | "application" | "invitation" | "ownership_transfer";
 export type CrewApplicationStatus = "pending" | "approved" | "rejected";
-export type EpisodeStatus = "not_started" | "in_production" | "approved";
-export type AssignmentStatus = "in_progress" | "submitted" | "approved" | "rejected";
 
 // ─── Recruitment enums ───────────────────────────────────
 
@@ -240,7 +238,18 @@ export interface CrewPositionDTO {
   revenueSharePercent: number | null;
   /** Optional auto-archive date (YYYY-MM-DD). */
   closeDate: string | null;
+  /**
+   * Owner-only recruitment inbox totals. Public position discovery omits
+   * this block so applicant activity is never leaked outside the crew.
+   */
+  applicationStats?: CrewApplicationStatusCounts;
   createdAt: string;
+}
+
+export interface CrewPositionPageDTO {
+  items: CrewPositionDTO[];
+  nextCursor: string | null;
+  total: number;
 }
 
 export interface CrewMemberDTO {
@@ -252,6 +261,18 @@ export interface CrewMemberDTO {
   via: CrewMemberVia;
   isFinance: boolean;
   joinedAt: string;
+}
+
+export interface CrewMemberPageDTO {
+  items: CrewMemberDTO[];
+  nextCursor: string | null;
+  total: number;
+}
+
+export interface CrewMembershipDTO {
+  role: "admin" | "finance" | "member";
+  userId: string;
+  member: CrewMemberDTO;
 }
 
 export interface CrewApplicationDTO {
@@ -277,52 +298,20 @@ export interface CrewApplicationDTO {
   reviewerId: string | null;
 }
 
-// ─── Episode sub-domain ─────────────────────────────────────
-
-export interface EpisodeDTO {
-  id: string;
-  crewId: string;
-  number: number;
-  title: string | null;
-  description: string | null;
-  status: EpisodeStatus;
-  deadline: string | null;
-  approvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+export interface CrewApplicationStatusCounts {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
 }
 
-export interface EpisodeAssignmentDTO {
-  id: string;
-  crewId: string;
-  episodeId: string;
-  userId: string;
-  positionId: string | null;
-  roleName: string | null;
-  status: AssignmentStatus;
-  submission: { url: string | null; note: string | null; submittedAt: string } | null;
-  reviewNote: { reason: string; suggestion: string | null; rejectedAt: string } | null;
-  revenue: { amount: number; currency: CurrencyCode; setAt: string; setByUserId: string } | null;
-  updatedAt: string;
+export interface CrewApplicationListSummary extends CrewApplicationStatusCounts {
+  byPosition: Record<string, CrewApplicationStatusCounts>;
 }
 
-export type EpisodeActivityType =
-  | "episode_created"
-  | "member_assigned"
-  | "member_unassigned"
-  | "submission_made"
-  | "submission_approved"
-  | "submission_rejected"
-  | "revenue_set"
-  | "episode_approved";
-
-export interface EpisodeActivityDTO {
-  id: string;
-  crewId: string;
-  episodeId: string;
-  type: EpisodeActivityType | string;
-  actorUserId: string;
-  actorName: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
+export interface CrewApplicationPageDTO {
+  items: CrewApplicationDTO[];
+  nextCursor: string | null;
+  total: number;
+  summary: CrewApplicationListSummary;
 }

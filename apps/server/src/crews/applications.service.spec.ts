@@ -1,12 +1,10 @@
 /**
  * ApplicationsService ↔ crew group chat.
  *
- * Approval is the moment an applicant becomes a member, so it is also
- * the moment they enter the chat — same transaction, so the roster and
- * the participant list can never disagree. Rejection changes no
- * membership and must therefore leave the chat completely alone: a
- * rejected applicant appearing in (or being announced to) the crew's
- * private thread would be both a bug and a disclosure.
+ * Approval is the moment an applicant becomes a member, so it also grants
+ * their Studio workspace access and enters them into chat — all on the same
+ * transaction, so roster, production canvas and chat never disagree.
+ * Rejection changes no membership and must leave all three untouched.
  */
 import { ApplicationsService } from './applications.service';
 
@@ -114,11 +112,15 @@ function build() {
       return Promise.resolve();
     }),
   };
+  const collaboration = {
+    addCrewMemberAccess: jest.fn().mockResolvedValue(undefined),
+  };
 
   return {
     prisma,
     tx,
     conversations,
+    collaboration,
     syncCalls,
     systemCalls,
     broadcast,
@@ -126,6 +128,7 @@ function build() {
       prisma as never,
       notifications as never,
       conversations as never,
+      collaboration as never,
     ),
   };
 }
@@ -139,6 +142,19 @@ describe('ApplicationsService.approve — approval is a chat join', () => {
     expect(t.syncCalls).toEqual([
       { crewId: CREW_ID, userId: APPLICANT, action: 'join', tx: t.tx },
     ]);
+  });
+
+  it('grants Studio workspace access inside the same approval transaction', async () => {
+    const t = build();
+
+    await t.service.approve(APPLICATION_ID, OWNER);
+
+    expect(t.collaboration.addCrewMemberAccess).toHaveBeenCalledWith(
+      CREW_ID,
+      APPLICANT,
+      OWNER,
+      t.tx,
+    );
   });
 
   it('announces the join with crew.member.joined on the same tx', async () => {
@@ -198,5 +214,6 @@ describe('ApplicationsService.reject — rejection touches no chat', () => {
     expect(t.syncCalls).toEqual([]);
     expect(t.systemCalls).toEqual([]);
     expect(t.conversations.openCrewConversation).not.toHaveBeenCalled();
+    expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
   });
 });

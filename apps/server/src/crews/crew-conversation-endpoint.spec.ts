@@ -155,6 +155,9 @@ function build(over: Partial<World> = {}) {
     prisma as never,
     conversations as never,
     new CrewRoleService(prisma as never),
+    {
+      transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
+    } as never,
   );
   return { world, prisma, delegates, conversations, joined, service };
 }

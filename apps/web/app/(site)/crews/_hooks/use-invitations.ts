@@ -1,0 +1,91 @@
+"use client";
+
+import { useMemo } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { crewApi } from "./api";
+import { crewKeys } from "./shared";
+import type { CreateCrewInvitationInput, CrewInvitationDTO, CrewInvitationPageDTO } from "./types";
+
+export function useCrewInvitations(crewId: string, enabled = true, pageSize = 30) {
+  const query = useInfiniteQuery({
+    queryKey: [...crewKeys.invitations(crewId), pageSize] as const,
+    enabled,
+    queryFn: ({ pageParam }) =>
+      crewApi.get<CrewInvitationPageDTO>(`/crews/${encodeURIComponent(crewId)}/invitations`, {
+        query: { limit: pageSize, cursor: pageParam },
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  return {
+    ...query,
+    data,
+    total: query.data?.pages[0]?.total ?? 0,
+  };
+}
+
+export function useMyCrewInvitation(invitationId: string) {
+  return useQuery({
+    queryKey: crewKeys.invitation(invitationId),
+    enabled: !!invitationId,
+    queryFn: () =>
+      crewApi.get<CrewInvitationDTO>(`/crew-invitations/${encodeURIComponent(invitationId)}`),
+    retry: false,
+  });
+}
+
+export function useInviteCrewMember(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCrewInvitationInput) =>
+      crewApi.post<CrewInvitationDTO>(`/crews/${encodeURIComponent(crewId)}/invitations`, {
+        body: { ...input, expiresInDays: 7 },
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.invitations(crewId) }),
+  });
+}
+
+export function useAcceptCrewInvitation(invitationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      crewApi.post<{
+        crewId: string;
+        accepted: true;
+        agreementId: string | null;
+        agreementQueued: boolean;
+        workspaceHref: string;
+      }>(`/crew-invitations/${encodeURIComponent(invitationId)}/accept`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
+      qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
+    },
+  });
+}
+
+export function useDeclineCrewInvitation(invitationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      crewApi.post<{ declined: true }>(
+        `/crew-invitations/${encodeURIComponent(invitationId)}/decline`
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
+      qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
+    },
+  });
+}
+
+export function useRevokeCrewInvitation(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      crewApi.delete<{ revoked: true }>(`/crew-invitations/${encodeURIComponent(invitationId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.invitations(crewId) });
+    },
+  });
+}

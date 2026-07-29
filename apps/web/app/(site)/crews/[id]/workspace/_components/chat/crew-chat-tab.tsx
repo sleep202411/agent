@@ -11,11 +11,9 @@
  * back-to-inbox arrow and the "open crew" link (we are already in the
  * crew).
  *
- * No WebSocket is opened here either. `ConversationsProvider` holds the
- * one socket for the whole tab (components/providers.tsx) and patches
- * the React Query cache; this view just reads that cache. Per-component
- * sockets were the bug the chat module already paid for once — see
- * `src/lib/conversations/ws-client.ts`.
+ * `ConversationsProvider` owns one per-user Ably connection for inbox and
+ * invalidation frames. This surface additionally joins the crew's one
+ * `@ably/chat` Room for room continuity, history and presence.
  *
  * Sizing: the parent gives this a bounded box (the workspace switches
  * to a fixed-height app shell on this tab) and `ConversationView` is
@@ -29,6 +27,8 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { ConversationView } from "@/app/(site)/messages/_components/conversation-view";
 import { useCrewConversation } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
+import { CrewChatRoom } from "@/src/lib/conversations/crew-chat-room";
+import { CrewChatSidebar } from "./crew-chat-sidebar";
 
 export function CrewChatTab({ crewId }: { crewId: string }) {
   const t = useTranslations("workspace");
@@ -70,8 +70,13 @@ export function CrewChatTab({ crewId }: { crewId: string }) {
   }
 
   return (
-    <div className="h-full overflow-hidden rounded-xl bg-card/40">
-      <ConversationView conversationId={conversation.data.id} surface="workspace" />
+    <div className="flex h-full min-h-0 overflow-hidden bg-[#090a0c]">
+      <CrewChatSidebar crewId={crewId} />
+      <div className="min-w-0 flex-1">
+        <CrewChatRoom conversationId={conversation.data.id}>
+          <ConversationView conversationId={conversation.data.id} surface="workspace" />
+        </CrewChatRoom>
+      </div>
     </div>
   );
 }

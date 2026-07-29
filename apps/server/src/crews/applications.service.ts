@@ -22,20 +22,28 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CrewApplication, Message as PrismaMessage } from '@prisma/client';
-import { crewChatWritesEnabled } from '../conversations/crew-chat-rollout';
+import {
+  CrewApplicationStatus,
+  Prisma,
+  type CrewApplication,
+  type Message as PrismaMessage,
+} from '@prisma/client';
+import type {
+  CrewApplicationListSummary,
+  CrewApplicationStatusCounts,
+} from '@repo/shared/crew';
 import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import {
   assertAllowedCurrency,
-  defaultCurrency,
   toSmallestUnit,
   type CurrencyCode,
 } from '../common/currency';
-import type { ApplyInput } from './dto';
+import type { ApplyInput, ListCrewApplicationsQuery } from './dto';
 import { newCrewDomainId } from './id';
 import { toApplicationDTO } from './mappers';
+import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 
 @Injectable()
 export class ApplicationsService {
@@ -43,16 +51,70 @@ export class ApplicationsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly conversations: ConversationsService,
+    private readonly collaboration: CrewCollaborationService,
   ) {}
 
-  async listForOwner(crewId: string, ownerId: string) {
+  async listForOwner(
+    crewId: string,
+    ownerId: string,
+    query: ListCrewApplicationsQuery,
+  ) {
     await this.assertOwner(crewId, ownerId);
-    const rows = await this.prisma.crewApplication.findMany({
-      where: { crewId },
-      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-      take: 200,
+    const where = {
+      crewId,
+      ...(query.positionId ? { positionId: query.positionId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+    } satisfies Prisma.CrewApplicationWhereInput;
+
+    if (query.cursor) {
+      const cursor = await this.prisma.crewApplication.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      });
+      if (!cursor) {
+        throw new BadRequestException({
+          message:
+            'The applications cursor is invalid for the current filters. Restart from the first page.',
+        });
+      }
+    }
+
+    const summaryWhere = {
+      crewId,
+      ...(query.positionId ? { positionId: query.positionId } : {}),
+    } satisfies Prisma.CrewApplicationWhereInput;
+    const [rows, grouped] = await Promise.all([
+      this.prisma.crewApplication.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.prisma.crewApplication.groupBy({
+        by: ['positionId', 'status'],
+        where: summaryWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const page = rows.slice(0, query.limit);
+    const summary = buildApplicationSummary(grouped);
+    return {
+      items: page.map(toApplicationDTO),
+      nextCursor:
+        rows.length > query.limit ? (page[page.length - 1]?.id ?? null) : null,
+      total: query.status ? summary[query.status] : summary.total,
+      summary,
+    };
+  }
+
+  async getForOwner(crewId: string, applicationId: string, ownerId: string) {
+    await this.assertOwner(crewId, ownerId);
+    const row = await this.prisma.crewApplication.findFirst({
+      where: { id: applicationId, crewId },
     });
-    return rows.map(toApplicationDTO);
+    if (!row) throw new NotFoundException('Application not found');
+    return toApplicationDTO(row);
   }
 
   async apply(
@@ -132,9 +194,11 @@ export class ApplicationsService {
               // decide without any further navigation. The public
               // crew page used to handle this but it lacked the
               // approval surface entirely.
-              deeplink: `/crews/${crewId}/workspace?application=${app.id}`,
+              deeplink: `/crews/${crewId}/workspace?tab=roles&application=${app.id}`,
               crewId,
+              crewName: crew.name,
               positionId,
+              positionType: position.positionType,
               applicationId: app.id,
               applicantId,
             },
@@ -207,7 +271,6 @@ export class ApplicationsService {
     }
 
     const reviewedAt = new Date();
-    const chatEnabled = crewChatWritesEnabled();
     const pendingMessages: PrismaMessage[] = [];
     let updated: CrewApplication;
     try {
@@ -253,9 +316,10 @@ export class ApplicationsService {
           // order as ownership transfer and manual member changes.
           // This matters only for a pre-chat crew, but that is exactly
           // where opposite lock orders can deadlock.
-          const conversation = chatEnabled
-            ? await this.conversations.openCrewConversation(app.crewId, tx)
-            : null;
+          const conversation = await this.conversations.openCrewConversation(
+            app.crewId,
+            tx,
+          );
 
           // Plain insert — partial unique on (crewId, userId) WHERE
           // removed_at IS NULL means a previously removed member becomes
@@ -270,26 +334,34 @@ export class ApplicationsService {
               via: 'application',
             },
           });
+          // Joining through a public job must grant the exact same Studio
+          // workspace access as accepting a direct invitation. Without this,
+          // the member appears in the crew and chat but cannot open the shared
+          // production canvas or a task canvas.
+          await this.collaboration.addCrewMemberAccess(
+            app.crewId,
+            app.applicantId,
+            reviewerId,
+            tx,
+          );
           // Approval is the moment they become a member, so it is also
           // the moment they enter the group chat — same transaction, so
           // the two can never disagree. A rejection changes no
           // membership and therefore touches no chat.
-          if (conversation) {
-            await this.conversations.syncCrewParticipant(
-              app.crewId,
-              app.applicantId,
-              'join',
+          await this.conversations.syncCrewParticipant(
+            app.crewId,
+            app.applicantId,
+            'join',
+            tx,
+          );
+          pendingMessages.push(
+            await this.conversations.persistSystem(
+              conversation.id,
+              'crew.member.joined',
+              { userId: app.applicantId },
               tx,
-            );
-            pendingMessages.push(
-              await this.conversations.persistSystem(
-                conversation.id,
-                'crew.member.joined',
-                { userId: app.applicantId },
-                tx,
-              ),
-            );
-          }
+            ),
+          );
         }
 
         const isApprove = next === 'approved';
@@ -312,7 +384,9 @@ export class ApplicationsService {
                 ? `/crews/${app.crewId}/workspace`
                 : `/crews/${app.crewId}`,
               crewId: app.crewId,
+              crewName: app.crew.name,
               positionId: app.position.id,
+              positionType: app.position.positionType,
               applicationId,
             },
             idempotencyKey: `crew.application.${next}:${applicationId}`,
@@ -350,25 +424,47 @@ export class ApplicationsService {
   }
 }
 
+type ApplicationGroup = {
+  positionId: string;
+  status: CrewApplicationStatus;
+  _count: { _all: number };
+};
+
+function emptyApplicationCounts(): CrewApplicationStatusCounts {
+  return { total: 0, pending: 0, approved: 0, rejected: 0 };
+}
+
+function buildApplicationSummary(
+  groups: ApplicationGroup[],
+): CrewApplicationListSummary {
+  const summary: CrewApplicationListSummary = {
+    ...emptyApplicationCounts(),
+    byPosition: {},
+  };
+  for (const group of groups) {
+    const count = group._count._all;
+    const position =
+      summary.byPosition[group.positionId] ??
+      (summary.byPosition[group.positionId] = emptyApplicationCounts());
+    summary[group.status] += count;
+    summary.total += count;
+    position[group.status] += count;
+    position.total += count;
+  }
+  return summary;
+}
+
 function normalizeExpectedCompensation(input: ApplyInput): {
   amount: number;
   currency: CurrencyCode;
   period: 'month' | 'episode' | 'project' | null;
 } | null {
   const next = input.expectedCompensation;
-  if (next?.amount != null) {
+  if (next?.amount != null && next.currency) {
     return {
       amount: next.amount,
-      currency: next.currency ?? defaultCurrency(),
+      currency: next.currency,
       period: next.period ?? null,
-    };
-  }
-
-  if (input.expectedSalary != null) {
-    return {
-      amount: input.expectedSalary,
-      currency: 'CNY',
-      period: null,
     };
   }
 

@@ -27,6 +27,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import {
   notificationHref,
+  notificationContent,
   useMarkAllRead,
   useMarkRead,
   useRecentNotifications,
@@ -35,11 +36,22 @@ import {
 
 const DROPDOWN_LIMIT = 10;
 
-export function BellButton() {
+export interface BellButtonProps {
+  /**
+   * `rail` adapts the global notification inbox to narrow product workbench
+   * navigation. It intentionally keeps the same authoritative notification
+   * queries and mutations as the site header instead of creating a crew-only
+   * shadow inbox.
+   */
+  variant?: "header" | "rail";
+}
+
+export function BellButton({ variant = "header" }: BellButtonProps) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const locale = useLocale() as Locale;
   const t = useTranslations("notifications");
+  const isRail = variant === "rail";
 
   const { data: unreadCount = 0 } = useUnreadCount();
   const recent = useRecentNotifications(DROPDOWN_LIMIT);
@@ -71,13 +83,21 @@ export function BellButton() {
         <button
           type="button"
           aria-label={badge ? t("ariaUnread", { count: badge }) : t("title")}
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+          className={cn(
+            "relative inline-flex items-center justify-center text-muted-foreground outline-none transition-colors hover:bg-secondary/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/70",
+            isRail ? "size-10 shrink-0 rounded-lg" : "h-9 w-9 rounded-lg"
+          )}
         >
-          <IconBell className="size-5" />
+          <IconBell className={isRail ? "size-[18px]" : "size-5"} stroke={1.75} />
           {badge != null && (
             <span
               data-notification-badge
-              className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+              className={cn(
+                "absolute inline-flex items-center justify-center rounded-full bg-primary font-semibold leading-none text-primary-foreground",
+                isRail
+                  ? "right-0.5 top-0.5 h-3.5 min-w-3.5 px-1 text-[9px]"
+                  : "-right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]"
+              )}
             >
               {badge}
             </span>
@@ -85,7 +105,12 @@ export function BellButton() {
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" sideOffset={8} className="w-[380px] p-0">
+      <DropdownMenuContent
+        align={isRail ? "start" : "end"}
+        side={isRail ? "right" : "bottom"}
+        sideOffset={8}
+        className="w-[380px] p-0"
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <span className="text-sm font-semibold text-foreground">{t("title")}</span>
           <Button
@@ -158,6 +183,8 @@ function NotificationRow({
   onClick: () => void;
 }) {
   const unread = !item.readAt;
+  const t = useTranslations("notifications");
+  const content = notificationContent(item, locale, t);
   return (
     <button
       type="button"
@@ -181,9 +208,9 @@ function NotificationRow({
             unread ? "font-semibold text-foreground" : "text-foreground/90"
           )}
         >
-          {item.title}
+          {content.title}
         </span>
-        <span className="line-clamp-2 text-xs text-muted-foreground">{item.body}</span>
+        <span className="line-clamp-2 text-xs text-muted-foreground">{content.body}</span>
         <span className="text-[11px] text-muted-foreground/80">
           {formatAgo(item.createdAt, locale)}
         </span>

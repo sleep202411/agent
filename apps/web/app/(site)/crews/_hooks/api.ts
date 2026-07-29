@@ -123,6 +123,7 @@ function buildUrl(path: string, query?: CallOptions["query"]): string {
 export const crewApi = {
   get: <T>(path: string, opts?: CallOptions) => call<T>("GET", path, opts),
   post: <T>(path: string, opts?: CallOptions) => call<T>("POST", path, opts),
+  put: <T>(path: string, opts?: CallOptions) => call<T>("PUT", path, opts),
   patch: <T>(path: string, opts?: CallOptions) => call<T>("PATCH", path, opts),
   delete: <T>(path: string, opts?: CallOptions) => call<T>("DELETE", path, opts),
 };

@@ -181,5 +181,6 @@ function renderInboxPreview(m: Message): string {
   }
   if (m.type === 'image') return '[image]';
   if (m.type === 'file') return '[file]';
+  if (m.type === 'task') return '[task]';
   return '';
 }

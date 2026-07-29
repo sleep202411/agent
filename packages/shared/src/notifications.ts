@@ -1,11 +1,10 @@
 /**
  * In-app notifications (站内信) — shared wire types and channel helpers.
  *
- * Server emits notifications by writing a DB row + publishing to a
- * Redis pub/sub channel scoped to one user. Every tab the user has
- * open subscribes to that channel via the WS gateway and receives the
- * push in realtime. The DB row is the source of truth; the WS is the
- * latency optimization.
+ * Server emits notifications by writing a DB row + durable outbox entry.
+ * The outbox publishes a `notification.created` frame to the authenticated
+ * per-user Ably channel shared with conversation and crew-domain events.
+ * The DB row is the source of truth; Ably is the latency optimization.
  *
  * Adding a notification type:
  *   1. Append to NOTIFICATION_TYPES.
@@ -22,14 +21,20 @@ export const NOTIFICATION_TYPES = [
   "crew.application.rejected",
   "crew.member.added",
   "crew.member.removed",
-  // Episode
-  "crew.episode.assigned",
-  "crew.episode.unassigned",
-  "crew.episode.submitted",
-  "crew.episode.submission_approved",
-  "crew.episode.submission_rejected",
-  "crew.episode.approved",
-  "crew.episode.revenue_set",
+  "crew.invitation.received",
+  "crew.invitation.accepted",
+  "crew.agreement.sent",
+  "crew.agreement.updated",
+  "crew.chat.mentioned",
+  // Production task + settlement
+  "crew.task.assigned",
+  "crew.task.commented",
+  "crew.task.mentioned",
+  "crew.task.updated",
+  "crew.task.submitted",
+  "crew.task.approved",
+  "crew.task.revision_requested",
+  "crew.settlement.settled",
   // Sharing (studio team collaboration — workspace + project membership)
   "workspace.member.added",
   "workspace.member.removed",
@@ -60,7 +65,7 @@ export function notificationCategory(type: string): NotificationCategory {
   return "system";
 }
 
-/** A notification record as it crosses the wire (REST GET + WS push). */
+/** A notification record as it crosses the wire (REST GET + Ably frame). */
 export interface NotificationDTO {
   id: string;
   type: string; // NotificationType, but typed as string for forward compat
@@ -77,17 +82,3 @@ export interface NotificationMeta {
   /** Type-specific extra fields. */
   [k: string]: unknown;
 }
-
-/** Per-user Redis pub/sub channel. */
-export function notificationChannel(userId: string): string {
-  return `notification:user:${userId}`;
-}
-
-export const NOTIFICATION_CHANNEL_PATTERN = "notification:user:*";
-export const NOTIFICATION_CHANNEL_PREFIX = "notification:user:";
-
-/** WS frame envelope — keeps the gateway / client agreement minimal. */
-export type NotificationFrame =
-  | { event: "notification"; data: NotificationDTO }
-  | { event: "heartbeat"; data: { serverTime: number } }
-  | { event: "terminate"; data: { reason: string; code: number } };

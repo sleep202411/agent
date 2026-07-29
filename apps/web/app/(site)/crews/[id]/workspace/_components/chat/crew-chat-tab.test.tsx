@@ -5,10 +5,8 @@
  * crew id into a conversation id and hands off to the shared
  * `ConversationView`. Two things about that are worth pinning.
  *
- * First, it must not open a WebSocket. `ConversationsProvider` holds
- * the one socket for the whole tab and every view reads the React Query
- * cache it patches; per-component sockets are the bug the chat module
- * already paid for once (`src/lib/conversations/ws-client.ts`).
+ * First, it must hand room lifecycle to `CrewChatRoom` rather than
+ * reimplementing transport beside the shared timeline.
  *
  * Second, when the resolve fails the reader has to see WHY. "You are no
  * longer a member of this crew" is actionable; "群聊打不开" on its own
@@ -54,9 +52,18 @@ vi.mock("@/app/(site)/messages/_components/conversation-view", () => ({
   ),
 }));
 
+vi.mock("@/src/lib/conversations/crew-chat-room", () => ({
+  CrewChatRoom: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+vi.mock("./crew-chat-sidebar", () => ({
+  CrewChatSidebar: ({ crewId }: { crewId: string }) => (
+    <aside data-chat-sidebar="" data-crew={crewId} />
+  ),
+}));
+
 let root: Root | null = null;
 let container: HTMLElement | null = null;
-let sockets = 0;
 
 function render(node: React.ReactNode) {
   container = document.createElement("div");
@@ -81,15 +88,6 @@ function button(label: string): HTMLButtonElement {
 
 beforeEach(() => {
   document.body.innerHTML = "";
-  sockets = 0;
-  // Any attempt to open a socket from this subtree is a regression.
-  (globalThis as { WebSocket?: unknown }).WebSocket = class {
-    constructor() {
-      sockets += 1;
-    }
-    addEventListener() {}
-    close() {}
-  };
   state.query = {
     data: { id: "conv_1" },
     error: null,
@@ -114,7 +112,6 @@ describe("crew chat tab", () => {
     const view = document.querySelector("[data-view]") as HTMLElement;
     expect(view.dataset.conversation).toBe("conv_1");
     expect(view.dataset.surface).toBe("workspace");
-    expect(sockets).toBe(0);
   });
 
   it("shows the server's own words when the crew chat cannot be opened", () => {

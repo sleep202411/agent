@@ -12,7 +12,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { setupInterceptors } from "@/src/lib/api";
 import { StoreProvider } from "@/src/store/provider";
 import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-events-session";
-import { NotificationProvider } from "@/src/lib/notifications";
 import { ConversationsProvider } from "@/src/lib/conversations/provider";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
 import { AuthDialogProvider } from "@/components/auth/auth-dialog-provider";
@@ -78,9 +77,7 @@ export function Providers({
             <AuthDialogProvider>
               <AuthInterceptor />
               <EntityEventsSession>
-                <NotificationProvider>
-                  <ConversationsProvider>{children}</ConversationsProvider>
-                </NotificationProvider>
+                <ConversationsProvider>{children}</ConversationsProvider>
               </EntityEventsSession>
               <Toaster position="top-center" />
             </AuthDialogProvider>

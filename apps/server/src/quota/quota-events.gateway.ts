@@ -1,10 +1,10 @@
 /**
  * QuotaEventsGateway — per-user WS push for quota changes.
  *
- * Mirrors NotificationGateway: one WS per browser tab, satoken auth,
- * 30s heartbeat, 90s zombie watchdog, 1008 close on auth fail. The
- * gateway path is `/quota/subscribe` (post-prefix-strip — apex /
- * AKS ingress both rewrite `/aurora/...` to `/...`).
+ * One WS per browser tab with satoken auth, a 30s heartbeat, 90s zombie
+ * watchdog, and 1008 close on auth failure. The gateway path is
+ * `/quota/subscribe` (post-prefix-strip — apex / AKS ingress both rewrite
+ * `/aurora/...` to `/...`).
  *
  * Client receives `{ event: "quota_updated", data: snapshot }` after
  * every successful consume / refund. The DB row + Redis counter are

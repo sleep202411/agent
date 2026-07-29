@@ -36,7 +36,7 @@ const DEEPLINK = "/crews/c_1/workspace?tab=episodes&episode=ep_1";
 
 const ITEM: NotificationDTO = {
   id: "n_1",
-  type: "crew.episode.assigned",
+  type: "crew.task.assigned",
   title: "You were assigned EP01",
   body: "Storyboard — due Friday",
   meta: { deeplink: DEEPLINK },
@@ -46,8 +46,10 @@ const ITEM: NotificationDTO = {
 
 vi.mock("@/src/lib/notifications", async () => {
   const { notificationHref } = await import("@/src/lib/notifications/deeplink");
+  const { notificationContent } = await import("@/src/lib/notifications/content");
   return {
     notificationHref,
+    notificationContent,
     useNotificationFeed: () => ({
       data: { pages: [{ items: [ITEM] }] },
       isLoading: false,

@@ -6,8 +6,8 @@ import { join, relative, sep } from 'node:path';
  *
  *   The Nest server never publishes to a Studio Agent channel — the Temporal
  *   activity worker is the only publisher, from inside the run it owns — and
- *   `studio-agent.realtime.ts` is the only module in the WHOLE SERVER that may
- *   touch Ably at all, for the single purpose of signing a per-thread token.
+ *   Nest never publishes to a Studio Agent channel. Conversations owns its
+ *   separate Ably REST publisher; the two channel families must not cross.
  *
  * This file replaces the boundary test the Postgres relay used to need. The
  * relay's invariant ("exactly one module may call `.publish(`, exactly one may
@@ -52,8 +52,12 @@ const MODULE_DIR = __dirname;
 /** Every server source file, not just this feature's. */
 const SERVER_SRC_DIR = join(__dirname, '..');
 
-/** The one module in the entire server allowed to name Ably at all. */
+/** Modules intentionally allowed to own an Ably root credential. */
 const ABLY_OWNER = join('studio-agent', 'studio-agent.realtime.ts');
+const CONVERSATION_ABLY_OWNER = join(
+  'conversations',
+  'conversation-realtime.service.ts',
+);
 
 function sourceFiles(root: string): string[] {
   const found: string[] = [];
@@ -103,17 +107,17 @@ describe('Studio Agent publish boundary', () => {
     expect(all).toContain(ABLY_OWNER);
   });
 
-  it('lets exactly one module in apps/server/src import the Ably SDK, and names it', () => {
+  it('keeps Ably imports in the two named transport owners', () => {
     const importers = sourceFiles(SERVER_SRC_DIR).filter((name) =>
       /from\s+'ably'|require\('ably'\)|from\s+'@ably\//.test(
         read(SERVER_SRC_DIR, name),
       ),
     );
 
-    expect(importers).toEqual([ABLY_OWNER]);
+    expect(importers).toEqual([CONVERSATION_ABLY_OWNER, ABLY_OWNER].sort());
   });
 
-  it('never publishes from the server — not through the SDK, not through the transport, from anywhere', () => {
+  it('never publishes Studio Agent runs from the server', () => {
     // `createAgentSession` / `AgentRun.pipe` / `RunStep.send` are the library's
     // publish verbs. None of them belongs in a process that holds no run.
     const offenders = sourceFiles(SERVER_SRC_DIR).filter((name) =>
@@ -162,15 +166,16 @@ describe('Studio Agent publish boundary', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('keeps the root credential out of every module but the owner', () => {
+  it('keeps the root credential inside the named transport owners and config', () => {
     const offenders = sourceFiles(SERVER_SRC_DIR).filter(
       (name) =>
         name !== ABLY_OWNER &&
+        name !== CONVERSATION_ABLY_OWNER &&
         name !== join('studio-agent', 'studio-agent.config.ts') &&
         /ABLY_API_KEY|ably\.apiKey/.test(read(SERVER_SRC_DIR, name)),
     );
 
-    // The config service parses it; the owner uses it. Nobody else sees it.
+    // Config parses it; the two transport owners use it. Nobody else sees it.
     expect(offenders).toEqual([]);
   });
 });

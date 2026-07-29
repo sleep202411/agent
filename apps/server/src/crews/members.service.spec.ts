@@ -1,16 +1,14 @@
 /**
  * MembersService ↔ crew group chat.
  *
- * Add and remove are the two owner-driven membership edges. Both must
- * move the ConversationParticipant inside the SAME transaction as the
- * `crew_members` write — otherwise a chat failure leaves someone who can
- * post in a crew they were never added to, or a removed member still
- * receiving broadcasts.
+ * Invitation acceptance and removal are the membership edges. This suite
+ * protects the removal half; invitation acceptance has its own service suite.
  *
  * The `tx` identity assertions are the point of these tests. Asserting
  * only "sync was called" would pass even if the sync ran on the outer
  * Prisma client, which is precisely the bug being guarded against.
  */
+import { ListCrewMembersQuerySchema } from './dto';
 import { MembersService } from './members.service';
 
 const CREW_ID = 'crew-1';
@@ -39,7 +37,7 @@ function build(
     userId: NEWCOMER,
     roleType: 'animator',
     positionId: null,
-    via: 'manual',
+    via: 'invitation',
     isFinance: false,
     joinedAt: new Date('2026-07-01T00:00:00.000Z'),
     removedAt: null,
@@ -48,7 +46,6 @@ function build(
 
   const tx = {
     crewMember: {
-      create: jest.fn().mockResolvedValue({ ...memberRow, id: 'm-new' }),
       update: jest.fn().mockResolvedValue(memberRow),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
@@ -66,20 +63,14 @@ function build(
     },
     crewMember: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
       update: jest.fn().mockResolvedValue(memberRow),
     },
     $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
   };
 
   const notifications = { send: jest.fn().mockResolvedValue({}) };
-  const users = {
-    lookupByContact: jest.fn().mockResolvedValue({
-      userId: NEWCOMER,
-      isCrewMember: false,
-      isCrewFounder: false,
-    }),
-  };
-
   const syncCalls: SyncCall[] = [];
   const systemCalls: Array<{
     conversationId: string;
@@ -117,6 +108,10 @@ function build(
       return Promise.resolve();
     }),
   };
+  const collaboration = {
+    addCrewMemberAccess: jest.fn(() => Promise.resolve()),
+    removeCrewMemberAccess: jest.fn(() => Promise.resolve()),
+  };
 
   return {
     prisma,
@@ -129,94 +124,83 @@ function build(
     service: new MembersService(
       prisma as never,
       notifications as never,
-      users as never,
       conversations as never,
+      collaboration as never,
     ),
   };
 }
 
-describe('MembersService.add — an added member joins the chat', () => {
-  const input = { account: 'ada@example.com', roleType: 'animator' };
-
-  it('syncs the participant inside the membership transaction', async () => {
-    const t = build();
-
-    await t.service.add(CREW_ID, OWNER, 'cookie', input as never);
-
-    expect(t.syncCalls).toEqual([
-      { crewId: CREW_ID, userId: NEWCOMER, action: 'join', tx: t.tx },
-    ]);
-  });
-
-  it('announces the join with crew.member.joined on the same tx', async () => {
-    const t = build();
-
-    await t.service.add(CREW_ID, OWNER, 'cookie', input as never);
-
-    expect(t.systemCalls).toEqual([
-      {
-        conversationId: CONVERSATION_ID,
-        kind: 'crew.member.joined',
-        params: { userId: NEWCOMER },
-        tx: t.tx,
-      },
-    ]);
-  });
-
-  it('keeps membership writes available while crew-chat writes are gated', async () => {
-    const previous = process.env.CREW_CHAT_WRITES_ENABLED;
-    process.env.CREW_CHAT_WRITES_ENABLED = 'false';
-    try {
-      const t = build();
-
-      await expect(
-        t.service.add(CREW_ID, OWNER, 'cookie', input as never),
-      ).resolves.toMatchObject({ userId: NEWCOMER });
-
-      expect(t.tx.crewMember.create).toHaveBeenCalled();
-      expect(t.conversations.openCrewConversation).not.toHaveBeenCalled();
-      expect(t.syncCalls).toEqual([]);
-      expect(t.systemCalls).toEqual([]);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.CREW_CHAT_WRITES_ENABLED;
-      } else {
-        process.env.CREW_CHAT_WRITES_ENABLED = previous;
-      }
-    }
-  });
-
-  it('rolls the membership back when the chat sync fails', async () => {
-    const t = build();
-    t.conversations.syncCrewParticipant.mockRejectedValueOnce(
-      new Error('participant sync exploded'),
+describe('MembersService roster reads', () => {
+  it('validates bounded cursor pagination', () => {
+    expect(ListCrewMembersQuerySchema.parse({})).toEqual({
+      limit: 50,
+    });
+    expect(
+      ListCrewMembersQuerySchema.parse({ limit: '100', cursor: 'member_2' }),
+    ).toEqual({
+      limit: 100,
+      cursor: 'member_2',
+    });
+    expect(ListCrewMembersQuerySchema.safeParse({ limit: 1 }).success).toBe(
+      false,
     );
+  });
+
+  it('returns the current owner first and paginates the remaining roster', async () => {
+    const t = build();
+    const ownerRow = {
+      ...t.memberRow,
+      id: 'member-owner',
+      userId: OWNER,
+      roleType: 'owner',
+      via: 'founder',
+      joinedAt: new Date('2026-06-01T00:00:00.000Z'),
+    };
+    const first = {
+      ...t.memberRow,
+      id: 'member-1',
+      joinedAt: new Date('2026-07-01T00:00:00.000Z'),
+    };
+    const lookahead = {
+      ...t.memberRow,
+      id: 'member-2',
+      userId: 'u-member-2',
+      joinedAt: new Date('2026-07-02T00:00:00.000Z'),
+    };
+    t.prisma.crewMember.findFirst.mockResolvedValue(ownerRow);
+    t.prisma.crewMember.findMany.mockResolvedValue([first, lookahead]);
+    t.prisma.crewMember.count.mockResolvedValue(3);
 
     await expect(
-      t.service.add(CREW_ID, OWNER, 'cookie', input as never),
-    ).rejects.toThrow('participant sync exploded');
-    // Nothing was broadcast — the write never committed.
-    expect(t.broadcast).toEqual([]);
+      t.service.list(CREW_ID, OWNER, { limit: 2 }),
+    ).resolves.toMatchObject({
+      items: [{ id: 'member-owner', roleType: 'owner' }, { id: 'member-1' }],
+      nextCursor: 'member-1',
+      total: 3,
+    });
+    expect(t.prisma.crewMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+        take: 2,
+      }),
+    );
   });
 
-  it('broadcasts only after the transaction commits', async () => {
-    const order: string[] = [];
+  it('resolves the viewer role without scanning the roster', async () => {
     const t = build();
-    t.prisma.$transaction.mockImplementationOnce(
-      async (cb: (client: unknown) => Promise<unknown>) => {
-        const r = await cb(t.tx);
-        order.push('commit');
-        return r;
-      },
-    );
-    t.conversations.broadcastMessage.mockImplementation(() => {
-      order.push('broadcast');
-      return Promise.resolve();
+    t.prisma.crewMember.findFirst.mockResolvedValue({
+      ...t.memberRow,
+      isFinance: true,
     });
 
-    await t.service.add(CREW_ID, OWNER, 'cookie', input as never);
-
-    expect(order).toEqual(['commit', 'broadcast']);
+    await expect(
+      t.service.membership(CREW_ID, NEWCOMER),
+    ).resolves.toMatchObject({
+      role: 'finance',
+      userId: NEWCOMER,
+      member: { id: MEMBER_ROW_ID, isFinance: true },
+    });
+    expect(t.prisma.crewMember.findMany).not.toHaveBeenCalled();
   });
 });
 

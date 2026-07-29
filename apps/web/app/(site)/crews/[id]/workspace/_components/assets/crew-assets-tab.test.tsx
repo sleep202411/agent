@@ -2,9 +2,11 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CrewAssetsTab } from "./crew-assets-tab";
+import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -25,39 +27,199 @@ vi.mock("@/src/i18n/i18n", async () => {
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
+    error: vi.fn(),
   },
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/en-US/crews/crew_1/workspace",
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("@/components/user-avatar", () => ({
   UserAvatar: ({ name }: { name: string }) => <span aria-label={name} />,
 }));
 
+const ROOT_ITEMS = [
+  {
+    id: "folder-1",
+    parentId: null,
+    name: "Storyboard",
+    kind: "folder",
+    status: "active",
+    accessMode: "inherit",
+    permissionVersion: 1,
+    effectivePermission: "manage",
+    favorite: false,
+    createdByUserId: "user-1",
+    updatedByUserId: "user-1",
+    createdAt: "2026-07-29T09:00:00.000Z",
+    updatedAt: "2026-07-29T09:00:00.000Z",
+    trashedAt: null,
+    media: null,
+  },
+  {
+    id: "file-1",
+    parentId: null,
+    name: "concept.png",
+    kind: "file",
+    status: "active",
+    accessMode: "inherit",
+    permissionVersion: 1,
+    effectivePermission: "manage",
+    favorite: true,
+    createdByUserId: "user-1",
+    updatedByUserId: "user-1",
+    createdAt: "2026-07-29T09:00:00.000Z",
+    updatedAt: "2026-07-29T09:00:00.000Z",
+    trashedAt: null,
+    media: {
+      id: "media-1",
+      kind: "image",
+      contentType: "image/png",
+      sizeBytes: 2048,
+      width: 1920,
+      height: 1080,
+      durationSeconds: null,
+      previewUrl: "/aurora/media/assets/media-1/content",
+    },
+  },
+] as const;
+
 let root: Root | null = null;
 let container: HTMLElement | null = null;
+let requests: Array<{ url: string; method: string; body?: unknown }> = [];
+let storageAvailable = true;
 
-function render() {
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
+function installFetch() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      requests.push({
+        url,
+        method,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (method === "GET" && url.includes("/users/by-ids")) {
+        return jsonResponse({
+          users: [{ userId: "user-1", nickname: "Lin Mo" }],
+        });
+      }
+      if (method === "GET" && url.endsWith("/assets/context")) {
+        return jsonResponse({
+          cell: "global",
+          provider: "s3_compatible",
+          storageAvailable,
+          maxUploadBytes: 5 * 1024 * 1024 * 1024,
+          accessModel: "hierarchical_acl",
+          role: "admin",
+          capabilities: {
+            view: true,
+            createFolder: true,
+            upload: true,
+            organize: true,
+            trash: true,
+            restore: true,
+            deleteForever: true,
+          },
+        });
+      }
+      if (method === "GET" && url.endsWith("/assets/nodes/file-1")) {
+        return jsonResponse({
+          node: ROOT_ITEMS[1],
+          path: [],
+        });
+      }
+      if (method === "GET" && url.endsWith("/assets/file-1/permissions/events")) {
+        return jsonResponse([]);
+      }
+      if (method === "GET" && url.endsWith("/assets/file-1/permissions")) {
+        return jsonResponse({
+          accessMode: "inherit",
+          permissionVersion: 1,
+          effectivePermission: "manage",
+          canManage: true,
+          grants: [],
+        });
+      }
+      if (method === "GET" && url.endsWith("/members")) {
+        return jsonResponse([]);
+      }
+      if (method === "GET" && url.includes("/assets")) {
+        const inFolder = url.includes("parentId=folder-1");
+        return jsonResponse({
+          items: inFolder ? [] : ROOT_ITEMS,
+          parentId: inFolder ? "folder-1" : null,
+          source: "all",
+        });
+      }
+      if (method === "POST" && url.endsWith("/assets/folders")) {
+        return jsonResponse(
+          {
+            ...ROOT_ITEMS[0],
+            id: "folder-created",
+            name: "References",
+          },
+          { status: 201 }
+        );
+      }
+      if (method === "PUT" || method === "POST") return jsonResponse({ favorite: true });
+      if (method === "DELETE") return new Response(null, { status: 204 });
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    })
+  );
+}
+
+async function render(initialAssetId?: string) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root!.render(<CrewAssetsTab crewId="crew_1" />));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  await act(async () => {
+    root!.render(
+      <QueryClientProvider client={queryClient}>
+        <CrewTransfersProvider crewId="crew_1">
+          <CrewAssetsTab crewId="crew_1" initialAssetId={initialAssetId} />
+        </CrewTransfersProvider>
+      </QueryClientProvider>
+    );
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
-function assetRow(name: string): HTMLElement {
-  const row = [...document.querySelectorAll<HTMLElement>('[role="button"]')].find((element) =>
-    element.textContent?.includes(name)
+function byText(selector: string, text: string): HTMLElement {
+  const element = [...document.querySelectorAll<HTMLElement>(selector)].find(
+    (candidate) => candidate.textContent?.trim() === text
   );
-  if (!row) throw new Error(`Asset row not found: ${name}`);
-  return row;
+  if (!element) throw new Error(`Element not found: ${selector} ${text}`);
+  return element;
 }
 
-function click(element: HTMLElement) {
-  act(() => {
+async function click(element: HTMLElement) {
+  await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  requests = [];
+  storageAvailable = true;
+  installFetch();
 });
 
 afterEach(() => {
@@ -65,42 +227,166 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  vi.unstubAllGlobals();
 });
 
-describe("asset preview interaction", () => {
-  it("updates the in-page preview region when an asset is selected", () => {
-    render();
+describe("crew asset center", () => {
+  it("loads real asset data and opens a file in the right preview region", async () => {
+    await render();
 
-    const row = assetRow("EP01_Scrt_010_board_v02.pdf");
-    click(row);
+    const row = byText("span", "concept.png").closest<HTMLElement>('[role="button"]');
+    if (!row) throw new Error("Asset row not found");
+    await click(row);
 
     const preview = document.querySelector<HTMLElement>(
       'aside[aria-label="Asset preview and details"]'
     );
-    expect(row.className).toContain("bg-primary/8");
-    expect(preview?.textContent).toContain("EP01_Scrt_010_board_v02.pdf");
-    expect(preview?.querySelector('img[alt="EP01_Scrt_010_board_v02.pdf"]')).not.toBeNull();
+    expect(preview?.textContent).toContain("concept.png");
+    expect(preview?.textContent).toContain("Lin Mo");
+    expect(preview?.querySelector('img[alt="concept.png"]')).not.toBeNull();
     expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull();
     expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
   });
 
-  it("closes and reopens the right preview region without an overlay", () => {
-    render();
+  it("opens a chat attachment deeplink directly in the asset inspector", async () => {
+    await render("file-1");
 
-    const closeButton = document.querySelector<HTMLElement>('button[aria-label="Close preview"]');
-    if (!closeButton) throw new Error("Close preview button not found");
-    click(closeButton);
+    expect(requests.some((request) => request.url.endsWith("/assets/nodes/file-1"))).toBe(true);
+    await act(async () => {
+      await vi.waitFor(() => {
+        const preview = document.querySelector<HTMLElement>(
+          'aside[aria-label="Asset preview and details"]'
+        );
+        expect(preview?.textContent).toContain("concept.png");
+      });
+    });
+  });
 
-    expect(document.querySelector('aside[aria-label="Asset preview and details"]')).toBeNull();
+  it("opens folders in place and updates the API parent scope", async () => {
+    await render();
 
-    const toggleButton = document.querySelector<HTMLElement>(
-      'button[aria-label="Toggle preview panel"]'
+    const row = byText("span", "Storyboard").closest<HTMLElement>('[role="button"]');
+    if (!row) throw new Error("Folder row not found");
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+
+    expect(requests.some((request) => request.url.includes("parentId=folder-1"))).toBe(true);
+    expect(document.body.textContent).toContain("Storyboard");
+  });
+
+  it("creates a folder inside the current directory", async () => {
+    await render();
+    await click(byText("button", "New folder"));
+
+    const input = document.querySelector<HTMLInputElement>('input[placeholder="Folder name"]');
+    if (!input) throw new Error("Folder name input not found");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "References");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const form = input.closest("form");
+    if (!form) throw new Error("Folder form not found");
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    const createRequest = requests.find(
+      (request) => request.method === "POST" && request.url.endsWith("/assets/folders")
     );
-    if (!toggleButton) throw new Error("Toggle preview button not found");
-    click(toggleButton);
+    expect(createRequest?.body).toEqual({ name: "References", parentId: null });
+  });
 
-    expect(document.querySelector('aside[aria-label="Asset preview and details"]')).not.toBeNull();
-    expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull();
-    expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
+  it("queries the favorites source instead of filtering stale local mocks", async () => {
+    await render();
+    await click(byText("button", "Favorites"));
+
+    expect(requests.some((request) => request.url.includes("source=favorites"))).toBe(true);
+  });
+
+  it("locks rename to the single checked asset instead of the open inspector asset", async () => {
+    await render();
+
+    const fileRow = byText("span", "concept.png").closest<HTMLElement>('[role="button"]');
+    if (!fileRow) throw new Error("File row not found");
+    await click(fileRow);
+
+    const folderCheckbox = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Select Storyboard"]'
+    );
+    if (!folderCheckbox) throw new Error("Folder checkbox not found");
+    await act(async () => {
+      folderCheckbox.click();
+    });
+
+    const rename = document.querySelector<HTMLButtonElement>('button[aria-label="Rename"]');
+    if (!rename) throw new Error("Rename action not found");
+    await click(rename);
+
+    const nameInput = document.querySelector<HTMLInputElement>('input[aria-label="Name"]');
+    expect(nameInput?.value).toBe("Storyboard");
+  });
+
+  it("disables upload when the region storage provider is unavailable", async () => {
+    storageAvailable = false;
+    await render();
+
+    const upload = byText("button", "Upload") as HTMLButtonElement;
+    expect(upload.disabled).toBe(true);
+    expect(document.body.textContent).toContain("Cloudflare R2");
+    expect(document.body.textContent).toContain("Storage not configured");
+  });
+
+  it("persists a restricted asset permission boundary from the inspector", async () => {
+    await render();
+
+    const row = byText("span", "concept.png").closest<HTMLElement>('[role="button"]');
+    if (!row) throw new Error("Asset row not found");
+    await click(row);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await click(byText("button", "Manage access"));
+
+    const restricted = document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    );
+    if (!restricted) throw new Error("Restricted access checkbox not found");
+    await act(async () => restricted.click());
+    await click(byText("button", "Save access"));
+
+    const request = requests.find(
+      (candidate) =>
+        candidate.method === "PUT" && candidate.url.endsWith("/assets/file-1/permissions")
+    );
+    expect(request?.body).toEqual({
+      accessMode: "restricted",
+      expectedVersion: 1,
+      grants: [],
+    });
+  });
+
+  it("requires confirmation before permanent deletion from Trash", async () => {
+    await render();
+    await click(byText("button", "Trash"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const checkbox = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Select concept.png"]'
+    );
+    if (!checkbox) throw new Error("Asset checkbox not found");
+    await act(async () => {
+      checkbox.click();
+    });
+    await click(byText("button", "Delete forever"));
+
+    expect(document.body.textContent).toContain("Permanently delete selected assets?");
+    expect(
+      requests.some((request) => request.method === "DELETE" && request.url.endsWith("/permanent"))
+    ).toBe(false);
   });
 });

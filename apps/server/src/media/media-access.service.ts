@@ -8,6 +8,7 @@ import {
 import {
   CharacterMediaStatus,
   CharacterStatus,
+  CrewAssetPermission,
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVisibility,
@@ -21,6 +22,7 @@ import {
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 import { WorkspacePermissionService } from '../workspaces';
+import { CrewAssetAccessService } from '../crews/assets/asset-access.service';
 import {
   isPeerViewable,
   requireModerationApproval,
@@ -66,6 +68,7 @@ export class MediaAccessService {
     private readonly prisma: PrismaService,
     private readonly storageAccess: MediaStorageAccessService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly crewAssetAccess: CrewAssetAccessService,
   ) {}
 
   async issueAccessUrl(
@@ -156,6 +159,7 @@ export class MediaAccessService {
       visibility: MediaAssetVisibility;
       createdByUserId: string | null;
       workspaceId: string | null;
+      metadata: Prisma.JsonValue;
     },
   ): Promise<void> {
     if (asset.visibility === MediaAssetVisibility.public) return;
@@ -163,6 +167,48 @@ export class MediaAccessService {
       throw new UnauthorizedException({
         code: 'MEDIA_ASSET_AUTH_REQUIRED',
         message: 'Sign in to access this media asset.',
+      });
+    }
+    const crewId = crewAssetCrewId(asset.metadata);
+    if (crewId) {
+      const nodes = await this.prisma.crewAssetNode.findMany({
+        where: { mediaAssetId: asset.id },
+        select: { id: true, crewId: true },
+      });
+      // A just-confirmed upload is private to its creator until the attach
+      // transaction claims it as a CrewAssetNode. Once claimed, the node ACL
+      // is authoritative—even for the original uploader and former members.
+      if (nodes.length === 0 && asset.createdByUserId === userId) {
+        await this.crewAssetAccess.requireContainerPermission(
+          crewId,
+          null,
+          userId,
+          CrewAssetPermission.view,
+        );
+        return;
+      }
+      for (const node of nodes) {
+        try {
+          await this.crewAssetAccess.requireNodePermission(
+            node.crewId,
+            node.id,
+            userId,
+            CrewAssetPermission.view,
+          );
+          return;
+        } catch (error) {
+          if (
+            error instanceof ForbiddenException ||
+            error instanceof NotFoundException
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      throw new ForbiddenException({
+        code: 'MEDIA_ASSET_ACCESS_DENIED',
+        message: 'You do not have access to this crew asset.',
       });
     }
     if (asset.createdByUserId === userId) return;
@@ -293,6 +339,20 @@ export class MediaAccessService {
       expiresAt: signed.expiresAt,
     };
   }
+}
+
+function crewAssetCrewId(metadata: Prisma.JsonValue): string | null {
+  if (
+    metadata !== null &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    typeof metadata.crewId === 'string' &&
+    (metadata.uploadKind === 'crew_asset_file' ||
+      metadata.uploadKind === 'crew_agreement_archive')
+  ) {
+    return metadata.crewId;
+  }
+  return null;
 }
 
 function selectReadSource(

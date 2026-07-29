@@ -6,7 +6,7 @@
  * decision needs zero further navigation.
  *
  * Data sources are all already-cached queries — no extra round trip:
- *   - useCrewApplications(crewId)  → the application row
+ *   - useCrewApplication(crewId, id) → the exact application row
  *   - useCrewPositions(crewId)     → the position being applied for
  *   - useCrewDetail(crewId)        → crew name for breadcrumb
  *   - useUserDisplays([applicantId]) → applicant nickname / avatar
@@ -61,7 +61,7 @@ import {
   CrewApiError,
   ZERO_DECIMAL_CURRENCIES,
   useApproveApplication,
-  useCrewApplications,
+  useCrewApplication,
   useCrewDetail,
   useCrewPositions,
   useRejectApplication,
@@ -106,14 +106,14 @@ export function ApplicationReviewDialog({
 
   const open = applicationId !== null;
 
-  const { data: applications = [], isLoading: appsLoading } = useCrewApplications(crewId, open);
+  const { data: application, isLoading: appsLoading } = useCrewApplication(
+    crewId,
+    applicationId,
+    open
+  );
   const { data: positions = [] } = useCrewPositions(crewId);
   const { data: crew } = useCrewDetail(crewId);
 
-  const application = useMemo(
-    () => (applicationId ? (applications.find((a) => a.id === applicationId) ?? null) : null),
-    [applicationId, applications]
-  );
   const position = useMemo(
     () => (application ? (positions.find((p) => p.id === application.positionId) ?? null) : null),
     [application, positions]
@@ -313,7 +313,7 @@ export function ApplicationReviewDialog({
     );
   })();
 
-  const showActions = application !== null && application.status === "pending";
+  const showActions = application?.status === "pending";
 
   return (
     <Dialog

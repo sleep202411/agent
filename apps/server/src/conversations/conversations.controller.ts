@@ -4,6 +4,8 @@
  *   GET    /aurora/conversations/:id                      detail
  *   GET    /aurora/conversations/:id/messages             paginated messages
  *   POST   /aurora/conversations/:id/messages             send text
+ *   POST   /aurora/conversations/:id/attachments          send crew assets
+ *   POST   /aurora/conversations/:id/task-cards           share a crew task
  *   POST   /aurora/conversations/:id/proposals            creator sends proposal
  *   POST   /aurora/conversations/:id/proposals/:mid/decline  buyer declines proposal
  *   POST   /aurora/conversations/:id/read                 advance read cursor
@@ -18,8 +20,10 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
+  Inject,
   NotFoundException,
   Param,
   Post,
@@ -41,14 +45,18 @@ import {
   ListMessagesQuerySchema,
   MarkReadSchema,
   OpenConversationSchema,
+  SendAttachmentsSchema,
   SendMessageSchema,
   SendProposalSchema,
+  SendTaskCardSchema,
   type ListInboxQuery,
   type ListMessagesQuery,
   type MarkReadInput,
   type OpenConversationInput,
+  type SendAttachmentsInput,
   type SendMessageInput,
   type SendProposalInput,
+  type SendTaskCardInput,
 } from './dto';
 import {
   toConversationCardDTO,
@@ -57,12 +65,18 @@ import {
   type CrewCardContext,
 } from './mappers';
 import { PrismaService } from '../infra/db/db.module';
+import {
+  CONVERSATION_REALTIME,
+  type ConversationRealtimePublisher,
+} from './conversation-realtime.service';
 
 @Controller('conversations')
 export class ConversationsController {
   constructor(
     private readonly svc: ConversationsService,
     private readonly prisma: PrismaService,
+    @Inject(CONVERSATION_REALTIME)
+    private readonly realtime: ConversationRealtimePublisher,
   ) {}
 
   @Post()
@@ -143,6 +157,34 @@ export class ConversationsController {
     };
   }
 
+  /**
+   * Short-lived credential for this user's private Conversations event
+   * channel. The token is identity-bound and subscribe-only.
+   */
+  @Get('realtime-token')
+  @Header('Cache-Control', 'no-store')
+  async realtimeToken(@CurrentUser() user: AuthUser) {
+    return this.realtime.issueUserGrant(user.userId);
+  }
+
+  /**
+   * Short-lived room credential for a crew conversation. Authorization is
+   * re-evaluated on every refresh, so a removed member cannot renew access.
+   */
+  @Get(':id/realtime-token')
+  @Header('Cache-Control', 'no-store')
+  async crewRealtimeToken(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const conversationId = parseIdParam(idRaw, 'id');
+    const conversation = await this.svc.detail(conversationId, user.userId);
+    if (conversation.contextType !== 'crew') {
+      throw new NotFoundException('Crew conversation not found');
+    }
+    return this.realtime.issueCrewGrant(conversationId, user.userId);
+  }
+
   @Get(':id')
   async detail(
     @Param('id') idRaw: string,
@@ -185,6 +227,39 @@ export class ConversationsController {
       user.userId,
       body.body,
       body.clientKey ?? null,
+      body.mentions,
+    );
+    return toMessageDTO(msg);
+  }
+
+  @Post(':id/attachments')
+  @HttpCode(HttpStatus.CREATED)
+  async sendAttachments(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SendAttachmentsSchema))
+    body: SendAttachmentsInput,
+  ): Promise<MessageDTO> {
+    const msg = await this.svc.sendAttachments(
+      parseIdParam(idRaw, 'id'),
+      user.userId,
+      body,
+    );
+    return toMessageDTO(msg);
+  }
+
+  @Post(':id/task-cards')
+  @HttpCode(HttpStatus.CREATED)
+  async sendTaskCard(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SendTaskCardSchema))
+    body: SendTaskCardInput,
+  ): Promise<MessageDTO> {
+    const msg = await this.svc.sendTaskCard(
+      parseIdParam(idRaw, 'id'),
+      user.userId,
+      body,
     );
     return toMessageDTO(msg);
   }

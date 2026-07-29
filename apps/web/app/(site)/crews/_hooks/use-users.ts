@@ -94,15 +94,24 @@ export { useDebouncedValue } from "./use-debounced-value";
 
 // ─── Batch display name resolution ────────────────────
 //
-// The BFF caps a single request at 50 ids. Crews are well under that
-// today; chunking is a future concern. The cache key includes the
-// sorted, deduped id list so two screens viewing different subsets
-// of the same crew share work cleanly.
+// The BFF caps a single request at 50 ids. Resolve every chunk in parallel;
+// silently truncating a large roster would make permissions and assignee
+// pickers display anonymous users even though the membership rows exist.
+// The cache key includes the sorted, deduped id list so two screens viewing
+// different subsets of the same crew share work cleanly.
 
 const DISPLAYS_CHUNK_LIMIT = 50;
 
 interface ByIdsResponse {
   users: LookupUserDTO[];
+}
+
+export function chunkUserDisplayIds(userIds: readonly string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let offset = 0; offset < userIds.length; offset += DISPLAYS_CHUNK_LIMIT) {
+    chunks.push(userIds.slice(offset, offset + DISPLAYS_CHUNK_LIMIT));
+  }
+  return chunks;
 }
 
 export function useUserDisplays(userIds: readonly string[]): Map<string, LookupUserDTO> {
@@ -116,12 +125,13 @@ export function useUserDisplays(userIds: readonly string[]): Map<string, LookupU
     queryKey: ["users", "displays", sorted] as const,
     enabled: sorted.length > 0,
     queryFn: async () => {
-      // Single page is enough for any realistic crew; chunk if/when
-      // a caller actually hands us > 50 ids.
-      const head = sorted.slice(0, DISPLAYS_CHUNK_LIMIT);
-      const params = new URLSearchParams({ ids: head.join(",") });
-      const res = await crewApi.get<ByIdsResponse>(`/users/by-ids?${params.toString()}`);
-      return res.users ?? [];
+      const pages = await Promise.all(
+        chunkUserDisplayIds(sorted).map((chunk) => {
+          const params = new URLSearchParams({ ids: chunk.join(",") });
+          return crewApi.get<ByIdsResponse>(`/users/by-ids?${params.toString()}`);
+        })
+      );
+      return pages.flatMap((page) => page.users ?? []);
     },
     retry: false,
     staleTime: 5 * 60 * 1000,

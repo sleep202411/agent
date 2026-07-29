@@ -36,11 +36,23 @@ export const OpenConversationSchema = z.object({
 });
 export type OpenConversationInput = z.infer<typeof OpenConversationSchema>;
 
-/**
- * Plain text body. Attachments deferred to a later phase.
- */
+const MentionSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  /** Display-name snapshot without the leading @ character. */
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((label) => !/[@\r\n]/.test(label), {
+      message: 'Mention label cannot contain @ or a line break',
+    }),
+});
+
+/** Plain text message. Structured crew messages use the schemas below. */
 export const SendMessageSchema = z.object({
   body: z.string().trim().min(1).max(4000),
+  mentions: z.array(MentionSchema).max(20).default([]),
   /// Client-generated idempotency token for this send. Optional, but
   /// strongly recommended from anything with a retry: a flaky network
   /// that re-POSTs the same composed message otherwise appends a
@@ -55,6 +67,78 @@ export const SendMessageSchema = z.object({
   clientKey: z.string().trim().min(1).max(64).optional(),
 });
 export type SendMessageInput = z.infer<typeof SendMessageSchema>;
+
+const StructuredMessageBaseSchema = z.object({
+  body: z.string().trim().max(4000).default(''),
+  mentions: z.array(MentionSchema).max(20).default([]),
+  clientKey: z.string().trim().min(1).max(64).optional(),
+});
+
+/**
+ * Existing crew assets remain references. Fresh chat uploads carry only the
+ * confirmed MediaAsset id and display name: the service creates their
+ * CrewAssetNode in the SAME transaction as the message, so cancelling or a
+ * failed send can never leave a visible file in the asset center.
+ *
+ * Clients never submit storage URLs or object keys.
+ */
+const AttachmentNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .refine((name) => name !== '.' && name !== '..', {
+    message: 'Attachment name cannot be "." or ".."',
+  })
+  .refine((name) => !name.includes('/'), {
+    message: 'Attachment name cannot contain "/"',
+  });
+
+const SendAttachmentItemSchema = z.discriminatedUnion('source', [
+  z.object({
+    source: z.literal('asset'),
+    assetNodeId: z.string().uuid(),
+  }),
+  z.object({
+    source: z.literal('upload'),
+    mediaAssetId: z.string().uuid(),
+    name: AttachmentNameSchema,
+  }),
+]);
+
+export const SendAttachmentsSchema = StructuredMessageBaseSchema.extend({
+  attachments: z
+    .array(SendAttachmentItemSchema)
+    .min(1)
+    .max(10)
+    .superRefine((items, ctx) => {
+      const seen = new Set<string>();
+      items.forEach((item, index) => {
+        const key =
+          item.source === 'asset'
+            ? `asset:${item.assetNodeId}`
+            : `upload:${item.mediaAssetId}`;
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index],
+            message: 'The same attachment cannot be sent twice',
+          });
+        }
+        seen.add(key);
+      });
+    }),
+});
+export type SendAttachmentsInput = z.infer<typeof SendAttachmentsSchema>;
+
+/**
+ * Share a task into its crew's one group chat. The task must belong to the
+ * same crew context as the conversation.
+ */
+export const SendTaskCardSchema = StructuredMessageBaseSchema.extend({
+  taskId: z.string().uuid(),
+});
+export type SendTaskCardInput = z.infer<typeof SendTaskCardSchema>;
 
 /**
  * Proposal payload — creator's structured offer. Mirrors

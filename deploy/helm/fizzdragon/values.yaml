@@ -188,10 +188,12 @@ serverSecrets:
     # HMAC token-signing secret for the self-hosted realtime WS plane
     # (REALTIME_TRANSPORT=self-hosted). PREREQUISITE: create the `realtime-ws-secret`
     # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
-    # Studio Agent delivery. The Nest server uses this ROOT key for exactly one
-    # thing — signing per-thread Ably token requests, locally, with an HMAC. It
-    # opens no Ably connection and publishes nothing; the activity worker does
-    # that, from its own copy of the same key (studioAgentDeliverySecrets).
+    # Shared Ably ROOT credential for server-owned token signing and
+    # Conversations delivery. Nest signs least-privilege browser credentials,
+    # publishes ordinary Conversations frames with Ably REST, and publishes
+    # committed crew messages to Ably Chat REST. It opens no Ably Realtime
+    # socket. Studio Agent model-turn delivery is still published exclusively
+    # by the activity worker from its own scoped projection below.
     # PREREQUISITE: `ably-api-key` must exist in Key Vault BEFORE this ships.
     # The CSI projection is fail-closed — a mapping to a missing entry breaks
     # the WHOLE fizzdragon-server-secrets Secret, taking every other env var in

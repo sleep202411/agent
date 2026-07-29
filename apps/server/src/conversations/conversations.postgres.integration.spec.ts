@@ -28,7 +28,6 @@
 import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import type Redis from 'ioredis';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { ConversationsService, crewLookupKey } from './conversations.service';
 
@@ -50,7 +49,12 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   const createdConversationIds = new Set<string>();
 
   let prisma: ReturnType<typeof buildPrisma>;
-  let redis: { publish: jest.Mock };
+  let realtime: {
+    publishUserFrame: jest.Mock;
+    publishCrewMessage: jest.Mock;
+    issueUserGrant: jest.Mock;
+    issueCrewGrant: jest.Mock;
+  };
   let service: ConversationsService;
 
   beforeAll(async () => {
@@ -61,10 +65,16 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   });
 
   beforeEach(() => {
-    redis = { publish: jest.fn().mockResolvedValue(1) };
+    realtime = {
+      publishUserFrame: jest.fn().mockResolvedValue(undefined),
+      publishCrewMessage: jest.fn().mockResolvedValue(undefined),
+      issueUserGrant: jest.fn(),
+      issueCrewGrant: jest.fn(),
+    };
     service = new ConversationsService(
       prisma as unknown as PrismaService,
-      redis as unknown as Redis,
+      realtime,
+      { send: jest.fn().mockResolvedValue({}) } as never,
     );
   });
 
@@ -116,7 +126,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
         crewId: s.crewId,
         userId: s.memberId,
         roleType: 'storyboard',
-        via: 'manual',
+        via: 'invitation',
       },
     });
   }
@@ -360,7 +370,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
           crewId: s.crewId,
           userId: s.outsiderId,
           roleType: 'animation',
-          via: 'manual',
+          via: 'invitation',
         },
       });
       await service.syncCrewParticipant(s.crewId, s.outsiderId, 'join', tx);
@@ -406,15 +416,13 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     );
     await service.broadcastMessage(msg);
 
-    const calls = redis.publish.mock.calls as Array<[string, string]>;
-    expect(calls.map((c) => c[0])).toEqual([
-      `conversation:user:${s.founderId}`,
-    ]);
+    const calls = realtime.publishUserFrame.mock.calls as Array<
+      [string, { data: { unreadCount: number } }, string]
+    >;
+    expect(calls.map((c) => c[0])).toEqual([s.founderId]);
 
     // The author's own message is not unread to them.
-    const frame = JSON.parse(calls[0][1]) as {
-      data: { unreadCount: number };
-    };
+    const frame = calls[0][1];
     expect(frame.data.unreadCount).toBe(0);
   });
 

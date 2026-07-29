@@ -24,10 +24,14 @@
  */
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type Redis from 'ioredis';
 import type { PrismaService } from '../infra/db/db.module';
+import type { NotificationService } from '../notification';
 import { ConversationsService, crewLookupKey } from './conversations.service';
-import { SendMessageSchema } from './dto';
+import {
+  SendAttachmentsSchema,
+  SendMessageSchema,
+  SendTaskCardSchema,
+} from './dto';
 
 const CREW_ID = 'crew-1';
 const CONV_ID = 'conv-1';
@@ -123,6 +127,19 @@ function buildHarness() {
       create: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
     },
+    conversationRealtimeOutbox: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    crewAssetNode: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn(),
+    },
+    mediaAsset: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    crewTask: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     crew: {
       findFirst: jest.fn(
         ({ where }: { where: { id: string; deletedAt?: Date | null } }) =>
@@ -217,12 +234,19 @@ function buildHarness() {
     ...delegates,
     $transaction: jest.fn((fn: (t: unknown) => unknown) => fn(tx)),
   };
-  const redis = { publish: jest.fn().mockResolvedValue(1) };
+  const realtime = {
+    publishUserFrame: jest.fn().mockResolvedValue(undefined),
+    publishCrewMessage: jest.fn().mockResolvedValue(undefined),
+    issueUserGrant: jest.fn(),
+    issueCrewGrant: jest.fn(),
+  };
+  const notifications = { send: jest.fn().mockResolvedValue({}) };
   const service = new ConversationsService(
     prisma as unknown as PrismaService,
-    redis as unknown as Redis,
+    realtime,
+    notifications as unknown as NotificationService,
   );
-  return { service, prisma, tx, delegates, redis, world };
+  return { service, prisma, tx, delegates, realtime, notifications, world };
 }
 
 /** `jest.Mock.mock.calls` is `any[][]`; restate the arguments we passed. */
@@ -230,9 +254,13 @@ function callsOf<A extends unknown[]>(fn: jest.Mock): A[] {
   return fn.mock.calls as A[];
 }
 
-/** Channels the service published to, in call order. */
-function publishedChannels(redis: { publish: jest.Mock }): string[] {
-  return callsOf<[string, string]>(redis.publish).map((c) => c[0]);
+/** User channels the service published to, in call order. */
+function publishedChannels(realtime: {
+  publishUserFrame: jest.Mock;
+}): string[] {
+  return callsOf<[string, unknown, string]>(realtime.publishUserFrame).map(
+    (c) => `conversation:user:${c[0]}`,
+  );
 }
 
 describe('crewLookupKey', () => {
@@ -476,7 +504,7 @@ describe('syncCrewParticipant', () => {
 
 describe('broadcast fan-out', () => {
   it('never addresses a departed participant on message.created', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     delegates.conversation.findUnique.mockImplementation(
       ({ include }: { include?: { participants?: { where?: unknown } } }) => {
         expect(include?.participants).toEqual({ where: { leftAt: null } });
@@ -493,14 +521,14 @@ describe('broadcast fan-out', () => {
 
     await service.broadcastMessage(message() as never);
 
-    expect(publishedChannels(redis).sort()).toEqual([
+    expect(publishedChannels(realtime).sort()).toEqual([
       `conversation:user:${FOUNDER}`,
       `conversation:user:${MEMBER}`,
     ]);
   });
 
   it('costs ONE grouped unread query regardless of crew size, and keeps unreadCount per recipient', async () => {
-    const { service, delegates, redis, world } = buildHarness();
+    const { service, delegates, realtime, world } = buildHarness();
     const members = Array.from({ length: 30 }, (_, i) => `u-${i}`);
     // All 30 are really in the crew — this test is about the shape of
     // the fan-out, not about who is entitled to it.
@@ -517,10 +545,10 @@ describe('broadcast fan-out', () => {
 
     expect(delegates.$queryRaw).toHaveBeenCalledTimes(1);
     expect(delegates.message.count).not.toHaveBeenCalled();
-    expect(redis.publish).toHaveBeenCalledTimes(30);
-    const frames = callsOf<[string, string]>(redis.publish).map(
-      (c) => JSON.parse(c[1]) as { data: { unreadCount: number } },
-    );
+    expect(realtime.publishUserFrame).toHaveBeenCalledTimes(30);
+    const frames = callsOf<[string, { data: { unreadCount: number } }, string]>(
+      realtime.publishUserFrame,
+    ).map((c) => c[1]);
     expect(frames.map((f) => f.data.unreadCount)).toEqual(
       members.map((_, i) => i),
     );
@@ -531,7 +559,7 @@ describe('broadcast fan-out', () => {
     // soft-deleted with no `leftAt` written anywhere. `leftAt: null`
     // alone would hand this frame, message body and all, to someone
     // who is no longer in the crew.
-    const { service, delegates, redis, world } = buildHarness();
+    const { service, delegates, realtime, world } = buildHarness();
     world.memberUserIds.delete(MEMBER);
     delegates.conversation.findUnique.mockResolvedValue({
       ...crewConversation(),
@@ -540,11 +568,13 @@ describe('broadcast fan-out', () => {
 
     await service.broadcastMessage(message() as never);
 
-    expect(publishedChannels(redis)).toEqual([`conversation:user:${FOUNDER}`]);
+    expect(publishedChannels(realtime)).toEqual([
+      `conversation:user:${FOUNDER}`,
+    ]);
   });
 
   it('publishes to nobody once the crew is soft-deleted', async () => {
-    const { service, delegates, redis, world } = buildHarness();
+    const { service, delegates, realtime, world } = buildHarness();
     world.deletedAt = AT;
     delegates.conversation.findUnique.mockResolvedValue({
       ...crewConversation(),
@@ -553,13 +583,13 @@ describe('broadcast fan-out', () => {
 
     await service.broadcastMessage(message() as never);
 
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
     // And no unread work was done for a thread nobody may receive.
     expect(delegates.$queryRaw).not.toHaveBeenCalled();
   });
 
   it('leaves service and order fan-out on the projection alone — no crew queries', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     delegates.conversation.findUnique.mockResolvedValue({
       ...crewConversation({ contextType: 'service', contextId: 'svc-1' }),
       participants: [participant(FOUNDER), participant(MEMBER)],
@@ -568,7 +598,47 @@ describe('broadcast fan-out', () => {
     await service.broadcastMessage(message() as never);
 
     expect(delegates.crew.findFirst).not.toHaveBeenCalled();
-    expect(redis.publish).toHaveBeenCalledTimes(2);
+    expect(realtime.publishUserFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes asset invalidations only to the live crew roster', async () => {
+    const { service, realtime } = buildHarness();
+
+    await service.broadcastCrewAssetChange(
+      CREW_ID,
+      '01910d50-4c88-7c78-92d4-16892c06a001',
+      'updated',
+      MEMBER,
+    );
+
+    expect(publishedChannels(realtime).sort()).toEqual([
+      `conversation:user:${FOUNDER}`,
+      `conversation:user:${MEMBER}`,
+    ]);
+    const frames = callsOf<
+      [
+        string,
+        {
+          event: string;
+          data: {
+            crewId: string;
+            nodeId: string;
+            action: string;
+            actorUserId: string;
+          };
+        },
+        string,
+      ]
+    >(realtime.publishUserFrame);
+    expect(frames[0][1]).toEqual({
+      event: 'crew.asset.changed',
+      data: {
+        crewId: CREW_ID,
+        nodeId: '01910d50-4c88-7c78-92d4-16892c06a001',
+        action: 'updated',
+        actorUserId: MEMBER,
+      },
+    });
   });
 
   it('never addresses a departed participant on context.changed', async () => {
@@ -619,7 +689,7 @@ describe('markRead', () => {
   }
 
   it('refuses a removed participant before revealing whether the message exists', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     delegates.conversationParticipant.findUnique.mockResolvedValue(
       participant(LEAVER, { leftAt: AT }),
     );
@@ -629,7 +699,7 @@ describe('markRead', () => {
     );
     expect(delegates.message.findUnique).not.toHaveBeenCalled();
     expect(delegates.$executeRaw).not.toHaveBeenCalled();
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
   });
 
   it('advances on a (createdAt, id) tuple so a message sharing the cursor millisecond still counts', async () => {
@@ -656,7 +726,7 @@ describe('markRead', () => {
   });
 
   it('publishes read receipts to active participants only', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     serviceThread(delegates);
     delegates.conversationParticipant.findUnique.mockResolvedValue(
       participant(MEMBER),
@@ -674,17 +744,17 @@ describe('markRead', () => {
       where: { conversationId: CONV_ID, leftAt: null },
       select: { userId: true },
     });
-    expect(publishedChannels(redis)).toHaveLength(2);
+    expect(publishedChannels(realtime)).toHaveLength(2);
   });
 
   it('does not publish a crew read receipt to a stale projected outsider', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     delegates.conversationParticipant.findUnique.mockResolvedValue(
       participant(MEMBER),
     );
     delegates.conversation.findUnique.mockResolvedValue({
-      contextType: 'crew',
-      contextId: CREW_ID,
+      ...crewConversation(),
+      participants: [participant(MEMBER)],
     });
     delegates.message.findUnique.mockResolvedValue(message());
     delegates.conversationParticipant.findMany.mockResolvedValue([
@@ -695,7 +765,9 @@ describe('markRead', () => {
 
     await service.markRead(CONV_ID, MEMBER, 'm-1');
 
-    expect(publishedChannels(redis)).toEqual([`conversation:user:${MEMBER}`]);
+    expect(publishedChannels(realtime)).toEqual([
+      `conversation:user:${MEMBER}`,
+    ]);
   });
 
   /**
@@ -707,7 +779,7 @@ describe('markRead', () => {
    * thread from a missing one.
    */
   it('404s a crew outsider whose participant row still looks active', async () => {
-    const { service, delegates, redis, world } = buildHarness();
+    const { service, delegates, realtime, world } = buildHarness();
     delegates.conversationParticipant.findUnique.mockResolvedValue(
       participant(OUTSIDER),
     );
@@ -729,7 +801,7 @@ describe('markRead', () => {
       NotFoundException,
     );
     expect(delegates.$executeRaw).not.toHaveBeenCalled();
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
   });
 
   it('404s once the crew is soft-deleted, for the founder too', async () => {
@@ -768,7 +840,7 @@ describe('markRead', () => {
   });
 
   it('stays silent when the cursor was already at or past the target', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     serviceThread(delegates);
     delegates.conversationParticipant.findUnique.mockResolvedValue(
       participant(MEMBER, { lastReadAt: AT, lastReadMessageId: 'm-1' }),
@@ -778,11 +850,11 @@ describe('markRead', () => {
 
     await service.markRead(CONV_ID, MEMBER, 'm-1');
 
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
   });
 
   it('returns the current database cursor when a lagging concurrent request advances zero rows', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     serviceThread(delegates);
     delegates.conversationParticipant.findUnique
       .mockResolvedValueOnce(participant(MEMBER))
@@ -803,7 +875,7 @@ describe('markRead', () => {
     expect(delegates.conversationParticipant.findUnique).toHaveBeenCalledTimes(
       2,
     );
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
   });
 });
 
@@ -1086,6 +1158,7 @@ describe('SendMessageSchema', () => {
     expect(SendMessageSchema.parse({ body: 'hi', clientKey: 'k1' })).toEqual({
       body: 'hi',
       clientKey: 'k1',
+      mentions: [],
     });
   });
 
@@ -1093,6 +1166,37 @@ describe('SendMessageSchema', () => {
     expect(() =>
       SendMessageSchema.parse({ body: 'hi', clientKey: 'x'.repeat(65) }),
     ).toThrow();
+  });
+
+  it('requires durable ids for structured crew messages', () => {
+    expect(
+      SendAttachmentsSchema.parse({
+        attachments: [
+          {
+            source: 'asset',
+            assetNodeId: '01910d50-4c88-7c78-92d4-16892c06a010',
+          },
+        ],
+      }),
+    ).toEqual({
+      attachments: [
+        {
+          source: 'asset',
+          assetNodeId: '01910d50-4c88-7c78-92d4-16892c06a010',
+        },
+      ],
+      body: '',
+      mentions: [],
+    });
+    expect(
+      SendTaskCardSchema.parse({
+        taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+      }),
+    ).toEqual({
+      taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+      body: '',
+      mentions: [],
+    });
   });
 });
 
@@ -1104,8 +1208,8 @@ describe('clientKey dedupe', () => {
       participant(MEMBER),
     );
     delegates.conversation.findUnique.mockResolvedValue({
-      contextType: 'crew',
-      contextId: CREW_ID,
+      ...crewConversation(),
+      participants: [participant(MEMBER)],
     });
     delegates.crewMember.findFirst.mockResolvedValue({ id: 'cm-1' });
   }
@@ -1130,7 +1234,7 @@ describe('clientKey dedupe', () => {
   });
 
   it('does not broadcast an idempotent replay to every recipient again', async () => {
-    const { service, delegates, redis } = buildHarness();
+    const { service, delegates, realtime } = buildHarness();
     arrangeSendable(delegates);
     delegates.message.findFirst.mockResolvedValue(
       message({ id: 'm-first', body: 'hello', clientKey: 'k1' }),
@@ -1139,7 +1243,273 @@ describe('clientKey dedupe', () => {
     const msg = await service.sendText(CONV_ID, MEMBER, 'hello', 'k1');
 
     expect(msg.id).toBe('m-first');
-    expect(redis.publish).not.toHaveBeenCalled();
+    expect(realtime.publishUserFrame).not.toHaveBeenCalled();
+  });
+
+  it('persists a structured mention only for a live member named in the body', async () => {
+    const { service, delegates, notifications, world } = buildHarness();
+    arrangeSendable(delegates);
+    world.memberUserIds.add('u-mentioned');
+    delegates.message.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve(message({ id: 'm-mentioned', ...data })),
+    );
+
+    await service.sendText(CONV_ID, MEMBER, '@Ada please review', 'mention-1', [
+      { userId: 'u-mentioned', label: 'Ada' },
+    ]);
+
+    const create = callsOf<[{ data: Record<string, unknown> }]>(
+      delegates.message.create,
+    )[0][0].data;
+    expect(create.payload).toEqual({
+      kind: 'text',
+      mentions: [{ userId: 'u-mentioned', label: 'Ada' }],
+    });
+    const messageId = String(create.id);
+    expect(notifications.send).toHaveBeenCalledWith({
+      userId: 'u-mentioned',
+      type: 'crew.chat.mentioned',
+      title: 'You were mentioned in crew chat',
+      body: '@Ada please review',
+      meta: {
+        crewId: CREW_ID,
+        conversationId: CONV_ID,
+        messageId,
+        authorId: MEMBER,
+        deeplink: `/crews/${CREW_ID}/workspace?tab=chat`,
+      },
+      idempotencyKey: `crew.chat.mentioned:${messageId}:u-mentioned`,
+    });
+  });
+
+  it('rejects a mention whose identity is no longer in the live crew roster', async () => {
+    const { service, delegates } = buildHarness();
+    arrangeSendable(delegates);
+
+    await expect(
+      service.sendText(CONV_ID, MEMBER, '@Former please review', 'mention-2', [
+        { userId: 'u-former', label: 'Former' },
+      ]),
+    ).rejects.toThrow('no longer active crew members');
+    expect(delegates.message.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a self mention before writing a message or notification', async () => {
+    const { service, delegates, notifications } = buildHarness();
+    arrangeSendable(delegates);
+
+    await expect(
+      service.sendText(CONV_ID, MEMBER, '@Me please review', 'mention-self', [
+        { userId: MEMBER, label: 'Me' },
+      ]),
+    ).rejects.toThrow('You cannot mention yourself');
+    expect(delegates.message.create).not.toHaveBeenCalled();
+    expect(notifications.send).not.toHaveBeenCalled();
+  });
+
+  it('resolves attachment metadata from crew assets without persisting storage keys', async () => {
+    const { service, delegates } = buildHarness();
+    arrangeSendable(delegates);
+    delegates.crewAssetNode.findMany.mockResolvedValue([
+      {
+        id: '01910d50-4c88-7c78-92d4-16892c06a010',
+        name: 'animatic.mp4',
+        mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+        mediaAsset: {
+          id: '01910d50-4c88-7c78-92d4-16892c06a011',
+          kind: 'video',
+          contentType: 'video/mp4',
+          sizeBytes: 1024n,
+          storageKey: 'private/do-not-leak.mp4',
+        },
+      },
+    ]);
+    delegates.message.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve(message({ id: 'm-file', ...data })),
+    );
+
+    const result = await service.sendAttachments(CONV_ID, MEMBER, {
+      attachments: [
+        {
+          source: 'asset',
+          assetNodeId: '01910d50-4c88-7c78-92d4-16892c06a010',
+        },
+      ],
+      body: '',
+      clientKey: 'asset-send-1',
+      mentions: [],
+    });
+
+    expect(result.type).toBe('file');
+    const create = callsOf<[{ data: Record<string, unknown> }]>(
+      delegates.message.create,
+    )[0][0].data;
+    expect(create.payload).toMatchObject({
+      kind: 'attachments',
+      attachments: [
+        {
+          name: 'animatic.mp4',
+          mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+        },
+      ],
+    });
+    expect(JSON.stringify(create.payload)).not.toContain('storageKey');
+  });
+
+  it('atomically promotes a fresh chat upload into assets while creating the message', async () => {
+    const { service, delegates, prisma } = buildHarness();
+    arrangeSendable(delegates);
+    const order: string[] = [];
+    delegates.mediaAsset.findMany.mockResolvedValue([
+      {
+        id: '01910d50-4c88-7c78-92d4-16892c06a011',
+        kind: 'image',
+        contentType: 'image/png',
+        sizeBytes: 2048n,
+        createdByUserId: MEMBER,
+        metadata: {
+          uploadKind: 'crew_asset_file',
+          crewId: CREW_ID,
+        },
+      },
+    ]);
+    delegates.crewAssetNode.findMany.mockImplementation(
+      ({ select }: { select?: { name?: boolean } }) =>
+        Promise.resolve(select?.name ? [{ name: 'concept.png' }] : []),
+    );
+    delegates.crewAssetNode.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => {
+        order.push(`asset:${String(data.name)}`);
+        return Promise.resolve({ id: '01910d50-4c88-7c78-92d4-16892c06a099' });
+      },
+    );
+    delegates.message.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => {
+        order.push('message');
+        return Promise.resolve(message({ id: 'm-upload', ...data }));
+      },
+    );
+
+    const result = await service.sendAttachments(CONV_ID, MEMBER, {
+      attachments: [
+        {
+          source: 'upload',
+          mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          name: 'concept.png',
+        },
+      ],
+      body: 'New concept',
+      clientKey: 'upload-send-1',
+      mentions: [],
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    const uploadLock = callsOf<[Prisma.Sql]>(delegates.$executeRaw).find(
+      ([sql]) =>
+        sql.values[0] ===
+        'crew-asset-upload:01910d50-4c88-7c78-92d4-16892c06a011',
+    );
+    expect(uploadLock?.[0].sql).toContain('pg_advisory_xact_lock');
+    expect(order).toEqual(['asset:concept (2).png', 'message']);
+    expect(result.payload).toMatchObject({
+      kind: 'attachments',
+      attachments: [
+        {
+          assetNodeId: '01910d50-4c88-7c78-92d4-16892c06a099',
+          mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          name: 'concept (2).png',
+        },
+      ],
+    });
+  });
+
+  it('returns an idempotent attachment replay without creating a second asset node', async () => {
+    const { service, delegates } = buildHarness();
+    arrangeSendable(delegates);
+    delegates.message.findFirst.mockResolvedValue(
+      message({
+        id: 'm-upload',
+        type: 'image',
+        body: '',
+        clientKey: 'upload-send-retry',
+        payload: {
+          kind: 'attachments',
+          attachments: [
+            {
+              assetNodeId: '01910d50-4c88-7c78-92d4-16892c06a099',
+              mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+              name: 'concept.png',
+              mediaKind: 'image',
+              contentType: 'image/png',
+              sizeBytes: 2048,
+            },
+          ],
+        },
+      }),
+    );
+
+    await service.sendAttachments(CONV_ID, MEMBER, {
+      attachments: [
+        {
+          source: 'upload',
+          mediaAssetId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          name: 'concept.png',
+        },
+      ],
+      body: '',
+      clientKey: 'upload-send-retry',
+      mentions: [],
+    });
+
+    expect(delegates.crewAssetNode.create).not.toHaveBeenCalled();
+    expect(delegates.message.create).not.toHaveBeenCalled();
+  });
+
+  it('snapshots a task card only when the task belongs to the conversation crew', async () => {
+    const { service, delegates } = buildHarness();
+    arrangeSendable(delegates);
+    delegates.crewTask.findFirst.mockResolvedValue({
+      id: '01910d50-4c88-7c78-92d4-16892c06a011',
+      crewId: CREW_ID,
+      title: 'SC.010 storyboard',
+      status: 'submitted',
+      priority: 'high',
+      dueAt: null,
+      assignees: [{ id: 'assignment-1' }, { id: 'assignment-2' }],
+    });
+    delegates.message.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve(message({ id: 'm-task', ...data })),
+    );
+
+    const result = await service.sendTaskCard(CONV_ID, MEMBER, {
+      taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+      body: 'Please review.',
+      clientKey: 'task-send-1',
+      mentions: [],
+    });
+
+    expect(result.type).toBe('task');
+    expect(delegates.crewTask.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: '01910d50-4c88-7c78-92d4-16892c06a011',
+          crewId: CREW_ID,
+        },
+      }),
+    );
+    const taskCreate = callsOf<
+      [{ data: { payload: Record<string, unknown> } }]
+    >(delegates.message.create)[0][0].data;
+    expect(taskCreate.payload).toMatchObject({
+      kind: 'task',
+      task: {
+        title: 'SC.010 storyboard',
+        assigneeCount: 2,
+      },
+    });
   });
 
   it('recovers from the racing insert by resolving P2002 to the winner', async () => {

@@ -1,11 +1,10 @@
 /**
- * Member management — list, manual add, remove, finance toggle.
+ * Member management — list, remove, finance toggle.
  *
  * - List is open to any active member (outsiders can read the public
  *   crew detail but not the member roster).
- * - Add: owner-only, resolves email/phone server-side before insert.
- *   Direct INSERT — partial-unique on (crewId, userId) WHERE removed_at
- *   IS NULL permits multiple historical rows.
+ * - Joining is invitation-only. This service deliberately has no
+ *   direct-add path.
  * - Remove: owner-only. Owner can't remove themselves (would orphan
  *   the crew — delete the crew instead).
  * - Finance toggle: owner-only; flips the `isFinance` flag.
@@ -13,7 +12,8 @@
  * Every state change publishes a notification via the outbox with a
  * deterministic idempotency key so retries don't double-notify.
  *
- * Add / remove also move the member in and out of the crew group chat.
+ * Accepting an invitation / removing a member also moves the member in
+ * and out of the crew group chat.
  * The participant sync and its `crew.member.joined` / `crew.member.left`
  * system message run INSIDE the same transaction as the membership
  * write, so a chat failure rolls the roster change back rather than
@@ -28,145 +28,101 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Message as PrismaMessage } from '@prisma/client';
-import { crewChatWritesEnabled } from '../conversations/crew-chat-rollout';
+import { Prisma, type Message as PrismaMessage } from '@prisma/client';
+import type { CrewMemberPageDTO, CrewMembershipDTO } from '@repo/shared/crew';
 import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
-import { UsersService } from '../users/users.service';
-import type { AddMemberInput, UpdateMemberInput } from './dto';
-import { newCrewDomainId } from './id';
+import type { ListCrewMembersQuery, UpdateMemberInput } from './dto';
 import { toMemberDTO } from './mappers';
+import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 
 @Injectable()
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
-    private readonly users: UsersService,
     private readonly conversations: ConversationsService,
+    private readonly collaboration: CrewCollaborationService,
   ) {}
 
-  async list(crewId: string, viewerId: string) {
+  async list(
+    crewId: string,
+    viewerId: string,
+    query: ListCrewMembersQuery,
+  ): Promise<CrewMemberPageDTO> {
     await this.requireMembership(crewId, viewerId);
+    const baseWhere = {
+      crewId,
+      removedAt: null,
+      roleType: { not: 'owner' },
+    } satisfies Prisma.CrewMemberWhereInput;
+    const cursor = query.cursor
+      ? await this.prisma.crewMember.findFirst({
+          where: { ...baseWhere, id: query.cursor },
+          select: { id: true, joinedAt: true },
+        })
+      : null;
+    if (query.cursor && !cursor) {
+      throw new BadRequestException({
+        message:
+          'The member cursor is invalid for this crew. Restart from the first page.',
+      });
+    }
+    const pageWhere = cursor
+      ? {
+          ...baseWhere,
+          OR: [
+            { joinedAt: { gt: cursor.joinedAt } },
+            { joinedAt: cursor.joinedAt, id: { gt: cursor.id } },
+          ],
+        }
+      : baseWhere;
+    const [owner, total] = await Promise.all([
+      query.cursor
+        ? null
+        : this.prisma.crewMember.findFirst({
+            where: { crewId, removedAt: null, roleType: 'owner' },
+          }),
+      this.prisma.crewMember.count({
+        where: { crewId, removedAt: null },
+      }),
+    ]);
+    const capacity = query.limit - (owner ? 1 : 0);
     const rows = await this.prisma.crewMember.findMany({
-      where: { crewId, removedAt: null },
-      orderBy: [{ via: 'asc' }, { joinedAt: 'asc' }],
+      where: pageWhere,
+      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+      take: capacity + 1,
     });
-    return rows.map(toMemberDTO);
+    const page = rows.slice(0, capacity);
+    return {
+      items: [...(owner ? [toMemberDTO(owner)] : []), ...page.map(toMemberDTO)],
+      nextCursor:
+        rows.length > capacity ? (page[page.length - 1]?.id ?? null) : null,
+      total,
+    };
   }
 
-  async add(
-    crewId: string,
-    ownerId: string,
-    cookie: string,
-    input: AddMemberInput,
-  ) {
+  async membership(crewId: string, userId: string): Promise<CrewMembershipDTO> {
     const crew = await this.requireCrew(crewId);
-    if (crew.founderId !== ownerId) {
+    const member = await this.prisma.crewMember.findFirst({
+      where: { crewId, userId, removedAt: null },
+    });
+    if (!member) {
       throw new ForbiddenException({
-        message: 'Only the crew owner can add members',
+        message: 'You must be a member to view this',
       });
     }
-    const target = await this.users.lookupByContact({
-      account: input.account,
-      cookie,
-      checkCrewId: crewId,
-    });
-    if (!target) {
-      throw new NotFoundException({
-        message: 'No user matches that input',
-        field: 'account',
-      });
-    }
-
-    if (target.userId === ownerId || target.isCrewFounder) {
-      throw new BadRequestException({ message: 'Owner is already a member' });
-    }
-    if (target.isCrewMember) {
-      throw new BadRequestException({
-        message: 'User is already a member of this crew',
-      });
-    }
-    const existing = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId: target.userId, removedAt: null },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new BadRequestException({
-        message: 'User is already a member of this crew',
-      });
-    }
-
-    const chatEnabled = crewChatWritesEnabled();
-    const pendingMessages: PrismaMessage[] = [];
-    try {
-      const member = await this.prisma.$transaction(async (tx) => {
-        // Lock order for every legacy-crew membership mutation:
-        // conversation advisory lock first, membership row second.
-        // Ownership transfer uses the same order; reversing it here
-        // can deadlock when the crew has no conversation yet.
-        const conversation = chatEnabled
-          ? await this.conversations.openCrewConversation(crewId, tx)
-          : null;
-        const m = await tx.crewMember.create({
-          data: {
-            id: newCrewDomainId(),
-            crewId,
-            userId: target.userId,
-            roleType: input.roleType,
-            via: 'manual',
-          },
-        });
-        if (conversation) {
-          await this.conversations.syncCrewParticipant(
-            crewId,
-            target.userId,
-            'join',
-            tx,
-          );
-          pendingMessages.push(
-            await this.conversations.persistSystem(
-              conversation.id,
-              'crew.member.joined',
-              { userId: target.userId },
-              tx,
-            ),
-          );
-        }
-        await this.notifications.send(
-          {
-            userId: target.userId,
-            type: 'crew.member.added',
-            title: `You were added to "${crew.name}"`,
-            body: `You're now a ${input.roleType} in this crew.`,
-            meta: {
-              // Owner manually added them; they're already a member,
-              // so drop them straight into the workspace where they
-              // can act. The crew hall page is more useful for
-              // outside visitors deciding whether to apply.
-              deeplink: `/crews/${crewId}/workspace`,
-              crewId,
-            },
-            idempotencyKey: `crew.member.added:${m.id}`,
-          },
-          tx,
-        );
-        return m;
-      });
-      for (const msg of pendingMessages) {
-        await this.conversations.broadcastMessage(msg);
-      }
-      return toMemberDTO(member);
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        // Raced with another owner-add request; surface as conflict.
-        throw new ConflictException({
-          message: 'User is already a member of this crew',
-        });
-      }
-      throw err;
-    }
+    return {
+      role:
+        crew.founderId === userId
+          ? 'admin'
+          : member.isFinance
+            ? 'finance'
+            : 'member',
+      userId,
+      member: toMemberDTO(member),
+    };
   }
 
   async remove(
@@ -190,12 +146,12 @@ export class MembersService {
       });
     }
 
-    const chatEnabled = crewChatWritesEnabled();
     const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
-      const conversation = chatEnabled
-        ? await this.conversations.openCrewConversation(crewId, tx)
-        : null;
+      const conversation = await this.conversations.openCrewConversation(
+        crewId,
+        tx,
+      );
       const removed = await tx.crewMember.updateMany({
         where: { id: memberId, crewId, removedAt: null },
         data: { removedAt: new Date() },
@@ -205,6 +161,11 @@ export class MembersService {
           message: 'Member was already removed',
         });
       }
+      await this.collaboration.removeCrewMemberAccess(
+        crewId,
+        member.userId,
+        tx,
+      );
       // `syncCrewParticipant('leave')` deliberately won't conjure a
       // thread, but this crew demonstrably has members, so it is
       // entitled to one — opening here self-heals a crew that predates
@@ -213,22 +174,20 @@ export class MembersService {
       // message is written, so the removed member is not a recipient of
       // the announcement of their own removal (doc §6.1 — a removed
       // member must not keep reading or receiving).
-      if (conversation) {
-        await this.conversations.syncCrewParticipant(
-          crewId,
-          member.userId,
-          'leave',
+      await this.conversations.syncCrewParticipant(
+        crewId,
+        member.userId,
+        'leave',
+        tx,
+      );
+      pendingMessages.push(
+        await this.conversations.persistSystem(
+          conversation.id,
+          'crew.member.left',
+          { userId: member.userId },
           tx,
-        );
-        pendingMessages.push(
-          await this.conversations.persistSystem(
-            conversation.id,
-            'crew.member.left',
-            { userId: member.userId },
-            tx,
-          ),
-        );
-      }
+        ),
+      );
       // If the member came through a position, decrement and re-open
       // the slot. Manual adds don't affect any position count.
       if (member.via === 'application' && member.positionId) {
@@ -258,6 +217,7 @@ export class MembersService {
           meta: {
             deeplink: `/crews`,
             crewId,
+            crewName: crew.name,
           },
           idempotencyKey: `crew.member.removed:${memberId}`,
         },
@@ -318,10 +278,4 @@ export class MembersService {
         message: 'You must be a member to view this',
       });
   }
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: string };
-  return e.code === 'P2002';
 }

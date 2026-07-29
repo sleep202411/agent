@@ -19,9 +19,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The exact 400 body `POST /aurora/assignments/:id/submit` returns for
- *  `{}` — copied from SubmitAssignmentSchema's `.refine()` in
- *  apps/server/src/crews/episodes/dto.ts. */
+/** Representative refinement-shaped 400 body. The transport must surface
+ * the actionable issue even when Nest's top-level message is generic. */
 const CONTENT_FREE_SUBMISSION = {
   message: "Validation failed",
   issues: [{ path: "url", message: "A submission needs a url or a note", code: "custom" }],

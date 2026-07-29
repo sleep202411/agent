@@ -73,7 +73,7 @@ export class AzureBlobStorageService extends OutputStorageService {
 
   constructor() {
     super();
-    const cs = process.env.AZURE_BLOB_CONNECTION_STRING ?? '';
+    const cs = (process.env.AZURE_BLOB_CONNECTION_STRING ?? '').trim();
     this.containerName =
       (process.env.AZURE_BLOB_CONTAINER ?? '').trim() || DEFAULT_CONTAINER;
     this.publicBaseUrl =

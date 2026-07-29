@@ -22,13 +22,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ConversationDTO,
+  ConversationMentionPayload,
   ConversationParticipantRole,
   MessageDTO,
 } from "@repo/shared/conversation";
+import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import { ConversationView } from "./conversation-view";
 
 /** What the composer hands `useSendText`. */
-type SendInput = { body: string; clientKey?: string };
+type SendInput = {
+  body: string;
+  clientKey?: string;
+  mentions?: ConversationMentionPayload[];
+};
+type SendAttachmentsInput = {
+  attachments: Array<
+    | { source: "asset"; assetNodeId: string }
+    | { source: "upload"; mediaAssetId: string; name: string }
+  >;
+  body?: string;
+  clientKey?: string;
+};
+type SendTaskInput = { taskId: string; body?: string; clientKey?: string };
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -57,8 +72,20 @@ const state = vi.hoisted(() => ({
     mutateAsync: vi.fn(async (input: SendInput) => input as unknown),
     isPending: false,
   },
+  sendAttachments: {
+    mutateAsync: vi.fn(async (input: SendAttachmentsInput) => input as unknown),
+    isPending: false,
+  },
+  sendTask: {
+    mutateAsync: vi.fn(async (input: SendTaskInput) => input as unknown),
+    isPending: false,
+  },
   markRead: { mutate: vi.fn() },
   clearAccessCache: vi.fn(),
+  discardPendingUpload: vi.fn(async (crewId: string, mediaAssetId: string) => {
+    void crewId;
+    void mediaAssetId;
+  }),
 }));
 
 // Real en-US copy: a key that never landed in the message files shows
@@ -101,6 +128,12 @@ vi.mock("@/src/env", () => ({
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/image", () => ({
+  default: ({ src, alt }: { src: string; alt: string }) => (
+    // eslint-disable-next-line @next/next/no-img-element -- test stub
+    <img src={src} alt={alt} />
+  ),
+}));
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href}>{children}</a>
@@ -137,6 +170,8 @@ vi.mock("@/app/(site)/creators/_hooks/use-conversations", () => ({
   useClearConversationAccessCache: () => state.clearAccessCache,
   useMarkRead: () => state.markRead,
   useSendText: () => state.sendText,
+  useSendAttachments: () => state.sendAttachments,
+  useSendTaskCard: () => state.sendTask,
   useDeclineProposal: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/app/(site)/creators/_hooks/use-orders", () => ({
@@ -148,6 +183,34 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
   useUserDisplays: () => state.displays,
+}));
+vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-assets", () => ({
+  discardPendingCrewAssetUpload: (...args: [string, string]) => state.discardPendingUpload(...args),
+  useCrewAssetContext: () => ({
+    data: {
+      storageAvailable: true,
+      maxUploadBytes: 1024 * 1024,
+      capabilities: { upload: true },
+    },
+  }),
+  useAttachCrewAssetFile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCrewAssets: () => ({
+    data: { items: [] },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-tasks", () => ({
+  useCrewTaskOptions: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/src/lib/media-upload", () => ({
+  uploadFileViaSignedUrl: vi.fn(),
 }));
 
 vi.mock("./send-proposal-dialog", () => ({ SendProposalDialog: () => null }));
@@ -286,8 +349,20 @@ beforeEach(() => {
     mutateAsync: vi.fn(async (input: SendInput) => input as unknown),
     isPending: false,
   };
+  state.sendAttachments = {
+    mutateAsync: vi.fn(async (input: SendAttachmentsInput) => input as unknown),
+    isPending: false,
+  };
+  state.sendTask = {
+    mutateAsync: vi.fn(async (input: SendTaskInput) => input as unknown),
+    isPending: false,
+  };
   state.markRead = { mutate: vi.fn() };
   state.clearAccessCache = vi.fn();
+  state.discardPendingUpload = vi.fn(async (crewId: string, mediaAssetId: string) => {
+    void crewId;
+    void mediaAssetId;
+  });
 });
 
 afterEach(() => {
@@ -354,17 +429,89 @@ describe("crew conversation identity", () => {
         body: "",
         payload: {
           kind: "system",
-          system: { kind: "crew.episode.submitted", params: { userId: "9", episodeNumber: 3 } },
+          system: {
+            kind: "crew.member.joined",
+            params: { userId: "9" },
+          },
         },
         createdAt: "2026-07-27T00:00:00.000Z",
       } satisfies MessageDTO,
     ];
     render(<ConversationView conversationId="conv_1" />);
 
-    expect(text()).toContain("Bo submitted work for Episode 3.");
+    expect(text()).toContain("Bo joined the crew.");
     // No un-interpolated placeholder survived to the screen.
     expect(text()).not.toContain("{user}");
-    expect(text()).not.toContain("{episodeNumber}");
+  });
+
+  it("renders a shared task as a deep-linked production card", () => {
+    state.messages = [
+      {
+        id: "m_task",
+        conversationId: "conv_1",
+        authorId: "8",
+        type: "task",
+        body: "Please review this.",
+        payload: {
+          kind: "task",
+          task: {
+            taskId: "task_1",
+            crewId: "crew_1",
+            title: "SC.010 storyboard",
+            status: "submitted",
+            priority: "high",
+            assigneeCount: 2,
+            dueAt: null,
+          },
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+      } satisfies MessageDTO,
+    ];
+
+    render(<ConversationView conversationId="conv_1" />);
+
+    expect(text()).toContain("SC.010 storyboard");
+    expect(text()).toContain("In review");
+    expect(text()).toContain("2 assignees");
+    expect(document.querySelector('a[href*="tab=tasks"][href*="task=task_1"]')).not.toBeNull();
+  });
+
+  it("renders durable crew attachments without exposing a storage key", () => {
+    state.messages = [
+      {
+        id: "m_file",
+        conversationId: "conv_1",
+        authorId: "8",
+        type: "file",
+        body: "",
+        payload: {
+          kind: "attachments",
+          attachments: [
+            {
+              assetNodeId: "asset_1",
+              mediaAssetId: "media_1",
+              name: "animatic.mp4",
+              mediaKind: "video",
+              contentType: "video/mp4",
+              sizeBytes: 1048576,
+            },
+          ],
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+      } satisfies MessageDTO,
+    ];
+
+    render(<ConversationView conversationId="conv_1" />);
+
+    expect(text()).toContain("animatic.mp4");
+    expect(text()).toContain("1.0 MB");
+    const link = document.querySelector('a[href*="/media/assets/media_1/content"]');
+    expect(link).not.toBeNull();
+    expect(document.body.innerHTML).not.toContain("storageKey");
+    expect(text()).toContain("Saved to crew assets");
+
+    click(link as HTMLElement);
+    expect(document.querySelector('a[href*="tab=assets"][href*="asset=asset_1"]')).not.toBeNull();
   });
 
   it("drops the back-to-inbox arrow and the crew link when embedded in the workspace", () => {
@@ -532,6 +679,136 @@ describe("access revocation", () => {
 });
 
 describe("send states", () => {
+  it("keeps a fresh upload pending until send and submits it for atomic asset promotion", async () => {
+    vi.mocked(uploadFileViaSignedUrl).mockResolvedValue({
+      mediaAssetId: "01910d50-4c88-7c78-92d4-16892c06a011",
+      storageKey: "private/not-sent-to-message",
+      url: "/aurora/media/assets/01910d50-4c88-7c78-92d4-16892c06a011/content",
+    });
+    render(<ConversationView conversationId="conv_1" />);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    const file = new File(["png"], "concept.png", { type: "image/png" });
+
+    Object.defineProperty(input!, "files", { configurable: true, value: [file] });
+    act(() => input!.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+
+    expect(text()).toContain("concept.png");
+    click(button("Send"));
+    await settle();
+
+    expect(state.sendAttachments.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          {
+            source: "upload",
+            mediaAssetId: "01910d50-4c88-7c78-92d4-16892c06a011",
+            name: "concept.png",
+          },
+        ],
+      })
+    );
+  });
+
+  it("reclaims a pending upload when it is removed before send", async () => {
+    vi.mocked(uploadFileViaSignedUrl).mockResolvedValue({
+      mediaAssetId: "01910d50-4c88-7c78-92d4-16892c06a012",
+      storageKey: "private/pending",
+      url: "/aurora/media/assets/01910d50-4c88-7c78-92d4-16892c06a012/content",
+    });
+    render(<ConversationView conversationId="conv_1" />);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(["png"], "unused.png", { type: "image/png" });
+
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    const remove = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove unused.png"]'
+    );
+    expect(remove).not.toBeNull();
+    click(remove!);
+    await settle();
+
+    expect(state.discardPendingUpload).toHaveBeenCalledWith(
+      "crew_1",
+      "01910d50-4c88-7c78-92d4-16892c06a012"
+    );
+    expect(state.sendAttachments.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("reclaims a pending upload when the composer leaves the page", async () => {
+    vi.mocked(uploadFileViaSignedUrl).mockResolvedValue({
+      mediaAssetId: "01910d50-4c88-7c78-92d4-16892c06a013",
+      storageKey: "private/abandoned",
+      url: "/aurora/media/assets/01910d50-4c88-7c78-92d4-16892c06a013/content",
+    });
+    render(<ConversationView conversationId="conv_1" />);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(["png"], "abandoned.png", { type: "image/png" });
+
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    act(() => root?.unmount());
+    root = null;
+    await settle();
+
+    expect(state.discardPendingUpload).toHaveBeenCalledWith(
+      "crew_1",
+      "01910d50-4c88-7c78-92d4-16892c06a013"
+    );
+  });
+
+  it("sends an @mention as a structured live-member reference", async () => {
+    state.displays = new Map([["8", { userId: "8", nickname: "Ada" }]]);
+    render(<ConversationView conversationId="conv_1" />);
+
+    const mentionButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Mention crew members"]'
+    );
+    expect(mentionButton).not.toBeNull();
+    click(mentionButton!);
+    click(button("Ada"));
+    type(composer(), `${composer().value}please review`);
+    click(button("Send"));
+    await settle();
+
+    expect(state.sendText.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "@Ada please review",
+        mentions: [{ userId: "8", label: "Ada" }],
+      })
+    );
+  });
+
+  it("never offers the current user as an @mention target", () => {
+    state.displays = new Map([
+      ["7", { userId: "7", nickname: "Isaac" }],
+      ["8", { userId: "8", nickname: "Ada" }],
+    ]);
+    render(<ConversationView conversationId="conv_1" />);
+
+    const mentionButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Mention crew members"]'
+    );
+    expect(mentionButton).not.toBeNull();
+    click(mentionButton!);
+
+    expect(hasButton("Ada")).toBe(true);
+    expect(hasButton("Isaac")).toBe(false);
+  });
+
+  it("hides the @mention action when the current user is the only member", () => {
+    state.conversation = thread({}, ["member"]);
+    render(<ConversationView conversationId="conv_1" />);
+
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Mention crew members"]')
+    ).toBeNull();
+  });
+
   it("shows the server's own words on a failed send and lets the reader retry", async () => {
     state.sendText.mutateAsync = vi.fn(async (input: SendInput) => {
       void input;

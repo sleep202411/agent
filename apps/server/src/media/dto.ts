@@ -35,6 +35,7 @@ export const UploadKindSchema = z.enum([
   'ai_reference_video',
   'ai_reference_audio',
   'story_music_audio',
+  'crew_asset_file',
 ]);
 export type UploadKind = z.infer<typeof UploadKindSchema>;
 
@@ -51,6 +52,7 @@ export const CreateUploadUrlSchema = z.object({
     .object({
       projectId: z.union([z.string(), z.number()]).optional(),
       episodeId: z.union([z.string(), z.number()]).optional(),
+      crewId: z.string().trim().min(1).max(64).optional(),
     })
     .optional(),
 });
@@ -92,6 +94,11 @@ export const ConfirmUploadSchema = z.object({
   kind: UploadKindSchema,
   /** Re-asserted against storage metadata and, for verified images, bytes. */
   contentType: z.string().trim().min(1).max(128),
+  scope: z
+    .object({
+      crewId: z.string().trim().min(1).max(64).optional(),
+    })
+    .optional(),
   /** Required for story_clip_video; omitted by stateless generic uploads. */
   uploadSessionId: z.string().uuid().optional(),
 });

@@ -22,6 +22,10 @@ import type { AuthUser } from '../auth';
 import {
   CreatePositionSchema,
   type CreatePositionInput,
+  ListCrewPositionsQuerySchema,
+  type ListCrewPositionsQuery,
+  ListPublicPositionsQuerySchema,
+  type ListPublicPositionsQuery,
   UpdatePositionSchema,
   type UpdatePositionInput,
 } from './dto';
@@ -35,10 +39,16 @@ export class PositionsController {
 
   @Public()
   @Get()
-  list(@Param('crewId') crewIdRaw: string, @CurrentUser() user?: AuthUser) {
+  list(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser | undefined,
+    @Query(new ZodValidationPipe(ListCrewPositionsQuerySchema))
+    query: ListCrewPositionsQuery,
+  ) {
     return this.svc.list(
       parseIdParam(crewIdRaw, 'crewId'),
       user?.userId ?? null,
+      query,
     );
   }
 
@@ -94,11 +104,10 @@ export class PositionsDiscoveryController {
 
   @Public()
   @Get()
-  list(@Query('limit') limitRaw?: string, @Query('cursor') cursorRaw?: string) {
-    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
-    return this.svc.listPublic({
-      limit,
-      cursor: cursorRaw ? parseIdParam(cursorRaw, 'cursor') : undefined,
-    });
+  list(
+    @Query(new ZodValidationPipe(ListPublicPositionsQuerySchema))
+    query: ListPublicPositionsQuery,
+  ) {
+    return this.svc.listPublic(query);
   }
 }

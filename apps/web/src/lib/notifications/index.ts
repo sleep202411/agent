@@ -1,4 +1,4 @@
-export { NotificationProvider } from "./provider";
+export { notificationContent, type NotificationContent } from "./content";
 export { notificationHref } from "./deeplink";
 export {
   notificationKeys,

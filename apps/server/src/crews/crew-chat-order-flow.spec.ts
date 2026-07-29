@@ -110,11 +110,15 @@ function build(
   prisma.$transaction.mockImplementation((cb: (client: unknown) => unknown) =>
     cb(prisma),
   );
-  const redis = { publish: jest.fn().mockResolvedValue(1) };
+  const realtime = {
+    publishUserFrame: jest.fn().mockResolvedValue(undefined),
+    publishCrewMessage: jest.fn().mockResolvedValue(undefined),
+  };
 
   const conversations = new ConversationsService(
     prisma as never,
-    redis as never,
+    realtime as never,
+    { send: jest.fn().mockResolvedValue({}) } as never,
   );
   return {
     messageCreate,

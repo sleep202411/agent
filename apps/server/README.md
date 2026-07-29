@@ -106,6 +106,46 @@ ADMIN_BOOTSTRAP_REQUIRE_MFA=true
 `ADMIN_DEV_AUTH_BYPASS=false`。可选 `ADMIN_DEV_AUTH_EMAIL` 和
 `ADMIN_DEV_AUTH_NAME` 用于调整本地显示身份。
 
+## 剧组合同（BoldSign）
+
+合同是剧组协作的可选能力，不阻断邀请、任务、资产或积分结算。启用发送前必须同时配置：
+
+```bash
+BOLDSIGN_API_KEY=...
+BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID=...
+BOLDSIGN_WEBHOOK_SECRET=...
+```
+
+在 BoldSign 配置 Account-level webhook：
+
+```text
+https://<server-public-origin>/webhooks/boldsign
+```
+
+Webhook 使用 `X-BoldSign-Signature` 的 HMAC-SHA256 验签并校验时间窗；
+`Sent / SendFailed / Completed / Declined / Expired / Revoked` 会自动推进合同状态并发送站内通知。
+数据库保存最后一个 provider event 游标，重复或乱序回调不会把已签署合同回退为“已发送”。
+`POST /crew-agreements/:agreementId/sync` 仍保留为人工修复入口，而不是主要同步机制。
+
+成员邀请可以附带可选合同意图，但接受邀请只负责原子地建立成员权限、群聊参与者和合同发送任务，
+不会在事务中调用 BoldSign，也不会因第三方故障阻塞成员进入工作台。多实例发送 worker 使用
+PostgreSQL 租约处理任务；每个签署请求同时写入稳定 metadata 与无空格 label，重试前先按 label
+向 BoldSign 对账，覆盖“第三方已接收、HTTP 响应丢失”的模糊窗口，避免重复合同。API 返回
+`documentId` 时状态只进入 `sending`，最终 `sent / failed` 以 BoldSign 官方异步 webhook 为准。
+初始发送连续失败达到上限后，管理员可调用
+`POST /crew-agreements/:agreementId/send/retry` 显式重新入队。
+
+BoldSign 确认 `Sent` 后，合同绑定成员可调用
+`POST /crew-agreements/:agreementId/signing-session` 获取 15 分钟有效的嵌入签署链接。
+服务端同时校验当前登录用户、有效剧组成员身份和合同签署人，管理员不能代取其他成员的签署凭证。
+签署链接不写数据库、不进入日志或通知；站内通知只深链到合同面板，用户点击时才按需生成。
+
+`Completed` 状态会与一个持久归档任务在同一事务中写入。多实例 worker 通过数据库租约下载
+签署 PDF 与 Audit Trail，并按站点区域写入 `.com/global → R2`、`.cn → OSS`，随后建立
+两条受限剧组资产（管理员可管理，签署成员只读）。下载、存储或进程故障会指数退避重试；
+达到上限后 UI 会显示归档失败，管理员可调用
+`POST /crew-agreements/:agreementId/archive/retry` 重新入队。Webhook 不承担外部文件 IO。
+
 ## Java 对接：积分桥接接口（`/internal/points`）
 
 > 📄 **完整对接文档已独立成文，以它为准、并直接发给 Java：**
@@ -382,7 +422,7 @@ Foundry 当前实现：
 ### 本地启动
 
 ```bash
-# 1. 起 Postgres + Redis（docker-compose.dev.yml）
+# 1. 起 Postgres + Redis + MinIO（本地 S3/R2 协议替身）
 npm run db:up
 
 # 2. 应用 schema migration（首次或 schema 变更后）
@@ -395,6 +435,34 @@ npm run start:dev
 curl http://localhost:3002/ready
 # → web_pubsub / foundry_provider / output_storage / postgres / redis 五项全绿
 ```
+
+本地剧组资产上传使用 `docker-compose.dev.yml` 中的 MinIO，完整执行与
+Cloudflare R2 相同的 S3 预签名上传协议，但不会写入生产桶。`apps/server/.env`
+需要以下本地值：
+
+```dotenv
+S3_ENDPOINT=http://localhost:9000
+S3_REGION=us-east-1
+S3_BUCKET=fizzdragon-media
+S3_ACCESS_KEY_ID=fizzdragon
+S3_ACCESS_KEY_SECRET=fizzdragon-local-storage
+S3_FORCE_PATH_STYLE=true
+S3_AUTO_CREATE_BUCKET=true
+MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE=http://localhost:9000/fizzdragon-media
+```
+
+`S3_AUTO_CREATE_BUCKET` 只允许本地开发使用；生产环境启用时服务会拒绝启动。
+生产 `.com` 继续由 Helm 注入 R2 endpoint/bucket/Secret，`.cn` 继续使用
+Alibaba OSS。
+
+### 剧组任务查询边界
+
+`GET /aurora/crews/:crewId/tasks` 必须携带持久化 `viewId`，由服务端执行
+视图 scope、筛选、排序、搜索和精确计数，并以 opaque cursor 分页；列表只返回
+卡片/表格所需字段，提交版本和结算明细只由
+`GET /aurora/crew-tasks/:taskId` 加载。关系选择器和聊天任务卡使用独立的
+`/task-options` 有界搜索接口，聊天侧栏统计使用 `/task-summary` 聚合接口。
+不要重新引入“拉取整剧组任务后在浏览器筛选”的旁路。
 
 生产部署拆 `server-api` 和 `ai-generation-worker` 两个进程，后者通过
 `WORKER_ONLY=true` boot 同一份 codebase，只跑 BullMQ Worker + outbox

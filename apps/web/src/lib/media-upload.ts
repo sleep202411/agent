@@ -97,8 +97,33 @@ export interface UploadFileOptions {
   contentType?: string;
   /** Called with 0–100 as the PUT streams bytes (only when total is known). */
   onProgress?: (percent: number) => void;
+  /** Called whenever the durable upload pipeline moves to a new phase. */
+  onStage?: (stage: UploadFileStage) => void;
+  /**
+   * Called after storage accepted every byte but before `/confirm` has
+   * necessarily succeeded. Keeping this checkpoint lets a caller retry a
+   * transient confirm failure without uploading the file again.
+   */
+  onCheckpoint?: (checkpoint: UploadFileCheckpoint) => void;
+  /**
+   * Resume from a checkpoint emitted by this helper. The storage key is
+   * server-issued and scoped, so callers must keep the checkpoint attached to
+   * the exact same upload job rather than accepting arbitrary user input.
+   */
+  resumeFrom?: UploadFileCheckpoint;
   /** Abort the in-flight PUT (and the surrounding requests). */
   signal?: AbortSignal;
+  /** Feature-owned authorization scope echoed at issue + confirm. */
+  scope?: { crewId?: string };
+}
+
+export type UploadFileStage = "signing" | "uploading" | "confirming";
+
+export interface UploadFileCheckpoint {
+  storageKey: string;
+  kind: string;
+  contentType: string;
+  scope?: { crewId?: string };
 }
 
 export interface UploadFileResult {
@@ -113,7 +138,13 @@ export interface UploadFileResult {
 // ─── Step 1: request a signed write URL (stateless) ──
 
 async function requestSignedUrl(
-  body: { kind: string; contentType: string; fileName: string; sizeBytes: number },
+  body: {
+    kind: string;
+    contentType: string;
+    fileName: string;
+    sizeBytes: number;
+    scope?: { crewId?: string };
+  },
   signal?: AbortSignal
 ): Promise<SignedUrlResponse> {
   const res = await fetch(UPLOAD_URL_ENDPOINT, {
@@ -242,13 +273,14 @@ async function confirmUpload(
   storageKey: string,
   kind: string,
   contentType: string,
+  scope?: { crewId?: string },
   signal?: AbortSignal
 ): Promise<ConfirmResponse> {
   const res = await fetch(CONFIRM_ENDPOINT, {
     method: "POST",
     credentials: "include",
     headers: jsonHeaders(),
-    body: JSON.stringify({ storageKey, kind, contentType }),
+    body: JSON.stringify({ storageKey, kind, contentType, scope }),
     signal,
   });
 
@@ -300,11 +332,46 @@ export async function uploadFileViaSignedUrl(
   opts: UploadFileOptions
 ): Promise<UploadFileResult> {
   const contentType = opts.contentType || file.type || "application/octet-stream";
-  const info = await requestSignedUrl(
-    { kind: opts.kind, contentType, fileName: file.name, sizeBytes: file.size },
+  const resume = opts.resumeFrom;
+  const canResume =
+    resume?.kind === opts.kind &&
+    resume.contentType === contentType &&
+    (resume.scope?.crewId ?? null) === (opts.scope?.crewId ?? null);
+
+  let storageKey: string;
+  if (canResume && resume) {
+    storageKey = resume.storageKey;
+    opts.onProgress?.(100);
+  } else {
+    opts.onStage?.("signing");
+    const info = await requestSignedUrl(
+      {
+        kind: opts.kind,
+        contentType,
+        fileName: file.name,
+        sizeBytes: file.size,
+        scope: opts.scope,
+      },
+      opts.signal
+    );
+    opts.onStage?.("uploading");
+    await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
+    storageKey = info.storageKey;
+    opts.onCheckpoint?.({
+      storageKey,
+      kind: opts.kind,
+      contentType,
+      scope: opts.scope,
+    });
+  }
+
+  opts.onStage?.("confirming");
+  const confirmed = await confirmUpload(
+    storageKey,
+    opts.kind,
+    contentType,
+    opts.scope,
     opts.signal
   );
-  await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
-  const confirmed = await confirmUpload(info.storageKey, opts.kind, contentType, opts.signal);
-  return { mediaAssetId: confirmed.mediaAssetId, storageKey: info.storageKey, url: confirmed.url };
+  return { mediaAssetId: confirmed.mediaAssetId, storageKey, url: confirmed.url };
 }

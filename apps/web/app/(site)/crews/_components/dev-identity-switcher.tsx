@@ -35,6 +35,7 @@ export function DevIdentitySwitcher() {
   const members = useMemo(
     () =>
       crewMembers.map((m) => ({
+        id: m.userId,
         name: `User ${m.userId}`,
         role: m.via === "founder" ? ownerLabel : translatePosition(m.roleType),
       })),
@@ -110,9 +111,9 @@ export function DevIdentitySwitcher() {
               <div className="max-h-64 overflow-y-auto">
                 {members.map((m) => (
                   <Row
-                    key={m.name}
-                    active={identity.kind === "member" && identity.name === m.name}
-                    onClick={() => choose({ kind: "member", name: m.name })}
+                    key={m.id}
+                    active={identity.kind === "member" && identity.name === m.id}
+                    onClick={() => choose({ kind: "member", name: m.id })}
                     title={m.name}
                     subtitle={m.role}
                   />
@@ -166,10 +167,13 @@ function Row({
   );
 }
 
-function identityLabel(identity: Identity, members: { name: string; role: string }[]): string {
+function identityLabel(
+  identity: Identity,
+  members: { id: string; name: string; role: string }[]
+): string {
   if (identity.kind === "visitor") return "Visitor";
   if (identity.kind === "owner") return "Owner";
   if (identity.kind === "finance") return "Finance";
-  const m = members.find((x) => x.name === identity.name);
+  const m = members.find((x) => x.id === identity.name);
   return m ? `${m.name} · ${m.role}` : identity.name;
 }

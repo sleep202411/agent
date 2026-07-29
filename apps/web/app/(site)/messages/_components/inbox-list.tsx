@@ -310,6 +310,7 @@ function PreviewText({ card }: { card: ConversationCardDTO }) {
   if (raw === "[proposal]") return <>{t("preview.proposal")}</>;
   if (raw === "[image]") return <>{t("preview.image")}</>;
   if (raw === "[file]") return <>{t("preview.file")}</>;
+  if (raw === "[task]") return <>{t("preview.task")}</>;
   if (!raw) return <>{t("preview.empty")}</>;
   return <>{raw}</>;
 }

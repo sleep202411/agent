@@ -39,10 +39,6 @@ import {
   ConversationsService,
   crewLookupKey,
 } from '../conversations/conversations.service';
-import {
-  crewChatWritesEnabled,
-  requireCrewChatWritesEnabled,
-} from '../conversations/crew-chat-rollout';
 import { toConversationDTO } from '../conversations/mappers';
 import { PrismaService } from '../infra/db/db.module';
 import { CrewRoleService } from './crew-role.service';
@@ -52,6 +48,7 @@ import type {
   UpdateCrewInput,
   UpdateCrewListingInput,
 } from './dto';
+import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { newCrewDomainId, newCrewId } from './id';
 import { toCrewDTO } from './mappers';
 
@@ -64,6 +61,7 @@ export class CrewsService {
     private readonly prisma: PrismaService,
     private readonly conversations: ConversationsService,
     private readonly crewRoles: CrewRoleService,
+    private readonly collaboration: CrewCollaborationService,
   ) {}
 
   async create(founderId: string, input: CreateCrewInput) {
@@ -114,15 +112,8 @@ export class CrewsService {
       // the founder joining the crew they just created, into a chat
       // with no other reader, is not an event — the chat's existence
       // already says it. Every LATER join announces itself.
-      if (crewChatWritesEnabled()) {
-        await this.conversations.openCrewConversation(c.id, tx);
-        await this.conversations.syncCrewParticipant(
-          c.id,
-          founderId,
-          'join',
-          tx,
-        );
-      }
+      await this.conversations.openCrewConversation(c.id, tx);
+      await this.conversations.syncCrewParticipant(c.id, founderId, 'join', tx);
       return c;
     });
     return toCrewDTO(crew, {
@@ -248,7 +239,6 @@ export class CrewsService {
     crewId: string,
     viewerId: string,
   ): Promise<ConversationDTO> {
-    requireCrewChatWritesEnabled();
     const role = await this.crewRoles.resolve(crewId, viewerId);
     if (role === 'outsider') throw new NotFoundException('Crew not found');
 
@@ -497,14 +487,14 @@ export class CrewsService {
       }
     }
 
-    const chatEnabled = crewChatWritesEnabled();
     const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
       // Idempotent — returns the existing `crew:<crewId>` thread, and
       // opens one for a crew that predates crew chat.
-      const conversation = chatEnabled
-        ? await this.conversations.openCrewConversation(crewId, tx)
-        : null;
+      const conversation = await this.conversations.openCrewConversation(
+        crewId,
+        tx,
+      );
 
       // 1) founder_id carries the authority — swap it (optimistic if asked).
       if (opts.expectedVersion !== undefined) {
@@ -546,7 +536,7 @@ export class CrewsService {
         });
         // Only the `removedAt` branch ends the membership. The demote
         // branch keeps them in the crew — and in the chat.
-        if (opts.removeOldOwner && conversation) {
+        if (opts.removeOldOwner) {
           await this.conversations.syncCrewParticipant(
             crewId,
             crew.founderId,
@@ -583,28 +573,38 @@ export class CrewsService {
             crewId,
             userId: target,
             roleType: 'owner',
-            via: 'manual',
+            via: 'ownership_transfer',
           },
         });
         // Brand-new membership (admin path can hand a crew to a
         // non-member) — they join the chat like anyone else.
-        if (conversation) {
-          await this.conversations.syncCrewParticipant(
-            crewId,
-            target,
-            'join',
+        await this.conversations.syncCrewParticipant(
+          crewId,
+          target,
+          'join',
+          tx,
+        );
+        pendingMessages.push(
+          await this.conversations.persistSystem(
+            conversation.id,
+            'crew.member.joined',
+            { userId: target },
             tx,
-          );
-          pendingMessages.push(
-            await this.conversations.persistSystem(
-              conversation.id,
-              'crew.member.joined',
-              { userId: target },
-              tx,
-            ),
-          );
-        }
+          ),
+        );
       }
+
+      // 4) The crew roster and the Studio authorization graph are one
+      //    ownership boundary. Move them in this same transaction so a
+      //    successful hand-off can never leave the former owner in control of
+      //    the production workspace, or the successor unable to open it.
+      await this.collaboration.transferCrewOwnershipAccess(
+        crewId,
+        crew.founderId,
+        target,
+        opts.removeOldOwner === true,
+        tx,
+      );
     });
     // WS fan-out only after the transfer has actually committed.
     for (const m of pendingMessages) {

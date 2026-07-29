@@ -76,7 +76,9 @@ export function MemberCard({
     ? null
     : member.via === "application"
       ? t("memberViaApplication")
-      : t("memberViaManual");
+      : member.via === "invitation"
+        ? t("memberViaInvitation")
+        : t("memberViaOwnershipTransfer");
 
   const handleToggleFinance = () => {
     updateMember.mutate(

@@ -1,0 +1,142 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { CrewApplicationStatus } from '@prisma/client';
+import { ListCrewApplicationsQuerySchema } from './dto';
+import { ApplicationsService } from './applications.service';
+
+const CREW_ID = 'crew-1';
+const OWNER_ID = 'owner-1';
+const POSITION_ID = 'position-1';
+
+function application(id: string, status: CrewApplicationStatus) {
+  return {
+    id,
+    crewId: CREW_ID,
+    positionId: POSITION_ID,
+    applicantId: `user-${id}`,
+    message: null,
+    portfolioUrl: null,
+    expectedCompensationAmount: null,
+    expectedCompensationCurrency: null,
+    expectedCompensationPeriod: null,
+    availableStartDate: null,
+    yearsExperience: null,
+    status,
+    createdAt: new Date('2026-07-29T12:00:00.000Z'),
+    reviewedAt: null,
+    reviewerId: null,
+  };
+}
+
+function build() {
+  const crewApplication = {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    groupBy: jest.fn(),
+  };
+  const crew = {
+    findFirst: jest.fn().mockResolvedValue({ founderId: OWNER_ID }),
+  };
+  const service = new ApplicationsService(
+    { crew, crewApplication } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  return { service, crew, crewApplication };
+}
+
+describe('ListCrewApplicationsQuerySchema', () => {
+  it('applies a bounded page size and validates filters', () => {
+    expect(ListCrewApplicationsQuerySchema.parse({})).toEqual({ limit: 50 });
+    expect(
+      ListCrewApplicationsQuerySchema.parse({
+        limit: '100',
+        positionId: POSITION_ID,
+        status: 'pending',
+      }),
+    ).toEqual({
+      limit: 100,
+      positionId: POSITION_ID,
+      status: 'pending',
+    });
+    expect(
+      ListCrewApplicationsQuerySchema.safeParse({ limit: 101 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('ApplicationsService owner inbox', () => {
+  it('cursor-paginates with stable ordering and returns authoritative counts', async () => {
+    const t = build();
+    t.crewApplication.findMany.mockResolvedValue([
+      application('application-2', CrewApplicationStatus.pending),
+      application('application-1', CrewApplicationStatus.pending),
+    ]);
+    t.crewApplication.groupBy.mockResolvedValue([
+      {
+        positionId: POSITION_ID,
+        status: CrewApplicationStatus.pending,
+        _count: { _all: 2 },
+      },
+      {
+        positionId: POSITION_ID,
+        status: CrewApplicationStatus.approved,
+        _count: { _all: 3 },
+      },
+    ]);
+
+    const page = await t.service.listForOwner(CREW_ID, OWNER_ID, {
+      limit: 1,
+      positionId: POSITION_ID,
+    });
+
+    expect(t.crewApplication.findMany).toHaveBeenCalledWith({
+      where: { crewId: CREW_ID, positionId: POSITION_ID },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      take: 2,
+    });
+    expect(page.items.map((item) => item.id)).toEqual(['application-2']);
+    expect(page.nextCursor).toBe('application-2');
+    expect(page.total).toBe(5);
+    expect(page.summary).toEqual({
+      total: 5,
+      pending: 2,
+      approved: 3,
+      rejected: 0,
+      byPosition: {
+        [POSITION_ID]: {
+          total: 5,
+          pending: 2,
+          approved: 3,
+          rejected: 0,
+        },
+      },
+    });
+  });
+
+  it('rejects a cursor that does not belong to the active filter', async () => {
+    const t = build();
+    t.crewApplication.findFirst.mockResolvedValue(null);
+
+    await expect(
+      t.service.listForOwner(CREW_ID, OWNER_ID, {
+        limit: 50,
+        cursor: 'application-other',
+        positionId: POSITION_ID,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(t.crewApplication.findMany).not.toHaveBeenCalled();
+  });
+
+  it('loads notification deeplinks by exact crew-scoped application id', async () => {
+    const t = build();
+    t.crewApplication.findFirst.mockResolvedValue(null);
+
+    await expect(
+      t.service.getForOwner(CREW_ID, 'application-missing', OWNER_ID),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(t.crewApplication.findFirst).toHaveBeenCalledWith({
+      where: { id: 'application-missing', crewId: CREW_ID },
+    });
+  });
+});

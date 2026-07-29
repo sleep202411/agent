@@ -85,10 +85,19 @@ function build(items: ReturnType<typeof crewRow>[]) {
   const svc = {
     listInbox: jest.fn().mockResolvedValue({ items, nextCursor: null }),
   };
+  const realtime = {
+    issueUserGrant: jest.fn(),
+    issueCrewGrant: jest.fn(),
+  };
   return {
     prisma,
     svc,
-    controller: new ConversationsController(svc as never, prisma as never),
+    realtime,
+    controller: new ConversationsController(
+      svc as never,
+      prisma as never,
+      realtime as never,
+    ),
   };
 }
 

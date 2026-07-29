@@ -7,6 +7,8 @@
  *   GET    /aurora/conversations/:id                 detail
  *   GET    /aurora/conversations/:id/messages        paginated
  *   POST   /aurora/conversations/:id/messages        send text
+ *   POST   /aurora/conversations/:id/attachments     send crew assets
+ *   POST   /aurora/conversations/:id/task-cards      send crew task card
  *   POST   /aurora/conversations/:id/proposals       creator sends proposal
  *   POST   /aurora/conversations/:id/proposals/:m/decline   buyer declines
  *   POST   /aurora/conversations/:id/read            advance read cursor
@@ -37,6 +39,7 @@ import type {
   ConversationCardDTO,
   ConversationDTO,
   ConversationContextType,
+  ConversationMentionPayload,
   MessageDTO,
 } from "@repo/shared/conversation";
 import type { CurrencyCode } from "@repo/shared/crew";
@@ -290,10 +293,65 @@ export function useOpenConversation() {
  */
 export function useSendText(conversationId: string) {
   const qc = useQueryClient();
-  return useMutation<MessageDTO, ConversationApiError, { body: string; clientKey?: string }>({
-    mutationFn: ({ body, clientKey }) =>
+  return useMutation<
+    MessageDTO,
+    ConversationApiError,
+    { body: string; clientKey?: string; mentions?: ConversationMentionPayload[] }
+  >({
+    mutationFn: ({ body, clientKey, mentions }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/messages`, {
-        body: clientKey ? { body, clientKey } : { body },
+        body: {
+          body,
+          ...(clientKey ? { clientKey } : {}),
+          ...(mentions?.length ? { mentions } : {}),
+        },
+      }),
+    onSuccess: (message) => {
+      applyIncomingMessage(qc, conversationId, message);
+    },
+  });
+}
+
+export function useSendAttachments(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    MessageDTO,
+    ConversationApiError,
+    {
+      attachments: Array<
+        | { source: "asset"; assetNodeId: string }
+        | { source: "upload"; mediaAssetId: string; name: string }
+      >;
+      body?: string;
+      clientKey?: string;
+      mentions?: ConversationMentionPayload[];
+    }
+  >({
+    mutationFn: ({ attachments, body, clientKey, mentions }) =>
+      api.post<MessageDTO>(`/conversations/${conversationId}/attachments`, {
+        body: { attachments, body, clientKey, mentions },
+      }),
+    onSuccess: (message) => {
+      applyIncomingMessage(qc, conversationId, message);
+    },
+  });
+}
+
+export function useSendTaskCard(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    MessageDTO,
+    ConversationApiError,
+    {
+      taskId: string;
+      body?: string;
+      clientKey?: string;
+      mentions?: ConversationMentionPayload[];
+    }
+  >({
+    mutationFn: ({ taskId, body, clientKey, mentions }) =>
+      api.post<MessageDTO>(`/conversations/${conversationId}/task-cards`, {
+        body: { taskId, body, clientKey, mentions },
       }),
     onSuccess: (message) => {
       applyIncomingMessage(qc, conversationId, message);

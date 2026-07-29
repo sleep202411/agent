@@ -7,6 +7,7 @@ import {
   MediaStorageProvider,
   WorkspaceMemberRole,
 } from '@prisma/client';
+import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
 import { MediaUploadService } from './media-upload.service';
 
 const USER_ID = 'user-1';
@@ -103,6 +104,12 @@ function serviceFixture() {
   };
   const prisma = {
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(null) },
+    crew: {
+      findFirst: jest.fn().mockResolvedValue({ founderId: USER_ID }),
+    },
+    crewMember: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) =>
       callback(tx),
     ),
@@ -123,6 +130,22 @@ function serviceFixture() {
       fileExtension: 'png',
     }),
   };
+  const r2Storage = {
+    ...storage,
+    createUploadUrl: jest.fn(({ storageKey }: { storageKey: string }) =>
+      Promise.resolve({
+        url: 'https://r2.example.com/signed',
+        method: 'PUT' as const,
+        headers: { 'Content-Type': 'image/png' },
+        storageKey,
+        provider: 's3_compatible' as const,
+        expiresAt: '2026-07-17T13:00:00.000Z',
+      }),
+    ),
+  };
+  const storageRegistry = {
+    forProvider: jest.fn().mockReturnValue(r2Storage),
+  };
   const service = new MediaUploadService(
     prisma as never,
     storage as never,
@@ -136,6 +159,7 @@ function serviceFixture() {
     {} as never,
     workspacePermissions as never,
     uploadedImages as never,
+    storageRegistry as never,
   );
   return {
     service,
@@ -146,10 +170,87 @@ function serviceFixture() {
     readiness,
     tx,
     uploadedImages,
+    r2Storage,
+    storageRegistry,
   };
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
+  it('pins crew storage to R2 globally and Alibaba OSS in the CN cell', () => {
+    expect(crewAssetStorageProviderForCell('global')).toBe(
+      MediaStorageProvider.s3_compatible,
+    );
+    expect(crewAssetStorageProviderForCell('com')).toBe(
+      MediaStorageProvider.s3_compatible,
+    );
+    expect(crewAssetStorageProviderForCell('cn')).toBe(
+      MediaStorageProvider.aliyun_oss,
+    );
+  });
+
+  it('routes global crew asset uploads to Cloudflare R2 with a crew-bound key', async () => {
+    const fixture = serviceFixture();
+
+    await expect(
+      fixture.service.createUploadUrl(USER_ID, {
+        kind: 'crew_asset_file',
+        contentType: 'image/png',
+        fileName: 'concept.png',
+        sizeBytes: 1024,
+        scope: { crewId: 'crew-1' },
+      }),
+    ).resolves.toMatchObject({
+      provider: 's3_compatible',
+      storageKey: expect.stringContaining(
+        '/crew-asset-file/user-1/crew-crew-1/',
+      ),
+    });
+
+    expect(fixture.storageRegistry.forProvider).toHaveBeenCalledWith(
+      MediaStorageProvider.s3_compatible,
+    );
+    expect(fixture.r2Storage.createUploadUrl).toHaveBeenCalled();
+    expect(fixture.storage.createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('preserves the intrinsic media kind when a crew upload is confirmed', async () => {
+    const fixture = serviceFixture();
+    const issued = await fixture.service.createUploadUrl(USER_ID, {
+      kind: 'crew_asset_file',
+      contentType: 'image/png',
+      fileName: 'concept.png',
+      sizeBytes: 1024,
+      scope: { crewId: 'crew-1' },
+    });
+    fixture.r2Storage.headObject.mockResolvedValue({
+      exists: true,
+      provider: 's3_compatible',
+      bucket: 'crew-assets',
+      region: 'auto',
+      contentType: 'image/png',
+      sizeBytes: 1024,
+    });
+
+    await fixture.service.confirmUpload(USER_ID, {
+      kind: 'crew_asset_file',
+      contentType: 'image/png',
+      storageKey: issued.storageKey,
+      scope: { crewId: 'crew-1' },
+    });
+
+    expect(fixture.createAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: MediaAssetKind.image,
+          metadata: {
+            uploadKind: 'crew_asset_file',
+            crewId: 'crew-1',
+          },
+        }),
+      }),
+    );
+  });
+
   it('issues a workspace-scoped Studio Agent document upload with a closed MIME policy', async () => {
     const fixture = serviceFixture();
 

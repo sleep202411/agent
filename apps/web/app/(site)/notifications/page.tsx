@@ -28,6 +28,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import {
   notificationHref,
+  notificationContent,
   useMarkAllRead,
   useMarkRead,
   useNotificationFeed,
@@ -178,6 +179,8 @@ function FeedRow({
   onClick: () => void;
 }) {
   const unread = !item.readAt;
+  const t = useTranslations("notifications");
+  const content = notificationContent(item, locale, t);
   return (
     <button
       type="button"
@@ -198,9 +201,9 @@ function FeedRow({
         <span
           className={cn("text-sm", unread ? "font-semibold text-foreground" : "text-foreground/90")}
         >
-          {item.title}
+          {content.title}
         </span>
-        <span className="text-sm text-muted-foreground">{item.body}</span>
+        <span className="text-sm text-muted-foreground">{content.body}</span>
         <span className="text-xs text-muted-foreground/80">
           {formatTime(item.createdAt, locale)}
         </span>

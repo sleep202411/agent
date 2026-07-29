@@ -17,7 +17,8 @@
 "use client";
 
 import { useUserInfo } from "@/src/hooks/use-user";
-import { useCrewDetail, useCrewMembers } from "./use-crew";
+import { useCrewDetail } from "./use-crew-detail";
+import { useCrewMembers, useCrewMembership } from "./use-members";
 import { useDevIdentity } from "./use-dev-identity";
 
 export type CrewRole = "admin" | "finance" | "member" | "outsider";
@@ -39,14 +40,10 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
   const { data: userInfo } = useUserInfo();
   const { data: crewDetail } = useCrewDetail(crewId);
   const { data: crewMembers = [] } = useCrewMembers(crewId);
+  const { data: membership } = useCrewMembership(crewId);
   const devIdentity = useDevIdentity();
 
-  const realUserId = userInfo?.id != null ? String(userInfo.id) : undefined;
-  const realIsAdmin =
-    realUserId != null && crewDetail?.founderId != null && crewDetail.founderId === realUserId;
-  const realMember =
-    realUserId != null ? crewMembers.find((m) => m.userId === realUserId) : undefined;
-  const realIsFinance = realMember?.isFinance === true;
+  const realUserId = membership?.userId ?? (userInfo?.id != null ? String(userInfo.id) : undefined);
 
   if (process.env.NODE_ENV !== "production") {
     if (devIdentity.kind === "owner") {
@@ -89,7 +86,7 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
     }
   }
 
-  if (realIsAdmin) {
+  if (membership?.role === "admin") {
     return {
       role: "admin",
       effectiveUserId: realUserId,
@@ -99,7 +96,7 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
       isMember: false,
     };
   }
-  if (realIsFinance) {
+  if (membership?.role === "finance") {
     return {
       role: "finance",
       effectiveUserId: realUserId,
@@ -109,11 +106,11 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
       isMember: false,
     };
   }
-  if (realMember) {
+  if (membership?.role === "member") {
     return {
       role: "member",
-      effectiveUserId: realMember.userId,
-      effectiveName: userInfo?.nickName || `User ${realMember.userId}`,
+      effectiveUserId: membership.userId,
+      effectiveName: userInfo?.nickName || `User ${membership.userId}`,
       isAdmin: false,
       isFinance: false,
       isMember: true,

@@ -16,7 +16,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import CrewWorkspacePage from "./page";
+import CrewWorkspacePage from "@/app/(crew-workspace)/crews/[id]/workspace/page";
 import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 
@@ -138,14 +138,51 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation", () => 
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab", () => ({
   CrewChatTab: ({ crewId }: { crewId: string }) => <div data-pane="chat">chat:{crewId}</div>,
 }));
-vi.mock("@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab", () => ({
-  EpisodesTab: () => <div data-pane="episodes">episodes</div>,
+vi.mock("@/app/(site)/crews/[id]/workspace/_components/tasks/crew-tasks-tab", () => ({
+  CrewTasksTab: ({
+    deeplinkTaskId,
+    onSelectedTaskChange,
+  }: {
+    deeplinkTaskId?: string | null;
+    onSelectedTaskChange?: (taskId: string | null) => void;
+  }) => (
+    <div data-pane="tasks" data-deeplink-task-id={deeplinkTaskId ?? ""}>
+      tasks
+      {deeplinkTaskId ? (
+        <button type="button" onClick={() => onSelectedTaskChange?.(null)}>
+          Close mocked task
+        </button>
+      ) : null}
+    </div>
+  ),
 }));
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/assets/crew-assets-tab", () => ({
-  CrewAssetsTab: () => <div data-pane="assets">assets</div>,
+  CrewAssetsTab: ({
+    initialAssetId,
+    onSelectedAssetChange,
+  }: {
+    initialAssetId?: string | null;
+    onSelectedAssetChange?: (assetId: string | null) => void;
+  }) => (
+    <div data-pane="assets" data-initial-asset-id={initialAssetId ?? ""}>
+      assets
+      {initialAssetId ? (
+        <button type="button" onClick={() => onSelectedAssetChange?.(null)}>
+          Close mocked asset
+        </button>
+      ) : null}
+    </div>
+  ),
+}));
+vi.mock("@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center", () => ({
+  CrewTransfersProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/members/members-grid", () => ({
-  MembersGrid: () => <div data-pane="members">members</div>,
+  MembersGrid: ({ initialAgreementId }: { initialAgreementId?: string | null }) => (
+    <div data-pane="members" data-initial-agreement-id={initialAgreementId ?? ""}>
+      members
+    </div>
+  ),
 }));
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/positions/positions-grid", () => ({
   PositionsGrid: () => <div data-pane="roles">roles</div>,
@@ -170,6 +207,9 @@ vi.mock("@/app/(site)/crews/_components/create-crew-dialog", () => ({
 }));
 vi.mock("@/app/(site)/crews/_components/create-crew-job-dialog", () => ({
   CreateCrewJobDialog: () => null,
+}));
+vi.mock("@/components/notifications/bell-button", () => ({
+  BellButton: () => <button type="button" aria-label="Notifications" />,
 }));
 
 const MEMBER: UserCrewRole = {
@@ -210,7 +250,7 @@ function pane(): string | null {
 
 function tabButton(label: string): HTMLButtonElement {
   const match = [...document.querySelectorAll("nav button")].find(
-    (b) => b.textContent?.trim() === label
+    (b) => b.getAttribute("aria-label") === label
   );
   if (!match) throw new Error(`no tab labelled "${label}" (saw: ${navLabels().join(", ")})`);
   return match as HTMLButtonElement;
@@ -225,15 +265,15 @@ function button(label: string): HTMLButtonElement {
 }
 
 function navLabels(): string[] {
-  return [...document.querySelectorAll("nav button")].map((b) => b.textContent?.trim() ?? "");
+  return [...document.querySelectorAll("nav button")]
+    .map((b) => b.getAttribute("aria-label"))
+    .filter((label): label is string => Boolean(label));
 }
 
 /** The nav marks the selected tab with the brand accent. */
 function activeTabLabel(): string | null {
-  const match = [...document.querySelectorAll("nav button")].find((b) =>
-    b.className.includes("text-primary")
-  );
-  return match?.textContent?.trim() ?? null;
+  const match = document.querySelector('nav button[aria-current="page"]');
+  return match?.getAttribute("aria-label") ?? null;
 }
 
 function click(el: HTMLElement) {
@@ -282,7 +322,7 @@ describe("crew workspace tabs", () => {
     // Doc §4 order, with the member-only asset center in the primary rail.
     expect(navLabels()).toEqual([
       "Group Chat",
-      "Production",
+      "Tasks",
       "Asset Center",
       "Members",
       "Positions",
@@ -302,10 +342,10 @@ describe("crew workspace tabs", () => {
     reload();
     expect(pane()).toBe("chat");
 
-    click(tabButton("Production"));
-    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=episodes");
+    click(tabButton("Tasks"));
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=tasks");
     reload();
-    expect(pane()).toBe("episodes");
+    expect(pane()).toBe("tasks");
   });
 
   it("opens the asset center through its shareable URL", () => {
@@ -318,17 +358,58 @@ describe("crew workspace tabs", () => {
     expect(pane()).toBe("assets");
   });
 
-  it("keeps a deeplink's episode params while switching to chat and back", () => {
-    nav.search = new URLSearchParams("tab=episodes&episode=ep_42&assignment=as_7");
+  it("passes a chat attachment deeplink through to the asset center", () => {
+    nav.search = new URLSearchParams("tab=assets&asset=asset-from-chat");
+
     render();
-    expect(pane()).toBe("episodes");
+
+    expect(pane()).toBe("assets");
+    expect(
+      document.querySelector("[data-pane='assets']")?.getAttribute("data-initial-asset-id")
+    ).toBe("asset-from-chat");
+  });
+
+  it("clears a consumed asset deeplink when the preview closes", () => {
+    nav.search = new URLSearchParams("tab=assets&asset=asset-from-chat");
+    render();
+
+    click(button("Close mocked asset"));
+
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=assets");
+  });
+
+  it("passes an agreement notification deeplink to the members surface", () => {
+    nav.search = new URLSearchParams("tab=members&agreement=agreement_42");
+
+    render();
+
+    expect(pane()).toBe("members");
+    expect(
+      document.querySelector("[data-pane='members']")?.getAttribute("data-initial-agreement-id")
+    ).toBe("agreement_42");
+  });
+
+  it("keeps a deeplink's task param while switching to chat and back", () => {
+    nav.search = new URLSearchParams("tab=tasks&task=task_42");
+    render();
+    expect(pane()).toBe("tasks");
+    expect(
+      document.querySelector("[data-pane='tasks']")?.getAttribute("data-deeplink-task-id")
+    ).toBe("task_42");
 
     click(tabButton("Group Chat"));
-    expect(nav.replaced.at(-1)).toBe(
-      "/crews/crew_1/workspace?tab=chat&episode=ep_42&assignment=as_7"
-    );
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat&task=task_42");
     reload();
     expect(pane()).toBe("chat");
+  });
+
+  it("clears a consumed task deeplink when task details close", () => {
+    nav.search = new URLSearchParams("tab=tasks&task=task_42&comment=comment_9");
+    render();
+
+    click(button("Close mocked task"));
+
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=tasks");
   });
 
   it("gives an outsider an explicit member-only state", () => {
@@ -343,20 +424,19 @@ describe("crew workspace tabs", () => {
     expect(activeTabLabel()).toBeNull();
   });
 
-  it("bounds the page to the viewport on chat, and only on chat", () => {
-    // Doc §9: 群聊输入框在桌面和移动端都固定可达. The chat pane is
-    // `h-full`, which resolves to nothing unless an ancestor chain
-    // gives it a height — on a `min-h-screen` page the composer lands
-    // below the fold and the reader has to scroll to type.
+  it("keeps every workbench surface inside the viewport shell", () => {
+    // The dedicated workbench route owns the viewport for every tab.
+    // Individual panels scroll internally, so chat composers, review
+    // controls and upload status all remain reachable.
     render();
     const shell = () => container!.firstElementChild as HTMLElement;
-    expect(shell().className).toContain("h-[calc(100dvh-4rem)]");
+    expect(shell().className).toContain("h-dvh");
     expect(shell().className).not.toContain("min-h-screen");
 
-    click(tabButton("Production"));
+    click(tabButton("Tasks"));
     reload();
-    expect(shell().className).toContain("min-h-screen");
-    expect(shell().className).not.toContain("h-[calc(100dvh-4rem)]");
+    expect(shell().className).toContain("h-dvh");
+    expect(shell().className).not.toContain("min-h-screen");
   });
 
   it("waits for the roster before deciding the tab set", () => {
@@ -432,15 +512,15 @@ describe("crew workspace with an unresolvable chat thread", () => {
     // member is still entitled to it, and every other surface works.
     expect(navLabels()).toEqual([
       "Group Chat",
-      "Production",
+      "Tasks",
       "Asset Center",
       "Members",
       "Positions",
       "Basic Info",
     ]);
-    click(tabButton("Production"));
+    click(tabButton("Tasks"));
     reload();
-    expect(pane()).toBe("episodes");
+    expect(pane()).toBe("tasks");
   });
 
   it("stamps the demotion into the URL so a late success cannot yank the reader away", () => {

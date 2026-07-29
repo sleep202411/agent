@@ -30,16 +30,16 @@
  * message history is preserved in the same thread so both sides
  * keep their full back-and-forth.
  *
- * Realtime delivery: messages are persisted first (DB is source of
- * truth), then published to a per-user Redis pub/sub channel
- * (`conversation:user:{userId}`) so every browser tab the user has
- * open receives the push. Missed-while-offline windows are
- * recovered by the client refetching on reconnect (cursor-based on
- * createdAt).
+ * Realtime delivery: messages are persisted first (DB is source of truth),
+ * then delivered through the authenticated per-user Ably channel and, for
+ * crew chat, its Ably Chat room. Conversation inbox, crew-task, and in-app
+ * notification frames share the user connection. Missed-while-offline
+ * windows are recovered by REST cursor refetch on every attach boundary.
  */
 
 import type { CurrencyCode } from "./crew.js";
 import type { ServiceTier } from "./creator-service.js";
+import type { NotificationDTO } from "./notifications.js";
 
 // ─── Enums ───────────────────────────────────────────────────
 
@@ -66,10 +66,9 @@ export type ConversationParticipantRole = (typeof CONVERSATION_PARTICIPANT_ROLES
 
 export const CONVERSATION_MESSAGE_TYPES = [
   "text",
-  /** Reserved for v1.1 once attachments ship. */
   "image",
-  /** Reserved for v1.1 once attachments ship. */
   "file",
+  "task",
   "proposal",
   "system",
 ] as const;
@@ -106,17 +105,6 @@ export const SYSTEM_MESSAGE_KINDS = [
   // Crew chat — membership lifecycle. params: { userId }
   "crew.member.joined",
   "crew.member.left",
-  // Crew chat — episode assignment status. params:
-  //   { episodeId, episodeNumber, assignmentId, userId }
-  //
-  // STATUS ONLY. These never carry a money field: doc §5.3 step 7 —
-  // the group chat shows task status changes but must not publish
-  // earnings figures, which are per-assignment and finance-scoped.
-  // (`setRevenue` therefore emits no system message at all.)
-  "crew.episode.assigned",
-  "crew.episode.submitted",
-  "crew.episode.approved",
-  "crew.episode.rejected",
 ] as const;
 export type SystemMessageKind = (typeof SYSTEM_MESSAGE_KINDS)[number];
 
@@ -157,11 +145,54 @@ export interface SystemMessagePayload {
 }
 
 /**
+ * A durable reference behind an inline @mention.
+ *
+ * `label` is the display-name snapshot written into `body`; `userId` is
+ * the stable identity used for notification routing and later profile
+ * changes. The server validates every id against the crew's live roster,
+ * so clients cannot smuggle an outsider into a protected thread.
+ */
+export interface ConversationMentionPayload {
+  userId: string;
+  label: string;
+}
+
+export interface ConversationAttachmentPayload {
+  /** Durable crew asset reference. Never a raw storage key or signed URL. */
+  assetNodeId: string;
+  mediaAssetId: string;
+  name: string;
+  mediaKind: "image" | "video" | "audio" | "document" | "other";
+  contentType: string;
+  sizeBytes: number | null;
+}
+
+export interface ConversationTaskCardPayload {
+  taskId: string;
+  crewId: string;
+  title: string;
+  status: "open" | "in_progress" | "submitted" | "revision_requested" | "approved" | "cancelled";
+  priority: "low" | "normal" | "high" | "urgent";
+  assigneeCount: number;
+  dueAt: string | null;
+}
+
+/**
  * Union of payload shapes carried by a Message. The runtime
  * `type` field tells you which one to read.
  */
 export type MessagePayload =
-  | { kind: "text" }
+  | { kind: "text"; mentions?: ConversationMentionPayload[] }
+  | {
+      kind: "attachments";
+      attachments: ConversationAttachmentPayload[];
+      mentions?: ConversationMentionPayload[];
+    }
+  | {
+      kind: "task";
+      task: ConversationTaskCardPayload;
+      mentions?: ConversationMentionPayload[];
+    }
   | { kind: "proposal"; proposal: ProposalPayload }
   | { kind: "system"; system: SystemMessagePayload };
 
@@ -256,14 +287,14 @@ export interface ConversationCardDTO {
   memberCount?: number;
 }
 
-// ─── WS frame envelopes ──────────────────────────────────────
+// ─── Realtime frame envelopes ────────────────────────────────
 
 /**
- * WS frames the conversations gateway pushes. Same envelope shape
- * as the existing notification gateway: `{ event, data }`.
+ * Frames delivered through the authenticated per-user Ably channel.
+ * The payload stays transport-neutral: `{ event, data }`.
  *
  * Add a new frame variant: extend the union here AND in
- * `apps/web/src/lib/conversations/ws-client.ts`.
+ * `apps/web/src/lib/conversations/ably-client.ts`.
  */
 export type ConversationFrame =
   | {
@@ -295,22 +326,89 @@ export type ConversationFrame =
         contextId: string;
       };
     }
-  /** Sent only after authentication and per-user socket registration.
-   *  A client REST-refetches on this boundary, closing the startup gap
-   *  between its first query and a socket that was not ready to receive. */
+  | {
+      event: "crew.task.changed";
+      data: {
+        crewId: string;
+        taskId: string;
+        action: "created" | "updated" | "commented" | "submitted" | "reviewed" | "settled";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      event: "crew.task.project.changed";
+      data: {
+        crewId: string;
+        resource: "view" | "workflow" | "cycle" | "label" | "field";
+        resourceId: string;
+        action: "created" | "updated" | "deleted" | "reordered";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      event: "crew.asset.changed";
+      data: {
+        crewId: string;
+        nodeId: string;
+        action: "created" | "updated" | "trashed" | "restored" | "deleted" | "permissions_updated";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      /**
+       * Notifications share the authenticated per-user Ably channel with
+       * conversation inbox and crew-task invalidations. PostgreSQL remains
+       * authoritative; this frame is only the low-latency signal.
+       */
+      event: "notification.created";
+      data: NotificationDTO;
+    }
+  /** Synthetic client boundary emitted after the Ably user channel has
+   *  attached. A client REST-refetches here to close startup/reconnect gaps. */
   | { event: "ready"; data: { serverTime: number } }
-  | { event: "heartbeat"; data: { serverTime: number } }
   | { event: "terminate"; data: { reason: string; code: number } };
 
-// ─── Pub/sub channel helpers ─────────────────────────────────
+// ─── Ably channel + credential contracts ─────────────────────
 
-/** Per-user Redis pub/sub channel. Mirror of `notificationChannel`. */
+/** Per-user Ably Pub/Sub channel for inbox and domain invalidation frames. */
 export function conversationChannel(userId: string): string {
   return `conversation:user:${userId}`;
 }
 
 export const CONVERSATION_CHANNEL_PATTERN = "conversation:user:*";
 export const CONVERSATION_CHANNEL_PREFIX = "conversation:user:";
+export const CONVERSATION_REALTIME_EVENT = "frame";
+
+/** One crew conversation maps to one Ably Chat room. */
+export function crewConversationRoom(conversationId: string): string {
+  return `crew-chat:${conversationId}`;
+}
+
+export const CREW_CONVERSATION_METADATA_SCHEMA = "fizzdragon.crew-chat.signal.v1";
+
+/**
+ * The seven public fields of an Ably TokenRequest. The root key is never
+ * serialized into this contract.
+ */
+export interface ConversationAblyTokenRequestDTO {
+  keyName: string;
+  ttl?: number;
+  timestamp: number;
+  capability: string;
+  clientId?: string;
+  nonce: string;
+  mac: string;
+}
+
+export interface ConversationRealtimeGrantDTO {
+  channel: string;
+  ttlMs: number;
+  tokenRequest: ConversationAblyTokenRequestDTO;
+}
+
+export interface CrewConversationRealtimeGrantDTO extends ConversationRealtimeGrantDTO {
+  room: string;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 

@@ -22,11 +22,13 @@ import {
   IconCrown,
   IconInfoCircle,
   IconLoader2,
+  IconSignature,
   IconUserCheck,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogBody,
@@ -45,7 +47,11 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { env } from "@/src/env";
-import { CrewApiError, useAddCrewMember } from "@/app/(site)/crews/_hooks/use-crew";
+import {
+  CrewApiError,
+  useCrewAgreements,
+  useInviteCrewMember,
+} from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
 import { useDebouncedValue, useUserLookup } from "@/app/(site)/crews/_hooks/use-users";
 
@@ -65,17 +71,27 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
 
   const [queryInput, setQueryInput] = useState("");
   const [roleType, setRoleType] = useState<string>("");
+  const [agreementEnabled, setAgreementEnabled] = useState(false);
+  const [agreementTitle, setAgreementTitle] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [signerEmail, setSignerEmail] = useState("");
   const presetPositions = useTranslatedPresetPositions();
 
   const debouncedQuery = useDebouncedValue(queryInput, 400);
   const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId });
 
-  const { mutateAsync: addMember, isPending: submitting } = useAddCrewMember(crewId);
+  const { mutateAsync: inviteMember, isPending: submitting } = useInviteCrewMember(crewId);
+  const agreementCapability = useCrewAgreements(crewId, open, "all", 1);
+  const canRequestAgreement = agreementCapability.data?.capabilities.create === true;
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setQueryInput("");
       setRoleType("");
+      setAgreementEnabled(false);
+      setAgreementTitle("");
+      setSignerName("");
+      setSignerEmail("");
     }
     onOpenChange(next);
   };
@@ -86,14 +102,52 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
     if (roleType.length === 0) return false;
     if (lookup.kind !== "found") return false;
     if (lookup.user.isCrewMember || lookup.user.isCrewFounder) return false;
+    if (
+      agreementEnabled &&
+      (!canRequestAgreement || !agreementTitle.trim() || !signerName.trim() || !signerEmail.trim())
+    ) {
+      return false;
+    }
     return true;
-  }, [lookup, roleType, submitting]);
+  }, [
+    agreementEnabled,
+    agreementTitle,
+    canRequestAgreement,
+    lookup,
+    roleType,
+    signerEmail,
+    signerName,
+    submitting,
+  ]);
+
+  const toggleAgreement = (checked: boolean) => {
+    setAgreementEnabled(checked);
+    if (!checked || lookup.kind !== "found") return;
+    if (!signerName) {
+      setSignerName(lookup.user.nickname || `User ${lookup.user.userId}`);
+    }
+    if (!signerEmail && debouncedQuery.includes("@")) {
+      setSignerEmail(debouncedQuery.trim());
+    }
+  };
 
   const handleSubmit = async () => {
     if (!canSubmit || lookup.kind !== "found") return;
     try {
-      await addMember({ account: debouncedQuery.trim(), roleType });
-      toast.success(t("addMemberSuccess"));
+      await inviteMember({
+        account: debouncedQuery.trim(),
+        roleType,
+        ...(agreementEnabled
+          ? {
+              agreement: {
+                title: agreementTitle.trim(),
+                signerName: signerName.trim(),
+                signerEmail: signerEmail.trim(),
+              },
+            }
+          : {}),
+      });
+      toast.success(agreementEnabled ? t("addMemberAgreementSuccess") : t("addMemberSuccess"));
       handleOpenChange(false);
     } catch (err) {
       if (err instanceof CrewApiError) {
@@ -148,6 +202,76 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
                 </SelectContent>
               </Select>
             </Field>
+
+            <div className="rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.08]">
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={agreementEnabled}
+                  disabled={submitting || agreementCapability.isLoading || !canRequestAgreement}
+                  onCheckedChange={(checked) => toggleAgreement(checked === true)}
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <IconSignature className="size-4 text-primary" />
+                    {t("addMemberAgreementLabel")}
+                    <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-white/40">
+                      {t("addMemberAgreementOptional")}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    {t("addMemberAgreementHint")}
+                  </span>
+                </span>
+              </label>
+
+              {!agreementCapability.isLoading && !canRequestAgreement ? (
+                <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] leading-5 text-amber-200/80">
+                  <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  {t("addMemberAgreementUnavailable")}
+                </p>
+              ) : null}
+
+              {agreementEnabled ? (
+                <FieldGroup className="mt-4">
+                  <Field>
+                    <FieldLabel required>{t("addMemberAgreementTitle")}</FieldLabel>
+                    <Input
+                      value={agreementTitle}
+                      onChange={(event) => setAgreementTitle(event.target.value)}
+                      maxLength={180}
+                      placeholder={t("addMemberAgreementTitlePlaceholder")}
+                      disabled={submitting}
+                    />
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field>
+                      <FieldLabel required>{t("addMemberSignerName")}</FieldLabel>
+                      <Input
+                        value={signerName}
+                        onChange={(event) => setSignerName(event.target.value)}
+                        maxLength={128}
+                        disabled={submitting}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel required>{t("addMemberSignerEmail")}</FieldLabel>
+                      <Input
+                        type="email"
+                        value={signerEmail}
+                        onChange={(event) => setSignerEmail(event.target.value)}
+                        maxLength={320}
+                        placeholder="name@example.com"
+                        disabled={submitting}
+                      />
+                    </Field>
+                  </div>
+                  <p className="text-[11px] leading-5 text-muted-foreground">
+                    {t("addMemberAgreementDisclosure")}
+                  </p>
+                </FieldGroup>
+              ) : null}
+            </div>
           </FieldGroup>
         </DialogBody>
 

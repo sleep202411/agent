@@ -13,7 +13,7 @@ import { notificationHref } from "./deeplink";
 function notification(meta: Record<string, unknown> | undefined): NotificationDTO {
   return {
     id: "n_1",
-    type: "crew.episode.assigned",
+    type: "crew.task.assigned",
     title: "New assignment",
     body: "EP01 storyboard",
     meta,

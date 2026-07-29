@@ -86,7 +86,7 @@ export function planStoryChapterRelease(
   }
 
   const ordered = [...candidates].sort((left, right) => left.rank - right.rank);
-  const first = ordered[0]!;
+  const first = ordered[0];
   // The work must ship its beginning. Falling through to the next built
   // chapter would silently drop players into the middle of the story.
   if (!first.buildId) {

@@ -58,6 +58,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { CURRENT_CELL } from '../common/region/current-cell';
+import {
+  CREW_ASSET_MAX_BYTES,
+  crewAssetStorageProviderForCell,
+} from '../infra/storage/crew-asset-storage-policy';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import { MediaProcessingService } from './media-processing.service';
 import {
@@ -68,6 +72,7 @@ import {
   type HeadObjectResult,
 } from '../infra/storage/storage.types';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
+import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import type {
   ConfirmUploadInputDto,
   ConfirmUploadResponseDto,
@@ -149,6 +154,44 @@ const VIDEO_CONTENT_TYPES: Record<string, string> = {
 const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
   [STORY_CLIP_VIDEO_CONTENT_TYPE]: 'mp4',
 };
+
+const CREW_ASSET_CONTENT_TYPES: Record<string, string> = {
+  ...IMAGE_CONTENT_TYPES,
+  ...VIDEO_CONTENT_TYPES,
+  ...STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'application/zip': 'zip',
+  'application/x-zip-compressed': 'zip',
+  'application/vnd.adobe.photoshop': 'psd',
+  'application/postscript': 'ai',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    'pptx',
+  'application/octet-stream': 'bin',
+};
+
+function mediaKindFromContentType(contentType: string): MediaAssetKind {
+  const normalized = contentType.toLowerCase();
+  if (normalized.startsWith('image/')) return MediaAssetKind.image;
+  if (normalized.startsWith('video/')) return MediaAssetKind.video;
+  if (normalized.startsWith('audio/')) return MediaAssetKind.audio;
+  if (
+    normalized === 'application/pdf' ||
+    normalized.startsWith('text/') ||
+    normalized.includes('wordprocessingml') ||
+    normalized.includes('spreadsheetml') ||
+    normalized.includes('presentationml') ||
+    normalized === 'application/vnd.ms-excel' ||
+    normalized === 'application/vnd.ms-powerpoint'
+  ) {
+    return MediaAssetKind.document;
+  }
+  return MediaAssetKind.other;
+}
 
 /** AI reference videos: MP4/MOV only (Seedance 全能参考 spec — no webm). */
 const REFERENCE_VIDEO_CONTENT_TYPES: Record<string, string> = {
@@ -258,6 +301,13 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     ttlSeconds: 900,
     keySegment: 'story-music-audio',
   },
+  crew_asset_file: {
+    contentTypes: CREW_ASSET_CONTENT_TYPES,
+    maxBytes: CREW_ASSET_MAX_BYTES,
+    assetKind: MediaAssetKind.other,
+    ttlSeconds: 3600,
+    keySegment: 'crew-asset-file',
+  },
 };
 
 /** Prisma's MediaStorageProvider is the durable enum; the storage result
@@ -281,6 +331,7 @@ export class MediaUploadService {
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
+    private readonly storageRegistry: StorageProviderRegistry,
   ) {}
 
   /**
@@ -339,11 +390,14 @@ export class MediaUploadService {
     if (input.kind === 'story_clip_video') {
       return this.storyVideoUploads.issue(userId, workspaceId, input);
     }
-    const uploadWorkspaceId = await this.requireUploadWorkspace(
+    const uploadScope = await this.requireUploadScope(
       userId,
+      input.kind,
+      input.scope?.crewId,
       workspaceId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
+    const storage = this.storageForUpload(input.kind);
     // (kind is already validated by the Zod enum, so policy is defined.)
 
     // 1. content-type ↔ ext allowlist. Reject spoofed / unsupported types
@@ -372,7 +426,7 @@ export class MediaUploadService {
     const storageKey = this.buildStorageKey(
       policy.keySegment,
       userId,
-      uploadWorkspaceId,
+      uploadScope.keyScope,
       ext,
     );
 
@@ -380,7 +434,7 @@ export class MediaUploadService {
     //    provider is down this throws ServiceUnavailable and nothing was
     //    persisted (there's nothing to roll back).
     try {
-      const signed = await this.storage.createUploadUrl({
+      const signed = await storage.createUploadUrl({
         storageKey,
         contentType: input.contentType,
         maxBytes: policy.maxBytes,
@@ -446,11 +500,14 @@ export class MediaUploadService {
     if (input.kind === 'story_clip_video') {
       return this.storyVideoUploads.confirm(userId, workspaceId, input);
     }
-    const uploadWorkspaceId = await this.requireUploadWorkspace(
+    const uploadScope = await this.requireUploadScope(
       userId,
+      input.kind,
+      input.scope?.crewId,
       workspaceId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
+    const storage = this.storageForUpload(input.kind);
     const storageKey = input.storageKey;
 
     // 1. Ownership: the key MUST sit under this user's scope for this kind.
@@ -460,7 +517,7 @@ export class MediaUploadService {
     const uploadScopePrefix = this.buildUploadScopePrefix(
       policy.keySegment,
       userId,
-      uploadWorkspaceId,
+      uploadScope.keyScope,
     );
     if (!storageKey.startsWith(uploadScopePrefix)) {
       throw new ForbiddenException({
@@ -498,11 +555,12 @@ export class MediaUploadService {
         durationSeconds: true,
         checksumSha256: true,
         workspaceId: true,
+        metadata: true,
         status: true,
       },
     });
     if (existing) {
-      if (existing.workspaceId !== uploadWorkspaceId) {
+      if (!this.assetMatchesUploadScope(existing, uploadScope)) {
         throw new ForbiddenException({
           code: 'MEDIA_ASSET_SCOPE_MISMATCH',
           message: 'the existing media asset belongs to a different scope',
@@ -556,7 +614,16 @@ export class MediaUploadService {
           input.kind,
           policy,
         )
-      : await this.genericUploadTruth(userId, storageKey, input.contentType);
+      : await this.genericUploadTruth(
+          userId,
+          storageKey,
+          input.contentType,
+          storage,
+        );
+    const confirmedAssetKind =
+      input.kind === 'crew_asset_file'
+        ? mediaKindFromContentType(truth.contentType)
+        : policy.assetKind;
 
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
@@ -590,11 +657,12 @@ export class MediaUploadService {
               durationSeconds: true,
               checksumSha256: true,
               workspaceId: true,
+              metadata: true,
               status: true,
             },
           })
         : null;
-      if (converged && converged.workspaceId !== uploadWorkspaceId) {
+      if (converged && !this.assetMatchesUploadScope(converged, uploadScope)) {
         throw new ForbiddenException({
           code: 'MEDIA_ASSET_SCOPE_MISMATCH',
           message: 'the existing media asset belongs to a different scope',
@@ -605,7 +673,7 @@ export class MediaUploadService {
         converged ??
         (await tx.mediaAsset.create({
           data: {
-            kind: policy.assetKind,
+            kind: confirmedAssetKind,
             storageProvider: truth.storageProvider,
             bucket: truth.bucket,
             region: truth.region,
@@ -626,14 +694,18 @@ export class MediaUploadService {
             status: MediaAssetStatus.ready,
             source: MediaAssetSource.user_upload,
             createdByUserId: userId,
-            workspaceId: uploadWorkspaceId,
+            workspaceId: uploadScope.workspaceId,
             metadata: policy.verifiedImageFinalKeySegment
               ? {
                   uploadKind: input.kind,
+                  ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
                   storagePhase: 'immutable_final',
                   inspectedBy: 'server_byte_probe',
                 }
-              : { uploadKind: input.kind },
+              : {
+                  uploadKind: input.kind,
+                  ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
+                },
           },
           select: {
             id: true,
@@ -684,7 +756,7 @@ export class MediaUploadService {
     await this.maybeEnqueueHlsTranscode(
       asset.id,
       input.kind,
-      policy.assetKind,
+      confirmedAssetKind,
       asset.storageProvider,
     );
     void this.readiness.enqueueAutomaticChecks(asset.id);
@@ -702,14 +774,15 @@ export class MediaUploadService {
     userId: string,
     storageKey: string,
     requestedContentType: string,
+    storage: OutputStorageService = this.storage,
   ): Promise<ConfirmedUploadTruth> {
-    const head = await this.headUploadObject(userId, storageKey);
+    const head = await this.headUploadObject(userId, storageKey, storage);
     if (!head.exists) throw mediaObjectNotFound();
 
     // Generic objects retain their signed permanent key. Their cache metadata
     // is provider bookkeeping, not validation, and remains best-effort.
     try {
-      await this.storage.setCacheControl(
+      await storage.setCacheControl(
         storageKey,
         IMMUTABLE_STORAGE_CACHE_CONTROL,
         head.contentType ?? requestedContentType,
@@ -841,9 +914,10 @@ export class MediaUploadService {
   private async headUploadObject(
     userId: string,
     storageKey: string,
+    storage: OutputStorageService = this.storage,
   ): Promise<HeadObjectResult> {
     try {
-      return await this.storage.headObject(storageKey);
+      return await storage.headObject(storageKey);
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
       this.logger.error(
@@ -868,14 +942,14 @@ export class MediaUploadService {
   private buildStorageKey(
     keySegment: string,
     userId: string,
-    workspaceId: string | null,
+    keyScope: string,
     ext: string,
   ): string {
     const now = new Date();
     const yyyy = now.getUTCFullYear();
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(now.getUTCDate()).padStart(2, '0');
-    return `${this.buildUploadScopePrefix(keySegment, userId, workspaceId)}${yyyy}/${mm}/${dd}/${randomUUID()}.${ext}`;
+    return `${this.buildUploadScopePrefix(keySegment, userId, keyScope)}${yyyy}/${mm}/${dd}/${randomUUID()}.${ext}`;
   }
 
   /**
@@ -887,10 +961,101 @@ export class MediaUploadService {
   private buildUploadScopePrefix(
     keySegment: string,
     userId: string,
-    workspaceId: string | null,
+    keyScope: string,
   ): string {
-    const scope = workspaceId ? `workspace-${workspaceId}` : 'personal';
-    return `${this.buildOwnerPrefix(keySegment, userId)}${scope}/`;
+    return `${this.buildOwnerPrefix(keySegment, userId)}${keyScope}/`;
+  }
+
+  private async requireUploadScope(
+    userId: string,
+    kind: UploadKind,
+    crewId: string | undefined,
+    workspaceHeader: string | undefined,
+  ): Promise<UploadScope> {
+    if (kind === 'crew_asset_file') {
+      if (!crewId) {
+        throw new BadRequestException({
+          code: 'MEDIA_CREW_SCOPE_REQUIRED',
+          message: 'scope.crewId is required for crew asset uploads',
+        });
+      }
+      if (workspaceHeader !== undefined) {
+        throw new BadRequestException({
+          code: 'MEDIA_SCOPE_CONFLICT',
+          message: 'crew asset uploads cannot also declare x-fizz-workspace-id',
+        });
+      }
+      await this.requireCrewMembership(userId, crewId);
+      return {
+        workspaceId: null,
+        crewId,
+        keyScope: `crew-${sanitizeKeySegment(crewId)}`,
+      };
+    }
+    if (crewId !== undefined) {
+      throw new BadRequestException({
+        code: 'MEDIA_CREW_SCOPE_NOT_ALLOWED',
+        message: 'scope.crewId is only valid for crew asset uploads',
+      });
+    }
+    const workspaceId = await this.requireUploadWorkspace(
+      userId,
+      workspaceHeader,
+    );
+    return {
+      workspaceId,
+      crewId: null,
+      keyScope: workspaceId ? `workspace-${workspaceId}` : 'personal',
+    };
+  }
+
+  private storageForUpload(kind: UploadKind): OutputStorageService {
+    if (kind !== 'crew_asset_file') return this.storage;
+    const provider = crewAssetStorageProviderForCell(CURRENT_CELL);
+    const storage = this.storageRegistry.forProvider(provider);
+    if (!storage) {
+      throw new ServiceUnavailableException({
+        code: 'MEDIA_STORAGE_UNAVAILABLE',
+        message: `Crew asset storage provider "${provider}" is unavailable`,
+      });
+    }
+    return storage;
+  }
+
+  private async requireCrewMembership(
+    userId: string,
+    crewId: string,
+  ): Promise<void> {
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { founderId: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+    if (crew.founderId === userId) return;
+    const member = await this.prisma.crewMember.findFirst({
+      where: { crewId, userId, removedAt: null },
+      select: { id: true },
+    });
+    if (!member) {
+      throw new ForbiddenException({
+        code: 'MEDIA_CREW_ACCESS_DENIED',
+        message: 'Only active crew members can upload crew assets',
+      });
+    }
+  }
+
+  private assetMatchesUploadScope(
+    asset: { workspaceId: string | null; metadata: unknown },
+    scope: UploadScope,
+  ): boolean {
+    if (asset.workspaceId !== scope.workspaceId) return false;
+    const metadata =
+      asset.metadata && typeof asset.metadata === 'object'
+        ? (asset.metadata as Record<string, unknown>)
+        : {};
+    return scope.crewId
+      ? metadata.crewId === scope.crewId
+      : metadata.crewId === undefined;
   }
 
   /** Validate an optional workspace header and return its canonical scope. */
@@ -928,6 +1093,12 @@ export class MediaUploadService {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+interface UploadScope {
+  workspaceId: string | null;
+  crewId: string | null;
+  keyScope: string;
+}
 
 interface ConfirmedUploadTruth {
   storageProvider: MediaStorageProvider;

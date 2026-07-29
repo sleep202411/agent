@@ -167,6 +167,61 @@ export const UpdatePositionSchema = PositionBaseSchema.partial().extend({
 });
 export type UpdatePositionInput = z.infer<typeof UpdatePositionSchema>;
 
+function commaSeparatedEnum<const T extends readonly [string, ...string[]]>(
+  values: T,
+  field: string,
+) {
+  const allowed = new Set<string>(values);
+  return z
+    .string()
+    .trim()
+    .max(256)
+    .optional()
+    .transform((raw, ctx): T[number][] => {
+      if (!raw) return [];
+      const items = [
+        ...new Set(raw.split(',').map((value) => value.trim())),
+      ].filter(Boolean);
+      const invalid = items.find((value) => !allowed.has(value));
+      if (invalid) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${field} contains unsupported value "${invalid}"`,
+        });
+        return z.NEVER;
+      }
+      return items as T[number][];
+    });
+}
+
+export const ListPublicPositionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(60).default(36),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+  employment: commaSeparatedEnum(EMPLOYMENT_TYPES, 'employment'),
+  seniority: commaSeparatedEnum(EXPERIENCE_LEVELS, 'seniority'),
+  workMode: commaSeparatedEnum(WORK_MODES, 'workMode'),
+  sort: z.enum(['newest', 'oldest']).default('newest'),
+});
+export type ListPublicPositionsQuery = z.infer<
+  typeof ListPublicPositionsQuerySchema
+>;
+
+export const ListCrewPositionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+});
+export type ListCrewPositionsQuery = z.infer<
+  typeof ListCrewPositionsQuerySchema
+>;
+
 // ─── Application ────────────────────────────────────────────
 
 export const ApplySchema = z.object({
@@ -179,15 +234,6 @@ export const ApplySchema = z.object({
     .nullable()
     .optional(),
   expectedCompensation: ExpectedCompensationSchema.nullable().optional(),
-  /// Legacy CN-only field. Kept temporarily so old clients/cached bundles
-  /// keep working; new clients should send expectedCompensation.
-  expectedSalary: z
-    .number()
-    .int()
-    .min(0)
-    .max(100_000_000)
-    .nullable()
-    .optional(),
   availableStartDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'availableStartDate must be YYYY-MM-DD')
@@ -197,25 +243,334 @@ export const ApplySchema = z.object({
 });
 export type ApplyInput = z.infer<typeof ApplySchema>;
 
-// ─── Manual member ──────────────────────────────────────────
-
-export const AddMemberSchema = z.object({
-  account: z
+export const ListCrewApplicationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z
     .string()
     .trim()
-    .min(3)
-    .max(120)
-    .refine((v) => EMAIL_RE.test(v) || PHONE_RE.test(v), {
-      message: 'account must be a valid email or phone',
-    }),
-  roleType: presetPosition,
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+  positionId: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'positionId is invalid')
+    .optional(),
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });
-export type AddMemberInput = z.infer<typeof AddMemberSchema>;
+export type ListCrewApplicationsQuery = z.infer<
+  typeof ListCrewApplicationsQuerySchema
+>;
+
+// ─── Crew collaboration ─────────────────────────────────────
+
+const InvitationAgreementRequestSchema = z.object({
+  signerName: z.string().trim().min(1).max(128),
+  signerEmail: z.string().trim().email().max(320),
+  title: z.string().trim().min(1).max(180),
+});
+
+export const CreateCrewInvitationSchema = z
+  .object({
+    account: z
+      .string()
+      .trim()
+      .min(3)
+      .max(120)
+      .refine((v) => EMAIL_RE.test(v) || PHONE_RE.test(v), {
+        message: 'account must be a valid email or phone',
+      }),
+    roleType: presetPosition,
+    expiresInDays: z.number().int().min(1).max(30).default(7),
+    agreement: InvitationAgreementRequestSchema.optional(),
+  })
+  .strict();
+export type CreateCrewInvitationInput = z.infer<
+  typeof CreateCrewInvitationSchema
+>;
+
+export const ListCrewInvitationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+});
+export type ListCrewInvitationsQuery = z.infer<
+  typeof ListCrewInvitationsQuerySchema
+>;
+
+export const ListCrewMembersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(2).max(100).default(50),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+});
+export type ListCrewMembersQuery = z.infer<typeof ListCrewMembersQuerySchema>;
 
 export const UpdateMemberSchema = z.object({
   isFinance: z.boolean().optional(),
 });
 export type UpdateMemberInput = z.infer<typeof UpdateMemberSchema>;
+
+export const CreateCrewAgreementSchema = z.object({
+  memberUserId: z.string().trim().min(1).max(64),
+  signerName: z.string().trim().min(1).max(128),
+  signerEmail: z.string().trim().email().max(320),
+  title: z.string().trim().min(1).max(180),
+});
+export type CreateCrewAgreementInput = z.infer<
+  typeof CreateCrewAgreementSchema
+>;
+
+export const ListCrewAgreementsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+    .optional(),
+  view: z.enum(['all', 'active', 'signed', 'attention']).default('all'),
+});
+export type ListCrewAgreementsQuery = z.infer<
+  typeof ListCrewAgreementsQuerySchema
+>;
+
+const TaskAssigneeSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  /// Points-native compensation. Approval accrues these as withdrawable
+  /// community points; cash-out uses the immutable 100 points = USD 1 quote.
+  rewardPoints: z
+    .number()
+    .int()
+    .min(1)
+    .max(10_000_000_000)
+    .nullable()
+    .optional(),
+});
+
+const TaskCustomFieldValueSchema = z
+  .object({
+    fieldId: z.string().uuid(),
+    /// `null` removes the sparse value row. Runtime validation against the
+    /// field definition happens inside the task transaction.
+    value: z.union([
+      z.string().max(4_000),
+      z.number().finite(),
+      z.boolean(),
+      z.array(z.string().max(128)).max(50),
+      z.null(),
+    ]),
+  })
+  .strict();
+
+export const CreateCrewTaskSchema = z
+  .object({
+    title: z.string().trim().min(1).max(180),
+    description: z.string().trim().max(10_000).default(''),
+    workflowStateId: z.string().uuid().optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+    startAt: z.string().datetime({ offset: true }).nullable().optional(),
+    dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+    estimatePoints: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .nullable()
+      .optional(),
+    computeBudgetPoints: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .nullable()
+      .optional(),
+    revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
+    cycleId: z.string().uuid().nullable().optional(),
+    parentId: z.string().uuid().nullable().optional(),
+    blockedByTaskIds: z.array(z.string().uuid()).max(50).default([]),
+    customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).default([]),
+    labelIds: z.array(z.string().uuid()).max(20).default([]),
+    assignees: z.array(TaskAssigneeSchema).max(30).default([]),
+  })
+  .refine(
+    (input) =>
+      input.startAt == null ||
+      input.dueAt == null ||
+      new Date(input.dueAt) >= new Date(input.startAt),
+    {
+      path: ['dueAt'],
+      message: 'Task due date must be on or after its start date',
+    },
+  );
+export type CreateCrewTaskInput = z.infer<typeof CreateCrewTaskSchema>;
+
+export const UpdateCrewTaskSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    title: z.string().trim().min(1).max(180).optional(),
+    description: z.string().trim().max(10_000).optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    startAt: z.string().datetime({ offset: true }).nullable().optional(),
+    dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+    estimatePoints: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .nullable()
+      .optional(),
+    computeBudgetPoints: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .nullable()
+      .optional(),
+    revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
+    cycleId: z.string().uuid().nullable().optional(),
+    parentId: z.string().uuid().nullable().optional(),
+    blockedByTaskIds: z.array(z.string().uuid()).max(50).optional(),
+    customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).optional(),
+    labelIds: z.array(z.string().uuid()).max(20).optional(),
+    workflowStateId: z.string().uuid().optional(),
+    assignees: z.array(TaskAssigneeSchema).max(30).optional(),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      Object.entries(input).some(
+        ([field, value]) => field !== 'expectedVersion' && value !== undefined,
+      ),
+    { message: 'At least one task field must be changed' },
+  );
+export type UpdateCrewTaskInput = z.infer<typeof UpdateCrewTaskSchema>;
+
+const TaskMentionSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((label) => !/[@\r\n]/.test(label), {
+      message: 'Mention label cannot contain @ or a line break',
+    }),
+});
+
+const TaskCommentAttachmentNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .refine((name) => name !== '.' && name !== '..', {
+    message: 'Attachment name cannot be "." or ".."',
+  })
+  .refine((name) => !name.includes('/'), {
+    message: 'Attachment name cannot contain "/"',
+  });
+
+const TaskCommentAttachmentSchema = z.discriminatedUnion('source', [
+  z.object({
+    source: z.literal('asset'),
+    assetNodeId: z.string().uuid(),
+  }),
+  z.object({
+    source: z.literal('upload'),
+    mediaAssetId: z.string().uuid(),
+    name: TaskCommentAttachmentNameSchema,
+  }),
+]);
+
+const TaskCommentAttachmentsSchema = z
+  .array(TaskCommentAttachmentSchema)
+  .max(10)
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      const key =
+        item.source === 'asset'
+          ? `asset:${item.assetNodeId}`
+          : `upload:${item.mediaAssetId}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index],
+          message: 'The same attachment cannot be added twice',
+        });
+      }
+      seen.add(key);
+    });
+  });
+
+export const ListCrewTaskTimelineQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListCrewTaskTimelineQuery = z.infer<
+  typeof ListCrewTaskTimelineQuerySchema
+>;
+
+export const ListCrewSettlementsQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  status: z.enum(['pending', 'settled']).optional(),
+});
+export type ListCrewSettlementsQuery = z.infer<
+  typeof ListCrewSettlementsQuerySchema
+>;
+
+export const CreateCrewTaskCommentSchema = z
+  .object({
+    body: z.string().trim().max(10_000).default(''),
+    mentions: z.array(TaskMentionSchema).max(20).default([]),
+    replyToId: z.string().uuid().nullable().optional(),
+    attachments: TaskCommentAttachmentsSchema.default([]),
+    clientKey: z.string().trim().min(1).max(64),
+  })
+  .strict()
+  .refine((input) => input.body.length > 0 || input.attachments.length > 0, {
+    message: 'A comment needs text or at least one attachment',
+  });
+export type CreateCrewTaskCommentInput = z.infer<
+  typeof CreateCrewTaskCommentSchema
+>;
+
+export const UpdateCrewTaskCommentSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    body: z.string().trim().min(1).max(10_000),
+    mentions: z.array(TaskMentionSchema).max(20).default([]),
+  })
+  .strict();
+export type UpdateCrewTaskCommentInput = z.infer<
+  typeof UpdateCrewTaskCommentSchema
+>;
+
+export const SubmitCrewTaskSchema = z.object({
+  note: z.string().trim().max(5000).default(''),
+  assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
+});
+export type SubmitCrewTaskInput = z.infer<typeof SubmitCrewTaskSchema>;
+
+export const ReviewCrewTaskSchema = z
+  .object({
+    decision: z.enum(['approve', 'request_revision']),
+    note: z.string().trim().max(5000).default(''),
+  })
+  .refine((input) => input.decision === 'approve' || input.note.length > 0, {
+    path: ['note'],
+    message: 'Revision instructions are required when requesting changes',
+  });
+export type ReviewCrewTaskInput = z.infer<typeof ReviewCrewTaskSchema>;
+
+export const SettleCrewItemSchema = z.object({
+  note: z.string().trim().max(2000).nullable().optional(),
+});
+export type SettleCrewItemInput = z.infer<typeof SettleCrewItemSchema>;
 
 // ─── Viewer moderation ──────────────────────────────────────
 

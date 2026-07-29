@@ -9,8 +9,15 @@
  * roster ordering).
  */
 
-import { useMemo, useState } from "react";
-import { IconLoader2, IconUserPlus, IconUsers } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  IconClock,
+  IconSignature,
+  IconLoader2,
+  IconUserPlus,
+  IconUsers,
+  IconX,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -27,13 +34,17 @@ import {
 import { useTranslations as useTranslationsCommon } from "@/src/i18n/i18n";
 import {
   CrewApiError,
+  useCrewInvitations,
   useRemoveMember,
+  useRevokeCrewInvitation,
   useTransferCrewOwner,
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
-import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import { MemberCard } from "./member-card";
+import { CrewAgreementsDialog } from "./crew-agreements-dialog";
 
 interface MembersGridProps {
   crewId: string;
@@ -41,13 +52,27 @@ interface MembersGridProps {
   isOwner: boolean;
   loading: boolean;
   onInvite: () => void;
+  initialAgreementId?: string | null;
+  onAgreementsClose?: () => void;
 }
 
-export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: MembersGridProps) {
+export function MembersGrid({
+  crewId,
+  members,
+  isOwner,
+  loading,
+  onInvite,
+  initialAgreementId,
+  onAgreementsClose,
+}: MembersGridProps) {
   const t = useTranslations("workspace");
+  const ta = useTranslations("crewAgreements");
   const tc = useTranslationsCommon("common");
   const removeMember = useRemoveMember(crewId);
   const transferOwner = useTransferCrewOwner(crewId);
+  const invitations = useCrewInvitations(crewId, isOwner);
+  const revokeInvitation = useRevokeCrewInvitation(crewId);
+  const translateRole = useTranslatePositionValue();
   const [pendingRemove, setPendingRemove] = useState<{ memberId: string; name: string } | null>(
     null
   );
@@ -57,12 +82,17 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
   // Whether the outgoing owner leaves the crew after handing off (default:
   // stay on as a normal member).
   const [transferLeave, setTransferLeave] = useState(false);
+  const [agreementsOpen, setAgreementsOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialAgreementId) setAgreementsOpen(true);
+  }, [initialAgreementId]);
 
   // Founder always at the top; rest by join order (oldest first).
   const sorted = useMemo(() => {
-    const founder = members.find((m) => m.via === "founder");
+    const founder = members.find((m) => m.roleType === "owner");
     const others = members
-      .filter((m) => m.via !== "founder")
+      .filter((m) => m.roleType !== "owner")
       .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
     return { founder: founder ?? null, others };
   }, [members]);
@@ -71,7 +101,11 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
   // (cards mounting individually would each fire their own lookup,
   // defeating the batching). React Query keys by the sorted id list,
   // so two grids on the same crew share the cache row.
-  const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
+  const pendingInvitations = useMemo(() => invitations.data, [invitations.data]);
+  const memberIds = useMemo(
+    () => [...members.map((m) => m.userId), ...pendingInvitations.map((i) => i.inviteeUserId)],
+    [members, pendingInvitations]
+  );
   const displays = useUserDisplays(memberIds);
 
   const handleTransfer = () => {
@@ -131,12 +165,129 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
           <IconUsers className="size-4 text-primary" />
           {t("memberManagement")} · {members.length} {t("people")}
         </h3>
-        {isOwner ? (
-          <Button variant="soft" color="primary" size="sm" onClick={onInvite}>
-            <IconUserPlus className="size-3.5" /> {t("inviteMember")}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            color="muted"
+            size="sm"
+            onClick={() => setAgreementsOpen(true)}
+            icon={<IconSignature />}
+          >
+            {ta("title")}
           </Button>
-        ) : null}
+          {isOwner ? (
+            <Button variant="soft" color="primary" size="sm" onClick={onInvite}>
+              <IconUserPlus className="size-3.5" /> {t("inviteMember")}
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {isOwner && (invitations.isLoading || invitations.isError || invitations.total > 0) ? (
+        <section className="overflow-hidden rounded-xl bg-white/[0.025] ring-1 ring-white/[0.075]">
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+            <IconClock className="size-4 text-white/45" />
+            <h4 className="text-xs font-semibold text-white/75">
+              {t("pendingInvitations")} · {invitations.total}
+            </h4>
+          </div>
+          {invitations.isLoading ? (
+            <div className="flex h-14 items-center justify-center">
+              <IconLoader2 className="size-4 animate-spin text-white/35" />
+            </div>
+          ) : invitations.isError ? (
+            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+              <p className="text-xs text-destructive">
+                {invitations.error instanceof Error
+                  ? invitations.error.message
+                  : t("invitationRevokeFailed")}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                color="muted"
+                onClick={() => void invitations.refetch()}
+              >
+                {tc("retry")}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="divide-y divide-white/[0.06]">
+                {pendingInvitations.map((invitation) => (
+                  <div
+                    key={invitation.id}
+                    className="flex min-h-14 items-center justify-between gap-4 px-4 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-white/80">
+                        {displayNameOf(invitation.inviteeUserId, displays)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-white/38">
+                        {translateRole(invitation.roleType)} ·{" "}
+                        {t("invitationExpires", {
+                          date: new Intl.DateTimeFormat(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          }).format(new Date(invitation.expiresAt)),
+                        })}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      color="muted"
+                      disabled={
+                        revokeInvitation.isPending && revokeInvitation.variables === invitation.id
+                      }
+                      onClick={() =>
+                        revokeInvitation.mutate(invitation.id, {
+                          onSuccess: () => toast.success(t("invitationRevoked")),
+                          onError: (error) =>
+                            toast.error(
+                              error instanceof Error ? error.message : t("invitationRevokeFailed")
+                            ),
+                        })
+                      }
+                      icon={
+                        revokeInvitation.isPending &&
+                        revokeInvitation.variables === invitation.id ? (
+                          <IconLoader2 className="animate-spin" />
+                        ) : (
+                          <IconX />
+                        )
+                      }
+                    >
+                      {t("revokeInvitation")}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {invitations.hasNextPage ? (
+                <div className="border-t border-white/[0.06] px-4 py-2.5 text-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    color="muted"
+                    disabled={invitations.isFetchingNextPage}
+                    onClick={() => void invitations.fetchNextPage()}
+                    icon={
+                      invitations.isFetchingNextPage ? (
+                        <IconLoader2 className="animate-spin" />
+                      ) : undefined
+                    }
+                  >
+                    {invitations.isFetchingNextPage ? tc("loading") : tc("loadMore")}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
 
       {/* Body */}
       {loading ? (
@@ -184,6 +335,18 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
           ) : null}
         </div>
       )}
+
+      <CrewAgreementsDialog
+        crewId={crewId}
+        members={members}
+        isOwner={isOwner}
+        focusAgreementId={initialAgreementId}
+        open={agreementsOpen}
+        onOpenChange={(next) => {
+          setAgreementsOpen(next);
+          if (!next && initialAgreementId) onAgreementsClose?.();
+        }}
+      />
 
       {/* Remove confirmation */}
       <AlertDialog
