@@ -1,23 +1,24 @@
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { ChipRail, EmptyState, PosterImage, ScreenHeader, Skeleton } from "@/components/ui";
+import {
+  ChipRail,
+  EmptyState,
+  ListFooter,
+  PosterImage,
+  ScreenHeader,
+  Skeleton,
+} from "@/components/ui";
 import { webBaseUrl, type AppLocale } from "@/config";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
-import { getNewsFeed } from "@/data/browse-service";
+import { getNewsFeed, getNewsTags, NEWS_PAGE_SIZE } from "@/data/browse-service";
 import type { NewsArticle, NewsTag } from "@/data/types";
 import { useLocale, useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
-
-/**
- * The admin default "全部" tag is attached to everything — it duplicates the
- * synthetic All chip, so it never appears as a chip of its own.
- */
-const ALL_TAG_ID = "all";
 
 function openArticle(article: NewsArticle, locale: AppLocale) {
   // External items are bare links; internal articles render on the site's
@@ -27,34 +28,76 @@ function openArticle(article: NewsArticle, locale: AppLocale) {
   if (url) void WebBrowser.openBrowserAsync(url);
 }
 
+/** Stop paging on an empty/short page so Web onEndReached can't spin forever. */
+function pageHasMore(loadedCount: number, pageArticles: NewsArticle[], total: number): boolean {
+  if (pageArticles.length === 0) return false;
+  if (pageArticles.length < NEWS_PAGE_SIZE) return false;
+  return loadedCount < total;
+}
+
 export default function NewsScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [tagOptions, setTagOptions] = useState<NewsTag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [filtering, setFiltering] = useState(false);
   const [error, setError] = useState<string>();
+  // null = frontend "All" chip — no server-side tag filter.
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const hasDataRef = useRef(false);
-  // The payload is locale-dependent (titles/tag labels resolve server-side), so
-  // a straggling response from a superseded request must never win over the
-  // current locale's — each load takes a sequence ticket and stale ones bail.
+  const activeTagIdRef = useRef<string | null>(null);
+  // Locale / tag switches take a sequence ticket so stale responses never win.
   const requestSeqRef = useRef(0);
+  // Guards onEndReached from firing a second page fetch before the first resolves.
+  const loadingMoreRef = useRef(false);
 
-  const load = useCallback(async () => {
+  activeTagIdRef.current = activeTagId;
+
+  const loadFirstPage = useCallback(async () => {
     const seq = ++requestSeqRef.current;
-    // Skeleton only when there is nothing to show yet — refetches swap in place.
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
-      const data = await getNewsFeed(locale);
+      const tag = activeTagIdRef.current;
+      const [feed, tags] = await Promise.all([
+        getNewsFeed(locale, {
+          page: 1,
+          pageSize: NEWS_PAGE_SIZE,
+          ...(tag ? { tag } : {}),
+        }),
+        getNewsTags(locale),
+      ]);
       if (seq !== requestSeqRef.current) return;
       hasDataRef.current = true;
-      setArticles(data);
+      setTagOptions(tags);
+
+      const kept = tag && tags.some((item) => item.id === tag) ? tag : null;
+      if (kept !== tag) setActiveTagId(kept);
+
+      // Tag was dropped from the rail — refetch unfiltered page 1.
+      if (tag && !kept) {
+        const allFeed = await getNewsFeed(locale, { page: 1, pageSize: NEWS_PAGE_SIZE });
+        if (seq !== requestSeqRef.current) return;
+        setArticles(allFeed.articles);
+        setTotal(allFeed.total);
+        setPage(1);
+        setHasMore(pageHasMore(allFeed.articles.length, allFeed.articles, allFeed.total));
+        return;
+      }
+
+      setArticles(feed.articles);
+      setTotal(feed.total);
+      setPage(1);
+      setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
     } catch (loadError) {
-      // A failed background refetch keeps the list we already have.
       if (seq === requestSeqRef.current && !hasDataRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("news.loadError"));
       }
@@ -64,35 +107,84 @@ export default function NewsScreen() {
   }, [locale, t]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadFirstPage();
+  }, [loadFirstPage]);
+
+  const canLoadMore = hasMore && !filtering;
+
+  const loadMore = useCallback(async () => {
+    if (!canLoadMore || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const seq = requestSeqRef.current;
+    const tag = activeTagIdRef.current;
+    const nextPage = page + 1;
+    try {
+      const feed = await getNewsFeed(locale, {
+        page: nextPage,
+        pageSize: NEWS_PAGE_SIZE,
+        ...(tag ? { tag } : {}),
+      });
+      if (seq !== requestSeqRef.current) return;
+
+      if (feed.articles.length === 0) {
+        setHasMore(false);
+        setTotal(feed.total);
+        return;
+      }
+
+      let nextLength = 0;
+      setArticles((current) => {
+        const seen = new Set(current.map((article) => article.id));
+        const merged = [...current, ...feed.articles.filter((article) => !seen.has(article.id))];
+        nextLength = merged.length;
+        return merged;
+      });
+      setTotal(feed.total);
+      setPage(nextPage);
+      setHasMore(pageHasMore(nextLength, feed.articles, feed.total));
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [canLoadMore, locale, page]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await load();
+      await loadFirstPage();
     } finally {
       setRefreshing(false);
     }
-  }, [load]);
+  }, [loadFirstPage]);
 
-  // No public tag-list endpoint — the rail derives from the tags actually
-  // present on published items, so it grows as the admin tags content.
-  const tagOptions = useMemo<NewsTag[]>(() => {
-    const seen = new Map<string, string>();
-    for (const article of articles) {
-      for (const tag of article.tags) {
-        if (tag.id !== ALL_TAG_ID && !seen.has(tag.id)) seen.set(tag.id, tag.label);
+  const selectTag = useCallback(
+    async (tagId: string | null) => {
+      const previous = activeTagIdRef.current;
+      if (tagId === previous) return;
+      setActiveTagId(tagId);
+      const seq = ++requestSeqRef.current;
+      setFiltering(true);
+      try {
+        const feed = await getNewsFeed(locale, {
+          page: 1,
+          pageSize: NEWS_PAGE_SIZE,
+          ...(tagId ? { tag: tagId } : {}),
+        });
+        if (seq !== requestSeqRef.current) return;
+        setArticles(feed.articles);
+        setTotal(feed.total);
+        setPage(1);
+        setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
+      } catch {
+        // Keep the current list on a failed filter fetch — revert the chip.
+        if (seq === requestSeqRef.current) setActiveTagId(previous);
+      } finally {
+        if (seq === requestSeqRef.current) setFiltering(false);
       }
-    }
-    return [...seen].map(([id, label]) => ({ id, label }));
-  }, [articles]);
-
-  // A selected tag can disappear after a refetch (item unpublished/retagged).
-  const effectiveTagId = tagOptions.some((tag) => tag.id === activeTagId) ? activeTagId : null;
-  const filtered = effectiveTagId
-    ? articles.filter((article) => article.tags.some((tag) => tag.id === effectiveTagId))
-    : articles;
+    },
+    [locale]
+  );
 
   // The native tab host does NOT inset content below the status bar (verified
   // on iOS 26.3) — pad by the safe-area inset ourselves, like the mine tab.
@@ -140,10 +232,14 @@ export default function NewsScreen() {
     );
   }
 
+  const activeIndex = activeTagId
+    ? Math.max(0, tagOptions.findIndex((tag) => tag.id === activeTagId) + 1)
+    : 0;
+
   return (
     <FlatList
-      style={[styles.screen, { backgroundColor: theme.background }]}
-      data={filtered}
+      style={[styles.screen, { backgroundColor: theme.background }, filtering && styles.dimmed]}
+      data={articles}
       keyExtractor={(article) => article.id}
       showsVerticalScrollIndicator={false}
       contentInsetAdjustmentBehavior="never"
@@ -158,10 +254,10 @@ export default function NewsScreen() {
           {tagOptions.length ? (
             <ChipRail
               items={[t("news.tagAll"), ...tagOptions.map((tag) => tag.label)]}
-              activeIndex={
-                effectiveTagId ? tagOptions.findIndex((tag) => tag.id === effectiveTagId) + 1 : 0
-              }
-              onChange={(index) => setActiveTagId(index === 0 ? null : tagOptions[index - 1].id)}
+              activeIndex={activeIndex}
+              onChange={(index) => {
+                void selectTag(index === 0 ? null : (tagOptions[index - 1]?.id ?? null));
+              }}
             />
           ) : null}
         </View>
@@ -174,7 +270,20 @@ export default function NewsScreen() {
           symbol={{ ios: "newspaper", android: "feed", web: "feed" }}
         />
       }
+      ListFooterComponent={
+        loadingMore ? (
+          <ListFooter loading />
+        ) : hasMore || articles.length === 0 ? null : (
+          <View style={[styles.endOfList, { marginBottom: -(bottomInset - Spacing.three) }]}>
+            <ThemedText type="code" themeColor="textSecondary">
+              {t("news.endOfList")}
+            </ThemedText>
+          </View>
+        )
+      }
       ItemSeparatorComponent={ItemSeparator}
+      onEndReached={() => void loadMore()}
+      onEndReachedThreshold={0.5}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -264,6 +373,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
+  dimmed: {
+    opacity: 0.55,
+  },
   stateContainer: {
     width: "100%",
     maxWidth: MaxContentWidth,
@@ -280,6 +392,12 @@ const styles = StyleSheet.create({
   },
   listHeader: {
     marginBottom: Spacing.five,
+  },
+  endOfList: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.two,
   },
   separator: {
     height: Spacing.two,

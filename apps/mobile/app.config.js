@@ -258,7 +258,9 @@ module.exports = ({ config }) => {
     },
     web: {
       bundler: "metro",
-      output: "static",
+      // API routes (`/_mobile-api/*`) need "server" in local web dev. EAS
+      // `expo export:embed` for native release builds requires "static".
+      output: appVariant === "development" ? "server" : "static",
       favicon: "./assets/images/favicon.png",
       themeColor: THEME_COLORS.canvas,
       backgroundColor: THEME_COLORS.canvas,

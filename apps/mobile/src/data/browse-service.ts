@@ -9,7 +9,12 @@ import { fetchCrewById, fetchCrewFeed, fetchCrewFeedPage, fetchCrewsByUser } fro
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
 import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
 import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
-import { fetchNewsFeed } from "./news-api";
+import {
+  fetchNewsFeed,
+  fetchNewsTags,
+  type FetchNewsFeedOptions,
+  type NewsFeedPage,
+} from "./news-api";
 import type {
   CreatorServiceDetail,
   CreatorServiceSummary,
@@ -21,8 +26,11 @@ import type {
   IpDetail,
   IpDiscovery,
   IpSummary,
-  NewsArticle,
+  NewsTag,
 } from "./types";
+
+export type { NewsFeedPage } from "./news-api";
+export { NEWS_PAGE_SIZE } from "./news-api";
 
 export type { IpDiscovery } from "./types";
 export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
@@ -98,6 +106,13 @@ export async function getCreatorIps(creatorId: string, limit = 12): Promise<IpSu
   return fetchCreatorIps(creatorId, limit);
 }
 
-export async function getNewsFeed(locale: AppLocale): Promise<NewsArticle[]> {
-  return fetchNewsFeed(locale);
+export async function getNewsFeed(
+  locale: AppLocale,
+  options?: FetchNewsFeedOptions
+): Promise<NewsFeedPage> {
+  return fetchNewsFeed(locale, options);
+}
+
+export async function getNewsTags(locale: AppLocale): Promise<NewsTag[]> {
+  return fetchNewsTags(locale);
 }

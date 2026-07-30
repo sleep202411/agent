@@ -71,8 +71,7 @@ export default function InviteCodeScreen() {
             disabled={busy}
             hitSlop={8}
             onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace("/profile-setup");
+              router.replace("/profile-setup");
             }}
             style={({ pressed }) => (pressed ? styles.pressed : null)}
           >

@@ -215,6 +215,7 @@
   "news.emptyTitle": "暫無資訊",
   "news.emptyDetail": "目前尚未發佈任何新聞。",
   "news.tagAll": "全部",
+  "news.endOfList": "沒有更多啦",
   "settings.checkUpdate": "檢查更新",
   "update.availableTitle": "發現新版本",
   "update.availableDetail": "新版本已發佈，建議立即更新。",
