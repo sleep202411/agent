@@ -215,6 +215,7 @@
   "news.emptyTitle": "暂无资讯",
   "news.emptyDetail": "目前还没有发布任何新闻。",
   "news.tagAll": "全部",
+  "news.endOfList": "没有更多啦",
   "settings.checkUpdate": "检查更新",
   "update.availableTitle": "发现新版本",
   "update.availableDetail": "新版本已发布，建议立即更新。",
