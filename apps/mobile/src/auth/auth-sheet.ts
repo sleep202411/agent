@@ -82,8 +82,6 @@ export function completeAuthSheet(router: ImperativeRouter) {
   pendingRequest = undefined;
   authSheetOpen = false;
 
-  // Onboarding may push invite on top of profile. Pop to the first auth screen
-  // first, then leave the auth group — a single back() would stop on profile.
   if (router.canDismiss()) {
     router.dismissAll();
   }
