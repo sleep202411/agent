@@ -334,6 +334,7 @@
   "news.emptyTitle": "No stories yet",
   "news.emptyDetail": "No news is published right now.",
   "news.tagAll": "All",
+  "news.endOfList": "You're all caught up",
   "settings.checkUpdate": "Check for updates",
   "update.availableTitle": "New version",
   "update.availableDetail": "A new version is available.",

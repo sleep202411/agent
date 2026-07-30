@@ -1,14 +1,11 @@
 /**
- * News API — Java backend public news endpoint (`GET /api/news` on the
- * `content` service), the same admin-managed store the web /news page reads
- * (docs/news-module-backend-spec.md §5). Replaces the legacy layout-placement
- * feed `/project/list/newsad`.
+ * News API — Java backend public news endpoints (`GET /api/news`,
+ * `GET /api/news/tags` on the `content` service).
  *
- * The list is published-only, ordered by publishedAt desc; title/summary/cover
- * and tag labels are resolved server-side for the requested `locale` with
- * zh-CN fallback. There is NO public tag-list endpoint (tags are admin-only,
- * `/api/admin/news/tags`) — tag rails must derive from the tags present on
- * the fetched items.
+ * Anonymous, published-only, ordered by publishedAt desc. Title / summary /
+ * cover / tag labels resolve for the requested `locale` with zh-CN fallback.
+ * The "All" chip is frontend-only — omit `tag` for the unfiltered feed (do not
+ * send `tag_all`).
  */
 import { appEnv, resolveAssetUrl, type AppLocale } from "@/config";
 import { api } from "@/lib/api-client";
@@ -37,9 +34,22 @@ type NewsListDto = {
   list?: NewsItemDto[];
 };
 
-// Returns the full published set today (~72 items); revisit with real
-// pagination if the catalogue ever outgrows this (same note as the web).
-const FEED_PAGE_SIZE = 100;
+/** Default page size from the public news API (`pageSize` default 20). */
+export const NEWS_PAGE_SIZE = 20;
+
+export type NewsFeedPage = {
+  articles: NewsArticle[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type FetchNewsFeedOptions = {
+  /** Real backend tag id. Omit / empty for All (no server-side tag filter). */
+  tag?: string;
+  page?: number;
+  pageSize?: number;
+};
 
 function mapTags(raw?: NewsTagDto[]): NewsTag[] {
   const out: NewsTag[] = [];
@@ -51,15 +61,10 @@ function mapTags(raw?: NewsTagDto[]): NewsTag[] {
   return out;
 }
 
-export async function fetchNewsFeed(locale: AppLocale): Promise<NewsArticle[]> {
-  const data = await api.get<NewsListDto>("/api/news", {
-    service: "content",
-    params: { locale, pageSize: FEED_PAGE_SIZE },
-  });
-
+function normalizeFeed(list: NewsItemDto[] | undefined): NewsArticle[] {
   const seen = new Set<string>();
   const out: NewsArticle[] = [];
-  for (const raw of data?.list ?? []) {
+  for (const raw of list ?? []) {
     if (!raw || typeof raw !== "object") continue;
     const id = raw.id === undefined || raw.id === null ? "" : String(raw.id);
     const title = (raw.title ?? "").trim();
@@ -83,7 +88,50 @@ export async function fetchNewsFeed(locale: AppLocale): Promise<NewsArticle[]> {
       tags: mapTags(raw.tags),
     });
   }
-
   // Upstream already orders by publishedAt desc — keep server order.
   return out;
+}
+
+/**
+ * One page of the published feed.
+ * `GET /api/news?locale=&page=&pageSize=&tag?`
+ */
+export async function fetchNewsFeed(
+  locale: AppLocale,
+  options: FetchNewsFeedOptions = {}
+): Promise<NewsFeedPage> {
+  const filterTag = options.tag?.trim() ?? "";
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.max(1, options.pageSize ?? NEWS_PAGE_SIZE);
+
+  const data = await api.get<NewsListDto>("/api/news", {
+    service: "content",
+    params: {
+      locale,
+      page,
+      pageSize,
+      ...(filterTag ? { tag: filterTag } : {}),
+    },
+  });
+
+  const articles = normalizeFeed(data?.list);
+  const total =
+    typeof data?.total === "number" && Number.isFinite(data.total)
+      ? Math.max(0, data.total)
+      : articles.length;
+
+  return { articles, total, page, pageSize };
+}
+
+/**
+ * Enabled tags for the filter rail (`onlyWithNews=true` drops empty tags).
+ * Does not include All — the UI prepends that chip itself.
+ */
+export async function fetchNewsTags(locale: AppLocale): Promise<NewsTag[]> {
+  const data = await api.get<NewsTagDto[]>("/api/news/tags", {
+    service: "content",
+    params: { locale, onlyWithNews: true },
+  });
+
+  return mapTags(data ?? []);
 }

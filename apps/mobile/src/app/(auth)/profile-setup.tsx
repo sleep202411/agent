@@ -30,7 +30,7 @@ export default function ProfileSetupScreen() {
   const canSubmit = nickname.trim().length > 0 && !busy;
 
   async function goInvite() {
-    router.push("/invite-code");
+    router.replace("/invite-code");
   }
 
   async function handleSubmit() {
