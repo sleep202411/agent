@@ -1,9 +1,9 @@
 import { STUDIO_AGENT_CLIENT_CHANNEL_CAPABILITY } from '@repo/shared/studio-agent-transport';
 import {
-  StudioAgentAblyTokenIssuer,
-  createStudioAgentAblyTokenSigner,
-  type StudioAgentAblyTokenSigner,
-} from './studio-agent.realtime';
+  createAblyTokenCredentials,
+  type AblyTokenCredentials,
+} from '../infra/realtime/ably-token-credentials';
+import { StudioAgentAblyTokenIssuer } from './studio-agent.realtime';
 
 /**
  * The credential policy, pinned.
@@ -24,12 +24,12 @@ const TTL_MS = 120_000;
 type SignerCall = {
   capability: Record<string, readonly string[]>;
   clientId: string;
-  ttl: number;
+  ttlMs: number;
 };
 
 function issuer() {
   const calls: SignerCall[] = [];
-  const signer: StudioAgentAblyTokenSigner = {
+  const credentials: AblyTokenCredentials = {
     createTokenRequest: (params) => {
       calls.push(params);
       return Promise.resolve({
@@ -39,15 +39,16 @@ function issuer() {
         timestamp: 1_770_000_000_000,
         nonce: 'nonce-0123456789abcdef',
         mac: 'signature',
-        ttl: params.ttl,
+        ttl: params.ttlMs,
       });
     },
+    issueJwt: jest.fn(),
   };
-  const config = { value: { ably: { apiKey: ROOT_KEY, tokenTtlMs: TTL_MS } } };
+  const config = { value: { ably: { tokenTtlMs: TTL_MS } } };
   return {
     calls,
-    signer,
-    subject: new StudioAgentAblyTokenIssuer(signer, config as never),
+    credentials,
+    subject: new StudioAgentAblyTokenIssuer(credentials, config as never),
   };
 }
 
@@ -129,7 +130,7 @@ describe('StudioAgentAblyTokenIssuer capability policy', () => {
 
     const grant = await subject.issueThreadToken(THREAD_ID, 'user-7');
 
-    expect(calls[0].ttl).toBe(TTL_MS);
+    expect(calls[0].ttlMs).toBe(TTL_MS);
     expect(grant.ttlMs).toBe(TTL_MS);
   });
 
@@ -189,17 +190,20 @@ describe('StudioAgentAblyTokenIssuer capability policy', () => {
    * `Ably.Rest` holds no connection, so all of that asserted that nothing
    * happened. A lifecycle member here has to mean a resource exists.
    */
-  it('exposes token signing and nothing else — no lifecycle for a client that has none', () => {
-    const { signer, subject } = issuer();
+  it('adds no lifecycle for a credential signer that has none', () => {
+    const { credentials, subject } = issuer();
 
-    expect(Object.keys(signer)).toEqual(['createTokenRequest']);
+    expect(Object.keys(credentials).sort()).toEqual([
+      'createTokenRequest',
+      'issueJwt',
+    ]);
     expect(
       (subject as unknown as Record<string, unknown>).onApplicationShutdown,
     ).toBeUndefined();
   });
 });
 
-describe('createStudioAgentAblyTokenSigner', () => {
+describe('createAblyTokenCredentials', () => {
   it.each([
     ['empty', ''],
     ['a key NAME with no secret', 'appId.keyId'],
@@ -210,14 +214,16 @@ describe('createStudioAgentAblyTokenSigner', () => {
     // two locked doors, and it is the one standing where the credential is
     // actually used: a server that came up unable to mint would leave every
     // creator staring at an assistant that never connects.
-    expect(() => createStudioAgentAblyTokenSigner(value)).toThrow(
-      /ABLY_API_KEY/,
-    );
+    expect(() => createAblyTokenCredentials(value)).toThrow(/ABLY_API_KEY/);
   });
 
   it('accepts a complete key', () => {
-    const signer = createStudioAgentAblyTokenSigner(ROOT_KEY);
-    expect(typeof signer.createTokenRequest).toBe('function');
-    expect(Object.keys(signer)).toEqual(['createTokenRequest']);
+    const credentials = createAblyTokenCredentials(ROOT_KEY);
+    expect(typeof credentials.createTokenRequest).toBe('function');
+    expect(typeof credentials.issueJwt).toBe('function');
+    expect(Object.keys(credentials).sort()).toEqual([
+      'createTokenRequest',
+      'issueJwt',
+    ]);
   });
 });

@@ -11,16 +11,6 @@ const requiredString = z.string().trim().min(1);
 const positiveInteger = z.coerce.number().int().positive();
 const nonnegativeInteger = z.coerce.number().int().nonnegative();
 const ratio = z.coerce.number().min(0.5).max(0.95);
-/**
- * `<appId>.<keyId>:<secret>` — a complete Ably API key.
- *
- * The shape is checked, not just the presence, because the two ways this gets
- * misconfigured both produce a string: pasting the public key NAME (the part
- * before the colon, which is what Ably's dashboard shows first) or pasting a
- * token. Either would sail past a `min(1)` and then fail at the first publish,
- * in production, as a delivery outage rather than a boot failure.
- */
-const ABLY_API_KEY_PATTERN = /^[\w-]+\.[\w-]+:[\w+/=-]+$/;
 const StudioAgentServerEnvironmentSchema = z
   .object({
     TEMPORAL_ADDRESS: requiredString,
@@ -60,25 +50,6 @@ const StudioAgentServerEnvironmentSchema = z
     STUDIO_AGENT_COMMAND_POLL_INTERVAL_MS: positiveInteger.default(250),
     STUDIO_AGENT_COMMAND_LEASE_MS: positiveInteger.default(30_000),
     STUDIO_AGENT_COMMAND_BATCH_SIZE: positiveInteger.max(100).default(20),
-    /**
-     * Delivery credential. Required, with no default and no "disabled" mode.
-     *
-     * Studio Agent delivery IS Ably. A server that booted without this would
-     * still accept turns, still commit events, and deliver none of them — the
-     * silent failure that looks like a hung assistant and reads, from the logs,
-     * like nothing happened. So it fails here instead, at boot, with the
-     * variable named.
-     */
-    ABLY_API_KEY: z
-      .string({
-        error:
-          'ABLY_API_KEY is required: Studio Agent delivery runs on Ably and cannot start without it.',
-      })
-      .trim()
-      .regex(
-        ABLY_API_KEY_PATTERN,
-        'ABLY_API_KEY must be a complete Ably API key of the form "<appId>.<keyId>:<secret>" — a key name or a token is not enough to publish or to sign tokens.',
-      ),
     /**
      * Lifetime of a browser's subscribe token, and therefore the worst case for
      * how long a REVOKED grant keeps receiving frames: the full TTL, if the
@@ -487,7 +458,6 @@ export interface StudioAgentServerConfig {
     };
   };
   ably: {
-    apiKey: string;
     tokenTtlMs: number;
   };
   model: {
@@ -574,7 +544,6 @@ export function loadStudioAgentServerConfig(
     STUDIO_AGENT_COMMAND_LEASE_MS: environment.STUDIO_AGENT_COMMAND_LEASE_MS,
     STUDIO_AGENT_COMMAND_BATCH_SIZE:
       environment.STUDIO_AGENT_COMMAND_BATCH_SIZE,
-    ABLY_API_KEY: environment.ABLY_API_KEY,
     STUDIO_AGENT_ABLY_TOKEN_TTL_MS: environment.STUDIO_AGENT_ABLY_TOKEN_TTL_MS,
     STUDIO_AGENT_ADMISSION_LEASE_MS:
       environment.STUDIO_AGENT_ADMISSION_LEASE_MS,
@@ -732,7 +701,6 @@ export function loadStudioAgentServerConfig(
       },
     },
     ably: {
-      apiKey: parsed.ABLY_API_KEY,
       tokenTtlMs: parsed.STUDIO_AGENT_ABLY_TOKEN_TTL_MS,
     },
     model: {

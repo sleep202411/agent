@@ -1,5 +1,10 @@
 export { AuthModule } from './auth.module';
 export { AuthService } from './auth.service';
 export { AuthGuard } from './auth.guard';
-export { CurrentUser, Public, ViewerCookie } from './auth.decorator';
+export {
+  CurrentUser,
+  Public,
+  SkipEndUserAuth,
+  ViewerCookie,
+} from './auth.decorator';
 export type { AuthUser, AuthenticatedRequest } from './auth.types';

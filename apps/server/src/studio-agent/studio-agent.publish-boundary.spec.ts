@@ -6,8 +6,8 @@ import { join, relative, sep } from 'node:path';
  *
  *   The Nest server never publishes to a Studio Agent channel — the Temporal
  *   activity worker is the only publisher, from inside the run it owns — and
- *   `studio-agent.realtime.ts` is the only module in the WHOLE SERVER that may
- *   touch Ably at all, for the single purpose of signing a per-thread token.
+ *   `ably-token-credentials.ts` is the only module in the WHOLE SERVER that may
+ *   touch Ably at all, for the single purpose of signing scoped credentials.
  *
  * This file replaces the boundary test the Postgres relay used to need. The
  * relay's invariant ("exactly one module may call `.publish(`, exactly one may
@@ -53,7 +53,7 @@ const MODULE_DIR = __dirname;
 const SERVER_SRC_DIR = join(__dirname, '..');
 
 /** The one module in the entire server allowed to name Ably at all. */
-const ABLY_OWNER = join('studio-agent', 'studio-agent.realtime.ts');
+const ABLY_OWNER = join('infra', 'realtime', 'ably-token-credentials.ts');
 
 function sourceFiles(root: string): string[] {
   const found: string[] = [];
@@ -166,11 +166,10 @@ describe('Studio Agent publish boundary', () => {
     const offenders = sourceFiles(SERVER_SRC_DIR).filter(
       (name) =>
         name !== ABLY_OWNER &&
-        name !== join('studio-agent', 'studio-agent.config.ts') &&
         /ABLY_API_KEY|ably\.apiKey/.test(read(SERVER_SRC_DIR, name)),
     );
 
-    // The config service parses it; the owner uses it. Nobody else sees it.
+    // The owner parses and uses it. Nobody else sees it.
     expect(offenders).toEqual([]);
   });
 });

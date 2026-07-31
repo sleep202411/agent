@@ -23,6 +23,8 @@
     "test:integration:story-agent": "cross-env STORY_AGENT_POSTGRES_INTEGRATION=1 jest --runInBand --runTestsByPath src/story-studio/story-agent-run.postgres.integration.spec.ts",
     "test:integration:copilot": "cross-env COPILOT_POSTGRES_INTEGRATION=1 jest --runInBand --runTestsByPath src/copilot/copilot.store.postgres.integration.spec.ts",
     "test:integration:studio-agent": "cross-env STUDIO_AGENT_POSTGRES_INTEGRATION=1 jest --runInBand --runTestsByPath src/studio-agent/studio-agent.story-capabilities.postgres.integration.spec.ts",
+    "test:integration:agent-platform": "cross-env AGENT_PLATFORM_POSTGRES_INTEGRATION=1 jest --runInBand --runTestsByPath src/agent-platform-gateway/agent-platform-conversation.postgres.integration.spec.ts src/agent-platform-gateway/agent-platform-attachment.postgres.integration.spec.ts src/agent-platform-gateway/agent-platform-invocation.postgres.integration.spec.ts src/agent-platform-gateway/agent-platform-document-analysis.postgres.integration.spec.ts",
+    "test:integration:agent-domain": "cross-env AGENT_DOMAIN_POSTGRES_INTEGRATION=1 jest --runInBand --runTestsByPath src/agent-domain-gateway/agent-domain-execution.postgres.integration.spec.ts src/agent-domain-gateway/story-agent-domain.postgres.integration.spec.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",

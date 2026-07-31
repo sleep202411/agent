@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import {
   get as httpGet,
   type ClientRequest,
@@ -38,8 +39,15 @@ type NodeGet = (
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  /** In-memory cache: cookie → { user, expiresAt } */
+  /**
+   * Positive validation cache keyed by the SHA-256 digest of one credential
+   * candidate, never by the browser's complete Cookie header. Cookie ordering
+   * and unrelated cookies change frequently and must not push the interactive
+   * Agent admission path back through remote Java authentication.
+   */
   private cache = new Map<string, { user: AuthUser; expiresAt: number }>();
+  /** Coalesces concurrent remote checks for the same credential. */
+  private inFlight = new Map<string, Promise<AuthUser | null>>();
 
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private static readonly CACHE_MAX_SIZE = 1000;
@@ -100,6 +108,7 @@ export class AuthService {
 
   onModuleDestroy() {
     if (this.pruneTimer) clearInterval(this.pruneTimer);
+    this.inFlight.clear();
   }
 
   /**
@@ -108,12 +117,6 @@ export class AuthService {
    */
   async validateToken(cookie: string): Promise<AuthUser | null> {
     if (!cookie) return null;
-
-    // Check cache first (keyed by the full incoming cookie header).
-    const cached = this.cache.get(cookie);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.user;
-    }
 
     // A browser can carry MULTIPLE `satoken` cookies for fizzdragon.com — the
     // fresh one from the current login PLUS a stale host-only one left over
@@ -128,34 +131,83 @@ export class AuthService {
         [...cookie.matchAll(/(?:^|;\s*)satoken=([^;]+)/g)].map((m) => m[1]),
       ),
     ];
-    const candidates: Array<{ cookie: string; hint: string }> =
+    const candidates: Array<{
+      cookie: string;
+      cacheKey: string;
+      fingerprint: string;
+    }> =
       satokenValues.length > 0
-        ? satokenValues.map((value) => ({
-            cookie: `satoken=${value}`,
-            hint: value.slice(0, 8),
-          }))
-        : [{ cookie, hint: '(none)' }];
+        ? satokenValues.map((value) => credentialCandidate(`satoken=${value}`))
+        : [credentialCandidate(cookie)];
+
+    // Search every candidate before doing I/O. If a stale duplicate appears
+    // first, a later known-good token must still keep the request local.
+    for (const candidate of candidates) {
+      const cached = this.cachedUser(candidate.cacheKey);
+      if (cached) return cached;
+    }
 
     for (const candidate of candidates) {
-      const user = await this.validateSatoken(candidate.cookie, candidate.hint);
+      const user = await this.validateCandidate(candidate);
       if (!user) continue;
-      // Evict oldest if cache is full
-      if (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
-        const first = this.cache.keys().next();
-        if (!first.done) this.cache.delete(first.value);
-      }
-      this.cache.set(cookie, {
-        user,
-        expiresAt: Date.now() + AuthService.CACHE_TTL_MS,
-      });
       if (satokenValues.length > 1) {
         this.logger.log(
-          `Auth validated via 1 of ${satokenValues.length} satoken candidates (stale-cookie skip) token=${candidate.hint}`,
+          `Auth validated via 1 of ${satokenValues.length} satoken candidates (stale-cookie skip) tokenFingerprint=${candidate.fingerprint}`,
         );
       }
       return user;
     }
     return null;
+  }
+
+  private cachedUser(cacheKey: string): AuthUser | null {
+    const cached = this.cache.get(cacheKey);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      this.cache.delete(cacheKey);
+      return null;
+    }
+    // Refresh insertion order so the bounded Map behaves as an LRU cache.
+    this.cache.delete(cacheKey);
+    this.cache.set(cacheKey, cached);
+    return cached.user;
+  }
+
+  private async validateCandidate(candidate: {
+    cookie: string;
+    cacheKey: string;
+    fingerprint: string;
+  }): Promise<AuthUser | null> {
+    const cached = this.cachedUser(candidate.cacheKey);
+    if (cached) return cached;
+
+    const existing = this.inFlight.get(candidate.cacheKey);
+    if (existing) return existing;
+
+    const validation = this.validateSatoken(
+      candidate.cookie,
+      candidate.fingerprint,
+    )
+      .then((user) => {
+        if (!user) return null;
+        while (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
+          const oldest = this.cache.keys().next();
+          if (oldest.done) break;
+          this.cache.delete(oldest.value);
+        }
+        this.cache.set(candidate.cacheKey, {
+          user,
+          expiresAt: Date.now() + AuthService.CACHE_TTL_MS,
+        });
+        return user;
+      })
+      .finally(() => {
+        if (this.inFlight.get(candidate.cacheKey) === validation) {
+          this.inFlight.delete(candidate.cacheKey);
+        }
+      });
+    this.inFlight.set(candidate.cacheKey, validation);
+    return validation;
   }
 
   /**
@@ -165,7 +217,7 @@ export class AuthService {
    */
   private async validateSatoken(
     satokenCookie: string,
-    tokenHint: string,
+    fingerprint: string,
   ): Promise<AuthUser | null> {
     try {
       const baseUrl = process.env.JAVA_CONTENT_URL?.replace(/\/$/, '');
@@ -176,11 +228,13 @@ export class AuthService {
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
       const url = `${baseUrl}/user/query/user/info`;
-      this.logger.log(`Auth validation request url=${url} token=${tokenHint}`);
+      this.logger.log(
+        `Auth validation request url=${url} tokenFingerprint=${fingerprint}`,
+      );
       const body = await this.getJson<JavaAuthResponse>(
         url,
         satokenCookie,
-        `Auth validation token=${tokenHint}`,
+        `Auth validation tokenFingerprint=${fingerprint}`,
       );
 
       if (!body) return null;
@@ -193,7 +247,9 @@ export class AuthService {
       if (!isSuccess || !data) {
         const msg =
           scalarString(body.msg) ?? scalarString(body.message) ?? 'unknown';
-        this.logger.warn(`Auth validation rejected: ${msg} token=${tokenHint}`);
+        this.logger.warn(
+          `Auth validation rejected: ${msg} tokenFingerprint=${fingerprint}`,
+        );
         return null;
       }
       const user: AuthUser = {
@@ -207,13 +263,13 @@ export class AuthService {
 
       if (!user.userId) {
         this.logger.warn(
-          `Auth validation: no userId in response token=${tokenHint}`,
+          `Auth validation: no userId in response tokenFingerprint=${fingerprint}`,
         );
         return null;
       }
 
       this.logger.log(
-        `Auth validated: userId=${user.userId} name=${user.nickName ?? user.userName ?? '?'} token=${tokenHint}`,
+        `Auth validated: userId=${user.userId} name=${user.nickName ?? user.userName ?? '?'} tokenFingerprint=${fingerprint}`,
       );
       return user;
     } catch (error) {
@@ -241,13 +297,13 @@ export class AuthService {
 
     const satokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
     const satokenCookie = satokenMatch ? `satoken=${satokenMatch[1]}` : cookie;
-    const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
+    const fingerprint = tokenFingerprint(satokenMatch?.[1] ?? cookie);
     const url = `${baseUrl}/user/needAuth`;
 
     const body = await this.getJson<Record<string, unknown>>(
       url,
       satokenCookie,
-      `KYC status token=${tokenHint}`,
+      `KYC status tokenFingerprint=${fingerprint}`,
       5000,
     );
 
@@ -265,7 +321,7 @@ export class AuthService {
       this.logger.warn(
         `KYC status check rejected: ${
           scalarString(body.msg) ?? scalarString(body.message) ?? 'unknown'
-        } token=${tokenHint}`,
+        } tokenFingerprint=${fingerprint}`,
       );
       return null;
     }
@@ -285,4 +341,21 @@ export class AuthService {
       if (val.expiresAt <= now) this.cache.delete(key);
     }
   }
+}
+
+function tokenFingerprint(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 12);
+}
+
+function credentialCandidate(cookie: string): {
+  cookie: string;
+  cacheKey: string;
+  fingerprint: string;
+} {
+  const cacheKey = createHash('sha256').update(cookie).digest('hex');
+  return {
+    cookie,
+    cacheKey,
+    fingerprint: cacheKey.slice(0, 12),
+  };
 }

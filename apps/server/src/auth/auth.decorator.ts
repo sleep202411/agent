@@ -31,6 +31,16 @@ export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 /**
+ * Bypasses only the product end-user session guard.
+ *
+ * Use this for machine-to-machine controllers that install their own
+ * cryptographic guard. Unlike `@Public()`, the global guard must not treat an
+ * `Authorization: Bearer` service JWT as an optional Java `satoken`.
+ */
+export const SKIP_END_USER_AUTH_KEY = 'skipEndUserAuth';
+export const SkipEndUserAuth = () => SetMetadata(SKIP_END_USER_AUTH_KEY, true);
+
+/**
  * Parameter decorator to extract the raw forwarded cookie string —
  * used when proxying requests to Java services that need the
  * viewer's satoken (e.g. UsersController → Java /user/query/user).
