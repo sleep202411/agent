@@ -1,0 +1,595 @@
+{{- if .Values.agentPlatform.enabled -}}
+{{- $platform := .Values.agentPlatform -}}
+{{- $apiTag := required "agentPlatform.api.image.tag is required" $platform.api.image.tag -}}
+{{- $workerTag := required "agentPlatform.worker.image.tag is required" $platform.worker.image.tag -}}
+{{- $migratorTag := required "agentPlatform.migrator.image.tag is required" $platform.migrator.image.tag -}}
+{{- $apiDatabaseRole := required "agentPlatform.memory.apiDatabaseRole is required" $platform.memory.apiDatabaseRole -}}
+{{- $workerDatabaseRole := required "agentPlatform.memory.workerDatabaseRole is required" $platform.memory.workerDatabaseRole -}}
+{{- if or (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $apiDatabaseRole)) (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $workerDatabaseRole)) -}}
+{{- fail "agentPlatform memory database roles must be lowercase PostgreSQL role identifiers" -}}
+{{- end -}}
+{{- if eq $apiDatabaseRole $workerDatabaseRole -}}
+{{- fail "agentPlatform API and Worker database roles must be separate" -}}
+{{- end -}}
+{{- if not $platform.observability.collector.enabled -}}
+{{- fail "agentPlatform.observability.collector.enabled must be true for the production availability target" -}}
+{{- end -}}
+{{- if or (eq $apiTag "set-at-deploy") (eq $apiTag "latest") -}}
+{{- fail "agentPlatform image tags must be one immutable deployment revision" -}}
+{{- end -}}
+{{- if or (ne $apiTag $workerTag) (ne $apiTag $migratorTag) -}}
+{{- fail "agentPlatform API, Worker, and migrator image tags must be identical" -}}
+{{- end -}}
+{{- if lt (int $platform.api.replicaCount) 3 -}}
+{{- fail "agentPlatform.api.replicaCount must be at least 3 for the production availability target" -}}
+{{- end -}}
+{{- if and $platform.api.autoscaling.enabled (lt (int $platform.api.autoscaling.minReplicas) 3) -}}
+{{- fail "agentPlatform.api.autoscaling.minReplicas must be at least 3" -}}
+{{- end -}}
+{{- if and $platform.api.autoscaling.enabled (lt (int $platform.api.autoscaling.maxReplicas) (int $platform.api.autoscaling.minReplicas)) -}}
+{{- fail "agentPlatform.api.autoscaling.maxReplicas must be greater than or equal to minReplicas" -}}
+{{- end -}}
+{{- if lt (int $platform.worker.replicaCount) 2 -}}
+{{- fail "agentPlatform.worker.replicaCount must be at least 2" -}}
+{{- end -}}
+{{- if le (int $platform.worker.terminationGracePeriodSeconds) 180 -}}
+{{- fail "agentPlatform.worker.terminationGracePeriodSeconds must exceed the Worker's 3-minute forced shutdown window" -}}
+{{- end -}}
+{{- if ne $platform.temporal.workerDeploymentName "fizzdragon-agent-platform" -}}
+{{- fail "agentPlatform.temporal.workerDeploymentName must remain fizzdragon-agent-platform for pinned Workflow compatibility" -}}
+{{- end -}}
+{{- if ne $platform.model.provider "google-vertex" -}}
+{{- fail "agentPlatform.model.provider must be google-vertex" -}}
+{{- end -}}
+{{- $vertexProject := required "agentPlatform.model.project is required" $platform.model.project -}}
+{{- $vertexLocation := required "agentPlatform.model.location is required" $platform.model.location -}}
+{{- $interactiveModelId := required "agentPlatform.model.interactiveId is required" $platform.model.interactiveId -}}
+{{- $reasoningModelId := required "agentPlatform.model.reasoningId is required" $platform.model.reasoningId -}}
+{{- $observerModelId := required "agentPlatform.model.observerId is required" $platform.model.observerId -}}
+{{- if or (not (regexMatch "^gemini-[a-z0-9][a-z0-9._-]{0,126}$" $interactiveModelId)) (not (regexMatch "^gemini-[a-z0-9][a-z0-9._-]{0,126}$" $reasoningModelId)) (not (regexMatch "^gemini-[a-z0-9][a-z0-9._-]{0,126}$" $observerModelId)) -}}
+{{- fail "agentPlatform model IDs must be unprefixed Gemini model IDs" -}}
+{{- end -}}
+{{- $inClusterTemporal := printf "%s:%d" (include "fizzdragon.componentName" (merge (dict "component" "temporal") .)) (int .Values.temporal.frontendPort) -}}
+{{- if ne $platform.temporal.address $inClusterTemporal -}}
+{{- fail (printf "agentPlatform.temporal.address must use this chart's in-cluster Temporal Service (%s) until external mTLS credentials are configured" $inClusterTemporal) -}}
+{{- end -}}
+{{- $release := $apiTag -}}
+{{- $releaseHash := $release | sha256sum | trunc 12 -}}
+{{- $apiComponent := "agent-platform-api" -}}
+{{- $apiCtx := merge (dict "component" $apiComponent) . -}}
+{{- $workerComponent := printf "agent-platform-worker-%s" $releaseHash -}}
+{{- $workerCtx := merge (dict "component" $workerComponent) . -}}
+{{- $migratorComponent := printf "agent-memory-migrator-%s" $releaseHash -}}
+{{- $migratorCtx := merge (dict "component" $migratorComponent) . -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fizzdragon.componentName" $migratorCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $migratorCtx | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ $platform.migrator.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $migratorCtx | nindent 8 }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      enableServiceLinks: false
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrator
+          image: "{{ .Values.image.registry }}/{{ required "agentPlatform.migrator.image.repository is required" $platform.migrator.image.repository }}:{{ $migratorTag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: AGENT_MEMORY_API_DATABASE_ROLE
+              value: {{ $apiDatabaseRole | quote }}
+            - name: AGENT_MEMORY_WORKER_DATABASE_ROLE
+              value: {{ $workerDatabaseRole | quote }}
+            {{- if .Values.azure.enabled }}
+            - name: AGENT_MEMORY_MIGRATION_DATABASE_URL_FILE
+              value: /mnt/agent-memory-migration/agent-memory-migration-database-url
+            {{- end }}
+          {{- if not .Values.azure.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.agentPlatformMigrationSecrets.projectedName }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.azure.enabled }}
+            - name: migration-secrets
+              mountPath: /mnt/agent-memory-migration
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $platform.migrator.resources | nindent 12 }}
+      volumes:
+        {{- if .Values.azure.enabled }}
+        - name: migration-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-platform-migration-kv
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- with $platform.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $platform.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $apiCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $apiCtx | nindent 4 }}
+    fizzdragon.com/agent-platform-role: api
+spec:
+  replicas: {{ $platform.api.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $apiCtx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $apiCtx | nindent 8 }}
+        fizzdragon.com/agent-platform-role: api
+        fizzdragon.com/temporal-client: "true"
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: {{ $platform.api.terminationGracePeriodSeconds }}
+      enableServiceLinks: false
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $apiCtx | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $apiCtx | nindent 14 }}
+      containers:
+        - name: api
+          image: "{{ .Values.image.registry }}/{{ required "agentPlatform.api.image.repository is required" $platform.api.image.repository }}:{{ $apiTag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $platform.api.port }}
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: {{ $platform.api.port | quote }}
+            - name: AGENT_RELEASE
+              value: {{ $release | quote }}
+            - name: AGENT_AUTH_MODE
+              value: jwks
+            - name: AGENT_JWKS_URL
+              value: {{ required "agentPlatform.gateway.jwksUrl is required" $platform.gateway.jwksUrl | quote }}
+            - name: AGENT_JWT_ISSUER
+              value: {{ required "agentPlatform.gateway.jwtIssuer is required" $platform.gateway.jwtIssuer | quote }}
+            - name: AGENT_JWT_AUDIENCE
+              value: {{ required "agentPlatform.gateway.jwtAudience is required" $platform.gateway.jwtAudience | quote }}
+            - name: OTEL_EXPORTER_ENDPOINT
+              value: {{ required "agentPlatform.observability.endpoint is required" $platform.observability.endpoint | quote }}
+            - name: OTEL_COLLECTOR_HEALTH_URL
+              value: {{ required "agentPlatform.observability.collectorHealthUrl is required" $platform.observability.collectorHealthUrl | quote }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ $platform.temporal.address | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ required "agentPlatform.temporal.namespace is required" $platform.temporal.namespace | quote }}
+            - name: TEMPORAL_TASK_QUEUE
+              value: {{ required "agentPlatform.temporal.taskQueue is required" $platform.temporal.taskQueue | quote }}
+            - name: TEMPORAL_WORKER_DEPLOYMENT_NAME
+              value: {{ $platform.temporal.workerDeploymentName | quote }}
+            - name: AGENT_MEMORY_DATABASE_ROLE
+              value: {{ $apiDatabaseRole | quote }}
+            - name: AGENT_MEMORY_POOL_MAX
+              value: {{ $platform.api.memoryPoolMax | quote }}
+            - name: DOMAIN_GATEWAY_URL
+              value: {{ required "agentPlatform.gateway.domainUrl is required" $platform.gateway.domainUrl | quote }}
+            - name: DOMAIN_GATEWAY_JWT_KEY_ID
+              value: {{ required "agentPlatform.gateway.apiDomainSigningKeyId is required" $platform.gateway.apiDomainSigningKeyId | quote }}
+            - name: DOMAIN_GATEWAY_JWT_ISSUER
+              value: {{ required "agentPlatform.gateway.domainJwtIssuer is required" $platform.gateway.domainJwtIssuer | quote }}
+            - name: DOMAIN_GATEWAY_JWT_AUDIENCE
+              value: {{ required "agentPlatform.gateway.domainJwtAudience is required" $platform.gateway.domainJwtAudience | quote }}
+            - name: AGENT_MAX_MODEL_STEPS
+              value: {{ $platform.maxModelSteps | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.agentPlatformApiSecrets.projectedName }}
+          volumeMounts:
+            {{- if .Values.azure.enabled }}
+            - name: api-secrets
+              mountPath: /mnt/agent-platform-api-secrets
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $platform.api.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 12
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 8"]
+      volumes:
+        {{- if .Values.azure.enabled }}
+        - name: api-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-platform-api-kv
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+      {{- with $platform.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $platform.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fizzdragon.componentName" $apiCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $apiCtx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fizzdragon.componentSelector" $apiCtx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $platform.api.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fizzdragon.componentName" $apiCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $apiCtx | nindent 4 }}
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $apiCtx | nindent 6 }}
+{{- if $platform.api.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "fizzdragon.componentName" $apiCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $apiCtx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "fizzdragon.componentName" $apiCtx }}
+  minReplicas: {{ $platform.api.autoscaling.minReplicas }}
+  maxReplicas: {{ $platform.api.autoscaling.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 3
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $platform.api.autoscaling.cpuUtilization }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $workerCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $workerCtx | nindent 4 }}
+    fizzdragon.com/agent-platform-role: worker
+    fizzdragon.com/agent-platform-build: {{ $releaseHash | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fizzdragon.com/agent-platform-deployment-name: {{ $platform.temporal.workerDeploymentName | quote }}
+    fizzdragon.com/agent-platform-build-id: {{ $release | quote }}
+spec:
+  replicas: {{ $platform.worker.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $workerCtx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $workerCtx | nindent 8 }}
+        fizzdragon.com/agent-platform-role: worker
+        fizzdragon.com/agent-platform-build: {{ $releaseHash | quote }}
+        fizzdragon.com/temporal-client: "true"
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ $platform.worker.metricsPort | quote }}
+    spec:
+      terminationGracePeriodSeconds: {{ $platform.worker.terminationGracePeriodSeconds }}
+      enableServiceLinks: false
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $workerCtx | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $workerCtx | nindent 14 }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.registry }}/{{ required "agentPlatform.worker.image.repository is required" $platform.worker.image.repository }}:{{ $workerTag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: health
+              containerPort: {{ $platform.worker.healthPort }}
+            - name: metrics
+              containerPort: {{ $platform.worker.metricsPort }}
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: AGENT_RELEASE
+              value: {{ $release | quote }}
+            - name: GOOGLE_CLOUD_PROJECT
+              value: {{ $vertexProject | quote }}
+            - name: GOOGLE_CLOUD_LOCATION
+              value: {{ $vertexLocation | quote }}
+            - name: AGENT_INTERACTIVE_MODEL_ID
+              value: {{ $interactiveModelId | quote }}
+            - name: AGENT_REASONING_MODEL_ID
+              value: {{ $reasoningModelId | quote }}
+            - name: AGENT_MEMORY_OBSERVER_MODEL_ID
+              value: {{ $observerModelId | quote }}
+            - name: OTEL_EXPORTER_ENDPOINT
+              value: {{ required "agentPlatform.observability.endpoint is required" $platform.observability.endpoint | quote }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ $platform.temporal.address | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ $platform.temporal.namespace | quote }}
+            - name: TEMPORAL_TASK_QUEUE
+              value: {{ $platform.temporal.taskQueue | quote }}
+            - name: TEMPORAL_WORKER_DEPLOYMENT_NAME
+              value: {{ $platform.temporal.workerDeploymentName | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_WORKFLOWS
+              value: {{ $platform.worker.maxConcurrentWorkflows | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_DOCUMENT_WORKFLOWS
+              value: {{ $platform.worker.maxConcurrentDocumentWorkflows | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_CONTROL_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.control | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_INFERENCE_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.inference | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_TOOL_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.tool | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_LIFECYCLE_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.lifecycle | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_CLEANUP_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.cleanup | quote }}
+            - name: TEMPORAL_MAX_CONCURRENT_DOCUMENT_ACTIVITIES
+              value: {{ $platform.worker.activityConcurrency.document | quote }}
+            - name: AGENT_WORKER_HEALTH_HOST
+              value: 0.0.0.0
+            - name: AGENT_WORKER_HEALTH_PORT
+              value: {{ $platform.worker.healthPort | quote }}
+            - name: AGENT_WORKER_METRICS_BIND_ADDRESS
+              value: {{ printf "0.0.0.0:%v" $platform.worker.metricsPort | quote }}
+            - name: AGENT_MEMORY_DATABASE_ROLE
+              value: {{ $workerDatabaseRole | quote }}
+            - name: AGENT_MEMORY_POOL_MAX
+              value: {{ $platform.worker.memoryPoolMax | quote }}
+            - name: DOMAIN_GATEWAY_URL
+              value: {{ $platform.gateway.domainUrl | quote }}
+            - name: DOMAIN_GATEWAY_JWT_KEY_ID
+              value: {{ $platform.gateway.workerDomainSigningKeyId | quote }}
+            - name: DOMAIN_GATEWAY_JWT_ISSUER
+              value: {{ $platform.gateway.domainJwtIssuer | quote }}
+            - name: DOMAIN_GATEWAY_JWT_AUDIENCE
+              value: {{ $platform.gateway.domainJwtAudience | quote }}
+            - name: AGENT_MAX_MODEL_STEPS
+              value: {{ $platform.maxModelSteps | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.agentPlatformWorkerSecrets.projectedName }}
+          volumeMounts:
+            {{- if .Values.azure.enabled }}
+            - name: worker-secrets
+              mountPath: /mnt/agent-platform-worker-secrets
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $platform.worker.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: health
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        {{- if .Values.azure.enabled }}
+        - name: worker-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-platform-worker-kv
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+      {{- with $platform.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $platform.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fizzdragon.componentName" $workerCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $workerCtx | nindent 4 }}
+    fizzdragon.com/agent-platform-role: worker
+    fizzdragon.com/agent-platform-build: {{ $releaseHash | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fizzdragon.com/agent-platform-deployment-name: {{ $platform.temporal.workerDeploymentName | quote }}
+    fizzdragon.com/agent-platform-build-id: {{ $release | quote }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $workerCtx | nindent 6 }}
+{{- end }}

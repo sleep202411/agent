@@ -7,20 +7,44 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fizzdragon
+          POSTGRES_PASSWORD: fizzdragon
+          POSTGRES_DB: fizzdragon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fizzdragon -d fizzdragon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:5432/fizzdragon
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.18.1
           cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm install --global npm@11.16.0
 
       - run: npm ci
+
+      - name: Apply product database migrations
+        run: npm run db:deploy -w server
 
       - uses: azure/setup-helm@v5
 
       - name: Helm render contract
-        run: bash deploy/helm/fizzdragon/tests/studio-agent-runtime-render.sh
+        run: |
+          bash deploy/helm/fizzdragon/tests/studio-agent-runtime-render.sh
+          bash deploy/helm/fizzdragon/tests/agent-platform-render.sh
 
       - name: Lint
         run: npx turbo run lint
@@ -31,5 +55,90 @@ jobs:
       - name: Test
         run: npx turbo run test
 
+      - name: Agent Platform product-boundary integration tests
+        run: npm run test:integration:agent-platform -w server
+
+      - name: Agent Platform domain-boundary integration tests
+        run: npm run test:integration:agent-domain -w server
+
       - name: Build
         run: npx turbo run build
+
+  agent-platform:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fizzdragon
+          POSTGRES_PASSWORD: fizzdragon
+          POSTGRES_DB: fizzdragon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fizzdragon -d fizzdragon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AGENT_MEMORY_POSTGRES_INTEGRATION: "1"
+      AGENT_MEMORY_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:5432/fizzdragon
+      AGENT_MEMORY_MIGRATION_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:5432/fizzdragon
+      AGENT_MEMORY_API_DATABASE_ROLE: fizzdragon
+      AGENT_MEMORY_WORKER_DATABASE_ROLE: fizzdragon
+    defaults:
+      run:
+        working-directory: apps/agent-platform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+          cache: npm
+          cache-dependency-path: apps/agent-platform/package-lock.json
+
+      - run: npm install --global npm@11.16.0
+
+      - run: npm ci
+
+      - name: Install pinned Temporal CLI
+        uses: temporalio/setup-temporal@8bde337644eaaa6644b8b527d9a8406c2207de5b # v0
+        with:
+          version: v1.8.1
+
+      - name: Register Temporal CLI path
+        run: echo "TEMPORAL_CLI_PATH=$(command -v temporal)" >> "$GITHUB_ENV"
+
+      - name: Apply Agent Memory migrations
+        run: npm run memory:migrate
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run check-types
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Temporal and PostgreSQL integration tests
+        run: npm run test:integration
+
+      - name: Build production artifacts
+        run: npm run build
+
+      - name: Production artifact smoke tests
+        run: npm run test:build-smoke
+
+      - name: Build production container targets
+        run: |
+          docker build --file Dockerfile --target api --tag fizzdragon-agent-platform-api:ci ../..
+          docker build --file Dockerfile --target worker --tag fizzdragon-agent-platform-worker:ci ../..
+          docker build --file Dockerfile --target migrator --tag fizzdragon-agent-memory-migrator:ci ../..
+
+      - name: Production dependency security gate
+        run: npm run test:security

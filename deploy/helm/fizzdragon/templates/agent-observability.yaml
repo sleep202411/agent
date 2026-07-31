@@ -1,0 +1,242 @@
+{{- if and .Values.agentPlatform.enabled .Values.agentPlatform.observability.collector.enabled -}}
+{{- $collector := .Values.agentPlatform.observability.collector -}}
+{{- $component := "otel-collector" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+{{- $name := include "fizzdragon.componentName" $ctx -}}
+{{- $headlessName := include "fizzdragon.componentName" (merge (dict "component" "otel-collector-headless") .) -}}
+{{- $tag := required "agentPlatform.observability.collector.image.tag is required" $collector.image.tag -}}
+{{- $digest := required "agentPlatform.observability.collector.image.digest is required" $collector.image.digest -}}
+{{- if or (eq $tag "latest") (not (regexMatch "^sha256:[a-f0-9]{64}$" $digest)) -}}
+{{- fail "Agent observability Collector must use a version tag and valid immutable sha256 digest" -}}
+{{- end -}}
+{{- if lt (int $collector.replicaCount) 3 -}}
+{{- fail "agentPlatform.observability.collector.replicaCount must be at least 3" -}}
+{{- end -}}
+{{- $expectedEndpoint := printf "http://%s:%v/v1/traces" $name $collector.otlpHttpPort -}}
+{{- $expectedHealth := printf "http://%s:%v/" $name $collector.healthPort -}}
+{{- if ne .Values.agentPlatform.observability.endpoint $expectedEndpoint -}}
+{{- fail (printf "agentPlatform.observability.endpoint must be %s" $expectedEndpoint) -}}
+{{- end -}}
+{{- if ne .Values.agentPlatform.observability.collectorHealthUrl $expectedHealth -}}
+{{- fail (printf "agentPlatform.observability.collectorHealthUrl must be %s" $expectedHealth) -}}
+{{- end -}}
+{{- $config := .Files.Get "files/agent-platform-otel-collector.yaml" -}}
+{{- if not $config -}}
+{{- fail "files/agent-platform-otel-collector.yaml is required" -}}
+{{- end -}}
+{{- $image := printf "%s/%s:%s@%s" $collector.image.registry $collector.image.repository $tag $digest -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+data:
+  collector.yaml: |
+{{ $config | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $headlessName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+  ports:
+    - name: otlp-http
+      port: {{ $collector.otlpHttpPort }}
+      targetPort: otlp-http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+  ports:
+    - name: otlp-http
+      port: {{ $collector.otlpHttpPort }}
+      targetPort: otlp-http
+    - name: health
+      port: {{ $collector.healthPort }}
+      targetPort: health
+    - name: metrics
+      port: {{ $collector.metricsPort }}
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ $headlessName }}
+  replicas: {{ $collector.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        fizzdragon.com/agent-platform-role: observability
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+      annotations:
+        checksum/collector-config: {{ $config | sha256sum | quote }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ $collector.metricsPort | quote }}
+    spec:
+      terminationGracePeriodSeconds: {{ $collector.terminationGracePeriodSeconds }}
+      enableServiceLinks: false
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $ctx | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $ctx | nindent 14 }}
+      containers:
+        - name: collector
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          args: ["--config=/etc/otelcol-contrib/collector.yaml"]
+          ports:
+            - name: otlp-http
+              containerPort: {{ $collector.otlpHttpPort }}
+            - name: health
+              containerPort: {{ $collector.healthPort }}
+            - name: metrics
+              containerPort: {{ $collector.metricsPort }}
+          env:
+            - name: OTEL_STORAGE_DIRECTORY
+              value: /var/lib/otelcol/storage
+            - name: OTEL_STORAGE_COMPACTION_DIRECTORY
+              value: /var/lib/otelcol/compaction
+            - name: GOMEMLIMIT
+              value: {{ $collector.goMemLimit | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.agentObservabilitySecrets.projectedName }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol-contrib
+              readOnly: true
+            - name: queue
+              mountPath: /var/lib/otelcol
+            {{- if .Values.azure.enabled }}
+            - name: observability-secrets
+              mountPath: /mnt/agent-observability-secrets
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $collector.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        {{- if .Values.azure.enabled }}
+        - name: observability-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-observability-kv
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- with .Values.agentPlatform.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentPlatform.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: queue
+        labels:
+          {{- include "fizzdragon.componentLabels" $ctx | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ required "agentPlatform.observability.collector.storage.storageClassName is required" $collector.storage.storageClassName | quote }}
+        resources:
+          requests:
+            storage: {{ required "agentPlatform.observability.collector.storage.size is required" $collector.storage.size | quote }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+{{- end }}
