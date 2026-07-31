@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { IconLoader2, IconPencilPlus, IconX } from "@tabler/icons-react";
+import { IconPencilPlus, IconX } from "@tabler/icons-react";
 
 import { cn } from "@/lib/utils";
 
@@ -62,12 +62,6 @@ export function StudioAgentSurface({
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <h2 className="truncate text-sm font-medium text-white/92">{title}</h2>
-            {busy ? (
-              <IconLoader2
-                aria-hidden="true"
-                className="size-3.5 shrink-0 animate-spin text-white/42 motion-reduce:animate-none"
-              />
-            ) : null}
           </div>
 
           {onNewConversation ? (
@@ -75,8 +69,9 @@ export function StudioAgentSurface({
               type="button"
               aria-label={labels.newConversation}
               title={labels.newConversation}
+              disabled={busy}
               onClick={onNewConversation}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:pointer-events-none disabled:opacity-40"
             >
               <IconPencilPlus aria-hidden="true" className="size-4" />
             </button>

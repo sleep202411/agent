@@ -4,6 +4,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  StudioAgentDocumentAnalysisMap,
+  StudioAgentDocumentAnalysisView,
+} from "@/lib/studio-agent";
+
 import { StudioAgentComposer, type StudioAgentComposerProps } from "./studio-agent-composer";
 import type {
   StudioAgentCanonicalAttachment,
@@ -122,9 +127,21 @@ describe("StudioAgentComposer attachments", () => {
     expect(onAddFiles).not.toHaveBeenCalled();
   });
 
+  // "Ready" on a chip means the upload was read, not that the document has been
+  // analysed. The job behind it runs for minutes, so the chip has to say so
+  // instead of implying the work is done.
+  it("says what the analysis behind a ready attachment is doing", async () => {
+    await render(vi.fn(), [readyItem], analysisMap({ phase: "mapping", progress: 13 }));
+
+    expect(container.textContent).toContain("Analyzing the document 13%");
+    const progress = container.querySelector('[role="progressbar"][aria-valuenow="13"]');
+    expect(progress).not.toBeNull();
+  });
+
   async function render(
     onSubmit: StudioAgentComposerProps["onSubmit"],
-    items: readonly StudioAgentComposerAttachment[]
+    items: readonly StudioAgentComposerAttachment[],
+    analysis?: StudioAgentDocumentAnalysisMap
   ) {
     await act(async () => {
       root.render(
@@ -138,6 +155,7 @@ describe("StudioAgentComposer attachments", () => {
             onAddFiles: vi.fn(),
             onRetry: vi.fn(),
             onRemove: vi.fn(),
+            analysis,
           }}
           onDeliveryModeChange={vi.fn()}
           onValueChange={vi.fn()}
@@ -147,6 +165,27 @@ describe("StudioAgentComposer attachments", () => {
     });
   }
 });
+
+function analysisMap(
+  overrides: Partial<StudioAgentDocumentAnalysisView>
+): StudioAgentDocumentAnalysisMap {
+  return new Map([
+    [
+      canonicalAttachment.attachmentId,
+      {
+        attachmentId: canonicalAttachment.attachmentId,
+        jobId: "00000000-0000-4000-8000-0000000000a1",
+        phase: "mapping",
+        progress: 0,
+        completedUnits: 0,
+        totalUnits: 46,
+        error: null,
+        settled: false,
+        ...overrides,
+      },
+    ],
+  ]);
+}
 
 describe("StudioAgentComposer stop button", () => {
   let container: HTMLDivElement;
@@ -184,25 +223,84 @@ describe("StudioAgentComposer stop button", () => {
     expect(onStop).not.toHaveBeenCalled();
   });
 
+  it("uses one stable primary button for stop and an in-flight continuation", async () => {
+    const onStop = vi.fn();
+    const onSubmit = vi.fn<StudioAgentComposerProps["onSubmit"]>();
+
+    await render({ isRunning: true, isCancelling: false, onStop, onSubmit });
+
+    const emptyPrimary = primaryButton();
+    expect(emptyPrimary?.dataset.action).toBe("stop");
+    expect(emptyPrimary?.type).toBe("button");
+    expect(emptyPrimary?.getAttribute("aria-label")).toBe("Stop");
+    expect(container.querySelectorAll("[data-action]")).toHaveLength(1);
+    expect(container.querySelector('button[type="submit"]')).toBeNull();
+
+    await render({
+      isRunning: true,
+      isCancelling: false,
+      onStop,
+      onSubmit,
+      value: "Use the quieter opening.",
+    });
+
+    const draftedPrimary = primaryButton();
+    expect(draftedPrimary?.dataset.action).toBe("send");
+    expect(draftedPrimary?.type).toBe("submit");
+    expect(draftedPrimary?.getAttribute("aria-label")).toBe("Steer");
+    expect(container.querySelectorAll("[data-action]")).toHaveLength(1);
+    expect(stopButton()).toBeUndefined();
+
+    await act(async () => draftedPrimary?.click());
+    expect(onSubmit).toHaveBeenCalledWith("Use the quieter opening.", "steer", []);
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it("keeps the merged primary action in stopping state while a new draft is typed", async () => {
+    const onStop = vi.fn();
+    await render({
+      isRunning: true,
+      isCancelling: true,
+      onStop,
+      value: "Keep this draft.",
+    });
+
+    const primary = primaryButton();
+    expect(primary?.dataset.action).toBe("stop");
+    expect(primary?.getAttribute("aria-label")).toBe("Stopping");
+    expect(primary?.disabled).toBe(true);
+  });
+
   function stopButton() {
     return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       ["Stop", "Stopping"].includes(button.getAttribute("aria-label") ?? "")
     );
   }
 
-  async function render(props: { isRunning: boolean; isCancelling: boolean; onStop: () => void }) {
+  function primaryButton() {
+    return container.querySelector<HTMLButtonElement>("[data-action]");
+  }
+
+  async function render(props: {
+    isRunning: boolean;
+    isCancelling: boolean;
+    onStop: () => void;
+    onSubmit?: StudioAgentComposerProps["onSubmit"];
+    value?: string;
+  }) {
     await act(async () => {
       root.render(
         <StudioAgentComposer
-          value=""
+          value={props.value ?? ""}
           labels={labels}
           deliveryMode="steer"
           isRunning={props.isRunning}
+          canSteer
           isCancelling={props.isCancelling}
           onStop={props.onStop}
           onDeliveryModeChange={vi.fn()}
           onValueChange={vi.fn()}
-          onSubmit={vi.fn()}
+          onSubmit={props.onSubmit ?? vi.fn()}
         />
       );
     });
@@ -249,9 +347,18 @@ const labels = {
     remove: (fileName: string) => `Remove ${fileName}`,
     retry: (fileName: string) => `Retry ${fileName}`,
     uploading: (progress: number) => `Uploading ${progress}%`,
-    processing: "Processing",
+    processing: (progress: number) => `Processing ${progress}%`,
     ready: "Ready",
     failed: "Failed",
     fileSize: (bytes: number) => `${bytes} B`,
+    analysis: {
+      region: "Document analysis",
+      queued: "Document analysis queued",
+      mapping: (progress: number) => `Analyzing the document ${progress}%`,
+      reducing: (progress: number) => `Synthesizing the analysis ${progress}%`,
+      succeeded: "Document analysis ready",
+      failed: "Document analysis failed",
+      cancelled: "Document analysis cancelled",
+    },
   },
 };

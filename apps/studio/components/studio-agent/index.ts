@@ -1,4 +1,5 @@
 export * from "./studio-agent-activity-row";
+export * from "./studio-agent-attachment-analysis";
 export * from "./studio-agent-child-runs";
 export * from "./studio-agent-composer";
 export * from "./studio-agent-markdown";

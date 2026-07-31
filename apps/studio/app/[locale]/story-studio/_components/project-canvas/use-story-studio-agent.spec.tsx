@@ -3,40 +3,42 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { STUDIO_AGENT_SCHEMA_VERSION } from "@repo/shared";
 import { NextIntlClientProvider } from "next-intl";
-
-import { ApiRequestError } from "@/lib/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentAttachmentSummary, AgentInvocationStatus } from "@repo/shared/agent-platform";
 
-import { storyProjectionQueryKey } from "./story-canvas-edit-policy";
+import {
+  EMPTY_STUDIO_AGENT_DOCUMENT_ANALYSIS,
+  type StudioAgentUIMessage,
+} from "@/lib/studio-agent";
+
 import type { StoryStudioAgentBootstrap, StoryStudioAgentSession } from "./use-story-studio-agent";
-import { useStoryStudioAgentBootstrap, useStoryStudioAgentSession } from "./use-story-studio-agent";
+import {
+  mergeInvocationStatuses,
+  useStoryStudioAgentBootstrap,
+  useStoryStudioAgentSession,
+} from "./use-story-studio-agent";
 
-/**
- * The transport is faked; everything above it is real.
- *
- * `ClientSession` and `useChat` are the two things a jsdom test cannot stand
- * up (one needs an Ably socket, the other needs the transport). Everything the
- * hook actually decides — which write path a delivery mode takes, whether the
- * invocation POST fires once, when the control plane is re-read, when the
- * canvas is told to re-read — runs for real against them.
- */
 const runtime = vi.hoisted(() => {
   const api = {
-    resolveThread: vi.fn(),
-    getSnapshot: vi.fn(),
-    createRealtimeGrant: vi.fn(),
-    sendInvocation: vi.fn(),
+    resolveStoryConversation: vi.fn(),
+    createStoryConversation: vi.fn(),
+    authorizeConversation: vi.fn(),
+    updatePermissionMode: vi.fn(),
+    invoke: vi.fn(),
+    invocationStatus: vi.fn(),
+    cancel: vi.fn(),
+    history: vi.fn(),
     registerAttachment: vi.fn(),
-    deleteAttachment: vi.fn(),
-    updatePermissionPolicy: vi.fn(),
-    resolveApproval: vi.fn(),
+    revokeAttachment: vi.fn(),
+    attachmentStatus: vi.fn(),
   };
   const view = {
     send: vi.fn(),
     runs: vi.fn(() => [] as unknown[]),
     run: vi.fn(),
+    runOf: vi.fn(),
+    getMessages: vi.fn(() => [] as unknown[]),
     on: vi.fn(() => () => undefined),
   };
   const session = {
@@ -44,29 +46,25 @@ const runtime = vi.hoisted(() => {
     cancel: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(() => () => undefined),
   };
-  const chatTransport = {};
   const chat = {
     messages: [] as unknown[],
     setMessages: vi.fn(),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendMessage: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
     addToolApprovalResponse: vi.fn().mockResolvedValue(undefined),
+    clearError: vi.fn(),
     status: "ready" as string,
     error: undefined as Error | undefined,
   };
-  /** Whatever `useChat` was constructed with, so its options can be asserted. */
-  const chatInit = { current: null as Record<string, unknown> | null };
-  const syncSeed = { current: undefined as unknown[] | undefined };
   return {
     api,
     view,
     session,
-    chatTransport,
     chat,
-    chatInit,
-    syncSeed,
+    chatTransport: {},
+    realtimeInput: { current: null as Record<string, unknown> | null },
     uploadFileViaSignedUrl: vi.fn(),
-    ApiClient: vi.fn(function MockStudioAgentApiClient() {
+    ApiClient: vi.fn(function MockAgentPlatformApiClient() {
       return api;
     }),
   };
@@ -80,16 +78,16 @@ vi.mock("@/lib/studio-agent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/studio-agent")>();
   return {
     ...actual,
-    StudioAgentApiClient: runtime.ApiClient,
-    // The Ably connection itself is out of scope here: the hook only ever asks
-    // it for a client and a channel name, and the layer spec proves the
-    // providers are handed exactly those.
-    useStudioAgentRealtime: () => ({
-      client: null,
-      channelName: null,
-      status: "connected",
-      error: null,
-    }),
+    AgentPlatformApiClient: runtime.ApiClient,
+    useStudioAgentRealtime: (input: Record<string, unknown>) => {
+      runtime.realtimeInput.current = input;
+      return {
+        client: null,
+        channelName: SESSION_NAME,
+        status: "connected" as const,
+        error: null,
+      };
+    },
   };
 });
 
@@ -100,17 +98,25 @@ vi.mock("@ably/ai-transport/vercel/react", () => ({
     sessionError: undefined,
     chatTransportError: undefined,
   }),
-  useMessageSync: (options: { messages?: unknown[] }) => {
-    runtime.syncSeed.current = options.messages;
-  },
+  useMessageSync: vi.fn(),
 }));
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: (init: Record<string, unknown>) => {
-    runtime.chatInit.current = init;
-    return runtime.chat;
-  },
+  useChat: () => runtime.chat,
 }));
+
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "00000000-0000-4000-8000-000000000002";
+const CONVERSATION_ID = "00000000-0000-4000-8000-000000000003";
+const NEW_CONVERSATION_ID = "00000000-0000-4000-8000-000000000004";
+const RUN_ID = "00000000-0000-4000-8000-000000000005";
+const INVOCATION_ID = "00000000-0000-4000-8000-000000000006";
+const QUEUED_RUN_ID = "00000000-0000-4000-8000-000000000031";
+const QUEUED_INVOCATION_ID = "00000000-0000-4000-8000-000000000032";
+const MEDIA_ASSET_ID = "00000000-0000-4000-8000-000000000008";
+const ATTACHMENT_ID = "00000000-0000-4000-8000-000000000009";
+const ANALYSIS_JOB_ID = "00000000-0000-4000-8000-000000000010";
+const SESSION_NAME = `agent:v1:conversation:${CONVERSATION_ID}`;
 
 describe("useStoryStudioAgentBootstrap", () => {
   let container: HTMLDivElement;
@@ -119,1004 +125,1095 @@ describe("useStoryStudioAgentBootstrap", () => {
   let bootstrap: StoryStudioAgentBootstrap | null;
 
   beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    ({ container, root, queryClient } = createHarness());
     bootstrap = null;
     resetRuntime();
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
   });
 
   afterEach(async () => {
-    await act(async () => root.unmount());
-    queryClient.clear();
-    container.remove();
+    await destroyHarness(root, container, queryClient);
   });
 
-  it("resolves the exact story scope and seeds the transcript from the snapshot", async () => {
-    await render();
-    await waitUntilReady();
+  it("resolves a project-scoped product conversation and seeds durable Mastra history", async () => {
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
 
     expect(runtime.ApiClient).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
+      workspaceId: WORKSPACE_ID,
       locale: "zh-CN",
     });
-    expect(runtime.api.resolveThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        surfaceId: "story.studio",
-        scenario: { id: "story.studio.assistant", version: "1.0.0" },
-        scope: {
-          workspaceId: "workspace-1",
-          container: { resourceType: "story.project", resourceId: "project-1", revision: null },
-          focus: { resourceType: "story.chapter", resourceId: "chapter-1", revision: null },
-        },
-        locale: "zh-CN",
-      }),
+    expect(runtime.api.resolveStoryConversation).toHaveBeenCalledWith(
+      PROJECT_ID,
       expect.any(AbortSignal)
     );
-    // The seam key: the persisted row's own id, unchanged, so the channel copy
-    // of the same message reconciles onto it instead of duplicating it.
-    expect(bootstrap?.history.messages.map((message) => message.id)).toEqual([HISTORY_MESSAGE_ID]);
+    expect(runtime.api.history).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      expect.objectContaining({ limit: 50, signal: expect.any(AbortSignal) })
+    );
+    expect(bootstrap?.history.messages.map((message) => message.id)).toEqual(["durable-message-1"]);
+    expect(bootstrap?.thread).toEqual({
+      threadId: CONVERSATION_ID,
+      permissionPolicy: { mode: "smart" },
+    });
+    expect(runtime.realtimeInput.current).toMatchObject({
+      threadId: CONVERSATION_ID,
+      enabled: true,
+      initialGrant: grant(),
+    });
   });
 
-  it("rebuilds the conversation when the user retries after a failed load", async () => {
-    runtime.api.resolveThread
-      .mockRejectedValueOnce(new Error("Temporary gateway failure"))
-      .mockResolvedValueOnce({
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        thread: thread(),
-        created: false,
-      });
+  it("retries the complete resolve-and-history boundary after a failed bootstrap", async () => {
+    runtime.api.resolveStoryConversation
+      .mockRejectedValueOnce(new Error("Product gateway unavailable"))
+      .mockResolvedValueOnce(grant());
 
-    await render();
-    await waitUntilStatus("error");
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "error");
+    const failedKey = bootstrap!.conversationKey;
 
-    const before = bootstrap!.conversationKey;
     await act(async () => bootstrap!.retry());
-    await waitUntilReady();
+    await waitFor(() => bootstrap?.status === "ready");
 
-    expect(runtime.api.resolveThread).toHaveBeenCalledTimes(2);
-    // `useChat` reads its seed once, keyed on this id. A retry that reused the
-    // key would leave the panel showing the failed load's empty transcript.
-    expect(bootstrap!.conversationKey).not.toBe(before);
+    expect(runtime.api.resolveStoryConversation).toHaveBeenCalledTimes(2);
+    expect(bootstrap?.conversationKey).not.toBe(failedKey);
   });
 
-  it("returns a thread-bound lease that idempotently abandons its canonical artifact", async () => {
-    await render();
-    await waitUntilReady();
-    const file = new File(["image"], "reference.webp", { type: "image/webp" });
+  it("returns a conversation-bound attachment lease whose abandon operation is idempotent", async () => {
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
     const controller = new AbortController();
-    const onProgress = vi.fn();
+    const file = new File(["image"], "reference.webp", { type: "image/webp" });
 
-    const lease = await bootstrap!.uploadAttachment(file, {
-      signal: controller.signal,
-      onProgress,
-    });
-
-    expect(lease.attachment).toEqual(canonicalAttachment);
-    await expect(lease.abandon()).resolves.toBeUndefined();
-    await expect(lease.abandon()).resolves.toBeUndefined();
-
-    expect(runtime.api.deleteAttachment).toHaveBeenCalledOnce();
-    expect(runtime.uploadFileViaSignedUrl).toHaveBeenCalledWith(file, {
-      kind: "studio_agent_image",
-      workspaceId: "workspace-1",
-      contentType: "image/webp",
-      signal: controller.signal,
-      onProgress,
-    });
-  });
-
-  it("routes supported documents through the dedicated document upload channel", async () => {
-    await render();
-    await waitUntilReady();
-    const file = new File(["# Outline"], "outline.md", { type: "text/markdown" });
-
-    await bootstrap!.uploadAttachment(file, {
-      signal: new AbortController().signal,
-      onProgress: vi.fn(),
-    });
+    const lease = await act(() =>
+      bootstrap!.uploadAttachment(file, {
+        signal: controller.signal,
+        onProgress: vi.fn(),
+      })
+    );
 
     expect(runtime.uploadFileViaSignedUrl).toHaveBeenCalledWith(
       file,
-      expect.objectContaining({ kind: "studio_agent_document", contentType: "text/markdown" })
+      expect.objectContaining({
+        kind: "agent_attachment_image",
+        workspaceId: WORKSPACE_ID,
+      })
     );
+    expect(runtime.api.registerAttachment).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      MEDIA_ASSET_ID,
+      "reference.webp",
+      controller.signal
+    );
+    await lease.abandon();
+    await lease.abandon();
+    expect(runtime.api.revokeAttachment).toHaveBeenCalledTimes(1);
+    expect(runtime.api.revokeAttachment).toHaveBeenCalledWith(CONVERSATION_ID, ATTACHMENT_ID);
   });
 
-  it("pages earlier turns one window at a time and keeps the newer ones", async () => {
-    runtime.api.getSnapshot.mockResolvedValueOnce(
-      snapshot({
-        messages: [historyMessage(HISTORY_MESSAGE_ID, 2, "Later.")],
-        turnWindow: { earliestRootRunId: EARLIEST_ROOT_RUN_ID, hasEarlier: true },
+  // A document turns "ready" the moment its text is extracted, and the analysis
+  // that reads it then runs for minutes with no realtime event of its own. The
+  // bootstrap is where it is tracked because the job starts before the prompt
+  // is sent and outlives the turn that carries it.
+  it("reconciles the analysis running behind an uploaded document", async () => {
+    runtime.api.registerAttachment.mockResolvedValue(registeredDocument());
+    runtime.api.attachmentStatus.mockResolvedValue(
+      registeredDocument({
+        analysis: {
+          jobId: ANALYSIS_JOB_ID,
+          status: "running",
+          stage: "mapping",
+          completedUnits: 6,
+          totalUnits: 46,
+          progress: 13,
+          finalArtifactId: null,
+          error: null,
+        },
       })
     );
-    await render();
-    await waitUntilReady();
-    expect(bootstrap?.hasEarlierTurns).toBe(true);
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
 
-    runtime.api.getSnapshot.mockResolvedValueOnce(
-      snapshot({
-        messages: [historyMessage(OLDER_MESSAGE_ID, 1, "Earlier.")],
-        turnWindow: { earliestRootRunId: null, hasEarlier: false },
-      })
+    await act(() =>
+      bootstrap!.uploadAttachment(
+        new File(["screenplay"], "screenplay-test.docx", {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }),
+        { signal: new AbortController().signal, onProgress: vi.fn() }
+      )
     );
-    await act(async () => {
-      await bootstrap!.loadEarlierTurns();
+    await waitFor(() => bootstrap?.documentAnalysis.size === 1);
+
+    expect(runtime.api.attachmentStatus).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      ATTACHMENT_ID,
+      expect.any(AbortSignal)
+    );
+    expect(bootstrap?.documentAnalysis.get(ATTACHMENT_ID)).toMatchObject({
+      phase: "mapping",
+      progress: 13,
+      completedUnits: 6,
+      totalUnits: 46,
+      settled: false,
     });
+  });
 
-    expect(runtime.api.getSnapshot).toHaveBeenLastCalledWith(
-      thread().threadId,
-      expect.objectContaining({ beforeRootRunId: EARLIEST_ROOT_RUN_ID })
-    );
+  it("loads older durable pages without replacing the live tail", async () => {
+    runtime.api.history
+      .mockResolvedValueOnce(
+        historyPage([textMessage("message-2", "assistant", "Newest")], "older-cursor")
+      )
+      .mockResolvedValueOnce(historyPage([textMessage("message-1", "user", "Oldest")], null));
+
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
+    await act(async () => bootstrap!.loadEarlierTurns());
+
     expect(bootstrap?.history.messages.map((message) => message.id)).toEqual([
-      OLDER_MESSAGE_ID,
-      HISTORY_MESSAGE_ID,
+      "message-1",
+      "message-2",
     ]);
     expect(bootstrap?.hasEarlierTurns).toBe(false);
+    expect(runtime.api.history).toHaveBeenLastCalledWith(
+      CONVERSATION_ID,
+      expect.objectContaining({ cursor: "older-cursor", limit: 50 })
+    );
   });
 
-  async function render() {
+  it("creates a new product conversation atomically and preserves the selected permission mode", async () => {
+    runtime.api.createStoryConversation.mockResolvedValue(
+      grant({ conversationId: NEW_CONVERSATION_ID, permissionMode: "full" })
+    );
+    runtime.api.resolveStoryConversation.mockResolvedValue(grant({ permissionMode: "full" }));
+
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
+    await act(async () => bootstrap!.startNewConversation());
+
+    expect(runtime.api.createStoryConversation).toHaveBeenCalledWith(PROJECT_ID, "full");
+    expect(bootstrap?.thread?.threadId).toBe(NEW_CONVERSATION_ID);
+    expect(bootstrap?.history.messages).toEqual([]);
+  });
+
+  it("leaves no trace of the previous conversation's durable lifecycle", async () => {
+    runtime.api.invocationStatus.mockResolvedValue({
+      schemaVersion: "agent-invocation-status-page/v1",
+      revision: "4210",
+      hasMore: false,
+      invocations: [
+        invocationStatus({
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          status: "failed",
+          createdAt: "2026-07-30T10:00:00.000Z",
+        }),
+      ],
+    });
+
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
+    expect(bootstrap?.invocations).toHaveLength(1);
+
+    await act(async () => bootstrap!.startNewConversation());
+
+    // Otherwise the brand-new thread renders the old one's runs and pins its
+    // failure card above a composer with nothing behind it.
+    expect(bootstrap?.invocations).toEqual([]);
+
+    // The cursor is a table-wide sequence, so replaying it against a
+    // conversation whose newest revision is 0 is a 400 the poll swallows.
+    await act(async () => {
+      bootstrap!.refreshInvocations();
+      await settle();
+    });
+    expect(runtime.api.invocationStatus).toHaveBeenLastCalledWith(
+      NEW_CONVERSATION_ID,
+      expect.objectContaining({ sinceRevision: undefined })
+    );
+  });
+
+  it("drains monotonic invocation deltas and never replaces unrelated active runs", async () => {
+    const first = invocationStatus({
+      invocationId: INVOCATION_ID,
+      runId: RUN_ID,
+      status: "running",
+      createdAt: "2026-07-30T10:00:00.000Z",
+    });
+    const second = invocationStatus({
+      invocationId: "00000000-0000-4000-8000-000000000016",
+      runId: "00000000-0000-4000-8000-000000000017",
+      status: "queued",
+      createdAt: "2026-07-30T10:00:01.000Z",
+    });
+    runtime.api.invocationStatus
+      .mockResolvedValueOnce({
+        schemaVersion: "agent-invocation-status-page/v1",
+        revision: "5",
+        hasMore: false,
+        invocations: [first],
+      })
+      .mockResolvedValueOnce({
+        schemaVersion: "agent-invocation-status-page/v1",
+        revision: "6",
+        hasMore: true,
+        invocations: [{ ...first, status: "succeeded", completedAt: "2026-07-30T10:00:02.000Z" }],
+      })
+      .mockResolvedValueOnce({
+        schemaVersion: "agent-invocation-status-page/v1",
+        revision: "7",
+        hasMore: false,
+        invocations: [second],
+      });
+
+    await renderBootstrap();
+    await waitFor(() => bootstrap?.status === "ready");
+    await act(async () => {
+      bootstrap!.refreshInvocations();
+      await waitFor(() => runtime.api.invocationStatus.mock.calls.length === 3);
+    });
+
+    expect(runtime.api.invocationStatus.mock.calls.slice(1)).toEqual([
+      [CONVERSATION_ID, expect.objectContaining({ sinceRevision: "5", limit: 50 })],
+      [CONVERSATION_ID, expect.objectContaining({ sinceRevision: "6", limit: 50 })],
+    ]);
+    expect(bootstrap?.invocations).toEqual([
+      expect.objectContaining({ invocationId: INVOCATION_ID, status: "succeeded" }),
+      expect.objectContaining({
+        invocationId: "00000000-0000-4000-8000-000000000016",
+        status: "queued",
+      }),
+    ]);
+  });
+
+  async function renderBootstrap() {
     await act(async () => {
       root.render(
-        <NextIntlClientProvider locale="zh-CN" messages={{}}>
-          <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <NextIntlClientProvider locale="zh-CN" messages={{}}>
             <BootstrapHarness
-              onBootstrap={(value) => {
+              onValue={(value) => {
                 bootstrap = value;
               }}
             />
-          </QueryClientProvider>
-        </NextIntlClientProvider>
+          </NextIntlClientProvider>
+        </QueryClientProvider>
       );
       await settle();
     });
   }
+});
 
-  async function waitUntilReady() {
-    await waitUntilStatus("ready");
-  }
+describe("mergeInvocationStatuses", () => {
+  it("replaces one aggregate by identity while preserving every active invocation", () => {
+    const active = invocationStatus({
+      invocationId: INVOCATION_ID,
+      runId: RUN_ID,
+      status: "queued",
+      createdAt: "2026-07-30T10:00:00.000Z",
+    });
+    const unrelated = invocationStatus({
+      invocationId: "00000000-0000-4000-8000-000000000026",
+      runId: "00000000-0000-4000-8000-000000000027",
+      status: "running",
+      createdAt: "2026-07-30T10:00:01.000Z",
+    });
 
-  async function waitUntilStatus(status: string) {
-    for (let attempt = 0; attempt < 20 && bootstrap?.status !== status; attempt += 1) {
-      await act(async () => settle());
-    }
-    expect(bootstrap?.status).toBe(status);
-  }
+    expect(
+      mergeInvocationStatuses(
+        [active, unrelated],
+        [{ ...active, status: "succeeded", completedAt: "2026-07-30T10:00:02.000Z" }]
+      )
+    ).toEqual([
+      expect.objectContaining({ invocationId: INVOCATION_ID, status: "succeeded" }),
+      unrelated,
+    ]);
+  });
 });
 
 describe("useStoryStudioAgentSession", () => {
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
-  let session: StoryStudioAgentSession | null;
+  let sessionValue: StoryStudioAgentSession | null;
+  let bootstrap: StoryStudioAgentBootstrap;
 
   beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    session = null;
+    ({ container, root, queryClient } = createHarness());
+    sessionValue = null;
     resetRuntime();
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
+    bootstrap = createBootstrap();
   });
 
   afterEach(async () => {
-    await act(async () => root.unmount());
-    queryClient.clear();
-    container.remove();
+    await destroyHarness(root, container, queryClient);
   });
 
-  it("starts a fresh turn through useChat, under one id for the message and the command", async () => {
-    await render(createBootstrap());
+  it("publishes a fresh input, then wakes Temporal with only the Ably invocation pointer", async () => {
+    const handle = clientRun({ runId: RUN_ID });
+    runtime.view.send.mockResolvedValue(handle);
+    await renderSession();
 
     await act(async () => {
-      await session!.submit("Rewrite chapter one.", "send");
+      await sessionValue!.submit("  Make the arrival more dramatic.  ", "send");
     });
 
-    expect(runtime.chat.sendMessage).toHaveBeenCalledOnce();
-    expect(runtime.view.send).not.toHaveBeenCalled();
-    const sent = runtime.chat.sendMessage.mock.calls[0]![0] as {
-      id: string;
-      metadata: { clientMessageId: string };
+    expect(runtime.chat.sendMessage).not.toHaveBeenCalled();
+    expect(runtime.view.send).toHaveBeenCalledTimes(1);
+    expect(runtime.view.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          role: "user",
+          parts: [{ type: "text", text: "Make the arrival more dramatic." }],
+        }),
+      })
+    );
+    expect(bootstrap.invoke).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputEventId: "input-event-1",
+        clientMessageId: expect.any(String),
+        sessionName: SESSION_NAME,
+      })
+    );
+  });
+
+  it("projects the creator prompt and busy state before durable admission returns", async () => {
+    const admission = deferred<ReturnType<typeof accepted>>();
+    const handle = clientRun({
+      runId: "",
+      started: new Promise(() => undefined),
+    });
+    runtime.view.send.mockResolvedValue(handle);
+    vi.mocked(bootstrap.invoke).mockReturnValue(admission.promise);
+    await renderSession();
+
+    let submission!: Promise<boolean>;
+    await act(async () => {
+      submission = sessionValue!.submit("Add one node.", "send");
+      await settle();
+    });
+
+    expect(sessionValue?.submitting).toBe(true);
+    expect(sessionValue?.isRunning).toBe(true);
+    expect(
+      sessionValue?.timeline
+        .filter((item) => item.kind === "message")
+        .map((item) => (item.kind === "message" ? item.message.text : null))
+    ).toEqual(["Add one node."]);
+
+    await act(async () => {
+      admission.resolve(accepted());
+      await submission;
+    });
+    expect(sessionValue?.submitting).toBe(false);
+    expect(sessionValue?.isRunning).toBe(true);
+  });
+
+  it("reconciles the durable projection immediately after admission rejects", async () => {
+    runtime.view.send.mockResolvedValue(clientRun({ runId: "" }));
+    vi.mocked(bootstrap.invoke).mockRejectedValue(
+      new Error("This Agent conversation has reached its bounded pending-turn limit.")
+    );
+    await renderSession();
+
+    await expect(act(async () => sessionValue!.submit("Queue this turn", "send"))).rejects.toThrow(
+      "bounded pending-turn limit"
+    );
+
+    expect(bootstrap.refreshInvocations).toHaveBeenCalled();
+    expect(sessionValue?.isRunning).toBe(false);
+    expect(bootstrap.reportCommandError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "This Agent conversation has reached its bounded pending-turn limit.",
+      })
+    );
+  });
+
+  it("sends attachments as both render metadata and a stable model-visible product URI", async () => {
+    runtime.view.send.mockResolvedValue(clientRun({ runId: RUN_ID }));
+    await renderSession();
+
+    await act(async () => {
+      await sessionValue!.submit("", "send", [attachment()]);
+    });
+
+    const input = runtime.view.send.mock.calls[0]![0] as {
+      message: { parts: unknown[] };
     };
-    // Two ids would guarantee a duplicate at the seam on the next reload: the
-    // server persists the submission under `clientMessageId`, and the channel
-    // carries it under `UIMessage.id`.
-    expect(sent.id).toBe(sent.metadata.clientMessageId);
+    expect(input.message.parts).toEqual([
+      {
+        type: "data-studio-agent-attachment",
+        id: ATTACHMENT_ID,
+        data: attachment(),
+      },
+      {
+        type: "file",
+        mediaType: "image/webp",
+        filename: "reference.webp",
+        url: `fizzdragon-media://${ATTACHMENT_ID}`,
+      },
+    ]);
   });
 
-  /**
-   * THE SEED MUST NOT MOVE UNDER THE RECONCILER.
-   *
-   * `useMessageSync` takes the NEWEST seeded id as its seam, pages the channel
-   * back to it, and composes `seed ⧺ live`. Its contract says the seed is read
-   * once per channel. `bootstrap.history` is not that — it is re-fetched every
-   * time a write lands, so it grows as the conversation does. Handing the grown
-   * copy back re-seams against a seed that already contains the live tail and
-   * composes the same turns twice: the creator watches the conversation they
-   * just had render a second time, and a refresh "fixes" it because a fresh
-   * mount starts from one consistent snapshot again. Observed in production.
-   */
-  it("holds the seed when a write grows the snapshot, so the turn is not composed twice", async () => {
-    const bootstrap = createBootstrap();
-    const first = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
-    bootstrap.history = { ...bootstrap.history, messages: first } as never;
-    await render(bootstrap);
-    expect(runtime.syncSeed.current).toBe(first);
-
-    // The write landed; the snapshot now also carries the reply the CHANNEL has
-    // already delivered. The seam has moved.
-    const grown = [...first, { id: "m2", role: "assistant", parts: [] }];
-    await render({ ...bootstrap, history: { ...bootstrap.history, messages: grown } } as never);
-
-    expect(runtime.syncSeed.current).toBe(first);
-  });
-
-  /**
-   * ...but paging in EARLIER turns is the one growth that must be adopted. It
-   * only adds to the front, so the seam does not move — and the panel renders
-   * the overlay, not the seed, so refusing it would leave "load earlier turns"
-   * clicking with nothing appearing.
-   */
-  it("adopts a seed that grew at the front, because the seam did not move", async () => {
-    const bootstrap = createBootstrap();
-    const current = [{ id: "m2", role: "user", parts: [{ type: "text", text: "now" }] }];
-    bootstrap.history = { ...bootstrap.history, messages: current } as never;
-    await render(bootstrap);
-    expect(runtime.syncSeed.current).toBe(current);
-
-    const withEarlier = [
-      { id: "m0", role: "user", parts: [{ type: "text", text: "before" }] },
-      ...current,
-    ];
-    await render({
-      ...bootstrap,
-      history: { ...bootstrap.history, messages: withEarlier },
-    } as never);
-
-    expect(runtime.syncSeed.current).toBe(withEarlier);
-  });
-
-  it("publishes a steer as a continuation of the live run and wakes it exactly once", async () => {
-    runtime.view.send.mockResolvedValue({
-      toInvocation: () => ({
-        toJSON: () => ({ inputEventId: "event-1", sessionName: CHANNEL_NAME }),
-      }),
+  it("uses ClientRun.steer without issuing a second invocation", async () => {
+    const handle = clientRun({ runId: RUN_ID });
+    runtime.view.send.mockResolvedValue(handle);
+    await renderSession();
+    await act(async () => {
+      await sessionValue!.submit("Initial direction", "send");
     });
-    liveRun();
-    const bootstrap = createBootstrap();
-    await render(bootstrap);
+
+    runtime.view.runs.mockReturnValue([wireRun("active")]);
+    await emitView("run");
+    expect(sessionValue?.canSteer).toBe(true);
 
     await act(async () => {
-      await session!.submit("Make it darker.", "steer");
+      await sessionValue!.submit("Keep it under two pages", "steer");
     });
 
-    // Not `useChat`: a second `sendMessage` during a live stream orphans the
-    // first response. The transport's own continuation verb is the write path.
-    expect(runtime.chat.sendMessage).not.toHaveBeenCalled();
-    expect(runtime.view.send).toHaveBeenCalledOnce();
-    expect(runtime.view.send.mock.calls[0]![1]).toEqual({ runId: RUN_ID });
-    // Published once, woken once. Publishing and then also steering the
-    // returned run would put the same prompt on the channel twice.
-    expect(bootstrap.submitInvocation).toHaveBeenCalledOnce();
-    expect(bootstrap.submitInvocation).toHaveBeenCalledWith(
-      expect.objectContaining({ targetRunId: RUN_ID, delivery: "steer" }),
-      { inputEventId: "event-1", sessionName: CHANNEL_NAME }
+    expect(handle.steer).toHaveBeenCalledTimes(1);
+    expect(runtime.view.send).toHaveBeenCalledTimes(1);
+    expect(bootstrap.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a fresh Run durably instead of folding it into the active Run", async () => {
+    const activeHandle = clientRun({ runId: RUN_ID });
+    const queuedHandle = clientRun({ runId: "" });
+    runtime.view.send.mockResolvedValueOnce(activeHandle).mockResolvedValueOnce(queuedHandle);
+    await renderSession();
+    await act(async () => {
+      await sessionValue!.submit("First", "send");
+    });
+    runtime.view.runs.mockReturnValue([wireRun("active")]);
+    await emitView("run");
+
+    await act(async () => {
+      await sessionValue!.submit("Then add a coda", "enqueue");
+    });
+
+    expect(runtime.view.send).toHaveBeenCalledTimes(2);
+    expect(activeHandle.steer).not.toHaveBeenCalled();
+    expect(bootstrap.invoke).toHaveBeenCalledTimes(2);
+    expect(sessionValue?.queuedCount).toBe(1);
+  });
+
+  it("keeps the session busy while a queued Run is waiting for its run-start", async () => {
+    const activeHandle = clientRun({ runId: RUN_ID });
+    const queuedHandle = clientRun({
+      runId: "",
+      started: new Promise(() => undefined),
+    });
+    runtime.view.send.mockResolvedValueOnce(activeHandle).mockResolvedValueOnce(queuedHandle);
+    await renderSession();
+    await act(async () => {
+      await sessionValue!.submit("First", "send");
+    });
+    runtime.view.runs.mockReturnValue([wireRun("active")]);
+    await emitView("run");
+    await act(async () => {
+      await sessionValue!.submit("Queued", "enqueue");
+    });
+
+    activeHandle.setStatus("complete");
+    runtime.view.runs.mockReturnValue([]);
+    await emitView("run");
+
+    expect(sessionValue?.isRunning).toBe(true);
+    expect(sessionValue?.canSteer).toBe(false);
+    expect(sessionValue?.queuedCount).toBe(1);
+    await expect(sessionValue!.startNewConversation()).rejects.toThrow(
+      "Stop the active Agent turn"
     );
+
+    await act(async () => sessionValue!.cancelActiveRun());
+    expect(queuedHandle.cancel).toHaveBeenCalledTimes(1);
   });
 
-  /**
-   * THE LAST MILE OF THE WEDGE.
-   *
-   * When a workflow dies without reporting, nothing is published on the channel
-   * to say so — there is no workflow left to publish it. The server reconciles
-   * its own state on the next submission and frees the thread, but THIS client
-   * still believes a turn is live, so it keeps steering into a run that has
-   * ended. Without the refresh the creator sends the same message twice and the
-   * second one fails for the same invisible reason as the first.
-   */
-  it("resends as a fresh turn when the run it steered into has ended", async () => {
-    runtime.view.send.mockResolvedValue({
-      toInvocation: () => ({
-        toJSON: () => ({ inputEventId: "event-1", sessionName: CHANNEL_NAME }),
-      }),
-    });
-    liveRun();
-    const bootstrap = createBootstrap();
-    // Fails the steer once, then lets the automatic fresh-turn retry through.
-    (bootstrap.submitInvocation as unknown as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(
-        new ApiRequestError(
-          "STUDIO_AGENT_TARGET_RUN_INACTIVE",
-          "The selected agent run is no longer active.",
-          409
-        )
-      )
-      .mockResolvedValue(undefined);
-    await render(bootstrap);
+  it("does not advertise steering for a Run started on another device", async () => {
+    runtime.view.runs.mockReturnValue([wireRun("active")]);
+    await renderSession();
 
-    await act(async () => {
-      await expect(session!.submit("Make it darker.", "steer")).resolves.toBe(true);
-    });
-
-    expect(bootstrap.refreshControlPlane).toHaveBeenCalled();
-    // The retry goes out through the FRESH-send path, the only one that
-    // publishes an input event carrying no target run. Rewriting the steer
-    // server-side instead produces a turn the channel calls a continuation of a
-    // corpse, and it dies waiting for a run-start that never comes.
-    expect(runtime.chat.sendMessage).toHaveBeenCalledOnce();
-  });
-
-  it("does not re-read the control plane for an unrelated failure", async () => {
-    runtime.view.send.mockResolvedValue({
-      toInvocation: () => ({
-        toJSON: () => ({ inputEventId: "event-1", sessionName: CHANNEL_NAME }),
-      }),
-    });
-    liveRun();
-    const bootstrap = createBootstrap();
-    (bootstrap.submitInvocation as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new ApiRequestError("NETWORK_ERROR", "Network connection failed", 0)
+    expect(sessionValue?.isRunning).toBe(true);
+    expect(sessionValue?.canSteer).toBe(false);
+    await expect(sessionValue!.submit("Change direction", "steer")).rejects.toThrow(
+      "cannot be steered from this device"
     );
-    await render(bootstrap);
-
-    await act(async () => {
-      await expect(session!.submit("Make it darker.", "steer")).rejects.toThrow();
-    });
-
-    expect(bootstrap.refreshControlPlane).not.toHaveBeenCalled();
-  });
-
-  it("shows a steer immediately, because the message sync is gated while a stream is live", async () => {
-    runtime.view.send.mockResolvedValue({
-      toInvocation: () => ({ toJSON: () => ({ inputEventId: "e", sessionName: CHANNEL_NAME }) }),
-    });
-    liveRun();
-    await render(createBootstrap());
-
-    await act(async () => {
-      await session!.submit("Make it darker.", "steer");
-    });
-
-    expect(promptTexts()).toContain("Make it darker.");
-  });
-
-  it("counts a queued prompt so the composer can say how many are waiting", async () => {
-    runtime.view.send.mockResolvedValue({
-      toInvocation: () => ({ toJSON: () => ({ inputEventId: "e", sessionName: CHANNEL_NAME }) }),
-    });
-    liveRun();
-    await render(createBootstrap());
-
-    await act(async () => {
-      await session!.submit("And add a coda.", "enqueue");
-    });
-
-    expect(session?.queuedCount).toBe(1);
-  });
-
-  it("drops the optimistic steer without a trace if the publish is refused", async () => {
-    runtime.view.send.mockRejectedValue(new Error("Studio Agent refused the steer."));
-    liveRun();
-    await render(createBootstrap());
-
-    await act(async () => {
-      await expect(session!.submit("Make it darker.", "steer")).rejects.toThrow(
-        "Studio Agent refused the steer."
-      );
-    });
-
-    expect(promptTexts()).not.toContain("Make it darker.");
-  });
-
-  it("refuses to steer when no turn is running", async () => {
-    await render(createBootstrap());
-    await act(async () => {
-      await expect(session!.submit("Make it darker.", "steer")).rejects.toThrow(
-        "delivery mode does not match"
-      );
-    });
     expect(runtime.view.send).not.toHaveBeenCalled();
   });
 
-  it("refuses to start a second root turn while one is running", async () => {
-    liveRun();
-    await render(createBootstrap());
-    await act(async () => {
-      await expect(session!.submit("Rewrite chapter one.", "send")).rejects.toThrow(
-        "delivery mode does not match"
-      );
-    });
-    expect(runtime.chat.sendMessage).not.toHaveBeenCalled();
+  it("cancels a Run recovered from the durable control plane after reload", async () => {
+    runtime.view.runs.mockReturnValue([wireRun("active")]);
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: "00000000-0000-4000-8000-000000000007",
+          clientMessageId: "persisted-client-message",
+          inputEventId: "input-event-1",
+          status: "waiting_for_approval",
+          error: null,
+          latestAttempt: invocationAttempt({
+            clientMessageId: "persisted-client-message",
+            inputEventId: "input-event-1",
+          }),
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: "2026-07-30T10:00:01.000Z",
+          completedAt: null,
+        },
+      ],
+    };
+    await renderSession();
+
+    expect(sessionValue?.isRunning).toBe(true);
+    expect(sessionValue?.canSteer).toBe(false);
+    await act(async () => sessionValue!.cancelActiveRun());
+
+    expect(bootstrap.requestDurableCancel).toHaveBeenCalledWith(INVOCATION_ID);
+    expect(runtime.session.cancel).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000007");
+    expect(runtime.chat.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("interrupts a live turn on the channel and tears down the local stream", async () => {
-    liveRun();
-    await render(createBootstrap());
-
-    await act(async () => {
-      await session!.cancelActiveRun();
+  /**
+   * STOP ANSWERS FOR THE TURN THE CREATOR IS WATCHING.
+   *
+   * `panel.activeRun` is the NEWEST non-terminal root run, so the moment a
+   * follow-up is enqueued it outranks the turn that is actually streaming.
+   * Stopping that one destroys a prompt that never ran — and the latch then
+   * carried the cancel onto the streaming turn a few seconds later anyway.
+   */
+  it("stops the running turn, not the follow-up queued behind it", async () => {
+    const running = invocationStatus({
+      invocationId: INVOCATION_ID,
+      runId: RUN_ID,
+      status: "running",
+      createdAt: "2026-07-30T10:00:00.000Z",
     });
+    const queued = invocationStatus({
+      invocationId: QUEUED_INVOCATION_ID,
+      runId: QUEUED_RUN_ID,
+      status: "queued",
+      createdAt: "2026-07-30T10:00:05.000Z",
+    });
+    bootstrap = { ...bootstrap, invocations: [running, queued] };
+    await renderSession();
+    expect(sessionValue?.activeRun?.id).toBe(QUEUED_RUN_ID);
 
+    await act(async () => sessionValue!.cancelActiveRun());
+
+    expect(bootstrap.requestDurableCancel).toHaveBeenCalledWith(INVOCATION_ID);
+    expect(bootstrap.requestDurableCancel).not.toHaveBeenCalledWith(QUEUED_INVOCATION_ID);
     expect(runtime.session.cancel).toHaveBeenCalledWith(RUN_ID);
-    expect(runtime.chat.stop).toHaveBeenCalled();
+    expect(runtime.session.cancel).not.toHaveBeenCalledWith(QUEUED_RUN_ID);
+
+    // The stopped turn terminalizes. The queued prompt is a different turn and
+    // must not inherit a Stop the creator never aimed at it.
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        { ...running, status: "cancelled", completedAt: "2026-07-30T10:00:07.000Z" },
+        queued,
+      ],
+    };
+    await renderSession();
+
+    expect(bootstrap.requestDurableCancel).not.toHaveBeenCalledWith(QUEUED_INVOCATION_ID);
+    expect(sessionValue?.cancelling).toBe(false);
   });
 
-  it("cancels a turn that has been sent but has not been given a run id yet", async () => {
-    // The agent mints the run id, so between `sendMessage` and `ai-run-start`
-    // the browser has none — and that is exactly when someone who mistyped
-    // reaches for Stop. The transport's abort path owns this window: it calls
-    // `run.cancel()` keyed by the triggering input's codec-message-id, which the
-    // agent buffers until its input lookup resolves.
-    runtime.chat.status = "submitted";
-    await render(createBootstrap());
-    expect(session?.isRunning).toBe(true);
+  it("does not treat a cancellation the runtime never saw as a completed Stop", async () => {
+    vi.mocked(bootstrap.requestDurableCancel).mockResolvedValue({
+      schemaVersion: "agent-cancellation-result/v1",
+      invocationId: INVOCATION_ID,
+      status: "not-active",
+    });
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        invocationStatus({
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          status: "admitting",
+          createdAt: "2026-07-30T10:00:00.000Z",
+        }),
+      ],
+    };
+    await renderSession();
 
+    await act(async () => sessionValue!.cancelActiveRun());
+
+    // No Workflow saw it: the row is still in the admission outbox and will be
+    // dispatched afterwards. Saying nothing would leave the composer locked on
+    // "Stopping…" for a turn that is about to start talking, with the id
+    // latched so no later Stop could ever reach the gateway again.
+    expect(bootstrap.reportCommandError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("had not started yet") })
+    );
+    expect(sessionValue?.cancelling).toBe(false);
+
+    await act(async () => sessionValue!.cancelActiveRun());
+    expect(bootstrap.requestDurableCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a freshly published Run before run-start and carries its durable invocation id", async () => {
+    const handle = clientRun({ runId: "", started: new Promise(() => undefined) });
+    runtime.view.send.mockResolvedValue(handle);
+    await renderSession();
     await act(async () => {
-      await session!.cancelActiveRun();
+      await sessionValue!.submit("Long task", "send");
     });
 
-    expect(runtime.chat.stop).toHaveBeenCalledOnce();
-    // Nothing to address by run id yet; publishing `ai-cancel` with no target
-    // would be a cancel for no run.
+    expect(sessionValue?.isRunning).toBe(true);
+    await act(async () => sessionValue!.cancelActiveRun());
+
+    expect(handle.cancel).toHaveBeenCalledTimes(1);
+    expect(bootstrap.requestDurableCancel).toHaveBeenCalledWith(INVOCATION_ID);
     expect(runtime.session.cancel).not.toHaveBeenCalled();
   });
 
-  /**
-   * THE WINDOW THE CHANNEL CANNOT REACH.
-   *
-   * `ai-cancel` fires the abort signal of a run object some activity is holding,
-   * so it only stops a turn that is INSIDE a model step. Press stop while a tool
-   * is executing, between two activities, or while the turn is parked on an
-   * approval, and the worker has nothing registered to route it to: the panel
-   * says "stopping" and the turn runs to completion anyway. The HTTP route is the
-   * only thing that reaches the Temporal workflow, and it had ZERO callers.
-   */
-  it("also publishes the durable cancel, which is the only one that reaches a parked turn", async () => {
-    liveRun();
-    const bootstrap = createBootstrap();
-    await render(bootstrap);
-
+  it("does not let an unavailable Ably cancellation block durable cancellation", async () => {
+    const handle = clientRun({ runId: "", started: new Promise(() => undefined) });
+    handle.cancel.mockReturnValue(new Promise(() => undefined));
+    runtime.view.send.mockResolvedValue(handle);
+    await renderSession();
     await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
+      await sessionValue!.submit("Long task", "send");
     });
 
-    expect(runtime.session.cancel).toHaveBeenCalledWith(RUN_ID);
-    expect(bootstrap.requestDurableCancel).toHaveBeenCalledWith(RUN_ID);
-    // Order matters: the channel is milliseconds, the outbox is a poll interval.
-    const channelAt = runtime.session.cancel.mock.invocationCallOrder[0]!;
-    const durableAt = (bootstrap.requestDurableCancel as ReturnType<typeof vi.fn>).mock
-      .invocationCallOrder[0]!;
-    expect(channelAt).toBeLessThan(durableAt);
+    await act(async () => sessionValue!.cancelActiveRun());
+
+    expect(bootstrap.requestDurableCancel).toHaveBeenCalledWith(INVOCATION_ID);
+    expect(runtime.chat.stop).toHaveBeenCalledTimes(1);
+    expect(handle.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a failed durable cancel without pretending the stop was undone", async () => {
-    liveRun();
-    const reportCommandError = vi.fn();
-    const bootstrap = createBootstrap({
-      reportCommandError,
-      requestDurableCancel: vi.fn().mockRejectedValue(new Error("Run not found.")),
-      overlayRef: { current: [] },
-    });
-    await render(bootstrap);
-
-    // The fast path already published `ai-cancel`, so this must not throw and
-    // must not clear `cancelling` — the turn may well be stopping.
+  it("unlocks and renders a durable failure when no Ably run-start can exist", async () => {
+    const handle = clientRun({ runId: "", started: new Promise(() => undefined) });
+    runtime.view.send.mockResolvedValue(handle);
+    await renderSession();
     await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
+      await sessionValue!.submit("Missing event", "send");
     });
+    const clientMessageId = (
+      vi.mocked(bootstrap.invoke).mock.calls[0]![0] as {
+        clientMessageId: string;
+      }
+    ).clientMessageId;
 
-    expect(reportCommandError).toHaveBeenCalled();
-    expect(session?.cancelling).toBe(true);
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          clientMessageId,
+          inputEventId: "input-event-1",
+          status: "failed",
+          error: {
+            code: "AGENT_RUN_OPEN_FAILED",
+            messageKey: "agent.error.start_failed",
+            message: "The triggering input could not be located.",
+            retryable: false,
+            diagnosticId: "00000000-0000-4000-8000-000000000018",
+          },
+          latestAttempt: invocationAttempt({
+            clientMessageId,
+            inputEventId: "input-event-1",
+          }),
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: null,
+          completedAt: "2026-07-30T10:00:05.000Z",
+        },
+      ],
+    };
+    await renderSession();
+    await waitFor(() => sessionValue?.isRunning === false);
+
+    expect(sessionValue?.turnFailure).toMatchObject({
+      id: RUN_ID,
+      status: "failed",
+      error: {
+        code: "AGENT_RUN_OPEN_FAILED",
+        message: "The triggering input could not be located.",
+      },
+    });
+    // Failures are part of the message flow (owner decision 2026-07-31): the
+    // newest failed turn renders as exactly one in-flow row, which is where
+    // the retry affordance lives — never a pinned card, never a duplicate.
+    expect(
+      sessionValue?.timeline.filter((item) => item.kind === "run" && item.id === RUN_ID)
+    ).toHaveLength(1);
   });
 
-  it("has nothing durable to cancel before the agent has minted a run id", async () => {
-    runtime.chat.status = "submitted";
-    const bootstrap = createBootstrap();
-    await render(bootstrap);
+  it("reconstructs a legacy turn without duplicating its failure into the transcript", async () => {
+    const persistedPrompt: StudioAgentUIMessage = {
+      id: "persisted-client-message",
+      role: "user",
+      metadata: { createdAt: "2026-07-30T10:00:00.500Z" },
+      parts: [{ type: "text", text: "Open on the storm.", state: "done" }],
+    };
+    const persistedReply: StudioAgentUIMessage = {
+      id: "persisted-assistant-message",
+      role: "assistant",
+      metadata: { createdAt: "2026-07-30T10:00:01.500Z" },
+      parts: [{ type: "text", text: "The storm opens.", state: "done" }],
+    };
+    runtime.chat.messages = [persistedPrompt, persistedReply];
+    bootstrap = {
+      ...bootstrap,
+      history: {
+        ...bootstrap.history,
+        messages: [persistedPrompt, persistedReply],
+        messageIds: new Set([persistedPrompt.id, persistedReply.id]),
+      },
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          clientMessageId: persistedPrompt.id,
+          inputEventId: "input-event-1",
+          status: "failed",
+          error: {
+            code: "AGENT_RUNTIME_FAILED",
+            messageKey: "agent.error.runtime_failed",
+            message: "The Agent runtime did not complete this turn.",
+            retryable: true,
+            diagnosticId: "00000000-0000-4000-8000-000000000019",
+          },
+          latestAttempt: invocationAttempt({
+            clientMessageId: persistedPrompt.id,
+            inputEventId: "input-event-1",
+          }),
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: "2026-07-30T10:00:01.000Z",
+          completedAt: "2026-07-30T10:00:02.000Z",
+        },
+      ],
+    };
 
-    await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
+    await renderSession();
+
+    expect(
+      sessionValue?.timeline.map((item) =>
+        item.kind === "message"
+          ? `${item.kind}:${item.message.messageId}:${item.message.runId}`
+          : `${item.kind}:${item.id}`
+      )
+    ).toEqual([
+      `message:${persistedPrompt.id}:${RUN_ID}`,
+      `message:${persistedReply.id}:${RUN_ID}`,
+      // The reconstructed turn's failure, exactly once and in flow — after the
+      // messages of the turn it belongs to.
+      `run:${RUN_ID}`,
+    ]);
+    expect(sessionValue?.turnFailure).toMatchObject({
+      id: RUN_ID,
+      status: "failed",
+      error: {
+        code: "AGENT_RUNTIME_FAILED",
+        message: "The Agent runtime did not complete this turn.",
+      },
     });
-
-    expect(bootstrap.requestDurableCancel).not.toHaveBeenCalled();
   });
 
-  it("keeps saying it is stopping until the turn actually settles", async () => {
-    liveRun();
-    await render(createBootstrap());
+  it("sends approval decisions through the AI SDK continuation path only", async () => {
+    runtime.chat.messages = [approvalAssistantMessage()];
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          clientMessageId: "creator-message-1",
+          inputEventId: "input-event-1",
+          status: "waiting_for_approval",
+          error: null,
+          latestAttempt: invocationAttempt({
+            clientMessageId: "creator-message-1",
+            inputEventId: "input-event-1",
+          }),
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: "2026-07-30T10:00:01.000Z",
+          completedAt: null,
+        },
+      ],
+    };
+    await renderSession();
 
     await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
-    });
-
-    // Publishing `ai-cancel` is the whole of the client's part. Everything the
-    // creator is waiting for happens after it, so clearing here would put the
-    // panel back to "working" one tick after Stop was pressed.
-    expect(session?.cancelling).toBe(true);
-    expect(session?.isRunning).toBe(true);
-
-    await act(async () => {
-      endRun();
-      await settle();
-    });
-
-    expect(session?.cancelling).toBe(false);
-    expect(session?.isRunning).toBe(false);
-  });
-
-  it("does not open the next turn already claiming to be stopping", async () => {
-    liveRun();
-    await render(createBootstrap());
-    await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
-    });
-    await act(async () => {
-      endRun();
-      await settle();
-    });
-
-    // `cancelling` is derived by ANDing the request against "a turn is in
-    // flight", so the request has to be retired where the next turn begins —
-    // otherwise the new turn inherits the previous turn's Stop.
-    await act(async () => {
-      await session!.submit("Rewrite chapter one.", "send");
-      liveRun();
-      emitRunChange();
-      await settle();
-    });
-
-    expect(session?.isRunning).toBe(true);
-    expect(session?.cancelling).toBe(false);
-  });
-
-  it("refuses a second stop while the first is still unwinding", async () => {
-    liveRun();
-    await render(createBootstrap());
-
-    await act(async () => {
-      await session!.cancelActiveRun();
-      await settle();
-    });
-    await act(async () => {
-      await session!.cancelActiveRun();
-    });
-
-    expect(runtime.session.cancel).toHaveBeenCalledOnce();
-  });
-
-  it("answers a suspended tool call through the library, with no second write beside it", async () => {
-    await render(createBootstrap());
-
-    await act(async () => {
-      await session!.respondToToolApproval("approval-1", true);
+      await sessionValue!.respondToToolApproval("approval-1", false);
     });
 
     expect(runtime.chat.addToolApprovalResponse).toHaveBeenCalledWith({
       id: "approval-1",
+      approved: false,
+    });
+    expect(bootstrap.invoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps approval controls closed until the product lifecycle has durably suspended", async () => {
+    runtime.chat.messages = [approvalAssistantMessage()];
+    const baseInvocation: AgentInvocationStatus = {
+      invocationId: INVOCATION_ID,
+      runId: RUN_ID,
+      clientMessageId: "creator-message-1",
+      inputEventId: "input-event-1",
+      status: "running",
+      error: null,
+      latestAttempt: invocationAttempt({
+        clientMessageId: "creator-message-1",
+        inputEventId: "input-event-1",
+      }),
+      createdAt: "2026-07-30T10:00:00.000Z",
+      startedAt: "2026-07-30T10:00:01.000Z",
+      completedAt: null,
+    };
+    bootstrap = { ...bootstrap, invocations: [baseInvocation] };
+    await renderSession();
+
+    expect(sessionValue?.canRespondToToolApproval(RUN_ID)).toBe(false);
+    await expect(
+      act(async () => sessionValue!.respondToToolApproval("approval-1", true))
+    ).rejects.toThrow("still becoming durable");
+    expect(runtime.chat.addToolApprovalResponse).not.toHaveBeenCalled();
+
+    bootstrap = {
+      ...bootstrap,
+      invocations: [{ ...baseInvocation, status: "waiting_for_approval" }],
+    };
+    await renderSession();
+    expect(sessionValue?.canRespondToToolApproval(RUN_ID)).toBe(true);
+    await act(async () => sessionValue!.respondToToolApproval("approval-1", true));
+    expect(runtime.chat.addToolApprovalResponse).toHaveBeenCalledWith({
+      id: "approval-1",
       approved: true,
     });
-    // The decision travels as the transport's `tool-approval-response`, derived
-    // from the overlay on the continuation. A POST here would be a second author
-    // for one fact.
-    expect(runtime.api.sendInvocation).not.toHaveBeenCalled();
-    expect(runtime.view.send).not.toHaveBeenCalled();
   });
 
-  it("arms the continuation that carries an approval back to the agent", async () => {
-    await render(createBootstrap());
+  it("retries a rejected continuation with the exact original causal identity", async () => {
+    const rejection = {
+      code: "AGENT_ADMISSION_TEMPORARILY_UNAVAILABLE",
+      messageKey: "agent.error.admission_unavailable",
+      message: "The continuation could not be admitted yet.",
+      retryable: true,
+      diagnosticId: "00000000-0000-4000-8000-000000000029",
+    };
+    bootstrap = {
+      ...bootstrap,
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: RUN_ID,
+          clientMessageId: "creator-message-1",
+          inputEventId: "input-event-1",
+          status: "waiting_for_approval",
+          error: null,
+          latestAttempt: {
+            attemptId: "00000000-0000-4000-8000-000000000030",
+            ordinal: 1,
+            inputEventId: "continuation-event-1",
+            clientMessageId: "continuation-message-1",
+            status: "rejected",
+            error: rejection,
+          },
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: "2026-07-30T10:00:01.000Z",
+          completedAt: null,
+        },
+      ],
+    };
+    await renderSession();
 
-    // `addToolApprovalResponse` only rewrites the local part. Without this
-    // predicate useChat never issues the continuation, so the transport never
-    // derives the `tool-approval-response` and the agent waits for good.
-    const sendAutomaticallyWhen = runtime.chatInit.current?.sendAutomaticallyWhen as
-      | ((options: { messages: unknown[] }) => boolean)
-      | undefined;
-    expect(sendAutomaticallyWhen).toBeTypeOf("function");
-    expect(sendAutomaticallyWhen!({ messages: [assistantWithAnsweredApproval()] })).toBe(true);
-    expect(sendAutomaticallyWhen!({ messages: [assistantWithPendingApproval()] })).toBe(false);
+    expect(bootstrap.reportCommandError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "AgentContinuationAdmissionError",
+        message: rejection.message,
+      })
+    );
+    await expect(sessionValue!.retryRejectedAttempt(RUN_ID)).resolves.toBe(true);
+    expect(bootstrap.invoke).toHaveBeenCalledWith({
+      inputEventId: "continuation-event-1",
+      clientMessageId: "continuation-message-1",
+      continuationOfInvocationId: INVOCATION_ID,
+    });
+    expect(bootstrap.refreshInvocations).toHaveBeenCalled();
   });
 
-  it("re-reads the control plane when the channel says a run's lifecycle moved", async () => {
-    liveRun();
-    const bootstrap = createBootstrap();
-    await render(bootstrap);
-    expect(bootstrap.refreshControlPlane).not.toHaveBeenCalled();
+  it("clears the AI SDK's latched transport error when the creator dismisses it", async () => {
+    // `useChat` keeps its terminal error until `clearError()` is called, and
+    // the session surfaces it as the "realtime unavailable" command error.
+    // Dismiss used to clear only the bootstrap half, which left that banner
+    // pinned forever over a composer that was already usable again.
+    runtime.chat.error = new Error("stream terminated");
+    await renderSession();
+
+    expect(sessionValue?.commandError?.message).toContain(
+      "The realtime connection is unavailable."
+    );
+
+    await act(async () => sessionValue!.clearCommandError());
+
+    expect(runtime.chat.clearError).toHaveBeenCalledTimes(1);
+    expect(bootstrap.clearCommandError).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the previous turn's latched transport error the moment a new send starts", async () => {
+    runtime.chat.error = new Error("stream terminated");
+    runtime.view.send.mockResolvedValue(clientRun({ runId: RUN_ID }));
+    await renderSession();
 
     await act(async () => {
-      endRun();
-      await settle();
+      await sessionValue!.submit("Try once more.", "send");
     });
 
-    // Approvals, delegated tasks and applied writes have no wire shape. The
-    // channel says WHEN to look; this is the looking.
-    expect(bootstrap.refreshControlPlane).toHaveBeenCalled();
+    expect(runtime.chat.clearError).toHaveBeenCalled();
   });
 
-  it("tells the canvas to re-read once the agent's write has landed", async () => {
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    const bootstrap = createBootstrap();
-    await render(bootstrap);
-    expect(invalidate).not.toHaveBeenCalled();
-
-    await render(
-      createBootstrap({ history: { ...bootstrap.history, writeToken: "action-1:succeeded" } })
-    );
-
-    expect(invalidate).toHaveBeenCalled();
-    const predicate = invalidate.mock.calls[0]![0]!.predicate!;
-    expect(
-      predicate({
-        queryKey: storyProjectionQueryKey("workbench", "workspace-1", "project-1", "chapter-1"),
-      } as never)
-    ).toBe(true);
-    expect(
-      predicate({ queryKey: ["story-studio", "workbench", "workspace-1", "other"] } as never)
-    ).toBe(false);
-  });
-
-  function promptTexts(): string[] {
-    return (session?.timeline ?? []).flatMap((item) =>
-      item.kind === "message" ? [item.message.text] : []
-    );
-  }
-
-  /**
-   * THE SPINNER THAT NEVER STOPPED.
-   *
-   * Every other unstick in the hook waits for somebody to publish something: the
-   * domain terminal, the wire's `ai-run-end`, a rich failure part. A worker that
-   * DIES publishes none of them, and there was no watchdog anywhere — so the
-   * panel span until reload, indistinguishable from a slow model.
-   */
-  it("surfaces a turn that has gone silent, and re-reads the control plane once", async () => {
-    // `shouldAdvanceTime` so the harness's own real `setTimeout(0)` settles
-    // still resolve under the fake clock; the 120s window is advanced explicitly.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      liveRun();
-      const refreshControlPlane = vi.fn();
-      await render(createBootstrap({ refreshControlPlane }));
-
-      expect(session?.stalled).toBe(false);
-      expect(refreshControlPlane).not.toHaveBeenCalled();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(119_000);
-      });
-      expect(session?.stalled).toBe(false);
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2_000);
-      });
-      expect(session?.stalled).toBe(true);
-      // Not just a message: if the run reached a terminal in Postgres and the
-      // channel terminal was lost, this is what unsticks the panel for real.
-      expect(refreshControlPlane).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does not call a turn waiting on the creator a stall", async () => {
-    // `shouldAdvanceTime` so the harness's own real `setTimeout(0)` settles
-    // still resolve under the fake clock; the 120s window is advanced explicitly.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const bootstrap = createBootstrap({
-        history: {
-          messages: [],
-          messageIds: new Set<string>(),
-          runs: [waitingRun("waiting_for_approval")],
-          activities: [],
-          approvals: [],
-          writeToken: "",
-          writtenNodeIds: [],
-        } as unknown as StoryStudioAgentBootstrap["history"],
-      });
-      await render(bootstrap);
-      expect(session?.isRunning).toBe(true);
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(300_000);
-      });
-
-      // An approval can legitimately sit unanswered for hours. Calling that a
-      // stall would be lying about the most common pause there is.
-      expect(session?.stalled).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears the stall the moment the channel speaks again", async () => {
-    // `shouldAdvanceTime` so the harness's own real `setTimeout(0)` settles
-    // still resolve under the fake clock; the 120s window is advanced explicitly.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      liveRun();
-      const bootstrap = createBootstrap();
-      await render(bootstrap);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(121_000);
-      });
-      expect(session?.stalled).toBe(true);
-
-      // One more token arrives. The pulse is CONTENT, not the array's identity —
-      // `useMessageSync` replaces the array wholesale on a snapshot refresh,
-      // including the refresh the watchdog itself triggers, and keying on
-      // identity would let that hide a real stall forever. So this has to be a
-      // real change in what the channel has delivered.
-      runtime.chat.messages = [
-        { id: "assistant-1", role: "assistant", parts: [{ type: "text", text: "..." }] },
-      ];
-      await render(bootstrap);
-
-      expect(session?.stalled).toBe(false);
-
-      // ... and a re-render that delivers nothing new does NOT reset the window.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(60_000);
-      });
-      await render(bootstrap);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(61_000);
-      });
-      expect(session?.stalled).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does not arm the watchdog when nothing is in flight", async () => {
-    // `shouldAdvanceTime` so the harness's own real `setTimeout(0)` settles
-    // still resolve under the fake clock; the 120s window is advanced explicitly.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const refreshControlPlane = vi.fn();
-      await render(createBootstrap({ refreshControlPlane }));
-      expect(session?.isRunning).toBe(false);
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(600_000);
-      });
-
-      expect(session?.stalled).toBe(false);
-      expect(refreshControlPlane).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  async function render(bootstrap: StoryStudioAgentBootstrap) {
+  async function renderSession() {
     await act(async () => {
       root.render(
-        <NextIntlClientProvider locale="en-US" messages={{}}>
-          <QueryClientProvider client={queryClient}>
-            <SessionHarness
-              input={bootstrap}
-              onSession={(value) => {
-                session = value;
-              }}
-            />
-          </QueryClientProvider>
-        </NextIntlClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <SessionHarness
+            bootstrap={bootstrap}
+            onValue={(value) => {
+              sessionValue = value;
+            }}
+          />
+        </QueryClientProvider>
       );
+      await settle();
+    });
+  }
+
+  async function emitView(event: "run" | "update") {
+    await act(async () => {
+      for (const [registered, handler] of runtime.view.on.mock.calls as unknown as Array<
+        [string, () => void]
+      >) {
+        if (registered === event) handler();
+      }
       await settle();
     });
   }
 });
 
-function BootstrapHarness({
-  onBootstrap,
-}: {
-  onBootstrap: (bootstrap: StoryStudioAgentBootstrap) => void;
-}) {
-  onBootstrap(
+function BootstrapHarness({ onValue }: { onValue: (value: StoryStudioAgentBootstrap) => void }) {
+  onValue(
     useStoryStudioAgentBootstrap({
-      projectId: "project-1",
-      chapterId: "chapter-1",
-      workspaceId: "workspace-1",
+      projectId: PROJECT_ID,
+      chapterId: null,
+      workspaceId: WORKSPACE_ID,
       active: true,
     })
   );
   return null;
 }
 
-/**
- * Declared once, outside the render helper.
- *
- * A component defined inside the helper would be a new type on every call, so
- * React would unmount and remount the tree instead of re-rendering it — and the
- * two "has this changed since last time?" guards under test live in refs that a
- * remount silently resets.
- */
 function SessionHarness({
-  input,
-  onSession,
+  bootstrap,
+  onValue,
 }: {
-  input: StoryStudioAgentBootstrap;
-  onSession: (session: StoryStudioAgentSession) => void;
+  bootstrap: StoryStudioAgentBootstrap;
+  onValue: (value: StoryStudioAgentSession) => void;
 }) {
-  onSession(useStoryStudioAgentSession(input));
+  onValue(useStoryStudioAgentSession(bootstrap));
   return null;
 }
 
-const THREAD_ID = "00000000-0000-4000-8000-000000000001";
-const RUN_ID = "00000000-0000-4000-8000-000000000030";
-const CHANNEL_NAME = `studio-agent:thread:${THREAD_ID}`;
-const HISTORY_MESSAGE_ID = "00000000-0000-4000-8000-000000000029";
-const OLDER_MESSAGE_ID = "00000000-0000-4000-8000-000000000027";
-const EARLIEST_ROOT_RUN_ID = "019f8d30-0000-7000-8000-000000000001";
-
-function settle() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+function createHarness() {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  document.body.append(container);
+  return {
+    container,
+    root: createRoot(container),
+    queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  };
 }
 
-/** A control-plane run parked on the creator, which is silent by design. */
-function waitingRun(status: "waiting_for_approval" | "waiting_for_input") {
-  return {
-    id: RUN_ID,
-    parentRunId: null,
-    title: "",
-    summary: null,
-    error: null,
-    status,
-    progress: null,
-    createdAt: "2026-07-28T00:00:00.000Z",
-    startedAt: "2026-07-28T00:00:00.000Z",
-    completedAt: null,
-  };
+async function destroyHarness(root: Root, container: HTMLDivElement, queryClient: QueryClient) {
+  await act(async () => root.unmount());
+  queryClient.clear();
+  container.remove();
 }
 
 function resetRuntime() {
-  runtime.ApiClient.mockClear();
-  for (const mock of Object.values(runtime.api)) mock.mockReset();
-  runtime.view.send.mockReset();
-  runtime.view.runs.mockReset().mockReturnValue([]);
-  runtime.view.on.mockReset().mockReturnValue(() => undefined);
-  runtime.session.cancel.mockReset().mockResolvedValue(undefined);
-  runtime.session.on.mockReset().mockReturnValue(() => undefined);
-  runtime.chat.messages = [];
-  runtime.chat.sendMessage.mockReset().mockResolvedValue(undefined);
-  runtime.chat.stop.mockReset().mockResolvedValue(undefined);
-  runtime.chat.addToolApprovalResponse.mockReset().mockResolvedValue(undefined);
-  runtime.chat.status = "ready";
-  runtime.chatInit.current = null;
-  runtime.uploadFileViaSignedUrl.mockReset().mockResolvedValue({
-    mediaAssetId: "00000000-0000-4000-8000-000000000070",
-    variantId: "00000000-0000-4000-8000-000000000072",
-    storageKey: "studio-agent/reference.webp",
-    url: "https://media.example.test/reference.webp",
-  });
-
-  runtime.api.createRealtimeGrant.mockResolvedValue({
-    channel: CHANNEL_NAME,
-    ttlMs: 300_000,
-    tokenRequest: {
-      keyName: "app.key",
-      mac: "mac",
-      nonce: "nonce",
-      capability: `{"${CHANNEL_NAME}":["subscribe","publish","history"]}`,
-      timestamp: 1,
-    },
-  });
-  runtime.api.resolveThread.mockResolvedValue({
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    thread: thread(),
-    created: false,
-  });
-  runtime.api.getSnapshot.mockResolvedValue(
-    snapshot({ messages: [historyMessage(HISTORY_MESSAGE_ID, 1, "Rewrite chapter one.")] })
+  vi.clearAllMocks();
+  runtime.api.resolveStoryConversation.mockResolvedValue(grant());
+  runtime.api.createStoryConversation.mockResolvedValue(
+    grant({ conversationId: NEW_CONVERSATION_ID })
   );
-  runtime.api.registerAttachment.mockResolvedValue({
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    attachment: canonicalAttachment,
-    created: true,
+  runtime.api.authorizeConversation.mockResolvedValue(grant());
+  runtime.api.updatePermissionMode.mockImplementation(
+    (_conversationId: string, mode: "ask" | "smart" | "full") =>
+      Promise.resolve(grant({ permissionMode: mode }))
+  );
+  runtime.api.invoke.mockResolvedValue(accepted());
+  runtime.api.invocationStatus.mockResolvedValue({
+    schemaVersion: "agent-invocation-status-page/v1",
+    revision: "0",
+    hasMore: false,
+    invocations: [],
   });
-  runtime.api.deleteAttachment.mockResolvedValue({
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    attachmentId: canonicalAttachment.attachmentId,
-    cleanupStatus: "scheduled",
+  runtime.api.cancel.mockResolvedValue({
+    schemaVersion: "agent-cancellation-result/v1",
+    invocationId: INVOCATION_ID,
+    status: "cancellation-requested",
   });
+  runtime.api.history.mockResolvedValue(
+    historyPage([textMessage("durable-message-1", "user", "Persisted")], null)
+  );
+  runtime.api.registerAttachment.mockResolvedValue(registeredAttachment());
+  runtime.api.revokeAttachment.mockResolvedValue({
+    ...registeredAttachment(),
+    status: "revoked",
+  });
+  runtime.uploadFileViaSignedUrl.mockResolvedValue({ mediaAssetId: MEDIA_ASSET_ID });
+  runtime.view.send.mockReset();
+  runtime.view.runs.mockReturnValue([]);
+  runtime.view.run.mockReturnValue(undefined);
+  runtime.view.runOf.mockReturnValue(undefined);
+  runtime.view.getMessages.mockReturnValue([]);
+  runtime.view.on.mockImplementation(() => () => undefined);
+  runtime.session.cancel.mockResolvedValue(undefined);
+  runtime.session.on.mockImplementation(() => () => undefined);
+  runtime.chat.messages = [];
+  runtime.chat.status = "ready";
+  runtime.chat.error = undefined;
+  runtime.chat.stop.mockResolvedValue(undefined);
+  runtime.chat.addToolApprovalResponse.mockResolvedValue(undefined);
+  runtime.chat.clearError.mockReset();
+  runtime.realtimeInput.current = null;
 }
 
-/** Put an active run on the wire, the way `ai-run-start` does. */
-function liveRun() {
-  runtime.view.runs.mockReturnValue([
-    { runId: RUN_ID, clientId: "client", invocationId: "invocation", steps: [], status: "active" },
-  ]);
-}
-
-/** An assistant turn holding one approval the creator has answered. */
-function assistantWithAnsweredApproval() {
+function createBootstrap(): StoryStudioAgentBootstrap {
   return {
-    id: "assistant-1",
-    role: "assistant" as const,
-    parts: [
-      {
-        type: "tool-story.canvas.write",
-        toolCallId: "call-1",
-        state: "approval-responded",
-        input: { sceneId: "scene-1" },
-        approval: { id: "approval-1", approved: true },
-      },
-    ],
-  };
-}
-
-/** The same turn before the creator answered. */
-function assistantWithPendingApproval() {
-  return {
-    id: "assistant-1",
-    role: "assistant" as const,
-    parts: [
-      {
-        type: "tool-story.canvas.write",
-        toolCallId: "call-1",
-        state: "approval-requested",
-        input: { sceneId: "scene-1" },
-        approval: { id: "approval-1" },
-      },
-    ],
-  };
-}
-
-function endRun() {
-  runtime.view.runs.mockReturnValue([
-    {
-      runId: RUN_ID,
-      clientId: "client",
-      invocationId: "invocation",
-      steps: [],
-      status: "complete",
-    },
-  ]);
-  emitRunChange();
-}
-
-/**
- * What makes a `runs()` change visible.
- *
- * The hook subscribes to the view and re-reads on notification; swapping the
- * mock's return value alone changes nothing it can see, so a test that forgets
- * this asserts against the PREVIOUS run list and passes for the wrong reason.
- */
-function emitRunChange() {
-  for (const call of runtime.view.on.mock.calls) {
-    const [event, handler] = call as unknown as [string, () => void];
-    if (event === "run") handler();
-  }
-}
-
-function createBootstrap(
-  overrides: Partial<StoryStudioAgentBootstrap> = {}
-): StoryStudioAgentBootstrap {
-  return {
-    projectId: "project-1",
-    chapterId: "chapter-1",
-    workspaceId: "workspace-1",
+    projectId: PROJECT_ID,
+    chapterId: null,
+    workspaceId: WORKSPACE_ID,
+    locale: "en-GB",
     status: "ready",
     error: null,
-    thread: thread() as unknown as StoryStudioAgentBootstrap["thread"],
+    thread: {
+      threadId: CONVERSATION_ID,
+      permissionPolicy: { mode: "smart" },
+    },
     history: {
       messages: [],
-      messageIds: new Set<string>(),
+      messageIds: new Set(),
+      nextCursor: null,
       runs: [],
       activities: [],
-      approvals: [],
       writeToken: "",
       writtenNodeIds: [],
     },
-    conversationKey: `${THREAD_ID}:0`,
-    realtime: { client: null, channelName: CHANNEL_NAME, status: "connected", error: null },
+    invocations: [],
+    documentAnalysis: EMPTY_STUDIO_AGENT_DOCUMENT_ANALYSIS,
+    conversationKey: CONVERSATION_ID,
+    realtime: {
+      client: null,
+      channelName: SESSION_NAME,
+      status: "connected",
+      error: null,
+    },
     hasEarlierTurns: false,
     loadingEarlierTurns: false,
     policyUpdating: false,
@@ -1125,102 +1222,254 @@ function createBootstrap(
     reportCommandError: vi.fn(),
     retry: vi.fn(),
     loadEarlierTurns: vi.fn().mockResolvedValue(undefined),
-    refreshControlPlane: vi.fn(),
-    buildInvocation: vi.fn(
-      (input: Parameters<StoryStudioAgentBootstrap["buildInvocation"]>[0]) => ({
-        threadId: THREAD_ID,
-        clientMessageId: input.clientMessageId,
-        parts: input.parts,
-        targetRunId: input.targetRunId,
-        delivery: input.delivery,
-        scope: {
-          workspaceId: "workspace-1",
-          container: {
-            resourceType: "story.project" as const,
-            resourceId: "project-1",
-            revision: null,
-          },
-          focus: null,
-        },
-        locale: "en-US",
-      })
-    ),
-    submitInvocation: vi.fn().mockResolvedValue(undefined),
-    requestDurableCancel: vi.fn().mockResolvedValue(undefined),
-    overlayRef: { current: [] },
+    refreshHistory: vi.fn(),
+    refreshInvocations: vi.fn(),
+    invoke: vi.fn().mockResolvedValue(accepted()),
+    requestDurableCancel: vi.fn().mockResolvedValue(cancellationRequested()),
+    startNewConversation: vi.fn().mockResolvedValue(undefined),
     uploadAttachment: vi.fn(),
-    updatePermissionMode: vi.fn(),
-    resolveApproval: vi.fn(),
-    ...overrides,
-  } as StoryStudioAgentBootstrap;
+    updatePermissionMode: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
-function thread() {
-  const permissionPolicy = {
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    policyId: "00000000-0000-4000-8000-000000000020",
-    revision: 1,
-    mode: "smart" as const,
-    rules: [],
-    createdAt: "2026-07-24T12:00:00.000Z",
-  };
+function grant({
+  conversationId = CONVERSATION_ID,
+  permissionMode = "smart",
+}: {
+  conversationId?: string;
+  permissionMode?: "ask" | "smart" | "full";
+} = {}) {
   return {
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    threadId: THREAD_ID,
-    surfaceId: "story.studio",
-    scenario: { id: "story.studio.assistant", version: "1.0.0" },
-    scope: {
-      workspaceId: "workspace-1",
-      container: { resourceType: "story.project", resourceId: "project-1", revision: null },
-      focus: null,
+    schemaVersion: "agent-conversation-grant/v1",
+    conversation: {
+      id: conversationId,
+      surface: "story-studio",
+      title: null,
+      permissionMode,
+      createdAt: "2026-07-30T10:00:00.000Z",
+      updatedAt: "2026-07-30T10:00:00.000Z",
+      archivedAt: null,
     },
-    title: null,
-    ownerActorId: "actor-1",
-    status: "active" as const,
-    permissionPolicy,
-    activeRunId: null,
-    createdAt: "2026-07-24T12:00:00.000Z",
-    updatedAt: "2026-07-24T12:00:00.000Z",
+    sessionName: `agent:v1:conversation:${conversationId}`,
+    ablyToken: "jwt.header.signature",
+    expiresAt: "2099-07-30T11:00:00.000Z",
   };
 }
 
-function snapshot(overrides: Record<string, unknown> = {}) {
+function accepted() {
   return {
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    thread: thread(),
-    messages: [],
-    runs: [],
-    actions: [],
-    approvals: [],
-    inputs: [],
-    activities: [],
-    turnWindow: { earliestRootRunId: null, hasEarlier: false },
-    latestEventSequence: 0,
+    schemaVersion: "agent-invocation-accepted/v1" as const,
+    invocationId: INVOCATION_ID,
+  };
+}
+
+function cancellationRequested() {
+  return {
+    schemaVersion: "agent-cancellation-result/v1" as const,
+    invocationId: INVOCATION_ID,
+    status: "cancellation-requested" as const,
+  };
+}
+
+function invocationStatus(input: {
+  invocationId: string;
+  runId: string;
+  status: AgentInvocationStatus["status"];
+  createdAt: string;
+}): AgentInvocationStatus {
+  return {
+    invocationId: input.invocationId,
+    runId: input.runId,
+    clientMessageId: `client-${input.invocationId}`,
+    inputEventId: `event-${input.invocationId}`,
+    status: input.status,
+    error: null,
+    latestAttempt: invocationAttempt({
+      clientMessageId: `client-${input.invocationId}`,
+      inputEventId: `event-${input.invocationId}`,
+    }),
+    createdAt: input.createdAt,
+    startedAt: input.status === "admitting" || input.status === "queued" ? null : input.createdAt,
+    completedAt:
+      input.status === "succeeded" || input.status === "failed" || input.status === "cancelled"
+        ? input.createdAt
+        : null,
+  };
+}
+
+function invocationAttempt({
+  clientMessageId,
+  inputEventId,
+  attemptId = "00000000-0000-4000-8000-000000000028",
+}: {
+  clientMessageId: string;
+  inputEventId: string;
+  attemptId?: string;
+}): AgentInvocationStatus["latestAttempt"] {
+  return {
+    attemptId,
+    ordinal: 0,
+    inputEventId,
+    clientMessageId,
+    status: "dispatched",
+    error: null,
+  };
+}
+
+function approvalAssistantMessage(): StudioAgentUIMessage {
+  return {
+    id: "assistant-approval-1",
+    role: "assistant",
+    metadata: {
+      createdAt: "2026-07-30T10:00:02.000Z",
+      runId: RUN_ID,
+    },
+    parts: [
+      {
+        type: "dynamic-tool",
+        toolName: "cap_story_canvas_delete_scene_abcabcabcabc",
+        toolCallId: "tool-call-1",
+        state: "approval-requested",
+        input: { sceneId: "scene-1" },
+        approval: { id: "approval-1" },
+      },
+    ],
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function historyPage(messages: ReturnType<typeof textMessage>[], nextCursor: string | null) {
+  return {
+    schemaVersion: "agent-history-page/v1",
+    messages,
+    nextCursor,
+  };
+}
+
+function textMessage(id: string, role: "user" | "assistant", text: string) {
+  return {
+    id,
+    role,
+    parts: [{ type: "text", text }],
+  };
+}
+
+function registeredAttachment() {
+  return {
+    schemaVersion: "agent-attachment/v1",
+    id: ATTACHMENT_ID,
+    conversationId: CONVERSATION_ID,
+    mediaAssetId: MEDIA_ASSET_ID,
+    fileName: "reference.webp",
+    mediaType: "image/webp",
+    sizeBytes: "5",
+    status: "ready",
+    uri: `fizzdragon-media://${ATTACHMENT_ID}`,
+    ingest: null,
+    analysis: null,
+    error: null,
+    createdAt: "2026-07-30T10:00:00.000Z",
+    updatedAt: "2026-07-30T10:00:00.000Z",
+  };
+}
+
+function registeredDocument(overrides: Partial<AgentAttachmentSummary> = {}) {
+  return {
+    ...registeredAttachment(),
+    fileName: "screenplay-test.docx",
+    mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    sizeBytes: "159744",
     ...overrides,
   };
 }
 
-function historyMessage(messageId: string, ordinal: number, text: string) {
+function attachment() {
   return {
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    messageId,
-    clientMessageId: messageId,
-    threadId: THREAD_ID,
-    runId: null,
-    ordinal,
-    role: "user" as const,
-    status: "completed" as const,
-    parts: [{ type: "text" as const, format: "plain_text" as const, text }],
-    createdAt: "2026-07-24T12:01:00.000Z",
-    completedAt: "2026-07-24T12:01:00.000Z",
+    type: "attachment" as const,
+    attachmentId: ATTACHMENT_ID,
+    fileName: "reference.webp",
+    mediaType: "image/webp",
+    sizeBytes: 5,
+    status: "ready" as const,
   };
 }
 
-const canonicalAttachment = {
-  type: "attachment" as const,
-  attachmentId: "00000000-0000-4000-8000-000000000071",
-  fileName: "reference.webp",
-  mediaType: "image/webp",
-  sizeBytes: 5,
-  status: "ready" as const,
-};
+function wireRun(status: "active" | "suspended" | "complete" | "cancelled" | "error") {
+  return status === "error"
+    ? {
+        runId: RUN_ID,
+        clientId: "client-1",
+        invocationId: INVOCATION_ID,
+        steps: [],
+        status,
+        error: { code: 50000, statusCode: 500, message: "Run failed" },
+      }
+    : {
+        runId: RUN_ID,
+        clientId: "client-1",
+        invocationId: INVOCATION_ID,
+        steps: [],
+        status,
+      };
+}
+
+function clientRun({
+  runId,
+  started = Promise.resolve(),
+  status = "active",
+}: {
+  runId: string;
+  started?: Promise<void>;
+  status?: "active" | "complete" | "cancelled" | "error";
+}) {
+  let currentStatus = status;
+  const steer = vi.fn(() => ({
+    published: Promise.resolve({ serial: "serial-1" }),
+    outcome: Promise.resolve({ consumed: true }),
+  }));
+  return {
+    get runId() {
+      return runId;
+    },
+    get status() {
+      return currentStatus;
+    },
+    error: undefined,
+    messages: [],
+    inputCodecMessageId: "codec-message-1",
+    inputEventId: "input-event-1",
+    started,
+    setStatus(next: typeof currentStatus) {
+      currentStatus = next;
+    },
+    cancel: vi.fn().mockResolvedValue(undefined),
+    steer,
+    toInvocation: () => ({
+      toJSON: () => ({
+        inputEventId: "input-event-1",
+        sessionName: SESSION_NAME,
+      }),
+    }),
+  };
+}
+
+async function waitFor(predicate: () => boolean, attempts = 40) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) return;
+    await act(async () => settle());
+  }
+  throw new Error("Timed out waiting for hook state.");
+}
+
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}

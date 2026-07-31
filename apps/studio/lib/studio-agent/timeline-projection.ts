@@ -41,9 +41,11 @@ import type { RunInfo } from "@ably/ai-transport/react";
 import { getToolName, isToolUIPart } from "ai";
 
 import type { StudioAgentHistorySeed } from "./history-seed";
+import { reconcileStudioAgentMessages } from "./message-reconciliation";
 import {
   isStudioAgentDataPart,
   type StudioAgentAttachment,
+  type StudioAgentCanvasPreviewPart,
   type StudioAgentUIMessage,
   type StudioAgentUIPart,
 } from "./transport-contract";
@@ -59,9 +61,29 @@ import type {
   StudioAgentToolApprovalView,
 } from "./view-model";
 
+/**
+ * A wire terminal is only a recovery hint; the durable lifecycle projection
+ * carries the specific public failure. Never copy Ably's numeric code or raw
+ * SDK message into creator-visible state while that projection catches up.
+ */
+const REALTIME_TERMINAL_ERROR = {
+  code: "AGENT_REALTIME_DELIVERY_FAILED",
+  messageKey: "agent.error.realtime_delivery_failed",
+  message: "The realtime response could not be delivered. Please try again.",
+  retryable: true,
+  details: null,
+} as const;
+
 export interface StudioAgentPanelState {
   timeline: StudioAgentTimelineItemView[];
   runs: StudioAgentRunView[];
+  /**
+   * Newest unsettled, non-canonical Story change proposal.
+   *
+   * This is derived from the transport and matching tool state. It is never
+   * written to the canvas model, history, or undo stack.
+   */
+  activeCanvasPreview: StudioAgentCanvasPreviewPart | null;
   /** The newest root run that has not reached a terminal status. */
   activeRun: StudioAgentRunView | null;
   /** The newest root run, and only when it ended `failed`. */
@@ -109,8 +131,7 @@ export function projectStudioAgentPanel({
   wireRuns,
   pending = [],
 }: StudioAgentProjectionInput): StudioAgentPanelState {
-  const seen = new Set(messages.map((message) => message.id));
-  const composed = [...messages, ...pending.filter((message) => !seen.has(message.id))];
+  const composed = reconcileStudioAgentMessages([...messages, ...pending]);
 
   const runs = new Map<string, StudioAgentRunView>();
   for (const run of history.runs) runs.set(run.id, run);
@@ -123,10 +144,24 @@ export function projectStudioAgentPanel({
   // snapshot flush ahead of the message rendered each one twice, because the
   // dedupe set was still empty at that point.
   const activityIdsOnMessages = new Set<string>();
+  const canvasPreviewCandidates: StudioAgentCanvasPreviewPart[] = [];
+  const settledPreviewToolCallIds = new Set<string>();
   for (const message of composed) {
     for (const part of message.parts) {
       if (isStudioAgentDataPart(part, "studio-agent-activity")) {
         activityIdsOnMessages.add(part.data.activityId);
+      } else if (
+        isStudioAgentDataPart(part, "studio-agent-canvas-preview") &&
+        isUsableCanvasPreview(part.data)
+      ) {
+        canvasPreviewCandidates.push(part.data);
+      } else if (
+        isToolUIPart(part) &&
+        (part.state === "output-available" ||
+          part.state === "output-error" ||
+          part.state === "output-denied")
+      ) {
+        settledPreviewToolCallIds.add(part.toolCallId);
       }
     }
   }
@@ -168,11 +203,45 @@ export function projectStudioAgentPanel({
     items.push({ kind: "run", id: runId });
   };
 
+  /**
+   * Runs the conversation never mentions, in the order they happened.
+   *
+   * A delegated task, a turn rejected at admission before its prompt was ever
+   * persisted, a turn whose messages have paged out — each still owes the
+   * creator its outcome, and none of them has a message to hang it off. They
+   * used to be appended after everything else, which is how an admission
+   * failure from two hours earlier ended up rendered as the outcome of the
+   * reply directly above it: a turn that succeeded, wearing a "Failed" row.
+   * A run's outcome belongs where the run happened, so these are interleaved
+   * by `createdAt` against the timestamps the messages carry.
+   */
+  const mentionedRunIds = new Set(
+    composed.flatMap((message) => (message.metadata?.runId ? [message.metadata.runId] : []))
+  );
+  const unmentionedRuns = history.runs
+    .filter((run) => !mentionedRunIds.has(run.id))
+    .sort(byCreatedAt);
+  let unmentionedIndex = 0;
+  const flushRunsUpTo = (boundary: string | undefined) => {
+    // A message with no timestamp cannot order anything. Leaving the run for a
+    // later boundary is the honest choice; guessing a position is not.
+    if (!boundary) return;
+    while (unmentionedIndex < unmentionedRuns.length) {
+      const run = unmentionedRuns[unmentionedIndex]!;
+      if (run.createdAt.localeCompare(boundary) > 0) return;
+      unmentionedIndex += 1;
+      flushRun(run.id);
+    }
+  };
+
   let openRunId: string | null = null;
   for (const message of composed) {
     const messageRunId = message.metadata?.runId ?? null;
     if (messageRunId !== openRunId) {
       flushRun(openRunId);
+      // Only at a turn boundary: an unrelated run's outcome must never land
+      // between the two halves of a reply.
+      flushRunsUpTo(message.metadata?.createdAt);
       openRunId = messageRunId;
     }
     if (message.role === "assistant") {
@@ -187,36 +256,24 @@ export function projectStudioAgentPanel({
     );
   }
   flushRun(openRunId);
-  // Runs the conversation never mentioned — a delegated task, or a turn that
-  // died before it produced a single message — still owe the creator their
-  // outcome.
-  for (const run of [...history.runs].sort(byCreatedAt)) flushRun(run.id);
+  for (const run of unmentionedRuns.slice(unmentionedIndex)) flushRun(run.id);
 
   // A run the WIRE ended that the domain never terminalized. Without this the
   // composer stays locked on a turn whose agent process is gone.
-  for (const info of wireRuns) {
+  for (const [wireIndex, info] of wireRuns.entries()) {
     const wireStatus = wireRunStatus(info);
     const known = runs.get(info.runId);
     if (known && isTerminalStatus(known.status)) continue;
     if (!wireStatus) {
       if (!known) {
-        runs.set(info.runId, syntheticRun(info.runId, "running"));
+        runs.set(info.runId, syntheticRun(info.runId, "running", wireIndex));
       }
       continue;
     }
     runs.set(info.runId, {
-      ...(known ?? syntheticRun(info.runId, wireStatus)),
-      summary: known?.summary ?? info.error?.message ?? null,
-      error:
-        known?.error ??
-        (info.status === "error"
-          ? {
-              code: `ably.${info.error.code}`,
-              message: info.error.message,
-              retryable: false,
-              details: null,
-            }
-          : null),
+      ...(known ?? syntheticRun(info.runId, wireStatus, wireIndex)),
+      summary: known?.summary ?? (info.status === "error" ? REALTIME_TERMINAL_ERROR.message : null),
+      error: known?.error ?? (info.status === "error" ? REALTIME_TERMINAL_ERROR : null),
       status: wireStatus,
       // A parked run has not finished, so it does not get a finished run's
       // progress — that is what would let the composer unlock on a turn the
@@ -243,12 +300,13 @@ export function projectStudioAgentPanel({
 
   const runViews = [...runs.values()];
   const runViewsById = new Map(runViews.map((run) => [run.id, run]));
+  const settledItems = items.map((item) => settleTerminalChild(item, runViewsById));
 
   // Suppression: a failed model step already renders the turn's outcome
   // legibly, so a second row would be noise. A failed ACTION (`execute`) shows
   // only as a collapsed detail, so its turn still needs one.
   const loudlyFailedRunIds = new Set(
-    items.flatMap((item) =>
+    settledItems.flatMap((item) =>
       item.kind === "activity" &&
       item.activity.kind !== "execute" &&
       (item.activity.status === "failed" || item.activity.status === "cancelled") &&
@@ -283,7 +341,20 @@ export function projectStudioAgentPanel({
     if (hasText) runsWithReply.add(runId);
   }
 
-  const timeline = items.flatMap((item): StudioAgentTimelineItemView[] => {
+  const rootRuns = runViews.filter((run) => run.parentRunId === null).sort(byCreatedAtDescending);
+  const activeRun = rootRuns.find((run) => !isTerminalStatus(run.status)) ?? null;
+  const latestRoot = rootRuns[0] ?? null;
+  const terminalRoot = rootRuns.find((run) => isTerminalStatus(run.status)) ?? null;
+  const turnFailure =
+    latestRoot?.status === "failed" ? (latestRoot as StudioAgentFailedRunView) : null;
+  const activeCanvasPreview =
+    canvasPreviewCandidates.findLast((preview) => {
+      if (settledPreviewToolCallIds.has(preview.toolCallId)) return false;
+      const run = runViewsById.get(preview.runId);
+      return !run || !isTerminalStatus(run.status);
+    }) ?? null;
+
+  const timeline = settledItems.flatMap((item): StudioAgentTimelineItemView[] => {
     if (
       item.kind === "activity" &&
       item.activity.kind === "generate" &&
@@ -295,21 +366,32 @@ export function projectStudioAgentPanel({
     }
     if (item.kind !== "run") return [item];
     const run = runViewsById.get(item.id);
-    if (!run || run.parentRunId !== null || loudlyFailedRunIds.has(run.id)) return [];
+    if (!run || run.parentRunId !== null) return [];
     if (run.status !== "failed" && run.status !== "cancelled") return [];
+    // The newest failed root ALWAYS renders in-flow: the pinned card beside the
+    // composer is gone (owner decision 2026-07-31 — errors are part of the
+    // message flow), so this row is the single failure surface and the carrier
+    // of the retry affordance. An OLDER failure whose non-execute step already
+    // failed loudly stays suppressed — its activity row tells that story and a
+    // second row would be noise.
+    if (turnFailure?.id !== run.id && loudlyFailedRunIds.has(run.id)) return [];
     return [{ kind: "run", id: item.id, run: run as StudioAgentTerminalRunView }];
   });
 
-  const rootRuns = runViews.filter((run) => run.parentRunId === null).sort(byCreatedAtDescending);
-  const activeRun = rootRuns.find((run) => !isTerminalStatus(run.status)) ?? null;
-  const latestRoot = rootRuns[0] ?? null;
-  const terminalRoot = rootRuns.find((run) => isTerminalStatus(run.status)) ?? null;
+  // A newest failure with no durable row and no message to hang off (a
+  // wire-only terminal, for example) still owes the creator its outcome. It is
+  // by definition the newest run, so the end of the conversation is its honest
+  // position.
+  if (turnFailure && !timeline.some((item) => item.kind === "run" && item.id === turnFailure.id)) {
+    timeline.push({ kind: "run", id: turnFailure.id, run: turnFailure });
+  }
 
   return {
     timeline,
     runs: runViews,
+    activeCanvasPreview,
     activeRun,
-    turnFailure: latestRoot?.status === "failed" ? (latestRoot as StudioAgentFailedRunView) : null,
+    turnFailure,
     revalidationToken: [
       wireRuns
         .map((info) => `${info.runId}:${info.status}`)
@@ -440,6 +522,12 @@ function projectMessage(
       });
       return;
     }
+    if (isStudioAgentDataPart(part, "studio-agent-canvas-preview")) {
+      sink.revalidationParts.push(
+        `${part.data.previewId}:${part.data.toolCallId}:${part.data.baseDraftRevision}`
+      );
+      return;
+    }
     if (isToolUIPart(part)) {
       // A call the agent suspended on. It is not a step that is running — it is
       // a question, and it renders as one until the creator answers it.
@@ -475,13 +563,18 @@ function messageItem(
   streaming: boolean,
   attachments: StudioAgentAttachment[]
 ): Extract<DraftTimelineItem, { kind: "message" }> {
-  const id = `${message.id}:${index}`;
+  const renderMessageId =
+    message.role === "user" && message.metadata?.clientMessageId
+      ? message.metadata.clientMessageId
+      : message.id;
+  const id = `${renderMessageId}:${index}`;
   const view: StudioAgentMessageView = {
     id,
     messageId: message.id,
     clientMessageId: message.metadata?.clientMessageId ?? null,
     runId: message.metadata?.runId ?? null,
     role: message.role === "user" ? "user" : "assistant",
+    delivery: message.metadata?.delivery ?? "send",
     format: message.metadata?.format ?? (message.role === "user" ? "plain_text" : "markdown"),
     text,
     attachments,
@@ -528,6 +621,7 @@ function toolItem(
   index: number,
   part: Extract<StudioAgentUIPart, { toolCallId: string }>
 ): Extract<DraftTimelineItem, { kind: "activity" }> {
+  const toolName = getToolName(part);
   const status: StudioAgentActivityView["status"] =
     part.state === "output-available"
       ? "succeeded"
@@ -542,8 +636,8 @@ function toolItem(
     id: `${message.id}:tool:${index}`,
     runId: message.metadata?.runId ?? null,
     parentActivityId: null,
-    kind: "execute",
-    label: getToolName(part),
+    kind: toolActivityKind(toolName),
+    label: toolName,
     detail:
       part.state === "output-error"
         ? part.errorText
@@ -556,6 +650,76 @@ function toolItem(
   return { kind: "activity", id: activity.id, activity };
 }
 
+/**
+ * Tool names are protocol identifiers; their activity kind is product
+ * semantics. Keeping this mapping at the projection boundary gives read,
+ * search and write work distinct, accessible progress cues without teaching
+ * the transport about Story Studio UI.
+ */
+function toolActivityKind(toolName: string): StudioAgentActivityView["kind"] {
+  switch (toolName) {
+    case "story_get_snapshot":
+      return "read";
+    case "story_query_source_material":
+      return "search";
+    case "story_apply_change_set":
+      return "execute";
+    default:
+      return "execute";
+  }
+}
+
+/**
+ * A terminal parent owns the terminal state of every unfinished child row.
+ *
+ * Ably can retain the last tool-input part after Temporal has failed or
+ * cancelled the run. Treating that immutable historical part as live left a
+ * spinner running forever after the turn was already over. The projection is
+ * where the two truths meet, so it closes the child locally without mutating
+ * either source.
+ */
+function settleTerminalChild(
+  item: DraftTimelineItem,
+  runs: ReadonlyMap<string, StudioAgentRunView>
+): DraftTimelineItem {
+  if (item.kind === "activity") {
+    const run = item.activity.runId ? runs.get(item.activity.runId) : undefined;
+    if (item.activity.status !== "running" || !run || !isTerminalStatus(run.status)) return item;
+    return {
+      ...item,
+      activity: {
+        ...item.activity,
+        status: run.status === "failed" ? "failed" : "cancelled",
+        progress: 1,
+        completedAt: item.activity.completedAt ?? run.completedAt,
+      },
+    };
+  }
+
+  if (item.kind === "toolApproval" && item.toolApproval.decision === null) {
+    const run = item.toolApproval.runId ? runs.get(item.toolApproval.runId) : undefined;
+    if (!run || !isTerminalStatus(run.status)) return item;
+    return {
+      kind: "activity",
+      id: item.id,
+      activity: {
+        id: item.id,
+        runId: run.id,
+        parentActivityId: null,
+        kind: "execute",
+        label: item.toolApproval.toolName,
+        detail: item.toolApproval.input,
+        progress: 1,
+        status: run.status === "failed" ? "failed" : "cancelled",
+        startedAt: run.startedAt ?? run.createdAt,
+        completedAt: run.completedAt,
+      },
+    };
+  }
+
+  return item;
+}
+
 function stringifyToolDetail(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "string") return value.trim() || null;
@@ -566,7 +730,39 @@ function stringifyToolDetail(value: unknown): string | null {
   }
 }
 
-function syntheticRun(runId: string, status: StudioAgentRunStatus): StudioAgentRunView {
+/**
+ * Realtime data is untrusted even when the local TypeScript codec is generic
+ * over the expected shape. Keep malformed previews out of the canvas instead
+ * of letting an infrastructure or old-client payload break the whole surface.
+ */
+function isUsableCanvasPreview(value: StudioAgentCanvasPreviewPart): boolean {
+  return (
+    value.schemaVersion === "story-canvas-preview/v1" &&
+    typeof value.previewId === "string" &&
+    value.previewId.length > 0 &&
+    typeof value.runId === "string" &&
+    value.runId.length > 0 &&
+    typeof value.toolCallId === "string" &&
+    value.toolCallId.length > 0 &&
+    typeof value.chapterId === "string" &&
+    value.chapterId.length > 0 &&
+    Number.isSafeInteger(value.baseDraftRevision) &&
+    Number.isSafeInteger(value.baseLayoutRevision) &&
+    typeof value.baseContentHash === "string" &&
+    /^[a-f0-9]{64}$/u.test(value.baseContentHash) &&
+    typeof value.title === "string" &&
+    typeof value.summary === "string" &&
+    Array.isArray(value.operations) &&
+    value.operations.length > 0 &&
+    value.operations.length <= 100
+  );
+}
+
+function syntheticRun(
+  runId: string,
+  status: StudioAgentRunStatus,
+  wireIndex = 0
+): StudioAgentRunView {
   return {
     id: runId,
     parentRunId: null,
@@ -575,7 +771,9 @@ function syntheticRun(runId: string, status: StudioAgentRunStatus): StudioAgentR
     error: null,
     status,
     progress: null,
-    createdAt: "",
+    // RunInfo is already chronological but carries no timestamp. Encode that
+    // ordering so newest-root selection remains deterministic across renders.
+    createdAt: new Date(wireIndex).toISOString(),
     startedAt: null,
     completedAt: null,
   };

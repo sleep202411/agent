@@ -1,8 +1,7 @@
 "use client";
 
-import { IconAlertTriangle } from "@tabler/icons-react";
+import { IconAlertCircle, IconChevronDown, IconX } from "@tabler/icons-react";
 
-import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
 import type { StudioAgentFailedRunView } from "@/lib/studio-agent";
 
@@ -43,15 +42,19 @@ export function studioAgentTurnFailureKind(
 }
 
 export interface StudioAgentTurnFailureLabels {
-  /** Accessible name for the alert region. */
+  /** Accessible name for the failure row. */
   region: string;
   title: Record<StudioAgentTurnFailureKind, string>;
   /** What the failure means for the creator's story, per attribution. */
   explanation: Record<StudioAgentTurnFailureKind, string>;
-  /** Disclosure summary for the server's rejected paths. */
+  /** Disclosure summary for the diagnostic block (code, correlation id, issues). */
+  details: string;
+  /** Heading for the server's rejected paths inside the disclosure. */
   issues: string;
   /** Prefix for the stable wire code, e.g. "Code". */
   code: string;
+  /** Prefix for the support correlation id, e.g. "Diagnostic". */
+  diagnosticId: string;
 }
 
 export interface StudioAgentTurnFailureAction {
@@ -66,19 +69,26 @@ interface StudioAgentTurnFailureIssue {
 }
 
 /**
- * The terminal state of a turn, stated where it cannot be missed.
+ * A failed turn, stated INSIDE the conversation flow.
  *
- * This is deliberately NOT a timeline row and NOT dismissible: it renders from
- * `selectStudioAgentTurnFailure`, so it exists exactly as long as the newest
- * turn is a failed one. The server's message is rendered verbatim — never
- * replaced by a localized apology (root `DESIGN.md` § Error Toasts) — and the
- * localized copy only classifies and explains it.
+ * This replaces the pinned red-rimmed alert card (retired 2026-07-31: the owner
+ * ruled that errors are part of the message flow — one quiet row, like any
+ * other chat product, never a blocking banner). The row is deliberately small:
  *
- * Brand red is the accent here because this is the state that earns it
- * (`apps/studio/DESIGN.md` rule 3): a faint red wash plus a red rim-light on a
- * frosted panel, no fill, no glow.
+ * - one destructive-toned line naming the failure,
+ * - the server's public sentence, verbatim and secondary — never replaced by a
+ *   localized apology (root `DESIGN.md` § Error Toasts),
+ * - the obvious next move (retry / edit) as a quiet inline action,
+ * - and everything a support thread needs — attribution guidance, rejected
+ *   paths, the stable wire code, the diagnostic id — behind a "Details"
+ *   disclosure so casual creators never read error codes.
+ *
+ * Monochrome by design (`apps/studio/DESIGN.md` rules 2–4): failure tone comes
+ * from the `destructive` token on TEXT only. No red wash, no rim, no border —
+ * quiet, not hidden. It renders from the timeline projection, so it exists
+ * exactly as long as the failed turn is part of the conversation.
  */
-export function StudioAgentTurnFailure({
+export function StudioAgentTurnFailureRow({
   failure,
   labels,
   action,
@@ -93,81 +103,159 @@ export function StudioAgentTurnFailure({
   const kind = studioAgentTurnFailureKind(failure);
   const message = failure.error?.message ?? failure.summary;
   const code = failure.error?.code ?? null;
+  const diagnosticId = failure.error?.diagnosticId ?? null;
   const issues = readFailureIssues(failure);
 
   return (
-    <section
-      role="alert"
+    <div
+      role="group"
       aria-label={labels.region}
       data-slot="studio-agent-turn-failure"
       data-failure-kind={kind}
-      className={cn(
-        // Frosted base first, red wash on top: the panel has to read as glass
-        // over the near-black canvas as well as over the assistant surface, and
-        // brand red only ever tints it (DESIGN.md rule 3), never fills it.
-        "relative rounded-2xl bg-[oklch(0.22_0_0/0.82)] px-3.5 py-3 shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-[30px]",
-        className
-      )}
+      className={cn("min-w-0 px-1.5 text-xs/relaxed", className)}
     >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[#E52227]/[0.07]"
-      />
-      <GlassRim gradient={FAILURE_RIM} width="1.5px" />
-      <div className="relative flex items-start gap-2.5">
-        <IconAlertTriangle aria-hidden="true" className="mt-px size-4 shrink-0 text-[#E52227]" />
+      <div className="flex items-start gap-2">
+        <IconAlertCircle
+          aria-hidden="true"
+          className="mt-[3px] size-3.5 shrink-0 text-destructive/82"
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-white/92">{labels.title[kind]}</p>
-          <p className="mt-1 text-[11px]/relaxed text-white/50">{labels.explanation[kind]}</p>
+          <p className="font-medium text-destructive/82">{labels.title[kind]}</p>
           {message ? (
-            <p className="mt-2 max-h-32 overflow-y-auto text-[11px]/relaxed break-words whitespace-pre-wrap text-white/76">
-              {message}
-            </p>
+            <p className="mt-0.5 break-words whitespace-pre-wrap text-white/52">{message}</p>
           ) : null}
-          {issues.length > 0 ? (
-            <details className="mt-2 text-[11px] text-white/50">
-              <summary className="cursor-pointer text-white/58 transition-colors hover:text-white/82">
-                {labels.issues}
-              </summary>
-              <ul className="mt-1.5 grid gap-1">
-                {issues.map((issue, index) => (
-                  <li key={`${issue.path ?? ""}:${index}`} className="break-words">
-                    {issue.path ? (
-                      <span className="font-mono text-[10px] text-white/68">{issue.path}</span>
-                    ) : null}
-                    {issue.path ? " — " : null}
-                    <span>{issue.message}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-          <div className="mt-2.5 flex items-center gap-3">
+          <div className="mt-1.5 flex min-w-0 items-start gap-3">
             {action ? (
               <button
                 type="button"
                 disabled={action.disabled}
                 onClick={action.onClick}
-                className="rounded-full bg-white/[0.09] px-3 py-1.5 text-xs font-medium text-white/82 transition-colors hover:bg-white/[0.14] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+                className="shrink-0 rounded-full bg-white/[0.06] px-2.5 py-1 font-medium text-white/72 transition-colors hover:bg-white/[0.11] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
               >
                 {action.label}
               </button>
             ) : null}
-            {code ? (
-              <span className="ml-auto truncate font-mono text-[10px] text-white/34">
-                {labels.code} {code}
-              </span>
-            ) : null}
+            <details
+              data-slot="studio-agent-turn-failure-details"
+              className="group/details min-w-0 flex-1"
+            >
+              <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 py-1 text-[11px] text-white/44 transition-colors hover:text-white/72 focus-visible:ring-1 focus-visible:ring-white/24 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                {labels.details}
+                <IconChevronDown
+                  aria-hidden="true"
+                  className="size-3 shrink-0 transition-transform group-open/details:rotate-180"
+                />
+              </summary>
+              <div className="mt-1 grid gap-1.5 text-[11px]/relaxed text-white/48">
+                <p>{labels.explanation[kind]}</p>
+                {issues.length > 0 ? (
+                  <div>
+                    <p className="text-white/56">{labels.issues}</p>
+                    <ul className="mt-0.5 grid gap-1">
+                      {issues.map((issue, index) => (
+                        <li key={`${issue.path ?? ""}:${index}`} className="break-words">
+                          {issue.path ? (
+                            <span className="font-mono text-[10px] text-white/64">
+                              {issue.path}
+                            </span>
+                          ) : null}
+                          {issue.path ? " — " : null}
+                          <span>{issue.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {code ? (
+                  <p className="truncate font-mono text-[10px] text-white/40">
+                    {labels.code} {code}
+                  </p>
+                ) : null}
+                {diagnosticId ? (
+                  <p className="truncate font-mono text-[10px] text-white/40">
+                    {labels.diagnosticId} {diagnosticId}
+                  </p>
+                ) : null}
+              </div>
+            </details>
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
-/** Mirrors the sanctioned red rim-light recipe used by option-card selection. */
-const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
-const FAILURE_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
+export interface StudioAgentTurnFailureNoticeLabels {
+  /** Accessible name for the notice. */
+  region: string;
+  title: Record<StudioAgentTurnFailureKind, string>;
+  /** The deep-link into StoryOS, e.g. "Open StoryOS". */
+  open: string;
+  /** Accessible name for the dismiss control. */
+  dismiss: string;
+}
+
+/**
+ * The closed-panel echo of a failed turn: one compact, dismissible notice.
+ *
+ * The bootstrap stays mounted while StoryOS is closed, so a turn can die with
+ * nothing on screen — this is how the creator learns about it from the canvas.
+ * It is an usher, not a second error surface: the failure itself (message,
+ * retry, diagnostics) lives on the timeline row inside the panel, which is why
+ * this deep-links there and why the host hides it permanently once the failure
+ * has been seen or dismissed. Frosted panel, destructive tone on the glyph
+ * only — a transient notice never wears the red-rim treatment.
+ */
+export function StudioAgentTurnFailureNotice({
+  failure,
+  labels,
+  onOpen,
+  onDismiss,
+  className,
+}: {
+  failure: StudioAgentFailedRunView;
+  labels: StudioAgentTurnFailureNoticeLabels;
+  onOpen: () => void;
+  onDismiss: () => void;
+  className?: string;
+}) {
+  const kind = studioAgentTurnFailureKind(failure);
+  const message = failure.error?.message ?? failure.summary;
+
+  return (
+    <div
+      role="status"
+      aria-label={labels.region}
+      data-slot="studio-agent-turn-failure-notice"
+      data-failure-kind={kind}
+      className={cn(
+        "flex min-w-0 items-center gap-2.5 rounded-2xl bg-[oklch(0.22_0_0/0.92)] py-2 pr-2 pl-3 shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-[30px]",
+        className
+      )}
+    >
+      <IconAlertCircle aria-hidden="true" className="size-3.5 shrink-0 text-destructive/82" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium text-white/86">{labels.title[kind]}</p>
+        {message ? <p className="mt-0.5 truncate text-[11px] text-white/48">{message}</p> : null}
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="shrink-0 rounded-full bg-white/[0.09] px-3 py-1.5 text-xs font-medium text-white/82 transition-colors hover:bg-white/[0.14] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+      >
+        {labels.open}
+      </button>
+      <button
+        type="button"
+        aria-label={labels.dismiss}
+        onClick={onDismiss}
+        className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-white/55 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+      >
+        <IconX aria-hidden="true" className="size-3.5" />
+      </button>
+    </div>
+  );
+}
 
 /**
  * The structured half of the server's error.

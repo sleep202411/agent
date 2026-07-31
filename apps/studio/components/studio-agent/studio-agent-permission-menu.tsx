@@ -1,12 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import {
-  IconHandStop,
-  IconSettings,
-  IconShieldCheck,
-  IconShieldExclamation,
-} from "@tabler/icons-react";
+import { IconHandStop, IconShieldCheck, IconShieldExclamation } from "@tabler/icons-react";
 
 import {
   DropdownMenu,
@@ -44,7 +39,6 @@ const modeIcons: Record<
   ask: IconHandStop,
   smart: IconShieldCheck,
   full: IconShieldExclamation,
-  custom: IconSettings,
 };
 
 export function StudioAgentPermissionMenu({

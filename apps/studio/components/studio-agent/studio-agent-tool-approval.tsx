@@ -16,6 +16,8 @@ export interface StudioAgentToolApprovalLabels {
   decision: Record<"approved" | "denied", string>;
   /** Shown after a decision, while the agent picks the turn back up. */
   resuming: string;
+  /** Shown while the durable lifecycle catches up with the Ably suspension. */
+  preparing: string;
 }
 
 export interface StudioAgentToolApprovalProps {
@@ -23,6 +25,8 @@ export interface StudioAgentToolApprovalProps {
   labels: StudioAgentToolApprovalLabels;
   /** True while the panel cannot write — a torn-down session, or a send in flight. */
   disabled?: boolean;
+  /** Visible on Ably, but not yet admitted by the product lifecycle. */
+  preparing?: boolean;
   onRespond: (approved: boolean) => void;
   className?: string;
 }
@@ -47,6 +51,7 @@ export function StudioAgentToolApproval({
   approval,
   labels,
   disabled = false,
+  preparing = false,
   onRespond,
   className,
 }: StudioAgentToolApprovalProps) {
@@ -96,7 +101,20 @@ export function StudioAgentToolApproval({
         </div>
       </div>
 
-      {decision === null ? (
+      {decision === null && preparing ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-3 flex items-center gap-2 text-[11px] text-white/42"
+        >
+          <span aria-hidden="true" className="flex items-center gap-1">
+            <span className="size-1 animate-pulse rounded-full bg-white/38" />
+            <span className="size-1 animate-pulse rounded-full bg-white/38 [animation-delay:180ms]" />
+            <span className="size-1 animate-pulse rounded-full bg-white/38 [animation-delay:360ms]" />
+          </span>
+          <span>{labels.preparing}</span>
+        </div>
+      ) : decision === null ? (
         <div className="mt-3 flex flex-wrap justify-end gap-1.5">
           <button
             type="button"

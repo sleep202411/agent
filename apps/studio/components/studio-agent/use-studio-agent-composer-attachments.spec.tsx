@@ -74,6 +74,38 @@ describe("useStudioAgentComposerAttachments", () => {
     expect(queue?.readyAttachments).toEqual([canonicalAttachment]);
   });
 
+  it("projects durable ingest progress after the binary upload completes", async () => {
+    let resolveUpload!: (lease: StudioAgentAttachmentUploadLease) => void;
+    const upload = vi.fn(
+      (_file: File, context: StudioAgentAttachmentUploadContext) =>
+        new Promise<StudioAgentAttachmentUploadLease>((resolve) => {
+          context.onProgress(100);
+          context.onProcessing(7);
+          context.onProcessing(63);
+          resolveUpload = resolve;
+        })
+    );
+    await render(upload);
+
+    await act(async () => {
+      queue!.addFiles([new File(["script"], "script.pdf", { type: "image/pdf" })]);
+      await flush();
+    });
+    expect(queue?.items[0]).toMatchObject({
+      status: "processing",
+      progress: 63,
+    });
+
+    await act(async () => {
+      resolveUpload(createLease());
+      await flush();
+    });
+    expect(queue?.items[0]).toMatchObject({
+      status: "ready",
+      progress: 100,
+    });
+  });
+
   it("retains invalid files as removable blocking failures without calling the adapter", async () => {
     const upload = vi.fn();
     await render(upload);

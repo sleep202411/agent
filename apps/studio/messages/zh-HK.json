@@ -1879,6 +1879,7 @@
           "scrollToLatest": "捲動到最新進展",
           "loadEarlier": "載入更早的對話",
           "loadingEarlier": "正在載入更早的對話……",
+          "thinking": "正在思考……",
           "attachments": {
             "unknownSize": "大小未知",
             "status": {
@@ -1892,11 +1893,23 @@
             "assistant": "StoryOS"
           }
         },
+        "attachmentAnalysis": {
+          "region": "文件分析",
+          "queued": "文件分析已排隊",
+          "mapping": "正在分析文件 · {progress}%",
+          "reducing": "正在歸納分析結果 · {progress}%",
+          "succeeded": "文件分析已完成",
+          "failed": "文件分析失敗",
+          "cancelled": "文件分析已取消"
+        },
         "activity": {
           "expand": "展開活動詳情",
           "collapse": "收起活動詳情",
           "labels": {
-            "generatingResponse": "正在生成回覆"
+            "generatingResponse": "正在生成回覆",
+            "readingStory": "正在讀取目前故事",
+            "reviewingSource": "正在查閱來源素材",
+            "applyingChanges": "正在套用故事改動"
           },
           "status": {
             "running": "進行中",
@@ -1929,6 +1942,9 @@
           },
           "issues": "伺服器拒絕的內容",
           "code": "錯誤碼",
+          "diagnosticId": "診斷編號",
+          "details": "詳情",
+          "dismiss": "關閉",
           "retry": "重新傳送該請求",
           "reword": "編輯這條請求",
           "openSurface": "開啟 StoryOS"
@@ -1956,7 +1972,7 @@
             "remove": "移除 {fileName}",
             "retry": "重試 {fileName}",
             "uploading": "正在上載 · {progress}%",
-            "processing": "正在分析檔案",
+            "processing": "正在擷取文字 · {progress}%",
             "ready": "已就緒",
             "failed": "上載失敗",
             "emptyFile": "無法上載空白檔案。",
@@ -2006,6 +2022,7 @@
           "deny": "拒絕",
           "showInput": "查看執行參數",
           "hideInput": "隱藏執行參數",
+          "preparing": "正在準備安全審批節點……",
           "resuming": "正在繼續本輪",
           "decision": {
             "approved": "已允許",

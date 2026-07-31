@@ -6,6 +6,7 @@ import { projectStudioAgentPanel, selectStudioAgentChildRuns } from "./timeline-
 import {
   STUDIO_AGENT_ACTIVITY_DATA_PART,
   STUDIO_AGENT_ATTACHMENT_DATA_PART,
+  STUDIO_AGENT_CANVAS_PREVIEW_DATA_PART,
   STUDIO_AGENT_FAILURE_DATA_PART,
   type StudioAgentUIMessage,
 } from "./transport-contract";
@@ -32,6 +33,20 @@ describe("projectStudioAgentPanel — streaming", () => {
     expect(bubbles(settled)).toEqual([
       { role: "assistant", text: "Once upon a time.", streaming: false },
     ]);
+  });
+
+  it("projects one row when a reconnect repeats the same domain message", () => {
+    const duplicate = assistantMessage([{ type: "text", text: "One answer.", state: "done" }]);
+    const state = projectStudioAgentPanel({
+      history: EMPTY_STUDIO_AGENT_HISTORY_SEED,
+      messages: [duplicate, { ...duplicate }],
+      wireRuns: [],
+    });
+
+    expect(bubbles(state)).toEqual([{ role: "assistant", text: "One answer.", streaming: false }]);
+    expect(new Set(state.timeline.map((item) => `${item.kind}:${item.id}`)).size).toBe(
+      state.timeline.length
+    );
   });
 });
 
@@ -539,6 +554,69 @@ describe("projectStudioAgentPanel — a turn that ends", () => {
     expect(state.runs.find((run) => run.id === RUN_ID)?.status).toBe("cancelled");
   });
 
+  it("settles a dangling tool call when its parent run is cancelled", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "cancelled" })] }),
+      messages: [
+        assistantMessage([
+          toolPart({
+            toolCallId: "call-1",
+            toolName: "story_get_snapshot",
+            state: "input-available",
+            input: { schemaVersion: "story-read/v2" },
+          }),
+        ]),
+      ],
+      wireRuns: [],
+    });
+
+    expect(activities(state).map((activity) => activity.status)).toEqual(["cancelled"]);
+    expect(activities(state)[0]?.completedAt).toBe("2026-07-28T10:00:05.000Z");
+  });
+
+  it.each([
+    ["story_get_snapshot", "read"],
+    ["story_query_source_material", "search"],
+    ["story_apply_change_set", "execute"],
+    ["future_capability", "execute"],
+  ] as const)("projects %s with the correct product activity kind", (toolName, kind) => {
+    const state = projectStudioAgentPanel({
+      history: EMPTY_STUDIO_AGENT_HISTORY_SEED,
+      messages: [
+        assistantMessage([
+          toolPart({
+            toolCallId: `call-${toolName}`,
+            toolName,
+            state: "input-available",
+            input: {},
+          }),
+        ]),
+      ],
+      wireRuns: [wireRun(RUN_ID, "active")],
+    });
+
+    expect(activities(state)[0]?.kind).toBe(kind);
+  });
+
+  it("settles a dangling snapshot activity when its parent run fails", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({
+        runs: [runView({ id: RUN_ID, status: "failed" })],
+        activities: [
+          activityView({
+            id: "activity-1",
+            runId: RUN_ID,
+            status: "running",
+          }),
+        ],
+      }),
+      messages: [],
+      wireRuns: [],
+    });
+
+    expect(activities(state).map((activity) => activity.status)).toEqual(["failed"]);
+  });
+
   it("prefers the agent's rich failure over the wire's numeric error", () => {
     const state = projectStudioAgentPanel({
       history: seed({ runs: [runView({ id: RUN_ID, status: "running" })] }),
@@ -567,6 +645,213 @@ describe("projectStudioAgentPanel — a turn that ends", () => {
     expect(state.turnFailure?.error?.details).toEqual({
       issues: [{ path: "scenes.0.title", message: "required" }],
     });
+  });
+
+  it("never leaks a raw realtime SDK failure into the creator message flow", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "running" })] }),
+      messages: [userMessage("Hello.", { runId: RUN_ID })],
+      wireRuns: [
+        wireRunError(
+          RUN_ID,
+          104008,
+          "mutableMessages rejected namespace agent at private upstream host"
+        ),
+      ],
+    });
+
+    expect(state.turnFailure?.error).toMatchObject({
+      code: "AGENT_REALTIME_DELIVERY_FAILED",
+      messageKey: "agent.error.realtime_delivery_failed",
+      retryable: true,
+    });
+    expect(state.turnFailure?.error?.message).not.toContain("mutableMessages");
+    expect(state.turnFailure?.summary).not.toContain("private upstream");
+  });
+
+  /**
+   * The owner's ruling (2026-07-31): errors are part of the message flow. The
+   * pinned card beside the composer is gone, so the newest failed turn MUST
+   * render as an in-flow row of the transcript — that row is where the retry
+   * affordance lives, and a projection that suppresses it hides the failure.
+   */
+  it("renders the newest failed turn as one in-flow row after its own messages", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "failed" })] }),
+      messages: [
+        userMessage("Hello.", { runId: RUN_ID }),
+        assistantMessage([{ type: "text", text: "Hello back.", state: "done" }]),
+      ],
+      wireRuns: [],
+    });
+
+    expect(bubbles(state).map((bubble) => bubble.text)).toEqual(["Hello.", "Hello back."]);
+    const runRows = state.timeline.filter((item) => item.kind === "run");
+    expect(runRows).toHaveLength(1);
+    expect(runRows[0]?.id).toBe(RUN_ID);
+    // In flow: after the turn's messages, not pinned outside the conversation.
+    expect(state.timeline.at(-1)?.kind).toBe("run");
+    expect(state.turnFailure?.id).toBe(RUN_ID);
+  });
+
+  it("renders the newest failure exactly once — no pinned duplicate, no missing row", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "failed" })] }),
+      messages: [userMessage("Hello.", { runId: RUN_ID })],
+      wireRuns: [],
+    });
+
+    expect(state.timeline.filter((item) => item.kind === "run" && item.id === RUN_ID)).toHaveLength(
+      1
+    );
+    expect(state.turnFailure?.id).toBe(RUN_ID);
+  });
+
+  it("keeps the newest failure's row even when a failed step already tells its story", () => {
+    // An OLDER failure whose non-execute step failed loudly is suppressed —
+    // its activity row is the record. The NEWEST failure is different: its row
+    // carries the retry affordance, so the loud step must not swallow it.
+    const OLD_RUN_ID = "00000000-0000-4000-8000-000000000012";
+    const state = projectStudioAgentPanel({
+      history: seed({
+        runs: [
+          {
+            ...runView({ id: OLD_RUN_ID, status: "failed" }),
+            createdAt: "2026-07-28T09:00:00.000Z",
+          },
+          runView({ id: RUN_ID, status: "failed" }),
+        ],
+        activities: [
+          {
+            ...activityView({
+              id: "old-generate",
+              runId: OLD_RUN_ID,
+              kind: "generate",
+              status: "failed",
+            }),
+            startedAt: "2026-07-28T09:00:00.000Z",
+          },
+          activityView({ id: "new-generate", runId: RUN_ID, kind: "generate", status: "failed" }),
+        ],
+      }),
+      messages: [],
+      wireRuns: [],
+    });
+
+    const runRows = state.timeline.filter((item) => item.kind === "run");
+    expect(runRows.map((item) => item.id)).toEqual([RUN_ID]);
+    expect(state.turnFailure?.id).toBe(RUN_ID);
+  });
+
+  it("appends the newest failure when no durable row or message can position it", () => {
+    // A wire-only terminal: the domain never recorded the run and no message
+    // mentions it, so nothing in the draft items would ever flush a row for
+    // it. It is still the newest turn's outcome and must reach the timeline.
+    const state = projectStudioAgentPanel({
+      history: seed({}),
+      messages: [userMessage("Hello.", { runId: null })],
+      wireRuns: [wireRunError(RUN_ID, 50000, "agent stopped")],
+    });
+
+    expect(state.turnFailure?.id).toBe(RUN_ID);
+    const runRows = state.timeline.filter((item) => item.kind === "run");
+    expect(runRows.map((item) => item.id)).toEqual([RUN_ID]);
+    expect(state.timeline.at(-1)?.kind).toBe("run");
+  });
+});
+
+describe("projectStudioAgentPanel — non-canonical canvas preview", () => {
+  const preview = {
+    schemaVersion: "story-canvas-preview/v1" as const,
+    previewId: "preview-1",
+    runId: RUN_ID,
+    toolCallId: "call-write-1",
+    chapterId: "00000000-0000-4000-8000-000000000020",
+    baseDraftRevision: 7,
+    baseContentHash: "a".repeat(64),
+    baseLayoutRevision: 3,
+    title: "Add the arrival scene",
+    summary: "Adds one scene after the opening.",
+    operations: [
+      {
+        kind: "story_graph.put_node" as const,
+        payload: {
+          intent: "create",
+          node: {
+            kind: "text",
+            nodeId: "arrival",
+            body: { "en-US": "She arrives." },
+            exit: { kind: "auto", nextNodeId: null },
+          },
+        },
+      },
+    ],
+  };
+
+  it("exposes an unsettled proposal without adding noise to the message river", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "running" })] }),
+      messages: [
+        assistantMessage([
+          {
+            type: STUDIO_AGENT_CANVAS_PREVIEW_DATA_PART,
+            id: preview.previewId,
+            data: preview,
+          },
+        ]),
+      ],
+      wireRuns: [],
+    });
+
+    expect(state.activeCanvasPreview).toEqual(preview);
+    expect(state.timeline).toEqual([]);
+  });
+
+  it.each(["output-available", "output-error", "output-denied"] as const)(
+    "discards the ghost overlay when the matching tool reaches %s",
+    (toolState) => {
+      const state = projectStudioAgentPanel({
+        history: seed({ runs: [runView({ id: RUN_ID, status: "running" })] }),
+        messages: [
+          assistantMessage([
+            {
+              type: STUDIO_AGENT_CANVAS_PREVIEW_DATA_PART,
+              id: preview.previewId,
+              data: preview,
+            },
+            toolPart({
+              toolCallId: preview.toolCallId,
+              toolName: "story_apply_change_set",
+              state: toolState,
+              input: {},
+              ...(toolState === "output-available" ? { output: { status: "succeeded" } } : {}),
+              ...(toolState === "output-error" ? { errorText: "conflict" } : {}),
+            }),
+          ]),
+        ],
+        wireRuns: [],
+      });
+
+      expect(state.activeCanvasPreview).toBeNull();
+    }
+  );
+
+  it("discards the ghost overlay when the parent run terminalizes", () => {
+    const state = projectStudioAgentPanel({
+      history: seed({ runs: [runView({ id: RUN_ID, status: "failed" })] }),
+      messages: [
+        assistantMessage([
+          {
+            type: STUDIO_AGENT_CANVAS_PREVIEW_DATA_PART,
+            id: preview.previewId,
+            data: preview,
+          },
+        ]),
+      ],
+      wireRuns: [],
+    });
+
+    expect(state.activeCanvasPreview).toBeNull();
   });
 });
 
@@ -648,6 +933,164 @@ describe("projectStudioAgentPanel — a prompt sent into a live turn", () => {
       pending: [steer],
     });
     expect(bubbles(echoed).map((bubble) => bubble.text)).toEqual(["Drafting.", "Make it darker."]);
+  });
+
+  it("keeps an optimistic prompt's row key when its durable id differs", () => {
+    const clientMessageId = "client-message-1";
+    const optimistic: StudioAgentUIMessage = {
+      ...userMessage("Add a node.", { runId: null, id: "optimistic-id" }),
+      metadata: {
+        ...userMessage("Add a node.", { runId: null }).metadata,
+        clientMessageId,
+      },
+    };
+    const durable: StudioAgentUIMessage = {
+      ...optimistic,
+      id: "durable-id",
+      metadata: {
+        ...optimistic.metadata,
+        runId: RUN_ID,
+      },
+    };
+    const before = projectStudioAgentPanel({
+      history: EMPTY_STUDIO_AGENT_HISTORY_SEED,
+      messages: [],
+      pending: [optimistic],
+      wireRuns: [],
+    });
+    const after = projectStudioAgentPanel({
+      history: EMPTY_STUDIO_AGENT_HISTORY_SEED,
+      messages: [durable],
+      pending: [optimistic],
+      wireRuns: [],
+    });
+
+    expect(before.timeline.find((item) => item.kind === "message")?.id).toBe(
+      after.timeline.find((item) => item.kind === "message")?.id
+    );
+  });
+});
+
+/**
+ * A run the transcript never mentions still has a place in it.
+ *
+ * The control plane reports a turn REJECTED at admission as `failed`, and such
+ * a turn never persists a prompt — so the conversation carries no message that
+ * names it. It is real and the creator is owed its outcome; what it is not is
+ * the outcome of whatever happens to be the newest turn.
+ *
+ * The fixture is the live 2026-07-31 conversation: an admission rejection at
+ * 12:23 that produced no message, a failed turn at 14:26 that produced both,
+ * and a successful turn at 14:34.
+ */
+describe("projectStudioAgentPanel — a run the conversation never mentioned", () => {
+  const ORPHAN_RUN_ID = "019fb820-deb1-76e4-8ea1-dec307be064b";
+  const FAILED_RUN_ID = "019fb891-ff0f-7568-ad64-cb4e49790f8d";
+  const SUCCEEDED_RUN_ID = "019fb899-0dd7-730c-a960-9a908344aa45";
+
+  const state = () =>
+    projectStudioAgentPanel({
+      history: seed({
+        runs: [
+          {
+            ...runView({ id: ORPHAN_RUN_ID, status: "failed" }),
+            createdAt: "2026-07-31T12:23:09.745Z",
+            completedAt: "2026-07-31T12:25:34.340Z",
+            summary: "StoryOS could not start this request after repeated attempts.",
+            error: {
+              code: "AGENT_ADMISSION_EXHAUSTED",
+              message: "StoryOS could not start this request after repeated attempts.",
+              retryable: true,
+              details: null,
+            },
+          },
+          {
+            ...runView({ id: FAILED_RUN_ID, status: "failed" }),
+            createdAt: "2026-07-31T14:26:43.599Z",
+            completedAt: "2026-07-31T14:27:03.467Z",
+            summary: "StoryOS could not complete this request. Please retry.",
+            error: {
+              code: "AGENT_MESSAGE_RUN_IDENTITY_MISMATCH",
+              message: "StoryOS could not complete this request. Please retry.",
+              retryable: false,
+              details: null,
+            },
+          },
+          {
+            ...runView({ id: SUCCEEDED_RUN_ID, status: "succeeded" }),
+            createdAt: "2026-07-31T14:34:26.135Z",
+            completedAt: "2026-07-31T14:34:32.473Z",
+          },
+        ],
+      }),
+      messages: [
+        turnMessage({
+          id: "db61e323-04b0-4b5d-b58f-344e5221e081",
+          role: "user",
+          runId: FAILED_RUN_ID,
+          createdAt: "2026-07-31T14:26:45.879Z",
+          parts: [{ type: "text", text: "Break this screenplay down.", state: "done" }],
+        }),
+        turnMessage({
+          id: "8b822a3b-2159-4f42-ae3f-528f396a2d7b",
+          role: "assistant",
+          runId: FAILED_RUN_ID,
+          createdAt: "2026-07-31T14:26:45.934Z",
+          parts: [
+            { type: "text", text: "Analysing the screenplay now.", state: "done" },
+            toolPart({
+              toolCallId: "call-analysis",
+              toolName: "story_get_source_analysis",
+              state: "output-error",
+              errorText: "The analysis is not ready yet.",
+            }),
+          ],
+        }),
+        turnMessage({
+          id: "9463e177-af7e-489e-b739-e73ac1fdf8cc",
+          role: "user",
+          runId: SUCCEEDED_RUN_ID,
+          createdAt: "2026-07-31T14:34:28.061Z",
+          parts: [{ type: "text", text: "Reply with two characters only.", state: "done" }],
+        }),
+        turnMessage({
+          id: "4c623a3e-ffe2-4f0c-a9a1-9e4e96903a26",
+          role: "assistant",
+          runId: SUCCEEDED_RUN_ID,
+          createdAt: "2026-07-31T14:34:28.091Z",
+          parts: [{ type: "text", text: "Received.", state: "done" }],
+        }),
+      ],
+      wireRuns: [],
+    });
+
+  it("does not hang its outcome off a later turn that succeeded", () => {
+    const timeline = state().timeline;
+
+    expect(timeline.at(-1)).toMatchObject({ kind: "message" });
+    expect(
+      timeline
+        .slice(timeline.findIndex((item) => item.id.startsWith("9463e177")))
+        .map((item) => item.kind)
+    ).toEqual(["message", "message"]);
+  });
+
+  it("states it where it happened, above the turns that came after it", () => {
+    const timeline = state().timeline;
+
+    expect(timeline.map((item) => item.kind)).toEqual([
+      "run",
+      "message",
+      "message",
+      "activity",
+      "run",
+      "message",
+      "message",
+    ]);
+    expect(timeline.flatMap((item) => (item.kind === "run" ? [item.run.id] : []))).toEqual([
+      ORPHAN_RUN_ID,
+      FAILED_RUN_ID,
+    ]);
   });
 });
 
@@ -741,9 +1184,6 @@ function assistantMessage(parts: StudioAgentUIMessage["parts"]): StudioAgentUIMe
     metadata: {
       threadId: THREAD_ID,
       runId: RUN_ID,
-      rootRunId: RUN_ID,
-      parentRunId: null,
-      kind: "turn",
       createdAt: "2026-07-28T10:00:01.000Z",
       format: "markdown",
     },
@@ -765,6 +1205,27 @@ function userMessage(
       format: "plain_text",
     },
     parts: [{ type: "text", text, state: "done" }],
+  };
+}
+
+/** A durable history message: every one carries its own run and timestamp. */
+function turnMessage(input: {
+  id: string;
+  role: "user" | "assistant";
+  runId: string;
+  createdAt: string;
+  parts: StudioAgentUIMessage["parts"];
+}): StudioAgentUIMessage {
+  return {
+    id: input.id,
+    role: input.role,
+    metadata: {
+      threadId: THREAD_ID,
+      runId: input.runId,
+      createdAt: input.createdAt,
+      format: input.role === "user" ? "plain_text" : "markdown",
+    },
+    parts: input.parts,
   };
 }
 
@@ -838,7 +1299,10 @@ function runView(input: { id: string; status: StudioAgentRunView["status"] }): S
     progress: null,
     createdAt: "2026-07-28T10:00:00.000Z",
     startedAt: "2026-07-28T10:00:00.000Z",
-    completedAt: null,
+    completedAt:
+      input.status === "succeeded" || input.status === "failed" || input.status === "cancelled"
+        ? "2026-07-28T10:00:05.000Z"
+        : null,
   };
 }
 
@@ -846,6 +1310,7 @@ function activityView(input: {
   id: string;
   runId: string;
   kind?: StudioAgentActivityView["kind"];
+  status?: StudioAgentActivityView["status"];
 }): StudioAgentActivityView {
   return {
     id: input.id,
@@ -855,9 +1320,9 @@ function activityView(input: {
     label: "generate",
     detail: null,
     progress: null,
-    status: "succeeded",
+    status: input.status ?? "succeeded",
     startedAt: "2026-07-28T10:00:00.000Z",
-    completedAt: "2026-07-28T10:00:05.000Z",
+    completedAt: input.status === "running" ? null : "2026-07-28T10:00:05.000Z",
   };
 }
 

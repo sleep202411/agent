@@ -44,6 +44,16 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
    * written by the agent".
    */
   agentWrote?: boolean;
+  /**
+   * A non-canonical StoryOS proposal currently being executed.
+   *
+   * This marker exists only in the derived React Flow presentation. It is
+   * never written to the Story draft, layout, or canvas history.
+   */
+  agentPreview?: {
+    previewId: string;
+    kind: "create" | "replace" | "remove";
+  };
 }
 
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;

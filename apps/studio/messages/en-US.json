@@ -1879,6 +1879,7 @@
           "scrollToLatest": "Scroll to the latest update",
           "loadEarlier": "Load earlier turns",
           "loadingEarlier": "Loading earlier turns…",
+          "thinking": "Thinking…",
           "attachments": {
             "unknownSize": "Size unavailable",
             "status": {
@@ -1892,11 +1893,23 @@
             "assistant": "StoryOS"
           }
         },
+        "attachmentAnalysis": {
+          "region": "Document analysis",
+          "queued": "Document analysis queued",
+          "mapping": "Analyzing the document · {progress}%",
+          "reducing": "Synthesizing the analysis · {progress}%",
+          "succeeded": "Document analysis ready",
+          "failed": "Document analysis failed",
+          "cancelled": "Document analysis cancelled"
+        },
         "activity": {
           "expand": "Show activity details",
           "collapse": "Hide activity details",
           "labels": {
-            "generatingResponse": "Generating response"
+            "generatingResponse": "Generating response",
+            "readingStory": "Reading the current story",
+            "reviewingSource": "Reviewing source material",
+            "applyingChanges": "Applying story changes"
           },
           "status": {
             "running": "In progress",
@@ -1929,6 +1942,9 @@
           },
           "issues": "What the server rejected",
           "code": "Code",
+          "diagnosticId": "Diagnostic",
+          "details": "Details",
+          "dismiss": "Dismiss",
           "retry": "Send this request again",
           "reword": "Edit this request",
           "openSurface": "Open StoryOS"
@@ -1956,7 +1972,7 @@
             "remove": "Remove {fileName}",
             "retry": "Retry {fileName}",
             "uploading": "Uploading · {progress}%",
-            "processing": "Analyzing file",
+            "processing": "Extracting text · {progress}%",
             "ready": "Ready",
             "failed": "Upload failed",
             "emptyFile": "Empty files cannot be uploaded.",
@@ -2006,6 +2022,7 @@
           "deny": "Deny",
           "showInput": "Show what it will run with",
           "hideInput": "Hide what it will run with",
+          "preparing": "Preparing a safe approval checkpoint…",
           "resuming": "Resuming the turn",
           "decision": {
             "approved": "Approved",

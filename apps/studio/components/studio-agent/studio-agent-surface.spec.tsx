@@ -107,6 +107,29 @@ describe("StudioAgentSurface", () => {
     expect(container.querySelector(`[aria-label="${labels.newConversation}"]`)).toBeNull();
   });
 
+  it("keeps the title stable while busy and only guards conversation reset", async () => {
+    await act(async () => {
+      root.render(
+        <StudioAgentSurface
+          open
+          busy
+          title="StoryOS"
+          labels={labels}
+          onNewConversation={vi.fn()}
+          onOpenChange={vi.fn()}
+        >
+          <div>timeline</div>
+        </StudioAgentSurface>
+      );
+    });
+
+    expect(container.querySelector("header .animate-spin")).toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>(`[aria-label="${labels.newConversation}"]`)
+        ?.disabled
+    ).toBe(true);
+  });
+
   it("renders nothing when closed", async () => {
     await act(async () => {
       root.render(

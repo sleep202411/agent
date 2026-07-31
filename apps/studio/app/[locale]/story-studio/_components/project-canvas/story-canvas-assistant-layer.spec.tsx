@@ -121,30 +121,19 @@ describe("StoryCanvasAssistantLayer", () => {
 
     expect(new Set(providers.ably)).toEqual(new Set([client]));
     expect(providers.chatTransport[0]).toMatchObject({
-      channelName: `studio-agent:thread:${THREAD_ID}`,
-      api: "/aurora/studio-agent/invocations",
+      channelName: `agent:v1:conversation:${THREAD_ID}`,
+      api: "/aurora/agent-platform/invocations",
       credentials: "include",
     });
     expect(hooks.useStoryStudioAgentSession).toHaveBeenCalled();
   });
 
-  /**
-   * THE SEAM THAT MADE THE SHIPPED APPROVAL UI DEAD CODE.
-   *
-   * A continuation is the one `useChat` send that carries no new message: the
-   * library derives the `tool-approval-response` inputs from the overlay, and
-   * calls this with `messages` EMPTY and `history` holding the assistant the
-   * creator just answered. `prepareSendMessagesRequest` used to key entirely off
-   * `messages.at(-1)`, so a continuation POSTed no domain body at all and the
-   * control plane had nothing to route.
-   */
-  it("routes an approval continuation as a tool-approval invocation, not as an empty send", async () => {
-    const buildInvocation = vi.fn(() => null);
-    // The creator's answer lives HERE, in the overlay, and nowhere else until
-    // this very request publishes it.
-    const overlayRef = { current: [APPROVED_ASSISTANT] };
+  it("adds product routing to an approval continuation while the SDK owns its wire input", async () => {
     hooks.useStoryStudioAgentBootstrap.mockReturnValue(
-      createBootstrap({ realtime: live({ id: "ably-client" }), buildInvocation, overlayRef })
+      createBootstrap({
+        realtime: live({ id: "ably-client" }),
+        invocations: [waitingInvocation()],
+      })
     );
 
     await renderLayer(root, true);
@@ -160,32 +149,53 @@ describe("StoryCanvasAssistantLayer", () => {
     const prepared = prepare({
       trigger: "submit-message",
       messages: [],
-      // What the library actually hands us: the channel tree's copy, which has
-      // NOT seen the answer yet. Reading the decision from here is what shipped
-      // an empty body and a 400.
-      history: [
-        {
-          ...APPROVED_ASSISTANT,
-          parts: [
-            {
-              ...APPROVED_ASSISTANT.parts[0],
-              state: "approval-requested",
-              approval: { id: "sdk-approval-1" },
-            },
-          ],
-        },
-      ],
+      history: [APPROVED_ASSISTANT],
     });
 
     expect(prepared.body).toEqual({
-      kind: "tool_approval",
-      threadId: THREAD_ID,
-      targetRunId: RUN_ID,
-      decisions: [{ toolCallId: "call-1", approved: true }],
+      schemaVersion: "agent-invocation-gateway/v1",
+      conversationId: THREAD_ID,
+      clientMessageId: expect.any(String),
+      continuationOfInvocationId: INVOCATION_ID,
+      locale: "en-US",
     });
-    // The prompt builder is for prompts. A continuation has no message to build.
-    expect(buildInvocation).not.toHaveBeenCalled();
-    expect(prepared.headers).toEqual({ "x-fizz-workspace-id": "workspace-1" });
+    expect(prepared.body?.clientMessageId).not.toBe(APPROVED_ASSISTANT.id);
+    expect(prepared.headers).toEqual({
+      "x-fizz-workspace-id": "workspace-1",
+      "accept-language": "en-US",
+    });
+
+    const nextApproval = prepare({
+      trigger: "submit-message",
+      messages: [],
+      history: [APPROVED_ASSISTANT],
+    });
+    expect(nextApproval.body?.continuationOfInvocationId).toBe(INVOCATION_ID);
+    expect(nextApproval.body?.clientMessageId).not.toBe(prepared.body?.clientMessageId);
+  });
+
+  it("refuses an orphaned approval continuation instead of starting a second root Run", async () => {
+    hooks.useStoryStudioAgentBootstrap.mockReturnValue(
+      createBootstrap({
+        realtime: live({ id: "ably-client" }),
+        invocations: [],
+      })
+    );
+
+    await renderLayer(root, true);
+    const prepare = (
+      providers.chatTransport.at(-1)?.chatOptions as {
+        prepareSendMessagesRequest: (input: Record<string, unknown>) => unknown;
+      }
+    ).prepareSendMessagesRequest;
+
+    expect(() =>
+      prepare({
+        trigger: "submit-message",
+        messages: [],
+        history: [APPROVED_ASSISTANT],
+      })
+    ).toThrow("not linked to a durable Agent invocation");
   });
 
   /**
@@ -224,6 +234,38 @@ describe("StoryCanvasAssistantLayer", () => {
     expect(onAgentWrote).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves a continuation through the options object the transport was built from", async () => {
+    // `useChat` keeps the transport it was constructed with, so the FIRST
+    // options object built here is what every send in this panel session runs
+    // through — including approvals for invocations that did not exist yet.
+    // Reaching for `.at(-1)` instead would only ever test the freshest closure.
+    hooks.useStoryStudioAgentBootstrap.mockReturnValue(
+      createBootstrap({ realtime: live({ id: "ably-client" }), invocations: [] })
+    );
+    await renderLayer(root, true);
+    const captured = providers.chatTransport[0]?.chatOptions as {
+      prepareSendMessagesRequest: (input: Record<string, unknown>) => {
+        body?: Record<string, unknown>;
+      };
+    };
+
+    hooks.useStoryStudioAgentBootstrap.mockReturnValue(
+      createBootstrap({
+        realtime: live({ id: "ably-client" }),
+        invocations: [waitingInvocation()],
+      })
+    );
+    await renderLayer(root, true);
+
+    expect(
+      captured.prepareSendMessagesRequest({
+        trigger: "submit-message",
+        messages: [],
+        history: [APPROVED_ASSISTANT],
+      }).body?.continuationOfInvocationId
+    ).toBe(INVOCATION_ID);
+  });
+
   it("keeps the transport options referentially stable across renders", async () => {
     // The provider recreates the ChatTransport whenever `chatOptions` changes
     // identity, and rebuilding it mid-turn would drop the live stream.
@@ -244,14 +286,18 @@ describe("StoryCanvasAssistantLayer", () => {
 describe("StoryCanvasAssistantLayer first open", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let session: ReturnType<typeof createSession>;
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     providers.ably.length = 0;
     providers.chatTransport.length = 0;
-    hooks.useStoryStudioAgentBootstrap.mockReturnValue(createBootstrap());
+    hooks.useStoryStudioAgentBootstrap.mockReturnValue(
+      createBootstrap({ realtime: live({ id: "ably-client" }) })
+    );
     hooks.useDisconnectedStoryStudioAgentSession.mockImplementation(() => createSession());
-    hooks.useStoryStudioAgentSession.mockImplementation(() => createSession());
+    session = createSession({ submit: vi.fn().mockResolvedValue(true) });
+    hooks.useStoryStudioAgentSession.mockReturnValue(session);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -268,8 +314,32 @@ describe("StoryCanvasAssistantLayer first open", () => {
     const hero = container.querySelector('[data-testid="story-canvas-first-open"]');
     expect(hero).not.toBeNull();
     expect(hero?.textContent).toContain("Every choice rewrites the story");
+    const animatedTitle = hero?.querySelector<HTMLElement>(".react-bits-glitch-text");
+    expect(animatedTitle?.dataset.glitchTrigger).toBe("always");
+    expect(animatedTitle?.querySelectorAll("[data-glitch-layer]")).toHaveLength(2);
+    expect(animatedTitle?.style.getPropertyValue("--glitch-after-duration")).toBe("3.6s");
+    expect(animatedTitle?.style.getPropertyValue("--glitch-after-shadow")).toContain(
+      "rgba(229,34,39,0.55)"
+    );
     expect(skillCards(container)).toHaveLength(2);
-    expect(startButton(container)?.hasAttribute("disabled")).toBe(false);
+    expect(firstOpenComposer(container)).not.toBeNull();
+    expect(firstOpenComposer(container)?.hasAttribute("disabled")).toBe(false);
+    expect(
+      container.querySelector(
+        '[data-testid="story-canvas-first-open"] button[aria-label="Attach reference files"]'
+      )
+    ).not.toBeNull();
+    expect(
+      container
+        .querySelector<HTMLInputElement>(
+          '[data-testid="story-canvas-first-open"] input[type="file"]'
+        )
+        ?.accept.includes("application/pdf")
+    ).toBe(true);
+    expect(document.activeElement).toBe(firstOpenComposer(container));
+    expect(hooks.useStoryStudioAgentBootstrap).toHaveBeenLastCalledWith(
+      expect.objectContaining({ active: true })
+    );
   });
 
   it("stays out of the way once the canvas has content", async () => {
@@ -305,14 +375,12 @@ describe("StoryCanvasAssistantLayer first open", () => {
     // The reason, not just a generic apology.
     expect(notice?.textContent).toContain("Studio Agent is unreachable.");
 
-    expect(startButton(container)?.hasAttribute("disabled")).toBe(true);
+    expect(firstOpenComposer(container)?.hasAttribute("disabled")).toBe(true);
+    expect(firstOpenSend(container)?.hasAttribute("disabled")).toBe(true);
     for (const card of skillCards(container)) expect(card.hasAttribute("disabled")).toBe(true);
   });
 
-  it("opens StoryOS with the card's brief when a directing skill is clicked", async () => {
-    // Asserting the delivered draft, not just that a handler fired: seeding the
-    // composer IS the entry point, and an empty open() would render as "the
-    // panel appeared" while silently dropping the brief.
+  it("seeds an editable opening brief when a directing skill is clicked", async () => {
     await renderStateful(firstOpenInputs());
 
     const card = skillCards(container).find((node) =>
@@ -321,23 +389,51 @@ describe("StoryCanvasAssistantLayer first open", () => {
     expect(card).toBeDefined();
     await act(async () => card?.click());
 
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="story-canvas-first-open"]')).toBeNull();
-
-    const composer = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).toBeNull();
+    expect(container.querySelector('[data-testid="story-canvas-first-open"]')).not.toBeNull();
+    expect(card?.getAttribute("aria-pressed")).toBe("true");
+    const composer = firstOpenComposer(container);
     expect(composer?.value).toContain("a suitcase of old tickets and photos");
     // The premise and the art direction travel as separable text, because the
     // server no longer injects directing-skill instructions.
     expect(composer?.value).toContain("Art direction: flat paper fields");
   });
 
-  it("opens StoryOS with an untouched composer from the write-your-own path", async () => {
+  it("sends the opening message and reveals its StoryOS transcript immediately", async () => {
     await renderStateful(firstOpenInputs());
 
-    await act(async () => startButton(container)?.click());
+    const composer = firstOpenComposer(container);
+    expect(composer).not.toBeNull();
+    await act(async () => {
+      setTextareaValue(composer!, "A lighthouse remembers every ship it failed to save.");
+    });
+    expect(firstOpenSend(container)?.hasAttribute("disabled")).toBe(false);
+
+    await act(async () => firstOpenSend(container)?.click());
 
     expect(container.querySelector('[data-slot="studio-agent-overlay"]')).not.toBeNull();
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("");
+    expect(container.querySelector('[data-testid="story-canvas-first-open"]')).toBeNull();
+    expect(session.submit).toHaveBeenCalledWith(
+      "A lighthouse remembers every ship it failed to save.",
+      "send",
+      []
+    );
+  });
+
+  it("restores the exact opening message when the transport refuses it", async () => {
+    session.submit.mockResolvedValue(false);
+    await renderStateful(firstOpenInputs());
+
+    const composer = firstOpenComposer(container);
+    await act(async () => {
+      setTextareaValue(composer!, "A city where nobody can remember yesterday.");
+    });
+    await act(async () => firstOpenSend(container)?.click());
+
+    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).not.toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "A city where nobody can remember yesterday."
+    );
   });
 
   /** Mirrors the canvas: the layer is controlled, the parent owns `open`. */
@@ -388,7 +484,7 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     container.remove();
   });
 
-  it("states a terminal turn failure in a thread that already has content", async () => {
+  it("states a terminal turn failure as an in-flow row of the conversation", async () => {
     offline(threadWithFailedTurn(INPUT_REJECTED));
 
     await renderLayer(root, true);
@@ -402,16 +498,43 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
 
     const notice = failureNotice(container);
     expect(notice).not.toBeNull();
+    // In the message flow — inside the conversation log, not pinned beside the
+    // composer and not a floating alert.
+    expect(notice?.closest('[role="log"]')).not.toBeNull();
+    expect(notice?.getAttribute("role")).not.toBe("alert");
     // The server's sentence, verbatim — not a localized apology.
     expect(notice?.textContent).toContain(INPUT_REJECTED.message);
-    expect(notice?.textContent).toContain("studio_agent.invalid_action_input");
-    // The structured half of the error: the paths the server actually rejected.
-    expect(notice?.textContent).toContain("operations");
-    expect(notice?.textContent).toContain("must be array");
+    // The wire code and the rejected paths remain reachable — support still
+    // needs them — but only behind the Details disclosure, never in the
+    // primary text a casual creator reads.
+    const details = notice?.querySelector("details");
+    expect(details?.textContent).toContain("studio_agent.invalid_action_input");
+    expect(details?.textContent).toContain("operations");
+    expect(details?.textContent).toContain("must be array");
+    const primary = notice!.cloneNode(true) as HTMLElement;
+    primary.querySelector("details")?.remove();
+    expect(primary.textContent).not.toContain("studio_agent.invalid_action_input");
     // Derived state only — nothing can hide it while it is the latest turn.
     expect([...notice!.querySelectorAll("button")].map((node) => node.textContent)).not.toContain(
       messages.storyStudio.canvas.studioAgent.dismissError
     );
+  });
+
+  it("keeps the composer immediately usable while the newest turn is a terminal failure", async () => {
+    offline(threadWithFailedTurn(INPUT_REJECTED));
+
+    await renderLayer(root, true);
+
+    // The invariant: a terminal failed turn never leaves the composer disabled
+    // or stuck in running mode — the creator can type and send right away.
+    const composer = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Message StoryOS"]'
+    );
+    expect(composer).not.toBeNull();
+    expect(composer?.disabled).toBe(false);
+    expect(
+      container.querySelector('[data-slot="studio-agent-composer"]')?.hasAttribute("data-running")
+    ).toBe(false);
   });
 
   it("distinguishes an input rejection from a write the server could not record", async () => {
@@ -487,15 +610,51 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
 
     await renderLayer(root, false, { onOpenChange });
 
-    const notice = failureNotice(container);
+    // Closed panel: one compact notice, not the failure surface itself — it
+    // deep-links to the timeline row that owns the retry and the diagnostics.
+    const notice = closedFailureNotice(container);
     expect(notice).not.toBeNull();
     expect(notice?.textContent).toContain(NOT_RECORDED.message);
+    // No second in-flow row can exist out here: the panel is closed.
+    expect(failureNotice(container)).toBeNull();
     const open = [...notice!.querySelectorAll("button")].find(
       (node) => node.textContent === "Open StoryOS"
     );
     expect(open).toBeDefined();
     await act(async () => open?.click());
     expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("retires the closed-panel notice for good once dismissed", async () => {
+    offline(threadWithFailedTurn(NOT_RECORDED));
+
+    await renderLayer(root, false);
+    const notice = closedFailureNotice(container);
+    expect(notice).not.toBeNull();
+
+    const dismiss = notice!.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]');
+    expect(dismiss).not.toBeNull();
+    await act(async () => dismiss?.click());
+    expect(closedFailureNotice(container)).toBeNull();
+
+    // The same failure must not come back on a later render pass; the timeline
+    // row inside the panel remains its durable, discoverable home.
+    await renderLayer(root, false);
+    expect(closedFailureNotice(container)).toBeNull();
+  });
+
+  it("never echoes a failure the creator has already seen inside the panel", async () => {
+    offline(threadWithFailedTurn(NOT_RECORDED));
+
+    // Open: the timeline row is the single presentation — no floating notice.
+    await renderLayer(root, true);
+    expect(closedFailureNotice(container)).toBeNull();
+    expect(failureNotice(container)).not.toBeNull();
+
+    // Closing the panel afterwards must not resurrect an echo of a row the
+    // creator already read.
+    await renderLayer(root, false);
+    expect(closedFailureNotice(container)).toBeNull();
   });
 
   it("wires the load-earlier control to the session", async () => {
@@ -534,6 +693,7 @@ function offline(overrides: Record<string, unknown>) {
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
 const RUN_ID = "00000000-0000-4000-8000-000000000002";
+const INVOCATION_ID = "00000000-0000-4000-8000-000000000003";
 const FAILED_RUN_ID = "00000000-0000-4000-8000-000000000052";
 
 /** The two attributions the server keeps apart; see studio-agent.capability-error.ts. */
@@ -586,24 +746,42 @@ async function renderLayer(
   });
 }
 
+/** The in-flow failure row inside the panel's conversation log. */
 function failureNotice(container: HTMLElement) {
   return container.querySelector<HTMLElement>('[data-slot="studio-agent-turn-failure"]');
+}
+
+/** The compact dismissible echo shown on the canvas while StoryOS is closed. */
+function closedFailureNotice(container: HTMLElement) {
+  return container.querySelector<HTMLElement>('[data-slot="studio-agent-turn-failure-notice"]');
 }
 
 function skillCards(container: HTMLElement) {
   return [...container.querySelectorAll<HTMLButtonElement>("button[data-skill]")];
 }
 
-function startButton(container: HTMLElement) {
-  return [...container.querySelectorAll("button")].find(
-    (node) => node.textContent === "Describe your own story"
+function firstOpenComposer(container: HTMLElement) {
+  return container.querySelector<HTMLTextAreaElement>(
+    '[data-testid="story-canvas-first-open"] textarea'
   );
+}
+
+function firstOpenSend(container: HTMLElement) {
+  return container.querySelector<HTMLButtonElement>(
+    '[data-testid="story-canvas-first-open"] button[data-action="send"]'
+  );
+}
+
+function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  setter?.call(textarea, value);
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function live(client: unknown) {
   return {
     client,
-    channelName: `studio-agent:thread:${THREAD_ID}`,
+    channelName: `agent:v1:conversation:${THREAD_ID}`,
     status: "connected",
     error: null,
   };
@@ -617,6 +795,7 @@ function threadWithFailedTurn(error: StudioAgentError): Record<string, unknown> 
     clientMessageId: "client-message-1",
     runId: FAILED_RUN_ID,
     role: "user",
+    delivery: "send",
     format: "plain_text",
     text: "Rename the opening scene.",
     attachments: [],
@@ -693,23 +872,47 @@ const APPROVED_ASSISTANT = {
   ],
 };
 
+function waitingInvocation() {
+  return {
+    invocationId: INVOCATION_ID,
+    runId: RUN_ID,
+    clientMessageId: "creator-message-1",
+    inputEventId: "ably-event-1",
+    status: "waiting_for_approval",
+    error: null,
+    latestAttempt: {
+      attemptId: "00000000-0000-4000-8000-000000000004",
+      ordinal: 0,
+      inputEventId: "ably-event-1",
+      clientMessageId: "creator-message-1",
+      status: "dispatched",
+      error: null,
+    },
+    createdAt: "2026-07-30T12:00:00.000Z",
+    startedAt: "2026-07-30T12:00:01.000Z",
+    completedAt: null,
+  };
+}
+
 function createBootstrap(overrides: Record<string, unknown> = {}) {
   return {
     projectId: "project-1",
     chapterId: "chapter-1",
     workspaceId: "workspace-1",
+    locale: "en-US",
     status: "ready",
     error: null,
     thread: { threadId: THREAD_ID, permissionPolicy: { mode: "ask" } },
-    overlayRef: { current: [] },
     history: {
       messages: [],
       messageIds: new Set<string>(),
+      nextCursor: null,
       runs: [],
       activities: [],
       writeToken: "",
       writtenNodeIds: [],
     },
+    invocations: [],
     conversationKey: `${THREAD_ID}:0`,
     realtime: { client: null, channelName: null, status: "idle", error: null },
     hasEarlierTurns: false,
@@ -720,9 +923,14 @@ function createBootstrap(overrides: Record<string, unknown> = {}) {
     reportCommandError: vi.fn(),
     retry: vi.fn(),
     loadEarlierTurns: vi.fn().mockResolvedValue(undefined),
-    refreshControlPlane: vi.fn(),
-    buildInvocation: vi.fn(() => null),
-    submitInvocation: vi.fn().mockResolvedValue(undefined),
+    refreshHistory: vi.fn(),
+    refreshInvocations: vi.fn(),
+    invoke: vi.fn().mockResolvedValue({
+      schemaVersion: "agent-invocation-accepted/v1",
+      invocationId: RUN_ID,
+    }),
+    requestDurableCancel: vi.fn().mockResolvedValue(undefined),
+    startNewConversation: vi.fn().mockResolvedValue(undefined),
     uploadAttachment: vi.fn(),
     updatePermissionMode: vi.fn(),
     ...overrides,
@@ -743,6 +951,7 @@ function createSession(overrides: Record<string, unknown> = {}) {
     childRuns: [],
     turnFailure: null,
     activeRun: null,
+    canSteer: false,
     isRunning: false,
     streaming: false,
     queuedCount: 0,
@@ -758,7 +967,11 @@ function createSession(overrides: Record<string, unknown> = {}) {
     uploadAttachment: vi.fn(),
     cancelActiveRun: vi.fn(),
     updatePermissionMode: vi.fn(),
-    resolveApproval: vi.fn(),
+    respondToToolApproval: vi.fn(),
+    canRespondToToolApproval: vi.fn().mockReturnValue(true),
+    retryRejectedAttempt: vi.fn().mockResolvedValue(false),
+    commandErrorRetry: null,
+    startNewConversation: vi.fn(),
     ...overrides,
   };
 }

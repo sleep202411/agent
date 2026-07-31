@@ -46,7 +46,7 @@ export interface StudioAgentComposerAttachment {
 export interface StudioAgentAttachmentUploadContext {
   signal: AbortSignal;
   onProgress: (percent: number) => void;
-  onProcessing: () => void;
+  onProcessing: (percent: number) => void;
 }
 
 /**
@@ -181,12 +181,12 @@ export function useStudioAgentComposerAttachments({
             });
             publish();
           },
-          onProcessing() {
+          onProcessing(percent) {
             const latest = entriesRef.current.get(id);
             if (!latest || latest.attempt !== attempt || latest.controller !== controller) return;
             entriesRef.current.set(id, {
               ...latest,
-              progress: 100,
+              progress: clampProgress(percent),
               status: "processing",
             });
             publish();
@@ -231,7 +231,7 @@ export function useStudioAgentComposerAttachments({
             controller: null,
             status: "failed",
             error: toErrorMessage(cause, uploadFailedMessageRef.current),
-            retryable: true,
+            retryable: readRetryability(cause) ?? true,
             attachment: null,
           });
           publish();
@@ -423,6 +423,11 @@ function clampProgress(percent: number): number {
 
 function toErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
+}
+
+function readRetryability(cause: unknown): boolean | null {
+  if (!cause || typeof cause !== "object" || !("retryable" in cause)) return null;
+  return typeof cause.retryable === "boolean" ? cause.retryable : null;
 }
 
 function toPublicAttachment(entry: AttachmentEntry): StudioAgentComposerAttachment {
