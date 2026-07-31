@@ -113,6 +113,10 @@
     "./studio-agent-tools": {
       "types": "./dist/studio-agent-tools.d.ts",
       "default": "./dist/studio-agent-tools.js"
+    },
+    "./agent-platform": {
+      "types": "./dist/agent-platform.d.ts",
+      "default": "./dist/agent-platform.js"
     }
   },
   "scripts": {
