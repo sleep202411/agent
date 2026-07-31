@@ -3229,7 +3229,7 @@ function StoryProjectCanvasInner({
               className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
             >
               <IconUsers className="size-4" />
-              {t("share")}
+              <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
             </button>
           }
           assistantOpen={assistantOpen}
@@ -3262,8 +3262,10 @@ function StoryProjectCanvasInner({
 
         <section
           ref={canvasSectionRef}
-          // Inspectors and StoryOS are floating overlays: opening either one
-          // never resizes the React Flow container or changes its viewport.
+          // Inspectors are floating overlays over the canvas region; StoryOS
+          // docks as a sibling column in the assistant layer's split, so this
+          // section fills whatever width the region keeps. React Flow observes
+          // its container and absorbs the resize without moving the viewport.
           className="absolute inset-0"
           onDoubleClick={(event) => {
             if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
@@ -3558,6 +3560,14 @@ function StoryProjectCanvasInner({
   );
 }
 
+/**
+ * Toolbar label visibility. Below this container width the full-label pill
+ * overflows the header row, so labels collapse to sr-only and the buttons run
+ * icon-only. Applies to the canvas-header toolbar (including the share control
+ * the parent passes in), which is why it lives at module scope.
+ */
+const HEADER_LABEL_CLASS = "@max-[1000px]:sr-only";
+
 function CanvasHeader({
   title,
   canEdit,
@@ -3612,15 +3622,21 @@ function CanvasHeader({
       ) : (
         <IconCloudUpload className="size-4" />
       )}
-      {publishPending
-        ? t("publish.actionPending")
-        : published
-          ? t("publish.actionPublished")
-          : t("publish.action")}
+      <span className={HEADER_LABEL_CLASS}>
+        {publishPending
+          ? t("publish.actionPending")
+          : published
+            ? t("publish.actionPublished")
+            : t("publish.action")}
+      </span>
     </Button>
   );
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
+    // `@container`: the toolbar labels below shed to sr-only when the canvas
+    // region is too narrow to hold every row — the docked StoryOS column can
+    // take the region down to ~700px, where the full-label pill overflows.
+    // Icon-only buttons keep their accessible names; nothing is removed.
+    <header className="@container pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <div className="pointer-events-auto flex h-12 min-w-0 items-center gap-3">
         <Link
           href="/story-studio"
@@ -3650,7 +3666,7 @@ function CanvasHeader({
           )}
         >
           <IconSparkles className="size-4" />
-          {t("assistant.action")}
+          <span className={HEADER_LABEL_CLASS}>{t("assistant.action")}</span>
         </button>
         <button
           type="button"
@@ -3664,7 +3680,7 @@ function CanvasHeader({
           )}
         >
           <IconBook className="size-4" />
-          {t("world.title")}
+          <span className={HEADER_LABEL_CLASS}>{t("world.title")}</span>
         </button>
         <button
           type="button"
@@ -3672,7 +3688,7 @@ function CanvasHeader({
           className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
         >
           <IconMovie className="size-4" />
-          {t("mediaCreation")}
+          <span className={HEADER_LABEL_CLASS}>{t("mediaCreation")}</span>
         </button>
         {shareControl}
         {/* Was hidden while a draft preview could only ever start at the story's
@@ -3690,7 +3706,7 @@ function CanvasHeader({
           ) : (
             <IconPlayerPlay className="size-4" />
           )}
-          {t("workingPreview.action")}
+          <span className={HEADER_LABEL_CLASS}>{t("workingPreview.action")}</span>
         </button>
         {!canPublish && publishDisabledReason ? (
           <Tooltip>

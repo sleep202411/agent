@@ -69,11 +69,15 @@ describe("StoryCanvasAssistantLayer", () => {
     container.remove();
   });
 
-  it("keeps the runtime mounted while closed and overlays the canvas when opened", async () => {
+  it("keeps the runtime mounted while closed and splits the page when opened", async () => {
     await renderLayer(root, false);
 
-    expect(container.querySelector('[data-testid="story-canvas"]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).toBeNull();
+    // Closed: the canvas region stands alone in the split — no panel column.
+    const closedRegion = container.querySelector<HTMLElement>(
+      '[data-slot="studio-agent-canvas-region"]'
+    );
+    expect(closedRegion?.querySelector('[data-testid="story-canvas"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).toBeNull();
     // Closed: the bootstrap is alive, but it is told not to hold a channel.
     expect(hooks.useStoryStudioAgentBootstrap).toHaveBeenCalledWith({
       projectId: "project-1",
@@ -84,11 +88,19 @@ describe("StoryCanvasAssistantLayer", () => {
 
     await renderLayer(root, true);
 
-    const canvas = container.querySelector<HTMLElement>('[data-testid="story-canvas"]');
-    const overlay = container.querySelector<HTMLElement>('[data-slot="studio-agent-overlay"]');
-    expect(canvas?.style.width).toBe("100%");
-    expect(overlay?.classList.contains("absolute")).toBe(true);
-    expect(overlay?.classList.contains("inset-0")).toBe(true);
+    // Open: canvas region and StoryOS column are SIBLINGS of one split
+    // container. The panel is in-flow — never an absolute overlay that could
+    // hide the canvas content beneath it.
+    const split = container.querySelector<HTMLElement>('[data-slot="studio-agent-split"]');
+    const region = container.querySelector<HTMLElement>('[data-slot="studio-agent-canvas-region"]');
+    const surface = container.querySelector<HTMLElement>('[data-slot="studio-agent-surface"]');
+    expect(split).not.toBeNull();
+    expect(region?.parentElement).toBe(split);
+    expect(surface?.parentElement).toBe(split);
+    expect(surface?.classList.contains("absolute")).toBe(false);
+    // The canvas lives in the shrinking region, never inside the panel column.
+    expect(region?.querySelector('[data-testid="story-canvas"]')).not.toBeNull();
+    expect(surface?.querySelector('[data-testid="story-canvas"]')).toBeNull();
     expect(hooks.useStoryStudioAgentBootstrap).toHaveBeenLastCalledWith(
       expect.objectContaining({ active: true })
     );
@@ -389,7 +401,7 @@ describe("StoryCanvasAssistantLayer first open", () => {
     expect(card).toBeDefined();
     await act(async () => card?.click());
 
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).toBeNull();
     expect(container.querySelector('[data-testid="story-canvas-first-open"]')).not.toBeNull();
     expect(card?.getAttribute("aria-pressed")).toBe("true");
     const composer = firstOpenComposer(container);
@@ -411,7 +423,7 @@ describe("StoryCanvasAssistantLayer first open", () => {
 
     await act(async () => firstOpenSend(container)?.click());
 
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="story-canvas-first-open"]')).toBeNull();
     expect(session.submit).toHaveBeenCalledWith(
       "A lighthouse remembers every ship it failed to save.",
@@ -430,7 +442,7 @@ describe("StoryCanvasAssistantLayer first open", () => {
     });
     await act(async () => firstOpenSend(container)?.click());
 
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).not.toBeNull();
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "A city where nobody can remember yesterday."
     );
@@ -615,6 +627,10 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     const notice = closedFailureNotice(container);
     expect(notice).not.toBeNull();
     expect(notice?.textContent).toContain(NOT_RECORDED.message);
+    // The notice floats over the canvas region — the split never opens a
+    // panel column for a closed StoryOS.
+    expect(notice?.closest('[data-slot="studio-agent-canvas-region"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).toBeNull();
     // No second in-flow row can exist out here: the panel is closed.
     expect(failureNotice(container)).toBeNull();
     const open = [...notice!.querySelectorAll("button")].find(
@@ -848,7 +864,7 @@ function chapter(id: string, rank: number, nodeCount: number): StoryChapter {
 }
 
 /**
- * The assistant message the creator has just answered, as the OVERLAY holds it.
+ * The assistant message the creator has just answered, as the PANEL holds it.
  *
  * The channel tree's copy of this same message still reads
  * `approval-requested` at the moment the continuation is prepared — publishing

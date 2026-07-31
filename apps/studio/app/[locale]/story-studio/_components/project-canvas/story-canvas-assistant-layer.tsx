@@ -63,8 +63,10 @@ export interface StoryCanvasFirstOpenInputs {
  * honest. The channel and the Ably connection are held only while the panel is
  * open and on top, because the account is capped on both.
  *
- * The surface is an absolute overlay, so opening StoryOS never changes React
- * Flow's viewport dimensions or canvas transform.
+ * The surface is a split, not an overlay: opening StoryOS docks a sibling
+ * column on the right and the canvas region shrinks beside it, so the panel
+ * never hides canvas content. React Flow observes its own container and
+ * absorbs the resize without moving the viewport transform.
  */
 export function StoryCanvasAssistantLayer({
   projectId,
@@ -231,39 +233,47 @@ export function StoryCanvasAssistantLayer({
           ? { kind: "connecting" }
           : { kind: "ready" };
   // Hidden while StoryOS is open: the hero's whole job is to get the creator
-  // into the panel, and leaving it live behind the overlay is just clutter.
+  // into the panel, and leaving it live beside the transcript is just clutter.
   const showFirstOpen = firstOpenEligible && !suspended && !open;
 
   const surface = (
     <div
+      data-slot="studio-agent-split"
       aria-hidden={suspended ? true : undefined}
       inert={suspended ? true : undefined}
       className={cn(
-        "relative h-full w-full origin-center transition-[opacity,transform] duration-300 ease-out",
+        "relative flex h-full w-full origin-center transition-[opacity,transform] duration-300 ease-out",
         suspended && "pointer-events-none scale-[0.985] opacity-0"
       )}
     >
-      {children}
       {/*
-        The bootstrap stays mounted while the panel is closed, so a turn can die
-        with nothing on screen. This compact notice is an usher, not a second
-        error surface: it deep-links to the timeline row that owns the failure,
-        and it disappears for good once seen or dismissed. It sits directly
-        under the canvas header's StoryOS toggle — where the panel itself opens
-        — because the bottom-right corner already belongs to the history
-        controls and the graph-error toast.
+        The shrinking half of the split. Every canvas overlay — the header, the
+        inspectors, the toasts, the closed-panel notice below — anchors to this
+        region, so a docked StoryOS column can never sit on top of them.
       */}
-      {showClosedPanelFailure ? (
-        <div className="pointer-events-none absolute inset-x-0 top-16 z-40 flex justify-end px-3 pt-1">
-          <StudioAgentTurnFailureNotice
-            failure={closedPanelFailure}
-            labels={turnFailureNoticeLabels}
-            onOpen={() => onOpenChange(true)}
-            onDismiss={() => setAcknowledgedFailureKey(closedPanelFailureKey)}
-            className="nodrag nopan nowheel pointer-events-auto w-[min(420px,100%)]"
-          />
-        </div>
-      ) : null}
+      <div data-slot="studio-agent-canvas-region" className="relative h-full min-w-0 flex-1">
+        {children}
+        {/*
+          The bootstrap stays mounted while the panel is closed, so a turn can
+          die with nothing on screen. This compact notice is an usher, not a
+          second error surface: it deep-links to the timeline row that owns the
+          failure, and it disappears for good once seen or dismissed. It sits
+          directly under the canvas header's StoryOS toggle — where the panel
+          itself opens — because the bottom-right corner already belongs to the
+          history controls and the graph-error toast.
+        */}
+        {showClosedPanelFailure ? (
+          <div className="pointer-events-none absolute inset-x-0 top-16 z-40 flex justify-end px-3 pt-1">
+            <StudioAgentTurnFailureNotice
+              failure={closedPanelFailure}
+              labels={turnFailureNoticeLabels}
+              onOpen={() => onOpenChange(true)}
+              onDismiss={() => setAcknowledgedFailureKey(closedPanelFailureKey)}
+              className="nodrag nopan nowheel pointer-events-auto w-[min(420px,100%)]"
+            />
+          </div>
+        ) : null}
+      </div>
       {connected ? (
         <ConnectedStudioAgentPanel
           bootstrap={bootstrap}

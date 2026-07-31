@@ -28,12 +28,15 @@ export interface StudioAgentSurfaceProps {
 }
 
 /**
- * Layout-neutral host for Studio Agent.
+ * Layout host for Studio Agent.
  *
- * The outer layer is always absolutely positioned, so opening the assistant
- * cannot change the dimensions of a sibling canvas. The surface is a single
- * right-docked panel — no expand/focus mode, no header status line; run state
- * is surfaced in the timeline, and the permission control lives in the composer.
+ * The surface is an in-flow, full-height column: the host mounts it as a
+ * sibling of the canvas inside a flex split, so opening the assistant shrinks
+ * the canvas beside it instead of covering it — nothing overlaps, nothing is
+ * hidden. The column owns its clamped width; closing it returns the whole row
+ * to the canvas. It is a single right-docked panel — no expand/focus mode, no
+ * header status line; run state is surfaced in the timeline, and the
+ * permission control lives in the composer.
  */
 export function StudioAgentSurface({
   open,
@@ -50,14 +53,13 @@ export function StudioAgentSurface({
 
   return (
     <div
-      data-slot="studio-agent-overlay"
-      data-layout="overlay"
-      className={cn("pointer-events-none absolute inset-0 z-50 isolate", className)}
+      data-slot="studio-agent-surface"
+      className={cn("relative h-full min-h-0 shrink-0 p-3", className)}
     >
       <aside
         aria-label={labels.surface}
         role="complementary"
-        className="liquid-rim pointer-events-auto absolute top-3 right-3 bottom-3 flex min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden rounded-[26px] bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-[0.985] motion-safe:duration-200"
+        className="liquid-rim flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden rounded-[26px] bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200"
       >
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">
           <div className="flex min-w-0 flex-1 items-center gap-2">
