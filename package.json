@@ -23,11 +23,18 @@
     "typescript": "5.9.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24.18.1",
+    "npm": ">=11.16.0"
   },
-  "packageManager": "npm@10.9.0",
+  "packageManager": "npm@11.16.0",
   "workspaces": [
-    "apps/*",
+    "apps/admin-ui",
+    "apps/agent",
+    "apps/mobile",
+    "apps/server",
+    "apps/studio",
+    "apps/studio-agent-runtime",
+    "apps/web",
     "packages/*"
   ],
   "dependencies": {
