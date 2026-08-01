@@ -2,8 +2,10 @@ import { ApplicationFailure, Context } from "@temporalio/activity";
 import { z } from "zod";
 
 import {
+  AgentDocumentFinalAnalysisModelSchema,
   AgentDocumentFinalAnalysisSchema,
   AgentDocumentSectionAnalysisSchema,
+  AgentDocumentSynthesisModelSchema,
   AgentDocumentSynthesisSchema,
 } from "../domain/agent-platform-wire-v1.js";
 
@@ -302,29 +304,31 @@ export async function reduceLongDocumentAnalysisActivity(
       context.artifacts.flatMap((artifact) => artifact.sourceChunkIds)
     );
     const synthesis = AgentDocumentSynthesisSchema.parse(
-      await longDocumentAnalyst.generateStructured({
-        prompt: [
-          `Reduction level: ${input.level}`,
-          `Input checkpoint count: ${context.artifacts.length}`,
-          "",
-          "Output budget — the merge is a compression, not a concatenation. Emit at most " +
-            `${SYNTHESIS_BUDGET.entriesPerArray} entries per array,`,
-          `at most ${SYNTHESIS_BUDGET.evidencePerEntry} evidence quotes per entry, and at most ` +
-            `${SYNTHESIS_BUDGET.analysisChars} characters per analysis.`,
-          "When the inputs exceed the budget, merge overlapping findings and keep the strongest evidence for each.",
-          "",
-          "Merge all checkpoint findings into one loss-minimizing synthesis.",
-          "Preserve exact evidence quotes and chunk IDs; remove only true duplicates.",
-          "<checkpoint-artifacts>",
-          JSON.stringify(context.artifacts.map((artifact) => artifact.content)),
-          "</checkpoint-artifacts>",
-        ].join("\n"),
-        schema: AgentDocumentSynthesisSchema,
-        stage: "synthesize",
-        maxOutputTokens: REDUCE_OUTPUT_TOKENS,
-        thinkingBudgetTokens: SYNTHESIS_THINKING_TOKENS,
-        signal: Context.current().cancellationSignal,
-      })
+      dropUnevidencedFindings(
+        await longDocumentAnalyst.generateStructured({
+          prompt: [
+            `Reduction level: ${input.level}`,
+            `Input checkpoint count: ${context.artifacts.length}`,
+            "",
+            "Output budget — the merge is a compression, not a concatenation. Emit at most " +
+              `${SYNTHESIS_BUDGET.entriesPerArray} entries per array,`,
+            `at most ${SYNTHESIS_BUDGET.evidencePerEntry} evidence quotes per entry, and at most ` +
+              `${SYNTHESIS_BUDGET.analysisChars} characters per analysis.`,
+            "When the inputs exceed the budget, merge overlapping findings and keep the strongest evidence for each.",
+            "",
+            "Merge all checkpoint findings into one loss-minimizing synthesis.",
+            "Preserve exact evidence quotes and chunk IDs; remove only true duplicates.",
+            "<checkpoint-artifacts>",
+            JSON.stringify(context.artifacts.map((artifact) => artifact.content)),
+            "</checkpoint-artifacts>",
+          ].join("\n"),
+          schema: AgentDocumentSynthesisModelSchema,
+          stage: "synthesize",
+          maxOutputTokens: REDUCE_OUTPUT_TOKENS,
+          thinkingBudgetTokens: SYNTHESIS_THINKING_TOKENS,
+          signal: Context.current().cancellationSignal,
+        })
+      )
     );
     if (synthesis.level !== input.level) {
       throw ApplicationFailure.nonRetryable(
@@ -333,9 +337,11 @@ export async function reduceLongDocumentAnalysisActivity(
       );
     }
     const content = AgentDocumentSynthesisSchema.parse(
-      alignCheckpointEvidence(
-        synthesis,
-        checkpointQuoteIndex(context.artifacts.map((artifact) => artifact.content))
+      dropUnevidencedFindings(
+        alignCheckpointEvidence(
+          synthesis,
+          checkpointQuoteIndex(context.artifacts.map((artifact) => artifact.content))
+        )
       )
     );
     return domainGateway.writeLongDocumentArtifact({
@@ -373,28 +379,30 @@ export async function finalizeLongDocumentAnalysisActivity(
       );
     }
     const analysis = AgentDocumentFinalAnalysisSchema.parse(
-      await longDocumentAnalyst.generateStructured({
-        prompt: [
-          `Source chunk count: ${input.chunkCount}`,
-          "",
-          `Output budget — emit at most ${FINAL_BUDGET.entriesPerArray} entries per array, at most ` +
-            `${FINAL_BUDGET.evidencePerEntry} evidence quotes per entry,`,
-          `and at most ${FINAL_BUDGET.analysisChars} characters per analysis. Merge overlapping ` +
-            "findings rather than truncating the report.",
-          "",
-          "Produce the final exhaustive, creator-facing document analysis.",
-          "Preserve exact evidence quotes and chunk IDs from the source checkpoint.",
-          "Set sourceCoverage chunkCount and analyzedChunkCount to the supplied count, with no missing chunks.",
-          "<root-checkpoint>",
-          JSON.stringify(source.content),
-          "</root-checkpoint>",
-        ].join("\n"),
-        schema: AgentDocumentFinalAnalysisSchema,
-        stage: "synthesize",
-        maxOutputTokens: FINAL_OUTPUT_TOKENS,
-        thinkingBudgetTokens: SYNTHESIS_THINKING_TOKENS,
-        signal: Context.current().cancellationSignal,
-      })
+      dropUnevidencedFindings(
+        await longDocumentAnalyst.generateStructured({
+          prompt: [
+            `Source chunk count: ${input.chunkCount}`,
+            "",
+            `Output budget — emit at most ${FINAL_BUDGET.entriesPerArray} entries per array, at most ` +
+              `${FINAL_BUDGET.evidencePerEntry} evidence quotes per entry,`,
+            `and at most ${FINAL_BUDGET.analysisChars} characters per analysis. Merge overlapping ` +
+              "findings rather than truncating the report.",
+            "",
+            "Produce the final exhaustive, creator-facing document analysis.",
+            "Preserve exact evidence quotes and chunk IDs from the source checkpoint.",
+            "Set sourceCoverage chunkCount and analyzedChunkCount to the supplied count, with no missing chunks.",
+            "<root-checkpoint>",
+            JSON.stringify(source.content),
+            "</root-checkpoint>",
+          ].join("\n"),
+          schema: AgentDocumentFinalAnalysisModelSchema,
+          stage: "synthesize",
+          maxOutputTokens: FINAL_OUTPUT_TOKENS,
+          thinkingBudgetTokens: SYNTHESIS_THINKING_TOKENS,
+          signal: Context.current().cancellationSignal,
+        })
+      )
     );
     if (
       analysis.sourceCoverage.chunkCount !== input.chunkCount ||
@@ -406,7 +414,9 @@ export async function finalizeLongDocumentAnalysisActivity(
       );
     }
     const content = AgentDocumentFinalAnalysisSchema.parse(
-      alignCheckpointEvidence(analysis, checkpointQuoteIndex([source.content]))
+      dropUnevidencedFindings(
+        alignCheckpointEvidence(analysis, checkpointQuoteIndex([source.content]))
+      )
     );
     return domainGateway.writeLongDocumentArtifact({
       artifact: {
@@ -500,6 +510,30 @@ function uniqueOrdered(values: readonly string[]): string[] {
  * hours-long job with it. Deciding this where the source text is in hand keeps
  * the citation verbatim instead of losing the section.
  */
+/**
+ * Removes findings whose evidence is empty — either because the model merged a
+ * beat without keeping a quote within the budget, or because quote alignment
+ * stripped every citation. The wire contract requires each persisted finding
+ * to be citable (evidence min 1), so an unevidenced finding is dropped rather
+ * than failing the entire multi-minute reduction (live incident 2026-08-01).
+ */
+function dropUnevidencedFindings<T>(content: T): T {
+  if (content === null || typeof content !== "object" || Array.isArray(content)) {
+    // Not a checkpoint object; hand it to the wire parse to reject properly.
+    return content;
+  }
+  const next = { ...content } as Record<string, unknown>;
+  for (const field of EVIDENCE_FIELDS) {
+    const findings = next[field];
+    if (!Array.isArray(findings)) continue;
+    next[field] = findings.filter((finding) => {
+      const evidence = (finding as { evidence?: unknown }).evidence;
+      return Array.isArray(evidence) && evidence.length > 0;
+    });
+  }
+  return next as T;
+}
+
 function alignCheckpointEvidence<T extends object>(content: T, sources: SourceQuoteIndex): T {
   const aligned = { ...content } as Record<string, unknown>;
   for (const field of EVIDENCE_FIELDS) {

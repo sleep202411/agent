@@ -155,21 +155,35 @@ export const AgentDocumentEvidenceSchema = z
   })
   .strict();
 
-export const AgentDocumentFindingSchema = z
-  .object({
-    label: z.string().trim().min(1).max(160),
-    analysis: z.string().trim().min(1).max(1_500),
-    evidence: z.array(AgentDocumentEvidenceSchema).min(1).max(12),
-  })
-  .strict();
+/*
+ * Two evidence floors, one shape source. The wire contract keeps min(1):
+ * a persisted finding must be citable. The model-tolerant variants accept
+ * min(0), because a legal synthesis can merge a beat whose evidence the
+ * budget squeezed out — the runtime then DROPS unevidenced findings before
+ * the wire parse instead of failing the whole reduction (live incident
+ * 2026-08-01: storyStructure[6].evidence=[] killed the final synthesis).
+ */
+const documentFindingSchema = (evidenceMinimum: number) =>
+  z
+    .object({
+      label: z.string().trim().min(1).max(160),
+      analysis: z.string().trim().min(1).max(1_500),
+      evidence: z.array(AgentDocumentEvidenceSchema).min(evidenceMinimum).max(12),
+    })
+    .strict();
+export const AgentDocumentFindingSchema = documentFindingSchema(1);
+const modelTolerantFindingSchema = documentFindingSchema(0);
 
-const agentDocumentEntityAnalysisSchema = z
-  .object({
-    name: z.string().trim().min(1).max(160),
-    analysis: z.string().trim().min(1).max(1_500),
-    evidence: z.array(AgentDocumentEvidenceSchema).min(1).max(12),
-  })
-  .strict();
+const documentEntityAnalysisSchema = (evidenceMinimum: number) =>
+  z
+    .object({
+      name: z.string().trim().min(1).max(160),
+      analysis: z.string().trim().min(1).max(1_500),
+      evidence: z.array(AgentDocumentEvidenceSchema).min(evidenceMinimum).max(12),
+    })
+    .strict();
+const agentDocumentEntityAnalysisSchema = documentEntityAnalysisSchema(1);
+const modelTolerantEntityAnalysisSchema = documentEntityAnalysisSchema(0);
 
 export const AgentDocumentSectionAnalysisSchema = z
   .object({
@@ -203,52 +217,79 @@ export const AgentDocumentSectionAnalysisSchema = z
     }
   });
 
+const documentSynthesisShape = (
+  finding: ReturnType<typeof documentFindingSchema>,
+  entity: ReturnType<typeof documentEntityAnalysisSchema>
+) => ({
+  schemaVersion: z.literal("agent-document-synthesis/v1"),
+  level: z.number().int().positive().max(16),
+  summary: z.string().trim().min(1).max(4_000),
+  storyStructure: z.array(finding).max(64),
+  characters: z.array(entity).max(64),
+  locations: z.array(entity).max(48),
+  plotThreads: z.array(finding).max(64),
+  continuityFindings: z.array(finding).max(64),
+  themes: z.array(finding).max(32),
+});
 export const AgentDocumentSynthesisSchema = z
-  .object({
-    schemaVersion: z.literal("agent-document-synthesis/v1"),
-    level: z.number().int().positive().max(16),
-    summary: z.string().trim().min(1).max(4_000),
-    storyStructure: z.array(AgentDocumentFindingSchema).max(64),
-    characters: z.array(agentDocumentEntityAnalysisSchema).max(64),
-    locations: z.array(agentDocumentEntityAnalysisSchema).max(48),
-    plotThreads: z.array(AgentDocumentFindingSchema).max(64),
-    continuityFindings: z.array(AgentDocumentFindingSchema).max(64),
-    themes: z.array(AgentDocumentFindingSchema).max(32),
-  })
+  .object(documentSynthesisShape(AgentDocumentFindingSchema, agentDocumentEntityAnalysisSchema))
+  .strict();
+/** Model-facing variant: evidence may be empty; the runtime drops such findings. */
+export const AgentDocumentSynthesisModelSchema = z
+  .object(documentSynthesisShape(modelTolerantFindingSchema, modelTolerantEntityAnalysisSchema))
   .strict();
 
+const documentFinalAnalysisShape = (
+  finding: ReturnType<typeof documentFindingSchema>,
+  entity: ReturnType<typeof documentEntityAnalysisSchema>
+) => ({
+  schemaVersion: z.literal("agent-document-final-analysis/v1"),
+  executiveSummary: z.string().trim().min(1).max(6_000),
+  sourceCoverage: z
+    .object({
+      chunkCount: z.number().int().positive().max(256),
+      analyzedChunkCount: z.number().int().positive().max(256),
+      missingChunkIds: z.array(agentDocumentChunkIdSchema).max(256),
+    })
+    .strict(),
+  storyStructure: z.array(finding).max(96),
+  characters: z.array(entity).max(96),
+  locations: z.array(entity).max(64),
+  plotThreads: z.array(finding).max(96),
+  continuityFindings: z.array(finding).max(96),
+  themes: z.array(finding).max(48),
+  productionRecommendations: z.array(finding).max(64),
+});
+const requireCompleteCoverage = (
+  analysis: {
+    sourceCoverage: {
+      chunkCount: number;
+      analyzedChunkCount: number;
+      missingChunkIds: readonly string[];
+    };
+  },
+  context: z.RefinementCtx
+) => {
+  if (
+    analysis.sourceCoverage.analyzedChunkCount !== analysis.sourceCoverage.chunkCount ||
+    analysis.sourceCoverage.missingChunkIds.length !== 0
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourceCoverage"],
+      message: "final analysis must account for every indexed source chunk",
+    });
+  }
+};
 export const AgentDocumentFinalAnalysisSchema = z
-  .object({
-    schemaVersion: z.literal("agent-document-final-analysis/v1"),
-    executiveSummary: z.string().trim().min(1).max(6_000),
-    sourceCoverage: z
-      .object({
-        chunkCount: z.number().int().positive().max(256),
-        analyzedChunkCount: z.number().int().positive().max(256),
-        missingChunkIds: z.array(agentDocumentChunkIdSchema).max(256),
-      })
-      .strict(),
-    storyStructure: z.array(AgentDocumentFindingSchema).max(96),
-    characters: z.array(agentDocumentEntityAnalysisSchema).max(96),
-    locations: z.array(agentDocumentEntityAnalysisSchema).max(64),
-    plotThreads: z.array(AgentDocumentFindingSchema).max(96),
-    continuityFindings: z.array(AgentDocumentFindingSchema).max(96),
-    themes: z.array(AgentDocumentFindingSchema).max(48),
-    productionRecommendations: z.array(AgentDocumentFindingSchema).max(64),
-  })
+  .object(documentFinalAnalysisShape(AgentDocumentFindingSchema, agentDocumentEntityAnalysisSchema))
   .strict()
-  .superRefine((analysis, context) => {
-    if (
-      analysis.sourceCoverage.analyzedChunkCount !== analysis.sourceCoverage.chunkCount ||
-      analysis.sourceCoverage.missingChunkIds.length !== 0
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["sourceCoverage"],
-        message: "final analysis must account for every indexed source chunk",
-      });
-    }
-  });
+  .superRefine(requireCompleteCoverage);
+/** Model-facing variant: evidence may be empty; the runtime drops such findings. */
+export const AgentDocumentFinalAnalysisModelSchema = z
+  .object(documentFinalAnalysisShape(modelTolerantFindingSchema, modelTolerantEntityAnalysisSchema))
+  .strict()
+  .superRefine(requireCompleteCoverage);
 
 export const AgentLongDocumentArtifactContentSchema = z.discriminatedUnion("schemaVersion", [
   AgentDocumentSectionAnalysisSchema,
