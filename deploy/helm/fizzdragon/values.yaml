@@ -334,7 +334,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: c8f014f78de2d98eac46924610b44d255c970828
+    tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -408,7 +408,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 6522a4bd39ef8ac180d8b7e3c91f807355cbfadb
+    tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -513,7 +513,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-api
-      tag: set-at-deploy
+      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
     port: 4111
     terminationGracePeriodSeconds: 45
     memoryPoolMax: 10
@@ -529,7 +529,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-worker
-      tag: set-at-deploy
+      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
     healthPort: 3010
     metricsPort: 9464
     terminationGracePeriodSeconds: 240
@@ -553,7 +553,7 @@ agentPlatform:
   migrator:
     image:
       repository: fizzdragon-agent-memory-migrator
-      tag: set-at-deploy
+      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
     activeDeadlineSeconds: 600
     resources:
       requests: { cpu: 250m, memory: 512Mi }
