@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 
 import type { AuthUser } from '../auth';
+import { mastraFetch } from '../assistant/mastra-fetch';
 import { AgentPlatformConversationService } from './agent-platform-conversation.service';
 import { AgentPlatformGatewayConfigService } from './agent-platform-gateway.config';
 import {
@@ -328,7 +329,12 @@ export class AgentPlatformGatewayService
       if (remainingMs <= 0) break;
       let response: Response;
       try {
-        response = await fetch(target, {
+        // mastraFetch, not fetch: undici's keep-alive pool pins every request
+        // on a connection to the one ClusterIP-DNAT'd API pod it first landed
+        // on, defeating Service load-spreading and holding sockets to pods
+        // that a rollout has already replaced. Same doctrine as
+        // assistant/mastra-fetch.ts (verified under burst 2026-05-22).
+        response = await mastraFetch(target, {
           method: 'POST',
           headers: {
             authorization: `Bearer ${authorized.token}`,
@@ -594,7 +600,7 @@ export class AgentPlatformGatewayService
 
   async isReady(): Promise<boolean> {
     try {
-      const response = await fetch(
+      const response = await mastraFetch(
         new URL('/api/v1/health/ready', this.#config.agentUrl),
         {
           headers: { accept: 'application/json' },

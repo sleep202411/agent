@@ -230,3 +230,27 @@ git add "$VALUES"
 git commit -m "deploy(com): ${SERVICES[*]} -> ${SHORT}"
 git push origin "$BRANCH"
 echo "✅ 已推送。ArgoCD 将自动同步（约几分钟）。查看：kubectl -n fizzdragon-com get deploy"
+
+# --- agent-platform: Temporal Worker Deployment 路由 -----------------------
+# 新 Worker 注册的 build 不会自动成为"当前版本"；没有这一步，所有新工作流
+# 任务无处投递，update-with-start 全部超时，网关报 AGENT_ADMISSION_EXHAUSTED
+# （2026-08-01 上线事故）。本地 start-local-stack 每次起服都做同样的事。
+for s in "${SERVICES[@]}"; do
+  if [ "$s" = "agent-platform" ]; then
+    echo "▶ 等待新 worker 就绪后设置 Temporal 路由（build ${SHA}）…"
+    for _i in $(seq 1 60); do
+      ready=$(kubectl -n fizzdragon-com get deploy 2>/dev/null | awk '/agent-platform-worker/ {print $2}' | head -1)
+      [ "$ready" = "3/3" ] && break
+      sleep 20
+    done
+    kubectl -n fizzdragon-com port-forward svc/fizzdragon-temporal 17233:7233 >/dev/null 2>&1 &
+    pf_pid=$!
+    sleep 3
+    temporal worker deployment set-current-version \
+      --address 127.0.0.1:17233 --namespace fizzdragon \
+      --deployment-name fizzdragon-agent-platform \
+      --build-id "$SHA" --yes
+    kill "$pf_pid" 2>/dev/null || true
+    echo "✅ Temporal Worker Deployment 当前版本 -> ${SHORT}"
+  fi
+done
