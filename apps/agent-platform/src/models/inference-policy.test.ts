@@ -29,9 +29,22 @@ const sessionContext: AgentSessionContext = {
 };
 
 describe("inference policy", () => {
-  it("keeps greetings and focused canvas actions on the interactive path", () => {
+  it("keeps greetings and questions on the interactive path", () => {
     expect(classifyInferenceTier([userMessage("你好")])).toBe("interactive");
-    expect(classifyInferenceTier([userMessage("添加一个节点我看看")])).toBe("interactive");
+    expect(classifyInferenceTier([userMessage("这个故事的主题是什么？")])).toBe("interactive");
+    expect(classifyInferenceTier([userMessage("看看当前章节的结构")])).toBe("interactive");
+  });
+
+  it("routes mutation intent to reasoning so apply turns keep dynamic thinking", () => {
+    // Policy reversal (2026-08-01): composing a change set is the hardest
+    // structured task the agent performs, and capped-thinking interactive
+    // turns are where "announce the apply, never call the tool" concentrated.
+    // Mutation-intent turns pay the reasoning tier's latency on purpose.
+    expect(classifyInferenceTier([userMessage("添加一个节点我看看")])).toBe("reasoning");
+    expect(classifyInferenceTier([userMessage("增加一个节点")])).toBe("reasoning");
+    expect(classifyInferenceTier([userMessage("确认，执行吧。")])).toBe("reasoning");
+    expect(classifyInferenceTier([userMessage("用五集骨架覆盖章节摘要")])).toBe("reasoning");
+    expect(classifyInferenceTier([userMessage("更新章节标题和摘要")])).toBe("reasoning");
   });
 
   it("routes source material and explicit deep analysis to reasoning", () => {

@@ -104,6 +104,31 @@ describe("storyChangeSetSchema", () => {
     ).toThrow();
   });
 
+  it("still rejects the op-vs-kind confusion the description now pre-empts", () => {
+    // The schema annotations exist to make the FIRST attempt validate, but
+    // they must never weaken the schema itself: an operation keyed `op`
+    // remains invalid.
+    expect(() =>
+      storyChangeSetSchema.parse({
+        ...BASE,
+        operations: [
+          {
+            op: "story_graph.put_node",
+            payload: {
+              intent: "create",
+              node: {
+                kind: "text",
+                nodeId: "arrival",
+                body: { "en-US": "Arrival." },
+                exit: { kind: "auto", nextNodeId: null },
+              },
+            },
+          },
+        ],
+      })
+    ).toThrow();
+  });
+
   it("rejects a no-op story overview command", () => {
     expect(() =>
       storyChangeSetSchema.parse({

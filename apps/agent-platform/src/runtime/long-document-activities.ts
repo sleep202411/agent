@@ -75,37 +75,41 @@ const SECTION_BUDGET = Object.freeze({
  * document a ~2.6% per-section rate means a majority of documents never finish.
  * Stamping the id we already hold makes the invariant true by construction.
  *
- * Caps mirror SECTION_BUDGET because that is what the prompt states; the wider
- * wire caps remain the outer contract that the stamped result is parsed against.
+ * Acceptance caps mirror the WIRE contract, not SECTION_BUDGET. The budget is
+ * prompt guidance the model usually honours; the wire caps are what the stamped
+ * result must ultimately satisfy. Live run 019fba59 proved the difference
+ * matters: sections came back at 4 evidence quotes and a 900-character summary
+ * — inside the wire contract, over the stated budget — and a budget-strict
+ * model schema rejected them identically on every temperature-0 retry, killing
+ * the job. Overshooting a soft target is a normal model behaviour to absorb,
+ * not a failure to reproduce.
  */
-const modelEvidenceSchema = z
-  .object({ quote: z.string().trim().min(1).max(SECTION_BUDGET.quoteChars) })
-  .strict();
+const modelEvidenceSchema = z.object({ quote: z.string().trim().min(1).max(400) }).strict();
 const modelFindingSchema = z
   .object({
     label: z.string().trim().min(1).max(160),
-    analysis: z.string().trim().min(1).max(SECTION_BUDGET.analysisChars),
-    evidence: z.array(modelEvidenceSchema).min(1).max(SECTION_BUDGET.evidencePerFinding),
+    analysis: z.string().trim().min(1).max(1_500),
+    evidence: z.array(modelEvidenceSchema).min(1).max(12),
   })
   .strict();
 const modelEntitySchema = z
   .object({
     name: z.string().trim().min(1).max(160),
-    analysis: z.string().trim().min(1).max(SECTION_BUDGET.analysisChars),
-    evidence: z.array(modelEvidenceSchema).min(1).max(SECTION_BUDGET.evidencePerFinding),
+    analysis: z.string().trim().min(1).max(1_500),
+    evidence: z.array(modelEvidenceSchema).min(1).max(12),
   })
   .strict();
 const modelSectionAnalysisSchema = z
   .object({
     schemaVersion: z.literal("agent-document-section-analysis/v1"),
     heading: z.string().max(240).nullable(),
-    summary: z.string().trim().min(1).max(SECTION_BUDGET.summaryChars),
-    storyBeats: z.array(modelFindingSchema).max(SECTION_BUDGET.storyBeats),
-    characters: z.array(modelEntitySchema).max(SECTION_BUDGET.characters),
-    locations: z.array(modelEntitySchema).max(SECTION_BUDGET.locations),
-    plotThreads: z.array(modelFindingSchema).max(SECTION_BUDGET.plotThreads),
-    continuityFindings: z.array(modelFindingSchema).max(SECTION_BUDGET.continuityFindings),
-    themes: z.array(modelFindingSchema).max(SECTION_BUDGET.themes),
+    summary: z.string().trim().min(1).max(2_000),
+    storyBeats: z.array(modelFindingSchema).max(16),
+    characters: z.array(modelEntitySchema).max(24),
+    locations: z.array(modelEntitySchema).max(16),
+    plotThreads: z.array(modelFindingSchema).max(16),
+    continuityFindings: z.array(modelFindingSchema).max(16),
+    themes: z.array(modelFindingSchema).max(12),
   })
   .strict();
 

@@ -16,6 +16,7 @@ import {
   causalAttachmentIds,
   collectCanonicalMessagesForRun,
   collectResponseMessagesForRun,
+  executeToolActivity,
   mergeMessagesById,
   openRunActivity,
   recoverTerminalInferenceResult,
@@ -544,6 +545,236 @@ describe("suspended inference classification", () => {
     });
   });
 
+  it("classifies a tool call whose input never parsed as correctable invalid input, not inconsistent", () => {
+    // Reconstruction of the 2026-07-31 skeleton-apply attempt 2: the model
+    // finished the step on tool-calls, but its story_apply_change_set input
+    // JSON never became parseable, so Mastra published the tool-call chunk
+    // with `args: undefined` (stream transform: empty/unrepairable input) and
+    // the UI part settled as `input-available` with `input === undefined`.
+    // The transport's pendingToolCalls() requires a defined input, so this
+    // part is invisible to it — before the fix the turn terminalized as
+    // AGENT_INFERENCE_SUSPENSION_INCONSISTENT.
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-apply",
+            role: "assistant",
+            parts: [
+              { type: "text", text: "我将应用这些修改。" },
+              {
+                type: "tool-story_apply_change_set",
+                toolCallId: "call-apply-2",
+                state: "input-available",
+                input: undefined,
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({
+      kind: "invalid-tool-inputs",
+      toolCalls: [
+        {
+          toolCallId: "call-apply-2",
+          toolName: "story_apply_change_set",
+          input: undefined,
+        },
+      ],
+    });
+  });
+
+  it("classifies an already-errored tool output as a continuation, not inconsistent", () => {
+    // A tool part in `output-error` (e.g. Mastra's ToolNotFoundError for a
+    // hallucinated tool name) already carries its error as durable tool
+    // output the model can read. The loop must re-infer within the bounded
+    // budget instead of killing the turn.
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-typo",
+            role: "assistant",
+            parts: [
+              {
+                type: "dynamic-tool",
+                toolName: "story_apply_changeset",
+                toolCallId: "call-typo",
+                state: "output-error",
+                input: {},
+                errorText: 'Tool "story_apply_changeset" not found.',
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({ kind: "errored-tool-output" });
+  });
+
+  it("reads a rejected result in the nested tool-invocation shape as errored output", () => {
+    // Canonical replay hands back Mastra's persisted representation: a nested
+    // `tool-invocation` part with `state: "result"` carrying the correctable
+    // rejection inside `result`. This is the exact part shape from the live
+    // "覆盖" incident (2026-08-01): the dispatch and rejection had already
+    // succeeded, and only this classification blind spot killed the turn as
+    // SUSPENSION_INCONSISTENT instead of letting the model read the error.
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-replayed-rejection",
+            role: "assistant",
+            parts: [
+              { type: "step-start" },
+              { type: "text", text: "这是我将要执行的变更，请您确认：" },
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolCallId: "7vTYlu9iAI0F53Hx",
+                  toolName: "story_apply_change_set",
+                  state: "result",
+                  args: {
+                    schemaVersion: "story-apply/v1",
+                    changeSet: { operations: [] },
+                  },
+                  result: {
+                    status: "rejected",
+                    error: {
+                      code: "AGENT_TOOL_INPUT_INVALID",
+                      message: "The tool arguments did not satisfy the capability contract.",
+                      retryable: false,
+                    },
+                  },
+                },
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({ kind: "errored-tool-output" });
+  });
+
+  it("dispatches a pending nested tool-invocation call the transport cannot see", () => {
+    // The "提交这些变更" incident (2026-08-01): after two correctable
+    // rejections in one turn, the next step's apply call surfaced ONLY in the
+    // nested shape with state "call" and fully-formed args. The transport's
+    // flat-shape pendingToolCalls returned nothing, so classification fell
+    // through to inconsistent and killed a turn that was mid-self-correction.
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-nested-pending",
+            role: "assistant",
+            parts: [
+              { type: "step-start" },
+              { type: "text", text: "我现在将提交修正后的变更：" },
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolCallId: "call-nested-pending",
+                  toolName: "story_apply_change_set",
+                  state: "call",
+                  args: { schemaVersion: "story-apply/v1", changeSet: { operations: [{}] } },
+                },
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({
+      kind: "tool-calls",
+      toolCalls: [
+        {
+          toolCallId: "call-nested-pending",
+          toolName: "story_apply_change_set",
+          input: { schemaVersion: "story-apply/v1", changeSet: { operations: [{}] } },
+        },
+      ],
+    });
+  });
+
+  it("treats an undefined-args call in the nested tool-invocation shape as invalid input", () => {
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-replayed-invalid",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolCallId: "call-nested-undefined",
+                  toolName: "story_apply_change_set",
+                  state: "call",
+                  args: undefined,
+                },
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({
+      kind: "invalid-tool-inputs",
+      toolCalls: [
+        {
+          toolCallId: "call-nested-undefined",
+          toolName: "story_apply_change_set",
+          input: undefined,
+        },
+      ],
+    });
+  });
+
+  it("keeps approval authority over a mixed approval and invalid-input turn", () => {
+    expect(
+      classifySuspendedInference(
+        [
+          {
+            id: "assistant-mixed-approval",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-story_apply_change_set",
+                toolCallId: "call-invalid",
+                state: "input-available",
+                input: undefined,
+              } as unknown as UIMessage["parts"][number],
+            ],
+          },
+        ],
+        {
+          approvalToolCallIds: new Set(["call-approve"]),
+          runtimeSuspensionToolCallIds: new Set(),
+        }
+      )
+    ).toEqual({
+      kind: "awaiting-approval",
+      toolCallIds: ["call-approve"],
+    });
+  });
+
   it("lets a runtime suspension dominate mixed parallel tool output", () => {
     expect(
       classifySuspendedInference(
@@ -982,6 +1213,142 @@ describe("bounded run adoption contract", () => {
       ],
     });
     expect(run.view.loadOlder).toHaveBeenCalled();
+  });
+});
+
+describe("invalid tool input recovery contract", () => {
+  it("returns an input-less tool call as executable work instead of terminalizing the turn", async () => {
+    // Full reconstruction of the 2026-07-31 skeleton-apply attempt 2 at the
+    // activity level: model step finishes on tool-calls, the settled Mastra
+    // response carries the story_apply_change_set part in `input-available`
+    // with no parsed input. Before the fix this path threw the nonRetryable
+    // AGENT_INFERENCE_SUSPENSION_INCONSISTENT ApplicationFailure and the
+    // creator saw a dead turn. The invariant: an input that fails validation
+    // must come back to the model as correctable tool output, so the call is
+    // dispatched to executeToolActivity, whose input-schema rejection is that
+    // correctable output.
+    const { run } = adoptRunWith([replayedUserInput]);
+    const step = {
+      start: vi.fn(async () => undefined),
+      pipe: vi.fn(async () => ({ reason: "suspend" })),
+      end: vi.fn(async () => undefined),
+    };
+    (run.createStep as ReturnType<typeof vi.fn>).mockReturnValue(step);
+    const assistantResponse: UIMessage = {
+      id: "response-apply",
+      role: "assistant",
+      metadata: {
+        conversationId: input.context.conversationId,
+        runId: input.ids.runId,
+      },
+      parts: [
+        { type: "text", text: "我将应用这些修改。" },
+        {
+          type: "tool-story_apply_change_set",
+          toolCallId: "call-apply-2",
+          state: "input-available",
+          input: undefined,
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+    const stream = runtimeDependencies.agent.stream as ReturnType<typeof vi.fn>;
+    stream.mockReturnValue({
+      response: Promise.resolve({ uiMessages: [assistantResponse] }),
+      finishReason: Promise.resolve("tool-calls"),
+    });
+
+    await expect(
+      new MockActivityEnvironment().run(runInferenceActivity, activityInput)
+    ).resolves.toEqual({
+      kind: "tool-calls",
+      toolCalls: [
+        {
+          toolCallId: "call-apply-2",
+          toolName: "story_apply_change_set",
+          input: undefined,
+        },
+      ],
+    });
+    expect(run.end).not.toHaveBeenCalled();
+  });
+
+  it("dispatches a dangling input-less canonical tool call on replay instead of re-inferring past it", async () => {
+    // Activity retry between classification and dispatch replays the same
+    // state from the canonical Ably fold. The canonical path must resolve the
+    // dangling call the same way the settled-response path does.
+    const { run } = adoptRunWith([
+      replayedUserInput,
+      {
+        id: "assistant-apply",
+        role: "assistant",
+        metadata: {
+          conversationId: input.context.conversationId,
+          runId: input.ids.runId,
+        },
+        parts: [
+          { type: "text", text: "我将应用这些修改。" },
+          {
+            type: "tool-story_apply_change_set",
+            toolCallId: "call-apply-2",
+            state: "input-available",
+            input: undefined,
+          } as unknown as UIMessage["parts"][number],
+        ],
+      },
+    ]);
+
+    await expect(
+      new MockActivityEnvironment().run(runInferenceActivity, activityInput)
+    ).resolves.toEqual({
+      kind: "tool-calls",
+      toolCalls: [
+        {
+          toolCallId: "call-apply-2",
+          toolName: "story_apply_change_set",
+          input: undefined,
+        },
+      ],
+    });
+    expect(runtimeDependencies.agent.stream).not.toHaveBeenCalled();
+    expect(run.end).not.toHaveBeenCalled();
+  });
+
+  it("publishes a correctable input rejection for a call whose arguments are missing", async () => {
+    const { run } = adoptRunWith([replayedUserInput]);
+    const step = {
+      start: vi.fn(async () => undefined),
+      send: vi.fn(async () => undefined),
+      end: vi.fn(async () => undefined),
+    };
+    (run.createStep as ReturnType<typeof vi.fn>).mockReturnValue(step);
+    const domainExecute = vi.fn();
+    (runtimeDependencies as { domainGateway?: unknown }).domainGateway = {
+      execute: domainExecute,
+    };
+
+    await new MockActivityEnvironment().run(executeToolActivity, {
+      ...activityInput,
+      context: { ...context, permissions: ["story.read", "story.write"] },
+      toolCallId: "call-apply-2",
+      toolName: "story_apply_change_set",
+      arguments: undefined,
+    });
+
+    // The rejection is model-correctable tool output; the domain gateway must
+    // never observe an input that failed the capability contract.
+    expect(domainExecute).not.toHaveBeenCalled();
+    expect(step.send).toHaveBeenCalledWith({
+      type: "tool-output-available",
+      toolCallId: "call-apply-2",
+      output: expect.objectContaining({
+        status: "rejected",
+        error: expect.objectContaining({
+          code: "AGENT_TOOL_INPUT_INVALID",
+          retryable: false,
+        }),
+      }),
+    });
+    expect(step.end).toHaveBeenCalledWith({ reason: "complete" });
   });
 });
 

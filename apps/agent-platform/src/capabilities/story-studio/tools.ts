@@ -87,12 +87,23 @@ turn, and never end a turn whose only outcome is a pending analysis.
 Submit all interdependent Story operations in one story_apply_change_set call
 with the exact chapterId, draft revision, content hash, and layout revision
 returned by story_get_snapshot. Include every newly referenced node or ending
-in the same change set. Before proposing the tool call, explain the creative
+in the same change set. Every operation object names its type in a field
+called exactly "kind" (for example "kind": "story_graph.put_node") and carries
+its content under "payload"; there is no "op" or "type" field anywhere in a
+change set. Before proposing the tool call, explain the creative
 effect and the concrete scenes, choices, characters, or notes that will change.
 The signed conversation policy decides whether that exact call pauses for
 approval. A
 rejected compare-and-swap means the project changed: read again and construct a
 new proposal. Never resubmit stale revisions and never claim success from text.
+
+Saying you will do something is not doing it. A turn must never end on an
+announcement like "我现在将提交这些变更" — if your text promises a read, an
+apply, or any tool action, the SAME step must contain that tool call. The only
+legitimate turn endings are a completed answer, a clarifying question the
+creator must answer, or an approval pause the policy created. Reading a
+snapshot commits you: a snapshot exists to be followed by the change set that
+uses its revisions, in the same turn.
   `.trim(),
   tools: [
     {
@@ -160,8 +171,15 @@ new proposal. Never resubmit stale revisions and never claim success from text.
     },
     {
       id: "story_apply_change_set",
-      description:
+      description: [
         "Atomically compare-and-swap a complete Story Studio graph change set after human approval.",
+        'Every entry in changeSet.operations is discriminated by a field named exactly "kind" — never "op", "type", or "operation" — with the operation body under "payload".',
+        "Valid kinds: story_bible.update_overview, story_bible.put_character, story_bible.remove_character, story_bible.put_ending, story_bible.remove_ending, story_graph.set_entry_node, story_graph.put_node, story_graph.remove_node, story_graph.reorder_nodes, production.replace_notes.",
+        'Node, character, and ending identifiers are letter-first stable slugs (e.g. "scene-opening-01"), never UUIDs.',
+        "changeSet.title and changeSet.summary describe the change set itself (audit metadata, like a commit message); they never rename the chapter or write story content — narrative overviews go through story_bible.update_overview, and chapter titles cannot be changed by this tool at all, so never claim you renamed a chapter.",
+        "Compact valid example:",
+        '{"schemaVersion":"story-apply/v1","changeSet":{"schemaVersion":"story-change-set/v2","chapterId":"<chapterId from story_get_snapshot>","baseDraftRevision":3,"baseContentHash":"<64-char hash from snapshot>","baseLayoutRevision":1,"title":"Arrival scene","summary":"Create the arrival scene and route the opening to it.","operations":[{"kind":"story_bible.update_overview","payload":{"synopsis":"..."}},{"kind":"story_graph.put_node","payload":{"intent":"create","node":{"kind":"text","nodeId":"arrival","body":{"zh-CN":"..."},"exit":{"kind":"auto","nextNodeId":null}}}}]}}',
+      ].join(" "),
       inputSchema: storyApplyInputSchema,
       requiredPermission: "story.write",
       approvalClass: (input) => {

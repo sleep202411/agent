@@ -88,6 +88,8 @@ type InferenceControlState = {
 
 export type SuspendedInferenceClassification =
   | Readonly<{ kind: "tool-calls"; toolCalls: ReturnType<typeof pendingToolCalls> }>
+  | Readonly<{ kind: "invalid-tool-inputs"; toolCalls: ReturnType<typeof pendingToolCalls> }>
+  | Readonly<{ kind: "errored-tool-output" }>
   | Readonly<{ kind: "awaiting-approval"; toolCallIds: ReadonlyArray<string> }>
   | Readonly<{ kind: "runtime-suspension"; toolCallIds: ReadonlyArray<string> }>
   | Readonly<{ kind: "inconsistent" }>;
@@ -218,7 +220,13 @@ export async function runInferenceActivity(
         "AGENT_CONVERSATION_EMPTY"
       );
     }
-    const pending = pendingToolCalls(canonicalMessages);
+    // Unexecutable calls (input never parsed) join the dispatch set so an
+    // Activity retry that replays this state resolves the dangling call with a
+    // correctable rejection instead of re-inferring past it.
+    const pending = [
+      ...pendingToolCalls(canonicalMessages),
+      ...unexecutableToolCalls(canonicalMessages),
+    ];
     if (pending.length > 0) {
       await persistCanonicalReplay();
       return { kind: "tool-calls", toolCalls: pending };
@@ -436,6 +444,20 @@ export async function runInferenceActivity(
       const suspended = classifySuspendedInference(authoritativeMessages, controlState);
       if (suspended.kind === "tool-calls") {
         return suspended;
+      }
+      if (suspended.kind === "invalid-tool-inputs") {
+        // The model's tool input failed before it could become executable
+        // (empty/truncated/unrepairable input JSON). Dispatch the call anyway:
+        // executeToolActivity's input-schema rejection is the correctable tool
+        // output the model needs, bounded by the workflow's model-step budget.
+        // Terminalizing here (the old behavior) killed the whole turn for a
+        // formatting mistake the model can fix.
+        return { kind: "tool-calls", toolCalls: suspended.toolCalls };
+      }
+      if (suspended.kind === "errored-tool-output") {
+        // The tool error is already durable output in the transcript; loop so
+        // the model reads it and corrects itself within the bounded budget.
+        return { kind: "continue" };
       }
       if (suspended.kind === "awaiting-approval") {
         await measureActivityStage("ably.run.suspend", () => run.suspend());
@@ -705,6 +727,21 @@ export async function executeToolActivity(input: ToolActivityInput): Promise<voi
     }
 
     async function executeDefinition(): Promise<DomainToolResult> {
+      if (input.arguments === undefined) {
+        // The model finished a tool call whose input JSON never parsed
+        // (empty, truncated, or unrepairable). Name the real failure instead
+        // of the generic contract message so the model re-issues complete
+        // arguments rather than hunting for a schema mistake.
+        return {
+          status: "rejected",
+          error: {
+            code: "AGENT_TOOL_INPUT_INVALID",
+            message:
+              "The tool call arrived without parseable JSON arguments (the input was empty, truncated, or malformed). Re-issue the call with the complete JSON input for this tool.",
+            retryable: false,
+          },
+        };
+      }
       try {
         const parsedArguments = definition.inputSchema.parse(input.arguments);
         return await definition.execute({
@@ -1073,7 +1110,15 @@ export function classifySuspendedInference(
     };
   }
 
-  const toolCalls = pendingToolCalls(messages);
+  // The transport's pendingToolCalls only reads the flat part shapes. A step
+  // replayed through Mastra's memory carries the nested `tool-invocation`
+  // shape instead, and a pending call in that shape (state "call", args
+  // present) was invisible to every branch here — the "提交这些变更" incident,
+  // 2026-08-01. Merge both views by toolCallId.
+  const toolCalls = mergePendingToolCalls(
+    pendingToolCalls(messages),
+    nestedPendingToolCalls(messages)
+  );
   if (toolCalls.length > 0) {
     return { kind: "tool-calls", toolCalls };
   }
@@ -1088,7 +1133,164 @@ export function classifySuspendedInference(
     };
   }
 
+  const invalidInputCalls = unexecutableToolCalls(messages);
+  if (invalidInputCalls.length > 0) {
+    return { kind: "invalid-tool-inputs", toolCalls: invalidInputCalls };
+  }
+  if (hasErroredToolOutput(messages)) {
+    return { kind: "errored-tool-output" };
+  }
+
   return { kind: "inconsistent" };
+}
+
+/**
+ * Tool calls the model finished the step on but whose input never became
+ * executable. When the model's tool-call input JSON is empty, truncated, or
+ * unrepairable, Mastra publishes the tool-call chunk with `args: undefined`
+ * instead of failing the stream, so the UI part settles as `input-available`
+ * with `input === undefined`. The transport's pendingToolCalls() requires a
+ * defined input and cannot see these calls, which used to terminalize the turn
+ * as SUSPENSION_INCONSISTENT (skeleton-apply incident, 2026-07-31).
+ *
+ * Returning them as dispatchable calls routes them through
+ * executeToolActivity, whose capability input-schema rejection is the
+ * model-correctable tool output this state deserves — the same bounded
+ * self-correction loop a parseable-but-invalid input already gets.
+ */
+export function unexecutableToolCalls(
+  messages: ReadonlyArray<UIMessage>
+): ReturnType<typeof pendingToolCalls> {
+  const lastAssistant = messages.findLast((message) => message.role === "assistant");
+  if (!lastAssistant) return [];
+  const calls: { toolCallId: string; toolName: string; input: unknown }[] = [];
+  for (const part of lastAssistant.parts) {
+    const toolPart = asToolPart(part);
+    if (!toolPart) continue;
+    if (toolPart.state === "input-available" && toolPart.input === undefined) {
+      calls.push({
+        toolCallId: toolPart.toolCallId,
+        toolName: toolPart.toolName,
+        input: undefined,
+      });
+    }
+  }
+  return calls;
+}
+
+/**
+ * Executable pending calls that only exist in the nested `tool-invocation`
+ * representation, which the transport's flat-shape pendingToolCalls cannot
+ * see. Only the last assistant message can hold this step's pending calls.
+ */
+export function nestedPendingToolCalls(
+  messages: ReadonlyArray<UIMessage>
+): ReturnType<typeof pendingToolCalls> {
+  const lastAssistant = messages.findLast((message) => message.role === "assistant");
+  if (!lastAssistant) return [];
+  const calls: { toolCallId: string; toolName: string; input: unknown }[] = [];
+  for (const part of lastAssistant.parts) {
+    if (part.type !== "tool-invocation") continue;
+    const toolPart = asToolPart(part);
+    if (!toolPart) continue;
+    if (toolPart.state === "input-available" && toolPart.input !== undefined) {
+      calls.push({
+        toolCallId: toolPart.toolCallId,
+        toolName: toolPart.toolName,
+        input: toolPart.input,
+      });
+    }
+  }
+  return calls;
+}
+
+/** Union by toolCallId; the transport's flat view wins on duplicates. */
+function mergePendingToolCalls(
+  flat: ReturnType<typeof pendingToolCalls>,
+  nested: ReturnType<typeof pendingToolCalls>
+): ReturnType<typeof pendingToolCalls> {
+  if (nested.length === 0) return flat;
+  const seen = new Set(flat.map((call) => call.toolCallId));
+  return [...flat, ...nested.filter((call) => !seen.has(call.toolCallId))];
+}
+
+/**
+ * Whether the last assistant message carries a tool part whose output is
+ * already an error (e.g. Mastra's ToolNotFoundError for a hallucinated tool
+ * name). That error is durable tool output the model can read, so the turn
+ * continues within the bounded model-step budget instead of terminalizing.
+ */
+function hasErroredToolOutput(messages: ReadonlyArray<UIMessage>): boolean {
+  const lastAssistant = messages.findLast((message) => message.role === "assistant");
+  if (!lastAssistant) return false;
+  return lastAssistant.parts.some((part) => asToolPart(part)?.state === "output-error");
+}
+
+/**
+ * Normalizes the three tool part representations — `dynamic-tool` (explicit
+ * `toolName`), statically-typed `tool-${name}`, and the nested
+ * `tool-invocation` shape Mastra's memory persists — mirroring the transport
+ * codec's own cross-representation rule.
+ *
+ * The nested shape is what canonical replay hands back: a turn whose tool call
+ * was already dispatched and rejected returns as `tool-invocation` with
+ * `state: "result"` and the rejection inside `result`. Classification that only
+ * reads the flat states cannot see that durable error, and a turn in perfect
+ * correctable shape dies as SUSPENSION_INCONSISTENT (the "覆盖" incident,
+ * 2026-08-01).
+ */
+function asToolPart(
+  part: UIMessage["parts"][number]
+): { toolCallId: string; toolName: string; state: string; input: unknown } | undefined {
+  const record = part as unknown as Record<string, unknown>;
+  if (part.type === "tool-invocation") {
+    const invocation = record.toolInvocation as Record<string, unknown> | undefined;
+    if (
+      !invocation ||
+      typeof invocation.toolCallId !== "string" ||
+      typeof invocation.toolName !== "string" ||
+      typeof invocation.state !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      toolCallId: invocation.toolCallId,
+      toolName: invocation.toolName,
+      state: legacyInvocationState(invocation.state, invocation.result),
+      input: invocation.args,
+    };
+  }
+  if (typeof record.toolCallId !== "string" || typeof record.state !== "string") return undefined;
+  if (part.type === "dynamic-tool" && typeof record.toolName === "string") {
+    return {
+      toolCallId: record.toolCallId,
+      toolName: record.toolName,
+      state: record.state,
+      input: record.input,
+    };
+  }
+  if (part.type.startsWith("tool-")) {
+    return {
+      toolCallId: record.toolCallId,
+      toolName: part.type.slice("tool-".length),
+      state: record.state,
+      input: record.input,
+    };
+  }
+  return undefined;
+}
+
+/** Maps the legacy partial-call/call/result states onto the flat-part states. */
+function legacyInvocationState(state: string, result: unknown): string {
+  if (state === "partial-call") return "input-streaming";
+  if (state === "call") return "input-available";
+  if (state !== "result") return state;
+  const payload = result as Record<string, unknown> | null | undefined;
+  const rejected =
+    payload != null &&
+    typeof payload === "object" &&
+    (payload.status === "rejected" || payload.error != null);
+  return rejected ? "output-error" : "output-available";
 }
 
 /**

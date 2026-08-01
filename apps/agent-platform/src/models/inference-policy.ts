@@ -52,6 +52,16 @@ export function inferenceThinkingProviderOptions(
 const REASONING_TEXT_THRESHOLD = 1_200;
 const DEEP_INTENT =
   /(?:全面|深入|系统(?:性|地)?|详细|完整).{0,16}(?:分析|规划|评估|审查|拆解|改编|重构)|(?:分析|拆解|改编).{0,16}(?:整部|全文|长篇|剧本)|\b(?:comprehensive|deep|thorough|long[- ]form|whole (?:script|story)|architecture review)\b/iu;
+/**
+ * Mutation-intent turns get dynamic thinking. Composing a valid change set
+ * (CAS tokens, discriminated operations, localized node bodies) is the hardest
+ * structured task the interactive tier faces, and the capped-thinking flash
+ * model is where "announce the apply, end the turn without calling it"
+ * concentrates (live incidents 2026-07-31/08-01). The extra latency of the
+ * reasoning tier is spent exactly on the turns that mutate the project.
+ */
+const ACT_INTENT =
+  /(?:提交|应用|执行|覆盖|创建|新增|增加|添加)|(?:修改|更新|删除|移除|重排|设置|连接|改成|改为|换成).{0,24}(?:节点|场景|章节|结局|角色|人物|骨架|摘要|标题|入口|变更|内容|选择)|\b(?:create|add|insert|apply|submit|execute|overwrite)\b|\b(?:update|modify|delete|remove|reorder|rewire|rename|set)\b.{0,32}\b(?:node|scene|chapter|ending|character|skeleton|summary|title|entry|change|choice)s?\b/iu;
 
 /**
  * Selects the model class without adding a classifier-model round trip.
@@ -73,7 +83,11 @@ export function classifyInferenceTier(messages: ReadonlyArray<UIMessage>): Infer
   }
 
   const normalized = text.trim();
-  if (normalized.length >= REASONING_TEXT_THRESHOLD || DEEP_INTENT.test(normalized)) {
+  if (
+    normalized.length >= REASONING_TEXT_THRESHOLD ||
+    DEEP_INTENT.test(normalized) ||
+    ACT_INTENT.test(normalized)
+  ) {
     return "reasoning";
   }
   return "interactive";

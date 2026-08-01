@@ -8,6 +8,53 @@ function tool(id: string) {
   return definition;
 }
 
+describe("change-set authoring contract communication", () => {
+  const apply = () => tool("story_apply_change_set");
+
+  it("names the operation discriminator so the first attempt validates", () => {
+    // The 2026-07-31 skeleton-apply attempt 1 failed validation because the
+    // model wrote `op` instead of `kind` in an operation. The tool contract
+    // must state the discriminator explicitly, and name the wrong guesses.
+    const contract = `${apply().description}\n${storyStudioCapabilityPack.instructions}`;
+
+    expect(contract).toContain('"kind"');
+    expect(contract).toMatch(/never "op"/iu);
+    expect(contract).toContain('"payload"');
+  });
+
+  it("carries a compact valid change-set example with a graph operation", () => {
+    const description = apply().description;
+
+    expect(description).toContain('"kind":"story_graph.put_node"');
+    expect(description).toContain('"schemaVersion":"story-apply/v1"');
+    expect(description).toContain('"schemaVersion":"story-change-set/v2"');
+  });
+
+  it("lists every operation kind the schema accepts", () => {
+    const description = apply().description;
+
+    for (const kind of [
+      "story_bible.update_overview",
+      "story_bible.put_character",
+      "story_bible.remove_character",
+      "story_bible.put_ending",
+      "story_bible.remove_ending",
+      "story_graph.set_entry_node",
+      "story_graph.put_node",
+      "story_graph.remove_node",
+      "story_graph.reorder_nodes",
+      "production.replace_notes",
+    ]) {
+      expect(description).toContain(kind);
+    }
+  });
+
+  it("keeps the atomic compare-and-swap framing intact", () => {
+    expect(apply().description).toContain("Atomically compare-and-swap");
+    expect(apply().description).toContain("after human approval");
+  });
+});
+
 describe("durable source analysis read contract", () => {
   const analysis = () => tool("story_get_source_analysis");
 
