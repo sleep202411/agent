@@ -58,6 +58,7 @@
     "@prisma/client": "^7.8.0",
     "@repo/shared": "*",
     "@temporalio/client": "1.21.0",
+    "@temporalio/envconfig": "1.21.1",
     "@temporalio/proto": "1.21.0",
     "ably": "^2.26.0",
     "ai": "^6.0.146",
