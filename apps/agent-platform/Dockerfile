@@ -6,8 +6,9 @@ WORKDIR /build
 RUN npm install --global npm@11.16.0
 
 COPY apps/agent-platform/package.json apps/agent-platform/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --ignore-scripts --no-audit --no-fund
+# Plain RUN: `az acr build` uses the classic builder, which rejects BuildKit
+# cache mounts. The mount was only an npm cache optimization.
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 COPY apps/agent-platform/ ./
 RUN npm run build
