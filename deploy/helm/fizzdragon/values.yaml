@@ -513,7 +513,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-api
-      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
+      tag: f376f064c751c85b06a50e9634285ee11dda8414
     port: 4111
     terminationGracePeriodSeconds: 45
     memoryPoolMax: 10
@@ -529,7 +529,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-worker
-      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
+      tag: f376f064c751c85b06a50e9634285ee11dda8414
     healthPort: 3010
     metricsPort: 9464
     terminationGracePeriodSeconds: 240
@@ -553,7 +553,7 @@ agentPlatform:
   migrator:
     image:
       repository: fizzdragon-agent-memory-migrator
-      tag: 45462599b8c4410d5de35bb7080d63cbd9f3b7c4
+      tag: f376f064c751c85b06a50e9634285ee11dda8414
     activeDeadlineSeconds: 600
     resources:
       requests: { cpu: 250m, memory: 512Mi }
