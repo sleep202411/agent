@@ -401,7 +401,12 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
+      {{- /* A Temporal worker losing a pod is the durability model working,
+             not an outage: activities retry on the surviving pollers. On a
+             bin-packed cluster maxUnavailable=0 gridlocks every rollout —
+             the old ReplicaSet cannot shrink, so the new one cannot
+             schedule (2026-08-01 cutover). */}}
+      maxUnavailable: 1
       maxSurge: 1
   selector:
     matchLabels:
