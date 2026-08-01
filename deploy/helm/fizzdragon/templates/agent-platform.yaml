@@ -462,6 +462,13 @@ spec:
               value: {{ $vertexProject | quote }}
             - name: GOOGLE_CLOUD_LOCATION
               value: {{ $vertexLocation | quote }}
+            {{- /* Keyless ADC: an external_account credential config (a plain
+                   ConfigMap, not a secret) points at the projected K8s token,
+                   which GCP's workload-identity pool exchanges for short-lived
+                   Vertex credentials. No Google key material exists anywhere.
+                   The code forbids GOOGLE_VERTEX_API_KEY on purpose. */}}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/gcp/credential.json
             - name: AGENT_INTERACTIVE_MODEL_ID
               value: {{ $interactiveModelId | quote }}
             - name: AGENT_REASONING_MODEL_ID
@@ -523,6 +530,12 @@ spec:
               mountPath: /mnt/agent-platform-worker-secrets
               readOnly: true
             {{- end }}
+            - name: gcp-identity
+              mountPath: /var/run/gcp-identity
+              readOnly: true
+            - name: gcp-credential
+              mountPath: /etc/gcp
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           securityContext:
@@ -562,6 +575,19 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-agent-platform-worker-kv
         {{- end }}
+        {{- /* The pod's own identity, minted by the cluster for GCP's ears
+               only: the audience names exactly one workload-identity provider
+               and the kubelet rotates the token continuously. */}}
+        - name: gcp-identity
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "fizzdragon.agentPlatformGcpAudience" . | quote }}
+                  expirationSeconds: 3600
+                  path: token
+        - name: gcp-credential
+          configMap:
+            name: {{ include "fizzdragon.componentName" (merge (dict "component" "agent-platform-gcp-credential") .) }}
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi
@@ -592,4 +618,29 @@ spec:
   selector:
     matchLabels:
       {{- include "fizzdragon.componentSelector" $workerCtx | nindent 6 }}
+---
+{{- /* Keyless Google identity for the Worker. This is CONFIGURATION, not a
+       secret: it tells ADC where the pod's projected token lives and which
+       workload-identity provider exchanges it for short-lived credentials
+       impersonating the Vertex service account. No key material exists. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fizzdragon.componentName" (merge (dict "component" "agent-platform-gcp-credential") .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "agent-platform-gcp-credential") .) | nindent 4 }}
+data:
+  credential.json: |
+    {
+      "type": "external_account",
+      "audience": "//iam.googleapis.com/{{ include "fizzdragon.agentPlatformGcpProviderPath" . }}",
+      "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+      "token_url": "https://sts.googleapis.com/v1/token",
+      "credential_source": {
+        "file": "/var/run/gcp-identity/token",
+        "format": { "type": "text" }
+      },
+      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{{ required "agentPlatform.model.workloadIdentityFederation.serviceAccountEmail is required" $platform.model.workloadIdentityFederation.serviceAccountEmail }}:generateAccessToken"
+    }
 {{- end }}

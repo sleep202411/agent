@@ -562,6 +562,14 @@ agentPlatform:
     provider: google-vertex
     project: glass-proxy-501907-d2
     location: global
+    # Keyless AKS→GCP workload identity federation. The Worker's projected
+    # K8s token is exchanged at this provider for short-lived credentials
+    # impersonating serviceAccountEmail; no Google key file exists anywhere.
+    workloadIdentityFederation:
+      projectNumber: "553701186007"
+      pool: fizzdragon-aks
+      provider: aks-com
+      serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
     interactiveId: gemini-2.5-flash
     reasoningId: gemini-2.5-pro
     observerId: gemini-2.5-flash

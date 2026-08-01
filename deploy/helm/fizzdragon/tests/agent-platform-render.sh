@@ -51,11 +51,13 @@ env_value() {
   ' "$1"
 }
 
-# The committed migration switch is off until images and scoped secrets have
-# been provisioned. The server must make that choice explicit rather than
-# loading a half-configured gateway.
+# Cutover happened 2026-08-01: the platform ships enabled by default, and the
+# dark-ship posture is asserted with an explicit override below. The server
+# must make the choice explicit either way rather than loading a
+# half-configured gateway.
 helm template fizzdragon "$chart_dir" \
   --namespace fizzdragon-test \
+  --set agentPlatform.enabled=false \
   --show-only templates/server.yaml \
   >"$server_render"
 split_server_containers "$server_render"
@@ -80,6 +82,9 @@ if helm template fizzdragon "$chart_dir" \
   --namespace fizzdragon-test \
   --show-only templates/agent-platform.yaml \
   --set agentPlatform.enabled=true \
+  --set agentPlatform.api.image.tag=set-at-deploy \
+  --set agentPlatform.worker.image.tag=set-at-deploy \
+  --set agentPlatform.migrator.image.tag=set-at-deploy \
   >"$platform_render" 2>"$render_error"; then
   echo "Enabled Agent Platform must reject placeholder image revisions." >&2
   exit 1

@@ -54,3 +54,14 @@ app.kubernetes.io/component: {{ .component }}
 azure.workload.identity/use: "true"
 {{- end }}
 {{- end -}}
+
+{{/* GCP workload-identity provider resource path (no scheme). */}}
+{{- define "fizzdragon.agentPlatformGcpProviderPath" -}}
+{{- $wif := .Values.agentPlatform.model.workloadIdentityFederation -}}
+projects/{{ required "agentPlatform.model.workloadIdentityFederation.projectNumber is required" $wif.projectNumber }}/locations/global/workloadIdentityPools/{{ required "...pool is required" $wif.pool }}/providers/{{ required "...provider is required" $wif.provider }}
+{{- end -}}
+
+{{/* Audience the projected K8s token is minted for (https form). */}}
+{{- define "fizzdragon.agentPlatformGcpAudience" -}}
+https://iam.googleapis.com/{{ include "fizzdragon.agentPlatformGcpProviderPath" . }}
+{{- end -}}
