@@ -1,0 +1,253 @@
+{
+  "schemaVersions": [
+    "agent-invocation-lifecycle/v1",
+    "agent-invocation-lifecycle-ack/v1",
+    "agent-long-document-manifest/v1",
+    "agent-long-document-section-context/v1",
+    "agent-long-document-artifacts-context/v1",
+    "agent-document-section-analysis/v1",
+    "agent-document-synthesis/v1",
+    "agent-document-final-analysis/v1"
+  ],
+  "valid": {
+    "lifecycleRunning": {
+      "schemaVersion": "agent-invocation-lifecycle/v1",
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "attemptId": "22222222-2222-4222-8222-222222222222",
+      "attemptOrdinal": 0,
+      "conversationId": "33333333-3333-4333-8333-333333333333",
+      "runId": "44444444-4444-4444-8444-444444444444",
+      "status": "running",
+      "error": null
+    },
+    "lifecycleFailed": {
+      "schemaVersion": "agent-invocation-lifecycle/v1",
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "attemptId": "22222222-2222-4222-8222-222222222222",
+      "attemptOrdinal": 1,
+      "conversationId": "33333333-3333-4333-8333-333333333333",
+      "runId": "44444444-4444-4444-8444-444444444444",
+      "status": "failed",
+      "error": {
+        "code": "AGENT_MODEL_UNAVAILABLE",
+        "messageKey": "agent.errors.model_unavailable",
+        "message": "The model is temporarily unavailable.",
+        "retryable": true,
+        "diagnosticId": "55555555-5555-4555-8555-555555555555"
+      }
+    },
+    "lifecycleAcknowledgement": {
+      "schemaVersion": "agent-invocation-lifecycle-ack/v1",
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "attemptId": "22222222-2222-4222-8222-222222222222",
+      "attemptOrdinal": 1
+    },
+    "manifest": {
+      "schemaVersion": "agent-long-document-manifest/v1",
+      "jobId": "66666666-6666-4666-8666-666666666666",
+      "attachmentId": "77777777-7777-4777-8777-777777777777",
+      "locale": "zh-CN",
+      "sourceContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "document": {
+        "title": "A Two-Section Screenplay",
+        "format": "screenplay",
+        "characterCount": 4200,
+        "chunkCount": 2
+      },
+      "sections": [
+        {
+          "chunkId": "chunk-000000",
+          "ordinal": 0,
+          "heading": "INT. STUDIO - NIGHT",
+          "abstract": "The protagonist arrives."
+        },
+        {
+          "chunkId": "chunk-000001",
+          "ordinal": 1,
+          "heading": "EXT. STREET - DAWN",
+          "abstract": "The conflict resolves."
+        }
+      ],
+      "completedArtifacts": []
+    },
+    "sectionContext": {
+      "schemaVersion": "agent-long-document-section-context/v1",
+      "jobId": "66666666-6666-4666-8666-666666666666",
+      "locale": "zh-CN",
+      "document": {
+        "title": "A Two-Section Screenplay",
+        "format": "screenplay",
+        "characterCount": 4200,
+        "chunkCount": 2
+      },
+      "section": {
+        "chunkId": "chunk-000000",
+        "ordinal": 0,
+        "heading": "INT. STUDIO - NIGHT",
+        "text": "The protagonist arrives and finds the studio empty."
+      }
+    },
+    "artifactsContext": {
+      "schemaVersion": "agent-long-document-artifacts-context/v1",
+      "jobId": "66666666-6666-4666-8666-666666666666",
+      "artifacts": [
+        {
+          "artifactId": "88888888-8888-4888-8888-888888888888",
+          "kind": "section",
+          "level": 0,
+          "ordinal": 0,
+          "sourceChunkIds": ["chunk-000000"],
+          "content": {
+            "schemaVersion": "agent-document-section-analysis/v1",
+            "chunkId": "chunk-000000",
+            "heading": "INT. STUDIO - NIGHT",
+            "summary": "The protagonist enters an empty studio.",
+            "storyBeats": [
+              {
+                "label": "Arrival",
+                "analysis": "The arrival establishes the central mystery.",
+                "evidence": [
+                  {
+                    "chunkId": "chunk-000000",
+                    "quote": "The protagonist arrives"
+                  }
+                ]
+              }
+            ],
+            "characters": [],
+            "locations": [],
+            "plotThreads": [],
+            "continuityFindings": [],
+            "themes": []
+          }
+        },
+        {
+          "artifactId": "99999999-9999-4999-8999-999999999999",
+          "kind": "reduce",
+          "level": 1,
+          "ordinal": 0,
+          "sourceChunkIds": ["chunk-000000", "chunk-000001"],
+          "content": {
+            "schemaVersion": "agent-document-synthesis/v1",
+            "level": 1,
+            "summary": "The arrival mystery resolves at dawn.",
+            "storyStructure": [],
+            "characters": [],
+            "locations": [],
+            "plotThreads": [],
+            "continuityFindings": [],
+            "themes": []
+          }
+        },
+        {
+          "artifactId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "kind": "final",
+          "level": 2,
+          "ordinal": 0,
+          "sourceChunkIds": ["chunk-000000", "chunk-000001"],
+          "content": {
+            "schemaVersion": "agent-document-final-analysis/v1",
+            "executiveSummary": "A complete analysis of both source sections.",
+            "sourceCoverage": {
+              "chunkCount": 2,
+              "analyzedChunkCount": 2,
+              "missingChunkIds": []
+            },
+            "storyStructure": [],
+            "characters": [],
+            "locations": [],
+            "plotThreads": [],
+            "continuityFindings": [],
+            "themes": [],
+            "productionRecommendations": []
+          }
+        }
+      ]
+    }
+  },
+  "invalid": {
+    "succeededWithError": {
+      "schemaVersion": "agent-invocation-lifecycle/v1",
+      "invocationId": "11111111-1111-4111-8111-111111111111",
+      "attemptId": "22222222-2222-4222-8222-222222222222",
+      "attemptOrdinal": 0,
+      "conversationId": "33333333-3333-4333-8333-333333333333",
+      "runId": "44444444-4444-4444-8444-444444444444",
+      "status": "succeeded",
+      "error": {
+        "code": "AGENT_MODEL_UNAVAILABLE",
+        "messageKey": "agent.errors.model_unavailable",
+        "message": "The model is temporarily unavailable.",
+        "retryable": true,
+        "diagnosticId": "55555555-5555-4555-8555-555555555555"
+      }
+    },
+    "manifestWithGap": {
+      "schemaVersion": "agent-long-document-manifest/v1",
+      "jobId": "66666666-6666-4666-8666-666666666666",
+      "attachmentId": "77777777-7777-4777-8777-777777777777",
+      "locale": "zh-CN",
+      "sourceContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "document": {
+        "title": "Broken",
+        "format": "screenplay",
+        "characterCount": 4200,
+        "chunkCount": 2
+      },
+      "sections": [
+        {
+          "chunkId": "chunk-000000",
+          "ordinal": 0,
+          "heading": null,
+          "abstract": ""
+        },
+        {
+          "chunkId": "chunk-000002",
+          "ordinal": 2,
+          "heading": null,
+          "abstract": ""
+        }
+      ],
+      "completedArtifacts": []
+    },
+    "sectionAnalysisWithForeignEvidence": {
+      "schemaVersion": "agent-document-section-analysis/v1",
+      "chunkId": "chunk-000000",
+      "heading": null,
+      "summary": "A section.",
+      "storyBeats": [
+        {
+          "label": "Foreign evidence",
+          "analysis": "This evidence points at another section.",
+          "evidence": [
+            {
+              "chunkId": "chunk-000001",
+              "quote": "Wrong section"
+            }
+          ]
+        }
+      ],
+      "characters": [],
+      "locations": [],
+      "plotThreads": [],
+      "continuityFindings": [],
+      "themes": []
+    },
+    "finalAnalysisWithMissingCoverage": {
+      "schemaVersion": "agent-document-final-analysis/v1",
+      "executiveSummary": "Incomplete.",
+      "sourceCoverage": {
+        "chunkCount": 2,
+        "analyzedChunkCount": 1,
+        "missingChunkIds": ["chunk-000001"]
+      },
+      "storyStructure": [],
+      "characters": [],
+      "locations": [],
+      "plotThreads": [],
+      "continuityFindings": [],
+      "themes": [],
+      "productionRecommendations": []
+    }
+  }
+}

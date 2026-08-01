@@ -36,7 +36,13 @@ export function canonicalizeJson(value: unknown, path = '$'): CanonicalJson {
 
   if (typeof value === 'object') {
     const prototype = Reflect.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
+    // A plain object created in another JavaScript realm has that realm's
+    // Object.prototype, so identity comparison with the local Object.prototype
+    // incorrectly rejects valid JSON. A true plain-object prototype is itself
+    // the end of its prototype chain in every realm. Class instances, Date,
+    // Map and objects with a custom prototype still have another prototype
+    // above their immediate one and remain rejected.
+    if (prototype !== null && Reflect.getPrototypeOf(prototype) !== null) {
       throw new TypeError(`Non-plain object at ${path}.`);
     }
 

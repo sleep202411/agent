@@ -24,11 +24,11 @@ describe("StudioAgentSurface", () => {
     container.remove();
   });
 
-  it("renders as an absolute overlay that never participates in canvas layout", async () => {
+  it("docks as an in-flow column beside the canvas instead of overlaying it", async () => {
     await act(async () => {
       root.render(
-        <div data-testid="workspace" style={{ display: "grid", width: 900 }}>
-          <main data-testid="canvas" style={{ width: "100%" }} />
+        <div data-testid="workspace" style={{ display: "flex", width: 900 }}>
+          <main data-testid="canvas" style={{ flex: 1 }} />
           <StudioAgentSurface open title="StoryOS" labels={labels} onOpenChange={vi.fn()}>
             <div>timeline</div>
           </StudioAgentSurface>
@@ -37,13 +37,19 @@ describe("StudioAgentSurface", () => {
     });
 
     const canvas = container.querySelector<HTMLElement>('[data-testid="canvas"]');
-    const overlay = container.querySelector<HTMLElement>('[data-slot="studio-agent-overlay"]');
+    const surface = container.querySelector<HTMLElement>('[data-slot="studio-agent-surface"]');
 
-    // Opening the assistant must not resize the sibling canvas.
-    expect(canvas?.style.width).toBe("100%");
-    expect(overlay?.dataset.layout).toBe("overlay");
-    expect(overlay?.classList.contains("absolute")).toBe(true);
-    expect(overlay?.classList.contains("inset-0")).toBe(true);
+    // Siblings in one flex row: the canvas shrinks beside the panel, and the
+    // panel never floats above it. An absolutely positioned surface would sit
+    // OVER the canvas, hiding whatever is underneath — the rejected layout.
+    expect(surface?.parentElement).toBe(canvas?.parentElement);
+    expect(surface?.classList.contains("absolute")).toBe(false);
+    expect(surface?.classList.contains("shrink-0")).toBe(true);
+
+    // The column owns a clamped width — never a viewport-covering overlay.
+    const aside = surface?.querySelector("aside");
+    expect(aside?.getAttribute("aria-label")).toBe(labels.surface);
+    expect(aside?.className).toContain("w-[clamp(360px,30vw,460px)]");
   });
 
   it("renders the title and closes via onOpenChange", async () => {
@@ -107,6 +113,29 @@ describe("StudioAgentSurface", () => {
     expect(container.querySelector(`[aria-label="${labels.newConversation}"]`)).toBeNull();
   });
 
+  it("keeps the title stable while busy and only guards conversation reset", async () => {
+    await act(async () => {
+      root.render(
+        <StudioAgentSurface
+          open
+          busy
+          title="StoryOS"
+          labels={labels}
+          onNewConversation={vi.fn()}
+          onOpenChange={vi.fn()}
+        >
+          <div>timeline</div>
+        </StudioAgentSurface>
+      );
+    });
+
+    expect(container.querySelector("header .animate-spin")).toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>(`[aria-label="${labels.newConversation}"]`)
+        ?.disabled
+    ).toBe(true);
+  });
+
   it("renders nothing when closed", async () => {
     await act(async () => {
       root.render(
@@ -116,6 +145,6 @@ describe("StudioAgentSurface", () => {
       );
     });
 
-    expect(container.querySelector('[data-slot="studio-agent-overlay"]')).toBeNull();
+    expect(container.querySelector('[data-slot="studio-agent-surface"]')).toBeNull();
   });
 });

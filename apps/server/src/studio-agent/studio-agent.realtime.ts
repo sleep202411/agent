@@ -1,25 +1,21 @@
-import { Inject, Injectable, type Provider } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   STUDIO_AGENT_CLIENT_CHANNEL_CAPABILITY,
   studioAgentThreadChannel,
 } from '@repo/shared/studio-agent-transport';
-import * as Ably from 'ably';
+import {
+  InjectAblyTokenCredentials,
+  type AblyTokenCredentials,
+  type AblyTokenRequest,
+} from '../infra/realtime/ably-token-credentials';
 import { StudioAgentConfigService } from './studio-agent.config';
 
 /**
- * THE ONLY MODULE IN THE SERVER THAT MAY IMPORT THE ABLY SDK — and it mints
- * credentials, nothing else.
- *
  * The server does not publish. Delivery is `@ably/ai-transport`, driven by the
  * Temporal activity worker inside an `AgentSession`; Nest holds no run, so it
  * has nothing truthful to say on the channel. That is the whole boundary, and
  * `studio-agent.publish-boundary.spec.ts` asserts it rather than trusting
  * anyone to remember.
- *
- * ROOT KEY HANDLING. `ABLY_API_KEY` is a ROOT credential: its capability is
- * `{"[*]*":["*"]}`, every operation on every channel of the app. Here it is
- * used for exactly one thing — signing token requests, locally, with an HMAC —
- * and it never leaves the process. It is never logged either.
  */
 
 /**
@@ -29,102 +25,13 @@ import { StudioAgentConfigService } from './studio-agent.config';
  * Declared here rather than re-exported from the SDK so no other module —
  * including the controller that returns it — has to name an Ably type.
  */
-export interface StudioAgentAblyTokenRequest {
-  keyName: string;
-  clientId: string;
-  capability: string;
-  timestamp: number;
-  nonce: string;
-  mac: string;
-  ttl: number;
-}
+export type StudioAgentAblyTokenRequest = AblyTokenRequest;
 
 export interface StudioAgentRealtimeGrant {
   channel: string;
   ttlMs: number;
   tokenRequest: StudioAgentAblyTokenRequest;
 }
-
-/**
- * Exactly the slice of the Ably SDK this server uses: ONE method.
- *
- * Narrow on purpose. It is the seam that lets the token policy be tested
- * without an Ably account, and it makes the total surface we depend on legible
- * in four lines instead of an SDK's worth of `.d.ts`.
- *
- * There is no `close()`. There was one — empty, with a comment saying it
- * existed "so the DI lifecycle is symmetric with anything that later does" —
- * and it bought a Nest shutdown hook, a spy test and an interface member for a
- * resource that does not exist: `Ably.Rest` holds no connection, no socket and
- * no timer. A lifecycle hook for a thing with no lifecycle is a claim that
- * something is being cleaned up. If this ever grows a `Realtime` client, it
- * grows a `close()` at the same moment, for a reason.
- */
-export interface StudioAgentAblyTokenSigner {
-  createTokenRequest(params: {
-    capability: Record<string, readonly string[]>;
-    clientId: string;
-    ttl: number;
-  }): Promise<StudioAgentAblyTokenRequest>;
-}
-
-export const STUDIO_AGENT_ABLY_TOKEN_SIGNER = Symbol(
-  'STUDIO_AGENT_ABLY_TOKEN_SIGNER',
-);
-
-/**
- * `Ably.Rest`, not `Ably.Realtime`.
- *
- * The server publishes nothing, so a persistent realtime connection would be a
- * socket per replica held open for no reason — and on the free plan the account
- * ceiling is 200 concurrent connections, which the worker's publishing
- * connections actually need. Signing is a local HMAC over the request with the
- * key secret: no call leaves the process, which is both why the secret never
- * travels and why minting keeps working when Ably is unreachable.
- */
-export function createStudioAgentAblyTokenSigner(
-  apiKey: string,
-): StudioAgentAblyTokenSigner {
-  if (!/^[\w-]+\.[\w-]+:[\w+/=-]+$/.test(apiKey)) {
-    // The point of use. The config service already refuses to load without a
-    // well-formed key, so this is the second of two locked doors — but it is
-    // the one standing where the credential is actually used, and a server that
-    // quietly came up unable to mint tokens would leave every creator staring
-    // at an assistant that never connects.
-    throw new Error(
-      'ABLY_API_KEY is missing or malformed: Studio Agent cannot mint realtime credentials without a complete Ably API key.',
-    );
-  }
-  const client = new Ably.Rest({ key: apiKey });
-  return {
-    createTokenRequest: async (params) => {
-      const signed = await client.auth.createTokenRequest({
-        capability: params.capability as Ably.TokenParams['capability'],
-        clientId: params.clientId,
-        ttl: params.ttl,
-      });
-      // Mapped field by field rather than spread: this response is public, and
-      // a future SDK version adding a field would otherwise ship it to a
-      // browser without anyone deciding to.
-      return {
-        keyName: signed.keyName,
-        clientId: signed.clientId ?? params.clientId,
-        capability: signed.capability,
-        timestamp: signed.timestamp,
-        nonce: signed.nonce,
-        mac: signed.mac,
-        ttl: signed.ttl ?? params.ttl,
-      };
-    },
-  };
-}
-
-export const studioAgentAblyTokenSignerProvider: Provider = {
-  provide: STUDIO_AGENT_ABLY_TOKEN_SIGNER,
-  inject: [StudioAgentConfigService],
-  useFactory: (config: StudioAgentConfigService): StudioAgentAblyTokenSigner =>
-    createStudioAgentAblyTokenSigner(config.value.ably.apiKey),
-};
 
 /**
  * Mints the credential a browser uses to take part in ONE thread.
@@ -157,8 +64,8 @@ export const studioAgentAblyTokenSignerProvider: Provider = {
 @Injectable()
 export class StudioAgentAblyTokenIssuer {
   constructor(
-    @Inject(STUDIO_AGENT_ABLY_TOKEN_SIGNER)
-    private readonly signer: StudioAgentAblyTokenSigner,
+    @InjectAblyTokenCredentials()
+    private readonly credentials: AblyTokenCredentials,
     private readonly config: StudioAgentConfigService,
   ) {}
 
@@ -168,10 +75,10 @@ export class StudioAgentAblyTokenIssuer {
   ): Promise<StudioAgentRealtimeGrant> {
     const channel = studioAgentThreadChannel(threadId);
     const ttlMs = this.config.value.ably.tokenTtlMs;
-    const tokenRequest = await this.signer.createTokenRequest({
+    const tokenRequest = await this.credentials.createTokenRequest({
       capability: { [channel]: STUDIO_AGENT_CLIENT_CHANNEL_CAPABILITY },
       clientId: actorId,
-      ttl: ttlMs,
+      ttlMs,
     });
     return { channel, ttlMs, tokenRequest };
   }

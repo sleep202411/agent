@@ -4,7 +4,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import { StudioAgentRealtimeError, type StudioAgentRealtimeGrant } from "./realtime-grant";
+import {
+  STUDIO_AGENT_REALTIME_UNAVAILABLE_MESSAGE,
+  StudioAgentRealtimeError,
+  type StudioAgentRealtimeGrant,
+} from "./realtime-grant";
 import {
   useStudioAgentRealtime,
   type StudioAgentRealtimeHandle,
@@ -53,7 +57,7 @@ const ably = vi.hoisted(() => {
 vi.mock("ably", () => ({ Realtime: ably.MockRealtime }));
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
-const CHANNEL = `studio-agent:thread:${THREAD_ID}`;
+const CHANNEL = `agent:v1:conversation:${THREAD_ID}`;
 
 describe("useStudioAgentRealtime", () => {
   let container: HTMLDivElement;
@@ -104,11 +108,20 @@ describe("useStudioAgentRealtime", () => {
   });
 
   it("opens on the channel the server signed, never one it rebuilt", async () => {
-    authorize.mockResolvedValue(grant({ channel: "studio-agent:thread:server-chosen" }));
+    const secondId = "00000000-0000-4000-8000-000000000002";
+    authorize.mockResolvedValue(
+      grant({
+        conversation: {
+          ...grant().conversation,
+          id: secondId,
+        },
+        sessionName: `agent:v1:conversation:${secondId}`,
+      })
+    );
 
     await render({ threadId: THREAD_ID, enabled: true });
 
-    expect(handle?.channelName).toBe("studio-agent:thread:server-chosen");
+    expect(handle?.channelName).toBe(`agent:v1:conversation:${secondId}`);
     expect(handle?.client).toBe(ably.MockRealtime.instances[0]);
   });
 
@@ -135,7 +148,8 @@ describe("useStudioAgentRealtime", () => {
     await emit(client, "failed", { message: "Token capability rejected." });
 
     expect(handle?.status).toBe("closed");
-    expect(handle?.error?.message).toBe("Token capability rejected.");
+    expect(handle?.error?.message).toBe(STUDIO_AGENT_REALTIME_UNAVAILABLE_MESSAGE);
+    expect(handle?.error?.message).not.toContain("Token capability");
   });
 
   it("surfaces a refused grant as a closed pipe rather than an endless connect", async () => {
@@ -162,16 +176,59 @@ describe("useStudioAgentRealtime", () => {
     expect(handle).toEqual({ client: null, channelName: null, status: "idle", error: null });
   });
 
+  it("reopening the same thread builds a fresh connection instead of resurrecting the closed one", async () => {
+    await render({ threadId: THREAD_ID, enabled: true });
+    const first = ably.MockRealtime.instances[0]!;
+    await emit(first, "connected");
+
+    await render({ threadId: THREAD_ID, enabled: false });
+    expect(first.closed).toBe(true);
+
+    // Reopen the panel on the SAME thread while the new grant is still in
+    // flight. The old slot's key matches again, so anything short of clearing
+    // it at teardown hands `<AblyProvider>` the closed client for this window —
+    // the transport then opens a session on a dead socket and the creator sees
+    // "realtime unavailable" over a conversation that is actually fine.
+    let release: ((value: StudioAgentRealtimeGrant) => void) | null = null;
+    authorize.mockReturnValue(
+      new Promise<StudioAgentRealtimeGrant>((resolve) => {
+        release = resolve;
+      })
+    );
+    await render({ threadId: THREAD_ID, enabled: true });
+    expect(handle?.client).toBeNull();
+    expect(handle?.status).toBe("connecting");
+    expect(handle?.error).toBeNull();
+
+    await act(async () => {
+      release!(grant());
+      await settle();
+    });
+    expect(ably.MockRealtime.instances).toHaveLength(2);
+    expect(handle?.client).toBe(ably.MockRealtime.instances[1]);
+    expect(handle?.client).not.toBe(first);
+    expect(handle?.error).toBeNull();
+  });
+
   it("does not carry one thread's connection into the next", async () => {
     await render({ threadId: THREAD_ID, enabled: true });
     const first = ably.MockRealtime.instances[0]!;
     await emit(first, "connected");
 
-    authorize.mockResolvedValue(grant({ channel: "studio-agent:thread:second" }));
+    const secondId = "00000000-0000-4000-8000-000000000002";
+    authorize.mockResolvedValue(
+      grant({
+        conversation: {
+          ...grant().conversation,
+          id: secondId,
+        },
+        sessionName: `agent:v1:conversation:${secondId}`,
+      })
+    );
     await render({ threadId: "00000000-0000-4000-8000-000000000002", enabled: true });
 
     expect(first.closed).toBe(true);
-    expect(handle?.channelName).toBe("studio-agent:thread:second");
+    expect(handle?.channelName).toBe(`agent:v1:conversation:${secondId}`);
     expect(handle?.client).toBe(ably.MockRealtime.instances[1]);
   });
 
@@ -203,10 +260,10 @@ describe("useStudioAgentRealtime", () => {
       await settle();
     });
 
-    // A token request is single-use and short-lived: the one that opened the
-    // connection is consumed here, and only a RENEWAL mints another.
+    // The opening JWT is consumed here; only a renewal asks the product gateway
+    // to re-authorize the conversation and mint another one.
     expect(authorize).toHaveBeenCalledTimes(1);
-    expect(first).toHaveBeenCalledWith(null, grant().tokenRequest);
+    expect(first).toHaveBeenCalledWith(null, grant().ablyToken);
 
     const renewal = vi.fn();
     await act(async () => {
@@ -261,15 +318,19 @@ function Harness({
 
 function grant(overrides: Partial<StudioAgentRealtimeGrant> = {}): StudioAgentRealtimeGrant {
   return {
-    channel: CHANNEL,
-    ttlMs: 300_000,
-    tokenRequest: {
-      keyName: "app.key",
-      mac: "mac",
-      nonce: "nonce",
-      timestamp: 1,
-      capability: `{"${CHANNEL}":["subscribe","publish","history"]}`,
+    schemaVersion: "agent-conversation-grant/v1",
+    conversation: {
+      id: THREAD_ID,
+      surface: "story-studio",
+      title: null,
+      permissionMode: "smart",
+      createdAt: "2026-07-30T10:00:00.000Z",
+      updatedAt: "2026-07-30T10:00:00.000Z",
+      archivedAt: null,
     },
+    sessionName: CHANNEL,
+    ablyToken: "jwt.header.signature",
+    expiresAt: "2099-07-30T11:00:00.000Z",
     ...overrides,
   };
 }

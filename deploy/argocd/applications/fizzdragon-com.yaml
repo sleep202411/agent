@@ -40,17 +40,30 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - ApplyOutOfSyncOnly=true
+      # Replica fields listed below are owned by HPA/KEDA. This prevents a
+      # routine GitOps sync from briefly scaling them back to the Helm seed.
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
         duration: 10s
         factor: 2
         maxDuration: 5m
-  # Ignore the agent-worker replica count once KEDA is in charge —
-  # otherwise ArgoCD would constantly revert KEDA's scaling decisions.
+  # Ignore replica counts owned by autoscalers; otherwise ArgoCD would
+  # constantly revert live capacity to the Helm seed on each sync.
   ignoreDifferences:
     - group: apps
       kind: Deployment
       name: fizzdragon-agent-worker
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: fizzdragon-server
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: fizzdragon-agent-platform-api
       jsonPointers:
         - /spec/replicas

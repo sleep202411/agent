@@ -13,28 +13,48 @@
  * removed.
  */
 
-import type {
-  StudioAgentActivityKind as RuntimeStudioAgentActivityKind,
-  StudioAgentApprovalStatus as RuntimeStudioAgentApprovalStatus,
-  StudioAgentError,
-  StudioAgentInputDelivery,
-  StudioAgentPermissionMode as RuntimeStudioAgentPermissionMode,
-  StudioAgentRunStatus as RuntimeStudioAgentRunStatus,
-} from "@repo/shared";
+import type { AgentPlatformPermissionMode } from "@repo/shared/agent-platform";
 
 import type { StudioAgentAttachment } from "./transport-contract";
 
-export type StudioAgentRunStatus = RuntimeStudioAgentRunStatus;
+export type StudioAgentRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_input"
+  | "cancelling"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export type StudioAgentActivityStatus = "running" | "succeeded" | "failed" | "cancelled";
 
-export type StudioAgentApprovalStatus = RuntimeStudioAgentApprovalStatus;
+export type StudioAgentApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
-export type StudioAgentDeliveryMode = "send" | StudioAgentInputDelivery;
+export type StudioAgentDeliveryMode = "send" | "steer" | "enqueue" | "stop_and_send";
 
-export type StudioAgentPermissionMode = RuntimeStudioAgentPermissionMode;
+export type StudioAgentPermissionMode = AgentPlatformPermissionMode;
 
-export type StudioAgentActivityKind = RuntimeStudioAgentActivityKind;
+export type StudioAgentActivityKind =
+  | "read"
+  | "search"
+  | "analyze"
+  | "plan"
+  | "execute"
+  | "generate"
+  | "wait"
+  | "other";
+
+export interface StudioAgentError {
+  code: string;
+  /** Stable localization identity for product-boundary failures. */
+  messageKey?: string;
+  message: string;
+  retryable: boolean;
+  /** Support correlation id; never contains provider or infrastructure data. */
+  diagnosticId?: string;
+  details: Record<string, unknown> | null;
+}
 
 export interface StudioAgentRunView {
   id: string;
@@ -74,6 +94,14 @@ export interface StudioAgentMessageView {
   clientMessageId: string | null;
   runId: string | null;
   role: "user" | "assistant";
+  /**
+   * How this creator message entered the run.
+   *
+   * A missing wire value is the ordinary `send` path. Keeping the normalized
+   * value on the view lets transient UI distinguish a new turn awaiting its
+   * first Agent signal from a steer or a queued prompt.
+   */
+  delivery: StudioAgentDeliveryMode;
   format: "plain_text" | "markdown";
   text: string;
   attachments: StudioAgentAttachment[];
@@ -82,9 +110,9 @@ export interface StudioAgentMessageView {
    * The text is still arriving, token by token.
    *
    * Read straight off the transport (`TextUIPart.state === "streaming"`), not
-   * inferred. The surface renders it a tone step back and marks it `aria-busy`
-   * so "still arriving" is never mistaken for "this is what the assistant
-   * said"; both revert when the part settles to `done`.
+   * inferred. The surface marks it `aria-busy` and adds a quiet inline pulse
+   * without dimming the content; both disappear when the part settles to
+   * `done`.
    */
   streaming: boolean;
   createdAt: string;

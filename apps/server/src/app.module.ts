@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
 import { AgentUsersModule } from './agent-users';
+import { AgentPlatformGatewayModule } from './agent-platform-gateway';
+import { AgentDomainGatewayModule } from './agent-domain-gateway';
+import { loadAgentPlatformFeatureEnabled } from './agent-platform-feature';
 import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
@@ -40,6 +43,10 @@ import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 
+const agentPlatformModules = loadAgentPlatformFeatureEnabled()
+  ? [AgentDomainGatewayModule, AgentPlatformGatewayModule]
+  : [];
+
 @Module({
   imports: [
     // Infra modules first — global, others can inject PrismaService / REDIS.
@@ -56,6 +63,7 @@ import { WorkspacesModule } from './workspaces';
     AuthModule,
     AdminAuthModule,
     AgentUsersModule,
+    ...agentPlatformModules,
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,

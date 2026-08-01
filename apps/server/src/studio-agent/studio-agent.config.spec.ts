@@ -7,7 +7,6 @@ describe('loadStudioAgentServerConfig', () => {
     TEMPORAL_TLS_MODE: 'disabled',
     STUDIO_AGENT_RELEASE: 'git-0123456789abcdef',
     STUDIO_AGENT_RUNTIME_TOKEN: 'x'.repeat(32),
-    ABLY_API_KEY: 'appId.keyId:c2VjcmV0LXZhbHVl',
   } satisfies NodeJS.ProcessEnv;
 
   it('fails loudly when runtime credentials are absent', () => {
@@ -108,7 +107,6 @@ describe('loadStudioAgentServerConfig', () => {
         retryMaxMs: 1_800_000,
       },
       ably: {
-        apiKey: 'appId.keyId:c2VjcmV0LXZhbHVl',
         tokenTtlMs: 120_000,
       },
       model: {
@@ -129,30 +127,6 @@ describe('loadStudioAgentServerConfig', () => {
         wallTimeMs: 3_600_000,
       },
     });
-  });
-
-  it('refuses to boot without a delivery credential', () => {
-    // Studio Agent delivery IS Ably. A server that came up without this would
-    // accept turns, commit their events, and deliver none of them — a hung
-    // assistant that looks, in the logs, like nothing happened.
-    const withoutKey: NodeJS.ProcessEnv = { ...required };
-    delete withoutKey.ABLY_API_KEY;
-    expect(() => loadStudioAgentServerConfig(withoutKey)).toThrow(
-      /ABLY_API_KEY/,
-    );
-  });
-
-  it.each([
-    ['the public key name alone', 'appId.keyId'],
-    ['a token instead of a key', 'AblyTokenLookingString'],
-    ['an empty secret', 'appId.keyId:'],
-  ])('rejects %s', (_case, value) => {
-    // Both realistic misconfigurations are non-empty strings, so presence is
-    // not a check. Either would pass a `min(1)` and then fail at the first
-    // publish, in production, as a delivery outage instead of a boot failure.
-    expect(() =>
-      loadStudioAgentServerConfig({ ...required, ABLY_API_KEY: value }),
-    ).toThrow(/ABLY_API_KEY/);
   });
 
   it('bounds how long a revoked grant can keep receiving frames', () => {

@@ -32,8 +32,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { StudioAgentDeliveryMode } from "@/lib/studio-agent";
+import type {
+  StudioAgentDeliveryMode,
+  StudioAgentDocumentAnalysisMap,
+  StudioAgentDocumentAnalysisView,
+} from "@/lib/studio-agent";
 
+import {
+  StudioAgentAttachmentAnalysis,
+  type StudioAgentDocumentAnalysisLabels,
+} from "./studio-agent-attachment-analysis";
 import type {
   StudioAgentCanonicalAttachment,
   StudioAgentComposerAttachment,
@@ -60,10 +68,11 @@ export interface StudioAgentComposerLabels {
     remove: (fileName: string) => string;
     retry: (fileName: string) => string;
     uploading: (progress: number) => string;
-    processing: string;
+    processing: (progress: number) => string;
     ready: string;
     failed: string;
     fileSize: (sizeBytes: number) => string;
+    analysis: StudioAgentDocumentAnalysisLabels;
   };
 }
 
@@ -73,6 +82,13 @@ export interface StudioAgentComposerAttachmentControls {
   onAddFiles: (files: FileList | readonly File[]) => void;
   onRetry: (id: string) => void;
   onRemove: (id: string) => void;
+  /**
+   * Live document-analysis state by attachment id.
+   *
+   * "Ready" on a chip only means the upload finished being read. The job that
+   * analyses the document keeps running behind it, and the chip says so.
+   */
+  analysis?: StudioAgentDocumentAnalysisMap;
 }
 
 export interface StudioAgentComposerProps {
@@ -88,6 +104,8 @@ export interface StudioAgentComposerProps {
   ) => void | Promise<void>;
   onStop?: () => void;
   isRunning?: boolean;
+  /** A locally-owned live Run handle is available for Ably steering. */
+  canSteer?: boolean;
   /**
    * A cancel is published and the turn has not reached a terminal yet.
    *
@@ -115,7 +133,8 @@ export interface StudioAgentComposerProps {
   className?: string;
 }
 
-const runningModes: readonly StudioAgentDeliveryMode[] = ["steer", "enqueue", "stop_and_send"];
+const localRunningModes: readonly StudioAgentDeliveryMode[] = ["steer", "enqueue", "stop_and_send"];
+const remoteRunningModes: readonly StudioAgentDeliveryMode[] = ["enqueue", "stop_and_send"];
 
 export function StudioAgentComposer({
   value,
@@ -126,6 +145,7 @@ export function StudioAgentComposer({
   onSubmit,
   onStop,
   isRunning = false,
+  canSteer = false,
   isCancelling = false,
   isSubmitting = false,
   queuedCount = 0,
@@ -143,7 +163,11 @@ export function StudioAgentComposer({
   const dragDepthRef = useRef(0);
   const submissionRef = useRef<Promise<void> | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
-  const availableModes = isRunning ? runningModes : (["send"] as const);
+  const availableModes = isRunning
+    ? canSteer
+      ? localRunningModes
+      : remoteRunningModes
+    : (["send"] as const);
   const effectiveMode = availableModes.includes(deliveryMode as (typeof availableModes)[number])
     ? deliveryMode
     : availableModes[0];
@@ -153,6 +177,20 @@ export function StudioAgentComposer({
     attachments?.items.some((item) => item.status !== "ready") ?? false;
   const hasContent = value.trim().length > 0 || readyAttachments.length > 0;
   const canSubmit = !disabled && !isSubmitting && !hasBlockingAttachments && hasContent;
+  // One primary action occupies one stable location:
+  //
+  // - an empty running composer stops the current turn;
+  // - drafting a continuation turns that same control back into the selected
+  //   steer/enqueue/stop-and-send action;
+  // - after cancellation is requested it remains the stopping indicator even
+  //   if the creator starts typing, so acknowledgement never disappears.
+  const primaryActsAsStop = Boolean(isRunning && onStop && (isCancelling || !hasContent));
+  const primaryLabel = primaryActsAsStop
+    ? isCancelling
+      ? labels.stopping
+      : labels.stop
+    : labels.deliveryMode[effectiveMode].label;
+  const primaryDisabled = primaryActsAsStop ? disabled || isCancelling : !canSubmit;
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -242,6 +280,11 @@ export function StudioAgentComposer({
               key={attachment.id}
               attachment={attachment}
               labels={labels.attachments}
+              analysis={
+                attachment.attachment
+                  ? (attachments.analysis?.get(attachment.attachment.attachmentId) ?? null)
+                  : null
+              }
               disabled={disabled || isSubmitting}
               onRetry={() => attachments.onRetry(attachment.id)}
               onRemove={() => attachments.onRemove(attachment.id)}
@@ -302,30 +345,6 @@ export function StudioAgentComposer({
           ) : null}
         </div>
 
-        {isRunning && onStop ? (
-          <button
-            type="button"
-            data-cancelling={isCancelling || undefined}
-            aria-label={isCancelling ? labels.stopping : labels.stop}
-            // Disabled rather than hidden: the cancel is already on the
-            // channel, so a second press has nothing to add — but the button is
-            // still the thing that says what is happening.
-            aria-disabled={isCancelling || undefined}
-            onClick={onStop}
-            disabled={disabled || isCancelling}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-white/48 transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
-          >
-            {isCancelling ? (
-              <IconLoader2
-                aria-hidden="true"
-                className="size-3.5 animate-spin motion-reduce:animate-none"
-              />
-            ) : (
-              <IconPlayerStop aria-hidden="true" className="size-3.5" />
-            )}
-          </button>
-        ) : null}
-
         {isRunning ? (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -372,12 +391,23 @@ export function StudioAgentComposer({
         ) : null}
 
         <button
-          type="submit"
-          aria-label={labels.deliveryMode[effectiveMode].label}
-          disabled={!canSubmit}
+          type={primaryActsAsStop ? "button" : "submit"}
+          data-action={primaryActsAsStop ? "stop" : "send"}
+          data-cancelling={primaryActsAsStop && isCancelling ? true : undefined}
+          aria-label={primaryLabel}
+          aria-disabled={primaryActsAsStop && isCancelling ? true : undefined}
+          disabled={primaryDisabled}
+          onClick={primaryActsAsStop ? onStop : undefined}
           className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-[transform,opacity,background-color] hover:scale-[1.03] hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 active:scale-95 disabled:scale-100 disabled:opacity-30"
         >
-          {isSubmitting ? (
+          {primaryActsAsStop && isCancelling ? (
+            <IconLoader2
+              aria-hidden="true"
+              className="size-4 animate-spin motion-reduce:animate-none"
+            />
+          ) : primaryActsAsStop ? (
+            <IconPlayerStop aria-hidden="true" className="size-3.5" />
+          ) : isSubmitting ? (
             <IconLoader2
               aria-hidden="true"
               className="size-4 animate-spin motion-reduce:animate-none"
@@ -394,12 +424,14 @@ export function StudioAgentComposer({
 function ComposerAttachmentRow({
   attachment,
   labels,
+  analysis,
   disabled,
   onRetry,
   onRemove,
 }: {
   attachment: StudioAgentComposerAttachment;
   labels: StudioAgentComposerLabels["attachments"];
+  analysis: StudioAgentDocumentAnalysisView | null;
   disabled: boolean;
   onRetry: () => void;
   onRemove: () => void;
@@ -408,7 +440,7 @@ function ComposerAttachmentRow({
     attachment.status === "uploading"
       ? labels.uploading(attachment.progress)
       : attachment.status === "processing"
-        ? labels.processing
+        ? labels.processing(attachment.progress)
         : attachment.status === "ready"
           ? labels.ready
           : labels.failed;
@@ -474,7 +506,11 @@ function ComposerAttachmentRow({
         </button>
       </div>
 
-      {attachment.status === "uploading" ? (
+      {analysis ? (
+        <StudioAgentAttachmentAnalysis analysis={analysis} labels={labels.analysis} />
+      ) : null}
+
+      {attachment.status === "uploading" || attachment.status === "processing" ? (
         <div
           role="progressbar"
           aria-label={`${attachment.fileName}: ${statusLabel}`}

@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
-import { IS_PUBLIC_KEY } from './auth.decorator';
+import { IS_PUBLIC_KEY, SKIP_END_USER_AUTH_KEY } from './auth.decorator';
 import type { AuthenticatedRequest, AuthUser } from './auth.types';
 
 type GuardRequest = Request &
@@ -42,6 +42,12 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<GuardRequest>();
+    const skipEndUserAuth = this.reflector.getAllAndOverride<boolean>(
+      SKIP_END_USER_AUTH_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (skipEndUserAuth) return true;
+
     // Native clients (mobile app) carry the satoken in an Authorization
     // bearer header instead of a browser cookie jar. Normalize it to the
     // cookie form Java expects; an explicit bearer wins over whatever the

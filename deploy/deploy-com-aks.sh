@@ -15,7 +15,7 @@
 # 用法：
 #   deploy/deploy-com-aks.sh <service...>     # 只部指定服务（推荐，外科手术式）
 #   deploy/deploy-com-aks.sh all              # 全部 5 个
-#   服务名：web studio admin-ui server agent
+#   服务名：web studio admin-ui server agent agent-platform
 #
 # 前提：① 已 az login 到 fizzdragon-ai-prod ② 工作区干净 ③ 在 main 分支
 #       （prod 只从 main 出；ArgoCD 盯 main）。覆盖：FORCE=1 跳过分支检查。
@@ -45,13 +45,16 @@ svc_spec() {
     # needs a new revision. The tag is also the Temporal build ID, so bumping it
     # is what moves pinned workflow histories onto the new worker.
     studio-agent-runtime) echo "fizzdragon-studio-agent-runtime:apps/studio-agent-runtime/Dockerfile:.studioAgentRuntime.image" ;;
+    # Atomic three-image release. All targets share the same immutable tag;
+    # Helm rejects a mixed API/Worker/migrator revision.
+    agent-platform) echo "__agent_platform_bundle__" ;;
     *)        return 1 ;;
   esac
 }
 
 # --- args -----------------------------------------------------------------
 if [ "$#" -eq 0 ]; then
-  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime)" >&2
+  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime agent-platform)" >&2
   exit 2
 fi
 if [ "$1" = "all" ]; then
@@ -132,7 +135,7 @@ wait_for_acr_image() {
 
 # --- build (az acr build, 镜像在 ACR 里构建) ------------------------------
 build_one() {
-  local svc="$1" image="$2" dockerfile="$3"
+  local svc="$1" image="$2" dockerfile="$3" target="${4:-}"
   local args=()
   case "$svc" in
     web)
@@ -163,6 +166,9 @@ build_one() {
     # server / agent: 无 build-arg（运行时读 env）
   esac
   echo "  · 构建 $image:$SHORT …"
+  if [ -n "$target" ]; then
+    args+=(--target "$target")
+  fi
   # Git Bash MSYS converts `/studio` → `E:/Git/studio` when passing --build-arg
   # to az.exe, baking broken NEXT_PUBLIC_API_*_PREFIX into the client bundle.
   local acr_env=()
@@ -191,15 +197,27 @@ bump_tag() {  # $1=镜像名(repository)  $2=新tag
 }
 
 for s in "${SERVICES[@]}"; do
-  IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
-  build_one "$s" "$image" "$dockerfile"
+  if [ "$s" = "agent-platform" ]; then
+    build_one agent-platform-api fizzdragon-agent-platform-api apps/agent-platform/Dockerfile api
+    build_one agent-platform-worker fizzdragon-agent-platform-worker apps/agent-platform/Dockerfile worker
+    build_one agent-memory-migrator fizzdragon-agent-memory-migrator apps/agent-platform/Dockerfile migrator
+  else
+    IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
+    build_one "$s" "$image" "$dockerfile"
+  fi
 done
 
 # --- bump values.yaml (只动本次构建的服务) --------------------------------
 echo "▶ 更新 $VALUES 的 tag → $SHA"
 for s in "${SERVICES[@]}"; do
-  IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
-  bump_tag "$image" "$SHA"
+  if [ "$s" = "agent-platform" ]; then
+    bump_tag fizzdragon-agent-platform-api "$SHA"
+    bump_tag fizzdragon-agent-platform-worker "$SHA"
+    bump_tag fizzdragon-agent-memory-migrator "$SHA"
+  else
+    IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
+    bump_tag "$image" "$SHA"
+  fi
 done
 git --no-pager diff -- "$VALUES" || true
 

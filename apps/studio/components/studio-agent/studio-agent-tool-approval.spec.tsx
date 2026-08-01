@@ -71,6 +71,14 @@ describe("StudioAgentToolApproval", () => {
     expect(onRespond).not.toHaveBeenCalled();
   });
 
+  it("shows lifecycle preparation instead of clickable approval before durable readiness", async () => {
+    await render({ approval: pending(), onRespond: vi.fn(), preparing: true });
+
+    expect(container.textContent).toContain("Preparing approval");
+    expect(button("Approve")).toBeUndefined();
+    expect(button("Deny")).toBeUndefined();
+  });
+
   function button(label: string) {
     return [...container.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
       candidate.textContent?.includes(label)
@@ -81,6 +89,7 @@ describe("StudioAgentToolApproval", () => {
     approval: StudioAgentToolApprovalView;
     onRespond: (approved: boolean) => void;
     disabled?: boolean;
+    preparing?: boolean;
   }) {
     await act(async () => {
       root.render(
@@ -88,6 +97,7 @@ describe("StudioAgentToolApproval", () => {
           approval={props.approval}
           labels={labels}
           disabled={props.disabled}
+          preparing={props.preparing}
           onRespond={props.onRespond}
         />
       );
@@ -112,6 +122,7 @@ const labels: StudioAgentToolApprovalLabels = {
   deny: "Deny",
   showInput: "Show what it will run with",
   hideInput: "Hide what it will run with",
+  preparing: "Preparing approval",
   resuming: "Resuming the turn",
   decision: { approved: "Approved", denied: "Denied" },
 };

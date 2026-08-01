@@ -1,4 +1,5 @@
 {{- $mtls := eq .Values.studioAgentRuntime.temporal.tlsMode "mtls" -}}
+{{- $agentPlatform := .Values.agentPlatform -}}
 {{- if .Values.server.enabled -}}
 {{- $component := "server" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
@@ -162,6 +163,66 @@ spec:
               value: {{ .Values.studioAgentRuntime.attachmentCleanup.retryBaseMs | quote }}
             - name: STUDIO_AGENT_ATTACHMENT_CLEANUP_RETRY_MAX_MS
               value: {{ .Values.studioAgentRuntime.attachmentCleanup.retryMaxMs | quote }}
+            {{- /* app.module.ts evaluates AGENT_PLATFORM_ENABLED at module import
+                   and throws when it is unset under NODE_ENV=production, so this
+                   whole block belongs to the process that runs main.js. The
+                   db-migrate initContainer only shells out to prisma and must not
+                   carry it — a copy there satisfies no reader and hides the gap. */}}
+            - name: AGENT_PLATFORM_ENABLED
+              value: {{ $agentPlatform.enabled | quote }}
+            {{- if $agentPlatform.enabled }}
+            - name: AGENT_PLATFORM_URL
+              value: {{ printf "http://%s:%v" (include "fizzdragon.componentName" (merge (dict "component" "agent-platform-api") .)) $agentPlatform.api.port | quote }}
+            - name: AGENT_PLATFORM_JWT_KEY_ID
+              value: {{ required "agentPlatform.gateway.serverSigningKeyId is required" $agentPlatform.gateway.serverSigningKeyId | quote }}
+            - name: AGENT_PLATFORM_JWT_ISSUER
+              value: {{ required "agentPlatform.gateway.jwtIssuer is required" $agentPlatform.gateway.jwtIssuer | quote }}
+            - name: AGENT_PLATFORM_JWT_AUDIENCE
+              value: {{ required "agentPlatform.gateway.jwtAudience is required" $agentPlatform.gateway.jwtAudience | quote }}
+            {{- /* The BASE queue, identical to the Worker's TEMPORAL_TASK_QUEUE.
+                   Both sides derive their lanes from it — the Worker through
+                   agentTaskQueues(), the gateway by appending -document — so a
+                   literal or a pre-suffixed value here dispatches long-document
+                   analysis onto a queue no Worker polls, silently and forever. */}}
+            - name: AGENT_PLATFORM_TEMPORAL_TASK_QUEUE
+              value: {{ required "agentPlatform.temporal.taskQueue is required" $agentPlatform.temporal.taskQueue | quote }}
+            - name: AGENT_DOMAIN_JWT_ISSUER
+              value: {{ required "agentPlatform.gateway.domainJwtIssuer is required" $agentPlatform.gateway.domainJwtIssuer | quote }}
+            - name: AGENT_DOMAIN_JWT_AUDIENCE
+              value: {{ required "agentPlatform.gateway.domainJwtAudience is required" $agentPlatform.gateway.domainJwtAudience | quote }}
+            - name: AGENT_ADMISSION_PROVIDER_LANE
+              value: {{ required "agentPlatform.admission.providerLane is required" $agentPlatform.admission.providerLane | quote }}
+            - name: AGENT_ADMISSION_RETRY_AFTER_SECONDS
+              value: {{ required "agentPlatform.admission.retryAfterSeconds is required" $agentPlatform.admission.retryAfterSeconds | quote }}
+            - name: AGENT_ADMISSION_RESERVED_TOKEN_UNITS_PER_RUN
+              value: {{ required "agentPlatform.admission.reservation.tokenUnitsPerRun is required" $agentPlatform.admission.reservation.tokenUnitsPerRun | quote }}
+            - name: AGENT_ADMISSION_RESERVED_COST_MICROUSD_PER_RUN
+              value: {{ required "agentPlatform.admission.reservation.costMicrousdPerRun is required" $agentPlatform.admission.reservation.costMicrousdPerRun | quote }}
+            - name: AGENT_ADMISSION_MAX_ACTIVE_GLOBAL
+              value: {{ required "agentPlatform.admission.maxActive.global is required" $agentPlatform.admission.maxActive.global | quote }}
+            - name: AGENT_ADMISSION_MAX_ACTIVE_PER_WORKSPACE
+              value: {{ required "agentPlatform.admission.maxActive.perWorkspace is required" $agentPlatform.admission.maxActive.perWorkspace | quote }}
+            - name: AGENT_ADMISSION_MAX_ACTIVE_PER_ACTOR
+              value: {{ required "agentPlatform.admission.maxActive.perActor is required" $agentPlatform.admission.maxActive.perActor | quote }}
+            - name: AGENT_ADMISSION_MAX_ACTIVE_PER_PROVIDER_LANE
+              value: {{ required "agentPlatform.admission.maxActive.perProviderLane is required" $agentPlatform.admission.maxActive.perProviderLane | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_GLOBAL
+              value: {{ required "agentPlatform.admission.maxReservedTokenUnits.global is required" $agentPlatform.admission.maxReservedTokenUnits.global | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_PER_WORKSPACE
+              value: {{ required "agentPlatform.admission.maxReservedTokenUnits.perWorkspace is required" $agentPlatform.admission.maxReservedTokenUnits.perWorkspace | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_PER_ACTOR
+              value: {{ required "agentPlatform.admission.maxReservedTokenUnits.perActor is required" $agentPlatform.admission.maxReservedTokenUnits.perActor | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_TOKEN_UNITS_PER_PROVIDER_LANE
+              value: {{ required "agentPlatform.admission.maxReservedTokenUnits.perProviderLane is required" $agentPlatform.admission.maxReservedTokenUnits.perProviderLane | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_COST_MICROUSD_GLOBAL
+              value: {{ required "agentPlatform.admission.maxReservedCostMicrousd.global is required" $agentPlatform.admission.maxReservedCostMicrousd.global | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_COST_MICROUSD_PER_WORKSPACE
+              value: {{ required "agentPlatform.admission.maxReservedCostMicrousd.perWorkspace is required" $agentPlatform.admission.maxReservedCostMicrousd.perWorkspace | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_COST_MICROUSD_PER_ACTOR
+              value: {{ required "agentPlatform.admission.maxReservedCostMicrousd.perActor is required" $agentPlatform.admission.maxReservedCostMicrousd.perActor | quote }}
+            - name: AGENT_ADMISSION_MAX_RESERVED_COST_MICROUSD_PER_PROVIDER_LANE
+              value: {{ required "agentPlatform.admission.maxReservedCostMicrousd.perProviderLane is required" $agentPlatform.admission.maxReservedCostMicrousd.perProviderLane | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
@@ -172,6 +233,10 @@ spec:
             {{- if $mtls }}
             - secretRef:
                 name: {{ .Values.studioAgentTemporalSecrets.projectedName }}
+            {{- end }}
+            {{- if $agentPlatform.enabled }}
+            - secretRef:
+                name: {{ .Values.agentPlatformServerSecrets.projectedName }}
             {{- end }}
             - secretRef:
                 name: {{ .Values.studioAgentGatewaySecrets.projectedName }}
@@ -197,6 +262,11 @@ spec:
             {{- if $mtls }}
             - name: studio-agent-temporal-secrets
               mountPath: /mnt/studio-agent-temporal-secrets
+              readOnly: true
+            {{- end }}
+            {{- if $agentPlatform.enabled }}
+            - name: agent-platform-server-secrets
+              mountPath: /mnt/agent-platform-server-secrets
               readOnly: true
             {{- end }}
             - name: studio-agent-gateway-secrets
@@ -251,6 +321,14 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-studio-agent-temporal-kv
+        {{- end }}
+        {{- if $agentPlatform.enabled }}
+        - name: agent-platform-server-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-platform-server-kv
         {{- end }}
         - name: studio-agent-gateway-secrets
           csi:

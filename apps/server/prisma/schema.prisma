@@ -4092,6 +4092,316 @@ model Crew {
   @@map("crews")
 }
 
+/// Exactly-once receipt for a command accepted from the internal Agent
+/// Platform. The receipt is written in the same transaction as a successful
+/// domain mutation. Replayed Temporal activities therefore return the original
+/// response instead of executing business logic twice. Rejected commands are
+/// also recorded (without a domain mutation) so a retry cannot observe a
+/// different result under the same idempotency key.
+model AgentDomainCommand {
+  idempotencyKey String   @id @map("idempotency_key") @db.VarChar(256)
+  toolId         String   @map("tool_id") @db.VarChar(128)
+  actorId        String   @map("actor_id") @db.VarChar(128)
+  surface        String   @db.VarChar(64)
+  scopeKey       String   @map("scope_key") @db.VarChar(512)
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  request        Json     @db.JsonB
+  httpStatus     Int      @map("http_status")
+  response       Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt    DateTime @default(now()) @map("completed_at") @db.Timestamptz(6)
+
+  @@index([actorId, createdAt(sort: Desc)], map: "agent_domain_commands_actor_recent_idx")
+  @@index([surface, scopeKey, createdAt(sort: Desc)], map: "agent_domain_commands_scope_recent_idx")
+  @@map("agent_domain_commands")
+}
+
+enum AgentPlatformPermissionMode {
+  ask
+  smart
+  full
+}
+
+enum AgentPlatformAttachmentKind {
+  model_file
+  document_text
+}
+
+enum AgentPlatformAttachmentStatus {
+  processing
+  ready
+  failed
+  revoked
+}
+
+enum AgentPlatformAttachmentIngestJobStatus {
+  queued
+  leased
+  retry_wait
+  succeeded
+  dead_lettered
+  cancelled
+}
+
+enum AgentDocumentAnalysisJobStatus {
+  queued
+  dispatching
+  running
+  reducing
+  succeeded
+  failed
+  dead_lettered
+  cancelled
+}
+
+enum AgentDocumentAnalysisArtifactKind {
+  section
+  reduce
+  final
+}
+
+enum AgentPlatformInvocationStatus {
+  admitting
+  rejected
+  queued
+  running
+  waiting_for_approval
+  succeeded
+  failed
+  cancelled
+}
+
+enum AgentPlatformInvocationAttemptStatus {
+  admitting
+  dispatched
+  rejected
+}
+
+/// Product-owned conversation identity for the replacement Agent Platform.
+/// Execution state remains in Temporal, live events remain in Ably, and model
+/// memory remains in the Agent Platform database. This registry owns only the
+/// user-visible conversation lifecycle and its security-bound business scope.
+///
+/// `scope` is a closed discriminated object validated both by the gateway and
+/// database CHECK constraints. Every grant/control request reloads this row and
+/// re-authorizes the stored scope; clients never get to redefine scope for an
+/// existing conversation.
+model AgentPlatformConversation {
+  id             String                      @id @default(uuid(7)) @db.Uuid
+  ownerActorId   String                      @map("owner_actor_id") @db.VarChar(128)
+  surface        String                      @db.VarChar(64)
+  scopeKind      String                      @map("scope_kind") @db.VarChar(64)
+  scopeKey       String                      @map("scope_key") @db.VarChar(64)
+  scope          Json                        @db.JsonB
+  title          String?                     @db.VarChar(240)
+  permissionMode AgentPlatformPermissionMode @default(smart) @map("permission_mode")
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?                   @map("archived_at") @db.Timestamptz(6)
+
+  attachments AgentPlatformAttachment[]
+  invocations AgentPlatformInvocation[]
+
+  /// Exactly one currently selected conversation per actor and business scope
+  /// is enforced by a partial unique index in migration SQL.
+  @@unique([id, ownerActorId], map: "agent_platform_conversations_id_owner_unique")
+  @@index([ownerActorId, surface, scopeKey, updatedAt(sort: Desc)], map: "agent_platform_conversations_owner_scope_recent_idx")
+  @@index([ownerActorId, updatedAt(sort: Desc), id(sort: Desc)], map: "agent_platform_conversations_owner_recent_idx")
+  @@map("agent_platform_conversations")
+}
+
+/// Durable product projection of one Agent invocation. Temporal remains the
+/// execution authority; this row closes the UI lifecycle before an Ably Run can
+/// be opened and gives reconnecting clients a bounded, queryable terminal fact.
+model AgentPlatformInvocation {
+  id                      String                        @id @default(uuid(7)) @db.Uuid
+  conversationId          String                        @map("conversation_id") @db.Uuid
+  ownerActorId            String                        @map("owner_actor_id") @db.VarChar(128)
+  workspaceScopeKey       String                        @map("workspace_scope_key") @db.VarChar(64)
+  providerLane            String                        @map("provider_lane") @db.VarChar(64)
+  reservedTokenUnits      BigInt                        @map("reserved_token_units")
+  reservedCostMicrousd    BigInt                        @map("reserved_cost_microusd")
+  inputEventId            String                        @map("input_event_id") @db.VarChar(256)
+  clientMessageId         String                        @map("client_message_id") @db.VarChar(512)
+  locale                  String                        @db.VarChar(35)
+  provisionalRunId        String                        @default(uuid(7)) @map("provisional_run_id") @db.Uuid
+  workflowId              String?                       @map("workflow_id") @db.Uuid
+  status                  AgentPlatformInvocationStatus @default(admitting)
+  error                   Json?                         @db.JsonB
+  latestAttemptOrdinal    Int                           @default(0) @map("latest_attempt_ordinal")
+  lifecycleAttemptOrdinal Int                           @default(-1) @map("lifecycle_attempt_ordinal")
+  statusRevision          BigInt                        @default(autoincrement()) @map("status_revision")
+  admittedAt              DateTime?                     @map("admitted_at") @db.Timestamptz(6)
+  startedAt               DateTime?                     @map("started_at") @db.Timestamptz(6)
+  completedAt             DateTime?                     @map("completed_at") @db.Timestamptz(6)
+  createdAt               DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversation AgentPlatformConversation        @relation(fields: [conversationId, ownerActorId], references: [id, ownerActorId], onDelete: Cascade)
+  attempts     AgentPlatformInvocationAttempt[]
+
+  @@unique([conversationId, inputEventId], map: "agent_platform_invocations_conversation_input_unique")
+  @@index([conversationId, status, createdAt(sort: Desc), id(sort: Desc)], map: "agent_platform_invocations_conversation_status_idx")
+  @@index([ownerActorId, createdAt(sort: Desc), id(sort: Desc)], map: "agent_platform_invocations_owner_recent_idx")
+  @@index([workspaceScopeKey, status, createdAt, id], map: "agent_platform_invocations_workspace_active_idx")
+  @@index([providerLane, status, createdAt, id], map: "agent_platform_invocations_provider_active_idx")
+  @@index([conversationId, statusRevision], map: "agent_platform_invocations_conversation_revision_idx")
+  @@map("agent_platform_invocations")
+}
+
+/// One transport trigger for an Agent run aggregate.
+///
+/// Ordinal zero is the creator's root message. Later ordinals are AI SDK
+/// continuations (approval/tool-result responses) that reuse the same Ably
+/// run, invocation identity, Temporal session, and product lifecycle. The
+/// leased outbox belongs here because delivery is per trigger, not per run.
+model AgentPlatformInvocationAttempt {
+  id                     String                               @id @default(uuid(7)) @db.Uuid
+  invocationId           String                               @map("invocation_id") @db.Uuid
+  conversationId         String                               @map("conversation_id") @db.Uuid
+  ordinal                Int
+  inputEventId           String                               @map("input_event_id") @db.VarChar(256)
+  clientMessageId        String                               @map("client_message_id") @db.VarChar(512)
+  locale                 String                               @db.VarChar(35)
+  status                 AgentPlatformInvocationAttemptStatus @default(admitting)
+  error                  Json?                                @db.JsonB
+  admissionAttempts      Int                                  @default(0) @map("admission_attempts")
+  nextAdmissionAttemptAt DateTime?                            @default(now()) @map("next_admission_attempt_at") @db.Timestamptz(6)
+  admissionLeaseToken    String?                              @map("admission_lease_token") @db.Uuid
+  admissionLeaseUntil    DateTime?                            @map("admission_lease_until") @db.Timestamptz(6)
+  dispatchedAt           DateTime?                            @map("dispatched_at") @db.Timestamptz(6)
+  createdAt              DateTime                             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invocation AgentPlatformInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
+
+  @@unique([invocationId, ordinal], map: "agent_platform_invocation_attempts_ordinal_unique")
+  @@unique([conversationId, clientMessageId], map: "agent_platform_invocation_attempts_message_unique")
+  @@unique([conversationId, inputEventId], map: "agent_platform_invocation_attempts_input_unique")
+  @@index([status, nextAdmissionAttemptAt, createdAt, id], map: "agent_platform_invocation_attempts_due_idx")
+  @@map("agent_platform_invocation_attempts")
+}
+
+/// Product-owned attachment identity for Agent Platform conversations.
+///
+/// Messages persist only `fizzdragon-media://<id>` references. Model-file
+/// URLs are minted just in time after current access is re-authorized, so a
+/// Temporal queue delay can never make a stored URL stale. Text-based
+/// documents are parsed once in an isolated worker and retain only a bounded,
+/// normalized projection plus its source hash.
+model AgentPlatformAttachment {
+  id                   String                        @id @default(uuid(7)) @db.Uuid
+  conversationId       String                        @map("conversation_id") @db.Uuid
+  mediaAssetId         String                        @map("media_asset_id") @db.Uuid
+  ownerActorId         String                        @map("owner_actor_id") @db.VarChar(128)
+  kind                 AgentPlatformAttachmentKind
+  status               AgentPlatformAttachmentStatus
+  fileName             String                        @map("file_name") @db.VarChar(255)
+  mediaType            String                        @map("media_type") @db.VarChar(128)
+  locale               String                        @db.VarChar(35)
+  sizeBytes            BigInt                        @map("size_bytes")
+  documentText         String?                       @map("document_text") @db.Text
+  documentCharCount    Int?                          @map("document_char_count")
+  documentPageCount    Int?                          @map("document_page_count")
+  contentHash          String?                       @map("content_hash") @db.VarChar(64)
+  documentIndex        Json?                         @map("document_index") @db.JsonB
+  documentIndexVersion String?                       @map("document_index_version") @db.VarChar(64)
+  error                Json?                         @db.JsonB
+  readyAt              DateTime?                     @map("ready_at") @db.Timestamptz(6)
+  revokedAt            DateTime?                     @map("revoked_at") @db.Timestamptz(6)
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversation AgentPlatformConversation         @relation(fields: [conversationId, ownerActorId], references: [id, ownerActorId], onDelete: Cascade)
+  mediaAsset   MediaAsset                        @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  ingestJob    AgentPlatformAttachmentIngestJob?
+  analysisJobs AgentDocumentAnalysisJob[]
+
+  @@unique([conversationId, mediaAssetId], map: "agent_platform_attachments_conversation_media_unique")
+  @@index([conversationId, status, createdAt, id], map: "agent_platform_attachments_conversation_status_idx")
+  @@index([ownerActorId, createdAt(sort: Desc), id(sort: Desc)], map: "agent_platform_attachments_owner_recent_idx")
+  @@map("agent_platform_attachments")
+}
+
+/// Durable queue row for off-event-loop document ingestion. The attachment
+/// owns the public lifecycle while this row owns every retry, lease and
+/// dead-letter fact; there is deliberately no second in-memory queue.
+model AgentPlatformAttachmentIngestJob {
+  id              String                                 @id @default(uuid(7)) @db.Uuid
+  attachmentId    String                                 @unique(map: "agent_attachment_ingest_jobs_attachment_unique") @map("attachment_id") @db.Uuid
+  status          AgentPlatformAttachmentIngestJobStatus @default(queued)
+  attemptCount    Int                                    @default(0) @map("attempt_count")
+  maxAttempts     Int                                    @map("max_attempts")
+  stage           String                                 @default("queued") @db.VarChar(64)
+  progress        Int                                    @default(0)
+  availableAt     DateTime                               @default(now()) @map("available_at") @db.Timestamptz(6)
+  leaseToken      String?                                @map("lease_token") @db.Uuid
+  leaseUntil      DateTime?                              @map("lease_until") @db.Timestamptz(6)
+  lastHeartbeatAt DateTime?                              @map("last_heartbeat_at") @db.Timestamptz(6)
+  error           Json?                                  @db.JsonB
+  completedAt     DateTime?                              @map("completed_at") @db.Timestamptz(6)
+  deadLetteredAt  DateTime?                              @map("dead_lettered_at") @db.Timestamptz(6)
+  createdAt       DateTime                               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  attachment AgentPlatformAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt, leaseUntil, createdAt, id], map: "agent_attachment_ingest_jobs_claim_idx")
+  @@map("agent_platform_attachment_ingest_jobs")
+}
+
+/// Durable exhaustive analysis of one immutable indexed source version.
+/// Temporal owns orchestration; these rows own resumable product checkpoints.
+model AgentDocumentAnalysisJob {
+  id                   String                         @id @default(uuid(7)) @db.Uuid
+  attachmentId         String                         @map("attachment_id") @db.Uuid
+  analysisVersion      String                         @map("analysis_version") @db.VarChar(64)
+  sourceContentHash    String                         @map("source_content_hash") @db.VarChar(64)
+  status               AgentDocumentAnalysisJobStatus @default(queued)
+  temporalWorkflowId   String?                        @map("temporal_workflow_id") @db.VarChar(256)
+  dispatchAttemptCount Int                            @default(0) @map("dispatch_attempt_count")
+  nextDispatchAt       DateTime                       @default(now()) @map("next_dispatch_at") @db.Timestamptz(6)
+  dispatchLeaseToken   String?                        @map("dispatch_lease_token") @db.Uuid
+  dispatchLeaseUntil   DateTime?                      @map("dispatch_lease_until") @db.Timestamptz(6)
+  stage                String                         @default("queued") @db.VarChar(64)
+  completedUnits       Int                            @default(0) @map("completed_units")
+  totalUnits           Int                            @map("total_units")
+  error                Json?                          @db.JsonB
+  startedAt            DateTime?                      @map("started_at") @db.Timestamptz(6)
+  completedAt          DateTime?                      @map("completed_at") @db.Timestamptz(6)
+  deadLetteredAt       DateTime?                      @map("dead_lettered_at") @db.Timestamptz(6)
+  createdAt            DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  attachment AgentPlatformAttachment         @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  artifacts  AgentDocumentAnalysisArtifact[]
+
+  @@unique([attachmentId, analysisVersion, sourceContentHash], map: "agent_document_analysis_jobs_source_unique")
+  @@index([status, nextDispatchAt, dispatchLeaseUntil, createdAt, id], map: "agent_document_analysis_jobs_dispatch_idx")
+  @@map("agent_document_analysis_jobs")
+}
+
+/// Immutable map/reduce checkpoint. Unique coordinates make every model
+/// activity idempotent across Activity retries, worker crashes and replays.
+model AgentDocumentAnalysisArtifact {
+  id               String                            @id @default(uuid(7)) @db.Uuid
+  jobId            String                            @map("job_id") @db.Uuid
+  kind             AgentDocumentAnalysisArtifactKind
+  level            Int
+  ordinal          Int
+  sourceChunkIds   String[]                          @map("source_chunk_ids")
+  inputArtifactIds String[]                          @map("input_artifact_ids") @db.Uuid
+  content          Json                              @db.JsonB
+  contentHash      String                            @map("content_hash") @db.VarChar(64)
+  createdAt        DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job AgentDocumentAnalysisJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, kind, level, ordinal], map: "agent_document_analysis_artifacts_coordinate_unique")
+  @@index([jobId, kind, level, ordinal], map: "agent_document_analysis_artifacts_job_idx")
+  @@map("agent_document_analysis_artifacts")
+}
+
 model CrewPosition {
   id             String             @id
   crewId         String             @map("crew_id")
@@ -5749,6 +6059,7 @@ model MediaAsset {
   storyVideoUploadSession          StoryVideoUploadSession?
   studioAgentArtifacts             StudioAgentArtifact[]             @relation("StudioAgentArtifactMedia")
   studioAgentOrphanCleanupJob      StudioAgentOrphanMediaCleanupJob?
+  agentPlatformAttachments         AgentPlatformAttachment[]
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
@@ -6649,16 +6960,16 @@ model StoryChapter {
 }
 
 model StoryCanvasLayout {
-  storyChapterId        String   @id @map("story_chapter_id") @db.Uuid
-  storyProjectId        String   @map("story_project_id") @db.Uuid
-  workspaceId           String   @map("workspace_id") @db.Uuid
-  schemaVersion         String   @default("story-canvas-layout-v3") @map("schema_version") @db.VarChar(64)
-  nodePositions         Json     @default("{}") @map("node_positions") @db.JsonB
-  revision              Int      @default(0)
-  updatedByUserId       String   @map("updated_by_user_id") @db.VarChar(64)
-  updatedBySessionId    String?  @map("updated_by_session_id") @db.VarChar(64)
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  storyChapterId     String   @id @map("story_chapter_id") @db.Uuid
+  storyProjectId     String   @map("story_project_id") @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  schemaVersion      String   @default("story-canvas-layout-v3") @map("schema_version") @db.VarChar(64)
+  nodePositions      Json     @default("{}") @map("node_positions") @db.JsonB
+  revision           Int      @default(0)
+  updatedByUserId    String   @map("updated_by_user_id") @db.VarChar(64)
+  updatedBySessionId String?  @map("updated_by_session_id") @db.VarChar(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   chapter StoryChapter @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade, map: "story_canvas_layouts_chapter_project_fkey")
   project StoryProject @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)

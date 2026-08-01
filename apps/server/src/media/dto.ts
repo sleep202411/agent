@@ -30,6 +30,8 @@ export const UploadKindSchema = z.enum([
   'ip_banner',
   'news_cover',
   'ai_reference_image',
+  'agent_attachment_image',
+  'agent_attachment_document',
   'studio_agent_image',
   'studio_agent_document',
   'ai_reference_video',

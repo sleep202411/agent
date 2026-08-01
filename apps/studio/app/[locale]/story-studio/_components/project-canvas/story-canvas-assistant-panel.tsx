@@ -2,7 +2,6 @@
 
 import { useMemo, type ReactNode, type RefObject } from "react";
 import { IconClockExclamation } from "@tabler/icons-react";
-import type { StudioAgentPermissionMode } from "@repo/shared";
 import { useTranslations } from "next-intl";
 
 import {
@@ -14,16 +13,18 @@ import {
   StudioAgentSurface,
   StudioAgentTimeline,
   StudioAgentToolApproval,
-  StudioAgentTurnFailure,
+  StudioAgentTurnFailureRow,
   formatStudioAgentFileSize,
   studioAgentTurnFailureKind,
   type StudioAgentComposerAttachmentQueue,
+  type StudioAgentDocumentAnalysisLabels,
   type StudioAgentTurnFailureAction,
   type StudioAgentTurnFailureLabels,
 } from "@/components/studio-agent";
 import type {
   StudioAgentDeliveryMode,
   StudioAgentMessageView,
+  StudioAgentPermissionMode,
   StudioAgentRunStatus,
   StudioAgentTimelineItemView,
 } from "@/lib/studio-agent";
@@ -80,6 +81,8 @@ export function StoryCanvasAssistantPanel({
   const turnFailureLabels: StudioAgentTurnFailureLabels = {
     region: t("turnFailure.region"),
     code: t("turnFailure.code"),
+    diagnosticId: t("turnFailure.diagnosticId"),
+    details: t("turnFailure.details"),
     issues: t("turnFailure.issues"),
     title: {
       inputRejected: t("turnFailure.title.inputRejected"),
@@ -91,6 +94,15 @@ export function StoryCanvasAssistantPanel({
       notRecorded: t("turnFailure.explanation.notRecorded"),
       failed: t("turnFailure.explanation.failed"),
     },
+  };
+  const analysisLabels: StudioAgentDocumentAnalysisLabels = {
+    region: t("attachmentAnalysis.region"),
+    queued: t("attachmentAnalysis.queued"),
+    mapping: (progress) => t("attachmentAnalysis.mapping", { progress }),
+    reducing: (progress) => t("attachmentAnalysis.reducing", { progress }),
+    succeeded: t("attachmentAnalysis.succeeded"),
+    failed: t("attachmentAnalysis.failed"),
+    cancelled: t("attachmentAnalysis.cancelled"),
   };
   const runStatusLabels: Record<StudioAgentRunStatus, string> = {
     queued: t("runStatus.queued"),
@@ -135,8 +147,14 @@ export function StoryCanvasAssistantPanel({
               onClick: () =>
                 runCommand(
                   session
-                    .submit(failedTurnPrompt.text, "send", failedTurnPrompt.attachments)
-                    .then(() => undefined)
+                    .retryRejectedAttempt(turnFailure.id)
+                    .then((retried) =>
+                      retried
+                        ? undefined
+                        : session
+                            .submit(failedTurnPrompt.text, "send", failedTurnPrompt.attachments)
+                            .then(() => undefined)
+                    )
                 ),
             }
           : undefined;
@@ -153,17 +171,10 @@ export function StoryCanvasAssistantPanel({
         newConversation: t("newConversation"),
       }}
       onNewConversation={session.thread ? () => void session.startNewConversation() : undefined}
-      busy={session.status === "loading" || session.isRunning}
+      busy={session.status === "loading" || session.submitting || session.isRunning}
       onOpenChange={onOpenChange}
       composer={
         <div className="space-y-2">
-          {turnFailure ? (
-            <StudioAgentTurnFailure
-              failure={turnFailure}
-              labels={turnFailureLabels}
-              action={failureAction}
-            />
-          ) : null}
           {/*
             THE SPINNER IS NOT AN ANSWER.
             Every other unstick depends on someone publishing something; a worker
@@ -219,10 +230,14 @@ export function StoryCanvasAssistantPanel({
               ) : session.commandError ? (
                 <button
                   type="button"
-                  onClick={session.clearCommandError}
-                  className="shrink-0 text-white/40 transition-colors hover:text-white/76"
+                  onClick={() =>
+                    session.commandErrorRetry
+                      ? runCommand(session.commandErrorRetry())
+                      : session.clearCommandError()
+                  }
+                  className="shrink-0 font-medium text-white/52 transition-colors hover:text-white/82"
                 >
-                  {t("dismissError")}
+                  {session.commandErrorRetry ? t("retry") : t("dismissError")}
                 </button>
               ) : null}
             </div>
@@ -232,6 +247,7 @@ export function StoryCanvasAssistantPanel({
             inputRef={composer.inputRef}
             deliveryMode={composer.deliveryMode}
             isRunning={session.isRunning}
+            canSteer={session.canSteer}
             isCancelling={session.cancelling}
             isSubmitting={session.submitting}
             queuedCount={session.queuedCount}
@@ -282,10 +298,11 @@ export function StoryCanvasAssistantPanel({
                 remove: (fileName) => t("composer.attachments.remove", { fileName }),
                 retry: (fileName) => t("composer.attachments.retry", { fileName }),
                 uploading: (progress) => t("composer.attachments.uploading", { progress }),
-                processing: t("composer.attachments.processing"),
+                processing: (progress) => t("composer.attachments.processing", { progress }),
                 ready: t("composer.attachments.ready"),
                 failed: t("composer.attachments.failed"),
                 fileSize: formatStudioAgentFileSize,
+                analysis: analysisLabels,
               },
             }}
             attachments={{
@@ -294,6 +311,7 @@ export function StoryCanvasAssistantPanel({
               onAddFiles: composer.queue.addFiles,
               onRetry: composer.queue.retry,
               onRemove: composer.queue.remove,
+              analysis: session.documentAnalysis,
             }}
             chips={
               session.childRuns.length > 0 ? (
@@ -337,7 +355,8 @@ export function StoryCanvasAssistantPanel({
     >
       <StudioAgentTimeline
         items={session.timeline}
-        busy={session.status === "loading" || session.isRunning}
+        analysis={session.documentAnalysis}
+        busy={session.status === "loading" || session.submitting || session.isRunning}
         earlier={{
           hasMore: session.hasEarlierTurns,
           loading: session.loadingEarlierTurns,
@@ -349,6 +368,7 @@ export function StoryCanvasAssistantPanel({
           scrollToLatest: t("timeline.scrollToLatest"),
           loadEarlier: t("timeline.loadEarlier"),
           loadingEarlier: t("timeline.loadingEarlier"),
+          thinking: t("timeline.thinking"),
           messageRole: {
             user: t("timeline.roles.user"),
             assistant: t("timeline.roles.assistant"),
@@ -365,6 +385,7 @@ export function StoryCanvasAssistantPanel({
             },
             unknownSize: t("timeline.attachments.unknownSize"),
             fileSize: formatStudioAgentFileSize,
+            analysis: analysisLabels,
           },
           activity: {
             expand: t("activity.expand"),
@@ -374,6 +395,9 @@ export function StoryCanvasAssistantPanel({
             // falls through and renders verbatim.
             semantic: {
               "studio_agent.activity.generating_response": t("activity.labels.generatingResponse"),
+              story_get_snapshot: t("activity.labels.readingStory"),
+              story_query_source_material: t("activity.labels.reviewingSource"),
+              story_apply_change_set: t("activity.labels.applyingChanges"),
             },
             status: {
               running: t("activity.status.running"),
@@ -402,27 +426,45 @@ export function StoryCanvasAssistantPanel({
           )
         }
         renderMessage={renderMessage}
-        renderToolApproval={(approval) => (
-          <StudioAgentToolApproval
-            approval={approval}
-            disabled={session.status !== "ready" || streamClosed}
-            labels={{
-              title: (toolName) => t("toolApproval.title", { toolName }),
-              approve: t("toolApproval.approve"),
-              deny: t("toolApproval.deny"),
-              showInput: t("toolApproval.showInput"),
-              hideInput: t("toolApproval.hideInput"),
-              resuming: t("toolApproval.resuming"),
-              decision: {
-                approved: t("toolApproval.decision.approved"),
-                denied: t("toolApproval.decision.denied"),
-              },
-            }}
-            onRespond={(approved) =>
-              runCommand(session.respondToToolApproval(approval.id, approved))
-            }
-          />
-        )}
+        // The failed turn renders as part of the conversation, not as a pinned
+        // banner: one quiet in-flow row carrying the retry affordance, with the
+        // wire code and diagnostic id behind its Details disclosure. Older
+        // terminals keep the timeline's default collapsed outcome row.
+        renderRun={(run) =>
+          turnFailure && run.id === turnFailure.id && run.status === "failed" ? (
+            <StudioAgentTurnFailureRow
+              failure={turnFailure}
+              labels={turnFailureLabels}
+              action={failureAction}
+            />
+          ) : undefined
+        }
+        renderToolApproval={(approval) => {
+          const approvalReady = session.canRespondToToolApproval(approval.runId);
+          return (
+            <StudioAgentToolApproval
+              approval={approval}
+              disabled={session.status !== "ready" || streamClosed || !approvalReady}
+              preparing={approval.decision === null && !approvalReady && !streamClosed}
+              labels={{
+                title: (toolName) => t("toolApproval.title", { toolName }),
+                approve: t("toolApproval.approve"),
+                deny: t("toolApproval.deny"),
+                showInput: t("toolApproval.showInput"),
+                hideInput: t("toolApproval.hideInput"),
+                preparing: t("toolApproval.preparing"),
+                resuming: t("toolApproval.resuming"),
+                decision: {
+                  approved: t("toolApproval.decision.approved"),
+                  denied: t("toolApproval.decision.denied"),
+                },
+              }}
+              onRespond={(approved) =>
+                runCommand(session.respondToToolApproval(approval.id, approved))
+              }
+            />
+          );
+        }}
       />
     </StudioAgentSurface>
   );
@@ -467,8 +509,12 @@ export function selectFailedPrompt(
 
 function renderMessage(message: StudioAgentMessageView): ReactNode {
   if (!message.text) return null;
-  if (message.format === "markdown") {
+  // Parsing and laying out the entire Markdown tree on every arriving token is
+  // quadratic work on long answers and visibly shakes blocks whose syntax is
+  // still incomplete. Stream the exact text first; upgrade it once, atomically,
+  // to rich Markdown when the transport marks the part done.
+  if (message.format === "markdown" && !message.streaming) {
     return <StudioAgentMarkdown>{message.text}</StudioAgentMarkdown>;
   }
-  return <p className="whitespace-pre-wrap break-words">{message.text}</p>;
+  return <span className="whitespace-pre-wrap break-words">{message.text}</span>;
 }

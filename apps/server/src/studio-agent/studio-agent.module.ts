@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { EntitlementsModule } from '../entitlements';
+import { AblyTokenCredentialsModule } from '../infra/realtime/ably-token-credentials';
 import { StorageModule } from '../infra/storage/storage.module';
 import { QuotaModule } from '../quota/quota.module';
 import { StoryAccessModule } from '../story-studio/story-access.module';
@@ -15,10 +16,7 @@ import { StudioAgentCapabilityExecutor } from './studio-agent.capability-executo
 import { StudioAgentConfigService } from './studio-agent.config';
 import { StudioAgentController } from './studio-agent.controller';
 import { StudioAgentEventStore } from './studio-agent.events';
-import {
-  StudioAgentAblyTokenIssuer,
-  studioAgentAblyTokenSignerProvider,
-} from './studio-agent.realtime';
+import { StudioAgentAblyTokenIssuer } from './studio-agent.realtime';
 import { StudioAgentCommandOutboxDispatcher } from './studio-agent.outbox';
 import { StudioAgentPolicyEngine } from './studio-agent.policy';
 import { StudioAgentQuotaService } from './studio-agent-quota.service';
@@ -41,12 +39,6 @@ const STUDIO_AGENT_PROVIDERS = [
   StudioAgentRegistry,
   StudioAgentPolicyEngine,
   StudioAgentScopeAuthorizer,
-  // The server's ENTIRE relationship with Ably: it signs per-thread token
-  // requests and never opens a connection. Delivery is the Temporal worker's,
-  // inside the run it owns. Built from the credential at boot, so a deployment
-  // without ABLY_API_KEY fails here rather than accepting turns whose creators
-  // can never be handed a credential to watch them.
-  studioAgentAblyTokenSignerProvider,
   StudioAgentAblyTokenIssuer,
   StudioAgentEventStore,
   StudioAgentStoryCapabilities,
@@ -83,6 +75,7 @@ export class StudioAgentModule {
         StorageModule,
         EntitlementsModule,
         QuotaModule,
+        AblyTokenCredentialsModule,
       ],
       controllers: [...STUDIO_AGENT_CONTROLLERS],
       providers: [...STUDIO_AGENT_PROVIDERS],

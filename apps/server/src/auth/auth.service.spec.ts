@@ -57,6 +57,45 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
     expect(calls).toEqual(['satoken=FRESH']);
   });
 
+  it('reuses a valid token across cookie reordering and unrelated cookies', async () => {
+    await svc.validateToken('locale=en-US; satoken=FRESH');
+    const user = await svc.validateToken(
+      'analytics=changed; satoken=STALE; satoken=FRESH; locale=zh-CN',
+    );
+
+    expect(user?.userId).toBe('42');
+    expect(calls).toEqual(['satoken=FRESH']);
+  });
+
+  it('coalesces concurrent remote validation for the same token', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    jest
+      .spyOn(
+        svc as unknown as {
+          validateSatoken: (c: string, h: string) => Promise<AuthUser | null>;
+        },
+        'validateSatoken',
+      )
+      .mockImplementation(async (satokenCookie: string) => {
+        calls.push(satokenCookie);
+        await gate;
+        return { userId: '42', nickName: 'Fresh' };
+      });
+
+    const first = svc.validateToken('satoken=FRESH');
+    const second = svc.validateToken('locale=zh-CN; satoken=FRESH');
+    release();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { userId: '42', nickName: 'Fresh' },
+      { userId: '42', nickName: 'Fresh' },
+    ]);
+    expect(calls).toEqual(['satoken=FRESH']);
+  });
+
   it('falls back to the whole cookie when no satoken is present', async () => {
     await svc.validateToken('sessionid=abc');
     expect(calls).toEqual(['sessionid=abc']);

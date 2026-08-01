@@ -1,18 +1,25 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   IconAlertTriangle,
   IconLayoutGrid,
   IconLoader2,
   IconScissors,
-  IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 
-import { Button } from "@/components/ui/button";
+import {
+  STUDIO_AGENT_ATTACHMENT_ACCEPT,
+  StudioAgentComposer,
+  formatStudioAgentFileSize,
+  type StudioAgentCanonicalAttachment,
+  type StudioAgentComposerAttachmentQueue,
+} from "@/components/studio-agent";
 import { GlassRim } from "@/components/ui/glass-rim";
+import { GlitchText } from "@/components/ui/glitch-text";
+import type { StudioAgentDocumentAnalysisMap } from "@/lib/studio-agent";
 import { cn } from "@/lib/utils";
 
 import {
@@ -27,6 +34,8 @@ const SKILL_ICONS: Record<StoryCanvasSkillIcon, Icon> = {
 };
 
 const NOTICE_ID = "story-canvas-first-open-agent-state";
+const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
+const SELECTED_SKILL_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
 
 /**
  * Whether the Studio Agent can accept an opening message right now.
@@ -56,20 +65,39 @@ export type StoryCanvasFirstOpenAvailability =
 export function StoryCanvasFirstOpen({
   availability,
   draft,
-  onStart,
+  attachmentQueue,
+  documentAnalysis,
+  onDraftChange,
+  onSubmit,
+  submitting = false,
   onRetry,
   className,
 }: {
   availability: StoryCanvasFirstOpenAvailability;
-  /** The StoryOS composer draft, so a seed never clobbers typed text. */
+  /** Shared with the StoryOS panel, so opening it never loses typed text. */
   draft: string;
-  /** Opens StoryOS with this draft. Nothing is sent — the creator submits. */
-  onStart: (nextDraft: string) => void;
+  /** Shared upload queue; attachments survive the transition into StoryOS. */
+  attachmentQueue: StudioAgentComposerAttachmentQueue;
+  /** Live document-analysis state for the queued attachments. */
+  documentAnalysis?: StudioAgentDocumentAnalysisMap;
+  onDraftChange: (nextDraft: string) => void;
+  /** Sends the first creator-authored message and opens the StoryOS transcript. */
+  onSubmit: (
+    text: string,
+    attachments: readonly StudioAgentCanonicalAttachment[]
+  ) => void | Promise<void>;
+  submitting?: boolean;
   onRetry?: () => void;
   className?: string;
 }) {
   const t = useTranslations("storyStudio.canvas.firstOpen");
+  const agentT = useTranslations("storyStudio.canvas.studioAgent");
   const ready = availability.kind === "ready";
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (ready) inputRef.current?.focus();
+  }, [ready]);
 
   // The premise and the art direction are separate strings: the server stopped
   // injecting directing-skill instructions when Story Studio moved off the
@@ -86,9 +114,10 @@ export function StoryCanvasFirstOpen({
     const seeds = STORY_CANVAS_DIRECTING_SKILLS.map((skill) => skillSeed(skill.copyKey).trim());
     const current = draft.trim();
     // Only ever replace an empty draft or another card's untouched seed. Text
-    // the creator typed or edited survives; they keep it and land in StoryOS.
+    // the creator typed or edited survives.
     const replaceable = current === "" || seeds.includes(current);
-    onStart(replaceable ? skillSeed(copyKey) : draft);
+    onDraftChange(replaceable ? skillSeed(copyKey) : draft);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   return (
@@ -111,7 +140,15 @@ export function StoryCanvasFirstOpen({
             id="story-canvas-first-open-title"
             className="text-[32px] leading-tight font-semibold tracking-[-0.02em] text-white/92"
           >
-            {t("title")}
+            <GlitchText
+              speed={1.2}
+              enableShadows
+              shadowColors={{ after: "rgba(229,34,39,0.55)", before: "#9d8cff" }}
+              baseClassName="bg-gradient-to-r from-[#d67578] via-[#b482e8] to-[#9d8cff] bg-clip-text text-transparent"
+              className="[--glitch-background:oklch(0.105_0_0)]"
+            >
+              {t("title")}
+            </GlitchText>
           </h2>
           <p className="mx-auto mt-3 max-w-[520px] text-sm leading-6 text-white/50">
             {t("description")}
@@ -150,20 +187,72 @@ export function StoryCanvasFirstOpen({
           </div>
         )}
 
-        <div className="mt-7 flex justify-center">
-          {/* One deliberate brand-red hero CTA (DESIGN.md rule 3) — the same
-              accent the Story Studio library's create action already uses. */}
-          <Button
-            type="button"
-            variant="primary-cta"
-            size="xl"
+        <div className="mt-7">
+          <StudioAgentComposer
+            value={draft}
+            inputRef={inputRef}
+            deliveryMode="send"
+            onDeliveryModeChange={() => undefined}
+            onValueChange={onDraftChange}
+            onSubmit={(text, _mode, attachments) => onSubmit(text, attachments)}
+            isSubmitting={submitting}
             disabled={!ready}
-            aria-describedby={ready ? undefined : NOTICE_ID}
-            onClick={() => onStart(draft)}
-          >
-            <IconSparkles aria-hidden="true" />
-            {t("start")}
-          </Button>
+            className="bg-[oklch(0.22_0_0_/_0.96)] shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_22px_70px_rgba(0,0,0,0.45)]"
+            attachments={{
+              items: attachmentQueue.items,
+              accept: STUDIO_AGENT_ATTACHMENT_ACCEPT,
+              onAddFiles: attachmentQueue.addFiles,
+              onRetry: attachmentQueue.retry,
+              onRemove: attachmentQueue.remove,
+              analysis: documentAnalysis,
+            }}
+            labels={{
+              input: t("start"),
+              placeholder: t("start"),
+              stop: agentT("composer.stop"),
+              stopping: agentT("composer.stopping"),
+              queued: (count) => agentT("composer.queued", { count }),
+              deliveryModeMenu: agentT("composer.deliveryModeMenu"),
+              deliveryMode: {
+                send: {
+                  label: agentT("composer.delivery.send.label"),
+                  description: agentT("composer.delivery.send.description"),
+                },
+                steer: {
+                  label: agentT("composer.delivery.steer.label"),
+                  description: agentT("composer.delivery.steer.description"),
+                },
+                enqueue: {
+                  label: agentT("composer.delivery.enqueue.label"),
+                  description: agentT("composer.delivery.enqueue.description"),
+                },
+                stop_and_send: {
+                  label: agentT("composer.delivery.stopAndSend.label"),
+                  description: agentT("composer.delivery.stopAndSend.description"),
+                },
+              },
+              attachments: {
+                add: agentT("composer.attachments.add"),
+                drop: agentT("composer.attachments.drop"),
+                remove: (fileName) => agentT("composer.attachments.remove", { fileName }),
+                retry: (fileName) => agentT("composer.attachments.retry", { fileName }),
+                uploading: (progress) => agentT("composer.attachments.uploading", { progress }),
+                processing: (progress) => agentT("composer.attachments.processing", { progress }),
+                ready: agentT("composer.attachments.ready"),
+                failed: agentT("composer.attachments.failed"),
+                fileSize: formatStudioAgentFileSize,
+                analysis: {
+                  region: agentT("attachmentAnalysis.region"),
+                  queued: agentT("attachmentAnalysis.queued"),
+                  mapping: (progress) => agentT("attachmentAnalysis.mapping", { progress }),
+                  reducing: (progress) => agentT("attachmentAnalysis.reducing", { progress }),
+                  succeeded: agentT("attachmentAnalysis.succeeded"),
+                  failed: agentT("attachmentAnalysis.failed"),
+                  cancelled: agentT("attachmentAnalysis.cancelled"),
+                },
+              },
+            }}
+          />
         </div>
 
         <div className="mt-7">
@@ -173,17 +262,23 @@ export function StoryCanvasFirstOpen({
           <div className="grid grid-cols-2 gap-2.5">
             {STORY_CANVAS_DIRECTING_SKILLS.map((skill) => {
               const SkillIcon = SKILL_ICONS[skill.icon];
+              const selected = draft.trim() === skillSeed(skill.copyKey).trim();
               return (
                 <button
                   key={skill.key}
                   type="button"
                   data-skill={skill.key}
+                  aria-pressed={selected}
                   disabled={!ready}
                   aria-describedby={ready ? undefined : NOTICE_ID}
                   onClick={() => startFromSkill(skill.copyKey)}
                   className={cn(
                     "relative flex min-h-24 items-stretch overflow-hidden rounded-[20px] bg-[oklch(0.205_0_0/0.88)] text-left shadow-[0_14px_48px_rgba(0,0,0,0.24)] backdrop-blur-[30px] transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-                    ready ? "hover:bg-[oklch(0.24_0_0/0.92)]" : "opacity-50"
+                    selected
+                      ? "bg-[#E52227]/[0.07]"
+                      : ready
+                        ? "hover:bg-[oklch(0.24_0_0/0.92)]"
+                        : "opacity-50"
                   )}
                 >
                   {skill.illustration ? (
@@ -198,7 +293,10 @@ export function StoryCanvasFirstOpen({
                   ) : null}
                   <span className="min-w-0 flex-1 p-3.5 text-right">
                     <span className="flex items-center justify-end gap-2 text-white/95">
-                      <SkillIcon className="size-4 shrink-0" stroke={1.7} />
+                      <SkillIcon
+                        className={cn("size-4 shrink-0", selected && "text-[#E52227]")}
+                        stroke={1.7}
+                      />
                       <span className="text-sm font-semibold tracking-[-0.01em]">
                         {t(`skills.${skill.copyKey}.title`)}
                       </span>
@@ -207,7 +305,7 @@ export function StoryCanvasFirstOpen({
                       {t(`skills.${skill.copyKey}.description`)}
                     </span>
                   </span>
-                  <GlassRim />
+                  <GlassRim gradient={selected ? SELECTED_SKILL_RIM : undefined} />
                 </button>
               );
             })}

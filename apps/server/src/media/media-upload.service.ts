@@ -211,6 +211,21 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     keySegment: 'ai-reference-image-staging',
     verifiedImageFinalKeySegment: 'ai-reference-image-final',
   },
+  agent_attachment_image: {
+    contentTypes: IMAGE_CONTENT_TYPES,
+    maxBytes: 30 * MiB,
+    assetKind: MediaAssetKind.image,
+    ttlSeconds: 900,
+    keySegment: 'agent-attachment-image-staging',
+    verifiedImageFinalKeySegment: 'agent-attachment-image-final',
+  },
+  agent_attachment_document: {
+    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+    maxBytes: 10 * MiB,
+    assetKind: MediaAssetKind.document,
+    ttlSeconds: 900,
+    keySegment: 'agent-attachment-document',
+  },
   studio_agent_image: {
     contentTypes: IMAGE_CONTENT_TYPES,
     // Studio Agent accepts only server-decoded JPEG/PNG/WebP images. The cap

@@ -31,10 +31,10 @@ for zh-CN / zh-HK locales only.
          │
          ▼
 ┌────────────────────┐
-│ Agent (Mastra)     │
-│ StoryOS supervisor │
-│ + ask_* personas   │
-│ Workflows + queues │
+│ Agent Platform     │
+│ Mastra + Temporal  │
+│ Ably AI Transport  │
+│ scoped capability  │
 └────────────────────┘
 ```
 
@@ -44,6 +44,7 @@ for zh-CN / zh-HK locales only.
 | `apps/server`                | NestJS                                         | Session, chat WS, proxies to Agent, billing glue        |
 | `apps/agent`                 | Mastra + AI SDK                                | StoryOS supervisor + 6 specialist personas, workflows   |
 | `apps/studio-agent-runtime`  | Temporal workers (TypeScript)                  | Durable Studio Agent execution: control + activities    |
+| `apps/agent-platform`        | Mastra + Temporal + Ably AI Transport          | Replacement unified product Agent Platform              |
 | `packages/shared`            | TypeScript                                     | Cross-app types and constants (`ForcedPersonaKey` etc.) |
 | `packages/ui`                | React                                          | Shared low-level component primitives                   |
 | `packages/eslint-config`     | —                                              | Shared lint rules                                       |
@@ -56,10 +57,16 @@ for zh-CN / zh-HK locales only.
 - **Admin UI design system** → `@apps/admin-ui/DESIGN.md`
 - **Web frontend (Next.js)** → `@apps/web/AGENTS.md`
 - **Agent backend (Mastra)** → `@apps/agent/AGENTS.md`
+- **Replacement Agent Platform** → `@apps/agent-platform/AGENTS.md`
 - **Studio Agent runtime (Temporal)** → `@apps/studio-agent-runtime/AGENTS.md`;
   run it locally with `npm run dev -w studio-agent-runtime` (one command by
   design — it builds `@repo/shared`, refuses to start a stale or half-started
   stack, and restarts a worker when the code it loaded changes).
+
+`apps/agent` and `apps/studio-agent-runtime` are legacy migration sources. New
+Agent architecture and product traffic target `apps/agent-platform`; do not add
+new coupling to the legacy pair.
+
 - **NestJS server** → no AGENTS yet; conventions live in code comments
   and `apps/server/README.md` (TODO: write one).
 

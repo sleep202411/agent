@@ -3,6 +3,7 @@ import {
   canonicalJsonHash,
   canonicalJsonString,
 } from './canonical-json';
+import { runInNewContext } from 'node:vm';
 
 describe('canonical JSON', () => {
   it('sorts object keys recursively while preserving array order', () => {
@@ -31,4 +32,25 @@ describe('canonical JSON', () => {
       expect(() => canonicalizeJson({ value })).toThrow(TypeError);
     },
   );
+
+  it('accepts plain JSON objects created in another JavaScript realm', () => {
+    const crossRealm: unknown = runInNewContext(
+      '({ nested: { value: 1 }, list: [true, null] })',
+    );
+
+    expect(canonicalJsonString(crossRealm)).toBe(
+      '{"list":[true,null],"nested":{"value":1}}',
+    );
+  });
+
+  it.each([
+    new Date('2026-01-01T00:00:00.000Z'),
+    new Map([['value', 1]]),
+    new (class DomainObject {
+      value = 1;
+    })(),
+    Object.assign(Object.create({ inherited: true }), { value: 1 }),
+  ])('rejects non-JSON object prototypes', (value) => {
+    expect(() => canonicalizeJson(value)).toThrow('Non-plain object');
+  });
 });

@@ -13,15 +13,14 @@ import {
   STUDIO_AGENT_DOCUMENT_MAX_SIZE_BYTES,
   STUDIO_AGENT_DOCUMENT_MEDIA_TYPES,
   STUDIO_AGENT_IMAGE_MAX_SIZE_BYTES,
-  StudioAgentTurnFailure,
+  StudioAgentTurnFailureNotice,
   formatStudioAgentFileSize,
   useStudioAgentComposerAttachments,
-  type StudioAgentTurnFailureLabels,
+  type StudioAgentTurnFailureNoticeLabels,
 } from "@/components/studio-agent";
 import {
   STUDIO_AGENT_INVOCATION_PATH,
-  toStudioAgentMessageParts,
-  toStudioAgentToolApprovalInvocation,
+  type StudioAgentCanvasPreviewPart,
   type StudioAgentDeliveryMode,
   type StudioAgentUIMessage,
 } from "@/lib/studio-agent";
@@ -64,8 +63,10 @@ export interface StoryCanvasFirstOpenInputs {
  * honest. The channel and the Ably connection are held only while the panel is
  * open and on top, because the account is capped on both.
  *
- * The surface is an absolute overlay, so opening StoryOS never changes React
- * Flow's viewport dimensions or canvas transform.
+ * The surface is a split, not an overlay: opening StoryOS docks a sibling
+ * column on the right and the canvas region shrinks beside it, so the panel
+ * never hides canvas content. React Flow observes its own container and
+ * absorbs the resize without moving the viewport transform.
  */
 export function StoryCanvasAssistantLayer({
   projectId,
@@ -76,6 +77,7 @@ export function StoryCanvasAssistantLayer({
   suspended = false,
   firstOpen,
   onAgentWrote,
+  onCanvasPreviewChange,
   nodeLinks,
   children,
 }: {
@@ -98,6 +100,13 @@ export function StoryCanvasAssistantLayer({
    */
   onAgentWrote?: (nodeIds: readonly string[]) => void;
   /**
+   * A transient Story change proposal for a ghost overlay.
+   *
+   * It is presentation-only: the parent must not persist it or place it in the
+   * creator's undo/redo stack. `null` clears it when its tool settles.
+   */
+  onCanvasPreviewChange?: (preview: StudioAgentCanvasPreviewPart | null) => void;
+  /**
    * Lets a node named in the assistant's reply become the way to go and look at
    * it. Omit and every code span stays plain text — the honest answer for a
    * surface with no canvas behind it.
@@ -106,14 +115,23 @@ export function StoryCanvasAssistantLayer({
   children?: ReactNode;
 }) {
   const t = useTranslations("storyStudio.canvas.studioAgent");
-  // The panel being open and on top is what "in use" means here. `suspended` is
-  // a deeper canvas covering this one, which is exactly as unattended as closed.
-  const active = open && !suspended;
+  const firstOpenEligible =
+    firstOpen !== undefined &&
+    firstOpen.canEdit &&
+    firstOpen.canvasNodeCount === 0 &&
+    chapterId !== null &&
+    isStoryCanvasProjectBootstrap(firstOpen.chapters, chapterId);
+  // A visible first-open composer is an active delivery surface even though the
+  // transcript is still closed. It must own a realtime session before its send
+  // button becomes interactive. Once the canvas has content, a closed panel
+  // goes back to being unattended and releases that capped connection.
+  const panelOpen = open && !suspended;
+  const realtimeActive = (open || firstOpenEligible) && !suspended;
   const bootstrap = useStoryStudioAgentBootstrap({
     projectId,
     chapterId,
     workspaceId,
-    active,
+    active: realtimeActive,
   });
   // Always computed, never conditional: it is the panel's session before the
   // grant resolves AND the source of the closed-panel failure notice, which has
@@ -162,7 +180,7 @@ export function StoryCanvasAssistantLayer({
   const clearAttachments = queue.clear;
   useEffect(() => {
     clearAttachments();
-  }, [chapterId, clearAttachments, projectId, workspaceId]);
+  }, [bootstrap.conversationKey, chapterId, clearAttachments, projectId, workspaceId]);
 
   const composer: StoryCanvasAssistantComposerState = {
     draft,
@@ -173,22 +191,37 @@ export function StoryCanvasAssistantLayer({
     queue,
   };
 
-  const turnFailureLabels: StudioAgentTurnFailureLabels = {
+  const turnFailureNoticeLabels: StudioAgentTurnFailureNoticeLabels = {
     region: t("turnFailure.region"),
-    code: t("turnFailure.code"),
-    issues: t("turnFailure.issues"),
+    open: t("turnFailure.openSurface"),
+    dismiss: t("turnFailure.dismiss"),
     title: {
       inputRejected: t("turnFailure.title.inputRejected"),
       notRecorded: t("turnFailure.title.notRecorded"),
       failed: t("turnFailure.title.failed"),
     },
-    explanation: {
-      inputRejected: t("turnFailure.explanation.inputRejected"),
-      notRecorded: t("turnFailure.explanation.notRecorded"),
-      failed: t("turnFailure.explanation.failed"),
-    },
   };
 
+  // The closed-panel failure notice fires once per failure and never again
+  // after the creator has seen or dismissed it. "Seen" means StoryOS was open
+  // while this failure was current — the timeline row inside the panel is the
+  // single failure surface, so closing the panel afterwards must not resurrect
+  // an echo of a row the creator already read.
+  const closedPanelFailure = offline.turnFailure;
+  const closedPanelFailureKey = closedPanelFailure
+    ? `${bootstrap.conversationKey}:${closedPanelFailure.id}`
+    : null;
+  const [acknowledgedFailureKey, setAcknowledgedFailureKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (panelOpen && closedPanelFailureKey) setAcknowledgedFailureKey(closedPanelFailureKey);
+  }, [closedPanelFailureKey, panelOpen]);
+  const showClosedPanelFailure =
+    closedPanelFailure !== null &&
+    !open &&
+    !suspended &&
+    acknowledgedFailureKey !== closedPanelFailureKey;
+
+  const connected = bootstrap.realtime.client !== null && bootstrap.realtime.channelName !== null;
   // Mirrors the composer's `disabled` gate in the panel, so the hero never
   // advertises an action the composer would refuse the instant it opens.
   const firstOpenAvailability: StoryCanvasFirstOpenAvailability =
@@ -196,81 +229,82 @@ export function StoryCanvasAssistantLayer({
       ? { kind: "unavailable", detail: bootstrap.error?.message ?? null }
       : bootstrap.realtime.status === "closed" && bootstrap.realtime.error
         ? { kind: "unavailable", detail: bootstrap.realtime.error.message }
-        : bootstrap.status === "loading" || !bootstrap.thread
+        : bootstrap.status === "loading" || !bootstrap.thread || !connected
           ? { kind: "connecting" }
           : { kind: "ready" };
   // Hidden while StoryOS is open: the hero's whole job is to get the creator
-  // into the panel, and leaving it live behind the overlay is just clutter.
-  const showFirstOpen =
-    firstOpen !== undefined &&
-    !suspended &&
-    !open &&
-    firstOpen.canEdit &&
-    firstOpen.canvasNodeCount === 0 &&
-    chapterId !== null &&
-    isStoryCanvasProjectBootstrap(firstOpen.chapters, chapterId);
-
-  const connected = bootstrap.realtime.client !== null && bootstrap.realtime.channelName !== null;
+  // into the panel, and leaving it live beside the transcript is just clutter.
+  const showFirstOpen = firstOpenEligible && !suspended && !open;
 
   const surface = (
     <div
+      data-slot="studio-agent-split"
       aria-hidden={suspended ? true : undefined}
       inert={suspended ? true : undefined}
       className={cn(
-        "relative h-full w-full origin-center transition-[opacity,transform] duration-300 ease-out",
+        "relative flex h-full w-full origin-center transition-[opacity,transform] duration-300 ease-out",
         suspended && "pointer-events-none scale-[0.985] opacity-0"
       )}
     >
-      {children}
-      {showFirstOpen ? (
-        <StoryCanvasFirstOpen
-          availability={firstOpenAvailability}
-          draft={draft}
-          onRetry={bootstrap.retry}
-          onStart={(nextDraft) => {
-            // The real entry point: pre-fill the durable thread's composer and
-            // open it. Never auto-send — the premise is someone else's, and
-            // firing it would spend credits on a story nobody chose yet.
-            setDraft(nextDraft);
-            onOpenChange(true);
-          }}
-        />
-      ) : null}
       {/*
-        The bootstrap stays mounted while the panel is closed, so a turn can die
-        with nothing on screen. The closed-panel notice is the same alert with
-        the only next action that exists from out here: open StoryOS and read it.
-        It sits directly under the canvas header's StoryOS toggle — where the
-        panel itself opens — because the bottom-right corner already belongs to
-        the history controls and the graph-error toast.
+        The shrinking half of the split. Every canvas overlay — the header, the
+        inspectors, the toasts, the closed-panel notice below — anchors to this
+        region, so a docked StoryOS column can never sit on top of them.
       */}
-      {offline.turnFailure && !open && !suspended ? (
-        <div className="pointer-events-none absolute inset-x-0 top-16 z-40 flex justify-end px-3 pt-1">
-          <StudioAgentTurnFailure
-            failure={offline.turnFailure}
-            labels={turnFailureLabels}
-            action={{
-              label: t("turnFailure.openSurface"),
-              onClick: () => onOpenChange(true),
-            }}
-            className="nodrag nopan nowheel pointer-events-auto w-[min(420px,100%)]"
-          />
-        </div>
-      ) : null}
+      <div data-slot="studio-agent-canvas-region" className="relative h-full min-w-0 flex-1">
+        {children}
+        {/*
+          The bootstrap stays mounted while the panel is closed, so a turn can
+          die with nothing on screen. This compact notice is an usher, not a
+          second error surface: it deep-links to the timeline row that owns the
+          failure, and it disappears for good once seen or dismissed. It sits
+          directly under the canvas header's StoryOS toggle — where the panel
+          itself opens — because the bottom-right corner already belongs to the
+          history controls and the graph-error toast.
+        */}
+        {showClosedPanelFailure ? (
+          <div className="pointer-events-none absolute inset-x-0 top-16 z-40 flex justify-end px-3 pt-1">
+            <StudioAgentTurnFailureNotice
+              failure={closedPanelFailure}
+              labels={turnFailureNoticeLabels}
+              onOpen={() => onOpenChange(true)}
+              onDismiss={() => setAcknowledgedFailureKey(closedPanelFailureKey)}
+              className="nodrag nopan nowheel pointer-events-auto w-[min(420px,100%)]"
+            />
+          </div>
+        ) : null}
+      </div>
       {connected ? (
         <ConnectedStudioAgentPanel
           bootstrap={bootstrap}
-          open={active}
+          open={panelOpen}
           onOpenChange={onOpenChange}
           composer={composer}
+          showFirstOpen={showFirstOpen}
+          firstOpenAvailability={firstOpenAvailability}
+          onRetryFirstOpen={bootstrap.retry}
+          onCanvasPreviewChange={onCanvasPreviewChange}
         />
       ) : (
-        <StoryCanvasAssistantPanel
-          session={offline}
-          open={active}
-          onOpenChange={onOpenChange}
-          composer={composer}
-        />
+        <>
+          {showFirstOpen ? (
+            <StoryCanvasFirstOpen
+              availability={firstOpenAvailability}
+              draft={draft}
+              attachmentQueue={queue}
+              documentAnalysis={bootstrap.documentAnalysis}
+              onDraftChange={setDraft}
+              onSubmit={() => undefined}
+              onRetry={bootstrap.retry}
+            />
+          ) : null}
+          <StoryCanvasAssistantPanel
+            session={offline}
+            open={panelOpen}
+            onOpenChange={onOpenChange}
+            composer={composer}
+          />
+        </>
       )}
     </div>
   );
@@ -302,93 +336,79 @@ function ConnectedStudioAgentPanel({
   open,
   onOpenChange,
   composer,
+  showFirstOpen,
+  firstOpenAvailability,
+  onRetryFirstOpen,
+  onCanvasPreviewChange,
 }: {
   bootstrap: StoryStudioAgentBootstrap;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   composer: StoryCanvasAssistantComposerState;
+  showFirstOpen: boolean;
+  firstOpenAvailability: StoryCanvasFirstOpenAvailability;
+  onRetryFirstOpen: () => void;
+  onCanvasPreviewChange?: (preview: StudioAgentCanvasPreviewPart | null) => void;
 }) {
-  const { realtime, workspaceId, buildInvocation } = bootstrap;
-  // Read through a ref so the transport is not rebuilt every render: the
-  // provider recreates the ChatTransport whenever `chatOptions` changes
-  // identity, and rebuilding it mid-turn would drop the stream. The ref is
-  // written after commit, not during render; `prepareSendMessagesRequest` only
-  // ever runs from a send, which is long after that.
-  const buildInvocationRef = useRef(buildInvocation);
+  const { realtime, workspaceId, locale } = bootstrap;
+  const conversationId = bootstrap.thread!.threadId;
+
+  // `useChat` builds its `Chat` once per conversation id and `AbstractChat`
+  // assigns `readonly transport` in its constructor — there is no setter, so
+  // the transport this panel session sends through is the FIRST one built here.
+  // Every invocation an approval can belong to is created after that moment,
+  // which is why the continuation lookup reads the live ref instead of the
+  // invocations that happened to exist when the transport was captured.
+  const invocationsRef = useRef(bootstrap.invocations);
   useEffect(() => {
-    buildInvocationRef.current = buildInvocation;
-  }, [buildInvocation]);
-  // Same reason as `buildInvocationRef`: read the thread through a ref so a
-  // resolved thread does not re-create `chatOptions` and rebuild the transport
-  // mid-turn.
-  const threadIdRef = useRef(bootstrap.thread?.threadId ?? null);
-  useEffect(() => {
-    threadIdRef.current = bootstrap.thread?.threadId ?? null;
-  }, [bootstrap.thread?.threadId]);
-  // Stable across renders (a `useRef` object from the bootstrap hook), so
-  // capturing it in the memo below does not stale.
-  const { overlayRef } = bootstrap;
+    invocationsRef.current = bootstrap.invocations;
+  }, [bootstrap.invocations]);
 
   const chatOptions = useMemo<ChatTransportOptions>(
     () => ({
-      /**
-       * The control-plane half of every wake-up the library issues.
-       *
-       * The library publishes `ai-input` and only then issues this POST, so
-       * everything below authorizes something that is ALREADY on the channel.
-       * A refusal comes back through the session's error emitter; the panel
-       * surfaces it inline rather than leaving the prompt looking committed.
-       *
-       * TWO SHAPES, ONE ENDPOINT, TOLD APART BY WHETHER THE CREATOR IS SENDING
-       * A PROMPT. A fresh prompt arrives with a USER message to send. A
-       * CONTINUATION — which is how `useChat` answers a suspended tool call —
-       * carries no new prompt; `history` holds the assistant whose approval the
-       * creator just answered, and the library derived the
-       * `tool-approval-response` inputs from that overlay and published them
-       * before calling this. There is no second endpoint beside it.
-       *
-       * THE DISCRIMINATOR IS THE ROLE, NOT EMPTINESS. This used to read "is
-       * `messages` empty", on the assumption that a continuation sends nothing.
-       * It does not always: the continuation can arrive with the ASSISTANT
-       * message in `messages`, whose `id` is truthy — so the approval was posted
-       * as if it were a fresh prompt, and the server refused it with 409 because
-       * the run it belonged to was parked on that very approval. The creator saw
-       * "Approved · Resuming the turn" and then nothing, forever. Only a `user`
-       * message is a prompt; anything else on a send is a continuation.
-       */
-      prepareSendMessagesRequest: ({ messages }) => {
-        const last = messages.at(-1) as StudioAgentUIMessage | undefined;
-        const outgoing = last?.role === "user" ? last : undefined;
-        const threadId = threadIdRef.current;
-        const clientMessageId = outgoing?.metadata?.clientMessageId ?? outgoing?.id;
-        const body =
-          outgoing && clientMessageId
-            ? buildInvocationRef.current({
-                clientMessageId,
-                parts: toStudioAgentMessageParts(outgoing.parts),
-                // A fresh send starts a root turn; steer / enqueue never take
-                // this path (see `useStoryStudioAgentSession.submit`).
-                targetRunId: null,
-                delivery: null,
-              })
-            : threadId
-              ? // THE OVERLAY, NOT THE LIBRARY'S `history`. `history` is derived
-                // from the channel tree, and on an approval continuation the
-                // tree does not yet carry the creator's answer — publishing it
-                // is what this request is for. Reading it there found
-                // `approval-requested` every time, so the body came out empty
-                // and the POST went out with only the library's two pointer
-                // fields: a 400, and a turn parked forever behind
-                // "Approved · Resuming the turn".
-                toStudioAgentToolApprovalInvocation(threadId, overlayRef.current)
-              : null;
+      prepareSendMessagesRequest: (context) => {
+        const isContinuation =
+          context.trigger === "submit-message" &&
+          context.messages.length === 0 &&
+          context.history.at(-1)?.role === "assistant";
+        const lastAssistant = isContinuation
+          ? (context.history.at(-1) as StudioAgentUIMessage)
+          : null;
+        const continuationRunId = lastAssistant?.metadata?.runId;
+        const continuationInvocation = continuationRunId
+          ? invocationsRef.current.find((invocation) => invocation.runId === continuationRunId)
+          : undefined;
+        if (isContinuation && !continuationInvocation) {
+          throw new Error("The approval continuation is not linked to a durable Agent invocation.");
+        }
+        // A continuation does not create a new UIMessage: the SDK updates the
+        // suspended assistant message in place. Give the transport event its
+        // own causal identity instead of reusing that assistant id, otherwise
+        // two sequential approvals collide at the product idempotency boundary.
+        const clientMessageId = isContinuation
+          ? crypto.randomUUID()
+          : (context.messages.at(-1)?.id ?? context.messageId ?? context.history.at(-1)?.id);
+        if (!clientMessageId) {
+          throw new Error("Agent invocation has no causal message identity.");
+        }
         return {
-          ...(body ? { body: body as unknown as Record<string, unknown> } : {}),
-          headers: { "x-fizz-workspace-id": workspaceId },
+          body: {
+            schemaVersion: "agent-invocation-gateway/v1",
+            conversationId,
+            clientMessageId,
+            ...(continuationInvocation
+              ? { continuationOfInvocationId: continuationInvocation.invocationId }
+              : {}),
+            locale,
+          },
+          headers: {
+            "x-fizz-workspace-id": workspaceId,
+            "accept-language": locale,
+          },
         };
       },
     }),
-    [workspaceId]
+    [conversationId, locale, workspaceId]
   );
 
   return (
@@ -404,6 +424,10 @@ function ConnectedStudioAgentPanel({
           open={open}
           onOpenChange={onOpenChange}
           composer={composer}
+          showFirstOpen={showFirstOpen}
+          firstOpenAvailability={firstOpenAvailability}
+          onRetryFirstOpen={onRetryFirstOpen}
+          onCanvasPreviewChange={onCanvasPreviewChange}
         />
       </ChatTransportProvider>
     </AblyProvider>
@@ -416,19 +440,63 @@ function LiveStudioAgentPanel({
   open,
   onOpenChange,
   composer,
+  showFirstOpen,
+  firstOpenAvailability,
+  onRetryFirstOpen,
+  onCanvasPreviewChange,
 }: {
   bootstrap: StoryStudioAgentBootstrap;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   composer: StoryCanvasAssistantComposerState;
+  showFirstOpen: boolean;
+  firstOpenAvailability: StoryCanvasFirstOpenAvailability;
+  onRetryFirstOpen: () => void;
+  onCanvasPreviewChange?: (preview: StudioAgentCanvasPreviewPart | null) => void;
 }) {
   const session = useStoryStudioAgentSession(bootstrap);
+  useEffect(() => {
+    onCanvasPreviewChange?.(session.activeCanvasPreview);
+    return () => onCanvasPreviewChange?.(null);
+  }, [onCanvasPreviewChange, session.activeCanvasPreview]);
   return (
-    <StoryCanvasAssistantPanel
-      session={session}
-      open={open}
-      onOpenChange={onOpenChange}
-      composer={composer}
-    />
+    <>
+      {showFirstOpen ? (
+        <StoryCanvasFirstOpen
+          availability={firstOpenAvailability}
+          draft={composer.draft}
+          attachmentQueue={composer.queue}
+          documentAnalysis={bootstrap.documentAnalysis}
+          onDraftChange={composer.onDraftChange}
+          submitting={session.submitting}
+          onRetry={onRetryFirstOpen}
+          onSubmit={async (text, attachments) => {
+            // The opening composer is a real delivery surface, not a staging
+            // button. Clear it before awaiting the streamed reply, open the
+            // transcript immediately, and restore the exact text only when the
+            // transport refuses the message.
+            composer.onDraftChange("");
+            onOpenChange(true);
+            try {
+              await composer.queue.deliver(attachments, () =>
+                session.submit(text, "send", attachments).then((submitted) => {
+                  if (!submitted) {
+                    throw new Error("The Studio Agent submission was not accepted.");
+                  }
+                })
+              );
+            } catch {
+              composer.onDraftChange(text);
+            }
+          }}
+        />
+      ) : null}
+      <StoryCanvasAssistantPanel
+        session={session}
+        open={open}
+        onOpenChange={onOpenChange}
+        composer={composer}
+      />
+    </>
   );
 }

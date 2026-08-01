@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { Realtime } from "ably";
 
-import { StudioAgentRealtimeError, type StudioAgentRealtimeGrant } from "./realtime-grant";
+import {
+  StudioAgentRealtimeError,
+  studioAgentRealtimeUnavailableError,
+  type StudioAgentRealtimeGrant,
+} from "./realtime-grant";
 
 /** Connection state as the surface reports it. `closed` is terminal. */
 export type StudioAgentStreamStatus =
@@ -25,10 +29,11 @@ export interface StudioAgentRealtimeHandle {
 /**
  * One connection's observable state, tagged with the thread it belongs to.
  *
- * The tag is what makes a scope change a pure derivation rather than a reset:
- * state whose `key` is not the current one is simply not read, so switching
- * threads (or closing the panel) needs no state write at all — and the previous
- * connection's teardown stays where it belongs, in the effect's cleanup.
+ * The tag makes reading safe while another scope's state lingers: state whose
+ * `key` is not the current one is simply not read. It is NOT enough on its own,
+ * because a scope can come back — close the panel, reopen the same thread — and
+ * its own dead state would match the key again. So teardown also clears the
+ * slot: a closed client must be unreachable, not merely unread.
  */
 interface StudioAgentConnectionState {
   key: string;
@@ -55,10 +60,13 @@ interface StudioAgentConnectionState {
 export function useStudioAgentRealtime({
   threadId,
   enabled,
+  initialGrant,
   authorize,
 }: {
   threadId: string | null;
   enabled: boolean;
+  /** Grant returned while resolving the conversation; consumed once. */
+  initialGrant?: StudioAgentRealtimeGrant | null;
   /** Mints a grant. Called to open the connection and again for every renewal. */
   authorize: () => Promise<StudioAgentRealtimeGrant>;
 }): StudioAgentRealtimeHandle {
@@ -67,20 +75,20 @@ export function useStudioAgentRealtime({
   // Read through a ref so a re-created `authorize` closure never tears down a
   // live connection: the identity that matters is the thread, not the callback.
   const authorizeRef = useRef(authorize);
+  const initialGrantRef = useRef(initialGrant);
   useEffect(() => {
     authorizeRef.current = authorize;
   }, [authorize]);
+  useEffect(() => {
+    initialGrantRef.current = initialGrant;
+  }, [initialGrant]);
 
   useEffect(() => {
     if (!key) return;
 
     let released = false;
     let client: Realtime | null = null;
-    /**
-     * The grant that opened the connection, handed to the SDK's first
-     * `authCallback` instead of minting a second one. A token request is
-     * single-use and short-lived, so this is consumed exactly once.
-     */
+    /** The grant that opened the connection, consumed before the first renewal. */
     let seeded: StudioAgentRealtimeGrant | null = null;
 
     /** Merge into this thread's slot, replacing any other thread's. */
@@ -102,7 +110,11 @@ export function useStudioAgentRealtime({
 
     void (async () => {
       try {
-        const grant = await authorizeRef.current();
+        const candidate = initialGrantRef.current;
+        const grant =
+          candidate && Date.parse(candidate.expiresAt) > Date.now() + 30_000
+            ? candidate
+            : await authorizeRef.current();
         if (released) return;
         seeded = grant;
         const { Realtime: AblyRealtime } = await import("ably");
@@ -113,7 +125,7 @@ export function useStudioAgentRealtime({
             const pending = seeded ? Promise.resolve(seeded) : authorizeRef.current();
             seeded = null;
             pending.then(
-              (next) => callback(null, next.tokenRequest),
+              (next) => callback(null, next.ablyToken),
               (cause: unknown) => callback(toMessage(cause), null)
             );
           },
@@ -135,10 +147,7 @@ export function useStudioAgentRealtime({
             case "failed":
               publish({
                 status: "closed",
-                error: new StudioAgentRealtimeError(
-                  change.reason?.message ?? "Studio Agent realtime connection failed.",
-                  true
-                ),
+                error: studioAgentRealtimeUnavailableError(),
               });
               return;
             default:
@@ -146,11 +155,14 @@ export function useStudioAgentRealtime({
           }
         });
 
-        publish({ client, channelName: grant.channel });
+        publish({ client, channelName: grant.sessionName });
       } catch (cause) {
         publish({
           status: "closed",
-          error: cause instanceof Error ? cause : new StudioAgentRealtimeError(String(cause), true),
+          error:
+            cause instanceof StudioAgentRealtimeError
+              ? cause
+              : studioAgentRealtimeUnavailableError(),
         });
       }
     })();
@@ -162,6 +174,13 @@ export function useStudioAgentRealtime({
       // connection ceiling, so releasing means closing.
       client?.close();
       client = null;
+      // The slot dies with the connection. If the same thread is re-enabled
+      // (the creator closes StoryOS and reopens it), a lingering entry would
+      // match the key again and hand `<AblyProvider>` this closed client for
+      // the whole window in which the next effect is still minting its grant —
+      // the transport then opens a session on a dead socket and latches
+      // "realtime unavailable" over a conversation that is actually fine.
+      setState((current) => (current?.key === key ? null : current));
     };
   }, [key]);
 

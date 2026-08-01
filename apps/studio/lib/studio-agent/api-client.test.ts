@@ -1,316 +1,289 @@
-import {
-  STUDIO_AGENT_SCHEMA_VERSION,
-  type StudioAgentSubmissionInvocationRequest,
-} from "@repo/shared";
+import { canonicalAgentSessionName } from "@repo/shared/agent-platform";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api";
 
-import { StudioAgentApiClient } from "./api-client";
-
-const THREAD_ID = "00000000-0000-4000-8000-000000000002";
-const RUN_ID = "00000000-0000-4000-8000-000000000030";
-const MESSAGE_ID = "00000000-0000-4000-8000-000000000031";
+import { AgentPlatformApiClient } from "./api-client";
 
 vi.mock("@/lib/api", () => ({
   api: {
-    get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
-    delete: vi.fn(),
   },
 }));
 
-describe("StudioAgentApiClient", () => {
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "00000000-0000-4000-8000-000000000002";
+const CONVERSATION_ID = "00000000-0000-4000-8000-000000000003";
+const INVOCATION_ID = "00000000-0000-4000-8000-000000000004";
+const WORKFLOW_ID = "00000000-0000-4000-8000-000000000005";
+const ATTACHMENT_ID = "00000000-0000-4000-8000-000000000006";
+const MEDIA_ASSET_ID = "00000000-0000-4000-8000-000000000007";
+const SESSION_NAME = canonicalAgentSessionName(CONVERSATION_ID);
+
+describe("AgentPlatformApiClient", () => {
   beforeEach(() => {
-    vi.mocked(api.get).mockReset();
     vi.mocked(api.post).mockReset();
     vi.mocked(api.patch).mockReset();
-    vi.mocked(api.delete).mockReset();
   });
 
-  it("wakes a turn for an input the transport already published", async () => {
-    vi.mocked(api.post).mockResolvedValue({
-      code: 200,
-      data: {
-        kind: "submission",
-        threadId: THREAD_ID,
-        messageId: MESSAGE_ID,
-        runId: RUN_ID,
-        inputId: null,
-        channelName: `studio-agent:thread:${THREAD_ID}`,
-      },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "zh-CN",
-    });
+  it("resolves the product conversation and preserves the server-issued realtime grant", async () => {
+    vi.mocked(api.post).mockResolvedValue(envelope(grant()));
+    const client = createClient();
 
-    await expect(client.sendInvocation(invocation())).resolves.toEqual({
-      kind: "submission",
-      threadId: THREAD_ID,
-      messageId: MESSAGE_ID,
-      runId: RUN_ID,
-      inputId: null,
-      channelName: `studio-agent:thread:${THREAD_ID}`,
-    });
+    await expect(client.resolveStoryConversation(PROJECT_ID)).resolves.toEqual(grant());
     expect(api.post).toHaveBeenCalledWith(
-      "/aurora/studio-agent/invocations",
+      "/aurora/agent-platform/conversations/resolve",
       expect.objectContaining({
         raw: true,
-        data: invocation(),
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "accept-language": "zh-CN",
+        data: {
+          schemaVersion: "agent-conversation-resolve/v1",
+          surface: "story-studio",
+          workspaceId: WORKSPACE_ID,
+          projectId: PROJECT_ID,
+          locale: "zh-CN",
+        },
+        headers: requestHeaders(),
+      })
+    );
+  });
+
+  it("sends only a validated input pointer to the invocation boundary", async () => {
+    vi.mocked(api.post).mockResolvedValue(
+      envelope({
+        schemaVersion: "agent-invocation-accepted/v1",
+        invocationId: INVOCATION_ID,
+      })
+    );
+    const client = createClient();
+
+    await expect(
+      client.invoke({
+        conversationId: CONVERSATION_ID,
+        inputEventId: "client-message-01",
+        clientMessageId: "0197f4a2-0800-7000-8000-000000000012",
+        sessionName: SESSION_NAME,
+      })
+    ).resolves.toEqual({
+      schemaVersion: "agent-invocation-accepted/v1",
+      invocationId: INVOCATION_ID,
+    });
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/agent-platform/invocations",
+      expect.objectContaining({
+        data: {
+          schemaVersion: "agent-invocation-gateway/v1",
+          conversationId: CONVERSATION_ID,
+          inputEventId: "client-message-01",
+          clientMessageId: "0197f4a2-0800-7000-8000-000000000012",
+          sessionName: SESSION_NAME,
+          locale: "zh-CN",
         },
       })
     );
   });
 
-  it("refuses to wake a run without saying how the prompt is meant to reach it", async () => {
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "en-US",
-    });
+  it("rejects a forged session name before any network request", async () => {
+    const client = createClient();
 
-    // The pairing rule is the server's, and the client must not be the place it
-    // is first noticed: a steer with no delivery mode would otherwise reach the
-    // control plane as a request to start a second root turn.
-    await expect(
-      client.sendInvocation({ ...invocation(), targetRunId: RUN_ID, delivery: null })
-    ).rejects.toThrow();
+    expect(() =>
+      client.invoke({
+        conversationId: CONVERSATION_ID,
+        inputEventId: "client-message-01",
+        clientMessageId: "0197f4a2-0800-7000-8000-000000000012",
+        sessionName: canonicalAgentSessionName(WORKFLOW_ID),
+      })
+    ).toThrow("sessionName does not match");
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it("sends the turn cursor only when paging backwards", async () => {
-    const snapshot = {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      thread: snapshotThread(),
-      messages: [],
-      runs: [],
-      actions: [],
-      approvals: [],
-      inputs: [],
-      activities: [],
-      turnWindow: { earliestRootRunId: null, hasEarlier: false },
-      latestEventSequence: 0,
-    };
-    vi.mocked(api.get).mockResolvedValue({ code: 200, data: snapshot });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "zh-CN",
+  it("preserves the aggregate identity when admitting an approval continuation", async () => {
+    vi.mocked(api.post).mockResolvedValue(
+      envelope({
+        schemaVersion: "agent-invocation-accepted/v1",
+        invocationId: INVOCATION_ID,
+      })
+    );
+    const client = createClient();
+
+    await client.invoke({
+      conversationId: CONVERSATION_ID,
+      inputEventId: "continuation-event-01",
+      clientMessageId: "continuation-message-01",
+      sessionName: SESSION_NAME,
+      continuationOfInvocationId: INVOCATION_ID,
     });
 
-    await client.getSnapshot("thread-1");
-    // buildUrl drops undefined values, so the live tail must carry no cursor
-    // at all rather than an empty one.
-    expect(vi.mocked(api.get).mock.calls[0][1]).toMatchObject({
-      params: { beforeRootRunId: undefined },
-    });
-
-    const cursor = "019f8d20-0000-7000-8000-000000000001";
-    await client.getSnapshot("thread-1", { beforeRootRunId: cursor });
-    expect(vi.mocked(api.get).mock.calls[1][1]).toMatchObject({
-      params: { beforeRootRunId: cursor },
-    });
-  });
-
-  it("fails closed when a successful HTTP response drifts from the protocol", async () => {
-    vi.mocked(api.post).mockResolvedValue({
-      code: 200,
-      data: { threadId: THREAD_ID, messageId: MESSAGE_ID, runId: RUN_ID },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "en-US",
-    });
-
-    await expect(client.sendInvocation(invocation())).rejects.toThrow();
-  });
-
-  it("mints a thread-scoped realtime grant and keeps the channel the server's choice", async () => {
-    const tokenRequest = {
-      keyName: "app.key",
-      mac: "signature",
-      nonce: "0123456789abcdef",
-      capability: '{"studio-agent:thread:thread/id":["subscribe"]}',
-      timestamp: 1_800_000_000_000,
-      ttl: 300_000,
-    };
-    vi.mocked(api.get).mockResolvedValue({
-      code: 200,
-      data: { channel: "studio-agent:thread:thread/id", ttlMs: 300_000, tokenRequest },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace with spaces",
-      locale: "en-US",
-    });
-
-    await expect(client.createRealtimeGrant("thread/id")).resolves.toEqual({
-      channel: "studio-agent:thread:thread/id",
-      ttlMs: 300_000,
-      tokenRequest,
-    });
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/studio-agent/threads/thread%2Fid/realtime-token",
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/agent-platform/invocations",
       expect.objectContaining({
-        raw: true,
-        headers: {
-          "x-fizz-workspace-id": "workspace with spaces",
-          "accept-language": "en-US",
+        data: expect.objectContaining({
+          inputEventId: "continuation-event-01",
+          clientMessageId: "continuation-message-01",
+          continuationOfInvocationId: INVOCATION_ID,
+        }),
+      })
+    );
+  });
+
+  it("cancels by durable invocation identity instead of a transport message id", async () => {
+    vi.mocked(api.post).mockResolvedValue(
+      envelope({
+        schemaVersion: "agent-cancellation-result/v1",
+        invocationId: INVOCATION_ID,
+        status: "cancellation-requested",
+      })
+    );
+    const client = createClient();
+
+    await expect(client.cancel(CONVERSATION_ID, INVOCATION_ID)).resolves.toMatchObject({
+      invocationId: INVOCATION_ID,
+      status: "cancellation-requested",
+    });
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/agent-platform/cancellations",
+      expect.objectContaining({
+        data: {
+          schemaVersion: "agent-cancellation-gateway/v1",
+          conversationId: CONVERSATION_ID,
+          invocationId: INVOCATION_ID,
+          locale: "zh-CN",
         },
       })
     );
   });
 
-  it("refuses a grant that cannot authorize a channel", async () => {
-    vi.mocked(api.get).mockResolvedValue({
-      code: 200,
-      data: {
-        channel: "studio-agent:thread:thread-1",
-        ttlMs: 300_000,
-        tokenRequest: { keyName: "app.key" },
-      },
-    });
-    const client = new StudioAgentApiClient({ workspaceId: "workspace-1", locale: "en-US" });
+  it("loads the durable invocation lifecycle projection", async () => {
+    const page = {
+      schemaVersion: "agent-invocation-status-page/v1",
+      revision: "17",
+      hasMore: false,
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          runId: WORKFLOW_ID,
+          clientMessageId: "client-message-01",
+          inputEventId: "input-event-01",
+          status: "failed",
+          error: {
+            code: "AGENT_RUN_OPEN_FAILED",
+            messageKey: "agent.error.start_failed",
+            message: "The triggering input could not be located.",
+            retryable: false,
+            diagnosticId: "00000000-0000-4000-8000-000000000008",
+          },
+          latestAttempt: {
+            attemptId: "00000000-0000-4000-8000-000000000009",
+            ordinal: 0,
+            inputEventId: "input-event-01",
+            clientMessageId: "client-message-01",
+            status: "dispatched",
+            error: null,
+          },
+          createdAt: "2026-07-30T10:00:00.000Z",
+          startedAt: null,
+          completedAt: "2026-07-30T10:00:05.000Z",
+        },
+      ],
+    };
+    vi.mocked(api.post).mockResolvedValue(envelope(page));
+    const client = createClient();
 
-    await expect(client.createRealtimeGrant("thread-1")).rejects.toThrow("is missing mac");
+    await expect(client.invocationStatus(CONVERSATION_ID)).resolves.toEqual(page);
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/agent-platform/invocations/status",
+      expect.objectContaining({
+        data: {
+          schemaVersion: "agent-invocation-status-request/v1",
+          conversationId: CONVERSATION_ID,
+          locale: "zh-CN",
+          limit: 50,
+        },
+      })
+    );
   });
 
-  it("registers a confirmed media asset and returns only canonical attachment metadata", async () => {
-    const threadId = "00000000-0000-4000-8000-000000000001";
-    const request = {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      mediaAssetId: "00000000-0000-4000-8000-000000000070",
-      fileName: "reference.webp",
-    };
+  it("registers product-owned media and never exposes a storage URL", async () => {
     const attachment = {
-      type: "attachment" as const,
-      attachmentId: "00000000-0000-4000-8000-000000000071",
+      schemaVersion: "agent-attachment/v1",
+      id: ATTACHMENT_ID,
+      conversationId: CONVERSATION_ID,
+      mediaAssetId: MEDIA_ASSET_ID,
       fileName: "reference.webp",
       mediaType: "image/webp",
-      sizeBytes: 4_096,
-      status: "ready" as const,
+      sizeBytes: "4096",
+      status: "ready",
+      uri: `fizzdragon-media://${ATTACHMENT_ID}`,
+      ingest: null,
+      analysis: null,
+      error: null,
     };
-    vi.mocked(api.post).mockResolvedValue({
-      code: 200,
-      data: {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        attachment,
-        created: true,
-      },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "en-US",
-    });
-
-    await expect(client.registerAttachment(threadId, request)).resolves.toEqual({
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      attachment,
-      created: true,
-    });
-    expect(api.post).toHaveBeenCalledWith(`/aurora/studio-agent/threads/${threadId}/attachments`, {
-      raw: true,
-      data: request,
-      headers: {
-        "x-fizz-workspace-id": "workspace-1",
-        "accept-language": "en-US",
-      },
-      signal: undefined,
-    });
-  });
-
-  it("idempotently schedules an abandoned canonical attachment for cleanup", async () => {
-    const threadId = "00000000-0000-4000-8000-000000000001";
-    const attachmentId = "00000000-0000-4000-8000-000000000071";
-    vi.mocked(api.delete).mockResolvedValue({
-      code: 200,
-      data: {
-        schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-        attachmentId,
-        cleanupStatus: "scheduled",
-      },
-    });
-    const client = new StudioAgentApiClient({
-      workspaceId: "workspace-1",
-      locale: "en-US",
-    });
-    const controller = new AbortController();
+    vi.mocked(api.post).mockResolvedValue(envelope(attachment));
+    const client = createClient();
 
     await expect(
-      client.deleteAttachment(threadId, attachmentId, controller.signal)
-    ).resolves.toEqual({
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      attachmentId,
-      cleanupStatus: "scheduled",
-    });
-    expect(api.delete).toHaveBeenCalledWith(
-      `/aurora/studio-agent/threads/${threadId}/attachments/${attachmentId}`,
-      {
-        raw: true,
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "accept-language": "en-US",
+      client.registerAttachment(CONVERSATION_ID, MEDIA_ASSET_ID, "reference.webp")
+    ).resolves.toEqual(attachment);
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/agent-platform/attachments/register",
+      expect.objectContaining({
+        data: {
+          schemaVersion: "agent-attachment-register/v1",
+          conversationId: CONVERSATION_ID,
+          mediaAssetId: MEDIA_ASSET_ID,
+          fileName: "reference.webp",
+          locale: "zh-CN",
         },
-        signal: controller.signal,
-      }
+      })
+    );
+  });
+
+  it("fails closed when a successful HTTP response drifts from the product envelope", async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      code: 200,
+      data: grant(),
+      undocumentedField: true,
+    });
+    const client = createClient();
+
+    await expect(client.resolveStoryConversation(PROJECT_ID)).rejects.toThrow(
+      "response envelope is malformed"
     );
   });
 });
 
-function invocation(): StudioAgentSubmissionInvocationRequest {
+function createClient() {
+  return new AgentPlatformApiClient({
+    workspaceId: WORKSPACE_ID,
+    locale: "zh-CN",
+  });
+}
+
+function requestHeaders() {
   return {
-    kind: "submission",
-    inputEventId: "ably-event-1",
-    sessionName: `studio-agent:thread:${THREAD_ID}`,
-    threadId: THREAD_ID,
-    clientMessageId: MESSAGE_ID,
-    parts: [{ type: "text", format: "plain_text", text: "Rewrite chapter one." }],
-    targetRunId: null,
-    delivery: null,
-    scope: {
-      workspaceId: "workspace-1",
-      container: {
-        resourceType: "story.project",
-        resourceId: "project-1",
-        revision: null,
-      },
-      focus: null,
-    },
-    locale: "en-US",
+    "x-fizz-workspace-id": WORKSPACE_ID,
+    "accept-language": "zh-CN",
   };
 }
 
-function snapshotThread() {
-  const createdAt = "2026-07-24T12:00:00.000Z";
+function envelope(data: unknown) {
+  return { code: 200, data };
+}
+
+function grant() {
   return {
-    schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-    threadId: "00000000-0000-4000-8000-000000000002",
-    surfaceId: "story.studio",
-    scenario: { id: "story.studio.assistant", version: "1.0.0" },
-    scope: {
-      workspaceId: "workspace-1",
-      container: {
-        resourceType: "story.project",
-        resourceId: "project-1",
-        revision: null,
-      },
-      focus: null,
+    schemaVersion: "agent-conversation-grant/v1",
+    conversation: {
+      id: CONVERSATION_ID,
+      surface: "story-studio",
+      title: null,
+      permissionMode: "smart",
+      createdAt: "2026-07-30T10:00:00.000Z",
+      updatedAt: "2026-07-30T10:00:00.000Z",
+      archivedAt: null,
     },
-    title: null,
-    ownerActorId: "actor-1",
-    status: "active" as const,
-    permissionPolicy: {
-      schemaVersion: STUDIO_AGENT_SCHEMA_VERSION,
-      policyId: "00000000-0000-4000-8000-000000000020",
-      revision: 1,
-      mode: "smart" as const,
-      rules: [],
-      createdAt,
-    },
-    activeRunId: null,
-    createdAt,
-    updatedAt: createdAt,
+    sessionName: SESSION_NAME,
+    ablyToken: "jwt.header.signature",
+    expiresAt: "2026-07-30T11:00:00.000Z",
   };
 }
