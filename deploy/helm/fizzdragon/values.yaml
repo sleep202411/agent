@@ -503,7 +503,7 @@ server:
 # the matching gateway/domain keys and exposes the new product boundary.
 # ---------------------------------------------------------------------------
 agentPlatform:
-  enabled: false
+  enabled: true
   memory:
     # Both existing roles are non-owners. The API role is read-only; the Worker
     # role has DML. Each process verifies current_user during readiness.
