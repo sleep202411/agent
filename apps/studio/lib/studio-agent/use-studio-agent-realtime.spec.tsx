@@ -176,6 +176,40 @@ describe("useStudioAgentRealtime", () => {
     expect(handle).toEqual({ client: null, channelName: null, status: "idle", error: null });
   });
 
+  it("reopening the same thread builds a fresh connection instead of resurrecting the closed one", async () => {
+    await render({ threadId: THREAD_ID, enabled: true });
+    const first = ably.MockRealtime.instances[0]!;
+    await emit(first, "connected");
+
+    await render({ threadId: THREAD_ID, enabled: false });
+    expect(first.closed).toBe(true);
+
+    // Reopen the panel on the SAME thread while the new grant is still in
+    // flight. The old slot's key matches again, so anything short of clearing
+    // it at teardown hands `<AblyProvider>` the closed client for this window —
+    // the transport then opens a session on a dead socket and the creator sees
+    // "realtime unavailable" over a conversation that is actually fine.
+    let release: ((value: StudioAgentRealtimeGrant) => void) | null = null;
+    authorize.mockReturnValue(
+      new Promise<StudioAgentRealtimeGrant>((resolve) => {
+        release = resolve;
+      })
+    );
+    await render({ threadId: THREAD_ID, enabled: true });
+    expect(handle?.client).toBeNull();
+    expect(handle?.status).toBe("connecting");
+    expect(handle?.error).toBeNull();
+
+    await act(async () => {
+      release!(grant());
+      await settle();
+    });
+    expect(ably.MockRealtime.instances).toHaveLength(2);
+    expect(handle?.client).toBe(ably.MockRealtime.instances[1]);
+    expect(handle?.client).not.toBe(first);
+    expect(handle?.error).toBeNull();
+  });
+
   it("does not carry one thread's connection into the next", async () => {
     await render({ threadId: THREAD_ID, enabled: true });
     const first = ably.MockRealtime.instances[0]!;

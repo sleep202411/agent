@@ -1436,8 +1436,13 @@ export function useStoryStudioAgentSession(
     error: bootstrap.error,
     streamStatus: transportError ? "closed" : bootstrap.realtime.status,
     streamError: transportError ? studioAgentRealtimeUnavailableError() : bootstrap.realtime.error,
+    // `chat.error` is only voiced as a connection banner when no turn owns the
+    // failure. A failed turn already renders its own in-flow row with the retry
+    // affordance; echoing it as "realtime unavailable" both double-reports and
+    // misdiagnoses — the pipe is usually fine, the turn broke.
     commandError:
-      bootstrap.commandError ?? (chat.error ? studioAgentRealtimeUnavailableError() : null),
+      bootstrap.commandError ??
+      (chat.error && !panel.turnFailure ? studioAgentRealtimeUnavailableError() : null),
     thread: bootstrap.thread,
     timeline: panel.timeline,
     documentAnalysis: bootstrap.documentAnalysis,
