@@ -528,18 +528,20 @@ function CreateProjectDialog({
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [storyLocale, setStoryLocale] = useState(defaultLocale);
-  const [format, setFormat] = useState<CreatableStoryFormat>("interactive_film");
+  // Text adventures are moving into their own product (product split,
+  // 2026-08-01): Story Studio creates cinematic projects only, so nobody
+  // seeds soon-to-be-legacy text_adventure rows here. Existing text
+  // projects keep their full read/canvas/playtest paths.
+  const format: CreatableStoryFormat = "interactive_film";
   const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(DEFAULT_FRAME_PROFILE);
-  // A text-first project sets no frame profile at all; a film project requires one.
-  const requiresFrameProfile = format === "interactive_film";
   const createMutation = useMutation({
     mutationFn: () => {
-      if (!workspaceId || (requiresFrameProfile && !frameProfile)) {
+      if (!workspaceId || !frameProfile) {
         throw new Error(t("errors.createProject"));
       }
       return createStoryProject(workspaceId, {
         format,
-        ...(requiresFrameProfile && frameProfile ? { frameProfile } : {}),
+        frameProfile,
         title: title.trim(),
         summary: summary.trim() || null,
         defaultLocale: storyLocale,
@@ -550,7 +552,6 @@ function CreateProjectDialog({
       setTitle("");
       setSummary("");
       setStoryLocale(defaultLocale);
-      setFormat("interactive_film");
       setFrameProfile(DEFAULT_FRAME_PROFILE);
       onOpenChange(false);
       onCreated(project);
@@ -609,60 +610,25 @@ function CreateProjectDialog({
           </Field>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-white/58">
-              {t("fields.primaryExperience")}
+              {t("fields.frameProfile")}
               <RequiredMark />
             </legend>
-            <p className="text-[11px] leading-4 text-white/38">
-              {t("fields.primaryExperienceHint")}
-            </p>
+            <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
-              <FormatOption
-                format="interactive_film"
-                selected={format === "interactive_film"}
-                icon={<IconMovie className="size-5" stroke={1.7} />}
-                onSelect={(next) => {
-                  setFormat(next);
-                  // Coming back from text-first: restore the frame default so
-                  // the film contract is never silently empty.
-                  setFrameProfile((prev) => prev ?? DEFAULT_FRAME_PROFILE);
-                }}
+              <FrameProfileOption
+                profile="landscape_16_9"
+                selected={frameProfile === "landscape_16_9"}
+                icon={<IconRectangle className="size-5" stroke={1.7} />}
+                onSelect={setFrameProfile}
               />
-              <FormatOption
-                format="text_adventure"
-                selected={format === "text_adventure"}
-                icon={<IconFileText className="size-5" stroke={1.7} />}
-                onSelect={(next) => {
-                  setFormat(next);
-                  // A text-first project has no frame contract; drop any picked
-                  // profile so it is never sent in the create payload.
-                  if (next === "text_adventure") setFrameProfile(null);
-                }}
+              <FrameProfileOption
+                profile="portrait_9_16"
+                selected={frameProfile === "portrait_9_16"}
+                icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
+                onSelect={setFrameProfile}
               />
             </div>
           </fieldset>
-          {requiresFrameProfile ? (
-            <fieldset className="space-y-2">
-              <legend className="text-xs font-medium text-white/58">
-                {t("fields.frameProfile")}
-                <RequiredMark />
-              </legend>
-              <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
-              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
-                <FrameProfileOption
-                  profile="landscape_16_9"
-                  selected={frameProfile === "landscape_16_9"}
-                  icon={<IconRectangle className="size-5" stroke={1.7} />}
-                  onSelect={setFrameProfile}
-                />
-                <FrameProfileOption
-                  profile="portrait_9_16"
-                  selected={frameProfile === "portrait_9_16"}
-                  icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
-                  onSelect={setFrameProfile}
-                />
-              </div>
-            </fieldset>
-          ) : null}
         </div>
         <DialogFooter className="pt-2">
           <Button
@@ -678,12 +644,7 @@ function CreateProjectDialog({
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
-            disabled={
-              !workspaceId ||
-              !title.trim() ||
-              (requiresFrameProfile && !frameProfile) ||
-              createMutation.isPending
-            }
+            disabled={!workspaceId || !title.trim() || !frameProfile || createMutation.isPending}
           >
             {createMutation.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("actions.create")}
@@ -710,44 +671,6 @@ const STORY_LOCALE_OPTIONS = [
 // gradient mirrors the subscription dialog's Popular-tier red GlassRim.
 const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
 const SELECTED_CARD_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
-
-function FormatOption({
-  format,
-  selected,
-  icon,
-  onSelect,
-}: {
-  format: CreatableStoryFormat;
-  selected: boolean;
-  icon: React.ReactNode;
-  onSelect: (format: CreatableStoryFormat) => void;
-}) {
-  const t = useTranslations("storyStudio");
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      className={`relative flex min-h-24 flex-col rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
-        selected
-          ? "bg-[#E52227]/[0.07] text-white"
-          : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
-      }`}
-      onClick={() => onSelect(format)}
-    >
-      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
-      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
-      <span className="mt-3 block text-xs font-semibold">{t(`formats.${format}.label`)}</span>
-      <span
-        className={`mt-1 block text-[10px] leading-4 font-medium ${
-          selected ? "text-white/58" : "text-white/38"
-        }`}
-      >
-        {t(`formats.${format}.description`)}
-      </span>
-    </button>
-  );
-}
 
 function FrameProfileOption({
   profile,
