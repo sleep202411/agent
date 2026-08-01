@@ -237,15 +237,28 @@ echo "✅ 已推送。ArgoCD 将自动同步（约几分钟）。查看：kubect
 # （2026-08-01 上线事故）。本地 start-local-stack 每次起服都做同样的事。
 for s in "${SERVICES[@]}"; do
   if [ "$s" = "agent-platform" ]; then
-    echo "▶ 等待新 worker 就绪后设置 Temporal 路由（build ${SHA}）…"
-    for _i in $(seq 1 60); do
-      ready=$(kubectl -n fizzdragon-com get deploy 2>/dev/null | awk '/agent-platform-worker/ {print $2}' | head -1)
-      [ "$ready" = "3/3" ] && break
-      sleep 20
-    done
+    echo "▶ 等待新 worker 在 Temporal 注册后设置路由（build ${SHA}）…"
     kubectl -n fizzdragon-com port-forward svc/fizzdragon-temporal 17233:7233 >/dev/null 2>&1 &
     pf_pid=$!
     sleep 3
+    # 等"Temporal 里出现该 build"，不是等 K8s deploy 就绪：worker 的
+    # Deployment 对象名带发布哈希，新镜像=新对象，按名抓 READY 会命中
+    # 旧对象并提前放行（2026-08-01 首跑即中）。
+    registered=""
+    for _i in $(seq 1 90); do
+      if temporal worker deployment describe \
+        --address 127.0.0.1:17233 --namespace fizzdragon \
+        --name fizzdragon-agent-platform 2>/dev/null | grep -q "$SHA"; then
+        registered=1
+        break
+      fi
+      sleep 10
+    done
+    if [ -z "$registered" ]; then
+      kill "$pf_pid" 2>/dev/null || true
+      echo "✗ 新 build 未在 15 分钟内注册；路由未切换，旧版本继续服务。" >&2
+      exit 1
+    fi
     temporal worker deployment set-current-version \
       --address 127.0.0.1:17233 --namespace fizzdragon \
       --deployment-name fizzdragon-agent-platform \
