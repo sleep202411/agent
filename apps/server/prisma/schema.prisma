@@ -6361,7 +6361,6 @@ enum MessageType {
   text
   image
   file
-  task
   proposal
   system
 

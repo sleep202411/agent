@@ -8,7 +8,6 @@
  *   GET    /aurora/conversations/:id/messages        paginated
  *   POST   /aurora/conversations/:id/messages        send text
  *   POST   /aurora/conversations/:id/attachments     send crew assets
- *   POST   /aurora/conversations/:id/task-cards      send crew task card
  *   POST   /aurora/conversations/:id/proposals       creator sends proposal
  *   POST   /aurora/conversations/:id/proposals/:m/decline   buyer declines
  *   POST   /aurora/conversations/:id/read            advance read cursor
@@ -40,6 +39,7 @@ import type {
   ConversationDTO,
   ConversationContextType,
   ConversationMentionPayload,
+  ConversationTaskReferencePayload,
   MessageDTO,
 } from "@repo/shared/conversation";
 import type { CurrencyCode } from "@repo/shared/crew";
@@ -296,18 +296,24 @@ export function useSendText(conversationId: string, authorId: string | null) {
   return useMutation<
     MessageDTO,
     ConversationApiError,
-    { body: string; clientKey?: string; mentions?: ConversationMentionPayload[] },
+    {
+      body: string;
+      clientKey?: string;
+      mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
+    },
     { optimisticId: string | null }
   >({
-    mutationFn: ({ body, clientKey, mentions }) =>
+    mutationFn: ({ body, clientKey, mentions, tasks }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/messages`, {
         body: {
           body,
           ...(clientKey ? { clientKey } : {}),
           ...(mentions?.length ? { mentions } : {}),
+          ...(tasks?.length ? { tasks } : {}),
         },
       }),
-    onMutate: async ({ body, clientKey, mentions }) => {
+    onMutate: async ({ body, clientKey, mentions, tasks }) => {
       if (!authorId || !clientKey) return { optimisticId: null };
 
       const key = conversationKeys.messages(conversationId);
@@ -321,6 +327,7 @@ export function useSendText(conversationId: string, authorId: string | null) {
         body,
         clientKey,
         mentions,
+        tasks,
       });
       applyOptimisticMessage(qc, conversationId, optimistic);
       return { optimisticId: optimistic.id };
@@ -360,33 +367,12 @@ export function useSendAttachments(conversationId: string) {
       body?: string;
       clientKey?: string;
       mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
     }
   >({
-    mutationFn: ({ attachments, body, clientKey, mentions }) =>
+    mutationFn: ({ attachments, body, clientKey, mentions, tasks }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/attachments`, {
-        body: { attachments, body, clientKey, mentions },
-      }),
-    onSuccess: (message) => {
-      applyIncomingMessage(qc, conversationId, message);
-    },
-  });
-}
-
-export function useSendTaskCard(conversationId: string) {
-  const qc = useQueryClient();
-  return useMutation<
-    MessageDTO,
-    ConversationApiError,
-    {
-      taskId: string;
-      body?: string;
-      clientKey?: string;
-      mentions?: ConversationMentionPayload[];
-    }
-  >({
-    mutationFn: ({ taskId, body, clientKey, mentions }) =>
-      api.post<MessageDTO>(`/conversations/${conversationId}/task-cards`, {
-        body: { taskId, body, clientKey, mentions },
+        body: { attachments, body, clientKey, mentions, tasks },
       }),
     onSuccess: (message) => {
       applyIncomingMessage(qc, conversationId, message);
@@ -517,12 +503,14 @@ export function createOptimisticTextMessage({
   body,
   clientKey,
   mentions = [],
+  tasks = [],
 }: {
   conversationId: string;
   authorId: string;
   body: string;
   clientKey: string;
   mentions?: ConversationMentionPayload[];
+  tasks?: ConversationTaskReferencePayload[];
 }): MessageDTO {
   return {
     id: optimisticMessageId(clientKey),
@@ -531,7 +519,14 @@ export function createOptimisticTextMessage({
     clientKey,
     type: "text",
     body,
-    payload: mentions.length > 0 ? { kind: "text", mentions } : null,
+    payload:
+      mentions.length > 0 || tasks.length > 0
+        ? {
+            kind: "text",
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(tasks.length > 0 ? { tasks } : {}),
+          }
+        : null,
     createdAt: new Date().toISOString(),
   };
 }

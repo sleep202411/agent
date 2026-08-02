@@ -91,6 +91,14 @@ describe("optimistic text messages", () => {
       body: "The cut is ready",
       clientKey: "send-1",
       mentions: [{ userId: "user-2", label: "Ada" }],
+      tasks: [
+        {
+          taskId: "task-12",
+          crewId: "crew-1",
+          number: 12,
+          label: "TASK-12 Storyboard",
+        },
+      ],
     });
     applyOptimisticMessage(qc, "conv-1", optimistic);
 
@@ -102,6 +110,14 @@ describe("optimistic text messages", () => {
     expect(optimistic.payload).toEqual({
       kind: "text",
       mentions: [{ userId: "user-2", label: "Ada" }],
+      tasks: [
+        {
+          taskId: "task-12",
+          crewId: "crew-1",
+          number: 12,
+          label: "TASK-12 Storyboard",
+        },
+      ],
     });
 
     const persisted = {

@@ -5,7 +5,6 @@
  *   GET    /aurora/conversations/:id/messages             paginated messages
  *   POST   /aurora/conversations/:id/messages             send text
  *   POST   /aurora/conversations/:id/attachments          send crew assets
- *   POST   /aurora/conversations/:id/task-cards           share a crew task
  *   POST   /aurora/conversations/:id/proposals            creator sends proposal
  *   POST   /aurora/conversations/:id/proposals/:mid/decline  buyer declines proposal
  *   POST   /aurora/conversations/:id/read                 advance read cursor
@@ -48,7 +47,6 @@ import {
   SendAttachmentsSchema,
   SendMessageSchema,
   SendProposalSchema,
-  SendTaskCardSchema,
   type ListInboxQuery,
   type ListMessagesQuery,
   type MarkReadInput,
@@ -56,7 +54,6 @@ import {
   type SendAttachmentsInput,
   type SendMessageInput,
   type SendProposalInput,
-  type SendTaskCardInput,
 } from './dto';
 import {
   toConversationCardDTO,
@@ -228,6 +225,7 @@ export class ConversationsController {
       body.body,
       body.clientKey ?? null,
       body.mentions,
+      body.tasks,
     );
     return toMessageDTO(msg);
   }
@@ -241,22 +239,6 @@ export class ConversationsController {
     body: SendAttachmentsInput,
   ): Promise<MessageDTO> {
     const msg = await this.svc.sendAttachments(
-      parseIdParam(idRaw, 'id'),
-      user.userId,
-      body,
-    );
-    return toMessageDTO(msg);
-  }
-
-  @Post(':id/task-cards')
-  @HttpCode(HttpStatus.CREATED)
-  async sendTaskCard(
-    @Param('id') idRaw: string,
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(SendTaskCardSchema))
-    body: SendTaskCardInput,
-  ): Promise<MessageDTO> {
-    const msg = await this.svc.sendTaskCard(
       parseIdParam(idRaw, 'id'),
       user.userId,
       body,

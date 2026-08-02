@@ -23,8 +23,8 @@
  *   was committed with the message. Publishing before commit remains
  *   forbidden because it creates ghost messages.
  *
- *   Convenience wrappers (`sendText`, `sendAttachments`, `sendTaskCard`,
- *   `sendProposal`, `postSystem`, `evolveToOrderContext`,
+ *   Convenience wrappers (`sendText`, `sendAttachments`, `sendProposal`,
+ *   `postSystem`, `evolveToOrderContext`,
  *   `patchProposalStatus`) call the persist methods without a tx and
  *   then immediately broadcast — these are the right entry points for
  *   controllers that have no surrounding business transaction.
@@ -105,7 +105,7 @@ import {
   type ConversationFrame,
   type ConversationMentionPayload,
   type ConversationMessageType,
-  type ConversationTaskCardPayload,
+  type ConversationTaskReferencePayload,
   type MessagePayload,
   type ProposalPayload,
   type SystemMessageKind,
@@ -124,7 +124,7 @@ import {
 import type {
   SendAttachmentsInput,
   SendProposalInput,
-  SendTaskCardInput,
+  TaskReferenceInput,
 } from './dto';
 
 type TxClient = Prisma.TransactionClient;
@@ -685,9 +685,16 @@ export class ConversationsService {
     body: string,
     clientKey: string | null,
     mentions: ConversationMentionPayload[] = [],
+    tasks: ConversationTaskReferencePayload[] = [],
   ): Promise<PersistResult> {
     const payload: MessagePayload | null =
-      mentions.length > 0 ? { kind: 'text', mentions } : null;
+      mentions.length > 0 || tasks.length > 0
+        ? {
+            kind: 'text',
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(tasks.length > 0 ? { tasks } : {}),
+          }
+        : null;
     return this.persist(
       conversationId,
       authorId,
@@ -1182,19 +1189,19 @@ export class ConversationsService {
     body: string,
     clientKey: string | null = null,
     mentions: ConversationMentionPayload[] = [],
+    tasks: TaskReferenceInput[] = [],
   ): Promise<PrismaMessage> {
-    const validatedMentions = await this.validateMentions(
-      conversationId,
-      authorId,
-      body,
-      mentions,
-    );
+    const [validatedMentions, validatedTasks] = await Promise.all([
+      this.validateMentions(conversationId, authorId, body, mentions),
+      this.validateTaskReferences(conversationId, authorId, body, tasks),
+    ]);
     const result = await this.persistTextResult(
       conversationId,
       authorId,
       body,
       clientKey,
       validatedMentions,
+      validatedTasks,
     );
     await this.notifyMentions(result.message, authorId, validatedMentions);
     if (result.created) {
@@ -1224,6 +1231,11 @@ export class ConversationsService {
       input.mentions,
     );
     const crewId = access.conversation.contextId;
+    const tasks = await this.validateTaskReferencesForCrew(
+      crewId,
+      input.body,
+      input.tasks,
+    );
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockCrewMembership(crewId, authorId, tx);
       await this.assertConversationAccess(conversationId, authorId, tx);
@@ -1248,7 +1260,7 @@ export class ConversationsService {
           },
         });
         if (existing) {
-          this.assertAttachmentReplay(existing, input, mentions);
+          this.assertAttachmentReplay(existing, input, mentions, tasks);
           return { message: existing, created: false };
         }
       }
@@ -1407,6 +1419,7 @@ export class ConversationsService {
         kind: 'attachments',
         attachments,
         ...(mentions.length > 0 ? { mentions } : {}),
+        ...(tasks.length > 0 ? { tasks } : {}),
       };
       const type = attachments.every((item) => item.mediaKind === 'image')
         ? 'image'
@@ -1442,6 +1455,7 @@ export class ConversationsService {
     existing: PrismaMessage,
     input: SendAttachmentsInput,
     mentions: ConversationMentionPayload[],
+    tasks: ConversationTaskReferencePayload[],
   ): void {
     const payload = (existing.payload ?? null) as MessagePayload | null;
     const sameAttachments =
@@ -1455,11 +1469,14 @@ export class ConversationsService {
       });
     const persistedMentions =
       payload?.kind === 'attachments' ? (payload.mentions ?? []) : [];
+    const persistedTasks =
+      payload?.kind === 'attachments' ? (payload.tasks ?? []) : [];
     if (
       (existing.type === 'image' || existing.type === 'file') &&
       existing.body === input.body &&
       sameAttachments &&
-      JSON.stringify(persistedMentions) === JSON.stringify(mentions)
+      JSON.stringify(persistedMentions) === JSON.stringify(mentions) &&
+      JSON.stringify(persistedTasks) === JSON.stringify(tasks)
     ) {
       return;
     }
@@ -1467,71 +1484,6 @@ export class ConversationsService {
       message: 'Idempotency key was already used for a different message',
       existingMessageId: existing.id,
     });
-  }
-
-  async sendTaskCard(
-    conversationId: string,
-    authorId: string,
-    input: SendTaskCardInput,
-  ): Promise<PrismaMessage> {
-    const access = await this.assertConversationAccess(
-      conversationId,
-      authorId,
-    );
-    if (access.conversation.contextType !== ConversationContextType.crew) {
-      throw new BadRequestException(
-        'Task cards are available in crew conversations only',
-      );
-    }
-    const task = await this.prisma.crewTask.findFirst({
-      where: {
-        id: input.taskId,
-        crewId: access.conversation.contextId,
-      },
-      include: {
-        assignees: { select: { id: true } },
-      },
-    });
-    if (!task) {
-      throw new NotFoundException('Task not found in this crew');
-    }
-    const taskPayload: ConversationTaskCardPayload = {
-      taskId: task.id,
-      crewId: task.crewId,
-      title: task.title,
-      status: task.status,
-      priority: task.priority,
-      assigneeCount: task.assignees.length,
-      dueAt: task.dueAt?.toISOString() ?? null,
-    };
-    const mentions = await this.validateMentions(
-      conversationId,
-      authorId,
-      input.body,
-      input.mentions,
-    );
-    const payload: MessagePayload = {
-      kind: 'task',
-      task: taskPayload,
-      ...(mentions.length > 0 ? { mentions } : {}),
-    };
-    const result = await this.persist(
-      conversationId,
-      authorId,
-      'task',
-      input.body,
-      payload,
-      this.prisma,
-      input.clientKey ?? null,
-    );
-    await this.notifyMentions(
-      result.message,
-      authorId,
-      mentions,
-      access.conversation.contextId,
-    );
-    if (result.created) await this.broadcastMessage(result.message);
-    return result.message;
   }
 
   async sendProposal(
@@ -1852,6 +1804,97 @@ export class ConversationsService {
   }
 
   /**
+   * Resolve the stable task identities behind inline #labels.
+   *
+   * The client submits only an id plus the exact label it inserted. The
+   * server reloads every task from the crew and rejects a stale label instead
+   * of silently linking visible text to a different title. This leaves one
+   * canonical message body while preserving durable navigation metadata.
+   */
+  private async validateTaskReferences(
+    conversationId: string,
+    authorId: string,
+    body: string,
+    tasks: TaskReferenceInput[],
+  ): Promise<ConversationTaskReferencePayload[]> {
+    if (tasks.length === 0) return [];
+
+    const { conversation } = await this.assertConversationAccess(
+      conversationId,
+      authorId,
+    );
+    if (conversation.contextType !== ConversationContextType.crew) {
+      throw new BadRequestException(
+        'Task references are currently available in crew conversations only',
+      );
+    }
+    return this.validateTaskReferencesForCrew(
+      conversation.contextId,
+      body,
+      tasks,
+    );
+  }
+
+  private async validateTaskReferencesForCrew(
+    crewId: string,
+    body: string,
+    tasks: TaskReferenceInput[],
+  ): Promise<ConversationTaskReferencePayload[]> {
+    if (tasks.length === 0) return [];
+
+    const unique = new Map<string, TaskReferenceInput>();
+    for (const task of tasks) {
+      if (!body.includes(`#${task.label}`)) {
+        throw new BadRequestException(
+          `Task reference #${task.label} is not present in the message body`,
+        );
+      }
+      const prior = unique.get(task.taskId);
+      if (prior && prior.label !== task.label) {
+        throw new BadRequestException(
+          'A referenced task cannot carry multiple display labels',
+        );
+      }
+      unique.set(task.taskId, task);
+    }
+
+    const rows = await this.prisma.crewTask.findMany({
+      where: {
+        crewId,
+        id: { in: [...unique.keys()] },
+      },
+      select: {
+        id: true,
+        crewId: true,
+        number: true,
+        title: true,
+      },
+    });
+    if (rows.length !== unique.size) {
+      throw new BadRequestException(
+        'One or more referenced tasks are unavailable in this crew',
+      );
+    }
+
+    const byId = new Map(rows.map((task) => [task.id, task]));
+    return [...unique.values()].map((input) => {
+      const task = byId.get(input.taskId)!;
+      const label = `TASK-${task.number} ${task.title}`;
+      if (input.label !== label) {
+        throw new BadRequestException(
+          `Task reference #${input.label} is stale; select it again`,
+        );
+      }
+      return {
+        taskId: task.id,
+        crewId: task.crewId,
+        number: task.number,
+        label,
+      };
+    });
+  }
+
+  /**
    * Mentions are durable product events, not a transient WebSocket hint.
    * The notification service writes an inbox row and outbox record; its
    * deterministic key means retries repair a failed notification attempt
@@ -1913,7 +1956,7 @@ export class ConversationsService {
   private async persist(
     conversationId: string,
     authorId: string | null,
-    type: 'text' | 'proposal' | 'system' | 'image' | 'file' | 'task',
+    type: 'text' | 'proposal' | 'system' | 'image' | 'file',
     body: string,
     payload: MessagePayload | null,
     db: DbClient = this.prisma,
@@ -2049,7 +2092,7 @@ export class ConversationsService {
    */
   private assertIdempotentReplay(
     existing: PrismaMessage,
-    type: 'text' | 'proposal' | 'system' | 'image' | 'file' | 'task',
+    type: 'text' | 'proposal' | 'system' | 'image' | 'file',
     body: string,
     payload: MessagePayload | null,
   ): void {

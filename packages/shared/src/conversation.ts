@@ -64,14 +64,7 @@ export type ConversationContextType = (typeof CONVERSATION_CONTEXT_TYPES)[number
 export const CONVERSATION_PARTICIPANT_ROLES = ["buyer", "creator", "member"] as const;
 export type ConversationParticipantRole = (typeof CONVERSATION_PARTICIPANT_ROLES)[number];
 
-export const CONVERSATION_MESSAGE_TYPES = [
-  "text",
-  "image",
-  "file",
-  "task",
-  "proposal",
-  "system",
-] as const;
+export const CONVERSATION_MESSAGE_TYPES = ["text", "image", "file", "proposal", "system"] as const;
 // Renamed from `MessageType` to disambiguate from chat.ts (Mastra
 // assistant wire shape); re-export from shared/index.ts would
 // otherwise collide.
@@ -167,14 +160,18 @@ export interface ConversationAttachmentPayload {
   sizeBytes: number | null;
 }
 
-export interface ConversationTaskCardPayload {
+/**
+ * Durable identity behind an inline #task reference.
+ *
+ * `label` is the exact snapshot embedded in the message body without the
+ * leading `#`. The remaining fields let clients open the referenced task and
+ * render useful context without trusting human-readable text as identity.
+ */
+export interface ConversationTaskReferencePayload {
   taskId: string;
   crewId: string;
-  title: string;
-  status: "open" | "in_progress" | "submitted" | "revision_requested" | "approved" | "cancelled";
-  priority: "low" | "normal" | "high" | "urgent";
-  assigneeCount: number;
-  dueAt: string | null;
+  number: number;
+  label: string;
 }
 
 /**
@@ -182,16 +179,16 @@ export interface ConversationTaskCardPayload {
  * `type` field tells you which one to read.
  */
 export type MessagePayload =
-  | { kind: "text"; mentions?: ConversationMentionPayload[] }
+  | {
+      kind: "text";
+      mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
+    }
   | {
       kind: "attachments";
       attachments: ConversationAttachmentPayload[];
       mentions?: ConversationMentionPayload[];
-    }
-  | {
-      kind: "task";
-      task: ConversationTaskCardPayload;
-      mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
     }
   | { kind: "proposal"; proposal: ProposalPayload }
   | { kind: "system"; system: SystemMessagePayload };

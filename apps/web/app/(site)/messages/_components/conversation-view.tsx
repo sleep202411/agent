@@ -29,7 +29,6 @@
  * the reader back to the newest message.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -37,21 +36,15 @@ import {
   IconArrowLeft,
   IconAt,
   IconBriefcase,
-  IconCalendar,
-  IconClipboardText,
-  IconFile,
   IconFolderOpen,
   IconHash,
-  IconMusic,
   IconLoader2,
   IconPaperclip,
-  IconPhoto,
   IconPlus,
   IconSend,
   IconShoppingBag,
   IconSparkles,
   IconUsersGroup,
-  IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -60,7 +53,7 @@ import type {
   ConversationAttachmentPayload,
   ConversationMentionPayload,
   ConversationParticipantRole,
-  ConversationTaskCardPayload,
+  ConversationTaskReferencePayload,
   MessageDTO,
   MessagePayload,
   ProposalPayload,
@@ -85,7 +78,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogBody,
@@ -105,7 +97,6 @@ import {
   useMarkRead,
   useMessages,
   useSendAttachments,
-  useSendTaskCard,
   useSendText,
 } from "@/app/(site)/creators/_hooks/use-conversations";
 import {
@@ -119,6 +110,7 @@ import type { CrewTaskOptionDTO } from "@/app/(site)/crews/_hooks/types";
 import { useAcceptProposal } from "@/app/(site)/creators/_hooks/use-orders";
 import { CrewChatContextPanel, type CrewChatContext } from "./crew-chat-context-panel";
 import { SendProposalDialog } from "./send-proposal-dialog";
+import { AttachmentKindIcon, AttachmentVisual, fileExtension } from "./attachment-visual";
 
 /**
  * Where the view is mounted. `inbox` is the /messages route: the
@@ -749,15 +741,6 @@ function MessageRow({
   };
 
   const payload = (message.payload ?? null) as MessagePayload | null;
-  if (message.type === "task" && payload?.kind === "task") {
-    return (
-      <TaskMessageRow
-        {...authoredProps}
-        task={payload.task}
-        onOpenContext={() => onOpenContext({ kind: "task", task: payload.task })}
-      />
-    );
-  }
   if ((message.type === "image" || message.type === "file") && payload?.kind === "attachments") {
     return (
       <AttachmentMessageRow
@@ -798,6 +781,7 @@ function TextRow({
   const tm = useTranslations("messages");
   const display = authorId ? displays.get(authorId) : undefined;
   const mentions = messageMentions(message);
+  const tasks = messageTaskReferences(message);
   const isOptimistic = isOptimisticConversationMessage(message);
 
   if (isCrew) {
@@ -830,7 +814,7 @@ function TextRow({
             </div>
           ) : null}
           <div className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-[1.55] text-[#eef0f3]">
-            <RichMessageBody body={message.body} mentions={mentions} />
+            <RichMessageBody body={message.body} mentions={mentions} tasks={tasks} />
             {isOptimistic ? (
               <span role="status" aria-label={tm("sending")} className="ml-1.5 inline-flex">
                 <IconLoader2 className="size-3 animate-spin text-[#777d87]" />
@@ -870,7 +854,7 @@ function TextRow({
             isMine ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
           )}
         >
-          <RichMessageBody body={message.body} mentions={mentions} />
+          <RichMessageBody body={message.body} mentions={mentions} tasks={tasks} />
           {isOptimistic ? (
             <span role="status" aria-label={tm("sending")} className="ml-1.5 inline-flex">
               <IconLoader2 className="size-3 animate-spin opacity-70" />
@@ -904,6 +888,7 @@ function AuthoredCardShell({
   const tm = useTranslations("messages");
   const display = authorId ? displays.get(authorId) : undefined;
   const mentions = messageMentions(message);
+  const tasks = messageTaskReferences(message);
 
   if (isCrew) {
     return (
@@ -936,7 +921,7 @@ function AuthoredCardShell({
           ) : null}
           {message.body ? (
             <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-[1.55] text-[#eef0f3]">
-              <RichMessageBody body={message.body} mentions={mentions} />
+              <RichMessageBody body={message.body} mentions={mentions} tasks={tasks} />
             </p>
           ) : null}
           <div className="mt-1.5 max-w-[820px]">{children}</div>
@@ -972,82 +957,12 @@ function AuthoredCardShell({
               isMine ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
             )}
           >
-            <RichMessageBody body={message.body} mentions={mentions} />
+            <RichMessageBody body={message.body} mentions={mentions} tasks={tasks} />
           </p>
         ) : null}
         {children}
       </div>
     </div>
-  );
-}
-
-function TaskMessageRow({
-  task,
-  onOpenContext,
-  ...shell
-}: {
-  task: ConversationTaskCardPayload;
-  onOpenContext: () => void;
-  message: MessageDTO;
-  isMine: boolean;
-  showAvatar: boolean;
-  showAuthorName: boolean;
-  authorId: string | null;
-  displays: DisplayMap;
-  isCrew: boolean;
-}) {
-  const tm = useTranslations("messages");
-  const tt = useTranslations("crewTasks");
-  const locale = useLocale() as Locale;
-  const href = localizePath(
-    `/crews/${task.crewId}/workspace?tab=tasks&task=${task.taskId}`,
-    locale
-  );
-  return (
-    <AuthoredCardShell {...shell}>
-      <Link
-        href={href}
-        onClick={(event) => {
-          event.preventDefault();
-          onOpenContext();
-        }}
-        className="group block overflow-hidden rounded-lg bg-white/[0.045] transition-colors hover:bg-white/[0.065]"
-      >
-        <div className="flex items-center gap-2 border-b border-white/[0.055] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#858b95]">
-          <IconClipboardText className="size-3.5 text-primary" />
-          {tm("taskCardLabel")}
-        </div>
-        <div className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="min-w-0">
-            <p className="line-clamp-2 text-[13px] font-semibold text-[#eceef2]">{task.title}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-[#7e848f]">
-              <span className="rounded bg-white/[0.055] px-2 py-1">
-                {tt(`status.${task.status}`)}
-              </span>
-              <span className="rounded bg-white/[0.055] px-2 py-1">
-                {tt(`priority.${task.priority}`)}
-              </span>
-              <span>{tm("taskAssigneeCount", { count: task.assigneeCount })}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 text-[10px] text-[#7e848f]">
-            {task.dueAt ? (
-              <span className="inline-flex items-center gap-1">
-                <IconCalendar className="size-3" />
-                {new Intl.DateTimeFormat(locale, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                }).format(new Date(task.dueAt))}
-              </span>
-            ) : null}
-            <span className="font-semibold text-primary group-hover:underline">
-              {tm("viewDetails")}
-            </span>
-          </div>
-        </div>
-      </Link>
-    </AuthoredCardShell>
   );
 }
 
@@ -1069,12 +984,19 @@ function AttachmentMessageRow({
   const tm = useTranslations("messages");
   return (
     <AuthoredCardShell {...shell}>
-      <div className="grid gap-1.5 sm:grid-cols-2">
+      <div
+        className={cn(
+          "grid max-w-[560px] gap-1.5",
+          attachments.length > 1 ? "grid-cols-2" : "grid-cols-1"
+        )}
+      >
         {attachments.map((attachment) => {
           const href = `/aurora/media/assets/${encodeURIComponent(
             attachment.mediaAssetId
           )}/content`;
-          const MediaIcon = attachmentIcon(attachment.mediaKind);
+          const isPreviewable =
+            attachment.mediaKind === "image" || attachment.mediaKind === "video";
+          const extension = fileExtension(attachment.name);
           return (
             <a
               key={attachment.assetNodeId}
@@ -1083,35 +1005,77 @@ function AttachmentMessageRow({
                 event.preventDefault();
                 onOpenContext(attachment);
               }}
-              className="flex min-w-0 items-center gap-2.5 rounded-lg bg-white/[0.045] p-2 transition-colors hover:bg-white/[0.07]"
+              className={cn(
+                "group min-w-0 overflow-hidden rounded-lg bg-white/[0.045] transition-colors hover:bg-white/[0.07]",
+                isPreviewable ? "block" : "flex items-center gap-3 p-2.5"
+              )}
             >
-              {attachment.mediaKind === "image" ? (
-                <Image
-                  src={href}
-                  alt=""
-                  width={44}
-                  height={44}
-                  unoptimized
-                  className="size-10 shrink-0 rounded-md object-cover"
-                />
+              {isPreviewable ? (
+                <>
+                  <AttachmentVisual
+                    name={attachment.name}
+                    mediaKind={attachment.mediaKind}
+                    src={href}
+                    className={cn(
+                      "w-full",
+                      attachments.length === 1 ? "aspect-[16/10] max-h-72" : "aspect-square"
+                    )}
+                  />
+                  <span className="flex min-w-0 items-center gap-2 px-2.5 py-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[11px] font-medium text-[#e5e7eb]">
+                        {attachment.name}
+                      </span>
+                      <span className="mt-0.5 block text-[9px] text-[#727985]">
+                        {attachment.sizeBytes == null
+                          ? tm(`mediaKind.${attachment.mediaKind}`)
+                          : formatBytes(attachment.sizeBytes)}
+                        <span aria-hidden="true"> · </span>
+                        {tm("savedToCrewAssets")}
+                      </span>
+                    </span>
+                    <span className="text-[10px] font-medium text-[#858b95] transition-colors group-hover:text-white">
+                      {tm("preview")}
+                    </span>
+                  </span>
+                </>
               ) : (
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-white/[0.05]">
-                  <MediaIcon className="size-4 text-[#828892]" />
+                <span className="flex size-11 shrink-0 flex-col items-center justify-center rounded-md bg-white/[0.055]">
+                  <AttachmentKindIcon
+                    kind={attachment.mediaKind}
+                    className="size-4 text-[#858b95]"
+                  />
+                  {extension ? (
+                    <span className="mt-0.5 max-w-9 truncate text-[7px] font-semibold uppercase tracking-[0.06em] text-[#656c77]">
+                      {extension}
+                    </span>
+                  ) : null}
                 </span>
               )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[11px] font-medium text-[#e5e7eb]">
-                  {attachment.name}
+              {!isPreviewable ? (
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[11px] font-medium text-[#e5e7eb]">
+                    {attachment.name}
+                  </span>
+                  <span className="mt-0.5 block text-[9px] text-[#727985]">
+                    {tm(`mediaKind.${attachment.mediaKind}`)}
+                    {attachment.sizeBytes == null ? null : (
+                      <>
+                        <span aria-hidden="true"> · </span>
+                        {formatBytes(attachment.sizeBytes)}
+                      </>
+                    )}
+                  </span>
+                  <span className="mt-1 block text-[8px] text-[#5f6671]">
+                    {tm("savedToCrewAssets")}
+                  </span>
                 </span>
-                <span className="mt-0.5 block text-[9px] text-[#727985]">
-                  {attachment.sizeBytes == null
-                    ? tm("attachment")
-                    : formatBytes(attachment.sizeBytes)}
-                  <span aria-hidden="true"> · </span>
-                  {tm("savedToCrewAssets")}
+              ) : null}
+              {!isPreviewable ? (
+                <span className="text-[10px] font-medium text-[#858b95] transition-colors group-hover:text-white">
+                  {tm("preview")}
                 </span>
-              </span>
-              <span className="text-[10px] font-medium text-primary">{tm("preview")}</span>
+              ) : null}
             </a>
           );
         })}
@@ -1443,13 +1407,30 @@ type ComposerAttachment =
       key: string;
       name: string;
       node: CrewAssetNodeDTO;
+      mediaKind: ConversationAttachmentPayload["mediaKind"];
+      contentType: string;
+      sizeBytes: number | null;
+      previewUrl: string | null;
     }
   | {
       source: "upload";
       key: string;
       name: string;
       mediaAssetId: string;
+      mediaKind: ConversationAttachmentPayload["mediaKind"];
+      contentType: string;
+      sizeBytes: number;
+      previewUrl: string | null;
     };
+
+function releaseComposerPreviews(items: ComposerAttachment[]) {
+  if (typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") return;
+  for (const item of items) {
+    if (item.source === "upload" && item.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  }
+}
 
 function Composer({
   conversationId,
@@ -1472,32 +1453,29 @@ function Composer({
   const tc = useTranslations("common");
   const sendText = useSendText(conversationId, viewerId);
   const sendAttachments = useSendAttachments(conversationId);
-  const sendTask = useSendTaskCard(conversationId);
   const isCrew = contextType === "crew";
   const crewId = isCrew ? contextId : "";
   const assetContext = useCrewAssetContext(crewId, isCrew);
-  const [taskPickerQuery, setTaskPickerQuery] = useState("");
   const [text, setText] = useState("");
   const textRef = useRef("");
   const [proposalOpen, setProposalOpen] = useState(false);
-  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [taskSearch, setTaskSearch] = useState<{ start: number; query: string } | null>(null);
+  const [taskIndex, setTaskIndex] = useState(0);
   const tasks = useCrewTaskOptions(
     crewId,
     {
-      query: taskPickerQuery.trim() || undefined,
-      activeOnly: true,
-      limit: 30,
+      query: taskSearch?.query.trim() || undefined,
+      limit: 8,
     },
-    isCrew && taskPickerOpen
+    isCrew && taskSearch !== null
   );
   const assets = useCrewAssets(
     crewId,
     { source: "recent", sort: "modified", kind: "file" },
     isCrew && assetPickerOpen
   );
-  const [selectedTask, setSelectedTask] = useState<CrewTaskOptionDTO | null>(null);
-  const selectedTaskRef = useRef<CrewTaskOptionDTO | null>(null);
+  const taskReferencesRef = useRef<ConversationTaskReferencePayload[]>([]);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const [mentions, setMentions] = useState<ConversationMentionPayload[]>([]);
@@ -1527,7 +1505,7 @@ function Composer({
   // and reusing the key would make the server hand back the old one.
   const clientKeyRef = useRef<string | null>(null);
   const draftVersionRef = useRef(0);
-  const isSending = sendText.isPending || sendAttachments.isPending || sendTask.isPending;
+  const isSending = sendText.isPending || sendAttachments.isPending;
   const isUploading = Object.keys(uploadProgress).length > 0;
   const canUpload =
     assetContext.data?.storageAvailable === true && assetContext.data.capabilities.upload;
@@ -1554,6 +1532,7 @@ function Composer({
       .slice(0, 8);
   }, [displays, mentionSearch?.query, participants, tm, viewerId]);
   const hasMentionableMembers = participants.some((participant) => participant.userId !== viewerId);
+  const taskCandidates = (tasks.data ?? []).slice(0, 8);
 
   useEffect(() => {
     if (sentFlash === 0) return;
@@ -1580,6 +1559,7 @@ function Composer({
     return () => {
       mountedRef.current = false;
       discardUploads(attachmentsRef.current);
+      releaseComposerPreviews(attachmentsRef.current);
     };
   }, [discardUploads]);
 
@@ -1592,8 +1572,16 @@ function Composer({
     );
     mentionsRef.current = retainedMentions;
     setMentions(retainedMentions);
-    setMentionSearch(findMentionSearch(value, caret));
+    const retainedTasks = taskReferencesRef.current.filter((task) =>
+      value.includes(`#${task.label}`)
+    );
+    taskReferencesRef.current = retainedTasks;
+    const nextMentionSearch = findMentionSearch(value, caret);
+    const nextTaskSearch = isCrew ? findTaskSearch(value, caret) : null;
+    setMentionSearch(nextTaskSearch ? null : nextMentionSearch);
+    setTaskSearch(nextMentionSearch ? null : nextTaskSearch);
     setMentionIndex(0);
+    setTaskIndex(0);
     setFailure(null);
     clientKeyRef.current = null;
   };
@@ -1616,6 +1604,7 @@ function Composer({
     mentionsRef.current = nextMentions;
     setMentions(nextMentions);
     setMentionSearch(null);
+    setTaskSearch(null);
     setMentionIndex(0);
     setFailure(null);
     clientKeyRef.current = null;
@@ -1626,27 +1615,47 @@ function Composer({
     });
   };
 
-  const replaceTask = (task: CrewTaskOptionDTO | null) => {
+  const insertTask = (task: CrewTaskOptionDTO) => {
+    const active = taskSearch;
+    if (!active) return;
+    const before = textRef.current.slice(0, active.start);
+    const caret = textareaRef.current?.selectionStart ?? textRef.current.length;
+    const after = textRef.current.slice(caret);
+    const label = `TASK-${task.number} ${task.title}`;
+    const inserted = `#${label} `;
+    const next = `${before}${inserted}${after}`;
+    const reference: ConversationTaskReferencePayload = {
+      taskId: task.id,
+      crewId,
+      number: task.number,
+      label,
+    };
+    const nextReferences = [
+      ...taskReferencesRef.current.filter((candidate) => candidate.taskId !== task.id),
+      reference,
+    ];
     draftVersionRef.current += 1;
-    selectedTaskRef.current = task;
-    setSelectedTask(task);
-    if (task) {
-      discardUploads(attachmentsRef.current);
-      attachmentsRef.current = [];
-      setAttachments([]);
-    }
+    textRef.current = next;
+    setText(next);
+    taskReferencesRef.current = nextReferences;
+    setTaskSearch(null);
+    setMentionSearch(null);
+    setTaskIndex(0);
     setFailure(null);
     clientKeyRef.current = null;
+    const nextCaret = before.length + inserted.length;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+    });
   };
 
   const replaceAttachments = (next: ComposerAttachment[]) => {
+    const nextKeys = new Set(next.map((item) => item.key));
+    releaseComposerPreviews(attachmentsRef.current.filter((item) => !nextKeys.has(item.key)));
     draftVersionRef.current += 1;
     attachmentsRef.current = next;
     setAttachments(next);
-    if (next.length > 0) {
-      selectedTaskRef.current = null;
-      setSelectedTask(null);
-    }
     setFailure(null);
     clientKeyRef.current = null;
   };
@@ -1690,14 +1699,23 @@ function Composer({
               [progressKey]: { name: file.name, progress },
             })),
         });
+        const mediaKind = mediaKindFromFile(file);
         const attachment: ComposerAttachment = {
           source: "upload",
           key: `upload:${result.mediaAssetId}`,
           name: file.name,
           mediaAssetId: result.mediaAssetId,
+          mediaKind,
+          contentType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          previewUrl:
+            mediaKind === "image" || mediaKind === "video"
+              ? createLocalAttachmentPreview(file, result.url)
+              : null,
         };
         if (!mountedRef.current) {
           discardUploads([attachment]);
+          releaseComposerPreviews([attachment]);
           continue;
         }
         replaceAttachments([...attachmentsRef.current, attachment]);
@@ -1720,27 +1738,22 @@ function Composer({
   const submit = async () => {
     const draft = textRef.current;
     const body = draft.trim();
-    const task = selectedTaskRef.current;
     const attachmentSnapshot = attachmentsRef.current;
     const mentionSnapshot = mentionsRef.current.filter((mention) =>
       body.includes(`@${mention.label}`)
     );
-    if (isSending || isUploading || (!body && !task && attachmentSnapshot.length === 0)) return;
+    const taskSnapshot = taskReferencesRef.current.filter((task) =>
+      body.includes(`#${task.label}`)
+    );
+    if (isSending || isUploading || (!body && attachmentSnapshot.length === 0)) return;
     setFailure(null);
     clientKeyRef.current ??= newClientKey();
     const clientKey = clientKeyRef.current;
-    const signature = draftSignature(draft, task, attachmentSnapshot, mentionSnapshot);
+    const signature = draftSignature(draft, taskSnapshot, attachmentSnapshot, mentionSnapshot);
     const draftVersion = draftVersionRef.current;
     let clearedOptimistically = false;
     try {
-      if (task) {
-        await sendTask.mutateAsync({
-          taskId: task.id,
-          body: body || undefined,
-          clientKey,
-          mentions: mentionSnapshot,
-        });
-      } else if (attachmentSnapshot.length > 0) {
+      if (attachmentSnapshot.length > 0) {
         await sendAttachments.mutateAsync({
           attachments: attachmentSnapshot.map((item) =>
             item.source === "asset"
@@ -1754,15 +1767,21 @@ function Composer({
           body: body || undefined,
           clientKey,
           mentions: mentionSnapshot,
+          tasks: taskSnapshot,
         });
       } else {
-        const send = sendText.mutateAsync({ body, clientKey, mentions: mentionSnapshot });
+        const send = sendText.mutateAsync({
+          body,
+          clientKey,
+          mentions: mentionSnapshot,
+          tasks: taskSnapshot,
+        });
         // Text sends render optimistically, so the composer should feel ready
         // for the next thought immediately instead of waiting for HTTP + WS.
         if (
           draftSignature(
             textRef.current,
-            selectedTaskRef.current,
+            taskReferencesRef.current,
             attachmentsRef.current,
             mentionsRef.current
           ) === signature &&
@@ -1773,6 +1792,8 @@ function Composer({
           mentionsRef.current = [];
           setMentions([]);
           setMentionSearch(null);
+          taskReferencesRef.current = [];
+          setTaskSearch(null);
           clientKeyRef.current = null;
           clearedOptimistically = true;
         }
@@ -1784,7 +1805,7 @@ function Composer({
       if (
         draftSignature(
           textRef.current,
-          selectedTaskRef.current,
+          taskReferencesRef.current,
           attachmentsRef.current,
           mentionsRef.current
         ) === signature &&
@@ -1792,8 +1813,9 @@ function Composer({
       ) {
         textRef.current = "";
         setText("");
-        selectedTaskRef.current = null;
-        setSelectedTask(null);
+        taskReferencesRef.current = [];
+        setTaskSearch(null);
+        releaseComposerPreviews(attachmentSnapshot);
         attachmentsRef.current = [];
         setAttachments([]);
         mentionsRef.current = [];
@@ -1812,19 +1834,20 @@ function Composer({
         clearedOptimistically &&
         draftVersionRef.current === draftVersion &&
         textRef.current === "" &&
-        selectedTaskRef.current === null &&
+        taskReferencesRef.current.length === 0 &&
         attachmentsRef.current.length === 0
       ) {
         textRef.current = draft;
         setText(draft);
         mentionsRef.current = mentionSnapshot;
         setMentions(mentionSnapshot);
+        taskReferencesRef.current = taskSnapshot;
         clientKeyRef.current = clientKey;
         setFailure(message);
       } else if (
         draftSignature(
           textRef.current,
-          selectedTaskRef.current,
+          taskReferencesRef.current,
           attachmentsRef.current,
           mentionsRef.current
         ) === signature &&
@@ -1842,9 +1865,7 @@ function Composer({
   };
 
   const canSubmit =
-    !isSending &&
-    !isUploading &&
-    (text.trim().length > 0 || selectedTask !== null || attachments.length > 0);
+    !isSending && !isUploading && (text.trim().length > 0 || attachments.length > 0);
 
   const startMention = () => {
     const field = textareaRef.current;
@@ -1872,7 +1893,16 @@ function Composer({
     }
     replaceAttachments([
       ...attachmentsRef.current,
-      { source: "asset", key, name: node.name, node },
+      {
+        source: "asset",
+        key,
+        name: node.name,
+        node,
+        mediaKind: node.media?.kind ?? "other",
+        contentType: node.media?.contentType ?? "application/octet-stream",
+        sizeBytes: node.media?.sizeBytes ?? null,
+        previewUrl: node.media?.previewUrl ?? null,
+      },
     ]);
     setAssetPickerOpen(false);
   };
@@ -1918,6 +1948,55 @@ function Composer({
           className="hidden"
           onChange={(event) => void addFiles(Array.from(event.target.files ?? []))}
         />
+      ) : null}
+
+      {taskSearch && isCrew ? (
+        <div
+          role="listbox"
+          aria-label={tm("taskReferencePicker")}
+          className="absolute inset-x-5 bottom-[calc(100%-8px)] z-20 max-h-64 overflow-y-auto rounded-lg border border-white/[0.08] bg-[#15181d] p-1.5 shadow-2xl"
+        >
+          <p className="px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-[#666c76]">
+            {tm("taskReferencePicker")}
+          </p>
+          {tasks.isLoading ? (
+            <div className="grid h-16 place-items-center">
+              <IconLoader2 className="size-4 animate-spin text-[#777d87]" />
+            </div>
+          ) : tasks.error ? (
+            <button
+              type="button"
+              onClick={() => void tasks.refetch()}
+              className="w-full rounded-md px-2 py-2 text-left text-[10px] text-destructive hover:bg-white/[0.045]"
+            >
+              {tasks.error.message}
+            </button>
+          ) : taskCandidates.length === 0 ? (
+            <p className="px-2 py-3 text-[10px] text-[#777d87]">{tm("taskReferenceEmpty")}</p>
+          ) : (
+            taskCandidates.map((task, index) => (
+              <button
+                key={task.id}
+                type="button"
+                role="option"
+                aria-selected={index === taskIndex}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertTask(task)}
+                className={cn(
+                  "flex w-full min-w-0 items-baseline gap-2 rounded-md px-2 py-1.5 text-left",
+                  index === taskIndex
+                    ? "bg-white/[0.075] text-white"
+                    : "text-[#a8adb5] hover:bg-white/[0.045]"
+                )}
+              >
+                <span className="shrink-0 text-[9px] tabular-nums text-[#707782]">
+                  TASK-{task.number}
+                </span>
+                <span className="truncate text-[10px] font-medium">{task.title}</span>
+              </button>
+            ))
+          )}
+        </div>
       ) : null}
 
       {mentionSearch && isCrew && mentionCandidates.length > 0 ? (
@@ -2000,43 +2079,59 @@ function Composer({
           </div>
         ) : null}
 
-        {selectedTask || attachments.length > 0 || isUploading ? (
+        {attachments.length > 0 || isUploading ? (
           <div className="border-b border-white/[0.055] px-2.5 py-2">
-            {selectedTask ? (
-              <div className="flex items-center gap-2 rounded-md bg-white/[0.045] px-2.5 py-2">
-                <IconClipboardText className="size-3.5 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[#dfe1e5]">
-                  {selectedTask.title}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => replaceTask(null)}
-                  aria-label={tm("removeTaskCard")}
-                  className="rounded p-0.5 text-[#777d87] hover:bg-white/[0.06] hover:text-white"
-                >
-                  <IconX className="size-3.5" />
-                </button>
-              </div>
-            ) : null}
             {attachments.length > 0 ? (
               <div className="flex gap-1.5 overflow-x-auto">
-                {attachments.map((item) => (
-                  <span
-                    key={item.key}
-                    className="inline-flex max-w-52 shrink-0 items-center gap-1.5 rounded-md bg-white/[0.045] px-2 py-1.5 text-[9px] text-[#d3d6db]"
-                  >
-                    <IconFile className="size-3.5 shrink-0 text-[#777d87]" />
-                    <span className="truncate">{item.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(item)}
-                      aria-label={tm("removeAttachment", { name: item.name })}
-                      className="shrink-0 text-[#747a84] hover:text-white"
+                {attachments.map((item) => {
+                  const isVisualAttachment =
+                    item.mediaKind === "image" || item.mediaKind === "video";
+                  return (
+                    <span
+                      key={item.key}
+                      className={cn(
+                        "shrink-0 overflow-hidden rounded-md bg-white/[0.045] text-[9px] text-[#d3d6db]",
+                        isVisualAttachment
+                          ? "group relative block size-14"
+                          : "inline-flex max-w-60 items-center gap-2 p-1"
+                      )}
                     >
-                      <IconX className="size-3" />
-                    </button>
-                  </span>
-                ))}
+                      <AttachmentVisual
+                        name={item.name}
+                        mediaKind={item.mediaKind}
+                        src={item.previewUrl}
+                        compact
+                        className={cn(
+                          "shrink-0 rounded",
+                          isVisualAttachment ? "size-full" : "size-9"
+                        )}
+                      />
+                      {!isVisualAttachment ? (
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{item.name}</span>
+                          <span className="mt-0.5 block text-[8px] text-[#707783]">
+                            {item.sizeBytes == null
+                              ? tm("attachment")
+                              : formatBytes(item.sizeBytes)}
+                          </span>
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(item)}
+                        aria-label={tm("removeAttachment", { name: item.name })}
+                        className={cn(
+                          "shrink-0 transition-colors hover:text-white",
+                          isVisualAttachment
+                            ? "absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-black/70 text-white/75 opacity-80 shadow-sm hover:bg-black/90 group-hover:opacity-100"
+                            : "text-[#747a84]"
+                        )}
+                      >
+                        <IconX className="size-3" />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             ) : null}
             {Object.entries(uploadProgress).map(([key, upload]) => (
@@ -2076,11 +2171,14 @@ function Composer({
                 Math.min(event.currentTarget.selectionStart, 4000)
               )
             }
-            onClick={(event) =>
-              setMentionSearch(
-                findMentionSearch(event.currentTarget.value, event.currentTarget.selectionStart)
-              )
-            }
+            onClick={(event) => {
+              const value = event.currentTarget.value;
+              const caret = event.currentTarget.selectionStart;
+              const nextMentionSearch = findMentionSearch(value, caret);
+              const nextTaskSearch = isCrew ? findTaskSearch(value, caret) : null;
+              setMentionSearch(nextTaskSearch ? null : nextMentionSearch);
+              setTaskSearch(nextMentionSearch ? null : nextTaskSearch);
+            }}
             onPaste={(event) => {
               if (!isCrew) return;
               const files = Array.from(event.clipboardData.files);
@@ -2092,6 +2190,31 @@ function Composer({
             rows={1}
             className="min-h-[40px] max-h-32 flex-1 resize-none bg-transparent px-1.5 py-2 text-[12px] leading-6 text-[#e1e3e7] outline-none placeholder:text-[#626874]"
             onKeyDown={(event) => {
+              if (taskSearch && !event.nativeEvent.isComposing) {
+                if (
+                  taskCandidates.length > 0 &&
+                  (event.key === "ArrowDown" || event.key === "ArrowUp")
+                ) {
+                  event.preventDefault();
+                  const direction = event.key === "ArrowDown" ? 1 : -1;
+                  setTaskIndex(
+                    (current) =>
+                      (current + direction + taskCandidates.length) % taskCandidates.length
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setTaskSearch(null);
+                  return;
+                }
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  const candidate = taskCandidates[taskIndex] ?? taskCandidates[0];
+                  if (candidate) insertTask(candidate);
+                  return;
+                }
+              }
               if (mentionSearch && mentionCandidates.length > 0 && !event.nativeEvent.isComposing) {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
@@ -2177,11 +2300,6 @@ function Composer({
                   onClick={() => setAssetPickerOpen(true)}
                   disabled={attachments.length >= 10}
                 />
-                <ComposerAction
-                  icon={<IconClipboardText className="size-3.5" />}
-                  label={tm("shareTask")}
-                  onClick={() => setTaskPickerOpen(true)}
-                />
                 {uploadAvailabilityMessage && !assetContext.isLoading ? (
                   <span
                     className="inline-flex max-w-56 items-center gap-1 truncate px-1 text-[8px] text-amber-400/75"
@@ -2230,37 +2348,15 @@ function Composer({
         />
       ) : null}
       {isCrew ? (
-        <>
-          <TaskPickerDialog
-            open={taskPickerOpen}
-            onOpenChange={(next) => {
-              setTaskPickerOpen(next);
-              if (!next) setTaskPickerQuery("");
-            }}
-            tasks={tasks.data ?? []}
-            isLoading={tasks.isLoading}
-            error={tasks.error}
-            onRetry={() => void tasks.refetch()}
-            query={taskPickerQuery}
-            onQueryChange={setTaskPickerQuery}
-            hasMore={Boolean(tasks.hasNextPage)}
-            isLoadingMore={tasks.isFetchingNextPage}
-            onLoadMore={() => void tasks.fetchNextPage()}
-            onSelect={(task) => {
-              replaceTask(task);
-              setTaskPickerOpen(false);
-            }}
-          />
-          <AssetPickerDialog
-            open={assetPickerOpen}
-            onOpenChange={setAssetPickerOpen}
-            items={assets.data?.items ?? []}
-            isLoading={assets.isLoading}
-            error={assets.error}
-            onRetry={() => void assets.refetch()}
-            onSelect={addExistingAsset}
-          />
-        </>
+        <AssetPickerDialog
+          open={assetPickerOpen}
+          onOpenChange={setAssetPickerOpen}
+          items={assets.data?.items ?? []}
+          isLoading={assets.isLoading}
+          error={assets.error}
+          onRetry={() => void assets.refetch()}
+          onSelect={addExistingAsset}
+        />
       ) : null}
     </footer>
   );
@@ -2290,104 +2386,6 @@ function ComposerAction({
       {icon}
       {label}
     </button>
-  );
-}
-
-function TaskPickerDialog({
-  open,
-  onOpenChange,
-  tasks,
-  isLoading,
-  error,
-  onRetry,
-  query,
-  onQueryChange,
-  hasMore,
-  isLoadingMore,
-  onLoadMore,
-  onSelect,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  tasks: CrewTaskOptionDTO[];
-  isLoading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-  query: string;
-  onQueryChange: (query: string) => void;
-  hasMore: boolean;
-  isLoadingMore: boolean;
-  onLoadMore: () => void;
-  onSelect: (task: CrewTaskOptionDTO) => void;
-}) {
-  const tm = useTranslations("messages");
-  const tt = useTranslations("crewTasks");
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{tm("taskPickerTitle")}</DialogTitle>
-          <DialogDescription>{tm("taskPickerDescription")}</DialogDescription>
-        </DialogHeader>
-        <DialogBody className="max-h-[55vh] space-y-2 overflow-y-auto">
-          <Input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={tm("taskPickerSearch")}
-          />
-          {isLoading ? (
-            <div className="flex h-28 items-center justify-center">
-              <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : error ? (
-            <div className="space-y-3 rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
-              <p>{error.message}</p>
-              <Button type="button" size="sm" variant="ghost" onClick={onRetry}>
-                {tm("retryTaskPicker")}
-              </Button>
-            </div>
-          ) : tasks.length === 0 ? (
-            <p className="py-10 text-center text-xs text-muted-foreground">
-              {tm("taskPickerEmpty")}
-            </p>
-          ) : (
-            tasks.map((task) => (
-              <button
-                key={task.id}
-                type="button"
-                onClick={() => onSelect(task)}
-                className="flex w-full items-start gap-3 rounded-lg border border-border bg-card px-3 py-3 text-left transition-colors hover:border-primary/50"
-              >
-                <IconClipboardText className="mt-0.5 size-4 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {task.title}
-                  </span>
-                  <span className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                    <span>{tt(`status.${task.status}`)}</span>
-                    <span>·</span>
-                    <span>{tt(`priority.${task.priority}`)}</span>
-                  </span>
-                </span>
-              </button>
-            ))
-          )}
-          {hasMore ? (
-            <Button
-              type="button"
-              variant="ghost"
-              color="muted"
-              size="sm"
-              loading={isLoadingMore}
-              onClick={onLoadMore}
-              className="w-full"
-            >
-              {tm("taskPickerLoadMore")}
-            </Button>
-          ) : null}
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -2446,19 +2444,12 @@ function AssetPickerDialog({
                   onClick={() => onSelect(asset)}
                   className="min-w-0 overflow-hidden rounded-lg bg-white/[0.035] text-left transition-colors hover:bg-white/[0.065]"
                 >
-                  <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-black/20">
-                    {asset.media?.kind === "image" && asset.media.previewUrl ? (
-                      <Image
-                        src={asset.media.previewUrl}
-                        alt=""
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
-                    ) : (
-                      <IconFile className="size-6 text-[#747a84]" />
-                    )}
-                  </div>
+                  <AttachmentVisual
+                    name={asset.name}
+                    mediaKind={asset.media?.kind ?? "other"}
+                    src={asset.media?.previewUrl}
+                    className="aspect-[16/9] w-full"
+                  />
                   <div className="p-2">
                     <p className="truncate text-[10px] font-medium text-[#e1e3e7]">{asset.name}</p>
                     <p className="mt-0.5 text-[8px] text-[#6e747e]">
@@ -2484,18 +2475,37 @@ type DisplayMap = ReturnType<typeof useUserDisplays>;
 function RichMessageBody({
   body,
   mentions,
+  tasks,
 }: {
   body: string;
   mentions: ConversationMentionPayload[];
+  tasks: ConversationTaskReferencePayload[];
 }) {
-  if (mentions.length === 0) return body;
-  const tokens = [...new Set(mentions.map((mention) => `@${mention.label}`))].sort(
+  const locale = useLocale() as Locale;
+  const taskByToken = new Map(tasks.map((task) => [`#${task.label}`, task]));
+  const mentionTokens = new Set(mentions.map((mention) => `@${mention.label}`));
+  const tokens = [...new Set([...mentionTokens, ...taskByToken.keys()])].sort(
     (a, b) => b.length - a.length
   );
   if (tokens.length === 0) return body;
   const pattern = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "g");
-  return body.split(pattern).map((part, index) =>
-    tokens.includes(part) ? (
+  return body.split(pattern).map((part, index) => {
+    const task = taskByToken.get(part);
+    if (task) {
+      return (
+        <Link
+          key={`${part}:${index}`}
+          href={localizePath(
+            `/crews/${task.crewId}/workspace?tab=tasks&task=${task.taskId}`,
+            locale
+          )}
+          className="font-medium text-[#c9d4e8] underline decoration-white/20 underline-offset-2 transition-colors hover:text-white hover:decoration-white/55"
+        >
+          {part}
+        </Link>
+      );
+    }
+    return mentionTokens.has(part) ? (
       <span
         key={`${part}:${index}`}
         className="rounded bg-primary/[0.15] px-0.5 font-medium text-[#ff666a]"
@@ -2504,14 +2514,22 @@ function RichMessageBody({
       </span>
     ) : (
       <span key={`text:${index}`}>{part}</span>
-    )
-  );
+    );
+  });
 }
 
 function messageMentions(message: MessageDTO): ConversationMentionPayload[] {
   const payload = message.payload;
-  if (payload?.kind === "text" || payload?.kind === "attachments" || payload?.kind === "task") {
+  if (payload?.kind === "text" || payload?.kind === "attachments") {
     return payload.mentions ?? [];
+  }
+  return [];
+}
+
+function messageTaskReferences(message: MessageDTO): ConversationTaskReferencePayload[] {
+  const payload = message.payload;
+  if (payload?.kind === "text" || payload?.kind === "attachments") {
+    return payload.tasks ?? [];
   }
   return [];
 }
@@ -2523,6 +2541,15 @@ function findMentionSearch(value: string, caret: number): { start: number; query
   const at = prefix.lastIndexOf("@");
   if (at < 0) return null;
   return { start: at, query: match[1] ?? "" };
+}
+
+function findTaskSearch(value: string, caret: number): { start: number; query: string } | null {
+  const prefix = value.slice(0, caret);
+  const match = prefix.match(/(?:^|\s)#([^#\s]*)$/u);
+  if (!match) return null;
+  const hash = prefix.lastIndexOf("#");
+  if (hash < 0) return null;
+  return { start: hash, query: match[1] ?? "" };
 }
 
 function formatMessageTime(value: string): string {
@@ -2539,19 +2566,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function attachmentIcon(kind: ConversationAttachmentPayload["mediaKind"]) {
-  switch (kind) {
-    case "image":
-      return IconPhoto;
-    case "video":
-      return IconVideo;
-    case "audio":
-      return IconMusic;
-    default:
-      return IconFile;
-  }
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"] as const;
@@ -2564,15 +2578,39 @@ function formatBytes(bytes: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
+function mediaKindFromFile(file: File): ConversationAttachmentPayload["mediaKind"] {
+  const contentType = file.type.toLowerCase();
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("video/")) return "video";
+  if (contentType.startsWith("audio/")) return "audio";
+  if (
+    contentType.startsWith("text/") ||
+    contentType === "application/pdf" ||
+    contentType.includes("document") ||
+    contentType.includes("spreadsheet") ||
+    contentType.includes("presentation")
+  ) {
+    return "document";
+  }
+  return "other";
+}
+
+function createLocalAttachmentPreview(file: File, fallbackUrl: string): string | null {
+  if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+    return URL.createObjectURL(file);
+  }
+  return fallbackUrl || null;
+}
+
 function draftSignature(
   text: string,
-  task: CrewTaskOptionDTO | null,
+  tasks: ConversationTaskReferencePayload[],
   attachments: ComposerAttachment[],
   mentions: ConversationMentionPayload[]
 ): string {
   return JSON.stringify([
     text,
-    task?.id ?? null,
+    tasks.map((task) => [task.taskId, task.label]),
     attachments.map((attachment) => attachment.key),
     mentions.map((mention) => [mention.userId, mention.label]),
   ]);

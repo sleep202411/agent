@@ -24,6 +24,7 @@ import type {
   ConversationDTO,
   ConversationMentionPayload,
   ConversationParticipantRole,
+  ConversationTaskReferencePayload,
   MessageDTO,
 } from "@repo/shared/conversation";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
@@ -34,6 +35,7 @@ type SendInput = {
   body: string;
   clientKey?: string;
   mentions?: ConversationMentionPayload[];
+  tasks?: ConversationTaskReferencePayload[];
 };
 type SendAttachmentsInput = {
   attachments: Array<
@@ -42,8 +44,9 @@ type SendAttachmentsInput = {
   >;
   body?: string;
   clientKey?: string;
+  mentions?: ConversationMentionPayload[];
+  tasks?: ConversationTaskReferencePayload[];
 };
-type SendTaskInput = { taskId: string; body?: string; clientKey?: string };
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -76,10 +79,15 @@ const state = vi.hoisted(() => ({
     mutateAsync: vi.fn(async (input: SendAttachmentsInput) => input as unknown),
     isPending: false,
   },
-  sendTask: {
-    mutateAsync: vi.fn(async (input: SendTaskInput) => input as unknown),
-    isPending: false,
-  },
+  taskOptions: [] as Array<{
+    id: string;
+    number: number;
+    title: string;
+    status: "open" | "in_progress" | "submitted" | "revision_requested" | "approved" | "cancelled";
+    priority: "low" | "normal" | "high" | "urgent";
+    workflowStateId: string;
+    parentId: string | null;
+  }>,
   markRead: { mutate: vi.fn() },
   clearAccessCache: vi.fn(),
   discardPendingUpload: vi.fn(async (crewId: string, mediaAssetId: string) => {
@@ -172,7 +180,6 @@ vi.mock("@/app/(site)/creators/_hooks/use-conversations", () => ({
   useMarkRead: () => state.markRead,
   useSendText: () => state.sendText,
   useSendAttachments: () => state.sendAttachments,
-  useSendTaskCard: () => state.sendTask,
   useDeclineProposal: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/app/(site)/creators/_hooks/use-orders", () => ({
@@ -204,7 +211,7 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-assets", () => ({
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-tasks", () => ({
   useCrewTaskOptions: () => ({
-    data: [],
+    data: state.taskOptions,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -220,10 +227,13 @@ vi.mock("./send-proposal-dialog", () => ({ SendProposalDialog: () => null }));
 // the src (which IS load-bearing — a crew logo resolves against the
 // banner bucket, not the user bucket) assertable.
 vi.mock("@/components/user-avatar", () => ({
-  UserAvatar: ({ src, name, seed }: { src?: string | null; name?: string; seed?: string }) => (
-    // eslint-disable-next-line @next/next/no-img-element -- a test stub, not a rendered page
-    <img data-avatar="" src={src ?? ""} alt={name ?? ""} data-seed={seed ?? ""} />
-  ),
+  UserAvatar: ({ src, name, seed }: { src?: string | null; name?: string; seed?: string }) => {
+    const props = src ? { src } : {};
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- a test stub, not a rendered page
+      <img data-avatar="" {...props} alt={name ?? ""} data-seed={seed ?? ""} />
+    );
+  },
 }));
 
 function participant(
@@ -354,10 +364,7 @@ beforeEach(() => {
     mutateAsync: vi.fn(async (input: SendAttachmentsInput) => input as unknown),
     isPending: false,
   };
-  state.sendTask = {
-    mutateAsync: vi.fn(async (input: SendTaskInput) => input as unknown),
-    isPending: false,
-  };
+  state.taskOptions = [];
   state.markRead = { mutate: vi.fn() };
   state.clearAccessCache = vi.fn();
   state.discardPendingUpload = vi.fn(async (crewId: string, mediaAssetId: string) => {
@@ -484,25 +491,24 @@ describe("crew conversation identity", () => {
     expect(text()).not.toContain("{user}");
   });
 
-  it("renders a shared task as a deep-linked production card", () => {
+  it("renders a task reference as inline linked text without a task card", () => {
     state.messages = [
       {
         id: "m_task",
         conversationId: "conv_1",
         authorId: "8",
-        type: "task",
-        body: "Please review this.",
+        type: "text",
+        body: "Please review #TASK-12 SC.010 storyboard",
         payload: {
-          kind: "task",
-          task: {
-            taskId: "task_1",
-            crewId: "crew_1",
-            title: "SC.010 storyboard",
-            status: "submitted",
-            priority: "high",
-            assigneeCount: 2,
-            dueAt: null,
-          },
+          kind: "text",
+          tasks: [
+            {
+              taskId: "task_1",
+              crewId: "crew_1",
+              number: 12,
+              label: "TASK-12 SC.010 storyboard",
+            },
+          ],
         },
         createdAt: "2026-07-27T00:00:00.000Z",
       } satisfies MessageDTO,
@@ -510,9 +516,9 @@ describe("crew conversation identity", () => {
 
     render(<ConversationView conversationId="conv_1" />);
 
-    expect(text()).toContain("SC.010 storyboard");
-    expect(text()).toContain("In review");
-    expect(text()).toContain("2 assignees");
+    expect(text()).toContain("#TASK-12 SC.010 storyboard");
+    expect(text()).not.toContain("In review");
+    expect(text()).not.toContain("assignees");
     expect(document.querySelector('a[href*="tab=tasks"][href*="task=task_1"]')).not.toBeNull();
   });
 
@@ -547,11 +553,55 @@ describe("crew conversation identity", () => {
     expect(text()).toContain("1.0 MB");
     const link = document.querySelector('a[href*="/media/assets/media_1/content"]');
     expect(link).not.toBeNull();
+    expect(document.querySelector('video[aria-label="animatic.mp4"]')).not.toBeNull();
     expect(document.body.innerHTML).not.toContain("storageKey");
     expect(text()).toContain("Saved to crew assets");
 
     click(link as HTMLElement);
     expect(document.querySelector('a[href*="tab=assets"][href*="asset=asset_1"]')).not.toBeNull();
+  });
+
+  it("renders image thumbnails and a typed file card for non-previewable attachments", () => {
+    state.messages = [
+      {
+        id: "m_attachments",
+        conversationId: "conv_1",
+        authorId: "8",
+        type: "file",
+        body: "References",
+        payload: {
+          kind: "attachments",
+          attachments: [
+            {
+              assetNodeId: "asset_image",
+              mediaAssetId: "media_image",
+              name: "lighting-reference.png",
+              mediaKind: "image",
+              contentType: "image/png",
+              sizeBytes: 2048,
+            },
+            {
+              assetNodeId: "asset_document",
+              mediaAssetId: "media_document",
+              name: "shooting-schedule.pdf",
+              mediaKind: "document",
+              contentType: "application/pdf",
+              sizeBytes: 4096,
+            },
+          ],
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+      } satisfies MessageDTO,
+    ];
+
+    render(<ConversationView conversationId="conv_1" />);
+
+    const image = document.querySelector<HTMLImageElement>('img[alt="lighting-reference.png"]');
+    expect(image?.getAttribute("src")).toContain("/media/assets/media_image/content");
+    expect(document.querySelector('video[aria-label="shooting-schedule.pdf"]')).toBeNull();
+    expect(text()).toContain("shooting-schedule.pdf");
+    expect(text()).toContain("Document");
+    expect(text()).toContain("pdf");
   });
 
   it("drops the back-to-inbox arrow and the crew link when embedded in the workspace", () => {
@@ -734,7 +784,9 @@ describe("send states", () => {
     act(() => input!.dispatchEvent(new Event("change", { bubbles: true })));
     await settle();
 
-    expect(text()).toContain("concept.png");
+    expect(text()).not.toContain("concept.png");
+    const preview = document.querySelector<HTMLImageElement>('img[alt="concept.png"]');
+    expect(preview?.getAttribute("src")).toMatch(/^blob:/);
     click(button("Send"));
     await settle();
 
@@ -819,6 +871,44 @@ describe("send states", () => {
       expect.objectContaining({
         body: "@Ada please review",
         mentions: [{ userId: "8", label: "Ada" }],
+      })
+    );
+  });
+
+  it("uses # to insert and send an inline durable task reference", async () => {
+    state.taskOptions = [
+      {
+        id: "01910d50-4c88-7c78-92d4-16892c06a011",
+        number: 12,
+        title: "SC.010 storyboard",
+        status: "in_progress",
+        priority: "high",
+        workflowStateId: "state-1",
+        parentId: null,
+      },
+    ];
+    render(<ConversationView conversationId="conv_1" />);
+
+    expect(hasButton("Share task")).toBe(false);
+    type(composer(), "#");
+    expect(hasButton("SC.010 storyboard")).toBe(true);
+    click(button("SC.010 storyboard"));
+    expect(composer().value).toBe("#TASK-12 SC.010 storyboard ");
+    type(composer(), `${composer().value}please review`);
+    click(button("Send"));
+    await settle();
+
+    expect(state.sendText.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "#TASK-12 SC.010 storyboard please review",
+        tasks: [
+          {
+            taskId: "01910d50-4c88-7c78-92d4-16892c06a011",
+            crewId: "crew_1",
+            number: 12,
+            label: "TASK-12 SC.010 storyboard",
+          },
+        ],
       })
     );
   });

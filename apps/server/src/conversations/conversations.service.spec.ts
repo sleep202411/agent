@@ -27,11 +27,7 @@ import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../infra/db/db.module';
 import type { NotificationService } from '../notification';
 import { ConversationsService, crewLookupKey } from './conversations.service';
-import {
-  SendAttachmentsSchema,
-  SendMessageSchema,
-  SendTaskCardSchema,
-} from './dto';
+import { SendAttachmentsSchema, SendMessageSchema } from './dto';
 
 const CREW_ID = 'crew-1';
 const CONV_ID = 'conv-1';
@@ -137,6 +133,7 @@ function buildHarness() {
     },
     crewTask: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     crew: {
       findFirst: jest.fn(
@@ -1154,6 +1151,7 @@ describe('SendMessageSchema', () => {
       body: 'hi',
       clientKey: 'k1',
       mentions: [],
+      tasks: [],
     });
   });
 
@@ -1182,15 +1180,27 @@ describe('SendMessageSchema', () => {
       ],
       body: '',
       mentions: [],
+      tasks: [],
     });
     expect(
-      SendTaskCardSchema.parse({
-        taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+      SendMessageSchema.parse({
+        body: '#TASK-7 Storyboard',
+        tasks: [
+          {
+            taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+            label: 'TASK-7 Storyboard',
+          },
+        ],
       }),
     ).toEqual({
-      taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
-      body: '',
+      body: '#TASK-7 Storyboard',
       mentions: [],
+      tasks: [
+        {
+          taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          label: 'TASK-7 Storyboard',
+        },
+      ],
     });
   });
 });
@@ -1335,6 +1345,7 @@ describe('clientKey dedupe', () => {
       body: '',
       clientKey: 'asset-send-1',
       mentions: [],
+      tasks: [],
     });
 
     expect(result.type).toBe('file');
@@ -1398,6 +1409,7 @@ describe('clientKey dedupe', () => {
       body: 'New concept',
       clientKey: 'upload-send-1',
       mentions: [],
+      tasks: [],
     });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -1456,42 +1468,49 @@ describe('clientKey dedupe', () => {
       body: '',
       clientKey: 'upload-send-retry',
       mentions: [],
+      tasks: [],
     });
 
     expect(delegates.crewAssetNode.create).not.toHaveBeenCalled();
     expect(delegates.message.create).not.toHaveBeenCalled();
   });
 
-  it('snapshots a task card only when the task belongs to the conversation crew', async () => {
+  it('resolves inline task references against the conversation crew', async () => {
     const { service, delegates } = buildHarness();
     arrangeSendable(delegates);
-    delegates.crewTask.findFirst.mockResolvedValue({
-      id: '01910d50-4c88-7c78-92d4-16892c06a011',
-      crewId: CREW_ID,
-      title: 'SC.010 storyboard',
-      status: 'submitted',
-      priority: 'high',
-      dueAt: null,
-      assignees: [{ id: 'assignment-1' }, { id: 'assignment-2' }],
-    });
+    delegates.crewTask.findMany.mockResolvedValue([
+      {
+        id: '01910d50-4c88-7c78-92d4-16892c06a011',
+        crewId: CREW_ID,
+        number: 12,
+        title: 'SC.010 storyboard',
+      },
+    ]);
     delegates.message.create.mockImplementation(
       ({ data }: { data: Record<string, unknown> }) =>
         Promise.resolve(message({ id: 'm-task', ...data })),
     );
 
-    const result = await service.sendTaskCard(CONV_ID, MEMBER, {
-      taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
-      body: 'Please review.',
-      clientKey: 'task-send-1',
-      mentions: [],
-    });
+    const result = await service.sendText(
+      CONV_ID,
+      MEMBER,
+      'Please review #TASK-12 SC.010 storyboard',
+      'task-send-1',
+      [],
+      [
+        {
+          taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          label: 'TASK-12 SC.010 storyboard',
+        },
+      ],
+    );
 
-    expect(result.type).toBe('task');
-    expect(delegates.crewTask.findFirst).toHaveBeenCalledWith(
+    expect(result.type).toBe('text');
+    expect(delegates.crewTask.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          id: '01910d50-4c88-7c78-92d4-16892c06a011',
           crewId: CREW_ID,
+          id: { in: ['01910d50-4c88-7c78-92d4-16892c06a011'] },
         },
       }),
     );
@@ -1499,11 +1518,15 @@ describe('clientKey dedupe', () => {
       [{ data: { payload: Record<string, unknown> } }]
     >(delegates.message.create)[0][0].data;
     expect(taskCreate.payload).toMatchObject({
-      kind: 'task',
-      task: {
-        title: 'SC.010 storyboard',
-        assigneeCount: 2,
-      },
+      kind: 'text',
+      tasks: [
+        {
+          taskId: '01910d50-4c88-7c78-92d4-16892c06a011',
+          crewId: CREW_ID,
+          number: 12,
+          label: 'TASK-12 SC.010 storyboard',
+        },
+      ],
     });
   });
 

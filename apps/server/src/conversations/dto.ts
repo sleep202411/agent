@@ -49,10 +49,25 @@ const MentionSchema = z.object({
     }),
 });
 
+const TaskReferenceSchema = z.object({
+  taskId: z.string().uuid(),
+  /** Exact body snapshot without the leading # character. */
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(260)
+    .refine((label) => !/[#\r\n]/.test(label), {
+      message: 'Task reference label cannot contain # or a line break',
+    }),
+});
+export type TaskReferenceInput = z.infer<typeof TaskReferenceSchema>;
+
 /** Plain text message. Structured crew messages use the schemas below. */
 export const SendMessageSchema = z.object({
   body: z.string().trim().min(1).max(4000),
   mentions: z.array(MentionSchema).max(20).default([]),
+  tasks: z.array(TaskReferenceSchema).max(20).default([]),
   /// Client-generated idempotency token for this send. Optional, but
   /// strongly recommended from anything with a retry: a flaky network
   /// that re-POSTs the same composed message otherwise appends a
@@ -71,6 +86,7 @@ export type SendMessageInput = z.infer<typeof SendMessageSchema>;
 const StructuredMessageBaseSchema = z.object({
   body: z.string().trim().max(4000).default(''),
   mentions: z.array(MentionSchema).max(20).default([]),
+  tasks: z.array(TaskReferenceSchema).max(20).default([]),
   clientKey: z.string().trim().min(1).max(64).optional(),
 });
 
@@ -130,15 +146,6 @@ export const SendAttachmentsSchema = StructuredMessageBaseSchema.extend({
     }),
 });
 export type SendAttachmentsInput = z.infer<typeof SendAttachmentsSchema>;
-
-/**
- * Share a task into its crew's one group chat. The task must belong to the
- * same crew context as the conversation.
- */
-export const SendTaskCardSchema = StructuredMessageBaseSchema.extend({
-  taskId: z.string().uuid(),
-});
-export type SendTaskCardInput = z.infer<typeof SendTaskCardSchema>;
 
 /**
  * Proposal payload — creator's structured offer. Mirrors
