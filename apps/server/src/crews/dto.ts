@@ -10,6 +10,9 @@ import {
   CREW_STYLES,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
+  CREW_OWNER_ONLY_PERMISSIONS,
+  CREW_PERMISSION_KEYS,
+  CREW_POLICY_KEYS,
   SALARY_PERIODS,
   SOCIAL_PLATFORMS,
   WORK_MODES,
@@ -19,6 +22,9 @@ import {
 const presetPosition = z.string().refine(isPresetPosition, {
   message: 'positionType must be one of PRESET_POSITIONS',
 });
+const crewPolicyKey = z.enum(CREW_POLICY_KEYS);
+const crewPermissionKey = z.enum(CREW_PERMISSION_KEYS);
+const ownerOnlyPermissionSet = new Set<string>(CREW_OWNER_ONLY_PERMISSIONS);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?\d[\d\s-]{5,32}$/;
 
@@ -269,6 +275,15 @@ const InvitationAgreementRequestSchema = z.object({
   title: z.string().trim().min(1).max(180),
 });
 
+const CrewMemberPositionInputSchema = z
+  .object({
+    categoryKey: presetPosition.nullable().optional(),
+    title: z.string().trim().min(1).max(128).nullable().optional(),
+  })
+  .refine((value) => value.categoryKey != null || value.title != null, {
+    message: 'A standard position or custom title is required',
+  });
+
 export const CreateCrewInvitationSchema = z
   .object({
     account: z
@@ -279,7 +294,7 @@ export const CreateCrewInvitationSchema = z
       .refine((v) => EMAIL_RE.test(v) || PHONE_RE.test(v), {
         message: 'account must be a valid email or phone',
       }),
-    roleType: presetPosition,
+    policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).default([]),
     expiresInDays: z.number().int().min(1).max(30).default(7),
     agreement: InvitationAgreementRequestSchema.optional(),
   })
@@ -310,9 +325,33 @@ export const ListCrewMembersQuerySchema = z.object({
 });
 export type ListCrewMembersQuery = z.infer<typeof ListCrewMembersQuerySchema>;
 
-export const UpdateMemberSchema = z.object({
-  isFinance: z.boolean().optional(),
-});
+export const UpdateMemberSchema = z
+  .object({
+    positions: z.array(CrewMemberPositionInputSchema).max(12).optional(),
+    policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).optional(),
+    permissionOverrides: z
+      .array(
+        z
+          .object({
+            permissionKey: crewPermissionKey,
+            effect: z.enum(['allow', 'deny']),
+          })
+          .refine((value) => !ownerOnlyPermissionSet.has(value.permissionKey), {
+            message: 'Owner-only permissions cannot be overridden',
+          }),
+      )
+      .max(CREW_PERMISSION_KEYS.length)
+      .optional(),
+    expectedVersion: z.number().int().min(1),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      input.positions !== undefined ||
+      input.policyKeys !== undefined ||
+      input.permissionOverrides !== undefined,
+    { message: 'At least one member field must be changed' },
+  );
 export type UpdateMemberInput = z.infer<typeof UpdateMemberSchema>;
 
 export const CreateCrewAgreementSchema = z.object({
@@ -390,6 +429,7 @@ export const CreateCrewTaskSchema = z
       .optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
+    episodeId: z.string().uuid().nullable().optional(),
     parentId: z.string().uuid().nullable().optional(),
     blockedByTaskIds: z.array(z.string().uuid()).max(50).default([]),
     customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).default([]),
@@ -407,6 +447,51 @@ export const CreateCrewTaskSchema = z
     },
   );
 export type CreateCrewTaskInput = z.infer<typeof CreateCrewTaskSchema>;
+
+export const DraftCrewTaskSchema = z
+  .object({
+    prompt: z.string().trim().min(3).max(4_000),
+    locale: z.enum(['en-US', 'zh-CN', 'zh-HK']).default('en-US'),
+    timeZone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(
+        /^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)*$/,
+        'timeZone must be an IANA time zone',
+      )
+      .default('UTC'),
+    memberHints: z
+      .array(
+        z
+          .object({
+            userId: z.string().trim().min(1).max(64),
+            displayName: z.string().trim().min(1).max(120),
+          })
+          .strict(),
+      )
+      .max(100)
+      .default([]),
+  })
+  .strict();
+export type DraftCrewTaskInput = z.infer<typeof DraftCrewTaskSchema>;
+
+export interface CrewTaskDraft {
+  title: string;
+  description: string;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  startDate: string | null;
+  dueDate: string | null;
+  estimatePoints: number | null;
+  computeBudgetPoints: number | null;
+  revisionLimit: number | null;
+  cycleId: string | null;
+  parentId: string | null;
+  blockedByTaskIds: string[];
+  assigneeUserIds: string[];
+  questions: string[];
+}
 
 export const UpdateCrewTaskSchema = z
   .object({
@@ -432,6 +517,7 @@ export const UpdateCrewTaskSchema = z
       .optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
+    episodeId: z.string().uuid().nullable().optional(),
     parentId: z.string().uuid().nullable().optional(),
     blockedByTaskIds: z.array(z.string().uuid()).max(50).optional(),
     customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).optional(),

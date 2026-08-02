@@ -88,6 +88,7 @@ ingress:
 sharedEnv:
   JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
+  USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
   ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
   AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools

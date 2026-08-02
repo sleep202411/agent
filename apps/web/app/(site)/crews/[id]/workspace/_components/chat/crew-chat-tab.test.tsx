@@ -56,12 +56,6 @@ vi.mock("@/src/lib/conversations/crew-chat-room", () => ({
   CrewChatRoom: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("./crew-chat-sidebar", () => ({
-  CrewChatSidebar: ({ crewId }: { crewId: string }) => (
-    <aside data-chat-sidebar="" data-crew={crewId} />
-  ),
-}));
-
 let root: Root | null = null;
 let container: HTMLElement | null = null;
 

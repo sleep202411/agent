@@ -32,7 +32,7 @@ export interface LookupByContactRequest {
   account: string;
   /** Viewer's raw cookie — forwarded to Java for sa-token auth. */
   cookie: string;
-  /** If supplied, response includes isCrewMember + isCrewFounder. */
+  /** If supplied, response includes isCrewMember + isCrewOwner. */
   checkCrewId?: string;
 }
 
@@ -82,21 +82,23 @@ export class UsersService {
         : typeof v === 'number'
           ? String(v)
           : null;
+    const id = str(info.id);
+    if (!id) return null;
     const rawAvatar =
       (typeof info.headImg === 'string' ? info.headImg : null) ??
       (typeof info.avatar === 'string' ? info.avatar : null);
     return {
-      id: String(info.id),
+      id,
       nickName: str(info.nickName) ?? str(info.userName) ?? str(info.name),
       email: str(info.email),
       phone: str(info.phone),
-      avatar: await resolveUserAvatar(rawAvatar, String(info.id)),
+      avatar: await resolveUserAvatar(rawAvatar, id),
     };
   }
 
   /**
    * Look up a single user by their Java user id. Returns the safe
-   * public projection (`isCrewMember`/`isCrewFounder` always null —
+   * public projection (`isCrewMember`/`isCrewOwner` always null —
    * by-id lookups don't carry a crew context). Null on not-found.
    */
   async lookupByUserId(
@@ -116,9 +118,9 @@ export class UsersService {
     return {
       userId: raw.userId,
       nickname: raw.nickname,
-      avatar: raw.avatar,
+      avatar: await resolveUserAvatar(raw.avatar, raw.userId),
       isCrewMember: null,
-      isCrewFounder: null,
+      isCrewOwner: null,
     };
   }
 
@@ -175,29 +177,37 @@ export class UsersService {
     checkCrewId?: string,
   ): Promise<LookupUserDTO> {
     let isCrewMember: boolean | null = null;
-    let isCrewFounder: boolean | null = null;
+    let isCrewOwner: boolean | null = null;
     if (checkCrewId) {
       const [crew, member] = await Promise.all([
         this.prisma.crew.findFirst({
           where: { id: checkCrewId, deletedAt: null },
-          select: { founderId: true },
+          select: {
+            ownership: {
+              select: { member: { select: { userId: true } } },
+            },
+          },
         }),
         this.prisma.crewMember.findFirst({
-          where: { crewId: checkCrewId, userId: raw.userId, removedAt: null },
+          where: {
+            crewId: checkCrewId,
+            userId: raw.userId,
+            status: 'active',
+          },
           select: { id: true },
         }),
       ]);
       if (crew) {
         isCrewMember = member != null;
-        isCrewFounder = crew.founderId === raw.userId;
+        isCrewOwner = crew.ownership?.member.userId === raw.userId;
       }
     }
     return {
       userId: raw.userId,
       nickname: raw.nickname,
-      avatar: raw.avatar,
+      avatar: await resolveUserAvatar(raw.avatar, raw.userId),
       isCrewMember,
-      isCrewFounder,
+      isCrewOwner,
     };
   }
 

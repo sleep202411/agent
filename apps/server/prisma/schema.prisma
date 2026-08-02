@@ -4020,11 +4020,22 @@ enum ExperienceLevel {
   master
 }
 
-enum CrewMemberVia {
-  founder
+enum CrewJoinSource {
+  creation
   application
   invitation
   ownership_transfer
+}
+
+enum CrewMembershipStatus {
+  active
+  suspended
+  removed
+}
+
+enum CrewPermissionEffect {
+  allow
+  deny
 }
 
 enum CrewApplicationStatus {
@@ -4079,19 +4090,66 @@ enum CrewTaskPriority {
   urgent
 }
 
-enum CrewTaskViewLayout {
-  table
-  board
-  calendar
-  timeline
+enum CrewProductionStatus {
+  backlog
+  planned
+  in_progress
+  completed
+  cancelled
 }
 
-enum CrewTaskViewScope {
-  backlog
-  active
-  review
+enum CrewProductionDateGranularity {
+  day
+  month
+  quarter
+  half_year
+  year
+}
+
+enum CrewProductionResourceKind {
+  link
+  asset
+}
+
+enum CrewProductionUpdateHealth {
+  on_track
+  at_risk
+  off_track
+}
+
+enum CrewProductionActivityKind {
+  comment
+  update
+  project_created
+  properties_changed
+  labels_changed
+  resource_added
+  resource_removed
+}
+
+enum CrewEpisodeStatus {
+  planned
+  in_production
+  in_review
   completed
+  cancelled
+}
+
+enum CrewEpisodeDeliveryStatus {
+  submitted
+  approved
+  rejected
+}
+
+enum CrewTaskViewLayout {
+  list
+  board
+}
+
+enum CrewTaskCompletedMode {
   all
+  recent
+  hidden
 }
 
 enum CrewTaskCycleStatus {
@@ -4171,8 +4229,9 @@ model Crew {
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
   showcaseWorks       Json?             @map("showcase_works") @db.JsonB
-  /// External auth user id. FK not enforced — see header.
-  founderId           String            @map("founder_id")
+  /// Immutable creator identity for audit only. Current ownership lives in
+  /// CrewOwnership and is never inferred from this field.
+  createdByUserId     String            @map("created_by_user_id")
   /// User-controlled discovery state. New crews start unlisted; only
   /// listed crews appear in the public Crew Hall.
   listingStatus       CrewListingStatus @default(unlisted) @map("listing_status")
@@ -4190,23 +4249,28 @@ model Crew {
   updatedAt           DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt           DateTime?         @map("deleted_at") @db.Timestamptz(6)
 
-  positions          CrewPosition[]
-  members            CrewMember[]
-  applications       CrewApplication[]
-  assetNodes         CrewAssetNode[]
-  invitations        CrewInvitation[]
-  tasks              CrewTask[]
-  taskViews          CrewTaskView[]
-  taskCycles         CrewTaskCycle[]
-  taskLabels         CrewTaskLabel[]
-  taskFields         CrewTaskFieldDefinition[]
-  taskWorkflowStates CrewTaskWorkflowState[]
-  agreements         CrewAgreement[]
-  settlementItems    CrewSettlementItem[]
-  workspace          Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
-  productionProject  PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
+  positions           CrewPosition[]
+  members             CrewMember[]
+  ownership           CrewOwnership?
+  applications        CrewApplication[]
+  assetNodes          CrewAssetNode[]
+  invitations         CrewInvitation[]
+  tasks               CrewTask[]
+  taskViews           CrewTaskView[]
+  taskCycles          CrewTaskCycle[]
+  taskLabels          CrewTaskLabel[]
+  taskFields          CrewTaskFieldDefinition[]
+  taskWorkflowStates  CrewTaskWorkflowState[]
+  productionPage      CrewProductionPage?
+  productionResources CrewProductionResource[]
+  productionActivity  CrewProductionActivity[]
+  episodes            CrewEpisode[]
+  agreements          CrewAgreement[]
+  settlementItems     CrewSettlementItem[]
+  workspace           Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
+  productionProject   PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
 
-  @@index([founderId, deletedAt], map: "crews_founder_idx")
+  @@index([createdByUserId, deletedAt], map: "crews_creator_idx")
   /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
   /// ORDER BY listed_at DESC / created_at DESC.
   @@index([listingStatus, deletedAt, listedAt(sort: Desc), createdAt(sort: Desc)], map: "crews_feed_idx")
@@ -4240,6 +4304,8 @@ model CrewAssetNode {
   grants               CrewAssetGrant[]
   submissionLinks      CrewTaskSubmissionAsset[]
   taskTimelineLinks    CrewTaskTimelineAsset[]
+  episodeDeliveries    CrewEpisodeDelivery[]
+  productionResources  CrewProductionResource[]
   signedAgreements     CrewAgreement[]           @relation("CrewAgreementSignedAsset")
   agreementAuditTrails CrewAgreement[]           @relation("CrewAgreementAuditAsset")
 
@@ -4373,9 +4439,9 @@ model CrewPosition {
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  crew         Crew              @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  applications CrewApplication[]
-  members      CrewMember[]
+  crew            Crew                 @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  applications    CrewApplication[]
+  memberPositions CrewMemberPosition[]
 
   /// Composite FK target for CrewApplication.position: guarantees the
   /// application row's crew_id matches the position's crew_id.
@@ -4390,34 +4456,122 @@ model CrewPosition {
 }
 
 model CrewMember {
-  id         String        @id
-  crewId     String        @map("crew_id")
-  userId     String        @map("user_id")
-  /// Preset position key OR literal "owner" for the founder.
-  roleType   String        @map("role_type") @db.VarChar(64)
-  /// Linked position when joined via application; null for owner /
-  /// invitation-based members.
-  positionId String?       @map("position_id")
-  via        CrewMemberVia
-  /// Finance flag (per episodes-spec) — only finance can set revenue.
-  isFinance  Boolean       @default(false) @map("is_finance")
-  joinedAt   DateTime      @default(now()) @map("joined_at") @db.Timestamptz(6)
-  removedAt  DateTime?     @map("removed_at") @db.Timestamptz(6)
+  id          String               @id
+  crewId      String               @map("crew_id")
+  userId      String               @map("user_id")
+  status      CrewMembershipStatus @default(active)
+  joinedVia   CrewJoinSource       @map("joined_via")
+  joinedAt    DateTime             @default(now()) @map("joined_at") @db.Timestamptz(6)
+  suspendedAt DateTime?            @map("suspended_at") @db.Timestamptz(6)
+  removedAt   DateTime?            @map("removed_at") @db.Timestamptz(6)
+  version     Int                  @default(1)
 
-  crew            Crew                 @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  position        CrewPosition?        @relation(fields: [positionId], references: [id], onDelete: SetNull)
-  taskAssignments CrewTaskAssignee[]
-  settlements     CrewSettlementItem[]
+  crew                     Crew                           @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  ownership                CrewOwnership?
+  positions                CrewMemberPosition[]
+  policies                 CrewMemberPolicy[]
+  permissionOverrides      CrewMemberPermissionOverride[]
+  authorizationEvents      CrewAuthorizationEvent[]       @relation("CrewAuthorizationSubject")
+  actorAuthorizationEvents CrewAuthorizationEvent[]       @relation("CrewAuthorizationActor")
+  taskAssignments          CrewTaskAssignee[]
+  ledProductionPages       CrewProductionPage[]           @relation("CrewProductionLead")
+  settlements              CrewSettlementItem[]
 
-  /// Partial unique enforced in migration SQL:
-  /// CREATE UNIQUE INDEX crew_members_active_unique
-  ///   ON crew_members (crew_id, user_id) WHERE removed_at IS NULL;
-  /// Allows historical removed rows to coexist with a new active row —
-  /// preserves the audit trail when a member is re-added.
-  @@index([userId, removedAt], map: "crew_members_by_user_idx")
-  @@index([crewId, removedAt], map: "crew_members_by_crew_idx")
-  @@index([crewId, removedAt, joinedAt, id], map: "crew_members_page_idx")
+  @@unique([id, crewId], name: "uniq_crew_member_id_crew", map: "crew_members_id_crew_unique")
+  @@index([userId, status], map: "crew_members_by_user_idx")
+  @@index([crewId, status], map: "crew_members_by_crew_idx")
+  @@index([crewId, status, joinedAt, id], map: "crew_members_page_idx")
   @@map("crew_members")
+}
+
+/// Exactly one current owner per crew. Ownership is independent from
+/// production positions and permission policies.
+model CrewOwnership {
+  crewId     String   @id @map("crew_id")
+  memberId   String   @unique(map: "crew_ownership_member_unique") @map("member_id")
+  acquiredAt DateTime @default(now()) @map("acquired_at") @db.Timestamptz(6)
+
+  crew   Crew       @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  member CrewMember @relation(fields: [memberId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@unique([memberId, crewId], map: "crew_ownership_member_crew_unique")
+  @@map("crew_ownership")
+}
+
+/// A member may hold multiple production positions. The standard category is
+/// optional; custom titles cover real-world crew responsibilities without
+/// turning job names into authorization roles.
+model CrewMemberPosition {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  crewId           String   @map("crew_id")
+  memberId         String   @map("member_id")
+  categoryKey      String?  @map("category_key") @db.VarChar(64)
+  title            String?  @db.VarChar(128)
+  isPrimary        Boolean  @default(false) @map("is_primary")
+  sourcePositionId String?  @map("source_position_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member         CrewMember    @relation(fields: [memberId, crewId], references: [id, crewId], onDelete: Cascade)
+  sourcePosition CrewPosition? @relation(fields: [sourcePositionId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@index([crewId, categoryKey], map: "crew_member_positions_crew_category_idx")
+  @@index([memberId, isPrimary], map: "crew_member_positions_member_primary_idx")
+  @@map("crew_member_positions")
+}
+
+/// Additive policy bundles (currently admin / finance). Active membership
+/// itself supplies the baseline member policy.
+model CrewMemberPolicy {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  memberId         String   @map("member_id")
+  policyKey        String   @map("policy_key") @db.VarChar(64)
+  assignedByUserId String   @map("assigned_by_user_id") @db.VarChar(64)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member CrewMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, policyKey], map: "crew_member_policies_member_key_unique")
+  @@index([policyKey, memberId], map: "crew_member_policies_key_member_idx")
+  @@map("crew_member_policies")
+}
+
+/// Explicit member-level exceptions applied after baseline and policy bundles.
+model CrewMemberPermissionOverride {
+  id              String               @id @default(uuid(7)) @db.Uuid
+  memberId        String               @map("member_id")
+  permissionKey   String               @map("permission_key") @db.VarChar(96)
+  effect          CrewPermissionEffect
+  changedByUserId String               @map("changed_by_user_id") @db.VarChar(64)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member CrewMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, permissionKey], map: "crew_member_permission_overrides_member_key_unique")
+  @@index([permissionKey, effect], map: "crew_member_permission_overrides_permission_idx")
+  @@map("crew_member_permission_overrides")
+}
+
+/// Append-only security audit trail for policy, permission and ownership
+/// changes. Logical identifiers are intentionally retained after removal.
+model CrewAuthorizationEvent {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  crewId        String   @map("crew_id")
+  memberId      String?  @map("member_id")
+  actorMemberId String?  @map("actor_member_id")
+  actorUserId   String   @map("actor_user_id") @db.VarChar(64)
+  action        String   @db.VarChar(64)
+  before        Json?    @db.JsonB
+  after         Json?    @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member      CrewMember? @relation("CrewAuthorizationSubject", fields: [memberId], references: [id], onDelete: SetNull)
+  actorMember CrewMember? @relation("CrewAuthorizationActor", fields: [actorMemberId], references: [id], onDelete: SetNull)
+
+  @@index([crewId, createdAt(sort: Desc)], map: "crew_authorization_events_crew_recent_idx")
+  @@index([memberId, createdAt(sort: Desc)], map: "crew_authorization_events_member_recent_idx")
+  @@map("crew_authorization_events")
 }
 
 /// Account-targeted invitation. Acceptance, not sending, creates membership,
@@ -4427,7 +4581,7 @@ model CrewInvitation {
   crewId               String               @map("crew_id")
   inviteeUserId        String               @map("invitee_user_id") @db.VarChar(64)
   invitedByUserId      String               @map("invited_by_user_id") @db.VarChar(64)
-  roleType             String               @map("role_type") @db.VarChar(64)
+  policyKeys           String[]             @default([]) @map("policy_keys")
   status               CrewInvitationStatus @default(pending)
   expiresAt            DateTime             @map("expires_at") @db.Timestamptz(6)
   acceptedAt           DateTime?            @map("accepted_at") @db.Timestamptz(6)
@@ -4476,14 +4630,17 @@ model CrewTask {
   revisionLimit       Int?             @map("revision_limit")
   revisionRoundsUsed  Int              @default(0) @map("revision_rounds_used")
   cycleId             String?          @map("cycle_id") @db.Uuid
+  episodeId           String?          @map("episode_id") @db.Uuid
   /// One shared sparse ordering key. Reordering within a board/list group
   /// uses exact decimal midpoints and periodically rebalances under a lock.
   rank                Decimal          @default(1024) @db.Decimal(36, 18)
   /// Optimistic concurrency token. Every mutable task-field/assignee write
   /// increments it; clients send the version they edited.
   version             Int              @default(1)
-  canvasProjectId     String           @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
-  canvasDocumentId    String           @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
+  /// Optional focused Studio branch. Ordinary issues stay lightweight and
+  /// acquire a branch only when somebody explicitly starts canvas work.
+  canvasProjectId     String?          @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
+  canvasDocumentId    String?          @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
   createdByUserId     String           @map("created_by_user_id") @db.VarChar(64)
   approvedByUserId    String?          @map("approved_by_user_id") @db.VarChar(64)
   submittedAt         DateTime?        @map("submitted_at") @db.Timestamptz(6)
@@ -4496,9 +4653,10 @@ model CrewTask {
   parent                CrewTask?                 @relation("CrewTaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children              CrewTask[]                @relation("CrewTaskHierarchy")
   cycle                 CrewTaskCycle?            @relation(fields: [cycleId], references: [id], onDelete: SetNull)
+  episode               CrewEpisode?              @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Restrict)
   workflowState         CrewTaskWorkflowState     @relation(fields: [workflowStateId, crewId], references: [id, crewId], onDelete: Restrict)
-  canvasProject         PlatformProject           @relation("CrewTaskCanvasProject", fields: [canvasProjectId], references: [id], onDelete: Restrict)
-  canvasDocument        PlatformDocument          @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
+  canvasProject         PlatformProject?          @relation("CrewTaskCanvasProject", fields: [canvasProjectId], references: [id], onDelete: Restrict)
+  canvasDocument        PlatformDocument?         @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
   assignees             CrewTaskAssignee[]
   labels                CrewTaskLabelAssignment[]
   submissions           CrewTaskSubmission[]
@@ -4513,12 +4671,136 @@ model CrewTask {
   @@index([crewId, rank, id], map: "crew_tasks_crew_rank_idx")
   @@index([crewId, parentId, rank, id], map: "crew_tasks_crew_parent_rank_idx")
   @@index([crewId, cycleId, rank, id], map: "crew_tasks_crew_cycle_rank_idx")
+  @@index([crewId, episodeId, rank, id], map: "crew_tasks_crew_episode_rank_idx")
   @@index([crewId, workflowStateId, rank, id], map: "crew_tasks_crew_workflow_state_rank_idx")
   @@index([crewId, priority, rank, id], map: "crew_tasks_crew_priority_rank_idx")
   @@index([crewId, status, updatedAt(sort: Desc)], map: "crew_tasks_crew_status_idx")
   @@index([crewId, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_tasks_crew_updated_idx")
   @@index([crewId, dueAt], map: "crew_tasks_crew_due_idx")
   @@map("crew_tasks")
+}
+
+/// The crew's editable production home. `document` is the canonical Tiptap
+/// JSON tree; episode, task, and delivery state remains normalized in its own
+/// tables and is referenced by atomic editor nodes rather than copied here.
+model CrewProductionPage {
+  crewId                String                        @id @map("crew_id")
+  document              Json                          @db.JsonB
+  version               Int                           @default(1)
+  status                CrewProductionStatus          @default(backlog)
+  priority              CrewTaskPriority?
+  leadMemberId          String?                       @map("lead_member_id")
+  startDate             DateTime?                     @map("start_date") @db.Date
+  startDateGranularity  CrewProductionDateGranularity @default(day) @map("start_date_granularity")
+  targetDate            DateTime?                     @map("target_date") @db.Date
+  targetDateGranularity CrewProductionDateGranularity @default(day) @map("target_date_granularity")
+  metadataVersion       Int                           @default(1) @map("metadata_version")
+  createdByUserId       String                        @map("created_by_user_id") @db.VarChar(64)
+  updatedByUserId       String                        @map("updated_by_user_id") @db.VarChar(64)
+  createdAt             DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew          Crew                            @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  leadMember    CrewMember?                     @relation("CrewProductionLead", fields: [leadMemberId], references: [id], onDelete: SetNull)
+  projectLabels CrewProductionLabelAssignment[]
+
+  @@map("crew_production_pages")
+}
+
+/// Project-level references used by the crew while planning production.
+/// A resource is either an external HTTP(S) link or an existing crew asset;
+/// the database check constraint enforces the exclusive shape.
+model CrewProductionResource {
+  id              String                     @id @default(uuid(7)) @db.Uuid
+  crewId          String                     @map("crew_id")
+  kind            CrewProductionResourceKind
+  title           String                     @db.VarChar(180)
+  url             String?                    @db.VarChar(2048)
+  assetNodeId     String?                    @map("asset_node_id") @db.Uuid
+  createdByUserId String                     @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew      Crew           @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  assetNode CrewAssetNode? @relation(fields: [assetNodeId], references: [id], onDelete: Restrict)
+
+  @@index([crewId, createdAt, id], map: "crew_production_resources_crew_idx")
+  @@index([assetNodeId], map: "crew_production_resources_asset_idx")
+  @@map("crew_production_resources")
+}
+
+/// Canonical append-only project stream. Updates, comments, and metadata
+/// changes share one cursor and ordering contract; task-local events stay on
+/// each issue timeline instead of polluting the project activity view.
+model CrewProductionActivity {
+  id              String                      @id @default(uuid(7)) @db.Uuid
+  crewId          String                      @map("crew_id")
+  kind            CrewProductionActivityKind
+  health          CrewProductionUpdateHealth?
+  content         Json?                       @db.JsonB
+  plainText       String                      @default("") @map("plain_text") @db.Text
+  progress        Int?
+  payload         Json                        @default("{}") @db.JsonB
+  createdByUserId String                      @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@index([crewId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_production_activity_recent_idx")
+  @@map("crew_production_activity")
+}
+
+/// A crew-owned episode in the actual production plan. It is deliberately
+/// independent from public IP publishing and from Studio projects.
+model CrewEpisode {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  crewId           String            @map("crew_id")
+  number           Int
+  title            String            @db.VarChar(180)
+  synopsis         String            @default("") @db.Text
+  status           CrewEpisodeStatus @default(planned)
+  durationSeconds  Int?              @map("duration_seconds")
+  plannedReleaseAt DateTime?         @map("planned_release_at") @db.Timestamptz(6)
+  rank             Decimal           @default(1024) @db.Decimal(36, 18)
+  version          Int               @default(1)
+  createdByUserId  String            @map("created_by_user_id") @db.VarChar(64)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew       Crew                  @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  tasks      CrewTask[]
+  deliveries CrewEpisodeDelivery[]
+
+  @@unique([id, crewId], name: "uniq_crew_episode_id_crew", map: "crew_episodes_id_crew_unique")
+  @@unique([crewId, number], map: "crew_episodes_crew_number_unique")
+  @@index([crewId, rank, id], map: "crew_episodes_crew_rank_idx")
+  @@index([crewId, status, updatedAt(sort: Desc)], map: "crew_episodes_crew_status_idx")
+  @@map("crew_episodes")
+}
+
+/// Immutable submitted masters for one episode. Review changes only the
+/// status and audit fields; a replacement is always a new version.
+model CrewEpisodeDelivery {
+  id                String                    @id @default(uuid(7)) @db.Uuid
+  crewId            String                    @map("crew_id")
+  episodeId         String                    @map("episode_id") @db.Uuid
+  versionNumber     Int                       @map("version_number")
+  assetNodeId       String                    @map("asset_node_id") @db.Uuid
+  status            CrewEpisodeDeliveryStatus @default(submitted)
+  note              String                    @default("") @db.Text
+  reviewNote        String                    @default("") @map("review_note") @db.Text
+  submittedByUserId String                    @map("submitted_by_user_id") @db.VarChar(64)
+  reviewedByUserId  String?                   @map("reviewed_by_user_id") @db.VarChar(64)
+  reviewedAt        DateTime?                 @map("reviewed_at") @db.Timestamptz(6)
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  episode   CrewEpisode   @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Cascade)
+  assetNode CrewAssetNode @relation(fields: [assetNodeId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@unique([episodeId, versionNumber], map: "crew_episode_deliveries_episode_version_unique")
+  @@index([crewId, status, createdAt(sort: Desc)], map: "crew_episode_deliveries_crew_status_idx")
+  @@index([assetNodeId], map: "crew_episode_deliveries_asset_idx")
+  @@map("crew_episode_deliveries")
 }
 
 /// Crew-owned workflow configuration. Names, colors and ordering are product
@@ -4551,20 +4833,22 @@ model CrewTaskWorkflowState {
 /// Filters/sorts/field visibility are data, so every member sees the same
 /// planning surface rather than a hard-coded client-only tab.
 model CrewTaskView {
-  id              String             @id @default(uuid(7)) @db.Uuid
-  crewId          String             @map("crew_id")
-  name            String             @db.VarChar(80)
-  layout          CrewTaskViewLayout
-  scope           CrewTaskViewScope  @default(all)
-  groupBy         String?            @map("group_by") @db.VarChar(32)
-  filters         Json               @default("{}") @db.JsonB
-  sorts           Json               @default("[]") @db.JsonB
-  visibleFields   Json               @default("[]") @map("visible_fields") @db.JsonB
-  position        Int                @default(0)
-  isSystem        Boolean            @default(false) @map("is_system")
-  createdByUserId String             @map("created_by_user_id") @db.VarChar(64)
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String                @id @default(uuid(7)) @db.Uuid
+  crewId          String                @map("crew_id")
+  name            String                @db.VarChar(80)
+  layout          CrewTaskViewLayout    @default(list)
+  groupBy         String?               @map("group_by") @db.VarChar(32)
+  filters         Json                  @default("{}") @db.JsonB
+  sorts           Json                  @default("[]") @db.JsonB
+  visibleFields   Json                  @default("[]") @map("visible_fields") @db.JsonB
+  completedMode   CrewTaskCompletedMode @default(all) @map("completed_mode")
+  showSubIssues   Boolean               @default(true) @map("show_sub_issues")
+  showEmptyGroups Boolean               @default(false) @map("show_empty_groups")
+  position        Int                   @default(0)
+  isSystem        Boolean               @default(false) @map("is_system")
+  createdByUserId String                @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
 
@@ -4605,12 +4889,29 @@ model CrewTaskLabel {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  crew  Crew                      @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  tasks CrewTaskLabelAssignment[]
+  crew               Crew                            @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  tasks              CrewTaskLabelAssignment[]
+  productionProjects CrewProductionLabelAssignment[]
 
   @@unique([crewId, name], map: "crew_task_labels_crew_name_unique")
   @@index([crewId, createdAt], map: "crew_task_labels_crew_created_idx")
   @@map("crew_task_labels")
+}
+
+/// Project-level label selection reuses the same crew-scoped taxonomy as
+/// issues. The assignment is normalized so labels remain searchable and
+/// automatable instead of being copied into the Tiptap document.
+model CrewProductionLabelAssignment {
+  crewId    String   @map("crew_id")
+  labelId   String   @map("label_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page  CrewProductionPage @relation(fields: [crewId], references: [crewId], onDelete: Cascade)
+  label CrewTaskLabel      @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([crewId, labelId])
+  @@index([labelId, crewId], map: "crew_production_label_assignments_label_idx")
+  @@map("crew_production_label_assignments")
 }
 
 model CrewTaskLabelAssignment {

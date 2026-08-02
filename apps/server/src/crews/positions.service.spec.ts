@@ -62,7 +62,6 @@ function build() {
   };
   const crew = {
     findFirst: jest.fn().mockResolvedValue({
-      founderId: 'owner-1',
       listingStatus: 'listed',
     }),
   };
@@ -77,12 +76,19 @@ function build() {
     crew,
     crewMember,
     crewApplication,
-    service: new PositionsService({
-      crewPosition,
-      crew,
-      crewMember,
-      crewApplication,
-    } as never),
+    service: new PositionsService(
+      {
+        crewPosition,
+        crew,
+        crewMember,
+        crewApplication,
+      } as never,
+      {
+        resolve: jest
+          .fn()
+          .mockResolvedValue({ permissions: ['openings.manage'] }),
+      } as never,
+    ),
   };
 }
 

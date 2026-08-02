@@ -14,7 +14,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -29,10 +28,14 @@ import type {
 } from './dto';
 import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';
+import { CrewAuthorizationService } from './crew-authorization.service';
 
 @Injectable()
 export class PositionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorization: CrewAuthorizationService,
+  ) {}
 
   async list(
     crewId: string,
@@ -41,24 +44,21 @@ export class PositionsService {
   ) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { founderId: true, listingStatus: true },
+      select: { listingStatus: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
 
-    const isFounder = viewerId !== null && viewerId === crew.founderId;
-    if (crew.listingStatus !== 'listed' && !isFounder) {
+    const viewer = viewerId
+      ? await this.authorization.resolve(crewId, viewerId)
+      : null;
+    if (crew.listingStatus !== 'listed' && !viewer) {
       // Mirror crews.detail visibility — unlisted crews are accessible
       // only to founder + active members. Deep-linking to
       // /crews/:id/positions must not leak position lists either.
-      const isMember =
-        viewerId !== null &&
-        (await this.prisma.crewMember.count({
-          where: { crewId, userId: viewerId, removedAt: null },
-        })) > 0;
-      if (!isMember) throw new NotFoundException('Crew not found');
+      throw new NotFoundException('Crew not found');
     }
 
-    const canManage = isFounder;
+    const canManage = viewer?.permissions.includes('openings.manage') ?? false;
     const where = {
       crewId,
       deletedAt: null,
@@ -204,7 +204,7 @@ export class PositionsService {
   }
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
     const ccy = input.salary?.currency ?? null;
     const row = await this.prisma.crewPosition.create({
@@ -252,7 +252,7 @@ export class PositionsService {
     ownerId: string,
     input: UpdatePositionInput,
   ) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     const pos = await this.requirePosition(crewId, positionId);
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
 
@@ -349,7 +349,7 @@ export class PositionsService {
     positionId: string,
     ownerId: string,
   ): Promise<void> {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     await this.requirePosition(crewId, positionId);
 
     const pendingCount = await this.prisma.crewApplication.count({
@@ -365,19 +365,6 @@ export class PositionsService {
       where: { id: positionId },
       data: { deletedAt: new Date() },
     });
-  }
-
-  private async assertOwner(crewId: string, userId: string) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
-    });
-    if (!crew) throw new NotFoundException('Crew not found');
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can do this',
-      });
-    }
   }
 
   private async requirePosition(crewId: string, positionId: string) {

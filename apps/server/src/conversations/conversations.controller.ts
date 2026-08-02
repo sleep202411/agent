@@ -346,7 +346,7 @@ export class ConversationsController {
       }),
       this.prisma.crewMember.groupBy({
         by: ['crewId'],
-        where: { crewId: { in: crewIds }, removedAt: null },
+        where: { crewId: { in: crewIds }, status: 'active' },
         _count: { _all: true },
       }),
     ]);

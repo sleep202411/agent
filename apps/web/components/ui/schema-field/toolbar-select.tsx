@@ -1,9 +1,9 @@
 /**
  * Compact native-shaped select for toolbars (image / video AI dialogs).
  *
- * Implementation note (May 2026): originally a native `<select>` styled
+ * Implementation note (May 2026): originally a browser-native select styled
  * with Tailwind + `color-scheme: dark`. Chromium on Windows does not
- * reliably honour `color-scheme` for the OS-painted `<select>` popup
+ * reliably honour `color-scheme` for the OS-painted popup
  * (see chromium issue 230258 and Microsoft Edge's 2022 "Styling select
  * for real" blog post). Swapped to a Radix-based shadcn Select so the
  * dropdown is fully DOM-rendered and theme-controlled.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { resolveUserAvatarUrl } from "@repo/shared/avatar";
 import { api } from "@/lib/api";
 
 /**
@@ -22,7 +23,10 @@ export async function fetchUsersByIds(ids: string[]): Promise<PublicUser[]> {
   const data = await api.get<{ users: PublicUser[] }>("/aurora/users/by-ids", {
     params: { ids: ids.join(",") },
   });
-  return data.users;
+  return data.users.map((user) => ({
+    ...user,
+    avatar: resolveUserAvatarUrl(user.avatar) ?? null,
+  }));
 }
 
 /**

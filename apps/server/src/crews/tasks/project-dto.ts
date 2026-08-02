@@ -1,18 +1,7 @@
 import { z } from 'zod';
 
-export const CrewTaskViewLayoutSchema = z.enum([
-  'table',
-  'board',
-  'calendar',
-  'timeline',
-]);
-export const CrewTaskViewScopeSchema = z.enum([
-  'backlog',
-  'active',
-  'review',
-  'completed',
-  'all',
-]);
+export const CrewTaskViewLayoutSchema = z.enum(['list', 'board']);
+export const CrewTaskCompletedModeSchema = z.enum(['all', 'recent', 'hidden']);
 export const CrewTaskViewGroupSchema = z.enum([
   'none',
   'status',
@@ -84,11 +73,13 @@ export const CreateCrewTaskViewSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     layout: CrewTaskViewLayoutSchema,
-    scope: CrewTaskViewScopeSchema.default('all'),
     groupBy: CrewTaskViewGroupSchema.default('none'),
     filters: CrewTaskViewFiltersSchema.default({}),
     sorts: z.array(CrewTaskViewSortSchema).max(3).default([]),
     visibleFields: z.array(CrewTaskViewFieldSchema).max(30).default([]),
+    completedMode: CrewTaskCompletedModeSchema.default('all'),
+    showSubIssues: z.boolean().default(true),
+    showEmptyGroups: z.boolean().default(false),
   })
   .strict();
 export type CreateCrewTaskViewInput = z.infer<typeof CreateCrewTaskViewSchema>;

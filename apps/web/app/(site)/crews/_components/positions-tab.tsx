@@ -15,19 +15,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  IconBriefcase,
-  IconChevronDown,
-  IconCoin,
-  IconMapPin,
-  IconUserCircle,
-} from "@tabler/icons-react";
+import { IconBriefcase, IconCoin, IconMapPin, IconUserCircle } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import type { CrewDTO, CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
 import {
@@ -352,23 +347,21 @@ function SortMenu({
     oldest: t("sortOldest"),
   };
   return (
-    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span>{t("sortBy")}:</span>
-      <span className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value as SortMode)}
-          className="cursor-pointer appearance-none rounded-md border border-border bg-card py-1 pl-2 pr-7 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          {(Object.keys(labels) as SortMode[]).map((k) => (
-            <option key={k} value={k}>
-              {labels[k]}
-            </option>
-          ))}
-        </select>
-        <IconChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      </span>
-    </label>
+      <NativeSelect
+        value={value}
+        onChange={(nextValue) => onChange(nextValue as SortMode)}
+        aria-label={t("sortBy")}
+        className="w-auto cursor-pointer rounded-md border-border bg-card text-xs font-medium text-foreground focus:ring-1 focus:ring-primary"
+      >
+        {(Object.keys(labels) as SortMode[]).map((k) => (
+          <option key={k} value={k}>
+            {labels[k]}
+          </option>
+        ))}
+      </NativeSelect>
+    </div>
   );
 }
 

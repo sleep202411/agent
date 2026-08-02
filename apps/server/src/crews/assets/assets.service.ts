@@ -24,7 +24,7 @@ import {
 } from '../../infra/storage/crew-asset-storage-policy';
 import { MediaStorageAccessService } from '../../infra/storage/media-storage-access.service';
 import { StorageProviderRegistry } from '../../infra/storage/storage-provider-registry.service';
-import { CrewRoleService } from '../crew-role.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewAssetAccessService } from './asset-access.service';
 import type {
   AttachCrewAssetFileInput,
@@ -88,7 +88,7 @@ type AssetNode = Prisma.CrewAssetNodeGetPayload<{
 export class CrewAssetsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly roles: CrewRoleService,
+    private readonly authorization: CrewAuthorizationService,
     private readonly access: CrewAssetAccessService,
     private readonly storageRegistry: StorageProviderRegistry,
     private readonly mediaStorage: MediaStorageAccessService,
@@ -96,11 +96,11 @@ export class CrewAssetsService {
   ) {}
 
   async context(crewId: string, userId: string) {
-    const role = await this.roles.require(crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
+    const context = await this.authorization.require(
+      crewId,
+      userId,
+      'assets.view',
+    );
     const provider = crewAssetStorageProviderForCell(CURRENT_CELL);
     const storage = this.storageRegistry.forProvider(provider);
     let storageAvailable = false;
@@ -117,21 +117,23 @@ export class CrewAssetsService {
       storageAvailable,
       maxUploadBytes: CREW_ASSET_MAX_BYTES,
       accessModel: 'hierarchical_acl' as const,
-      role,
+      isOwner: context.isOwner,
+      policyKeys: context.policyKeys,
+      permissions: context.permissions,
       capabilities: {
         view: true,
-        createFolder: true,
-        upload: true,
-        organize: true,
-        trash: true,
-        restore: true,
-        deleteForever: role === 'admin',
+        createFolder: context.permissions.includes('assets.upload'),
+        upload: context.permissions.includes('assets.upload'),
+        organize: context.permissions.includes('assets.upload'),
+        trash: context.permissions.includes('assets.upload'),
+        restore: context.permissions.includes('assets.upload'),
+        deleteForever: context.permissions.includes('assets.manage'),
       },
     };
   }
 
   async list(crewId: string, userId: string, query: ListCrewAssetsQuery) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'assets.view');
     if (query.source === 'all' && query.parentId) {
       await this.access.requireNodePermission(
         crewId,
@@ -225,7 +227,7 @@ export class CrewAssetsService {
   }
 
   async listFolders(crewId: string, userId: string) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'assets.view');
     const folders = await this.prisma.crewAssetNode.findMany({
       where: {
         crewId,
@@ -467,7 +469,7 @@ export class CrewAssetsService {
     userId: string,
     mediaAssetId: string,
   ): Promise<void> {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'assets.upload');
     await this.reclaimPendingUpload(mediaAssetId, {
       crewId,
       userId,

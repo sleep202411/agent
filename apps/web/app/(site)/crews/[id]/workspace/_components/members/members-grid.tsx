@@ -1,12 +1,8 @@
 "use client";
 
 /**
- * Members tab content — owner card on top + member grid below.
- *
- * Owner spans full width as a "founder" card (brand-tinted, no remove
- * action). Remaining members lay out in a responsive 1/2/3 column grid
- * ordered by joinedAt (earliest first — by-the-book "who joined first"
- * roster ordering).
+ * Members tab content. Ownership, production positions and access policies
+ * are independent concerns; each action is gated by its atomic permission.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -41,15 +37,19 @@ import {
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
-import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
+import { UserAvatar } from "@/components/user-avatar";
 import { MemberCard } from "./member-card";
 import { CrewAgreementsDialog } from "./crew-agreements-dialog";
 
 interface MembersGridProps {
   crewId: string;
   members: CrewMemberDTO[];
-  isOwner: boolean;
+  canInvite: boolean;
+  canManageMembers: boolean;
+  canManagePermissions: boolean;
+  canTransferOwnership: boolean;
+  canManageAgreements: boolean;
   loading: boolean;
   onInvite: () => void;
   initialAgreementId?: string | null;
@@ -59,7 +59,11 @@ interface MembersGridProps {
 export function MembersGrid({
   crewId,
   members,
-  isOwner,
+  canInvite,
+  canManageMembers,
+  canManagePermissions,
+  canTransferOwnership,
+  canManageAgreements,
   loading,
   onInvite,
   initialAgreementId,
@@ -70,9 +74,8 @@ export function MembersGrid({
   const tc = useTranslationsCommon("common");
   const removeMember = useRemoveMember(crewId);
   const transferOwner = useTransferCrewOwner(crewId);
-  const invitations = useCrewInvitations(crewId, isOwner);
+  const invitations = useCrewInvitations(crewId, canInvite);
   const revokeInvitation = useRevokeCrewInvitation(crewId);
-  const translateRole = useTranslatePositionValue();
   const [pendingRemove, setPendingRemove] = useState<{ memberId: string; name: string } | null>(
     null
   );
@@ -82,19 +85,30 @@ export function MembersGrid({
   // Whether the outgoing owner leaves the crew after handing off (default:
   // stay on as a normal member).
   const [transferLeave, setTransferLeave] = useState(false);
-  const [agreementsOpen, setAgreementsOpen] = useState(false);
+  const [agreementsOpen, setAgreementsOpen] = useState(() => Boolean(initialAgreementId));
 
+  // A notification can add ?agreement= while the member tab is already
+  // mounted. Open on that transition as well as on the initial mount, while
+  // scheduling outside the effect body to avoid a cascading render.
   useEffect(() => {
-    if (initialAgreementId) setAgreementsOpen(true);
+    if (!initialAgreementId) return;
+    let current = true;
+    queueMicrotask(() => {
+      if (current) setAgreementsOpen(true);
+    });
+    return () => {
+      current = false;
+    };
   }, [initialAgreementId]);
 
-  // Founder always at the top; rest by join order (oldest first).
-  const sorted = useMemo(() => {
-    const founder = members.find((m) => m.roleType === "owner");
+  // The current owner always leads the roster; everyone else follows join
+  // order. Ownership is a dedicated relation and can be transferred.
+  const sortedMembers = useMemo(() => {
+    const owner = members.find((member) => member.isOwner);
     const others = members
-      .filter((m) => m.roleType !== "owner")
+      .filter((member) => !member.isOwner)
       .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
-    return { founder: founder ?? null, others };
+    return owner ? [owner, ...others] : others;
   }, [members]);
 
   // One batch resolve per grid render — cards receive the map by prop
@@ -158,14 +172,31 @@ export function MembersGrid({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header: count + invite CTA */}
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
-          <IconUsers className="size-4 text-primary" />
-          {t("memberManagement")} · {members.length} {t("people")}
-        </h3>
-        <div className="flex items-center gap-2">
+    <div className="space-y-5">
+      {/* This is a toolbar, not a second page title: the workspace header
+          already establishes "Member management" above the scroll pane. */}
+      <section className="flex flex-col gap-4 rounded-xl bg-white/[0.025] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <IconUsers className="size-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="text-sm font-semibold text-[#eceef2]">
+                {t("memberActiveCount", { count: members.length })}
+              </h2>
+              {canInvite && !invitations.isLoading && !invitations.isError ? (
+                <span className="rounded-full bg-white/[0.055] px-2 py-0.5 text-[10px] font-medium text-[#858b95]">
+                  {t("memberPendingCount", { count: invitations.total })}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 max-w-2xl text-[11px] leading-4 text-[#747a84]">
+              {t("memberRosterDescription")}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
           <Button
             variant="ghost"
             color="muted"
@@ -175,21 +206,21 @@ export function MembersGrid({
           >
             {ta("title")}
           </Button>
-          {isOwner ? (
-            <Button variant="soft" color="primary" size="sm" onClick={onInvite}>
+          {canInvite ? (
+            <Button variant="solid" color="primary" size="sm" onClick={onInvite}>
               <IconUserPlus className="size-3.5" /> {t("inviteMember")}
             </Button>
           ) : null}
         </div>
-      </div>
+      </section>
 
-      {isOwner && (invitations.isLoading || invitations.isError || invitations.total > 0) ? (
-        <section className="overflow-hidden rounded-xl bg-white/[0.025] ring-1 ring-white/[0.075]">
-          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+      {canInvite && (invitations.isLoading || invitations.isError || invitations.total > 0) ? (
+        <section className="overflow-hidden rounded-xl bg-[#111318]">
+          <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
             <IconClock className="size-4 text-white/45" />
-            <h4 className="text-xs font-semibold text-white/75">
+            <h3 className="text-xs font-semibold text-white/75">
               {t("pendingInvitations")} · {invitations.total}
-            </h4>
+            </h3>
           </div>
           {invitations.isLoading ? (
             <div className="flex h-14 items-center justify-center">
@@ -218,21 +249,38 @@ export function MembersGrid({
                 {pendingInvitations.map((invitation) => (
                   <div
                     key={invitation.id}
-                    className="flex min-h-14 items-center justify-between gap-4 px-4 py-2.5"
+                    className="flex min-h-[68px] items-center justify-between gap-4 px-4 py-3 sm:px-5"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-white/80">
-                        {displayNameOf(invitation.inviteeUserId, displays)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-white/38">
-                        {translateRole(invitation.roleType)} ·{" "}
-                        {t("invitationExpires", {
-                          date: new Intl.DateTimeFormat(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          }).format(new Date(invitation.expiresAt)),
-                        })}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <UserAvatar
+                        src={displays.get(invitation.inviteeUserId)?.avatar}
+                        name={displayNameOf(invitation.inviteeUserId, displays)}
+                        seed={invitation.inviteeUserId}
+                        size={34}
+                        className="shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white/80">
+                          {displayNameOf(invitation.inviteeUserId, displays)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-white/38">
+                          {[
+                            t("memberRoleMember"),
+                            ...invitation.policyKeys.map((policyKey) =>
+                              policyKey === "admin"
+                                ? t("memberAdminBadge")
+                                : t("memberFinanceBadge")
+                            ),
+                          ].join(" + ")}{" "}
+                          ·{" "}
+                          {t("invitationExpires", {
+                            date: new Intl.DateTimeFormat(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            }).format(new Date(invitation.expiresAt)),
+                          })}
+                        </p>
+                      </div>
                     </div>
                     <Button
                       type="button"
@@ -295,51 +343,42 @@ export function MembersGrid({
           <IconLoader2 className="size-4 animate-spin" />
         </div>
       ) : members.length === 0 ? (
-        <EmptyState onInvite={onInvite} isOwner={isOwner} t={t} />
+        <EmptyState onInvite={onInvite} isOwner={canInvite} t={t} />
       ) : (
-        <div className="space-y-4">
-          {/* Founder card — single tile across the row */}
-          {sorted.founder ? (
-            <div className="grid grid-cols-1">
-              <MemberCard
-                crewId={crewId}
-                member={sorted.founder}
-                displays={displays}
-                isOwner={isOwner}
-                canManage={false}
-                onAskRemove={() => undefined}
-                onAskTransfer={() => undefined}
-              />
-            </div>
-          ) : null}
-
-          {/* Member grid */}
-          {sorted.others.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {sorted.others.map((m) => (
+        <section className="overflow-hidden rounded-xl bg-[#111318]">
+          <div className="hidden grid-cols-[minmax(240px,1.35fr)_minmax(160px,0.8fr)_minmax(150px,0.7fr)_minmax(180px,auto)] items-center gap-5 border-b border-white/[0.06] px-5 py-2.5 text-[10px] font-medium tracking-[0.08em] text-[#626873] uppercase md:grid">
+            <span>{t("memberColumnIdentity")}</span>
+            <span>{t("memberColumnRole")}</span>
+            <span>{t("memberColumnJoined")}</span>
+            <span className="text-right">{t("memberColumnActions")}</span>
+          </div>
+          <div className="divide-y divide-white/[0.055]">
+            {sortedMembers.map((member) => {
+              return (
                 <MemberCard
-                  key={m.id}
+                  key={member.id}
                   crewId={crewId}
-                  member={m}
+                  member={member}
                   displays={displays}
-                  isOwner={isOwner}
-                  canManage={isOwner}
+                  canManage={canManageMembers}
+                  canManagePermissions={canManagePermissions}
+                  canTransferOwnership={canTransferOwnership}
                   onAskRemove={(memberId, name) => setPendingRemove({ memberId, name })}
                   onAskTransfer={(userId, name) => {
                     setTransferLeave(false);
                     setPendingTransfer({ userId, name });
                   }}
                 />
-              ))}
-            </div>
-          ) : null}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <CrewAgreementsDialog
         crewId={crewId}
         members={members}
-        isOwner={isOwner}
+        isOwner={canManageAgreements}
         focusAgreementId={initialAgreementId}
         open={agreementsOpen}
         onOpenChange={(next) => {

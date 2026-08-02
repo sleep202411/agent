@@ -1,4 +1,8 @@
-import type { CrewTaskListItemDTO, CrewTaskWorkflowStateDTO } from "../_hooks/types";
+import type {
+  CrewTaskListItemDTO,
+  CrewTaskPageDTO,
+  CrewTaskWorkflowStateDTO,
+} from "../_hooks/types";
 
 export type BoardOrder = Record<string, string[]>;
 
@@ -118,7 +122,7 @@ export function optimisticallyReorderCrewTasks(
   const rank = optimisticRank(tasks, taskId, targetStateId, before, after);
   const now = new Date().toISOString();
 
-  return tasks.map((candidate) =>
+  const updated = tasks.map((candidate) =>
     candidate.id === taskId
       ? {
           ...candidate,
@@ -132,6 +136,54 @@ export function optimisticallyReorderCrewTasks(
         }
       : candidate
   );
+  const moved = updated.find((candidate) => candidate.id === taskId);
+  if (!moved) return tasks;
+
+  const withoutMoved = updated.filter((candidate) => candidate.id !== taskId);
+  let insertionIndex = withoutMoved.length;
+  if (input.beforeTaskId) {
+    const beforeIndex = withoutMoved.findIndex((candidate) => candidate.id === input.beforeTaskId);
+    if (beforeIndex >= 0) insertionIndex = beforeIndex + 1;
+  } else if (input.afterTaskId) {
+    const afterIndex = withoutMoved.findIndex((candidate) => candidate.id === input.afterTaskId);
+    if (afterIndex >= 0) insertionIndex = afterIndex;
+  } else {
+    const lastDestinationIndex = withoutMoved.findLastIndex(
+      (candidate) => candidate.workflowStateId === targetStateId
+    );
+    if (lastDestinationIndex >= 0) insertionIndex = lastDestinationIndex + 1;
+  }
+
+  return [...withoutMoved.slice(0, insertionIndex), moved, ...withoutMoved.slice(insertionIndex)];
+}
+
+export function optimisticallyReorderCrewTaskPages(
+  pages: CrewTaskPageDTO[],
+  taskId: string,
+  input: ReorderCrewTaskCommand,
+  destinationState: CrewTaskWorkflowStateDTO
+): CrewTaskPageDTO[] {
+  const items = pages.flatMap((page) => page.items);
+  const original = items.find((task) => task.id === taskId);
+  if (!original) return pages;
+
+  const reordered = optimisticallyReorderCrewTasks(items, taskId, input, destinationState);
+  const counts = { ...(pages[0]?.workflowCounts ?? {}) };
+  if (original.workflowStateId !== destinationState.id) {
+    counts[original.workflowStateId] = Math.max(0, (counts[original.workflowStateId] ?? 0) - 1);
+    counts[destinationState.id] = (counts[destinationState.id] ?? 0) + 1;
+  }
+
+  let offset = 0;
+  return pages.map((page, index) => {
+    const pageItems = reordered.slice(offset, offset + page.items.length);
+    offset += page.items.length;
+    return {
+      ...page,
+      items: pageItems,
+      workflowCounts: index === 0 ? counts : page.workflowCounts,
+    };
+  });
 }
 
 function optimisticRank(

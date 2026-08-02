@@ -23,11 +23,11 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CrewMembershipStatus,
   IpReportStatus,
   IpTargetType,
   IpUserBlockTargetType,
@@ -41,7 +41,7 @@ import {
 } from '../conversations/conversations.service';
 import { toConversationDTO } from '../conversations/mappers';
 import { PrismaService } from '../infra/db/db.module';
-import { CrewRoleService } from './crew-role.service';
+import { CrewAuthorizationService } from './crew-authorization.service';
 import type {
   CreateCrewInput,
   CreateCrewReportInput,
@@ -51,20 +51,24 @@ import type {
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { newCrewDomainId, newCrewId } from './id';
 import { toCrewDTO } from './mappers';
+import { createDefaultProductionDocument } from './production/production-document';
 
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
+const CREW_OWNER_INCLUDE = {
+  ownership: { include: { member: { select: { userId: true } } } },
+} as const;
 
 @Injectable()
 export class CrewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly conversations: ConversationsService,
-    private readonly crewRoles: CrewRoleService,
+    private readonly authorization: CrewAuthorizationService,
     private readonly collaboration: CrewCollaborationService,
   ) {}
 
-  async create(founderId: string, input: CreateCrewInput) {
+  async create(creatorUserId: string, input: CreateCrewInput) {
     const crew = await this.prisma.$transaction(async (tx) => {
       const c = await tx.crew.create({
         data: {
@@ -83,7 +87,7 @@ export class CrewsService {
           ...(input.showcaseWorks.length > 0
             ? { showcaseWorks: input.showcaseWorks }
             : { showcaseWorks: Prisma.DbNull }),
-          founderId,
+          createdByUserId: creatorUserId,
           // Product decision (2026-05-21): new crews are public by
           // default so they show up in the Crew Hall immediately —
           // founders can still toggle to `unlisted` later via
@@ -92,19 +96,32 @@ export class CrewsService {
           // to pass listingStatus) — set it explicitly here.
           listingStatus: 'listed',
           listedAt: new Date(),
+          productionPage: {
+            create: {
+              document: createDefaultProductionDocument(),
+              createdByUserId: creatorUserId,
+              updatedByUserId: creatorUserId,
+            },
+          },
+          productionActivity: {
+            create: {
+              kind: 'project_created',
+              createdByUserId: creatorUserId,
+            },
+          },
         },
       });
-      // Founder is the first crew member with role "owner". Keeps
-      // `crew_members` the single source of truth for "who's in this
-      // crew" — no special-casing the founder elsewhere.
-      await tx.crewMember.create({
+      const ownerMember = await tx.crewMember.create({
         data: {
           id: newCrewDomainId(),
           crewId: c.id,
-          userId: founderId,
-          roleType: 'owner',
-          via: 'founder',
+          userId: creatorUserId,
+          status: CrewMembershipStatus.active,
+          joinedVia: 'creation',
         },
+      });
+      await tx.crewOwnership.create({
+        data: { crewId: c.id, memberId: ownerMember.id },
       });
       // One crew, one group chat — opened with the crew so there is
       // never a window where a member exists without a thread to talk
@@ -113,8 +130,16 @@ export class CrewsService {
       // with no other reader, is not an event — the chat's existence
       // already says it. Every LATER join announces itself.
       await this.conversations.openCrewConversation(c.id, tx);
-      await this.conversations.syncCrewParticipant(c.id, founderId, 'join', tx);
-      return c;
+      await this.conversations.syncCrewParticipant(
+        c.id,
+        creatorUserId,
+        'join',
+        tx,
+      );
+      return tx.crew.findUniqueOrThrow({
+        where: { id: c.id },
+        include: CREW_OWNER_INCLUDE,
+      });
     });
     return toCrewDTO(crew, {
       memberCount: 1,
@@ -138,6 +163,7 @@ export class CrewsService {
       orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      include: CREW_OWNER_INCLUDE,
     });
     const hasMore = rows.length > limit;
     const slice = hasMore ? rows.slice(0, limit) : rows;
@@ -157,6 +183,7 @@ export class CrewsService {
   async detail(id: string, viewerId: string | null) {
     const crew = await this.prisma.crew.findFirst({
       where: { id, deletedAt: null },
+      include: CREW_OWNER_INCLUDE,
     });
     if (!crew) throw new NotFoundException('Crew not found');
     if (viewerId && (await this.isCrewBlockedBy(id, viewerId))) {
@@ -165,13 +192,14 @@ export class CrewsService {
     if (crew.listingStatus !== 'listed') {
       const canView =
         viewerId !== null &&
-        (crew.founderId === viewerId ||
+        (crew.ownership?.member.userId === viewerId ||
           (await this.isActiveCrewMember(id, viewerId)));
       if (!canView) throw new NotFoundException('Crew not found');
     }
 
     const counts = await this.countsFor([id]);
-    const isOwner = viewerId !== null && crew.founderId === viewerId;
+    const isOwner =
+      viewerId !== null && crew.ownership?.member.userId === viewerId;
     // Pending-application count is owner-only info (exposing it to
     // visitors leaks recruiting velocity).
     const pendingApplicationCount = isOwner
@@ -198,12 +226,8 @@ export class CrewsService {
    *
    * ### Gate
    *
-   * {@link CrewRoleService.resolve} — the platform's one crew-role
-   * predicate, founder short-circuit included: `founderId` grants
-   * access before `crew_members` is ever read, so a founder whose
-   * membership row an ownership transfer removed is not locked out of
-   * their own crew's chat. It filters `deletedAt: null`, so a
-   * soft-deleted crew is a 404 for everyone including its founder.
+   * {@link CrewAuthorizationService.resolve} is the single membership and
+   * capability predicate. It filters deleted crews and inactive memberships.
    *
    * An outsider gets **404, not 403**. `assertParticipant` and the crew
    * gate inside ConversationsService are deliberately non-probeable —
@@ -232,15 +256,14 @@ export class CrewsService {
    * caller: the crews module's contract is that every active member is
    * a participant (see `openCrewConversation`'s docstring), and a chat
    * where only the one member who happened to open it can be broadcast
-   * to is not that. `founderId` is unioned in explicitly for the same
-   * reason the gate short-circuits on it.
+   * to is not that.
    */
   async conversation(
     crewId: string,
     viewerId: string,
   ): Promise<ConversationDTO> {
-    const role = await this.crewRoles.resolve(crewId, viewerId);
-    if (role === 'outsider') throw new NotFoundException('Crew not found');
+    const membership = await this.authorization.resolve(crewId, viewerId);
+    if (!membership) throw new NotFoundException('Crew not found');
 
     const conversationId = await this.resolveCrewChat(crewId, viewerId);
     // Re-reads through the conversations service on purpose: it owns
@@ -277,16 +300,21 @@ export class CrewsService {
       // the advisory lock keeps the failure path from taking one.
       const crew = await tx.crew.findFirst({
         where: { id: crewId, deletedAt: null },
-        select: { founderId: true },
+        select: {
+          ownership: { select: { member: { select: { userId: true } } } },
+        },
       });
-      if (!crew) throw new NotFoundException('Crew not found');
+      if (!crew?.ownership) throw new NotFoundException('Crew not found');
 
       const conv = await this.conversations.openCrewConversation(crewId, tx);
       const roster = await tx.crewMember.findMany({
-        where: { crewId, removedAt: null },
+        where: { crewId, status: CrewMembershipStatus.active },
         select: { userId: true },
       });
-      const userIds = new Set([crew.founderId, ...roster.map((m) => m.userId)]);
+      const userIds = new Set([
+        crew.ownership.member.userId,
+        ...roster.map((m) => m.userId),
+      ]);
       for (const userId of userIds) {
         await this.conversations.syncCrewParticipant(
           crewId,
@@ -314,7 +342,7 @@ export class CrewsService {
     ownerId: string,
     input: UpdateCrewInput & { expectedVersion?: number },
   ) {
-    await this.assertOwner(id, ownerId);
+    await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
     const patch: Prisma.CrewUpdateInput = {
       ...(input.name !== undefined ? { name: input.name } : {}),
@@ -365,7 +393,10 @@ export class CrewsService {
       await this.prisma.crew.update({ where: { id }, data: patch });
     }
 
-    const updated = await this.prisma.crew.findUnique({ where: { id } });
+    const updated = await this.prisma.crew.findUnique({
+      where: { id },
+      include: CREW_OWNER_INCLUDE,
+    });
     if (!updated) throw new NotFoundException('Crew not found');
     return toCrewDTO(updated);
   }
@@ -375,7 +406,7 @@ export class CrewsService {
     ownerId: string,
     input: UpdateCrewListingInput,
   ) {
-    await this.assertOwner(id, ownerId);
+    await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
     const data: Prisma.CrewUpdateInput = {
       listingStatus: input.listingStatus,
@@ -405,102 +436,106 @@ export class CrewsService {
       await this.prisma.crew.update({ where: { id }, data });
     }
 
-    const updated = await this.prisma.crew.findUnique({ where: { id } });
+    const updated = await this.prisma.crew.findUnique({
+      where: { id },
+      include: CREW_OWNER_INCLUDE,
+    });
     if (!updated) throw new NotFoundException('Crew not found');
     return toCrewDTO(updated);
   }
 
-  /**
-   * Transfer crew ownership to `toUserId`.
-   *
-   * `founderId` is the single source of truth for owner/admin authority
-   * (see {@link CrewRoleService}), so the transfer swaps it and reconciles
-   * the `crew_members` "owner" row so the member list stays truthful:
-   *   - outgoing owner: demoted to a normal member (default) or removed
-   *     from the crew (`opts.removeOldOwner`);
-   *   - incoming owner: their active membership is promoted to `owner`, or
-   *     a fresh `owner` member row is created if they weren't a member.
-   *
-   * Permission-agnostic by design — the caller decides who may invoke it:
-   *   - the admin path passes no `requireCurrentFounderId` (act on any crew);
-   *   - a future self-service path passes the acting user id so a non-owner
-   *     can't transfer a crew they don't own.
-   *
-   * Group-chat projection of a transfer — only membership moves matter,
-   * because ConversationParticipant.role is flat `member` for everyone in
-   * a crew and never mirrors the crew role:
-   *   - outgoing owner, `removeOldOwner` → their membership ends, so they
-   *     LEAVE the chat (and a `crew.member.left` system message fires);
-   *   - outgoing owner, demoted to `member` → still an active member, so
-   *     NOTHING happens to the chat. Syncing a 'leave' here would lock the
-   *     demoted founder out of the crew they still belong to;
-   *   - incoming owner already an active member → already a participant,
-   *     nothing to do;
-   *   - incoming owner promoted from outside (admin path) → they JOIN.
-   */
+  /** Atomically moves the unique CrewOwnership relation and its projections. */
   async transferOwnership(
     crewId: string,
     toUserId: string,
     opts: {
-      requireCurrentFounderId?: string;
+      actor:
+        | { type: 'member'; userId: string }
+        | { type: 'platform_admin'; actorId: string };
       requireTargetActiveMember?: boolean;
       expectedVersion?: number;
       removeOldOwner?: boolean;
-    } = {},
+    },
   ) {
     const target = toUserId.trim();
     if (!target) {
       throw new BadRequestException({ message: 'toUserId is required' });
     }
 
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
-    });
-    if (!crew) throw new NotFoundException('Crew not found');
-
-    if (
-      opts.requireCurrentFounderId !== undefined &&
-      crew.founderId !== opts.requireCurrentFounderId
-    ) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can transfer ownership',
-      });
-    }
-    if (crew.founderId === target) {
+    const actorContext =
+      opts.actor.type === 'member'
+        ? await this.authorization.require(
+            crewId,
+            opts.actor.userId,
+            'ownership.transfer',
+          )
+        : null;
+    const currentOwner = await this.authorization.owner(crewId);
+    if (currentOwner.userId === target) {
       throw new BadRequestException({
         message: 'Target user is already the crew owner',
       });
     }
 
-    // Self-service transfers may only hand off to an existing member; the
-    // admin path leaves this off so ops can transfer to any user.
-    if (opts.requireTargetActiveMember) {
-      const isMember = await this.prisma.crewMember.findFirst({
-        where: { crewId, userId: target, removedAt: null },
-        select: { id: true },
-      });
-      if (!isMember) {
-        throw new BadRequestException({
-          message: 'Target user must be an existing crew member',
-        });
-      }
-    }
-
     const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
-      // Idempotent — returns the existing `crew:<crewId>` thread, and
-      // opens one for a crew that predates crew chat.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
+      `;
+      const lockedOwner = await tx.crewOwnership.findUnique({
+        where: { crewId },
+        include: { member: true },
+      });
+      if (!lockedOwner) throw new NotFoundException('Crew owner not found');
+
+      let targetMember = await tx.crewMember.findFirst({
+        where: {
+          crewId,
+          userId: target,
+          status: CrewMembershipStatus.active,
+        },
+      });
+      let targetWasCreated = false;
+      if (!targetMember) {
+        const nonRemoved = await tx.crewMember.findFirst({
+          where: {
+            crewId,
+            userId: target,
+            status: { not: CrewMembershipStatus.removed },
+          },
+          select: { status: true },
+        });
+        if (nonRemoved) {
+          throw new BadRequestException({
+            message:
+              'Target membership must be active before ownership transfer',
+          });
+        }
+        if (opts.requireTargetActiveMember) {
+          throw new BadRequestException({
+            message: 'Target user must be an existing active crew member',
+          });
+        }
+        targetMember = await tx.crewMember.create({
+          data: {
+            id: newCrewDomainId(),
+            crewId,
+            userId: target,
+            status: CrewMembershipStatus.active,
+            joinedVia: 'ownership_transfer',
+          },
+        });
+        targetWasCreated = true;
+      }
+
       const conversation = await this.conversations.openCrewConversation(
         crewId,
         tx,
       );
-
-      // 1) founder_id carries the authority — swap it (optimistic if asked).
       if (opts.expectedVersion !== undefined) {
         const r = await tx.crew.updateMany({
           where: { id: crewId, version: opts.expectedVersion, deletedAt: null },
-          data: { founderId: target, version: { increment: 1 } },
+          data: { version: { increment: 1 } },
         });
         if (r.count === 0) {
           const current = await tx.crew.findUnique({
@@ -518,66 +553,60 @@ export class CrewsService {
       } else {
         await tx.crew.update({
           where: { id: crewId },
-          data: { founderId: target, version: { increment: 1 } },
+          data: { version: { increment: 1 } },
         });
       }
 
-      // 2) Reconcile the outgoing owner's membership row.
-      const oldOwnerMember = await tx.crewMember.findFirst({
-        where: { crewId, userId: crew.founderId, removedAt: null },
-        select: { id: true },
+      await tx.crewOwnership.update({
+        where: { crewId },
+        data: { memberId: targetMember.id, acquiredAt: new Date() },
       });
-      if (oldOwnerMember) {
-        await tx.crewMember.update({
-          where: { id: oldOwnerMember.id },
-          data: opts.removeOldOwner
-            ? { removedAt: new Date() }
-            : { roleType: 'member' },
-        });
-        // Only the `removedAt` branch ends the membership. The demote
-        // branch keeps them in the crew — and in the chat.
-        if (opts.removeOldOwner) {
-          await this.conversations.syncCrewParticipant(
-            crewId,
-            crew.founderId,
-            'leave',
-            tx,
-          );
-          pendingMessages.push(
-            await this.conversations.persistSystem(
-              conversation.id,
-              'crew.member.left',
-              { userId: crew.founderId },
-              tx,
-            ),
-          );
-        }
-      }
 
-      // 3) Ensure the incoming owner has an active `owner` member row. The
-      //    partial unique (crew_id, user_id) WHERE removed_at IS NULL means
-      //    we promote an existing active row rather than insert a duplicate.
-      const newOwnerMember = await tx.crewMember.findFirst({
-        where: { crewId, userId: target, removedAt: null },
-        select: { id: true },
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          memberId: targetMember.id,
+          actorMemberId: actorContext?.memberId,
+          actorUserId:
+            opts.actor.type === 'member'
+              ? opts.actor.userId
+              : `platform-admin:${opts.actor.actorId}`,
+          action: 'ownership.transferred',
+          before: {
+            memberId: lockedOwner.memberId,
+            userId: lockedOwner.member.userId,
+          },
+          after: { memberId: targetMember.id, userId: target },
+        },
       });
-      if (newOwnerMember) {
+
+      if (opts.removeOldOwner) {
         await tx.crewMember.update({
-          where: { id: newOwnerMember.id },
-          data: { roleType: 'owner' },
-        });
-      } else {
-        await tx.crewMember.create({
+          where: { id: lockedOwner.memberId },
           data: {
-            id: newCrewDomainId(),
-            crewId,
-            userId: target,
-            roleType: 'owner',
-            via: 'ownership_transfer',
+            status: CrewMembershipStatus.removed,
+            removedAt: new Date(),
+            suspendedAt: null,
+            version: { increment: 1 },
           },
         });
-        // Brand-new membership (admin path can hand a crew to a
-        // non-member) — they join the chat like anyone else.
+        await this.conversations.syncCrewParticipant(
+          crewId,
+          lockedOwner.member.userId,
+          'leave',
+          tx,
+        );
+        pendingMessages.push(
+          await this.conversations.persistSystem(
+            conversation.id,
+            'crew.member.left',
+            { userId: lockedOwner.member.userId },
+            tx,
+          ),
+        );
+      }
+
+      if (targetWasCreated) {
         await this.conversations.syncCrewParticipant(
           crewId,
           target,
@@ -594,13 +623,9 @@ export class CrewsService {
         );
       }
 
-      // 4) The crew roster and the Studio authorization graph are one
-      //    ownership boundary. Move them in this same transaction so a
-      //    successful hand-off can never leave the former owner in control of
-      //    the production workspace, or the successor unable to open it.
       await this.collaboration.transferCrewOwnershipAccess(
         crewId,
-        crew.founderId,
+        lockedOwner.member.userId,
         target,
         opts.removeOldOwner === true,
         tx,
@@ -613,13 +638,14 @@ export class CrewsService {
 
     const updated = await this.prisma.crew.findUnique({
       where: { id: crewId },
+      include: CREW_OWNER_INCLUDE,
     });
     if (!updated) throw new NotFoundException('Crew not found');
     return toCrewDTO(updated);
   }
 
   async softDelete(id: string, ownerId: string): Promise<void> {
-    await this.assertOwner(id, ownerId);
+    await this.authorization.require(id, ownerId, 'crew.delete');
     await this.prisma.crew.update({
       where: { id },
       data: { deletedAt: new Date(), version: { increment: 1 } },
@@ -629,9 +655,16 @@ export class CrewsService {
   /** Founded + joined crews for the current user — drives /profile?tab=crews. */
   async myCrews(userId: string) {
     const memberships = await this.prisma.crewMember.findMany({
-      where: { userId, removedAt: null, crew: { deletedAt: null } },
+      where: {
+        userId,
+        status: CrewMembershipStatus.active,
+        crew: { deletedAt: null },
+      },
       orderBy: { joinedAt: 'desc' },
-      include: { crew: true },
+      include: {
+        ownership: true,
+        crew: { include: CREW_OWNER_INCLUDE },
+      },
     });
     const crews = memberships.map((m) => m.crew);
     const counts = await this.countsFor(crews.map((c) => c.id));
@@ -650,11 +683,11 @@ export class CrewsService {
         memberCount: counts.members.get(m.crew.id) ?? 0,
         openPositionCount: counts.openPositions.get(m.crew.id) ?? 0,
         openPositionPreview: counts.openPositionPreview.get(m.crew.id) ?? [],
-        ...(m.via === 'founder'
+        ...(m.ownership
           ? { pendingApplicationCount: pendingByCrew.get(m.crew.id) ?? 0 }
           : {}),
       });
-      if (m.via === 'founder') founded.push(dto);
+      if (m.ownership) founded.push(dto);
       else joined.push(dto);
     }
     return { founded, joined };
@@ -670,11 +703,11 @@ export class CrewsService {
     const memberships = await this.prisma.crewMember.findMany({
       where: {
         userId,
-        removedAt: null,
+        status: CrewMembershipStatus.active,
         crew: { deletedAt: null, listingStatus: 'listed' },
       },
       orderBy: { joinedAt: 'desc' },
-      include: { crew: true },
+      include: { crew: { include: CREW_OWNER_INCLUDE } },
     });
     const blockedIds = new Set(await this.blockedCrewIds(viewerId));
     const crews = memberships
@@ -801,25 +834,16 @@ export class CrewsService {
     return blocks.map((b) => b.targetId);
   }
 
-  private async assertOwner(crewId: string, userId: string) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
-    });
-    if (!crew) throw new NotFoundException('Crew not found');
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can do this',
-      });
-    }
-  }
-
   private async isActiveCrewMember(
     crewId: string,
     viewerId: string,
   ): Promise<boolean> {
     const membership = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId: viewerId, removedAt: null },
+      where: {
+        crewId,
+        userId: viewerId,
+        status: CrewMembershipStatus.active,
+      },
       select: { id: true },
     });
     return membership !== null;
@@ -837,7 +861,10 @@ export class CrewsService {
     const [memberRows, positionRows, recentOpenRows] = await Promise.all([
       this.prisma.crewMember.groupBy({
         by: ['crewId'],
-        where: { crewId: { in: ids }, removedAt: null },
+        where: {
+          crewId: { in: ids },
+          status: CrewMembershipStatus.active,
+        },
         _count: { _all: true },
       }),
       this.prisma.crewPosition.groupBy({

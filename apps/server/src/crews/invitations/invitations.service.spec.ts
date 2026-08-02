@@ -16,7 +16,7 @@ function invitation(overrides: Record<string, unknown> = {}) {
     crewId: CREW_ID,
     inviteeUserId: INVITEE_ID,
     invitedByUserId: OWNER_ID,
-    roleType: 'storyboardArtist',
+    policyKeys: [],
     status: CrewInvitationStatus.pending,
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     acceptedAt: null,
@@ -30,7 +30,6 @@ function invitation(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2026-07-29T09:00:00.000Z'),
     crew: {
       id: CREW_ID,
-      founderId: OWNER_ID,
       name: 'Night Shift',
     },
     ...overrides,
@@ -42,8 +41,8 @@ function build() {
     id: 'crew-member-1',
     crewId: CREW_ID,
     userId: INVITEE_ID,
-    roleType: 'storyboardArtist',
-    via: 'invitation',
+    status: 'active',
+    joinedVia: 'invitation',
   };
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
@@ -66,6 +65,8 @@ function build() {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(member),
     },
+    crewMemberPolicy: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
     crewInvitation: {
@@ -79,7 +80,6 @@ function build() {
     crew: {
       findFirst: jest.fn().mockResolvedValue({
         id: CREW_ID,
-        founderId: OWNER_ID,
         name: 'Night Shift',
       }),
     },
@@ -117,6 +117,9 @@ function build() {
       conversations as never,
       collaboration as never,
       agreements as never,
+      {
+        require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+      } as never,
     ),
   };
 }
@@ -136,7 +139,7 @@ describe('CrewInvitationsService', () => {
     expect(
       CreateCrewInvitationSchema.parse({
         account: 'mina@example.com',
-        roleType: 'storyboard',
+        policyKeys: [],
         agreement: {
           title: 'Storyboard agreement',
           signerName: 'Mina Chen',
@@ -151,6 +154,13 @@ describe('CrewInvitationsService', () => {
         signerEmail: 'MINA@example.com',
       },
     });
+    expect(
+      CreateCrewInvitationSchema.safeParse({
+        account: 'mina@example.com',
+        position: { categoryKey: 'storyboard' },
+        policyKeys: [],
+      }).success,
+    ).toBe(false);
   });
 
   it('returns pending crew invitations as a stable page with an authoritative total', async () => {
@@ -201,8 +211,8 @@ describe('CrewInvitationsService', () => {
       }),
     ).rejects.toMatchObject({
       response: expect.objectContaining({
-        message: expect.stringContaining('cursor is invalid'),
-      }),
+        message: expect.stringContaining('cursor is invalid') as unknown,
+      }) as unknown,
     });
     expect(t.prisma.crewInvitation.findMany).not.toHaveBeenCalled();
   });
@@ -226,16 +236,16 @@ describe('CrewInvitationsService', () => {
           id: string;
           crewId: string;
           userId: string;
-          roleType: string;
-          via: string;
+          status: string;
+          joinedVia: string;
         };
       },
     ];
     expect(createMemberInput.data).toMatchObject({
       crewId: CREW_ID,
       userId: INVITEE_ID,
-      roleType: 'storyboardArtist',
-      via: 'invitation',
+      status: 'active',
+      joinedVia: 'invitation',
     });
     expect(t.collaboration.addCrewMemberAccess).toHaveBeenCalledWith(
       CREW_ID,
@@ -264,14 +274,14 @@ describe('CrewInvitationsService', () => {
     const t = build();
     t.users.lookupByContact.mockResolvedValue({
       userId: INVITEE_ID,
-      isCrewFounder: false,
+      isCrewOwner: false,
       isCrewMember: false,
     });
 
     await expect(
       t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', {
         account: 'mina@example.com',
-        roleType: 'storyboard',
+        policyKeys: [],
         expiresInDays: 7,
         agreement: {
           title: 'Storyboard agreement',
@@ -292,7 +302,7 @@ describe('CrewInvitationsService', () => {
         agreementTitle: 'Storyboard agreement',
         agreementSignerName: 'Mina Chen',
         agreementSignerEmail: 'mina@example.com',
-      }),
+      }) as unknown,
     });
   });
 

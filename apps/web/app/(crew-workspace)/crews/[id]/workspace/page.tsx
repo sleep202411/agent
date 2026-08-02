@@ -27,14 +27,13 @@
  * changes height; CSS gets it right for free.
  *
  * Backed only by /aurora/crews/* endpoints. Every action is gated on
- * the viewer's crew role, resolved by `useUserCrewRole`.
+ * the viewer's effective crew permissions.
  */
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconChevronRight, IconAlertTriangle, IconLock, IconRefresh } from "@tabler/icons-react";
-import { env } from "@/src/env";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -45,7 +44,7 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
-import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
 import { ApplicationReviewDialog } from "@/app/(site)/crews/_components/application-review-dialog";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
@@ -160,19 +159,18 @@ export default function CrewWorkspacePage() {
   const { data: crewDetail, isLoading: detailLoading } = detailQuery;
   const { data: members = [], isLoading: membersLoading } = membersQuery;
   const { data: positions = [] } = useCrewPositions(id);
-  // Role gating goes through useUserCrewRole so DevIdentitySwitcher
+  // Permission gating goes through useCrewPermissions so DevIdentitySwitcher
   // works in dev (without it the workspace gates on the real Java
   // satoken user id, which doesn't match the server-side AUTH_DISABLED
   // fallback user 'dev' that owns rows created locally). Production
   // users still resolve from `useUserInfo` inside the hook.
-  const viewer = useUserCrewRole(id);
-  const isOwner = viewer.isAdmin;
+  const viewer = useCrewPermissions(id);
   // 群聊 is members-only (doc §7). The roster decides that, so the tab
   // set is not knowable until `useCrewMembers` resolves — the page
   // holds its spinner until then rather than showing an outsider a chat
   // tab that flickers away, or a member an overview they did not ask
   // for.
-  const canAccessChat = viewer.role !== "outsider";
+  const canAccessChat = viewer.isMember;
 
   // Resolved here, not only inside CrewChatTab, because the landing tab
   // depends on it: chat is the default the doc asks for, but only while
@@ -269,7 +267,7 @@ export default function CrewWorkspacePage() {
 
   const membershipDenied =
     (membersQuery.error instanceof CrewApiError && membersQuery.error.status === 403) ||
-    (process.env.NODE_ENV !== "production" && viewer.role === "outsider");
+    (process.env.NODE_ENV !== "production" && !viewer.isMember);
 
   if (membershipDenied) {
     return (
@@ -318,9 +316,6 @@ export default function CrewWorkspacePage() {
   }
 
   const isChat = activeTab === "chat";
-  const crewLogoUrl = crewDetail.logo
-    ? resolveAsset(crewDetail.logo, env.BANNER_BASE_URL)
-    : undefined;
   const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.labelKey ?? "tabOverview";
 
   return (
@@ -331,9 +326,9 @@ export default function CrewWorkspacePage() {
         activeTab={activeTab}
         tabs={tabs}
         crewId={id}
+        crewLogo={crewDetail.logo}
         crewName={crewDetail.name}
-        crewLogoUrl={crewLogoUrl}
-        isOwner={isOwner}
+        isOwner={viewer.can("crew.settings.manage")}
         onEditCrew={() => setEditOpen(true)}
         onSelectTab={selectTab}
       >
@@ -350,6 +345,7 @@ export default function CrewWorkspacePage() {
             title={t(activeTabLabel)}
             description={crewDetail.description}
             isChat={isChat}
+            isTaskWorkspace={activeTab === "tasks"}
           >
             {activeTab === "chat" ? <CrewChatTab crewId={id} /> : null}
 
@@ -361,7 +357,7 @@ export default function CrewWorkspacePage() {
                 openJobsCount={openCount}
                 slotsFilled={slotsFilled}
                 slotsTotal={slotsTotal}
-                isOwner={isOwner}
+                isOwner={viewer.can("openings.manage")}
                 t={t}
                 onJumpRoles={() => selectTab("roles")}
               />
@@ -371,7 +367,7 @@ export default function CrewWorkspacePage() {
               <PositionsGrid
                 crewId={id}
                 positions={positions}
-                isOwner={isOwner}
+                isOwner={viewer.can("openings.manage")}
                 onPublish={() => setPublishJobOpen(true)}
               />
             ) : null}
@@ -380,7 +376,11 @@ export default function CrewWorkspacePage() {
               <MembersGrid
                 crewId={id}
                 members={members}
-                isOwner={isOwner}
+                canInvite={viewer.can("members.invite")}
+                canManageMembers={viewer.can("members.manage")}
+                canManagePermissions={viewer.can("members.permissions.manage")}
+                canTransferOwnership={viewer.can("ownership.transfer")}
+                canManageAgreements={viewer.can("agreements.manage")}
                 loading={membersLoading}
                 onInvite={() => setAddMemberOpen(true)}
                 initialAgreementId={agreementId}
@@ -391,9 +391,14 @@ export default function CrewWorkspacePage() {
             {activeTab === "tasks" ? (
               <CrewTasksTab
                 crewId={id}
+                crewName={crewDetail.name}
+                crewSummary={crewDetail.tagline?.trim() || crewDetail.description}
+                crewLogo={crewDetail.logo}
+                crewVersion={crewDetail.version}
                 members={members}
-                isOwner={isOwner}
-                canSettle={viewer.role === "admin" || viewer.role === "finance"}
+                isOwner={viewer.can("tasks.manage")}
+                canEditCrewInfo={viewer.can("crew.settings.manage")}
+                canSettle={viewer.can("finance.settle")}
                 viewerUserId={viewer.effectiveUserId}
                 deeplinkTaskId={deeplinkTaskId}
                 onSelectedTaskChange={handleSelectedTaskChange}
@@ -403,12 +408,17 @@ export default function CrewWorkspacePage() {
         )}
       </CrewWorkbenchShell>
 
-      <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
+      <AddCrewMemberDialog
+        open={addMemberOpen}
+        onOpenChange={setAddMemberOpen}
+        crewId={id}
+        canGrantPolicies={viewer.can("members.permissions.manage")}
+      />
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
       {/* Notification deeplink → direct review. Only mounted for the
           owner so applicants who somehow land on this URL never see
           someone else's application. */}
-      {isOwner ? (
+      {viewer.can("applications.review") ? (
         <ApplicationReviewDialog
           crewId={id}
           applicationId={reviewApplicationId}
@@ -439,14 +449,16 @@ function StandardWorkspaceSurface({
   title,
   description,
   isChat,
+  isTaskWorkspace,
   children,
 }: {
   title: string;
   description?: string | null;
   isChat: boolean;
+  isTaskWorkspace: boolean;
   children: ReactNode;
 }) {
-  if (isChat) {
+  if (isChat || isTaskWorkspace) {
     return (
       <div className="h-dvh min-h-0 overflow-hidden bg-[#090a0c]">
         <div className="h-full min-h-0 w-full">{children}</div>
@@ -647,12 +659,4 @@ function KpiTile({ value, labelKey, t, subtitle, highlight = false }: KpiTilePro
       </div>
     </div>
   );
-}
-
-// ─── Helpers ──────────────────────────────────────────
-
-function resolveAsset(path: string | null | undefined, base: string): string {
-  if (!path) return "";
-  if (path.startsWith("http")) return path;
-  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }

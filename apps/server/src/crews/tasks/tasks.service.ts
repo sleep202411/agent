@@ -17,11 +17,9 @@ import {
   PlatformDocumentStatus,
   PlatformDocumentType,
   PlatformDocumentVersionSource,
-  PlatformProjectStatus,
   Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
-  ProjectVisibility,
   WalletAccountStatus,
   WalletBalanceKind,
   WalletCurrencyType,
@@ -34,7 +32,7 @@ import { rootSchemaFor } from '../../documents/document-modes';
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
 import { WalletLedgerService } from '../../workspaces/wallet-ledger.service';
-import { CrewRoleService } from '../crew-role.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import type {
   CreateCrewTaskCommentInput,
   CreateCrewTaskInput,
@@ -46,7 +44,6 @@ import type {
   UpdateCrewTaskInput,
   UpdateCrewTaskCommentInput,
 } from '../dto';
-import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { availableCrewAssetName } from '../assets/asset-name';
 import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { lockCrewAssetUploads } from '../assets/upload-lock';
@@ -82,7 +79,14 @@ const taskReferenceSelect = {
 } satisfies Prisma.CrewTaskSelect;
 
 const taskInclude = {
-  crew: { select: { founderId: true, productionProjectId: true } },
+  crew: {
+    select: {
+      productionProjectId: true,
+      ownership: {
+        select: { member: { select: { userId: true } } },
+      },
+    },
+  },
   workflowState: true,
   parent: { select: taskReferenceSelect },
   children: {
@@ -90,6 +94,9 @@ const taskInclude = {
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
   cycle: true,
+  episode: {
+    select: { id: true, number: true, title: true, status: true },
+  },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
   submissions: {
@@ -130,6 +137,9 @@ const taskCardInclude = {
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
   cycle: true,
+  episode: {
+    select: { id: true, number: true, title: true, status: true },
+  },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
   dependenciesAsBlocked: {
@@ -167,6 +177,13 @@ const timelineInclude = {
 type TimelineRow = Prisma.CrewTaskTimelineItemGetPayload<{
   include: typeof timelineInclude;
 }>;
+const activityInclude = {
+  ...timelineInclude,
+  task: { select: { id: true, number: true, title: true } },
+} satisfies Prisma.CrewTaskTimelineItemInclude;
+type ActivityRow = Prisma.CrewTaskTimelineItemGetPayload<{
+  include: typeof activityInclude;
+}>;
 const ACCEPTING_TASK_STATUSES = new Set<CrewTaskStatus>([
   CrewTaskStatus.open,
   CrewTaskStatus.in_progress,
@@ -179,46 +196,53 @@ const MANUALLY_MOVABLE_TASK_STATUSES = new Set<CrewTaskStatus>([
 ]);
 const DEFAULT_WORKFLOW_STATES = [
   {
+    name: 'Backlog',
+    color: '#8B919B',
+    semantic: CrewTaskStatus.open,
+    systemKey: 'backlog',
+    position: 0,
+  },
+  {
     name: 'To do',
     color: '#8B919B',
     semantic: CrewTaskStatus.open,
     systemKey: CrewTaskStatus.open,
-    position: 0,
+    position: 1,
   },
   {
     name: 'In progress',
     color: '#63A8FF',
     semantic: CrewTaskStatus.in_progress,
     systemKey: CrewTaskStatus.in_progress,
-    position: 1,
+    position: 2,
   },
   {
     name: 'In review',
     color: '#E9B949',
     semantic: CrewTaskStatus.submitted,
     systemKey: CrewTaskStatus.submitted,
-    position: 2,
+    position: 3,
   },
   {
     name: 'Changes requested',
     color: '#EF646B',
     semantic: CrewTaskStatus.revision_requested,
     systemKey: CrewTaskStatus.revision_requested,
-    position: 3,
+    position: 4,
   },
   {
     name: 'Completed',
     color: '#58B889',
     semantic: CrewTaskStatus.approved,
     systemKey: CrewTaskStatus.approved,
-    position: 4,
+    position: 5,
   },
   {
     name: 'Cancelled',
     color: '#6F7580',
     semantic: CrewTaskStatus.cancelled,
     systemKey: CrewTaskStatus.cancelled,
-    position: 5,
+    position: 6,
   },
 ] as const;
 const MAX_ACTIVE_WORKFLOW_STATES = 24;
@@ -227,8 +251,7 @@ const MAX_ACTIVE_WORKFLOW_STATES = 24;
 export class CrewTasksService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly roles: CrewRoleService,
-    private readonly collaboration: CrewCollaborationService,
+    private readonly authorization: CrewAuthorizationService,
     private readonly assetAccess: CrewAssetAccessService,
     private readonly notifications: NotificationService,
     private readonly conversations: ConversationsService,
@@ -236,7 +259,7 @@ export class CrewTasksService {
   ) {}
 
   async getProject(crewId: string, userId: string) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'tasks.view');
     await Promise.all([
       this.ensureDefaultViews(crewId, userId),
       this.ensureDefaultWorkflowStates(crewId, userId),
@@ -260,6 +283,7 @@ export class CrewTasksService {
       }),
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
+        include: { _count: { select: { tasks: true } } },
         orderBy: [
           { archived: 'asc' },
           { position: 'asc' },
@@ -281,7 +305,7 @@ export class CrewTasksService {
     userId: string,
     input: CreateCrewTaskViewInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const last = await this.prisma.crewTaskView.aggregate({
       where: { crewId },
       _max: { position: true },
@@ -291,11 +315,13 @@ export class CrewTasksService {
         crewId,
         name: input.name,
         layout: input.layout,
-        scope: input.scope,
         groupBy: input.groupBy === 'none' ? null : input.groupBy,
         filters: input.filters,
         sorts: input.sorts,
         visibleFields: input.visibleFields,
+        completedMode: input.completedMode,
+        showSubIssues: input.showSubIssues,
+        showEmptyGroups: input.showEmptyGroups,
         position: (last._max.position ?? -1) + 1,
         createdByUserId: userId,
       },
@@ -319,7 +345,7 @@ export class CrewTasksService {
       where: { id: viewId },
     });
     if (!current) throw new NotFoundException('Task view not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     const result = await this.prisma.crewTaskView.updateMany({
       where: {
         id: viewId,
@@ -328,7 +354,6 @@ export class CrewTasksService {
       data: {
         name: input.name,
         layout: input.layout,
-        scope: input.scope,
         groupBy:
           input.groupBy === undefined
             ? undefined
@@ -338,6 +363,9 @@ export class CrewTasksService {
         filters: input.filters,
         sorts: input.sorts,
         visibleFields: input.visibleFields,
+        completedMode: input.completedMode,
+        showSubIssues: input.showSubIssues,
+        showEmptyGroups: input.showEmptyGroups,
       },
     });
     if (result.count !== 1) {
@@ -365,7 +393,7 @@ export class CrewTasksService {
       where: { id: viewId },
     });
     if (!view) throw new NotFoundException('Task view not found.');
-    await this.roles.require(view.crewId, userId, ['admin']);
+    await this.authorization.require(view.crewId, userId, 'tasks.manage');
     if (view.isSystem) {
       throw new ConflictException({
         message: 'Built-in planning views cannot be deleted.',
@@ -386,7 +414,7 @@ export class CrewTasksService {
     userId: string,
     input: CreateCrewTaskWorkflowStateInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     await this.ensureDefaultWorkflowStates(crewId, userId);
     const state = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -476,7 +504,7 @@ export class CrewTasksService {
     });
     if (!current)
       throw new NotFoundException('Task workflow column not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     const state = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
@@ -623,7 +651,7 @@ export class CrewTasksService {
     userId: string,
     input: ReorderCrewTaskWorkflowStatesInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const states = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
@@ -682,17 +710,26 @@ export class CrewTasksService {
     });
     if (!current)
       throw new NotFoundException('Task workflow column not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
-    if (current.systemKey) {
-      throw new ConflictException({
-        message:
-          'Built-in workflow columns can be renamed or archived, but not permanently deleted.',
-      });
-    }
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
       `;
+      const locked = await tx.crewTaskWorkflowState.findUniqueOrThrow({
+        where: { id: stateId },
+      });
+      if (locked.systemKey) {
+        throw new ConflictException({
+          message:
+            'Built-in workflow columns can be renamed or archived, but not permanently deleted.',
+        });
+      }
+      if (!locked.archived) {
+        throw new ConflictException({
+          message:
+            'Archive a custom workflow column before permanently deleting it.',
+        });
+      }
       const taskCount = await tx.crewTask.count({
         where: { workflowStateId: stateId },
       });
@@ -708,8 +745,8 @@ export class CrewTasksService {
       await tx.crewTaskWorkflowState.updateMany({
         where: {
           crewId: current.crewId,
-          archived: current.archived,
-          position: { gt: current.position },
+          archived: locked.archived,
+          position: { gt: locked.position },
         },
         data: { position: { decrement: 1 }, version: { increment: 1 } },
       });
@@ -728,7 +765,7 @@ export class CrewTasksService {
     userId: string,
     input: CreateCrewTaskCycleInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const cycle = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${crewId}`})::bigint)
@@ -768,7 +805,7 @@ export class CrewTasksService {
       where: { id: cycleId },
     });
     if (!current) throw new NotFoundException('Task cycle not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     const cycle = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${current.crewId}`})::bigint)
@@ -834,7 +871,7 @@ export class CrewTasksService {
       where: { id: cycleId },
     });
     if (!current) throw new NotFoundException('Task cycle not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -877,7 +914,7 @@ export class CrewTasksService {
     userId: string,
     input: CreateCrewTaskLabelInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     try {
       const label = await this.prisma.crewTaskLabel.create({
         data: {
@@ -910,7 +947,7 @@ export class CrewTasksService {
       where: { id: labelId },
     });
     if (!current) throw new NotFoundException('Task label not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
 
     let result: { count: number };
     try {
@@ -953,7 +990,7 @@ export class CrewTasksService {
       where: { id: labelId },
     });
     if (!current) throw new NotFoundException('Task label not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     await this.prisma.crewTaskLabel.delete({
       where: { id: labelId },
     });
@@ -971,7 +1008,7 @@ export class CrewTasksService {
     userId: string,
     input: CreateCrewTaskFieldInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const last = await this.prisma.crewTaskFieldDefinition.aggregate({
       where: { crewId },
       _max: { position: true },
@@ -1007,7 +1044,7 @@ export class CrewTasksService {
       where: { id: fieldId },
     });
     if (!current) throw new NotFoundException('Custom field not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
       input.options &&
       current.type !== CrewTaskFieldType.single_select &&
@@ -1080,7 +1117,7 @@ export class CrewTasksService {
       where: { id: fieldId },
     });
     if (!current) throw new NotFoundException('Custom field not found.');
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     await this.prisma.crewTaskFieldDefinition.delete({
       where: { id: fieldId },
     });
@@ -1098,7 +1135,7 @@ export class CrewTasksService {
     userId: string,
     input: BatchUpdateCrewTasksInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const taskIds = [...new Set(input.taskIds)];
     if (taskIds.length !== input.taskIds.length) {
       throw new BadRequestException({ message: 'Task ids must be unique.' });
@@ -1164,7 +1201,7 @@ export class CrewTasksService {
 
   async reorder(taskId: string, userId: string, input: ReorderCrewTaskInput) {
     const current = await this.requireTask(taskId);
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
       current.status === CrewTaskStatus.submitted ||
       current.status === CrewTaskStatus.approved ||
@@ -1319,14 +1356,20 @@ export class CrewTasksService {
   }
 
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const view = await this.prisma.crewTaskView.findFirst({
       where: { id: query.viewId, crewId },
     });
     if (!view) {
       throw new NotFoundException('Task view not found.');
     }
-    const where = taskViewWhere(crewId, view.scope, view.filters, query);
+    const where = taskViewWhere(
+      crewId,
+      view.completedMode,
+      view.showSubIssues,
+      view.filters,
+      query,
+    );
     const orderBy = taskViewOrderBy(view.sorts);
     const [rows, total, workflowCounts] = await Promise.all([
       this.prisma.crewTask.findMany({
@@ -1369,7 +1412,7 @@ export class CrewTasksService {
     userId: string,
     query: ListCrewTaskOptionsQuery,
   ) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const normalized = query.query?.trim();
     const rows = await this.prisma.crewTask.findMany({
       where: {
@@ -1415,7 +1458,7 @@ export class CrewTasksService {
   }
 
   async summary(crewId: string, userId: string) {
-    await this.roles.require(crewId, userId, ['admin', 'finance', 'member']);
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const [statusGroups, myActive] = await Promise.all([
       this.prisma.crewTask.groupBy({
         by: ['status'],
@@ -1458,7 +1501,13 @@ export class CrewTasksService {
    */
   private async toDtosWithUsage(tasks: TaskCardRow[]) {
     if (tasks.length === 0) return [];
-    const projectIds = [...new Set(tasks.map((task) => task.canvasProjectId))];
+    const projectIds = [
+      ...new Set(
+        tasks.flatMap((task) =>
+          task.canvasProjectId ? [task.canvasProjectId] : [],
+        ),
+      ),
+    ];
     const jobs = await this.prisma.aiJob.findMany({
       where: { projectId: { in: projectIds } },
       select: { id: true, projectId: true },
@@ -1489,23 +1538,23 @@ export class CrewTasksService {
       );
     }
     return tasks.map((task) =>
-      taskCardDto(task, usageByProject.get(task.canvasProjectId) ?? 0),
+      taskCardDto(
+        task,
+        task.canvasProjectId
+          ? (usageByProject.get(task.canvasProjectId) ?? 0)
+          : 0,
+      ),
     );
   }
 
   async get(taskId: string, userId: string) {
     const task = await this.requireTask(taskId);
-    await this.roles.require(task.crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
+    await this.authorization.require(task.crewId, userId, 'tasks.view');
     return this.toDtoWithUsage(task);
   }
 
   async create(crewId: string, userId: string, input: CreateCrewTaskInput) {
-    await this.roles.require(crewId, userId, ['admin']);
-    await this.collaboration.ensureCrewSpace(crewId);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
     const uniqueAssigneeIds = [
       ...new Set(input.assignees.map((a) => a.userId)),
     ];
@@ -1542,12 +1591,12 @@ export class CrewTasksService {
             'New tasks must start in an open, active, or changes-requested workflow column.',
         });
       }
-      const space = await this.collaboration.ensureCrewSpaceTx(crewId, tx);
       await this.assertPlanningReferences(
         tx,
         crewId,
         input.cycleId,
         input.labelIds,
+        input.episodeId,
       );
       await this.assertTaskStructure(
         tx,
@@ -1569,7 +1618,7 @@ export class CrewTasksService {
       const crewMembers = await tx.crewMember.findMany({
         where: {
           crewId,
-          removedAt: null,
+          status: 'active',
           userId: { in: uniqueAssigneeIds },
         },
       });
@@ -1579,95 +1628,6 @@ export class CrewTasksService {
         throw new BadRequestException({
           message: 'Every assignee must be an active crew member.',
           userIds: missing,
-        });
-      }
-
-      const project = await tx.platformProject.create({
-        data: {
-          workspaceId: space.workspaceId,
-          name: input.title,
-          projectType: 'crew_task',
-          status: PlatformProjectStatus.active,
-          visibility: ProjectVisibility.workspace,
-          description: input.description,
-          createdById: userId,
-        },
-      });
-      await tx.projectMember.create({
-        data: {
-          projectId: project.id,
-          userId,
-          role: ProjectMemberRole.owner,
-          status: ProjectMemberStatus.active,
-          grantedById: userId,
-        },
-      });
-
-      const source = await this.materializeCanvasDocumentTx(
-        tx,
-        space.productionDocument.id,
-      );
-      if (!source.currentVersionId) {
-        throw new ConflictException({
-          code: 'CREW_PRODUCTION_VERSION_MISSING',
-          message:
-            'The crew production canvas has no base version. Repair the production space before creating a task.',
-        });
-      }
-      const document = await tx.platformDocument.create({
-        data: {
-          workspaceId: space.workspaceId,
-          projectId: project.id,
-          type: PlatformDocumentType.canvas,
-          status: PlatformDocumentStatus.active,
-          title: input.title,
-          schemaVersion: source.schemaVersion,
-          collaborationDialect: source.collaborationDialect,
-          contentSnapshot: source.contentSnapshot as Prisma.InputJsonValue,
-          crdtState: source.crdtState,
-          // A branch starts with a compacted full CRDT state and its own empty
-          // operation log. Sequence numbers are document-local and must never
-          // be copied from the production trunk.
-          currentSequence: 0,
-          snapshotSequence: 0,
-          createdById: userId,
-        },
-      });
-      const initialVersion = await tx.platformDocumentVersion.create({
-        data: {
-          documentId: document.id,
-          versionNumber: 1,
-          schemaVersion: document.schemaVersion,
-          sequence: 0,
-          title: document.title,
-          label: 'Task canvas created',
-          source: PlatformDocumentVersionSource.system,
-          snapshot: document.contentSnapshot as Prisma.InputJsonValue,
-          crdtState: document.crdtState,
-          metadata: {
-            reason: 'crew_task_created',
-            sourceDocumentId: source.id,
-            sourceVersionId: source.currentVersionId,
-            sourceSequence: source.currentSequence,
-          },
-          createdById: userId,
-        },
-      });
-      await tx.platformDocument.update({
-        where: { id: document.id },
-        data: { currentVersionId: initialVersion.id },
-      });
-
-      for (const assigneeId of uniqueAssigneeIds) {
-        if (assigneeId === userId) continue;
-        await tx.projectMember.create({
-          data: {
-            projectId: project.id,
-            userId: assigneeId,
-            role: ProjectMemberRole.editor,
-            status: ProjectMemberStatus.active,
-            grantedById: userId,
-          },
         });
       }
 
@@ -1687,11 +1647,10 @@ export class CrewTasksService {
           computeBudgetPoints: input.computeBudgetPoints,
           revisionLimit: input.revisionLimit,
           cycleId: input.cycleId,
+          episodeId: input.episodeId,
           rank: (planningSequence._max.rank ?? new Prisma.Decimal(0)).plus(
             1024,
           ),
-          canvasProjectId: project.id,
-          canvasDocumentId: document.id,
           createdByUserId: userId,
           labels: {
             create: input.labelIds.map((labelId) => ({ labelId })),
@@ -1760,7 +1719,7 @@ export class CrewTasksService {
 
   async update(taskId: string, userId: string, input: UpdateCrewTaskInput) {
     const current = await this.requireTask(taskId);
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
       current.status === CrewTaskStatus.approved ||
       current.status === CrewTaskStatus.cancelled
@@ -1840,6 +1799,7 @@ export class CrewTasksService {
         locked.crewId,
         input.cycleId,
         input.labelIds ?? [],
+        input.episodeId,
       );
       const nextParentId =
         input.parentId === undefined ? locked.parentId : input.parentId;
@@ -1890,7 +1850,7 @@ export class CrewTasksService {
         const crewMembers = await tx.crewMember.findMany({
           where: {
             crewId: locked.crewId,
-            removedAt: null,
+            status: 'active',
             userId: { in: uniqueAssigneeIds },
           },
         });
@@ -1948,32 +1908,34 @@ export class CrewTasksService {
           }
         }
 
-        for (const assigneeId of addedAssigneeIds) {
-          const activeProjectMember = await tx.projectMember.findFirst({
-            where: {
-              projectId: locked.canvasProjectId,
-              userId: assigneeId,
-              removedAt: null,
-            },
-          });
-          if (!activeProjectMember) {
-            await tx.projectMember.create({
-              data: {
+        if (locked.canvasProjectId) {
+          for (const assigneeId of addedAssigneeIds) {
+            const activeProjectMember = await tx.projectMember.findFirst({
+              where: {
                 projectId: locked.canvasProjectId,
                 userId: assigneeId,
-                role: ProjectMemberRole.editor,
-                status: ProjectMemberStatus.active,
-                grantedById: userId,
+                removedAt: null,
               },
             });
+            if (!activeProjectMember) {
+              await tx.projectMember.create({
+                data: {
+                  projectId: locked.canvasProjectId,
+                  userId: assigneeId,
+                  role: ProjectMemberRole.editor,
+                  status: ProjectMemberStatus.active,
+                  grantedById: userId,
+                },
+              });
+            }
           }
         }
         const removableProjectUsers = removedAssigneeIds.filter(
           (assigneeId) =>
             assigneeId !== locked.createdByUserId &&
-            assigneeId !== locked.crew.founderId,
+            assigneeId !== crewOwnerUserId(locked.crew),
         );
-        if (removableProjectUsers.length > 0) {
+        if (locked.canvasProjectId && removableProjectUsers.length > 0) {
           await tx.projectMember.updateMany({
             where: {
               projectId: locked.canvasProjectId,
@@ -1989,7 +1951,11 @@ export class CrewTasksService {
         }
       }
 
-      if (input.title !== undefined || input.description !== undefined) {
+      if (
+        locked.canvasProjectId &&
+        locked.canvasDocumentId &&
+        (input.title !== undefined || input.description !== undefined)
+      ) {
         await Promise.all([
           tx.platformProject.update({
             where: { id: locked.canvasProjectId },
@@ -2089,6 +2055,7 @@ export class CrewTasksService {
       );
       recordChange('revisionLimit', locked.revisionLimit, input.revisionLimit);
       recordChange('cycleId', locked.cycleId, input.cycleId);
+      recordChange('episodeId', locked.episodeId, input.episodeId);
       recordChange('parentId', locked.parentId, input.parentId);
       recordChange(
         'blockedByTaskIds',
@@ -2152,6 +2119,7 @@ export class CrewTasksService {
           computeBudgetPoints: input.computeBudgetPoints,
           revisionLimit: input.revisionLimit,
           cycleId: input.cycleId,
+          episodeId: input.episodeId,
           parentId: input.parentId,
           status: nextWorkflowState?.semantic,
           workflowStateId: nextWorkflowState?.id,
@@ -2192,7 +2160,7 @@ export class CrewTasksService {
       const changed = Object.keys(changedFields).length > 0;
       if (changed || addedAssigneeIds.length || removedAssigneeIds.length) {
         const participantIds = new Set([
-          updated.crew.founderId,
+          crewOwnerUserId(updated.crew),
           ...updated.assignees.map((assignee) => assignee.userId),
         ]);
         participantIds.delete(userId);
@@ -2233,11 +2201,7 @@ export class CrewTasksService {
     query: ListCrewTaskTimelineQuery,
   ) {
     const task = await this.requireTask(taskId);
-    await this.roles.require(task.crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
+    await this.authorization.require(task.crewId, userId, 'tasks.view');
     let before:
       | {
           createdAt: Date;
@@ -2278,17 +2242,59 @@ export class CrewTasksService {
     };
   }
 
+  async listActivity(
+    crewId: string,
+    userId: string,
+    query: ListCrewTaskTimelineQuery,
+  ) {
+    await this.authorization.require(crewId, userId, 'tasks.view');
+    let before:
+      | {
+          createdAt: Date;
+          id: string;
+        }
+      | undefined;
+    if (query.cursor) {
+      const cursor = await this.prisma.crewTaskTimelineItem.findFirst({
+        where: { id: query.cursor, task: { crewId } },
+        select: { createdAt: true, id: true },
+      });
+      if (!cursor) {
+        throw new BadRequestException({ message: 'Invalid activity cursor.' });
+      }
+      before = cursor;
+    }
+    const rows = await this.prisma.crewTaskTimelineItem.findMany({
+      where: {
+        task: { crewId },
+        ...(before
+          ? {
+              OR: [
+                { createdAt: { lt: before.createdAt } },
+                { createdAt: before.createdAt, id: { lt: before.id } },
+              ],
+            }
+          : {}),
+      },
+      include: activityInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+    });
+    const hasMore = rows.length > query.limit;
+    const page = rows.slice(0, query.limit);
+    return {
+      items: page.map(activityDto),
+      nextCursor: hasMore ? page.at(-1)!.id : null,
+    };
+  }
+
   async createComment(
     taskId: string,
     userId: string,
     input: CreateCrewTaskCommentInput,
   ) {
     const task = await this.requireTask(taskId);
-    await this.roles.require(task.crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
+    await this.authorization.require(task.crewId, userId, 'tasks.comment');
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(
@@ -2381,7 +2387,7 @@ export class CrewTasksService {
         );
       }
       const participantIds = new Set([
-        task.crew.founderId,
+        crewOwnerUserId(task.crew),
         task.createdByUserId,
         ...task.assignees.map((assignee) => assignee.userId),
       ]);
@@ -2441,19 +2447,20 @@ export class CrewTasksService {
   ) {
     const current = await this.prisma.crewTaskTimelineItem.findUnique({
       where: { id: commentId },
-      include: {
-        task: { include: { crew: { select: { founderId: true } } } },
-      },
+      include: { task: true },
     });
     if (!current || current.kind !== 'comment' || current.deletedAt) {
       throw new NotFoundException('Task comment not found.');
     }
-    const role = await this.roles.require(current.task.crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
-    if (current.actorUserId !== userId && role !== 'admin') {
+    const context = await this.authorization.require(
+      current.task.crewId,
+      userId,
+      'tasks.comment',
+    );
+    if (
+      current.actorUserId !== userId &&
+      !context.permissions.includes('tasks.manage')
+    ) {
       throw new ForbiddenException({
         message:
           'Only the author or a crew administrator can edit this comment.',
@@ -2540,12 +2547,15 @@ export class CrewTasksService {
     if (!current || current.kind !== 'comment' || current.deletedAt) {
       throw new NotFoundException('Task comment not found.');
     }
-    const role = await this.roles.require(current.task.crewId, userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
-    if (current.actorUserId !== userId && role !== 'admin') {
+    const context = await this.authorization.require(
+      current.task.crewId,
+      userId,
+      'tasks.comment',
+    );
+    if (
+      current.actorUserId !== userId &&
+      !context.permissions.includes('tasks.manage')
+    ) {
       throw new ForbiddenException({
         message:
           'Only the author or a crew administrator can delete this comment.',
@@ -2573,10 +2583,14 @@ export class CrewTasksService {
 
   async submit(taskId: string, userId: string, input: SubmitCrewTaskInput) {
     const task = await this.requireTask(taskId);
-    await this.roles.require(task.crewId, userId, ['admin', 'member']);
+    const context = await this.authorization.requireMembership(
+      task.crewId,
+      userId,
+    );
     const isAssignee = task.assignees.some((a) => a.userId === userId);
-    const role = await this.roles.resolve(task.crewId, userId);
-    if (!isAssignee && role !== 'admin') {
+    const canSubmit = context.permissions.includes('tasks.submit_assigned');
+    const canManage = context.permissions.includes('tasks.manage');
+    if (!canSubmit || (!isAssignee && !canManage)) {
       throw new ForbiddenException({
         message: 'Only a task assignee can submit this task.',
       });
@@ -2638,49 +2652,54 @@ export class CrewTasksService {
         );
       }
 
-      const document = await this.materializeCanvasDocumentTx(
-        tx,
-        locked.canvasDocumentId,
-      );
-      const latestDocumentVersion = await tx.platformDocumentVersion.findFirst({
-        where: { documentId: document.id },
-        orderBy: { versionNumber: 'desc' },
-      });
-      const canvasVersion = await tx.platformDocumentVersion.create({
-        data: {
-          documentId: document.id,
-          versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
-          schemaVersion: document.schemaVersion,
-          sequence: document.currentSequence,
-          title: document.title,
-          label: `Task submission v${locked.submissions.length + 1}`,
-          source: PlatformDocumentVersionSource.manual,
-          sourceId: taskId,
-          snapshot: document.contentSnapshot as Prisma.InputJsonValue,
-          crdtState: document.crdtState,
-          metadata: {
-            reason: 'crew_task_submission',
-            taskId,
-            documentSequence: document.currentSequence,
+      let canvasVersionId: string | null = null;
+      if (locked.canvasDocumentId) {
+        const document = await this.materializeCanvasDocumentTx(
+          tx,
+          locked.canvasDocumentId,
+        );
+        const latestDocumentVersion =
+          await tx.platformDocumentVersion.findFirst({
+            where: { documentId: document.id },
+            orderBy: { versionNumber: 'desc' },
+          });
+        const canvasVersion = await tx.platformDocumentVersion.create({
+          data: {
+            documentId: document.id,
+            versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
+            schemaVersion: document.schemaVersion,
+            sequence: document.currentSequence,
+            title: document.title,
+            label: `Task submission v${locked.submissions.length + 1}`,
+            source: PlatformDocumentVersionSource.manual,
+            sourceId: taskId,
+            snapshot: document.contentSnapshot as Prisma.InputJsonValue,
+            crdtState: document.crdtState,
+            metadata: {
+              reason: 'crew_task_submission',
+              taskId,
+              documentSequence: document.currentSequence,
+            },
+            createdById: userId,
           },
-          createdById: userId,
-        },
-      });
-      await tx.platformDocument.update({
-        where: { id: document.id },
-        data: {
-          currentVersionId: canvasVersion.id,
-          updatedById: userId,
-          version: { increment: 1 },
-        },
-      });
+        });
+        canvasVersionId = canvasVersion.id;
+        await tx.platformDocument.update({
+          where: { id: document.id },
+          data: {
+            currentVersionId: canvasVersion.id,
+            updatedById: userId,
+            version: { increment: 1 },
+          },
+        });
+      }
       const submission = await tx.crewTaskSubmission.create({
         data: {
           taskId,
           versionNumber: locked.submissions.length + 1,
           submittedByUserId: userId,
           note: input.note,
-          canvasVersionId: canvasVersion.id,
+          canvasVersionId,
           assets: {
             create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
               assetNodeId,
@@ -2712,7 +2731,7 @@ export class CrewTasksService {
       });
       await this.notifications.send(
         {
-          userId: locked.crew.founderId,
+          userId: crewOwnerUserId(locked.crew),
           type: 'crew.task.submitted',
           title: `Task submitted: ${locked.title}`,
           body: `Submission v${submission.versionNumber} is ready for review.`,
@@ -2741,7 +2760,7 @@ export class CrewTasksService {
 
   async review(taskId: string, userId: string, input: ReviewCrewTaskInput) {
     const current = await this.requireTask(taskId);
-    await this.roles.require(current.crewId, userId, ['admin']);
+    await this.authorization.require(current.crewId, userId, 'tasks.review');
 
     const task = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -2775,15 +2794,16 @@ export class CrewTasksService {
           revisionRoundsUsed: locked.revisionRoundsUsed,
         });
       }
-      const productionVersion = approved
-        ? await this.mergeSubmissionIntoProductionTx(
-            tx,
-            locked,
-            latest,
-            userId,
-            now,
-          )
-        : null;
+      const productionVersion =
+        approved && latest.canvasVersion
+          ? await this.mergeSubmissionIntoProductionTx(
+              tx,
+              locked,
+              latest,
+              userId,
+              now,
+            )
+          : null;
       await tx.crewTaskSubmission.update({
         where: { id: latest.id },
         data: {
@@ -2936,7 +2956,7 @@ export class CrewTasksService {
     userId: string,
     query: ListCrewSettlementsQuery,
   ) {
-    await this.roles.require(crewId, userId, ['admin', 'finance']);
+    await this.authorization.require(crewId, userId, 'finance.view');
     const where = {
       crewId,
       ...(query.status ? { status: query.status } : {}),
@@ -2987,7 +3007,11 @@ export class CrewTasksService {
       include: { task: true },
     });
     if (!item) throw new NotFoundException('Settlement item not found.');
-    await this.roles.require(item.task.crewId, userId, ['admin', 'finance']);
+    await this.authorization.require(
+      item.task.crewId,
+      userId,
+      'finance.settle',
+    );
     if (item.status === CrewSettlementStatus.settled) {
       return settlementDto(item);
     }
@@ -3409,7 +3433,7 @@ export class CrewTasksService {
     const activeCount = await tx.crewMember.count({
       where: {
         crewId,
-        removedAt: null,
+        status: 'active',
         userId: { in: [...uniqueIds] },
       },
     });
@@ -3642,29 +3666,9 @@ export class CrewTasksService {
       data: [
         {
           crewId,
-          name: 'backlog',
-          layout: 'table',
-          scope: 'backlog',
-          groupBy: 'priority',
-          filters: {},
-          sorts: [{ field: 'rank', direction: 'asc' }],
-          visibleFields: [
-            'number',
-            'priority',
-            'assignees',
-            'labels',
-            'estimate',
-            'dueAt',
-          ],
-          position: 0,
-          isSystem: true,
-          createdByUserId: userId,
-        },
-        {
-          crewId,
-          name: 'table',
-          layout: 'table',
-          scope: 'all',
+          name: 'issues',
+          layout: 'list',
+          groupBy: 'status',
           filters: {},
           sorts: [{ field: 'rank', direction: 'asc' }],
           visibleFields: [
@@ -3677,51 +3681,10 @@ export class CrewTasksService {
             'points',
             'dueAt',
           ],
-          position: 1,
-          isSystem: true,
-          createdByUserId: userId,
-        },
-        {
-          crewId,
-          name: 'board',
-          layout: 'board',
-          scope: 'active',
-          groupBy: 'status',
-          filters: {},
-          sorts: [{ field: 'rank', direction: 'asc' }],
-          visibleFields: [
-            'priority',
-            'assignees',
-            'labels',
-            'estimate',
-            'dueAt',
-          ],
-          position: 2,
-          isSystem: true,
-          createdByUserId: userId,
-        },
-        {
-          crewId,
-          name: 'calendar',
-          layout: 'calendar',
-          scope: 'active',
-          filters: {},
-          sorts: [{ field: 'dueAt', direction: 'asc' }],
-          visibleFields: ['priority', 'assignees', 'dueAt'],
-          position: 3,
-          isSystem: true,
-          createdByUserId: userId,
-        },
-        {
-          crewId,
-          name: 'timeline',
-          layout: 'timeline',
-          scope: 'all',
-          groupBy: 'cycle',
-          filters: {},
-          sorts: [{ field: 'startAt', direction: 'asc' }],
-          visibleFields: ['priority', 'assignees', 'cycle', 'startAt', 'dueAt'],
-          position: 4,
+          completedMode: 'all',
+          showSubIssues: true,
+          showEmptyGroups: false,
+          position: 0,
           isSystem: true,
           createdByUserId: userId,
         },
@@ -3735,6 +3698,7 @@ export class CrewTasksService {
     crewId: string,
     cycleId: string | null | undefined,
     labelIds: string[],
+    episodeId?: string | null,
   ) {
     if (cycleId) {
       const cycle = await tx.crewTaskCycle.findFirst({
@@ -3744,6 +3708,21 @@ export class CrewTasksService {
       if (!cycle) {
         throw new BadRequestException({
           message: 'The selected cycle is unavailable for this crew.',
+        });
+      }
+    }
+    if (episodeId) {
+      const episode = await tx.crewEpisode.findFirst({
+        where: {
+          id: episodeId,
+          crewId,
+          status: { notIn: ['cancelled', 'completed'] },
+        },
+        select: { id: true },
+      });
+      if (!episode) {
+        throw new BadRequestException({
+          message: 'The selected episode is unavailable for this crew.',
         });
       }
     }
@@ -4007,7 +3986,7 @@ export class CrewTasksService {
       const activeMembers = await tx.crewMember.count({
         where: {
           crewId,
-          removedAt: null,
+          status: 'active',
           userId: { in: [...userIds] },
         },
       });
@@ -4030,6 +4009,7 @@ export class CrewTasksService {
   }
 
   private async toDtoWithUsage(task: TaskRow) {
+    if (!task.canvasProjectId) return taskDto(task, 0);
     const usage = await this.prisma.aiCostLedgerEntry.aggregate({
       where: {
         internalCredits: { not: null },
@@ -4043,25 +4023,35 @@ export class CrewTasksService {
 
 function taskViewWhere(
   crewId: string,
-  scope: string,
+  completedMode: 'all' | 'recent' | 'hidden',
+  showSubIssues: boolean,
   rawFilters: Prisma.JsonValue,
   query: ListCrewTasksQuery,
 ): Prisma.CrewTaskWhereInput {
   const filters = CrewTaskViewFiltersSchema.parse(rawFilters);
   const clauses: Prisma.CrewTaskWhereInput[] = [];
-  if (scope === 'backlog') {
-    clauses.push({ cycleId: null, status: CrewTaskStatus.open });
-  } else if (scope === 'active') {
+  if (completedMode === 'hidden') {
     clauses.push({
       status: { notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
     });
-  } else if (scope === 'review') {
-    clauses.push({ status: CrewTaskStatus.submitted });
-  } else if (scope === 'completed') {
+  } else if (completedMode === 'recent') {
+    const completedAfter = new Date();
+    completedAfter.setUTCDate(completedAfter.getUTCDate() - 30);
     clauses.push({
-      status: { in: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
+      OR: [
+        {
+          status: {
+            notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+          },
+        },
+        {
+          status: { in: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
+          updatedAt: { gte: completedAfter },
+        },
+      ],
     });
   }
+  if (!showSubIssues) clauses.push({ parentId: null });
   if (query.priority) clauses.push({ priority: query.priority });
   if (query.query) clauses.push({ OR: taskSearchWhere(query.query) });
   if (filters.workflowStateIds?.length) {
@@ -4215,13 +4205,24 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     })),
     cycleId: task.cycleId,
     cycle: task.cycle ? taskCycleDto(task.cycle) : null,
+    episodeId: task.episodeId,
+    episode: task.episode
+      ? {
+          id: task.episode.id,
+          number: task.episode.number,
+          title: task.episode.title,
+          status: task.episode.status,
+        }
+      : null,
     labels: task.labels
       .map(({ label }) => taskLabelDto(label))
       .sort((a, b) => a.name.localeCompare(b.name)),
     version: task.version,
     canvasProjectId: task.canvasProjectId,
     canvasDocumentId: task.canvasDocumentId,
-    canvasHref: `/fizzstudio/projects/${task.canvasProjectId}`,
+    canvasHref: task.canvasProjectId
+      ? `/fizzstudio/projects/${task.canvasProjectId}`
+      : null,
     createdByUserId: task.createdByUserId,
     approvedByUserId: task.approvedByUserId,
     submittedAt: task.submittedAt?.toISOString() ?? null,
@@ -4306,11 +4307,13 @@ function taskViewDto(view: {
   crewId: string;
   name: string;
   layout: string;
-  scope: string;
   groupBy: string | null;
   filters: unknown;
   sorts: unknown;
   visibleFields: unknown;
+  completedMode: 'all' | 'recent' | 'hidden';
+  showSubIssues: boolean;
+  showEmptyGroups: boolean;
   position: number;
   isSystem: boolean;
   createdByUserId: string;
@@ -4337,9 +4340,12 @@ function taskWorkflowStateDto(state: {
   createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
+  _count?: { tasks: number };
 }) {
+  const { _count, ...workflowState } = state;
   return {
-    ...state,
+    ...workflowState,
+    ...(_count ? { taskCount: _count.tasks } : {}),
     createdAt: state.createdAt.toISOString(),
     updatedAt: state.updatedAt.toISOString(),
   };
@@ -4445,6 +4451,13 @@ function timelineDto(item: TimelineRow) {
   };
 }
 
+function activityDto(item: ActivityRow) {
+  return {
+    ...timelineDto(item),
+    task: item.task,
+  };
+}
+
 function parseMentions(
   value: Prisma.JsonValue,
 ): Array<{ userId: string; label: string }> {
@@ -4461,6 +4474,13 @@ function parseMentions(
     }
     return [{ userId: candidate.userId, label: candidate.label }];
   });
+}
+
+function crewOwnerUserId(crew: {
+  ownership: { member: { userId: string } } | null;
+}): string {
+  if (!crew.ownership) throw new Error('Crew has no active owner.');
+  return crew.ownership.member.userId;
 }
 
 function settlementDto(item: {

@@ -144,6 +144,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "7" } }) }));
 
 vi.mock("@/app/(site)/creators/_hooks/use-conversations", () => ({
+  isOptimisticConversationMessage: (message: MessageDTO) => message.id.startsWith("optimistic:"),
   isConversationAccessError: (error: unknown) =>
     !!error &&
     typeof error === "object" &&
@@ -416,6 +417,45 @@ describe("crew conversation identity", () => {
 
     expect(text()).toContain("Ada");
     expect(text()).toContain("Cut is up");
+  });
+
+  it("starts a fresh avatar group when the same author returns later", () => {
+    state.displays = new Map([["7", { userId: "7", nickname: "Isaac" }]]);
+    state.messages = [
+      {
+        id: "m_early",
+        conversationId: "conv_1",
+        authorId: "7",
+        type: "text",
+        body: "Morning update",
+        payload: null,
+        createdAt: "2026-07-27T14:09:00.000Z",
+      },
+      {
+        id: "m_same_burst",
+        conversationId: "conv_1",
+        authorId: "7",
+        type: "text",
+        body: "One minute later",
+        payload: null,
+        createdAt: "2026-07-27T14:10:00.000Z",
+      },
+      {
+        id: "m_later",
+        conversationId: "conv_1",
+        authorId: "7",
+        type: "text",
+        body: "Afternoon update",
+        payload: null,
+        createdAt: "2026-07-27T15:38:00.000Z",
+      },
+    ] satisfies MessageDTO[];
+
+    render(<ConversationView conversationId="conv_1" />);
+
+    // The two close messages share one identity block; the later message
+    // starts another and gets its own avatar/name instead of only a time.
+    expect(document.querySelectorAll('img[data-avatar][alt="Isaac"]')).toHaveLength(2);
   });
 
   it("renders a crew system message with the member's name, not their id", () => {
@@ -893,6 +933,9 @@ describe("send states", () => {
 
     type(composer(), "First message");
     click(button("Send"));
+    // Sending a plain message frees the composer synchronously; the reader
+    // can continue typing while persistence completes in the background.
+    expect(composer().value).toBe("");
     type(composer(), "Next message");
     await act(async () => {
       resolveSend({});
@@ -900,6 +943,26 @@ describe("send states", () => {
     });
 
     expect(composer().value).toBe("Next message");
+  });
+
+  it("marks an optimistic timeline row as sending", () => {
+    state.displays = new Map([["7", { userId: "7", nickname: "Isaac" }]]);
+    state.messages = [
+      {
+        id: "optimistic:send-1",
+        conversationId: "conv_1",
+        authorId: "7",
+        clientKey: "send-1",
+        type: "text",
+        body: "Instant local message",
+        payload: null,
+        createdAt: "2026-07-27T00:00:00.000Z",
+      } satisfies MessageDTO,
+    ];
+    render(<ConversationView conversationId="conv_1" />);
+
+    expect(text()).toContain("Instant local message");
+    expect(document.querySelector('[role="status"][aria-label="Sending…"]')).not.toBeNull();
   });
 
   it("does not send when Enter is confirming an IME composition", async () => {

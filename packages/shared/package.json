@@ -58,6 +58,10 @@
       "types": "./dist/users.d.ts",
       "default": "./dist/users.js"
     },
+    "./avatar": {
+      "types": "./dist/avatar.d.ts",
+      "default": "./dist/avatar.js"
+    },
     "./user-id-codec": {
       "types": "./dist/user-id-codec.d.ts",
       "default": "./dist/user-id-codec.js"

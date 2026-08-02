@@ -18,12 +18,12 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
   CrewApplicationStatus,
+  CrewMembershipStatus,
   Prisma,
   type CrewApplication,
   type Message as PrismaMessage,
@@ -44,6 +44,7 @@ import type { ApplyInput, ListCrewApplicationsQuery } from './dto';
 import { newCrewDomainId } from './id';
 import { toApplicationDTO } from './mappers';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
+import { CrewAuthorizationService } from './crew-authorization.service';
 
 @Injectable()
 export class ApplicationsService {
@@ -52,6 +53,7 @@ export class ApplicationsService {
     private readonly notifications: NotificationService,
     private readonly conversations: ConversationsService,
     private readonly collaboration: CrewCollaborationService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   async listForOwner(
@@ -59,7 +61,7 @@ export class ApplicationsService {
     ownerId: string,
     query: ListCrewApplicationsQuery,
   ) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'applications.review');
     const where = {
       crewId,
       ...(query.positionId ? { positionId: query.positionId } : {}),
@@ -109,7 +111,7 @@ export class ApplicationsService {
   }
 
   async getForOwner(crewId: string, applicationId: string, ownerId: string) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'applications.review');
     const row = await this.prisma.crewApplication.findFirst({
       where: { id: applicationId, crewId },
     });
@@ -126,19 +128,31 @@ export class ApplicationsService {
     const [crew, position, existingMembership] = await Promise.all([
       this.prisma.crew.findFirst({
         where: { id: crewId, deletedAt: null },
-        select: { id: true, founderId: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          ownership: { select: { member: { select: { userId: true } } } },
+        },
       }),
       this.prisma.crewPosition.findFirst({
         where: { id: positionId, crewId, deletedAt: null },
         select: { id: true, status: true, positionType: true },
       }),
       this.prisma.crewMember.findFirst({
-        where: { crewId, userId: applicantId, removedAt: null },
+        where: {
+          crewId,
+          userId: applicantId,
+          status: {
+            in: [CrewMembershipStatus.active, CrewMembershipStatus.suspended],
+          },
+        },
         select: { id: true },
       }),
     ]);
 
     if (!crew) throw new NotFoundException('Crew not found');
+    if (!crew.ownership) throw new NotFoundException('Crew owner not found');
+    const ownerUserId = crew.ownership.member.userId;
     if (!position) throw new NotFoundException('Position not found');
     if (position.status !== 'open') {
       throw new BadRequestException({
@@ -151,7 +165,7 @@ export class ApplicationsService {
         message: 'You are already a member of this crew',
       });
     }
-    if (applicantId === crew.founderId) {
+    if (applicantId === ownerUserId) {
       throw new BadRequestException({
         message: 'The crew owner cannot apply to their own crew',
       });
@@ -183,7 +197,7 @@ export class ApplicationsService {
         });
         await this.notifications.send(
           {
-            userId: crew.founderId,
+            userId: ownerUserId,
             type: 'crew.application.submitted',
             title: `New application for ${position.positionType}`,
             body: `Someone applied to your crew "${crew.name}".`,
@@ -243,7 +257,7 @@ export class ApplicationsService {
       where: { id: applicationId },
       include: {
         crew: {
-          select: { id: true, founderId: true, name: true, deletedAt: true },
+          select: { id: true, name: true, deletedAt: true },
         },
         position: {
           select: {
@@ -258,11 +272,11 @@ export class ApplicationsService {
     });
     if (!app || app.crew.deletedAt)
       throw new NotFoundException('Application not found');
-    if (app.crew.founderId !== reviewerId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can review applications',
-      });
-    }
+    const reviewer = await this.authorization.require(
+      app.crewId,
+      reviewerId,
+      'applications.review',
+    );
     if (app.status !== 'pending') {
       throw new BadRequestException({
         message: 'Application is not pending',
@@ -324,14 +338,36 @@ export class ApplicationsService {
           // Plain insert — partial unique on (crewId, userId) WHERE
           // removed_at IS NULL means a previously removed member becomes
           // a new active row, preserving the history.
-          await tx.crewMember.create({
+          const member = await tx.crewMember.create({
             data: {
               id: newCrewDomainId(),
               crewId: app.crewId,
               userId: app.applicantId,
-              roleType: app.position.positionType,
-              positionId: app.position.id,
-              via: 'application',
+              status: CrewMembershipStatus.active,
+              joinedVia: 'application',
+            },
+          });
+          await tx.crewMemberPosition.create({
+            data: {
+              crewId: app.crewId,
+              memberId: member.id,
+              categoryKey: app.position.positionType,
+              isPrimary: true,
+              sourcePositionId: app.position.id,
+            },
+          });
+          await tx.crewAuthorizationEvent.create({
+            data: {
+              crewId: app.crewId,
+              memberId: member.id,
+              actorMemberId: reviewer.memberId,
+              actorUserId: reviewerId,
+              action: 'member.joined.application',
+              after: {
+                applicationId,
+                positionCategoryKey: app.position.positionType,
+                sourcePositionId: app.position.id,
+              },
             },
           });
           // Joining through a public job must grant the exact same Studio
@@ -408,19 +444,6 @@ export class ApplicationsService {
       await this.conversations.broadcastMessage(msg);
     }
     return toApplicationDTO(updated);
-  }
-
-  private async assertOwner(crewId: string, userId: string) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
-    });
-    if (!crew) throw new NotFoundException('Crew not found');
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can do this',
-      });
-    }
   }
 }
 

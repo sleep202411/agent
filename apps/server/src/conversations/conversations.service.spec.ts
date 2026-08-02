@@ -17,8 +17,8 @@
  *
  * The `crew` / `crewMember` delegates HONOUR their `where` clause
  * against the `world` fixture instead of answering a fixed value.
- * They stand in for the crew gate's `deletedAt: null` /
- * `removedAt: null` filters, and a mock that answers the same thing
+ * They stand in for the crew gate's `deletedAt: null` / `status: active`
+ * filters, and a mock that answers the same thing
  * whatever it is asked keeps passing when the filter it represents is
  * deleted — which is worse than having no test.
  */
@@ -89,17 +89,15 @@ function message(over: Record<string, unknown> = {}) {
  * leaving the filter untested.
  */
 interface CrewWorld {
-  founderId: string;
   deletedAt: Date | null;
-  /** Active `crew_members` rows (removedAt IS NULL). Founder excluded. */
+  /** Active `crew_members` rows, including the owner membership. */
   memberUserIds: Set<string>;
 }
 
 function buildHarness() {
   const world: CrewWorld = {
-    founderId: FOUNDER,
     deletedAt: null,
-    memberUserIds: new Set([MEMBER]),
+    memberUserIds: new Set([FOUNDER, MEMBER]),
   };
   const crewVisible = (where: { deletedAt?: Date | null }) =>
     !(where.deletedAt === null && world.deletedAt !== null);
@@ -144,9 +142,7 @@ function buildHarness() {
       findFirst: jest.fn(
         ({ where }: { where: { id: string; deletedAt?: Date | null } }) =>
           Promise.resolve(
-            where.id === CREW_ID && crewVisible(where)
-              ? { founderId: world.founderId }
-              : null,
+            where.id === CREW_ID && crewVisible(where) ? { id: CREW_ID } : null,
           ),
       ),
       findMany: jest.fn(
@@ -157,7 +153,7 @@ function buildHarness() {
         }) =>
           Promise.resolve(
             where.id.in.includes(CREW_ID) && crewVisible(where)
-              ? [{ id: CREW_ID, founderId: world.founderId }]
+              ? [{ id: CREW_ID }]
               : [],
           ),
       ),
@@ -167,7 +163,7 @@ function buildHarness() {
         ({
           where,
         }: {
-          where: { crewId: string; userId: string; removedAt?: Date | null };
+          where: { crewId: string; userId: string; status?: string };
         }) =>
           Promise.resolve(
             where.crewId === CREW_ID && world.memberUserIds.has(where.userId)
@@ -188,7 +184,7 @@ function buildHarness() {
           where: {
             crewId: string | { in: string[] };
             userId?: string | { in: string[] };
-            removedAt?: Date | null;
+            status?: string;
           };
         }) => {
           if (typeof where.crewId === 'string') {
@@ -917,15 +913,14 @@ describe('listInbox — crew rows are re-checked against live membership', () =>
     expect(items).toEqual([]);
   });
 
-  it('keeps the founder’s row when they hold no crew_members row', async () => {
+  it('drops the owner row when the canonical membership is absent', async () => {
     const { service, delegates, world } = buildHarness();
     delegates.conversation.findMany.mockResolvedValue([inboxRow()]);
     world.memberUserIds.clear();
 
     const { items } = await service.listInbox(FOUNDER, { limit: 24 });
 
-    expect(items).toHaveLength(1);
-    expect(items[0].contextId).toBe(CREW_ID);
+    expect(items).toEqual([]);
   });
 
   it('keeps an active member’s row', async () => {
@@ -1111,15 +1106,15 @@ describe('crew membership re-check', () => {
     );
   });
 
-  it('lets the founder in with NO crew_members row — the ownership-transfer lockout', async () => {
+  it('revokes owner chat access when the canonical membership is absent', async () => {
     const { service, delegates, world } = buildHarness();
     arrangeCrewConversation(delegates, FOUNDER);
     world.memberUserIds.clear();
 
     await expect(
       service.listMessages(CONV_ID, FOUNDER, { limit: 20 }),
-    ).resolves.toEqual({ items: [], nextCursor: null });
-    expect(delegates.crewMember.findFirst).not.toHaveBeenCalled();
+    ).rejects.toThrow(NotFoundException);
+    expect(delegates.crewMember.findFirst).toHaveBeenCalled();
   });
 
   it('404s everyone once the crew is soft-deleted', async () => {

@@ -5,6 +5,7 @@ import {
   boardOrdersEqual,
   createBoardOrder,
   moveBoardTask,
+  optimisticallyReorderCrewTaskPages,
   optimisticallyReorderCrewTasks,
   placementForTask,
 } from "./task-board-ordering";
@@ -120,9 +121,52 @@ describe("crew task board ordering", () => {
       rank: "1536",
       version: 3,
     });
+    expect(optimistic.map((candidate) => candidate.id)).toEqual(["a", "d", "b", "c"]);
     expect(tasks.find((candidate) => candidate.id === "d")).toMatchObject({
       status: "in_progress",
       version: 2,
     });
+  });
+
+  it("reorders paginated view data and updates column counts immediately", () => {
+    const pages = [
+      {
+        items: tasks.slice(0, 2),
+        nextCursor: "page-2",
+        total: 4,
+        workflowCounts: { [states.open.id]: 3, [states.in_progress.id]: 1 },
+      },
+      {
+        items: tasks.slice(2),
+        nextCursor: null,
+        total: 4,
+        workflowCounts: { [states.open.id]: 3, [states.in_progress.id]: 1 },
+      },
+    ];
+    const optimistic = optimisticallyReorderCrewTaskPages(
+      pages,
+      "d",
+      {
+        expectedVersion: 2,
+        beforeTaskId: "a",
+        beforeTaskVersion: 1,
+        afterTaskId: "b",
+        afterTaskVersion: 4,
+        workflowStateId: states.open.id,
+      },
+      tasks[0]!.workflowState
+    );
+
+    expect(optimistic.flatMap((page) => page.items.map((candidate) => candidate.id))).toEqual([
+      "a",
+      "d",
+      "b",
+      "c",
+    ]);
+    expect(optimistic[0]?.workflowCounts).toEqual({
+      [states.open.id]: 4,
+      [states.in_progress.id]: 0,
+    });
+    expect(pages[0]?.items.map((candidate) => candidate.id)).toEqual(["a", "b"]);
   });
 });

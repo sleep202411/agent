@@ -1,7 +1,7 @@
 /**
- * Member reads + mutations (remove / toggle finance).
+ * Member reads + mutations for removal, positions, policies and overrides.
  *
- * Server-owned: every member row has just IDs + role; user display
+ * Server-owned: every member row carries authorization state; user display
  * info (nickname, avatar) is resolved on the client from the existing
  * user-info hooks so the data layer doesn't denormalize transient
  * profile state.
@@ -11,7 +11,12 @@ import { useEffect, useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
-import type { CrewMemberDTO, CrewMemberPageDTO, CrewMembershipDTO } from "./types";
+import type {
+  CrewMemberDTO,
+  CrewMemberPageDTO,
+  CrewMembershipDTO,
+  UpdateCrewMemberInput,
+} from "./types";
 
 export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
   const query = useInfiniteQuery({
@@ -30,10 +35,11 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
     retry: (failureCount, error) =>
       failureCount < 2 && !(error instanceof CrewApiError && error.status < 500),
   });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = query;
   useEffect(() => {
-    if (!query.hasNextPage || query.isFetchingNextPage) return;
-    void query.fetchNextPage();
-  }, [query.fetchNextPage, query.hasNextPage, query.isFetchingNextPage]);
+    if (!hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
   const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   return {
     ...query,
@@ -71,13 +77,14 @@ export function useRemoveMember(crewId: string) {
 export function useUpdateMember(crewId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ memberId, isFinance }: { memberId: string; isFinance: boolean }) =>
+    mutationFn: ({ memberId, input }: { memberId: string; input: UpdateCrewMemberInput }) =>
       crewApi.patch<CrewMemberDTO>(
         `/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(memberId)}`,
-        { body: { isFinance } }
+        { body: input }
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
     },
   });
 }

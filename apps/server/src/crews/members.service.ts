@@ -1,41 +1,28 @@
-/**
- * Member management — list, remove, finance toggle.
- *
- * - List is open to any active member (outsiders can read the public
- *   crew detail but not the member roster).
- * - Joining is invitation-only. This service deliberately has no
- *   direct-add path.
- * - Remove: owner-only. Owner can't remove themselves (would orphan
- *   the crew — delete the crew instead).
- * - Finance toggle: owner-only; flips the `isFinance` flag.
- *
- * Every state change publishes a notification via the outbox with a
- * deterministic idempotency key so retries don't double-notify.
- *
- * Accepting an invitation / removing a member also moves the member in
- * and out of the crew group chat.
- * The participant sync and its `crew.member.joined` / `crew.member.left`
- * system message run INSIDE the same transaction as the membership
- * write, so a chat failure rolls the roster change back rather than
- * leaving someone who can post in a crew they were never added to (or,
- * worse, a removed member still receiving broadcasts). The WS fan-out
- * is deliberately outside — it only runs once the row is committed.
- */
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type Message as PrismaMessage } from '@prisma/client';
+import {
+  CrewMembershipStatus,
+  Prisma,
+  type Message as PrismaMessage,
+} from '@prisma/client';
 import type { CrewMemberPageDTO, CrewMembershipDTO } from '@repo/shared/crew';
 import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
+import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
+import { CrewAuthorizationService } from './crew-authorization.service';
 import type { ListCrewMembersQuery, UpdateMemberInput } from './dto';
 import { toMemberDTO } from './mappers';
-import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
+
+const MEMBER_VIEW_INCLUDE = {
+  ownership: true,
+  positions: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+  policies: { orderBy: { policyKey: 'asc' } },
+} satisfies Prisma.CrewMemberInclude;
 
 @Injectable()
 export class MembersService {
@@ -44,6 +31,7 @@ export class MembersService {
     private readonly notifications: NotificationService,
     private readonly conversations: ConversationsService,
     private readonly collaboration: CrewCollaborationService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   async list(
@@ -51,11 +39,10 @@ export class MembersService {
     viewerId: string,
     query: ListCrewMembersQuery,
   ): Promise<CrewMemberPageDTO> {
-    await this.requireMembership(crewId, viewerId);
+    await this.authorization.require(crewId, viewerId, 'members.view');
     const baseWhere = {
       crewId,
-      removedAt: null,
-      roleType: { not: 'owner' },
+      status: CrewMembershipStatus.active,
     } satisfies Prisma.CrewMemberWhereInput;
     const cursor = query.cursor
       ? await this.prisma.crewMember.findFirst({
@@ -78,71 +65,65 @@ export class MembersService {
           ],
         }
       : baseWhere;
-    const [owner, total] = await Promise.all([
-      query.cursor
-        ? null
-        : this.prisma.crewMember.findFirst({
-            where: { crewId, removedAt: null, roleType: 'owner' },
-          }),
-      this.prisma.crewMember.count({
-        where: { crewId, removedAt: null },
+    const [rows, total] = await Promise.all([
+      this.prisma.crewMember.findMany({
+        where: pageWhere,
+        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+        take: query.limit + 1,
+        include: MEMBER_VIEW_INCLUDE,
       }),
+      this.prisma.crewMember.count({ where: baseWhere }),
     ]);
-    const capacity = query.limit - (owner ? 1 : 0);
-    const rows = await this.prisma.crewMember.findMany({
-      where: pageWhere,
-      orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
-      take: capacity + 1,
-    });
-    const page = rows.slice(0, capacity);
-    return {
-      items: [...(owner ? [toMemberDTO(owner)] : []), ...page.map(toMemberDTO)],
-      nextCursor:
-        rows.length > capacity ? (page[page.length - 1]?.id ?? null) : null,
-      total,
-    };
+    const page = rows.slice(0, query.limit);
+    const nextCursor =
+      rows.length > query.limit ? (page[page.length - 1]?.id ?? null) : null;
+    const items = page.map(toMemberDTO);
+    if (!query.cursor) {
+      items.sort((a, b) => Number(b.isOwner) - Number(a.isOwner));
+    }
+    return { items, nextCursor, total };
   }
 
   async membership(crewId: string, userId: string): Promise<CrewMembershipDTO> {
-    const crew = await this.requireCrew(crewId);
-    const member = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId, removedAt: null },
+    const context = await this.authorization.requireMembership(crewId, userId);
+    const member = await this.prisma.crewMember.findUnique({
+      where: { id: context.memberId },
+      include: MEMBER_VIEW_INCLUDE,
     });
-    if (!member) {
-      throw new ForbiddenException({
-        message: 'You must be a member to view this',
-      });
+    if (!member || member.status !== CrewMembershipStatus.active) {
+      throw new NotFoundException('Active crew member not found');
     }
     return {
-      role:
-        crew.founderId === userId
-          ? 'admin'
-          : member.isFinance
-            ? 'finance'
-            : 'member',
       userId,
       member: toMemberDTO(member),
+      permissions: context.permissions,
     };
   }
 
   async remove(
     crewId: string,
     memberId: string,
-    ownerId: string,
+    actorUserId: string,
   ): Promise<void> {
-    const crew = await this.requireCrew(crewId);
-    if (crew.founderId !== ownerId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can remove members',
-      });
-    }
-    const member = await this.prisma.crewMember.findFirst({
-      where: { id: memberId, crewId, removedAt: null },
-    });
+    const actor = await this.authorization.require(
+      crewId,
+      actorUserId,
+      'members.manage',
+    );
+    const [crew, member] = await Promise.all([
+      this.requireCrew(crewId),
+      this.prisma.crewMember.findFirst({
+        where: { id: memberId, crewId, status: CrewMembershipStatus.active },
+        include: {
+          ownership: true,
+          positions: { select: { sourcePositionId: true } },
+        },
+      }),
+    ]);
     if (!member) throw new NotFoundException('Member not found');
-    if (member.userId === crew.founderId) {
+    if (member.ownership) {
       throw new BadRequestException({
-        message: 'Cannot remove the crew owner — delete the crew instead',
+        message: 'Transfer ownership before removing the crew owner.',
       });
     }
 
@@ -153,27 +134,37 @@ export class MembersService {
         tx,
       );
       const removed = await tx.crewMember.updateMany({
-        where: { id: memberId, crewId, removedAt: null },
-        data: { removedAt: new Date() },
+        where: {
+          id: memberId,
+          crewId,
+          status: CrewMembershipStatus.active,
+        },
+        data: {
+          status: CrewMembershipStatus.removed,
+          removedAt: new Date(),
+          suspendedAt: null,
+          version: { increment: 1 },
+        },
       });
       if (removed.count !== 1) {
-        throw new ConflictException({
-          message: 'Member was already removed',
-        });
+        throw new ConflictException({ message: 'Member was already removed' });
       }
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          memberId,
+          actorMemberId: actor.memberId,
+          actorUserId,
+          action: 'member.removed',
+          before: { status: CrewMembershipStatus.active },
+          after: { status: CrewMembershipStatus.removed },
+        },
+      });
       await this.collaboration.removeCrewMemberAccess(
         crewId,
         member.userId,
         tx,
       );
-      // `syncCrewParticipant('leave')` deliberately won't conjure a
-      // thread, but this crew demonstrably has members, so it is
-      // entitled to one — opening here self-heals a crew that predates
-      // crew chat and gives the departure notice somewhere to land.
-      // Order matters: the participant is marked gone BEFORE the
-      // message is written, so the removed member is not a recipient of
-      // the announcement of their own removal (doc §6.1 — a removed
-      // member must not keep reading or receiving).
       await this.conversations.syncCrewParticipant(
         crewId,
         member.userId,
@@ -188,25 +179,31 @@ export class MembersService {
           tx,
         ),
       );
-      // If the member came through a position, decrement and re-open
-      // the slot. Manual adds don't affect any position count.
-      if (member.via === 'application' && member.positionId) {
-        const pos = await tx.crewPosition.findUnique({
-          where: { id: member.positionId },
+
+      const sourcePositionIds = [
+        ...new Set(
+          member.positions
+            .map((position) => position.sourcePositionId)
+            .filter((id): id is string => id !== null),
+        ),
+      ];
+      for (const positionId of sourcePositionIds) {
+        const position = await tx.crewPosition.findUnique({
+          where: { id: positionId },
           select: { recruitedCount: true, targetCount: true, status: true },
         });
-        if (pos) {
-          const nextCount = Math.max(0, pos.recruitedCount - 1);
-          await tx.crewPosition.update({
-            where: { id: member.positionId },
-            data: {
-              recruitedCount: nextCount,
-              ...(pos.status === 'full' && nextCount < pos.targetCount
-                ? { status: 'open' as const }
-                : {}),
-            },
-          });
-        }
+        if (!position) continue;
+        const recruitedCount = Math.max(0, position.recruitedCount - 1);
+        await tx.crewPosition.update({
+          where: { id: positionId },
+          data: {
+            recruitedCount,
+            ...(position.status === 'full' &&
+            recruitedCount < position.targetCount
+              ? { status: 'open' as const }
+              : {}),
+          },
+        });
       }
       await this.notifications.send(
         {
@@ -215,7 +212,7 @@ export class MembersService {
           title: `Removed from "${crew.name}"`,
           body: 'You are no longer a member of this crew.',
           meta: {
-            deeplink: `/crews`,
+            deeplink: '/crews',
             crewId,
             crewName: crew.name,
           },
@@ -224,58 +221,159 @@ export class MembersService {
         tx,
       );
     });
-    for (const msg of pendingMessages) {
-      await this.conversations.broadcastMessage(msg);
+    for (const message of pendingMessages) {
+      await this.conversations.broadcastMessage(message);
     }
   }
 
   async update(
     crewId: string,
     memberId: string,
-    ownerId: string,
+    actorUserId: string,
     input: UpdateMemberInput,
   ) {
-    const crew = await this.requireCrew(crewId);
-    if (crew.founderId !== ownerId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can edit members',
-      });
+    const changesPositions = input.positions !== undefined;
+    const changesAuthorization =
+      input.policyKeys !== undefined || input.permissionOverrides !== undefined;
+    if (changesPositions) {
+      await this.authorization.require(crewId, actorUserId, 'members.manage');
     }
-    const member = await this.prisma.crewMember.findFirst({
-      where: { id: memberId, crewId, removedAt: null },
-    });
-    if (!member) throw new NotFoundException('Member not found');
+    const actor = changesAuthorization
+      ? await this.authorization.require(
+          crewId,
+          actorUserId,
+          'members.permissions.manage',
+        )
+      : await this.authorization.requireMembership(crewId, actorUserId);
 
-    const updated = await this.prisma.crewMember.update({
-      where: { id: memberId },
-      data: {
-        ...(input.isFinance !== undefined
-          ? { isFinance: input.isFinance }
-          : {}),
+    const before = await this.prisma.crewMember.findFirst({
+      where: { id: memberId, crewId, status: CrewMembershipStatus.active },
+      include: {
+        ...MEMBER_VIEW_INCLUDE,
+        permissionOverrides: {
+          orderBy: { permissionKey: 'asc' },
+          select: { permissionKey: true, effect: true },
+        },
       },
     });
+    if (!before) throw new NotFoundException('Member not found');
+    if (
+      before.ownership &&
+      (input.policyKeys !== undefined ||
+        input.permissionOverrides !== undefined)
+    ) {
+      throw new BadRequestException({
+        message: 'The owner already has every crew permission.',
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.crewMember.updateMany({
+        where: {
+          id: memberId,
+          crewId,
+          status: CrewMembershipStatus.active,
+          version: input.expectedVersion,
+        },
+        data: { version: { increment: 1 } },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException({
+          message: 'Member permissions changed; refresh and retry.',
+          expectedVersion: input.expectedVersion,
+          actualVersion: before.version,
+        });
+      }
+
+      if (input.positions !== undefined) {
+        await tx.crewMemberPosition.deleteMany({ where: { memberId } });
+        if (input.positions.length > 0) {
+          await tx.crewMemberPosition.createMany({
+            data: input.positions.map((position, index) => ({
+              crewId,
+              memberId,
+              categoryKey: position.categoryKey ?? null,
+              title: position.title ?? null,
+              isPrimary: index === 0,
+            })),
+          });
+        }
+      }
+      if (input.policyKeys !== undefined) {
+        await tx.crewMemberPolicy.deleteMany({ where: { memberId } });
+        if (input.policyKeys.length > 0) {
+          await tx.crewMemberPolicy.createMany({
+            data: input.policyKeys.map((policyKey) => ({
+              memberId,
+              policyKey,
+              assignedByUserId: actorUserId,
+            })),
+          });
+        }
+      }
+      if (input.permissionOverrides !== undefined) {
+        await tx.crewMemberPermissionOverride.deleteMany({
+          where: { memberId },
+        });
+        if (input.permissionOverrides.length > 0) {
+          await tx.crewMemberPermissionOverride.createMany({
+            data: input.permissionOverrides.map((override) => ({
+              memberId,
+              permissionKey: override.permissionKey,
+              effect: override.effect,
+              changedByUserId: actorUserId,
+            })),
+          });
+        }
+      }
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          memberId,
+          actorMemberId: actor.memberId,
+          actorUserId,
+          action: changesAuthorization
+            ? 'member.authorization.updated'
+            : 'member.positions.updated',
+          before: {
+            positions: before.positions.map((position) => ({
+              categoryKey: position.categoryKey,
+              title: position.title,
+            })),
+            policyKeys: before.policies.map((policy) => policy.policyKey),
+            permissionOverrides: before.permissionOverrides,
+          },
+          after: {
+            positions: input.positions ?? undefined,
+            policyKeys: input.policyKeys ?? undefined,
+            permissionOverrides: input.permissionOverrides ?? undefined,
+          },
+        },
+      });
+      if (changesAuthorization) {
+        await this.collaboration.addCrewMemberAccess(
+          crewId,
+          before.userId,
+          actorUserId,
+          tx,
+        );
+      }
+    });
+
+    const updated = await this.prisma.crewMember.findUnique({
+      where: { id: memberId },
+      include: MEMBER_VIEW_INCLUDE,
+    });
+    if (!updated) throw new NotFoundException('Member not found');
     return toMemberDTO(updated);
   }
 
   private async requireCrew(crewId: string) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { id: true, founderId: true, name: true },
+      select: { id: true, name: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
     return crew;
-  }
-
-  private async requireMembership(crewId: string, userId: string) {
-    const crew = await this.requireCrew(crewId);
-    if (crew.founderId === userId) return;
-    const m = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId, removedAt: null },
-      select: { id: true },
-    });
-    if (!m)
-      throw new ForbiddenException({
-        message: 'You must be a member to view this',
-      });
   }
 }

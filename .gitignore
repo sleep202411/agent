@@ -33,6 +33,11 @@ coverage
 # Turbo
 .turbo
 
+# Agent Platform local runtime and generated bundles
+/apps/agent-platform/.local/
+/apps/agent-platform/.mastra/
+/apps/agent-platform/.temporal/
+
 # Vercel
 .vercel
 
@@ -99,3 +104,6 @@ apps/server/outputs/
 /docs/interactive-films/assets/**/*.jpg
 /docs/interactive-films/assets/**/*.jpeg
 /docs/interactive-films/assets/**/*.webp
+
+# Local registry authentication tokens
+/.npmrc

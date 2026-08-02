@@ -9,8 +9,8 @@
  * from a service call.
  *
  * Then the gate (outsiders get 404, never 403; a soft-deleted crew is a
- * 404 for its own founder; the founder short-circuit runs before any
- * `crew_members` read), and then the resolve (a crew founded before crew
+ * 404 for its owner; ownership never bypasses canonical membership), and
+ * then the resolve (a crew created before crew
  * chat existed has no `crew:<id>` row, and must still get one).
  *
  * Every Prisma mock here HONOURS its `where` clause. A mock that answers
@@ -20,7 +20,6 @@
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { NotFoundException, RequestMethod } from '@nestjs/common';
 import { IS_PUBLIC_KEY } from '../auth/auth.decorator';
-import { CrewRoleService } from './crew-role.service';
 import { CrewsController } from './crews.controller';
 import { CrewsService } from './crews.service';
 
@@ -38,19 +37,19 @@ interface World {
   conversationId: string | null;
   /** Active `conversation_participants` rows (leftAt IS NULL). */
   participants: Set<string>;
-  /** Active `crew_members` rows (removedAt IS NULL). Founder excluded. */
+  /** Active `crew_members` rows, including the owner membership. */
   crewMembers: Set<string>;
   crewDeletedAt: Date | null;
-  founderId: string;
+  ownerUserId: string;
 }
 
 function build(over: Partial<World> = {}) {
   const world: World = {
     conversationId: CONVERSATION_ID,
     participants: new Set([FOUNDER, MEMBER, OTHER_MEMBER]),
-    crewMembers: new Set([MEMBER, OTHER_MEMBER]),
+    crewMembers: new Set([FOUNDER, MEMBER, OTHER_MEMBER]),
     crewDeletedAt: null,
-    founderId: FOUNDER,
+    ownerUserId: FOUNDER,
     ...over,
   };
 
@@ -58,7 +57,10 @@ function build(over: Partial<World> = {}) {
   const crewFor = (where: { id: string; deletedAt?: Date | null }) => {
     if (where.id !== CREW_ID) return null;
     if (where.deletedAt === null && world.crewDeletedAt !== null) return null;
-    return { id: CREW_ID, founderId: world.founderId };
+    return {
+      id: CREW_ID,
+      ownership: { member: { userId: world.ownerUserId } },
+    };
   };
 
   const delegates = {
@@ -71,10 +73,10 @@ function build(over: Partial<World> = {}) {
     },
     crewMember: {
       findFirst: jest.fn(
-        ({ where }: { where: { userId: string; removedAt?: Date | null } }) =>
+        ({ where }: { where: { userId: string; status?: string } }) =>
           Promise.resolve(
             world.crewMembers.has(where.userId)
-              ? { id: `cm-${where.userId}`, isFinance: false }
+              ? { id: `cm-${where.userId}` }
               : null,
           ),
       ),
@@ -154,7 +156,14 @@ function build(over: Partial<World> = {}) {
   const service = new CrewsService(
     prisma as never,
     conversations as never,
-    new CrewRoleService(prisma as never),
+    {
+      resolve: jest.fn((_: string, userId: string) => {
+        if (world.crewDeletedAt || !world.crewMembers.has(userId)) {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve({ userId, permissions: ['members.view'] });
+      }),
+    } as never,
     {
       transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
     } as never,
@@ -238,9 +247,8 @@ describe('CrewsService.conversation — the gate', () => {
 
     // Not 403: `assertParticipant` and the crew gate inside
     // ConversationsService both refuse to confirm a thread exists, and
-    // this is the front door to them. `CrewRoleService.require()` would
-    // have thrown 403 here — resolving the role and mapping `outsider`
-    // to 404 ourselves is the whole point.
+    // this is the front door to them. The crew authorization resolver
+    // returns null here so the route preserves the non-probeable 404.
     const err: unknown = await t.service
       .conversation(CREW_ID, OUTSIDER)
       .catch((e: unknown) => e);
@@ -250,7 +258,7 @@ describe('CrewsService.conversation — the gate', () => {
     expect(t.conversations.detail).not.toHaveBeenCalled();
   });
 
-  it('404s the founder once the crew is soft-deleted', async () => {
+  it('404s the owner once the crew is soft-deleted', async () => {
     const t = build({ crewDeletedAt: AT });
 
     await expect(t.service.conversation(CREW_ID, FOUNDER)).rejects.toThrow(
@@ -267,14 +275,12 @@ describe('CrewsService.conversation — the gate', () => {
     );
   });
 
-  it('admits the founder BEFORE reading crew_members — the transfer lockout', async () => {
-    // An ownership transfer can leave the founder with no membership row.
+  it('revokes owner chat access when the canonical membership is absent', async () => {
     const t = build({ crewMembers: new Set([MEMBER]) });
 
-    await expect(
-      t.service.conversation(CREW_ID, FOUNDER),
-    ).resolves.toMatchObject({ contextType: 'crew' });
-    expect(t.delegates.crewMember.findFirst).not.toHaveBeenCalled();
+    await expect(t.service.conversation(CREW_ID, FOUNDER)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('admits an ordinary active member', async () => {
@@ -299,7 +305,7 @@ describe('CrewsService.conversation — resolving the thread', () => {
     );
   });
 
-  it('projects the WHOLE active roster on that first open, founder included', async () => {
+  it('projects the WHOLE active roster on that first open, owner included', async () => {
     const t = build({ conversationId: null, participants: new Set() });
 
     await t.service.conversation(CREW_ID, MEMBER);

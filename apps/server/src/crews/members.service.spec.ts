@@ -35,34 +35,36 @@ function build(
     id: MEMBER_ROW_ID,
     crewId: CREW_ID,
     userId: NEWCOMER,
-    roleType: 'animator',
-    positionId: null,
-    via: 'invitation',
-    isFinance: false,
+    status: 'active',
+    joinedVia: 'invitation',
     joinedAt: new Date('2026-07-01T00:00:00.000Z'),
+    suspendedAt: null,
     removedAt: null,
+    version: 1,
+    ownership: null,
+    positions: [],
+    policies: [],
     ...opts.member,
   };
 
   const tx = {
     crewMember: {
-      update: jest.fn().mockResolvedValue(memberRow),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     crewPosition: {
       findUnique: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
     },
+    crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
   };
 
   const prisma = {
     crew: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue({ id: CREW_ID, founderId: OWNER, name: CREW_NAME }),
+      findFirst: jest.fn().mockResolvedValue({ id: CREW_ID, name: CREW_NAME }),
     },
     crewMember: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(memberRow),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(1),
       update: jest.fn().mockResolvedValue(memberRow),
@@ -112,6 +114,12 @@ function build(
     addCrewMemberAccess: jest.fn(() => Promise.resolve()),
     removeCrewMemberAccess: jest.fn(() => Promise.resolve()),
   };
+  const authorization = {
+    require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+    requireMembership: jest
+      .fn()
+      .mockResolvedValue({ memberId: MEMBER_ROW_ID, permissions: [] }),
+  };
 
   return {
     prisma,
@@ -121,11 +129,13 @@ function build(
     syncCalls,
     systemCalls,
     broadcast,
+    authorization,
     service: new MembersService(
       prisma as never,
       notifications as never,
       conversations as never,
       collaboration as never,
+      authorization as never,
     ),
   };
 }
@@ -152,8 +162,8 @@ describe('MembersService roster reads', () => {
       ...t.memberRow,
       id: 'member-owner',
       userId: OWNER,
-      roleType: 'owner',
-      via: 'founder',
+      joinedVia: 'creation',
+      ownership: { crewId: CREW_ID, memberId: 'member-owner' },
       joinedAt: new Date('2026-06-01T00:00:00.000Z'),
     };
     const first = {
@@ -167,38 +177,45 @@ describe('MembersService roster reads', () => {
       userId: 'u-member-2',
       joinedAt: new Date('2026-07-02T00:00:00.000Z'),
     };
-    t.prisma.crewMember.findFirst.mockResolvedValue(ownerRow);
-    t.prisma.crewMember.findMany.mockResolvedValue([first, lookahead]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      ownerRow,
+      first,
+      lookahead,
+    ]);
     t.prisma.crewMember.count.mockResolvedValue(3);
 
     await expect(
       t.service.list(CREW_ID, OWNER, { limit: 2 }),
     ).resolves.toMatchObject({
-      items: [{ id: 'member-owner', roleType: 'owner' }, { id: 'member-1' }],
+      items: [{ id: 'member-owner', isOwner: true }, { id: 'member-1' }],
       nextCursor: 'member-1',
       total: 3,
     });
     expect(t.prisma.crewMember.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
-        take: 2,
+        take: 3,
       }),
     );
   });
 
-  it('resolves the viewer role without scanning the roster', async () => {
+  it('resolves additive policies and effective permissions without scanning the roster', async () => {
     const t = build();
-    t.prisma.crewMember.findFirst.mockResolvedValue({
+    t.prisma.crewMember.findUnique.mockResolvedValue({
       ...t.memberRow,
-      isFinance: true,
+      policies: [{ policyKey: 'finance' }],
+    });
+    t.authorization.requireMembership.mockResolvedValue({
+      memberId: MEMBER_ROW_ID,
+      permissions: ['settlements.view'],
     });
 
     await expect(
       t.service.membership(CREW_ID, NEWCOMER),
     ).resolves.toMatchObject({
-      role: 'finance',
       userId: NEWCOMER,
-      member: { id: MEMBER_ROW_ID, isFinance: true },
+      permissions: ['settlements.view'],
+      member: { id: MEMBER_ROW_ID, policyKeys: ['finance'] },
     });
     expect(t.prisma.crewMember.findMany).not.toHaveBeenCalled();
   });

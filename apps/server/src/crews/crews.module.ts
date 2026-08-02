@@ -32,6 +32,9 @@ import {
 import { PositionsService } from './positions.service';
 import { CrewTasksController } from './tasks/tasks.controller';
 import { CrewTasksService } from './tasks/tasks.service';
+import { CrewTaskDraftService } from './tasks/task-draft.service';
+import { CrewProductionController } from './production/production.controller';
+import { CrewProductionService } from './production/production.service';
 
 /**
  * Crew domain — server-owned, no Java dependency for any of these
@@ -65,6 +68,7 @@ import { CrewTasksService } from './tasks/tasks.service';
     CrewAssetsController,
     CrewInvitationsController,
     CrewTasksController,
+    CrewProductionController,
     CrewAgreementsController,
   ],
   providers: [
@@ -77,6 +81,8 @@ import { CrewTasksService } from './tasks/tasks.service';
     CrewCollaborationService,
     CrewInvitationsService,
     CrewTasksService,
+    CrewTaskDraftService,
+    CrewProductionService,
     CrewAgreementsService,
     CrewAgreementSendWorker,
     CrewAgreementArchiveWorker,

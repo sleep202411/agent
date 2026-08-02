@@ -17,6 +17,8 @@ import { ZodValidationPipe } from '../../common/zod.pipe';
 import {
   CreateCrewTaskSchema,
   type CreateCrewTaskInput,
+  DraftCrewTaskSchema,
+  type DraftCrewTaskInput,
   CreateCrewTaskCommentSchema,
   type CreateCrewTaskCommentInput,
   ListCrewSettlementsQuerySchema,
@@ -67,10 +69,14 @@ import {
   UpdateCrewTaskWorkflowStateSchema,
   type UpdateCrewTaskWorkflowStateInput,
 } from './project-dto';
+import { CrewTaskDraftService } from './task-draft.service';
 
 @Controller()
 export class CrewTasksController {
-  constructor(private readonly tasks: CrewTasksService) {}
+  constructor(
+    private readonly tasks: CrewTasksService,
+    private readonly taskDrafts: CrewTaskDraftService,
+  ) {}
 
   @Get('crews/:crewId/task-project')
   project(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {
@@ -313,6 +319,20 @@ export class CrewTasksController {
     return this.tasks.summary(parseIdParam(crewId, 'crewId'), user.userId);
   }
 
+  @Get('crews/:crewId/task-activity')
+  activity(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewTaskTimelineQuerySchema))
+    query: ListCrewTaskTimelineQuery,
+  ) {
+    return this.tasks.listActivity(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      query,
+    );
+  }
+
   @Get('crews/:crewId/task-options')
   listOptions(
     @Param('crewId') crewId: string,
@@ -336,6 +356,20 @@ export class CrewTasksController {
     body: CreateCrewTaskInput,
   ) {
     return this.tasks.create(parseIdParam(crewId, 'crewId'), user.userId, body);
+  }
+
+  @Post('crews/:crewId/task-drafts')
+  draft(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(DraftCrewTaskSchema))
+    body: DraftCrewTaskInput,
+  ) {
+    return this.taskDrafts.draft(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      body,
+    );
   }
 
   @Get('crew-tasks/:taskId')

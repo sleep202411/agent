@@ -8,10 +8,10 @@
  *   2. Debounce 400ms → GET /aurora/users/lookup?{email|phone}=…
  *      (the hook detects which mode and picks the right query param)
  *   3. Server returns profile PLUS membership context (isCrewMember,
- *      isCrewFounder) so the dialog renders a live preview card in
+ *      isCrewOwner) so the dialog renders a live preview card in
  *      one roundtrip
- *   4. Submit enabled only when found + not member + not founder
- *   5. Submit → POST /aurora/crews/:crewId/members { account, roleType }
+ *   4. Owners may grant additive access policies
+ *   5. Submit → invitation. Membership is created only after acceptance.
  *      and the server resolves the contact again before inserting.
  */
 
@@ -22,12 +22,15 @@ import {
   IconCrown,
   IconInfoCircle,
   IconLoader2,
+  IconCoin,
+  IconShield,
   IconSignature,
   IconUserCheck,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/user-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -38,22 +41,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { env } from "@/src/env";
 import {
   CrewApiError,
   useCrewAgreements,
   useInviteCrewMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
-import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
 import { useDebouncedValue, useUserLookup } from "@/app/(site)/crews/_hooks/use-users";
+import type { CrewPolicyKey } from "@repo/shared/crew";
 
 const ADD_MEMBER_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
@@ -63,20 +58,24 @@ interface AddCrewMemberDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   crewId: string;
+  canGrantPolicies: boolean;
 }
 
-export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMemberDialogProps) {
+export function AddCrewMemberDialog({
+  open,
+  onOpenChange,
+  crewId,
+  canGrantPolicies,
+}: AddCrewMemberDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
 
   const [queryInput, setQueryInput] = useState("");
-  const [roleType, setRoleType] = useState<string>("");
+  const [policyKeys, setPolicyKeys] = useState<CrewPolicyKey[]>([]);
   const [agreementEnabled, setAgreementEnabled] = useState(false);
   const [agreementTitle, setAgreementTitle] = useState("");
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
-  const presetPositions = useTranslatedPresetPositions();
-
   const debouncedQuery = useDebouncedValue(queryInput, 400);
   const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId });
 
@@ -87,7 +86,7 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setQueryInput("");
-      setRoleType("");
+      setPolicyKeys([]);
       setAgreementEnabled(false);
       setAgreementTitle("");
       setSignerName("");
@@ -96,12 +95,11 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
     onOpenChange(next);
   };
 
-  // Submit gate: must have a found-and-addable user + a role.
+  // Submit gate: the account must resolve to a user who is not already a member.
   const canSubmit = useMemo(() => {
     if (submitting) return false;
-    if (roleType.length === 0) return false;
     if (lookup.kind !== "found") return false;
-    if (lookup.user.isCrewMember || lookup.user.isCrewFounder) return false;
+    if (lookup.user.isCrewMember || lookup.user.isCrewOwner) return false;
     if (
       agreementEnabled &&
       (!canRequestAgreement || !agreementTitle.trim() || !signerName.trim() || !signerEmail.trim())
@@ -114,7 +112,6 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
     agreementTitle,
     canRequestAgreement,
     lookup,
-    roleType,
     signerEmail,
     signerName,
     submitting,
@@ -136,7 +133,7 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
     try {
       await inviteMember({
         account: debouncedQuery.trim(),
-        roleType,
+        policyKeys: canGrantPolicies ? policyKeys : [],
         ...(agreementEnabled
           ? {
               agreement: {
@@ -187,21 +184,36 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
               <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
             </Field>
 
-            <Field>
-              <FieldLabel required>{t("addMemberRoleLabel")}</FieldLabel>
-              <Select value={roleType} onValueChange={setRoleType} disabled={submitting}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t("addMemberRolePlaceholder")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {presetPositions.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+            {canGrantPolicies ? (
+              <Field>
+                <FieldLabel>{t("addMemberAccessLabel")}</FieldLabel>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <PolicyOption
+                    checked={policyKeys.includes("admin")}
+                    onCheckedChange={(checked) =>
+                      setPolicyKeys((current) => togglePolicy(current, "admin", checked))
+                    }
+                    icon={<IconShield className="size-4" />}
+                    title={t("memberAdminBadge")}
+                    description={t("addMemberAdminPolicyHint")}
+                    disabled={submitting}
+                  />
+                  <PolicyOption
+                    checked={policyKeys.includes("finance")}
+                    onCheckedChange={(checked) =>
+                      setPolicyKeys((current) => togglePolicy(current, "finance", checked))
+                    }
+                    icon={<IconCoin className="size-4" />}
+                    title={t("memberFinanceBadge")}
+                    description={t("addMemberFinancePolicyHint")}
+                    disabled={submitting}
+                  />
+                </div>
+                <p className="text-[11px] leading-5 text-muted-foreground">
+                  {t("addMemberAccessHint")}
+                </p>
+              </Field>
+            ) : null}
 
             <div className="rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.08]">
               <label className="flex cursor-pointer items-start gap-3">
@@ -361,16 +373,9 @@ function LookupPreview({
 
   // Found — render person card with member-state badge.
   const { user } = state;
-  const avatarUrl = user.avatar
-    ? user.avatar.startsWith("http")
-      ? user.avatar
-      : `${env.USER_BASE_URL || env.OSS_BASE_URL}/${user.avatar.replace(/^\/+/, "")}`
-    : "";
-  const initial = (user.nickname || `U${user.userId}`).charAt(0).toUpperCase();
-
   let badge: { tone: "info" | "warn" | "ok"; text: string; icon: typeof IconCheck } | null = null;
-  if (user.isCrewFounder) {
-    badge = { tone: "warn", text: t("addMemberUserIsFounder"), icon: IconCrown };
+  if (user.isCrewOwner) {
+    badge = { tone: "warn", text: t("addMemberUserIsOwner"), icon: IconCrown };
   } else if (user.isCrewMember) {
     badge = { tone: "warn", text: t("addMemberUserIsMember"), icon: IconUserCheck };
   } else {
@@ -379,14 +384,13 @@ function LookupPreview({
 
   return (
     <div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/40 p-2.5">
-      {avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={avatarUrl} alt="" className="size-9 rounded-full object-cover" />
-      ) : (
-        <div className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-          {initial}
-        </div>
-      )}
+      <UserAvatar
+        src={user.avatar}
+        name={user.nickname || `User ${user.userId}`}
+        seed={user.userId}
+        size={36}
+        className="shrink-0"
+      />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-foreground">
           {user.nickname || `User ${user.userId}`}
@@ -431,4 +435,53 @@ function PreviewBox({
       </span>
     </div>
   );
+}
+
+function PolicyOption({
+  checked,
+  onCheckedChange,
+  icon,
+  title,
+  description,
+  disabled,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  disabled: boolean;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+        checked
+          ? "border-primary/35 bg-primary/[0.08]"
+          : "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04]",
+        disabled && "pointer-events-none opacity-50"
+      )}
+    >
+      <Checkbox
+        className="mt-0.5"
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onCheckedChange(value === true)}
+      />
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          {icon}
+          {title}
+        </span>
+        <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">
+          {description}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function togglePolicy(current: CrewPolicyKey[], policyKey: CrewPolicyKey, enabled: boolean) {
+  if (enabled) return current.includes(policyKey) ? current : [...current, policyKey];
+  return current.filter((key) => key !== policyKey);
 }

@@ -54,9 +54,9 @@ export type ConversationContextType = (typeof CONVERSATION_CONTEXT_TYPES)[number
  * `buyer` may accept or decline one).
  *
  * `member` is the single role every crew-chat participant gets. It is
- * deliberately flat — crew authority (owner / finance / member) lives in
- * `crew_members` and is resolved by CrewRoleService. Mirroring crew roles
- * here would duplicate state that mutates independently and give the
+ * deliberately flat — crew authority is resolved from ownership, policy
+ * bundles, and permission overrides by the crew authorization boundary.
+ * Mirroring authorization here would duplicate mutable state and give the
  * order state machine roles it must never see. Because `member` is
  * neither `buyer` nor `creator`, every proposal / order gate fails closed
  * for crew rows without a single extra branch.
@@ -203,6 +203,12 @@ export interface MessageDTO {
   conversationId: string;
   /** NULL for system messages — server-authored, no user. */
   authorId: string | null;
+  /**
+   * Caller-supplied idempotency key. The sender uses it to replace an
+   * optimistic row with the persisted message even when realtime delivery
+   * arrives before the HTTP response. Optional for older producers.
+   */
+  clientKey?: string | null;
   type: ConversationMessageType;
   /** Plain text body. For type=text, the entire message; for
    *  type=proposal, the leading note (rendered above the price
@@ -339,7 +345,18 @@ export type ConversationFrame =
       event: "crew.task.project.changed";
       data: {
         crewId: string;
-        resource: "view" | "workflow" | "cycle" | "label" | "field";
+        resource:
+          | "view"
+          | "workflow"
+          | "cycle"
+          | "label"
+          | "field"
+          | "production_document"
+          | "production_project"
+          | "production_resource"
+          | "production_activity"
+          | "episode"
+          | "delivery";
         resourceId: string;
         action: "created" | "updated" | "deleted" | "reordered";
         actorUserId: string | null;

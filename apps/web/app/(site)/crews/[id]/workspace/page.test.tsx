@@ -17,7 +17,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import CrewWorkspacePage from "@/app/(crew-workspace)/crews/[id]/workspace/page";
-import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import type { UserCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -34,7 +34,7 @@ const state = vi.hoisted(() => ({
     name: "Night Shift",
     description: "",
     logo: null,
-    founderId: "1",
+    ownerUserId: "1",
     listingStatus: "unlisted",
     showcaseWorks: [],
   } as Record<string, unknown> | null,
@@ -89,6 +89,15 @@ vi.mock("@/src/env", () => ({ env: { BANNER_BASE_URL: "https://banner.test", OSS
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
+  useMyCrews: () => ({
+    data: {
+      founded: state.crewDetail ? [state.crewDetail] : [],
+      joined: [],
+    },
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
   useCrewDetail: () => ({
     data: state.crewDetail,
     isLoading: state.detailLoading,
@@ -116,8 +125,8 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useUpdateCrewListing: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-vi.mock("@/app/(site)/crews/_hooks/use-user-crew-role", () => ({
-  useUserCrewRole: () => state.viewer,
+vi.mock("@/app/(site)/crews/_hooks/use-crew-permissions", () => ({
+  useCrewPermissions: () => state.viewer,
 }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-anchor-deeplink", () => ({
@@ -212,20 +221,22 @@ vi.mock("@/components/notifications/bell-button", () => ({
   BellButton: () => <button type="button" aria-label="Notifications" />,
 }));
 
-const MEMBER: UserCrewRole = {
-  role: "member",
+const MEMBER: UserCrewPermissions = {
   effectiveUserId: "7",
   effectiveName: "Ada",
-  isAdmin: false,
-  isFinance: false,
   isMember: true,
+  isOwner: false,
+  policyKeys: [],
+  permissions: ["members.view", "tasks.view"],
+  can: (permission) => permission === "members.view" || permission === "tasks.view",
 };
 
-const OUTSIDER: UserCrewRole = {
-  role: "outsider",
-  isAdmin: false,
-  isFinance: false,
+const OUTSIDER: UserCrewPermissions = {
   isMember: false,
+  isOwner: false,
+  policyKeys: [],
+  permissions: [],
+  can: () => false,
 };
 
 let root: Root | null = null;
@@ -292,7 +303,7 @@ beforeEach(() => {
     name: "Night Shift",
     description: "",
     logo: null,
-    founderId: "1",
+    ownerUserId: "1",
     listingStatus: "unlisted",
     showcaseWorks: [],
   };

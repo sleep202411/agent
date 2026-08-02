@@ -47,7 +47,11 @@ function build() {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: jest.fn().mockResolvedValue(applicationRow),
     },
-    crewMember: { create: jest.fn().mockResolvedValue({}) },
+    crewMember: {
+      create: jest.fn().mockResolvedValue({ id: 'member-applicant' }),
+    },
+    crewMemberPosition: { create: jest.fn().mockResolvedValue({}) },
+    crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
     $queryRaw: jest.fn().mockResolvedValue([{ id: POSITION_ID }]),
   };
 
@@ -57,7 +61,6 @@ function build() {
         ...applicationRow,
         crew: {
           id: CREW_ID,
-          founderId: OWNER,
           name: CREW_NAME,
           deletedAt: null,
         },
@@ -129,6 +132,9 @@ function build() {
       notifications as never,
       conversations as never,
       collaboration as never,
+      {
+        require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+      } as never,
     ),
   };
 }

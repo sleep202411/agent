@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 import { AuthDialog, createFetchTransport, type AuthTranslate } from "@repo/auth-flow";
+import { resolveUserAvatarUrl as resolveSharedUserAvatarUrl } from "@repo/shared/avatar";
 import { getAuthUser } from "@/lib/auth";
 import { buildWebHref, WEB_PATHS } from "@/lib/web-base";
 import { useSiteRegion } from "@/app/_components/region-provider";
@@ -136,5 +137,5 @@ function LegalLink({ href, children }: { href: string; children: React.ReactNode
  * invalidates on success.
  */
 function resolveAvatarUrl(path: string): string {
-  return /^https?:\/\//.test(path) ? path : "";
+  return resolveSharedUserAvatarUrl(path) ?? "";
 }

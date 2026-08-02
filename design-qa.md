@@ -257,3 +257,237 @@ final result: passed
 - Locale JSON parse and `git diff --check`: passed.
 
 final result: passed
+
+---
+
+# Design QA — Crew project Overview metadata
+
+## Source and implementation evidence
+
+- Source visual truth: the authenticated Linear project Overview and its live
+  status, date, resource, member, label, and update interactions, inspected in
+  the user-provided reference project.
+- Source baseline: `/private/tmp/fizzdragon-linear-overview-interaction-audit/01-overview-baseline.png`
+  at `1280 × 720` pixels.
+- Implementation:
+  `http://localhost:9527/zh-CN/crews/X6Ni2ONDkcoW/workspace?tab=tasks`.
+- Browser-rendered implementation:
+  `/private/tmp/fizzdragon-overview-local-final-v3.png` at `1202 × 969` CSS px,
+  DPR `2`; the browser capture is `1202 × 969` pixels.
+- Full-view combined comparison:
+  `/private/tmp/fizzdragon-overview-linear-vs-local-v2.png`.
+- Focused combined comparisons:
+  `/private/tmp/fizzdragon-overview-status-linear-vs-local.png`,
+  `/private/tmp/fizzdragon-overview-date-linear-vs-local-v2.png`,
+  `/private/tmp/fizzdragon-overview-resource-linear-vs-local-v2.png`, and
+  `/private/tmp/fizzdragon-overview-update-linear-vs-local-v2.png`.
+- Normalization: the `1280 × 720` Linear captures were downsampled to
+  `1202 × 676`; the implementation was retained at its native width and cropped
+  to its top `1202 × 676` content region. Each pair was placed in one
+  `2404 × 676` comparison image without stretching the implementation.
+- State: zh-CN dark workspace, authenticated founder, Overview selected,
+  project status Planned, exact start date, no attached resources, and one
+  persisted project update.
+
+## Required fidelity surfaces
+
+- Typography: passed. The product sans stack, compact `10–25 px` hierarchy,
+  title/summary contrast, and muted property labels preserve Linear's optical
+  density without reducing legibility in the dark workbench.
+- Spacing and layout rhythm: passed. Project identity, properties, labels,
+  resources, update entry point, and Tiptap description follow the reference
+  order and constrained-width rhythm. The final `1202 × 969` state has zero
+  document and body horizontal overflow.
+- Colors and visual tokens: passed. FizzDragon keeps its zero-chroma studio
+  palette and uses brand red only for deliberate primary actions; neutral
+  surfaces, thin borders, selected states, and status colors map cleanly to the
+  Linear interaction hierarchy.
+- Image quality and asset fidelity: passed. Crew and member imagery uses the
+  existing production avatar/logo components. All action glyphs come from the
+  existing Tabler family; no replacement SVG, emoji, CSS illustration, or fake
+  project artwork was introduced.
+- Copy and localization: passed. New status, date-granularity, resource,
+  validation, empty, and action copy exists in `en-US`, `zh-CN`, and `zh-HK`;
+  backend errors remain visible verbatim.
+- Accessibility and semantics: passed. Project name/summary are named textboxes;
+  property menus are searchable listboxes; date granularity is a tablist;
+  calendars are semantic grids; the resource flow is a modal dialog; no native
+  `select` remains in the Overview main region.
+
+## Comparison history
+
+- [Resolved P1 — interaction] The first implementation rendered the project
+  name as a static `h2`, so it looked like Linear but did not support Linear's
+  direct-edit behavior. It is now a named inline textbox that writes the
+  canonical crew name; the adjacent summary writes the canonical crew tagline.
+- [Resolved P1 — consistency] Crew updates previously returned no concurrency
+  token. `CrewDTO.version` is now present on every mapped response, inline edits
+  send `expectedVersion`, and the detail cache updates optimistically with
+  rollback on failure. Sidebar, workspace header, and Overview therefore update
+  together instead of maintaining a duplicate project title.
+- [Resolved P1 — contract] The first structured-property pass treated labels as
+  display-only and dates as two loose strings. Project labels now have a
+  normalized assignment table; status, priority, lead, start date, target date,
+  labels, and metadata version share one guarded transaction and optimistic
+  cache contract.
+- [Resolved P2 — date fidelity] The first date picker exposed Today/Tomorrow
+  shortcuts and could store only an exact day. Linear's picker supports day,
+  month, quarter, half-year, and year. The database, DTO, API validation,
+  optimistic cache, display formatting, direct input, period grids, and
+  start/target interval validation now preserve those five granularities.
+  Post-fix evidence is
+  `/private/tmp/fizzdragon-overview-date-linear-vs-local-v2.png`.
+- [Resolved P2 — resource fidelity] The first resource flow used a small
+  anchored popover. It now uses the centered modal hierarchy visible in Linear,
+  while retaining the real FizzDragon extension for choosing an existing Crew
+  Asset. Link titles remain optional and are derived server-side when omitted.
+- [Resolved P2 — perceived latency] Project property edits, link/asset attach,
+  resource removal, and project update publication now write optimistic cache
+  state immediately and roll back on failure instead of waiting for a refetch.
+
+## Architecture verification
+
+- `crew_production_pages` owns the generic document and an independent document
+  version used for optimistic saves.
+- Project metadata has an independent optimistic version, so a document save
+  and a status/lead/date edit do not create false conflicts.
+- `crew_production_resources` stores normalized project links and Crew Asset
+  references; asset membership is validated before attachment.
+- Date values are canonical period starts plus an explicit
+  `CrewProductionDateGranularity`; target-period comparison uses the period end,
+  so an exact start date can validly fall inside a monthly/quarterly target.
+- `crew_production_activity` stores the canonical project stream: comments,
+  health/progress updates, project creation, property changes, label changes,
+  and resource changes. Task-local events remain in the task detail stream and
+  no longer leak into the project Activity surface.
+- Successful document, project, resource, and update mutations publish distinct
+  realtime events and invalidate only their relevant query surfaces.
+- Required permissions are enforced in the service as well as reflected by the
+  server-issued Overview capabilities; the UI does not infer authorization.
+
+## Automated verification
+
+- `npm run check-types` in `apps/server`: passed.
+- `npm run check-types` in `apps/web`: passed.
+- Targeted server ESLint: passed.
+- Targeted web ESLint: passed.
+- Targeted server Jest: 1 suite, 14 tests passed, including exact/coarse date
+  interval validation and canonical period enforcement.
+- Targeted web Vitest: 2 files, 6 tests passed for inline identity editing and
+  Overview document behavior.
+- `npx prisma validate --schema prisma/schema.prisma`: passed from `apps/server`.
+- Local migrations `20260802110000_crew_project_overview_contract` and
+  `20260802114500_crew_project_date_granularity` were deployed through the
+  local-database guard to PostgreSQL at `localhost:5433`; no remote database was
+  touched.
+
+## Browser interaction verification
+
+- Passed: direct project identity inputs are writable, Enter/blur save, and
+  Escape restores without layout shift.
+- Passed: status menu opens as one searchable listbox with five options,
+  keyboard focus, visible current-state checkmark, and numeric shortcuts.
+- Passed: day/month/quarter/half-year/year date tabs, direct-input field,
+  calendar grid, coarse-period grids, localized display, optimistic save, reload
+  persistence, and restoration to the exact original date.
+- Passed: centered resource dialog, real URL validation, optional title
+  derivation, immediate optimistic attachment, persisted result, and cleanup of
+  the disposable QA link.
+- Passed: Overview update CTA switches to Activity and opens its real
+  health/progress composer; close returns to Overview without losing state.
+- Passed: the final clean reload produced no new browser console errors.
+- Passed: final Overview has zero native selects and zero horizontal overflow.
+
+## Intentional product boundary
+
+- Comment and project-update modes, health selection, automatic property/label/
+  resource audit entries, progress summaries, and optimistic posting all use
+  durable FizzDragon contracts. Linear's attachment and “Write with Agent”
+  actions are intentionally absent until a real project-activity attachment and
+  agent contract exists; no inert control is rendered.
+
+## Severity review
+
+- P0: none.
+- P1: none.
+- P2: none remaining in the selected metadata region.
+
+final result: passed
+
+## Crew project Activity fidelity pass — 2026-08-02
+
+### Source and prototype
+
+- Source: authenticated Linear project Activity view captured at `1202 × 969`.
+- Source evidence:
+  `/private/tmp/fizzdragon-linear-activity-update-reference.png`.
+- Prototype evidence:
+  `/private/tmp/fizzdragon-local-activity-final.png`.
+- Same-canvas comparison:
+  `/private/tmp/fizzdragon-activity-linear-vs-local.png`.
+- Focused rich-editor source evidence:
+  `/private/tmp/fizzdragon-linear-activity-tiptap-reference.png`.
+- Focused rich-editor prototype evidence:
+  `/private/tmp/fizzdragon-local-activity-tiptap-final.png`.
+- Focused same-canvas comparison:
+  `/private/tmp/fizzdragon-activity-tiptap-comparison.png`.
+
+### Visual and interaction review
+
+- Layout: passed. The persistent composer, compact segmented mode control,
+  health chip, large borderless writing area, change summary, right-aligned
+  submit action, and narrow event rail match the Linear hierarchy and density.
+- Project/event separation: passed. Project comments, updates, and structural
+  changes are shown here; task activity remains attached to its task.
+- Comment flow: passed. Switching to Comment changes the placeholder and action,
+  posts optimistically, persists through reload, clears the composer, and
+  renders an avatar-backed comment entry.
+- Update flow: passed. Managers can select On track / At risk / Off track, see
+  the start-date and progress delta, and publish a durable update. View-only
+  members retain the comment path without receiving update authority.
+- Audit stream: passed. Project creation, start-date changes, labels, and
+  resources use compact icon-led timeline rows; authored comments and updates
+  use readable content entries.
+- Accessibility: passed. Comment/Update is a tablist, the health selector is an
+  expanded named control with three semantic options, the composer is a named
+  textbox, and there are zero native selects.
+- Responsive integrity: passed. At `1202 × 969` both body and document report
+  zero horizontal overflow.
+- Runtime integrity: passed. A clean reload followed by Activity navigation
+  produced zero new browser warnings or errors.
+- Editor engine: passed. Linear exposes a `contenteditable` element with the
+  `ProseMirror editor` classes; FizzDragon now exposes a real
+  `tiptap ProseMirror production-activity-prosemirror` editor rather than a
+  styled textarea. The compact editor reuses the installed Tiptap slash menu,
+  floating selection toolbar, Placeholder, StarterKit, and UniqueID
+  extensions.
+- Rich-content persistence: passed. Comment/update requests carry the canonical
+  Tiptap JSON document, the server derives searchable `plain_text`, PostgreSQL
+  stores JSONB plus derived text under shape constraints, and the activity feed
+  renders JSON through Tiptap Static Renderer without creating an editor per
+  item. A level-two heading was inserted through the slash menu, published,
+  reloaded, and remained an `h2` with its stable node id.
+- Focus behavior: passed. Editing reveals Cancel and the active FizzDragon-red
+  publication action; cancel clears the JSON document and closes the slash
+  menu without remounting the page. `Cmd/Ctrl + Enter` publishes from the
+  editor.
+
+### Automated verification
+
+- Shared, server, and web typechecks: passed.
+- Web Vitest: 3 files, 8 tests passed.
+- Server Jest: 1 suite, 15 tests passed.
+- Targeted server and web ESLint: passed.
+- Prisma schema validation and local guarded migration deployment: passed.
+- Local migrations `20260802150000_crew_activity_rich_text` and
+  `20260802151000_crew_activity_content_ids` were deployed to PostgreSQL at
+  `localhost:5433`; no remote database was touched.
+- `git diff --check`: passed.
+
+### Severity review
+
+- P0: none.
+- P1: none.
+- P2: none remaining in the selected Activity region.
+
+final result: passed

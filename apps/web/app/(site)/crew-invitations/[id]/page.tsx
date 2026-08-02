@@ -15,7 +15,6 @@ import {
   useDeclineCrewInvitation,
   useMyCrewInvitation,
 } from "@/app/(site)/crews/_hooks/use-crew";
-import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { useTranslations } from "@/src/i18n/i18n";
 import { getCurrentLocale, localizePath } from "@/src/i18n/locale-url";
 
@@ -27,7 +26,6 @@ export default function CrewInvitationPage() {
   const invitation = useMyCrewInvitation(invitationId);
   const accept = useAcceptCrewInvitation(invitationId);
   const decline = useDeclineCrewInvitation(invitationId);
-  const translateRole = useTranslatePositionValue();
 
   if (invitation.isLoading) {
     return (
@@ -111,7 +109,6 @@ export default function CrewInvitationPage() {
             <p className="max-w-lg text-sm leading-6 text-white/62">{crew?.tagline || t("body")}</p>
 
             <dl className="mt-7 divide-y divide-white/[0.07] border-y border-white/[0.07]">
-              <InfoRow label={t("role")} value={translateRole(item.roleType)} />
               <InfoRow
                 label={t("expires")}
                 value={new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(

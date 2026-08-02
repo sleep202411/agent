@@ -15,7 +15,7 @@ import {
 import { z } from 'zod';
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
-import { CrewRoleService } from '../crew-role.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import type { CreateCrewAgreementInput, ListCrewAgreementsQuery } from '../dto';
 import { BoldSignAgreementProvider } from './boldsign-agreement.provider';
 
@@ -30,21 +30,20 @@ const AGREEMENT_ARCHIVE_INCLUDE = {
 export class CrewAgreementsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly roles: CrewRoleService,
+    private readonly authorization: CrewAuthorizationService,
     private readonly provider: BoldSignAgreementProvider,
     private readonly notifications: NotificationService,
   ) {}
 
   async list(crewId: string, userId: string, query: ListCrewAgreementsQuery) {
-    const role = await this.roles.resolve(crewId, userId);
-    if (role === 'outsider') {
-      throw new ForbiddenException({
-        message: 'Crew agreements are visible to crew members only.',
-      });
+    const context = await this.authorization.requireMembership(crewId, userId);
+    const canManage = context.permissions.includes('agreements.manage');
+    if (!canManage && !context.permissions.includes('agreements.view_own')) {
+      throw new ForbiddenException({ message: 'You cannot view agreements.' });
     }
     const scopeWhere = {
       crewId,
-      ...(role === 'member' ? { memberUserId: userId } : {}),
+      ...(canManage ? {} : { memberUserId: userId }),
     } satisfies Prisma.CrewAgreementWhereInput;
     const where = {
       ...scopeWhere,
@@ -88,14 +87,14 @@ export class CrewAgreementsService {
     const summary = agreementSummary(grouped);
     return {
       capabilities: {
-        create: role === 'admin' && this.provider.isConfigured(),
+        create: canManage && this.provider.isConfigured(),
         sync: this.provider.canSync(),
         provider: 'boldsign' as const,
       },
       items: items.map((agreement) =>
         agreementDto(
           agreement,
-          role === 'admin',
+          canManage,
           agreement.memberUserId === userId &&
             agreement.status === CrewAgreementStatus.sent,
         ),
@@ -114,13 +113,13 @@ export class CrewAgreementsService {
     userId: string,
     input: CreateCrewAgreementInput,
   ) {
-    await this.roles.require(crewId, userId, ['admin']);
+    await this.authorization.require(crewId, userId, 'agreements.manage');
     this.requireDispatchConfigured();
     const member = await this.prisma.crewMember.findFirst({
       where: {
         crewId,
         userId: input.memberUserId,
-        removedAt: null,
+        status: 'active',
       },
       select: { id: true },
     });
@@ -198,7 +197,11 @@ export class CrewAgreementsService {
       include: AGREEMENT_ARCHIVE_INCLUDE,
     });
     if (!agreement) throw new NotFoundException('Agreement not found.');
-    await this.roles.require(agreement.crewId, userId, ['admin']);
+    await this.authorization.require(
+      agreement.crewId,
+      userId,
+      'agreements.manage',
+    );
     this.requireDispatchConfigured();
     if (
       agreement.providerDocumentId ||
@@ -243,8 +246,14 @@ export class CrewAgreementsService {
       where: { id: agreementId },
     });
     if (!agreement) throw new NotFoundException('Agreement not found.');
-    const role = await this.roles.resolve(agreement.crewId, userId);
-    if (role === 'outsider' || agreement.memberUserId !== userId) {
+    const context = await this.authorization.requireMembership(
+      agreement.crewId,
+      userId,
+    );
+    if (
+      !context.permissions.includes('agreements.view_own') ||
+      agreement.memberUserId !== userId
+    ) {
       throw new ForbiddenException({
         message:
           'Only the authenticated member named as this agreement signer can open its signing session.',
@@ -274,11 +283,12 @@ export class CrewAgreementsService {
       where: { id: agreementId },
     });
     if (!agreement) throw new NotFoundException('Agreement not found.');
-    const role = await this.roles.resolve(agreement.crewId, userId);
-    if (
-      role === 'outsider' ||
-      (role === 'member' && agreement.memberUserId !== userId)
-    ) {
+    const context = await this.authorization.requireMembership(
+      agreement.crewId,
+      userId,
+    );
+    const canManage = context.permissions.includes('agreements.manage');
+    if (!canManage && agreement.memberUserId !== userId) {
       throw new ForbiddenException({
         message: 'You cannot access this agreement.',
       });
@@ -323,7 +333,7 @@ export class CrewAgreementsService {
     });
     return agreementDto(
       updated,
-      role === 'admin',
+      canManage,
       updated.memberUserId === userId &&
         updated.status === CrewAgreementStatus.sent,
     );
@@ -335,7 +345,11 @@ export class CrewAgreementsService {
       include: AGREEMENT_ARCHIVE_INCLUDE,
     });
     if (!agreement) throw new NotFoundException('Agreement not found.');
-    await this.roles.require(agreement.crewId, userId, ['admin']);
+    await this.authorization.require(
+      agreement.crewId,
+      userId,
+      'agreements.manage',
+    );
     if (
       agreement.status !== CrewAgreementStatus.signed ||
       !agreement.providerDocumentId

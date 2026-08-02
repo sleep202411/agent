@@ -129,6 +129,8 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.task(data.taskId) });
         qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(data.taskId) });
+        qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
+        qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
         if (data.action === "settled" || data.action === "reviewed") {
           qc.invalidateQueries({ queryKey: crewKeys.settlements(data.crewId) });
         }
@@ -136,6 +138,20 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
       onCrewTaskProjectChanged: (data) => {
         qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
+        if (
+          data.resource === "production_document" ||
+          data.resource === "production_project" ||
+          data.resource === "production_resource" ||
+          data.resource === "production_activity" ||
+          data.resource === "episode" ||
+          data.resource === "delivery"
+        ) {
+          qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
+          qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+          if (data.resource === "production_activity") {
+            qc.invalidateQueries({ queryKey: crewKeys.productionActivity(data.crewId) });
+          }
+        }
       },
       onCrewAssetChanged: (data) => {
         qc.invalidateQueries({ queryKey: crewKeys.assets(data.crewId) });

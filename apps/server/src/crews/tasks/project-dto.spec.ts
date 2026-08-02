@@ -17,8 +17,10 @@ describe('crew task project DTOs', () => {
     const parsed = CreateCrewTaskViewSchema.parse({
       name: 'Scene delivery',
       layout: 'board',
-      scope: 'active',
       groupBy: 'status',
+      completedMode: 'hidden',
+      showSubIssues: true,
+      showEmptyGroups: false,
       filters: {
         workflowStateIds: [
           '019fae00-00be-74c1-a94d-47209790ff7c',
@@ -38,7 +40,7 @@ describe('crew task project DTOs', () => {
   it('rejects unknown filters instead of silently changing view semantics', () => {
     const result = CreateCrewTaskViewSchema.safeParse({
       name: 'Broken view',
-      layout: 'table',
+      layout: 'list',
       filters: { department: 'art' },
     });
 
@@ -47,7 +49,10 @@ describe('crew task project DTOs', () => {
 
   it('requires optimistic concurrency for shared view edits', () => {
     expect(
-      UpdateCrewTaskViewSchema.safeParse({ layout: 'calendar' }).success,
+      UpdateCrewTaskViewSchema.safeParse({
+        expectedUpdatedAt: '2026-08-01T12:00:00.000Z',
+        layout: 'calendar',
+      }).success,
     ).toBe(false);
   });
 

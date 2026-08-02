@@ -161,7 +161,7 @@ export class CrewsController {
   ) {
     const id = parseIdParam(idRaw, 'id');
     return this.svc.transferOwnership(id, body.toUserId, {
-      requireCurrentFounderId: user.userId,
+      actor: { type: 'member', userId: user.userId },
       requireTargetActiveMember: true,
       removeOldOwner: body.removeOldOwner,
       expectedVersion: body.expectedVersion,

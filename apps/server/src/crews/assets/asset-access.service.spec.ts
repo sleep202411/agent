@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped in ACL shape assertions. */
 import {
   CrewAssetAccessMode,
   CrewAssetNodeStatus,
@@ -68,12 +69,37 @@ function build(role: 'admin' | 'finance' | 'member' | 'outsider' = 'member') {
       ),
     },
   };
-  const roles = { resolve: jest.fn().mockResolvedValue(role) };
+  const authorizationContext =
+    role === 'outsider'
+      ? null
+      : {
+          crewId: CREW_ID,
+          memberId: 'crew-member-1',
+          userId: USER_ID,
+          isOwner: role === 'admin',
+          policyKeys:
+            role === 'admin'
+              ? ['admin']
+              : role === 'finance'
+                ? ['finance']
+                : [],
+          permissions:
+            role === 'admin'
+              ? ['assets.view', 'assets.upload', 'assets.manage']
+              : ['assets.view', 'assets.upload'],
+        };
+  const authorization = {
+    resolve: jest.fn().mockResolvedValue(authorizationContext),
+    requireMembership: jest.fn().mockResolvedValue(authorizationContext),
+  };
   return {
     grants,
     prisma,
-    roles,
-    service: new CrewAssetAccessService(prisma as never, roles as never),
+    authorization,
+    service: new CrewAssetAccessService(
+      prisma as never,
+      authorization as never,
+    ),
   };
 }
 
@@ -126,7 +152,7 @@ describe('CrewAssetAccessService', () => {
         [CHILD_ID, CrewAssetPermission.upload],
       ]),
     );
-    expect(t.roles.resolve).toHaveBeenCalledTimes(1);
+    expect(t.authorization.resolve).toHaveBeenCalledTimes(1);
     expect(t.prisma.crewAssetGrant.findMany).toHaveBeenCalledTimes(1);
   });
 
@@ -202,8 +228,22 @@ describe('CrewAssetAccessService', () => {
         (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
       ),
     };
-    const roles = { resolve: jest.fn().mockResolvedValue('admin') };
-    const service = new CrewAssetAccessService(prisma as never, roles as never);
+    const authorizationContext = {
+      crewId: CREW_ID,
+      memberId: 'owner-member-1',
+      userId: 'owner-1',
+      isOwner: true,
+      policyKeys: ['admin'],
+      permissions: ['assets.view', 'assets.upload', 'assets.manage'],
+    };
+    const authorization = {
+      resolve: jest.fn().mockResolvedValue(authorizationContext),
+      requireMembership: jest.fn().mockResolvedValue(authorizationContext),
+    };
+    const service = new CrewAssetAccessService(
+      prisma as never,
+      authorization as never,
+    );
 
     await service.setPermissions(CREW_ID, ROOT_ID, 'owner-1', {
       accessMode: CrewAssetAccessMode.restricted,

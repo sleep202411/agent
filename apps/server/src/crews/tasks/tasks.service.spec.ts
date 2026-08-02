@@ -110,7 +110,7 @@ function task(overrides: Record<string, unknown> = {}) {
     createdAt: new Date('2026-07-29T09:00:00.000Z'),
     updatedAt: new Date('2026-07-29T09:30:00.000Z'),
     crew: {
-      founderId: OWNER_ID,
+      ownership: { member: { userId: OWNER_ID } },
       productionProjectId: PRODUCTION_PROJECT_ID,
     },
     parent: null,
@@ -352,9 +352,11 @@ function build() {
   };
   const roles = {
     require: jest.fn().mockResolvedValue('admin'),
+    requireMembership: jest.fn().mockResolvedValue({
+      permissions: ['tasks.submit_assigned'],
+    }),
     resolve: jest.fn().mockResolvedValue('admin'),
   };
-  const collaboration = {};
   const assetAccess = {
     requireNodesPermission: jest.fn().mockResolvedValue(undefined),
   };
@@ -377,7 +379,6 @@ function build() {
     service: new CrewTasksService(
       prisma as never,
       roles as never,
-      collaboration as never,
       assetAccess as never,
       notifications as never,
       conversations as never,
@@ -568,7 +569,7 @@ describe('CrewTasksService', () => {
     expect(t.prisma.crewTaskLabel.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
-  it('deletes a task label and its assignment links after admin authorization', async () => {
+  it('deletes a task label and its assignment links with task-management permission', async () => {
     const t = build();
     const label = {
       id: '01910d50-4c88-7c78-92d4-16892c06c003',
@@ -580,7 +581,11 @@ describe('CrewTasksService', () => {
     await expect(
       t.service.deleteLabel(label.id, OWNER_ID),
     ).resolves.toBeUndefined();
-    expect(t.roles.require).toHaveBeenCalledWith(CREW_ID, OWNER_ID, ['admin']);
+    expect(t.roles.require).toHaveBeenCalledWith(
+      CREW_ID,
+      OWNER_ID,
+      'tasks.manage',
+    );
     expect(t.prisma.crewTaskLabel.delete).toHaveBeenCalledWith({
       where: { id: label.id },
     });
@@ -620,7 +625,8 @@ describe('CrewTasksService', () => {
     t.prisma.crewTaskView.findFirst.mockResolvedValue({
       id: viewId,
       crewId: CREW_ID,
-      scope: 'active',
+      completedMode: 'hidden',
+      showSubIssues: true,
       filters: {
         priorities: ['high', 'urgent'],
         assigneeUserIds: [ASSIGNEE_ID],
@@ -1090,7 +1096,11 @@ describe('CrewTasksService', () => {
       computeUsedPoints: 84,
     });
 
-    expect(t.roles.require).toHaveBeenCalledWith(CREW_ID, OWNER_ID, ['admin']);
+    expect(t.roles.require).toHaveBeenCalledWith(
+      CREW_ID,
+      OWNER_ID,
+      'tasks.review',
+    );
     expect(t.walletLedger.postEntryTx).toHaveBeenCalledWith(
       t.tx,
       expect.objectContaining({
@@ -1437,5 +1447,33 @@ describe('CrewTasksService', () => {
         version: { increment: 1 },
       },
     });
+  });
+
+  it('requires a custom workflow column to be archived before permanent deletion', async () => {
+    const t = build();
+    const activeCustomState = {
+      ...workflowState(CrewTaskStatus.in_progress),
+      id: '01910d50-4c88-7c78-92d4-16892c06b098',
+      name: 'Lighting pass',
+      systemKey: null,
+      archived: false,
+    };
+    t.prisma.crewTaskWorkflowState.findUnique.mockResolvedValue(
+      activeCustomState,
+    );
+    t.tx.crewTaskWorkflowState.findUniqueOrThrow.mockResolvedValue(
+      activeCustomState,
+    );
+
+    await expect(
+      t.service.deleteWorkflowState(activeCustomState.id, OWNER_ID),
+    ).rejects.toMatchObject({
+      response: {
+        message:
+          'Archive a custom workflow column before permanently deleting it.',
+      },
+    });
+
+    expect(t.tx.crewTaskWorkflowState.delete).not.toHaveBeenCalled();
   });
 });

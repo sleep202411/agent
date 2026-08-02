@@ -25,6 +25,7 @@ export function toMessageDTO(row: Message): MessageDTO {
     id: row.id,
     conversationId: row.conversationId,
     authorId: row.authorId,
+    clientKey: row.clientKey,
     type: row.type as ConversationMessageType,
     body: row.body,
     payload: (row.payload ?? null) as MessagePayload | null,

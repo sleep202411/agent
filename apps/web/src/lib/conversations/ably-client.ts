@@ -46,7 +46,18 @@ export interface ConversationRealtimeHandlers {
   }) => void;
   onCrewTaskProjectChanged?: (data: {
     crewId: string;
-    resource: "view" | "workflow" | "cycle" | "label" | "field";
+    resource:
+      | "view"
+      | "workflow"
+      | "cycle"
+      | "label"
+      | "field"
+      | "production_document"
+      | "production_project"
+      | "production_resource"
+      | "production_activity"
+      | "episode"
+      | "delivery";
     resourceId: string;
     action: "created" | "updated" | "deleted" | "reordered";
     actorUserId: string | null;
@@ -194,7 +205,7 @@ export function openConversationRealtime(
       if (closed) return;
       closed = true;
       channel.unsubscribe();
-      channel.detach().catch(() => undefined);
+      void Promise.resolve(channel.detach()).catch(() => undefined);
       realtime.close();
     },
     get isOpen() {

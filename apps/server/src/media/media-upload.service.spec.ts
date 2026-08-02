@@ -105,10 +105,10 @@ function serviceFixture() {
   const prisma = {
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(null) },
     crew: {
-      findFirst: jest.fn().mockResolvedValue({ founderId: USER_ID }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'crew-1' }),
     },
     crewMember: {
-      findFirst: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue({ id: 'member-1' }),
     },
     $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) =>
       callback(tx),

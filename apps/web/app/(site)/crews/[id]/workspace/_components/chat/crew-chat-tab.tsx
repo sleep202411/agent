@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { ConversationView } from "@/app/(site)/messages/_components/conversation-view";
 import { useCrewConversation } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 import { CrewChatRoom } from "@/src/lib/conversations/crew-chat-room";
-import { CrewChatSidebar } from "./crew-chat-sidebar";
 
 export function CrewChatTab({ crewId }: { crewId: string }) {
   const t = useTranslations("workspace");
@@ -70,13 +69,10 @@ export function CrewChatTab({ crewId }: { crewId: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-[#090a0c]">
-      <CrewChatSidebar crewId={crewId} />
-      <div className="min-w-0 flex-1">
-        <CrewChatRoom conversationId={conversation.data.id}>
-          <ConversationView conversationId={conversation.data.id} surface="workspace" />
-        </CrewChatRoom>
-      </div>
+    <div className="h-full min-h-0 min-w-0 overflow-hidden bg-[#090a0c]">
+      <CrewChatRoom conversationId={conversation.data.id}>
+        <ConversationView conversationId={conversation.data.id} surface="workspace" />
+      </CrewChatRoom>
     </div>
   );
 }

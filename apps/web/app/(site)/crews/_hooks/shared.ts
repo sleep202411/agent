@@ -25,8 +25,12 @@ export const crewKeys = {
   taskOptions: (crewId: string, input: Record<string, unknown>) =>
     ["crew", "tasks", crewId, "options", input] as const,
   taskSummary: (crewId: string) => ["crew", "tasks", crewId, "summary"] as const,
+  taskActivity: (crewId: string) => ["crew", "tasks", crewId, "activity"] as const,
   task: (taskId: string) => ["crew", "task", taskId] as const,
   taskTimeline: (taskId: string) => ["crew", "task", taskId, "timeline"] as const,
+  productionOverview: (crewId: string) => ["crew", "production", crewId, "overview"] as const,
+  productionActivity: (crewId: string) => ["crew", "production", crewId, "activity"] as const,
+  episodes: (crewId: string) => ["crew", "production", crewId, "episodes"] as const,
   settlements: (crewId: string) => ["crew", "settlements", crewId] as const,
   invitations: (crewId: string) => ["crew", "invitations", crewId] as const,
   myInvitations: ["crew", "invitations", "mine"] as const,

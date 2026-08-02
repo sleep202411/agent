@@ -41,9 +41,11 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  overlayClassName,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  overlayClassName?: string;
 }) {
   // Radix modal dialog sets body { pointer-events: none } via react-remove-scroll,
   // which blocks clicks on floating popups (tippy, mention lists) mounted on body.
@@ -62,7 +64,7 @@ function DialogContent({
 
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         data-show-close={showCloseButton}

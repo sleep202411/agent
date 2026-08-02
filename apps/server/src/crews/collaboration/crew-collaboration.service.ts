@@ -16,6 +16,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
 import { WalletLedgerService } from '../../workspaces';
+import {
+  CrewAuthorizationService,
+  type CrewAuthorizationContext,
+} from '../crew-authorization.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -24,6 +28,7 @@ export class CrewCollaborationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly wallets: WalletLedgerService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   /**
@@ -48,7 +53,12 @@ export class CrewCollaborationService {
   async ensureCrewSpaceTx(crewId: string, tx: Prisma.TransactionClient) {
     const crew = await tx.crew.findFirstOrThrow({
       where: { id: crewId, deletedAt: null },
+      include: {
+        ownership: { include: { member: { select: { userId: true } } } },
+      },
     });
+    if (!crew.ownership) throw new Error(`Crew ${crewId} has no owner`);
+    const ownerUserId = crew.ownership.member.userId;
 
     let workspaceId = crew.workspaceId;
     if (!workspaceId) {
@@ -59,8 +69,8 @@ export class CrewCollaborationService {
           name: crew.name,
           avatarUrl: crew.logo,
           description: crew.description,
-          ownerUserId: crew.founderId,
-          createdById: crew.founderId,
+          ownerUserId,
+          createdById: ownerUserId,
         },
       });
       workspaceId = workspace.id;
@@ -68,21 +78,30 @@ export class CrewCollaborationService {
 
     await this.upsertWorkspaceMember(
       workspaceId,
-      crew.founderId,
+      ownerUserId,
       WorkspaceMemberRole.owner,
-      crew.founderId,
+      ownerUserId,
       tx,
     );
     const members = await tx.crewMember.findMany({
-      where: { crewId, removedAt: null, userId: { not: crew.founderId } },
+      where: {
+        crewId,
+        status: 'active',
+        userId: { not: ownerUserId },
+      },
       select: { userId: true },
     });
     for (const member of members) {
+      const context = await this.authorization.requireMembership(
+        crewId,
+        member.userId,
+        tx,
+      );
       await this.upsertWorkspaceMember(
         workspaceId,
         member.userId,
-        WorkspaceMemberRole.viewer,
-        crew.founderId,
+        workspaceRoleFor(context),
+        ownerUserId,
         tx,
       );
     }
@@ -97,17 +116,17 @@ export class CrewCollaborationService {
           status: PlatformProjectStatus.active,
           visibility: ProjectVisibility.workspace,
           description: 'Main production canvas for this crew.',
-          createdById: crew.founderId,
+          createdById: ownerUserId,
         },
       });
       productionProjectId = project.id;
       await tx.projectMember.create({
         data: {
           projectId: project.id,
-          userId: crew.founderId,
+          userId: ownerUserId,
           role: ProjectMemberRole.owner,
           status: ProjectMemberStatus.active,
-          grantedById: crew.founderId,
+          grantedById: ownerUserId,
         },
       });
       const document = await tx.platformDocument.create({
@@ -117,7 +136,7 @@ export class CrewCollaborationService {
           type: PlatformDocumentType.canvas,
           status: PlatformDocumentStatus.active,
           title: project.name,
-          createdById: crew.founderId,
+          createdById: ownerUserId,
         },
       });
       const initial = await tx.platformDocumentVersion.create({
@@ -129,7 +148,7 @@ export class CrewCollaborationService {
           title: document.title,
           source: PlatformDocumentVersionSource.system,
           snapshot: document.contentSnapshot as Prisma.InputJsonValue,
-          createdById: crew.founderId,
+          createdById: ownerUserId,
           metadata: { reason: 'crew_production_created' },
         },
       });
@@ -177,10 +196,15 @@ export class CrewCollaborationService {
       select: { workspaceId: true },
     });
     if (!crew?.workspaceId) return;
+    const context = await this.authorization.requireMembership(
+      crewId,
+      userId,
+      db,
+    );
     await this.upsertWorkspaceMember(
       crew.workspaceId,
       userId,
-      WorkspaceMemberRole.viewer,
+      workspaceRoleFor(context),
       grantedById,
       db,
     );
@@ -220,8 +244,8 @@ export class CrewCollaborationService {
 
   /**
    * Atomically projects a crew ownership transfer into the collaboration
-   * backbone. Crew.founderId is the product authority source of truth, while
-   * Workspace/ProjectMember rows are the canvas authorization source of truth;
+   * backbone. CrewOwnership is the product authority source of truth, while
+   * Workspace/ProjectMember rows are technical authorization projections;
    * letting either side move without the other would leave a former owner with
    * elevated Studio access or lock the new owner out.
    *
@@ -393,4 +417,15 @@ export class CrewCollaborationService {
       },
     });
   }
+}
+
+function workspaceRoleFor(
+  context: CrewAuthorizationContext,
+): WorkspaceMemberRole {
+  if (context.isOwner) return WorkspaceMemberRole.owner;
+  if (context.policyKeys.includes('admin')) return WorkspaceMemberRole.admin;
+  if (context.permissions.includes('studio.edit')) {
+    return WorkspaceMemberRole.editor;
+  }
+  return WorkspaceMemberRole.viewer;
 }

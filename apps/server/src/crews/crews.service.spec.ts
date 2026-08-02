@@ -10,13 +10,15 @@
  *      participants. Participant.role is flat `member`; only rows that
  *      actually enter or leave `crew_members` move the chat.
  */
-import { CrewRoleService } from './crew-role.service';
 import { CrewsService } from './crews.service';
 
 const CREW_ID = 'crew-1';
 const CONVERSATION_ID = 'conv-crew-1';
 const FOUNDER = 'u-founder';
 const SUCCESSOR = 'u-successor';
+const OWNER_ACTOR = {
+  actor: { type: 'member' as const, userId: FOUNDER },
+};
 
 const CREATE_INPUT = {
   name: 'Night Shift',
@@ -39,11 +41,11 @@ function build(
   opts: {
     /** Existing active membership rows, keyed by userId. */
     members?: Record<string, { id: string }>;
-    founderId?: string;
+    ownerUserId?: string;
   } = {},
 ) {
   const members = opts.members ?? {};
-  const founderId = opts.founderId ?? FOUNDER;
+  const ownerUserId = opts.ownerUserId ?? FOUNDER;
   const conversation = { id: CONVERSATION_ID };
 
   /** Everything toCrewDTO() dereferences. */
@@ -57,13 +59,18 @@ function build(
     styles: CREATE_INPUT.styles,
     socialLinks: null,
     showcaseWorks: null,
-    founderId,
+    createdByUserId: ownerUserId,
     listingStatus: 'listed',
     listedAt: new Date('2026-07-01T00:00:00.000Z'),
     createdAt: new Date('2026-07-01T00:00:00.000Z'),
     updatedAt: new Date('2026-07-01T00:00:00.000Z'),
     version: 1,
     deletedAt: null,
+    ownership: {
+      crewId: CREW_ID,
+      memberId: members[ownerUserId]?.id ?? 'm-founder',
+      member: { userId: ownerUserId },
+    },
   };
 
   const tx = {
@@ -72,19 +79,39 @@ function build(
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue({ version: 2, deletedAt: null }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue(crewRow),
     },
     crewMember: {
-      create: jest.fn().mockResolvedValue({}),
+      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'm-created', ...data }),
+      ),
       update: jest.fn().mockResolvedValue({}),
       findFirst: jest.fn(({ where }: { where: { userId: string } }) =>
         Promise.resolve(members[where.userId] ?? null),
       ),
     },
+    crewOwnership: {
+      create: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue({
+        crewId: CREW_ID,
+        memberId: members[ownerUserId]?.id ?? 'm-founder',
+        member: {
+          id: members[ownerUserId]?.id ?? 'm-founder',
+          userId: ownerUserId,
+        },
+      }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
+    $executeRaw: jest.fn().mockResolvedValue(0),
   };
 
   const prisma = {
     crew: {
-      findFirst: jest.fn().mockResolvedValue({ founderId, deletedAt: null }),
+      findFirst: jest.fn().mockResolvedValue({
+        ownership: { member: { userId: ownerUserId } },
+        deletedAt: null,
+      }),
       findUnique: jest.fn().mockResolvedValue({ ...crewRow, version: 2 }),
     },
     crewMember: {
@@ -132,6 +159,21 @@ function build(
   const collaboration = {
     transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
   };
+  const authorization = {
+    require: jest.fn().mockResolvedValue({
+      crewId: CREW_ID,
+      memberId: members[ownerUserId]?.id ?? 'm-founder',
+      userId: ownerUserId,
+      isOwner: true,
+      permissions: ['ownership.transfer'],
+      policyKeys: [],
+    }),
+    owner: jest.fn().mockResolvedValue({
+      crewId: CREW_ID,
+      memberId: members[ownerUserId]?.id ?? 'm-founder',
+      userId: ownerUserId,
+    }),
+  };
 
   return {
     prisma,
@@ -140,13 +182,10 @@ function build(
     syncCalls,
     systemCalls,
     collaboration,
-    // The real role resolver over the same prisma double — the crew
-    // chat resolver gates on it, and a stub would be a second, laxer
-    // copy of the predicate these tests care about.
     service: new CrewsService(
       prisma as never,
       conversations as never,
-      new CrewRoleService(prisma as never),
+      authorization as never,
       collaboration as never,
     ),
   };
@@ -193,7 +232,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
 });
 
 describe('CrewsService.transferOwnership — which branch moves the chat', () => {
-  it('demoting the outgoing owner does NOT remove them from the chat', async () => {
+  it('moves ownership without mutating the outgoing owner membership', async () => {
     const t = build({
       members: {
         [FOUNDER]: { id: 'm-founder' },
@@ -201,14 +240,12 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       },
     });
 
-    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, OWNER_ACTOR);
 
-    expect(t.tx.crewMember.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'm-founder' },
-        data: { roleType: 'member' },
-      }),
+    expect(t.tx.crewOwnership.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { crewId: CREW_ID } }),
     );
+    expect(t.tx.crewMember.update).not.toHaveBeenCalled();
     expect(t.syncCalls).toEqual([]);
     expect(t.systemCalls).toEqual([]);
   });
@@ -222,6 +259,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
     });
 
     await t.service.transferOwnership(CREW_ID, SUCCESSOR, {
+      ...OWNER_ACTOR,
       removeOldOwner: true,
     });
 
@@ -245,7 +283,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       },
     });
 
-    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, OWNER_ACTOR);
 
     expect(t.syncCalls.filter((c) => c.userId === SUCCESSOR)).toEqual([]);
   });
@@ -253,7 +291,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
   it('handing the crew to an outsider joins them to the chat', async () => {
     const t = build({ members: { [FOUNDER]: { id: 'm-founder' } } });
 
-    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, OWNER_ACTOR);
 
     expect(t.syncCalls).toEqual([
       { crewId: CREW_ID, userId: SUCCESSOR, action: 'join', tx: t.tx },
@@ -282,7 +320,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       return Promise.resolve();
     });
 
-    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, OWNER_ACTOR);
 
     expect(order).toEqual(['commit', 'broadcast']);
   });
@@ -295,7 +333,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       },
     });
 
-    await t.service.transferOwnership(CREW_ID, SUCCESSOR);
+    await t.service.transferOwnership(CREW_ID, SUCCESSOR, OWNER_ACTOR);
 
     expect(t.collaboration.transferCrewOwnershipAccess).toHaveBeenCalledWith(
       CREW_ID,
@@ -315,6 +353,7 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
     });
 
     await t.service.transferOwnership(CREW_ID, SUCCESSOR, {
+      ...OWNER_ACTOR,
       removeOldOwner: true,
     });
 

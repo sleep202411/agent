@@ -24,7 +24,7 @@ export function notificationContent(
   const fallback = { title: item.title, body: item.body };
   const crewName = metaString(item, "crewName");
   const positionType = metaString(item, "positionType");
-  const roleType = metaString(item, "roleType");
+  const position = metaString(item, "positionTitle") ?? metaString(item, "positionCategoryKey");
   const agreementTitle = metaString(item, "agreementTitle");
   const taskTitle = metaString(item, "taskTitle");
 
@@ -61,10 +61,10 @@ export function notificationContent(
           }
         : fallback;
     case "crew.invitation.received":
-      return crewName && roleType
+      return crewName && position
         ? {
             title: t("events.invitationReceived.title", { crew: crewName }),
-            body: t("events.invitationReceived.body", { role: roleType }),
+            body: t("events.invitationReceived.body", { role: position }),
           }
         : fallback;
     case "crew.invitation.accepted":

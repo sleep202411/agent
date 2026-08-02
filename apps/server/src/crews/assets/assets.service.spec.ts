@@ -140,7 +140,17 @@ function build() {
   prisma.$transaction.mockImplementation(
     (callback: (client: typeof prisma) => unknown) => callback(prisma),
   );
-  const roles = { require: jest.fn().mockResolvedValue('member') };
+  const authorizationContext = {
+    crewId: CREW_ID,
+    memberId: 'crew-member-1',
+    userId: USER_ID,
+    isOwner: false,
+    policyKeys: [],
+    permissions: ['assets.view', 'assets.upload'],
+  };
+  const authorization = {
+    require: jest.fn().mockResolvedValue(authorizationContext),
+  };
   const access = {
     resolveNodePermission: jest
       .fn()
@@ -169,7 +179,7 @@ function build() {
   };
   return {
     prisma,
-    roles,
+    authorization,
     access,
     storageRegistry,
     selectedStorage,
@@ -177,7 +187,7 @@ function build() {
     conversations,
     service: new CrewAssetsService(
       prisma as never,
-      roles as never,
+      authorization as never,
       access as never,
       storageRegistry as never,
       mediaStorage as never,
@@ -195,11 +205,11 @@ describe('CrewAssetsService', () => {
       sort: 'modified',
     });
 
-    expect(t.roles.require).toHaveBeenCalledWith(CREW_ID, USER_ID, [
-      'admin',
-      'finance',
-      'member',
-    ]);
+    expect(t.authorization.require).toHaveBeenCalledWith(
+      CREW_ID,
+      USER_ID,
+      'assets.view',
+    );
     expect(result.items[0]).toMatchObject({
       id: NODE_ID,
       media: {
@@ -241,7 +251,9 @@ describe('CrewAssetsService', () => {
       storageAvailable: true,
       maxUploadBytes: 5 * 1024 * 1024 * 1024,
       accessModel: 'hierarchical_acl',
-      role: 'member',
+      isOwner: false,
+      policyKeys: [],
+      permissions: ['assets.view', 'assets.upload'],
       capabilities: {
         upload: true,
         deleteForever: false,

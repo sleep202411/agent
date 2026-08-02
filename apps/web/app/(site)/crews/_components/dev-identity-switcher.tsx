@@ -37,7 +37,12 @@ export function DevIdentitySwitcher() {
       crewMembers.map((m) => ({
         id: m.userId,
         name: `User ${m.userId}`,
-        role: m.via === "founder" ? ownerLabel : translatePosition(m.roleType),
+        role: m.isOwner
+          ? ownerLabel
+          : m.positions[0]?.title ||
+            (m.positions[0]?.categoryKey
+              ? translatePosition(m.positions[0].categoryKey)
+              : "Member"),
       })),
     [crewMembers, ownerLabel, translatePosition]
   );

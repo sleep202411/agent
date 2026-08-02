@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped in agreement lifecycle assertions. */
 import {
   CrewAgreementArchiveJobStatus,
   CrewAgreementSendJobStatus,
@@ -72,9 +73,27 @@ function build() {
   prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) =>
     fn(prisma),
   );
-  const roles = {
-    resolve: jest.fn().mockResolvedValue('admin'),
-    require: jest.fn().mockResolvedValue('admin'),
+  const authorizationContext = (userId: string) => ({
+    crewId: CREW_ID,
+    memberId: userId === OWNER_ID ? 'owner-member-1' : 'crew-member-1',
+    userId,
+    isOwner: userId === OWNER_ID,
+    policyKeys: userId === OWNER_ID ? ['admin'] : [],
+    permissions:
+      userId === OWNER_ID
+        ? ['agreements.view_own', 'agreements.manage']
+        : ['agreements.view_own'],
+  });
+  const authorization = {
+    resolve: jest.fn((_crewId: string, userId: string) =>
+      Promise.resolve(authorizationContext(userId)),
+    ),
+    requireMembership: jest.fn((_crewId: string, userId: string) =>
+      Promise.resolve(authorizationContext(userId)),
+    ),
+    require: jest.fn((_crewId: string, userId: string) =>
+      Promise.resolve(authorizationContext(userId)),
+    ),
   };
   const provider = {
     isConfigured: jest.fn().mockReturnValue(true),
@@ -91,12 +110,12 @@ function build() {
   const notifications = { send: jest.fn().mockResolvedValue({}) };
   return {
     prisma,
-    roles,
+    authorization,
     provider,
     notifications,
     service: new CrewAgreementsService(
       prisma as never,
-      roles as never,
+      authorization as never,
       provider as never,
       notifications as never,
     ),
@@ -363,7 +382,6 @@ describe('CrewAgreementsService', () => {
 
   it('mints a short-lived signing session only for the authenticated signer', async () => {
     const t = build();
-    t.roles.resolve.mockResolvedValue('member');
     t.prisma.crewAgreement.findUnique.mockResolvedValue(
       agreement({
         providerDocumentId: 'boldsign-document-1',
@@ -379,7 +397,10 @@ describe('CrewAgreementsService', () => {
         'https://app.boldsign.com/document/sign/?documentId=boldsign-document-1',
       expiresAt: '2026-07-29T12:15:00.000Z',
     });
-    expect(t.roles.resolve).toHaveBeenCalledWith(CREW_ID, MEMBER_ID);
+    expect(t.authorization.requireMembership).toHaveBeenCalledWith(
+      CREW_ID,
+      MEMBER_ID,
+    );
     expect(t.provider.getEmbeddedSigningLink).toHaveBeenCalledWith(
       'boldsign-document-1',
       'mina@example.com',
@@ -388,7 +409,6 @@ describe('CrewAgreementsService', () => {
 
   it('never exposes another member signing credential to a crew admin', async () => {
     const t = build();
-    t.roles.resolve.mockResolvedValue('admin');
     t.prisma.crewAgreement.findUnique.mockResolvedValue(
       agreement({
         providerDocumentId: 'boldsign-document-1',
@@ -409,7 +429,6 @@ describe('CrewAgreementsService', () => {
 
   it('does not mint a signing credential before BoldSign confirms delivery', async () => {
     const t = build();
-    t.roles.resolve.mockResolvedValue('member');
     t.prisma.crewAgreement.findUnique.mockResolvedValue(
       agreement({
         providerDocumentId: 'boldsign-document-1',
@@ -457,7 +476,10 @@ describe('CrewAgreementsService', () => {
       status: CrewAgreementStatus.signed,
       providerStatus: 'Completed',
     });
-    expect(t.roles.resolve).toHaveBeenCalledWith(CREW_ID, MEMBER_ID);
+    expect(t.authorization.requireMembership).toHaveBeenCalledWith(
+      CREW_ID,
+      MEMBER_ID,
+    );
     const [updateInput] = t.prisma.crewAgreement.update.mock
       .calls[0] as unknown as [
       {
@@ -596,7 +618,11 @@ describe('CrewAgreementsService', () => {
     ).resolves.toMatchObject({
       archive: { status: 'pending', attempt: 0, canRetry: false },
     });
-    expect(t.roles.require).toHaveBeenCalledWith(CREW_ID, OWNER_ID, ['admin']);
+    expect(t.authorization.require).toHaveBeenCalledWith(
+      CREW_ID,
+      OWNER_ID,
+      'agreements.manage',
+    );
     expect(t.prisma.crewAgreementArchiveJob.upsert).toHaveBeenCalledWith({
       where: { agreementId: AGREEMENT_ID },
       create: { agreementId: AGREEMENT_ID },

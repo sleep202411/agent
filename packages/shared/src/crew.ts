@@ -1,9 +1,10 @@
 /**
  * Crew domain — shared wire types and the preset position list.
  *
- * The 13 preset positions are the only string values allowed for
- * `CrewPosition.positionType` / `CrewMember.roleType` (plus the
- * reserved literal `"owner"` for founders). Adding a position:
+ * Preset positions provide a stable, translatable taxonomy for recruitment
+ * and member-position classification. A member position may instead use a
+ * custom title, so production responsibility is never confused with access
+ * control or ownership.
  *
  *   1. Append to PRESET_POSITIONS below.
  *   2. Add the i18n entry under "crew.position.<value>" in
@@ -34,26 +35,122 @@ export const PRESET_POSITIONS = [
 
 export type PresetPositionValue = (typeof PRESET_POSITIONS)[number]["value"];
 
-/** Reserved role for the crew founder. */
-export const OWNER_ROLE = "owner";
-
 const PRESET_VALUE_SET = new Set(PRESET_POSITIONS.map((p) => p.value));
 
 export function isPresetPosition(value: string): value is PresetPositionValue {
   return PRESET_VALUE_SET.has(value as PresetPositionValue);
 }
 
-/** Validates `roleType` for a CrewMember — preset position OR "owner". */
-export function isValidRoleType(value: string): boolean {
-  return value === OWNER_ROLE || isPresetPosition(value);
-}
-
 // ─── DTOs (wire shapes) ──────────────────────────────────────
 
 export type CrewPositionStatus = "open" | "frozen" | "full";
 export type CrewListingStatus = "unlisted" | "listed";
-export type CrewMemberVia = "founder" | "application" | "invitation" | "ownership_transfer";
+export type CrewMemberStatus = "active" | "suspended" | "removed";
+export type CrewJoinSource = "creation" | "application" | "invitation" | "ownership_transfer";
 export type CrewApplicationStatus = "pending" | "approved" | "rejected";
+
+// ─── Authorization ───────────────────────────────────────────
+
+/**
+ * Active membership always grants the member baseline. Policies are additive
+ * bundles, not mutually-exclusive roles: the same member may be both an
+ * administrator and a finance manager.
+ */
+export const CREW_POLICY_KEYS = ["admin", "finance"] as const;
+export type CrewPolicyKey = (typeof CREW_POLICY_KEYS)[number];
+
+export const CREW_PERMISSION_KEYS = [
+  "crew.settings.manage",
+  "crew.delete",
+  "ownership.transfer",
+  "members.view",
+  "members.invite",
+  "members.manage",
+  "members.permissions.manage",
+  "openings.manage",
+  "applications.review",
+  "tasks.view",
+  "tasks.manage",
+  "tasks.comment",
+  "tasks.submit_assigned",
+  "tasks.review",
+  "assets.view",
+  "assets.upload",
+  "assets.manage",
+  "agreements.view_own",
+  "agreements.manage",
+  "finance.view",
+  "finance.settle",
+  "studio.view",
+  "studio.edit",
+  "production.view",
+  "production.deliver",
+  "production.manage",
+  "production.review",
+] as const;
+export type CrewPermissionKey = (typeof CREW_PERMISSION_KEYS)[number];
+export type CrewPermissionEffect = "allow" | "deny";
+
+/** Permissions every active crew member receives. */
+export const CREW_MEMBER_PERMISSIONS = [
+  "members.view",
+  "tasks.view",
+  "tasks.comment",
+  "tasks.submit_assigned",
+  "assets.view",
+  "assets.upload",
+  "agreements.view_own",
+  "studio.view",
+  "production.view",
+  "production.deliver",
+] as const satisfies readonly CrewPermissionKey[];
+
+/** Additive, code-owned policy bundles. */
+export const CREW_POLICY_PERMISSIONS = {
+  admin: [
+    "crew.settings.manage",
+    "members.view",
+    "members.invite",
+    "members.manage",
+    "openings.manage",
+    "applications.review",
+    "tasks.view",
+    "tasks.manage",
+    "tasks.comment",
+    "tasks.submit_assigned",
+    "tasks.review",
+    "assets.view",
+    "assets.upload",
+    "assets.manage",
+    "agreements.view_own",
+    "agreements.manage",
+    "studio.view",
+    "studio.edit",
+    "production.view",
+    "production.deliver",
+    "production.manage",
+    "production.review",
+  ],
+  finance: ["finance.view", "finance.settle"],
+} as const satisfies Record<CrewPolicyKey, readonly CrewPermissionKey[]>;
+
+/** These capabilities are structural ownership powers and cannot be delegated. */
+export const CREW_OWNER_ONLY_PERMISSIONS = [
+  "crew.delete",
+  "ownership.transfer",
+  "members.permissions.manage",
+] as const satisfies readonly CrewPermissionKey[];
+
+const CREW_POLICY_KEY_SET = new Set<string>(CREW_POLICY_KEYS);
+const CREW_PERMISSION_KEY_SET = new Set<string>(CREW_PERMISSION_KEYS);
+
+export function isCrewPolicyKey(value: string): value is CrewPolicyKey {
+  return CREW_POLICY_KEY_SET.has(value);
+}
+
+export function isCrewPermissionKey(value: string): value is CrewPermissionKey {
+  return CREW_PERMISSION_KEY_SET.has(value);
+}
 
 // ─── Recruitment enums ───────────────────────────────────
 
@@ -186,11 +283,13 @@ export interface CrewDTO {
   socialLinks: SocialLink[];
   /** Featured works carousel. First entry powers the hero. */
   showcaseWorks: ShowcaseWork[];
-  founderId: string;
+  ownerUserId: string;
   /** User-controlled Crew Hall visibility. */
   listingStatus: CrewListingStatus;
   /** Last time the owner made the crew visible in Crew Hall. */
   listedAt: string | null;
+  /** Optimistic concurrency token for crew-level edits. */
+  version: number;
   createdAt: string;
   updatedAt: string;
   /** Aggregated counts populated by list / detail endpoints. */
@@ -256,11 +355,22 @@ export interface CrewMemberDTO {
   id: string;
   crewId: string;
   userId: string;
-  roleType: string; // preset value or "owner"
-  positionId: string | null;
-  via: CrewMemberVia;
-  isFinance: boolean;
+  status: CrewMemberStatus;
+  joinedVia: CrewJoinSource;
+  isOwner: boolean;
+  positions: CrewMemberPositionDTO[];
+  policyKeys: CrewPolicyKey[];
   joinedAt: string;
+  removedAt: string | null;
+  version: number;
+}
+
+export interface CrewMemberPositionDTO {
+  id: string;
+  categoryKey: PresetPositionValue | null;
+  title: string | null;
+  isPrimary: boolean;
+  sourcePositionId: string | null;
 }
 
 export interface CrewMemberPageDTO {
@@ -270,9 +380,9 @@ export interface CrewMemberPageDTO {
 }
 
 export interface CrewMembershipDTO {
-  role: "admin" | "finance" | "member";
   userId: string;
   member: CrewMemberDTO;
+  permissions: CrewPermissionKey[];
 }
 
 export interface CrewApplicationDTO {

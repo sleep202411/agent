@@ -4,8 +4,9 @@
  * One member rendered as a compact card.
  *
  * Owner card is visually distinct (single tile across the top with a
- * brand-tinted background) — the founder is a special role and the
- * remove + finance-toggle actions don't apply to them.
+ * brand-tinted background). Ownership, production positions and access
+ * policies are rendered independently so the UI never turns a job title into
+ * an authorization role.
  *
  * Inline actions only — members don't carry enough info to warrant a
  * full drawer like positions do. Profile link navigates out for the
@@ -20,17 +21,17 @@ import {
   IconCrown,
   IconExternalLink,
   IconLoader2,
+  IconShield,
   IconTrash,
-  IconUserPlus,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/user-avatar";
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import {
   CrewApiError,
-  useRemoveMember,
   useUpdateMember,
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
@@ -45,9 +46,12 @@ interface MemberCardProps {
    *  map may be empty (lookup in flight or failed); fallback is
    *  "User <id>". */
   displays: Map<string, LookupUserDTO>;
-  isOwner: boolean;
-  /** Owner can manage every other member but not themselves. */
+  /** Members with members.manage can remove non-owners. */
   canManage: boolean;
+  /** Owner-only structural permission editor. */
+  canManagePermissions: boolean;
+  /** Owner-only ownership transfer. */
+  canTransferOwnership: boolean;
   onAskRemove: (memberId: string, name: string) => void;
   /** Owner-only: hand crew ownership to this member. */
   onAskTransfer: (userId: string, name: string) => void;
@@ -57,133 +61,186 @@ export function MemberCard({
   crewId,
   member,
   displays,
-  // isOwner kept on the API for future viewer-specific affordances
-  // (e.g. "you" badge on the viewer's own row).
-  isOwner: _isOwner,
   canManage,
+  canManagePermissions,
+  canTransferOwnership,
   onAskRemove,
   onAskTransfer,
 }: MemberCardProps) {
   const t = useTranslations("workspace");
   const translatePosition = useTranslatePositionValue();
   const updateMember = useUpdateMember(crewId);
-  const isFounder = member.via === "founder";
+  const isCrewOwner = member.isOwner;
   const lookup = displays.get(member.userId);
   const displayName = displayNameOf(member.userId, displays);
-  const initial = (lookup?.nickname?.trim() || member.userId).charAt(0).toUpperCase();
-  const roleLabel = isFounder ? t("memberRoleOwner") : translatePosition(member.roleType);
-  const viaLabel = isFounder
-    ? null
-    : member.via === "application"
-      ? t("memberViaApplication")
-      : member.via === "invitation"
-        ? t("memberViaInvitation")
-        : t("memberViaOwnershipTransfer");
+  const primaryPosition =
+    member.positions.find((position) => position.isPrimary) ?? member.positions[0];
+  const positionLabel =
+    primaryPosition?.title ||
+    (primaryPosition?.categoryKey
+      ? translatePosition(primaryPosition.categoryKey)
+      : t("memberRoleMember"));
+  const viaLabel =
+    member.joinedVia === "creation"
+      ? null
+      : member.joinedVia === "application"
+        ? t("memberViaApplication")
+        : member.joinedVia === "invitation"
+          ? t("memberViaInvitation")
+          : t("memberViaOwnershipTransfer");
 
-  const handleToggleFinance = () => {
+  const handleTogglePolicy = (policyKey: "admin" | "finance") => {
+    const enabled = member.policyKeys.includes(policyKey);
+    const policyKeys = enabled
+      ? member.policyKeys.filter((key) => key !== policyKey)
+      : [...member.policyKeys, policyKey];
     updateMember.mutate(
-      { memberId: member.id, isFinance: !member.isFinance },
+      {
+        memberId: member.id,
+        input: { policyKeys, expectedVersion: member.version },
+      },
       {
         onSuccess: () =>
-          toast.success(member.isFinance ? t("memberFinanceRemoved") : t("memberFinanceAdded")),
-        onError: (err) => surfaceErr(err, t("memberFinanceFailed")),
+          toast.success(
+            policyKey === "admin"
+              ? enabled
+                ? t("memberAdminRemoved")
+                : t("memberAdminAdded")
+              : enabled
+                ? t("memberFinanceRemoved")
+                : t("memberFinanceAdded")
+          ),
+        onError: (err) => surfaceErr(err, t("memberAccessUpdateFailed")),
       }
     );
   };
 
   return (
-    <div
+    <article
       className={cn(
-        // Borderless per DESIGN.md "Cards without borders".
-        "group flex flex-col gap-3 rounded-xl p-4 transition-all",
-        isFounder
-          ? "bg-linear-to-br from-primary/10 via-card to-card hover:from-primary/15"
-          : "bg-card hover:bg-card/70 hover:shadow-md"
+        "group relative grid min-h-[82px] grid-cols-1 gap-3 px-4 py-3.5 transition-colors sm:px-5 md:grid-cols-[minmax(240px,1.35fr)_minmax(160px,0.8fr)_minmax(150px,0.7fr)_minmax(180px,auto)] md:items-center md:gap-5",
+        isCrewOwner ? "bg-primary/[0.025]" : "hover:bg-white/[0.018]"
       )}
     >
-      {/* Header: avatar + name + role */}
-      <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-            isFounder ? "bg-primary/20 text-primary" : "bg-secondary text-foreground"
-          )}
-        >
-          {initial}
-        </div>
+      {/* Identity */}
+      <div className="flex min-w-0 items-center gap-3">
+        <UserAvatar
+          src={lookup?.avatar}
+          name={displayName}
+          seed={member.userId}
+          size={42}
+          className={cn("shrink-0 ring-1 ring-white/[0.09]", isCrewOwner && "ring-primary/25")}
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-foreground">{displayName}</span>
-            {isFounder ? (
+            {isCrewOwner ? (
               <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                 <IconCrown className="size-2.5" />
                 {t("memberRoleOwner")}
               </span>
             ) : null}
-            {member.isFinance ? (
+            {member.policyKeys.includes("admin") ? (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-semibold text-white/75">
+                <IconShield className="size-2.5" />
+                {t("memberAdminBadge")}
+              </span>
+            ) : null}
+            {member.policyKeys.includes("finance") ? (
               <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
                 <IconCoin className="size-2.5" />
                 {t("memberFinanceBadge")}
               </span>
             ) : null}
           </div>
-          {!isFounder ? (
-            <div className="mt-0.5 text-xs text-muted-foreground">{roleLabel}</div>
+          {viaLabel ? (
+            <p className="mt-0.5 truncate text-[11px] text-[#6f7580]">{viaLabel}</p>
           ) : null}
         </div>
       </div>
 
-      {/* Meta: joined date + via */}
-      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <IconCalendar className="size-3" />
-        {t("memberJoinedAgo", { date: relativeDate(member.joinedAt, t) })}
-        {viaLabel ? <span>· {viaLabel}</span> : null}
+      {/* Role and access */}
+      <div className="min-w-0 pl-[54px] md:pl-0">
+        <p className="truncate text-xs font-medium text-[#cfd2d8]">{positionLabel}</p>
+        <p className="mt-0.5 text-[10px] text-[#676d77]">
+          {isCrewOwner
+            ? t("memberOwnerAccess")
+            : member.policyKeys.length > 0
+              ? member.policyKeys.map((key) => t(`memberPolicy_${key}`)).join(" · ")
+              : t("memberStandardAccess")}
+        </p>
       </div>
 
-      {/* Footer: actions */}
-      <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-2">
+      {/* Joined */}
+      <div className="flex items-center gap-1.5 pl-[54px] text-[11px] text-[#777d87] md:pl-0">
+        <IconCalendar className="size-3.5 shrink-0 text-[#5f6570]" />
+        <span className="truncate">
+          {t("memberJoinedAgo", { date: relativeDate(member.joinedAt, t) })}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex min-w-0 items-center justify-end gap-1.5 pl-[54px] md:pl-0">
         <Link
           href={`/creators/${encodeUserId(member.userId)}`}
-          className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+          className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-[#aeb3bc] transition-colors hover:bg-white/[0.055] hover:text-white"
         >
           {t("memberViewProfile")}
           <IconExternalLink className="size-3" />
         </Link>
-        {canManage && !isFounder ? (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              {t("memberFinanceToggleShort")}
-              <SwitchControl
-                value={member.isFinance}
-                onChange={() => handleToggleFinance()}
-                disabled={updateMember.isPending}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => onAskTransfer(member.userId, displayName)}
-              aria-label={t("transferOwner")}
-              title={t("transferOwner")}
-            >
-              <IconCrown className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              color="destructive"
-              onClick={() => onAskRemove(member.id, displayName)}
-              aria-label={t("removeMember")}
-              title={t("removeMember")}
-            >
-              <IconTrash className="size-3.5" />
-            </Button>
-          </div>
-        ) : isFounder ? (
-          // Founder cell shows "Owner" affordance only; no actions.
-          <span className="text-[10px] text-muted-foreground">{t("memberOwnerCannotRemove")}</span>
+        {!isCrewOwner && (canManage || canManagePermissions || canTransferOwnership) ? (
+          <>
+            <div className="mx-0.5 h-4 w-px bg-white/[0.07]" aria-hidden="true" />
+            {canManagePermissions ? (
+              <>
+                <label className="flex items-center gap-1.5 rounded-md px-1.5 text-[10px] text-[#777d87]">
+                  {t("memberAdminToggleShort")}
+                  <SwitchControl
+                    value={member.policyKeys.includes("admin")}
+                    onChange={() => handleTogglePolicy("admin")}
+                    disabled={updateMember.isPending}
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 rounded-md px-1.5 text-[10px] text-[#777d87]">
+                  {t("memberFinanceToggleShort")}
+                  <SwitchControl
+                    value={member.policyKeys.includes("finance")}
+                    onChange={() => handleTogglePolicy("finance")}
+                    disabled={updateMember.isPending}
+                  />
+                </label>
+              </>
+            ) : null}
+            {canTransferOwnership ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => onAskTransfer(member.userId, displayName)}
+                aria-label={t("transferOwner")}
+                title={t("transferOwner")}
+              >
+                <IconCrown className="size-3.5" />
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                color="destructive"
+                onClick={() => onAskRemove(member.id, displayName)}
+                aria-label={t("removeMember")}
+                title={t("removeMember")}
+              >
+                <IconTrash className="size-3.5" />
+              </Button>
+            ) : null}
+          </>
+        ) : isCrewOwner ? (
+          <span className="ml-1 hidden text-[10px] text-[#5f6570] xl:inline">
+            {t("memberOwnerProtected")}
+          </span>
         ) : null}
       </div>
 
@@ -192,12 +249,7 @@ export function MemberCard({
           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
         </div>
       ) : null}
-
-      {/* Suppress unused-import lint for IconUserPlus (re-exported case). */}
-      <span className="hidden">
-        <IconUserPlus className="size-0" />
-      </span>
-    </div>
+    </article>
   );
 }
 

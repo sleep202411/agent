@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import {
   Dialog,
@@ -1569,15 +1570,13 @@ function PermissionSummary({
                     <span className="min-w-0 flex-1 truncate text-[10px] text-foreground">
                       {displayNameOf(member.userId, displays)}
                     </span>
-                    <select
+                    <NativeSelect
                       value={permission}
-                      onChange={(event) =>
-                        updateGrant(
-                          member.userId,
-                          event.target.value as CrewAssetPermission | "none"
-                        )
+                      onChange={(nextValue) =>
+                        updateGrant(member.userId, nextValue as CrewAssetPermission | "none")
                       }
-                      className="h-7 rounded-md border border-border/70 bg-background px-1.5 text-[10px] text-foreground outline-none"
+                      size="sm"
+                      className="h-7 w-28 border-border/70 bg-background px-1.5 text-[10px] text-foreground"
                       aria-label={t("memberPermission", {
                         name: displayNameOf(member.userId, displays),
                       })}
@@ -1587,7 +1586,7 @@ function PermissionSummary({
                       <option value="upload">{t("permissionUpload")}</option>
                       <option value="edit">{t("permissionEdit")}</option>
                       <option value="manage">{t("permissionManage")}</option>
-                    </select>
+                    </NativeSelect>
                   </div>
                 );
               })}
@@ -1754,10 +1753,10 @@ function AssetActionDialog({
                 <span className="mb-1.5 block text-[11px] font-medium text-foreground">
                   {t("destination")}
                 </span>
-                <select
+                <NativeSelect
                   aria-label={t("destination")}
                   value={destinationId}
-                  onChange={(event) => onDestinationChange(event.target.value)}
+                  onChange={onDestinationChange}
                   className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground outline-none focus:border-primary/60"
                 >
                   <option value="">{t("folderCrewAssets")}</option>
@@ -1766,7 +1765,7 @@ function AssetActionDialog({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
             )}
           </DialogBody>
@@ -1804,22 +1803,26 @@ function ToolbarSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="relative flex h-8 items-center rounded-lg border border-border/70 bg-background/60 text-xs text-muted-foreground transition-colors focus-within:border-primary/60">
-      {icon ? <span className="pointer-events-none ml-2 [&>svg]:size-3.5">{icon}</span> : null}
-      <select
+    <div className="relative flex h-8 items-center rounded-lg text-xs text-muted-foreground">
+      {icon ? (
+        <span className="pointer-events-none absolute left-2 z-10 [&>svg]:size-3.5">{icon}</span>
+      ) : null}
+      <NativeSelect
         aria-label={ariaLabel}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-full appearance-none bg-transparent py-0 pl-2 pr-7 text-[11px] outline-none"
+        onChange={onChange}
+        className={cn(
+          "h-8 w-auto border-border/70 bg-background/60 py-0 text-[11px] text-muted-foreground focus-visible:border-primary/60",
+          icon && "pl-7"
+        )}
       >
         {options.map(([optionValue, label]) => (
           <option key={optionValue} value={optionValue} className="bg-card text-foreground">
             {label}
           </option>
         ))}
-      </select>
-      <IconChevronDown className="pointer-events-none absolute right-2 size-3" />
-    </label>
+      </NativeSelect>
+    </div>
   );
 }
 

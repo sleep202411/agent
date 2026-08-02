@@ -47,12 +47,10 @@
  *   crew row there carries the crew's NAME and the last message's
  *   preview and so leaks as much as opening the thread would. The
  *   re-check queries Prisma directly instead of importing
- *   CrewRoleService: module direction is one-way
+ *   the crew authorization service: module direction is one-way
  *   (CrewsModule → ConversationsModule) and reaching back would need
- *   a forwardRef. It duplicates ~8 lines of the membership predicate,
- *   INCLUDING the founder short-circuit — without that, an
- *   ownership transfer that leaves the founder without a
- *   `crew_members` row locks them out of their own crew chat.
+ *   a forwardRef. Crew ownership always points to an active member, so
+ *   the chat boundary only needs the canonical active-membership predicate.
  *
  * Authorization (controllers re-check; service is the last line):
  *   - Read / send / mark-read: caller must be a participant (and not
@@ -305,12 +303,12 @@ export class ConversationsService {
 
       const crew = await tx.crew.findFirst({
         where: { id: crewId, deletedAt: null },
-        select: { founderId: true },
+        select: { id: true },
       });
       if (!crew) throw new NotFoundException('Crew not found');
 
       const members = await tx.crewMember.findMany({
-        where: { crewId, removedAt: null },
+        where: { crewId, status: 'active' },
         select: { userId: true },
       });
       const conversation = await tx.conversation.create({
@@ -321,10 +319,7 @@ export class ConversationsService {
           lookupKey,
         },
       });
-      const userIds = new Set([
-        crew.founderId,
-        ...members.map((member) => member.userId),
-      ]);
+      const userIds = new Set(members.map((member) => member.userId));
       await tx.conversationParticipant.createMany({
         data: [...userIds].map((userId) => ({
           conversationId: conversation.id,
@@ -482,8 +477,8 @@ export class ConversationsService {
    * projection still says otherwise. Non-crew rows pass straight
    * through — a service / order thread has no crew to check.
    *
-   * The set-shaped mirror of `isActiveCrewMember`, founder
-   * short-circuit included. A crew absent from `crews` (soft-deleted)
+   * The set-shaped mirror of `isActiveCrewMember`. A crew absent from
+   * `crews` (soft-deleted)
    * fails for everyone, so `founderOf.has()` is tested before the
    * membership set: a leftover `crew_members` row must not resurrect a
    * deleted crew's inbox row.
@@ -503,20 +498,20 @@ export class ConversationsService {
     const [crews, memberships] = await Promise.all([
       db.crew.findMany({
         where: { id: { in: crewIds }, deletedAt: null },
-        select: { id: true, founderId: true },
+        select: { id: true },
       }),
       db.crewMember.findMany({
-        where: { crewId: { in: crewIds }, userId, removedAt: null },
+        where: { crewId: { in: crewIds }, userId, status: 'active' },
         select: { crewId: true },
       }),
     ]);
-    const founderOf = new Map(crews.map((c) => [c.id, c.founderId]));
+    const liveCrews = new Set(crews.map((crew) => crew.id));
     const memberOf = new Set(memberships.map((m) => m.crewId));
 
     return rows.filter((r) => {
       if (r.contextType !== ConversationContextType.crew) return true;
-      if (!founderOf.has(r.contextId)) return false;
-      return founderOf.get(r.contextId) === userId || memberOf.has(r.contextId);
+      if (!liveCrews.has(r.contextId)) return false;
+      return memberOf.has(r.contextId);
     });
   }
 
@@ -540,7 +535,7 @@ export class ConversationsService {
 
     const crew = await db.crew.findFirst({
       where: { id: conv.contextId, deletedAt: null },
-      select: { founderId: true },
+      select: { id: true },
     });
     if (!crew) return { ...conv, participants: [] };
 
@@ -552,12 +547,11 @@ export class ConversationsService {
             where: {
               crewId: conv.contextId,
               userId: { in: projectedUserIds },
-              removedAt: null,
+              status: 'active',
             },
             select: { userId: true },
           });
     const liveUserIds = new Set(memberships.map((m) => m.userId));
-    liveUserIds.add(crew.founderId);
     return {
       ...conv,
       participants: conv.participants.filter((p) => liveUserIds.has(p.userId)),
@@ -586,19 +580,15 @@ export class ConversationsService {
     const [crew, memberships] = await Promise.all([
       this.prisma.crew.findFirst({
         where: { id: crewId, deletedAt: null },
-        select: { founderId: true },
+        select: { id: true },
       }),
       this.prisma.crewMember.findMany({
-        where: { crewId, userId: { in: userIds }, removedAt: null },
+        where: { crewId, userId: { in: userIds }, status: 'active' },
         select: { userId: true },
       }),
     ]);
     if (!crew) return new Set();
-    const live = new Set(memberships.map((m) => m.userId));
-    // The founder short-circuit, same as everywhere else: they are
-    // admin by `crew.founderId` and may hold no `crew_members` row.
-    if (userIds.includes(crew.founderId)) live.add(crew.founderId);
-    return live;
+    return new Set(memberships.map((m) => m.userId));
   }
 
   async detail(
@@ -1024,18 +1014,15 @@ export class ConversationsService {
       const [crew, members] = await Promise.all([
         this.prisma.crew.findFirst({
           where: { id: crewId, deletedAt: null },
-          select: { founderId: true },
+          select: { id: true },
         }),
         this.prisma.crewMember.findMany({
-          where: { crewId, removedAt: null },
+          where: { crewId, status: 'active' },
           select: { userId: true },
         }),
       ]);
       if (!crew) return;
-      const recipientIds = new Set([
-        crew.founderId,
-        ...members.map((member) => member.userId),
-      ]);
+      const recipientIds = new Set(members.map((member) => member.userId));
       const frame: ConversationFrame = {
         event: 'crew.task.changed',
         data: { crewId, taskId, action, actorUserId },
@@ -1068,7 +1055,18 @@ export class ConversationsService {
    */
   async broadcastCrewTaskProjectChange(
     crewId: string,
-    resource: 'view' | 'workflow' | 'cycle' | 'label' | 'field',
+    resource:
+      | 'view'
+      | 'workflow'
+      | 'cycle'
+      | 'label'
+      | 'field'
+      | 'production_document'
+      | 'production_project'
+      | 'production_resource'
+      | 'production_activity'
+      | 'episode'
+      | 'delivery',
     resourceId: string,
     action: 'created' | 'updated' | 'deleted' | 'reordered',
     actorUserId: string | null,
@@ -1077,18 +1075,15 @@ export class ConversationsService {
       const [crew, members] = await Promise.all([
         this.prisma.crew.findFirst({
           where: { id: crewId, deletedAt: null },
-          select: { founderId: true },
+          select: { id: true },
         }),
         this.prisma.crewMember.findMany({
-          where: { crewId, removedAt: null },
+          where: { crewId, status: 'active' },
           select: { userId: true },
         }),
       ]);
       if (!crew) return;
-      const recipientIds = new Set([
-        crew.founderId,
-        ...members.map((member) => member.userId),
-      ]);
+      const recipientIds = new Set(members.map((member) => member.userId));
       const frame: ConversationFrame = {
         event: 'crew.task.project.changed',
         data: { crewId, resource, resourceId, action, actorUserId },
@@ -1134,18 +1129,15 @@ export class ConversationsService {
       const [crew, members] = await Promise.all([
         this.prisma.crew.findFirst({
           where: { id: crewId, deletedAt: null },
-          select: { founderId: true },
+          select: { id: true },
         }),
         this.prisma.crewMember.findMany({
-          where: { crewId, removedAt: null },
+          where: { crewId, status: 'active' },
           select: { userId: true },
         }),
       ]);
       if (!crew) return;
-      const recipientIds = new Set([
-        crew.founderId,
-        ...members.map((member) => member.userId),
-      ]);
+      const recipientIds = new Set(members.map((member) => member.userId));
       const frame: ConversationFrame = {
         event: 'crew.asset.changed',
         data: { crewId, nodeId, action, actorUserId },
@@ -2231,16 +2223,14 @@ export class ConversationsService {
   }
 
   /**
-   * Mirror of `CrewRoleService.resolve()`'s membership predicate,
-   * minus the role names this module has no use for. Duplicated
+   * Mirror of the crew authorization boundary's membership predicate.
+   * Duplicated
    * rather than imported: ConversationsModule must not depend on
    * CrewsModule (the dependency runs the other way, and closing the
    * cycle would take a forwardRef).
    *
-   * The founder short-circuit is NOT optional. A founder whose
-   * `crew_members` row was never created — or was removed by an
-   * ownership transfer — still owns the crew, and dropping this
-   * branch locks them out of their own group chat.
+   * Ownership is structurally attached to an active member, so there is no
+   * ownership bypass: inactive membership always revokes chat access.
    */
   private async isActiveCrewMember(
     crewId: string,
@@ -2249,12 +2239,11 @@ export class ConversationsService {
   ): Promise<boolean> {
     const crew = await db.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
+      select: { id: true },
     });
     if (!crew) return false;
-    if (crew.founderId === userId) return true;
     const member = await db.crewMember.findFirst({
-      where: { crewId, userId, removedAt: null },
+      where: { crewId, userId, status: 'active' },
       select: { id: true },
     });
     return member !== null;

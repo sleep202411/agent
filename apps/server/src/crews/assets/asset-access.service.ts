@@ -11,7 +11,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
-import { CrewRoleService } from '../crew-role.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -26,7 +26,7 @@ const PERMISSION_RANK: Record<CrewAssetPermission, number> = {
 export class CrewAssetAccessService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly roles: CrewRoleService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   /**
@@ -41,9 +41,11 @@ export class CrewAssetAccessService {
     userId: string,
     db: Db = this.prisma,
   ): Promise<CrewAssetPermission | null> {
-    const role = await this.roles.resolve(crewId, userId, db);
-    if (role === 'outsider') return null;
-    if (role === 'admin') return CrewAssetPermission.manage;
+    const context = await this.authorization.resolve(crewId, userId, db);
+    if (!context?.permissions.includes('assets.view')) return null;
+    if (context.permissions.includes('assets.manage')) {
+      return CrewAssetPermission.manage;
+    }
 
     return this.resolveMemberNodePermission(crewId, nodeId, userId, db);
   }
@@ -93,13 +95,13 @@ export class CrewAssetAccessService {
     db: Db = this.prisma,
   ): Promise<Map<string, CrewAssetPermission | null>> {
     const uniqueIds = [...new Set(nodeIds)];
-    const role = await this.roles.resolve(crewId, userId, db);
-    if (role === 'admin') {
+    const context = await this.authorization.resolve(crewId, userId, db);
+    if (context?.permissions.includes('assets.manage')) {
       return new Map(
         uniqueIds.map((nodeId) => [nodeId, CrewAssetPermission.manage]),
       );
     }
-    if (role === 'outsider') {
+    if (!context?.permissions.includes('assets.view')) {
       return new Map(uniqueIds.map((nodeId) => [nodeId, null]));
     }
 
@@ -259,12 +261,13 @@ export class CrewAssetAccessService {
     if (parentId) {
       return this.requireNodePermission(crewId, parentId, userId, minimum, db);
     }
-    const role = await this.roles.resolve(crewId, userId, db);
-    const permission =
-      role === 'admin'
-        ? CrewAssetPermission.manage
-        : role === 'finance' || role === 'member'
-          ? CrewAssetPermission.edit
+    const context = await this.authorization.resolve(crewId, userId, db);
+    const permission = context?.permissions.includes('assets.manage')
+      ? CrewAssetPermission.manage
+      : context?.permissions.includes('assets.upload')
+        ? CrewAssetPermission.edit
+        : context?.permissions.includes('assets.view')
+          ? CrewAssetPermission.view
           : null;
     if (
       permission == null ||
@@ -395,7 +398,7 @@ export class CrewAssetAccessService {
           where: {
             crewId,
             userId: { in: [...deduped.keys()] },
-            removedAt: null,
+            status: 'active',
           },
         });
         if (memberCount !== deduped.size) {
@@ -404,9 +407,13 @@ export class CrewAssetAccessService {
             message: 'Every asset permission recipient must be a crew member.',
           });
         }
-        const role = await this.roles.resolve(crewId, userId, tx);
+        const context = await this.authorization.requireMembership(
+          crewId,
+          userId,
+          tx,
+        );
         if (
-          role !== 'admin' &&
+          !context.permissions.includes('assets.manage') &&
           actorPermission === CrewAssetPermission.manage
         ) {
           deduped.set(userId, CrewAssetPermission.manage);

@@ -1,18 +1,28 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryFilters,
+} from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import {
-  optimisticallyReorderCrewTasks,
+  optimisticallyReorderCrewTaskPages,
   type ReorderCrewTaskCommand,
 } from "../_lib/task-board-ordering";
 import type {
   CreateCrewTaskCommentInput,
   CreateCrewTaskInput,
+  CrewTaskDraftDTO,
+  DraftCrewTaskInput,
   CrewSettlementItemDTO,
   CrewSettlementPageDTO,
   CrewTaskDTO,
+  CrewTaskListItemDTO,
   CrewTaskOptionPageDTO,
   CrewTaskPageDTO,
   CrewTaskFieldDTO,
@@ -25,9 +35,10 @@ import type {
   CrewTaskWorkflowStateDTO,
   CrewTaskViewGroup,
   CrewTaskViewLayout,
-  CrewTaskViewScope,
+  CrewTaskCompletedMode,
   CrewTaskTimelineItemDTO,
   CrewTaskTimelinePageDTO,
+  CrewTaskActivityPageDTO,
   UpdateCrewTaskCommentInput,
   UpdateCrewTaskInput,
 } from "./types";
@@ -114,14 +125,29 @@ export function useCrewTaskSummary(crewId: string, enabled = true) {
   });
 }
 
+export function useCrewTaskActivity(crewId: string, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: crewKeys.taskActivity(crewId),
+    enabled: enabled && Boolean(crewId),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      crewApi.get<CrewTaskActivityPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-activity`, {
+        query: { cursor: pageParam, limit: 30 },
+      }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+}
+
 export interface SaveCrewTaskViewInput {
   name: string;
   layout: CrewTaskViewLayout;
-  scope: CrewTaskViewScope;
   groupBy: CrewTaskViewGroup;
   filters: CrewTaskViewDTO["filters"];
   sorts: CrewTaskViewDTO["sorts"];
   visibleFields: string[];
+  completedMode: CrewTaskCompletedMode;
+  showSubIssues: boolean;
+  showEmptyGroups: boolean;
 }
 
 export function useCreateCrewTaskView(crewId: string) {
@@ -366,6 +392,10 @@ export function useDeleteCrewTaskField(crewId: string) {
 
 export function useReorderCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const taskViewQueries: QueryFilters = {
+    queryKey: crewKeys.tasks(crewId),
+    predicate: (query) => query.queryKey[3] === "view",
+  };
   return useMutation({
     mutationKey: ["crew-task-reorder", crewId],
     scope: { id: `crew-task-reorder:${crewId}` },
@@ -382,24 +412,37 @@ export function useReorderCrewTask(crewId: string) {
       }),
     onMutate: async ({ taskId, input, destinationState }) => {
       await Promise.all([
-        qc.cancelQueries({ queryKey: crewKeys.tasks(crewId) }),
+        qc.cancelQueries(taskViewQueries),
         qc.cancelQueries({ queryKey: crewKeys.task(taskId) }),
       ]);
-      const previousTasks = qc.getQueryData<CrewTaskDTO[]>(crewKeys.tasks(crewId));
+      const previousTaskViews = qc.getQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries);
       const previousTask = qc.getQueryData<CrewTaskDTO>(crewKeys.task(taskId));
-      const optimisticTasks = previousTasks
-        ? optimisticallyReorderCrewTasks(previousTasks, taskId, input, destinationState)
-        : undefined;
-      const optimisticTask = optimisticTasks?.find((task) => task.id === taskId);
+      let optimisticTask: CrewTaskListItemDTO | undefined;
 
-      if (optimisticTasks) qc.setQueryData(crewKeys.tasks(crewId), optimisticTasks);
-      if (optimisticTask) qc.setQueryData(crewKeys.task(taskId), optimisticTask);
+      for (const [queryKey, data] of previousTaskViews) {
+        if (!data) continue;
+        const optimisticData = {
+          ...data,
+          pages: optimisticallyReorderCrewTaskPages(data.pages, taskId, input, destinationState),
+        };
+        qc.setQueryData(queryKey, optimisticData);
+        optimisticTask ??= optimisticData.pages
+          .flatMap((page) => page.items)
+          .find((task) => task.id === taskId);
+      }
 
-      return { previousTasks, previousTask };
+      if (optimisticTask && previousTask) {
+        qc.setQueryData<CrewTaskDTO>(crewKeys.task(taskId), {
+          ...previousTask,
+          ...optimisticTask,
+        });
+      }
+
+      return { previousTaskViews, previousTask };
     },
     onError: (_error, { taskId }, context) => {
-      if (context?.previousTasks) {
-        qc.setQueryData(crewKeys.tasks(crewId), context.previousTasks);
+      for (const [queryKey, data] of context?.previousTaskViews ?? []) {
+        qc.setQueryData(queryKey, data);
       }
       if (context?.previousTask) {
         qc.setQueryData(crewKeys.task(taskId), context.previousTask);
@@ -407,17 +450,30 @@ export function useReorderCrewTask(crewId: string) {
     },
     onSuccess: (task) => {
       qc.setQueryData(crewKeys.task(task.id), task);
-      qc.setQueryData<CrewTaskDTO[]>(crewKeys.tasks(crewId), (current) =>
-        current?.map((candidate) => (candidate.id === task.id ? task : candidate))
+      qc.setQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries, (current) =>
+        current ? replaceCrewTaskInPages(current, task) : current
       );
     },
     onSettled: (_task, _error, { taskId }) => {
       void Promise.all([
-        qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) }),
+        qc.invalidateQueries(taskViewQueries),
         qc.invalidateQueries({ queryKey: crewKeys.task(taskId) }),
       ]);
     },
   });
+}
+
+function replaceCrewTaskInPages(
+  data: InfiniteData<CrewTaskPageDTO>,
+  task: CrewTaskDTO
+): InfiniteData<CrewTaskPageDTO> {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: page.items.map((candidate) => (candidate.id === task.id ? task : candidate)),
+    })),
+  };
 }
 
 export function useBatchUpdateCrewTasks(crewId: string) {
@@ -463,7 +519,23 @@ export function useCreateCrewTask(crewId: string) {
   return useMutation({
     mutationFn: (input: CreateCrewTaskInput) =>
       crewApi.post<CrewTaskDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, { body: input }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) }),
+    onSuccess: (task) => {
+      qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    },
+  });
+}
+
+export function useDraftCrewTask(crewId: string) {
+  return useMutation({
+    mutationFn: (input: DraftCrewTaskInput) =>
+      crewApi.post<CrewTaskDraftDTO>(`/crews/${encodeURIComponent(crewId)}/task-drafts`, {
+        body: input,
+      }),
   });
 }
 
@@ -478,6 +550,10 @@ export function useUpdateCrewTask(crewId: string) {
       qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
     },
   });
 }
@@ -532,7 +608,15 @@ export function useSubmitCrewTask(crewId: string) {
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/submissions`, {
         body: { note, assetNodeIds },
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) }),
+    onSuccess: (task) => {
+      qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    },
   });
 }
 
@@ -551,9 +635,15 @@ export function useReviewCrewTask(crewId: string) {
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
         body: { decision, note },
       }),
-    onSuccess: () => {
+    onSuccess: (task) => {
+      qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.settlements(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
     },
   });
 }
@@ -589,8 +679,12 @@ export function useSettleCrewItem(crewId: string) {
         `/crew-settlements/${encodeURIComponent(itemId)}/settle`,
         { body: { note } }
       ),
-    onSuccess: () => {
+    onSuccess: (settlement) => {
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.task(settlement.taskId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(settlement.taskId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.settlements(crewId) });
     },
   });

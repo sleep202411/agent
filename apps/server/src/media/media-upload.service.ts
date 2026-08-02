@@ -1028,12 +1028,11 @@ export class MediaUploadService {
   ): Promise<void> {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
+      select: { id: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
-    if (crew.founderId === userId) return;
     const member = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId, removedAt: null },
+      where: { crewId, userId, status: 'active' },
       select: { id: true },
     });
     if (!member) {

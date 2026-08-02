@@ -5,7 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CrewInvitationStatus, Prisma, type Message } from '@prisma/client';
+import {
+  CrewInvitationStatus,
+  CrewMembershipStatus,
+  Prisma,
+  type CrewInvitation,
+  type Message,
+} from '@prisma/client';
+import { isCrewPolicyKey } from '@repo/shared/crew';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
@@ -17,6 +24,7 @@ import type {
 } from '../dto';
 import { newCrewDomainId } from '../id';
 import { CrewAgreementsService } from '../agreements/agreements.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 
 @Injectable()
 export class CrewInvitationsService {
@@ -27,6 +35,7 @@ export class CrewInvitationsService {
     private readonly conversations: ConversationsService,
     private readonly collaboration: CrewCollaborationService,
     private readonly agreements: CrewAgreementsService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   async listForCrew(
@@ -34,12 +43,7 @@ export class CrewInvitationsService {
     userId: string,
     query: ListCrewInvitationsQuery,
   ) {
-    const crew = await this.requireCrew(crewId);
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can view invitations.',
-      });
-    }
+    await this.authorization.require(crewId, userId, 'members.invite');
     const now = new Date();
     await this.prisma.crewInvitation.updateMany({
       where: {
@@ -184,10 +188,17 @@ export class CrewInvitationsService {
     input: CreateCrewInvitationInput,
   ) {
     const crew = await this.requireCrew(crewId);
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can invite members.',
-      });
+    const actor = await this.authorization.require(
+      crewId,
+      userId,
+      'members.invite',
+    );
+    if (input.policyKeys.length > 0) {
+      await this.authorization.require(
+        crewId,
+        userId,
+        'members.permissions.manage',
+      );
     }
     if (input.agreement) this.agreements.requireDispatchConfigured();
     const target = await this.users.lookupByContact({
@@ -201,11 +212,7 @@ export class CrewInvitationsService {
         field: 'account',
       });
     }
-    if (
-      target.userId === userId ||
-      target.isCrewFounder ||
-      target.isCrewMember
-    ) {
+    if (target.isCrewMember) {
       throw new BadRequestException({
         message: 'This user is already a crew member.',
       });
@@ -233,7 +240,7 @@ export class CrewInvitationsService {
           crewId,
           inviteeUserId: target.userId,
           invitedByUserId: userId,
-          roleType: input.roleType,
+          policyKeys: input.policyKeys,
           agreementTitle: input.agreement?.title,
           agreementSignerName: input.agreement?.signerName,
           agreementSignerEmail: input.agreement?.signerEmail.toLowerCase(),
@@ -248,13 +255,13 @@ export class CrewInvitationsService {
           type: 'crew.invitation.received',
           title: `Invitation to join "${crew.name}"`,
           body: input.agreement
-            ? `You were invited as ${input.roleType}. An optional agreement will be sent after you join.`
-            : `You were invited as ${input.roleType}.`,
+            ? 'You were invited to join the crew. An optional agreement will be sent after you join.'
+            : 'You were invited to join the crew.',
           meta: {
             crewId,
             crewName: crew.name,
             invitationId: created.id,
-            roleType: input.roleType,
+            policyKeys: input.policyKeys,
             agreementRequested: Boolean(input.agreement),
             deeplink: `/crew-invitations/${created.id}`,
           },
@@ -262,6 +269,19 @@ export class CrewInvitationsService {
         },
         tx,
       );
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          actorMemberId: actor.memberId,
+          actorUserId: userId,
+          action: 'invitation.created',
+          after: {
+            invitationId: created.id,
+            inviteeUserId: target.userId,
+            policyKeys: input.policyKeys,
+          },
+        },
+      });
       return created;
     });
     return invitationDto(invitation);
@@ -288,45 +308,71 @@ export class CrewInvitationsService {
         where: {
           crewId: invitation.crewId,
           userId,
-          removedAt: null,
+          status: {
+            in: [CrewMembershipStatus.active, CrewMembershipStatus.suspended],
+          },
         },
       });
-      let member = existing;
-      if (!member) {
-        const conversation = await this.conversations.openCrewConversation(
-          invitation.crewId,
-          tx,
-        );
-        member = await tx.crewMember.create({
-          data: {
-            id: newCrewDomainId(),
-            crewId: invitation.crewId,
-            userId,
-            roleType: invitation.roleType,
-            via: 'invitation',
-          },
+      if (existing) {
+        throw new ConflictException({
+          message: 'This account already has an active crew membership.',
         });
-        await this.collaboration.addCrewMemberAccess(
-          invitation.crewId,
-          userId,
-          invitation.invitedByUserId,
-          tx,
-        );
-        await this.conversations.syncCrewParticipant(
-          invitation.crewId,
-          userId,
-          'join',
-          tx,
-        );
-        pendingMessages.push(
-          await this.conversations.persistSystem(
-            conversation.id,
-            'crew.member.joined',
-            { userId },
-            tx,
-          ),
-        );
       }
+      const conversation = await this.conversations.openCrewConversation(
+        invitation.crewId,
+        tx,
+      );
+      const member = await tx.crewMember.create({
+        data: {
+          id: newCrewDomainId(),
+          crewId: invitation.crewId,
+          userId,
+          status: CrewMembershipStatus.active,
+          joinedVia: 'invitation',
+        },
+      });
+      const policyKeys = invitation.policyKeys.filter(isCrewPolicyKey);
+      if (policyKeys.length > 0) {
+        await tx.crewMemberPolicy.createMany({
+          data: policyKeys.map((policyKey) => ({
+            memberId: member.id,
+            policyKey,
+            assignedByUserId: invitation.invitedByUserId,
+          })),
+        });
+      }
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId: invitation.crewId,
+          memberId: member.id,
+          actorUserId: userId,
+          action: 'member.joined.invitation',
+          after: {
+            invitationId: invitation.id,
+            policyKeys,
+          },
+        },
+      });
+      await this.collaboration.addCrewMemberAccess(
+        invitation.crewId,
+        userId,
+        invitation.invitedByUserId,
+        tx,
+      );
+      await this.conversations.syncCrewParticipant(
+        invitation.crewId,
+        userId,
+        'join',
+        tx,
+      );
+      pendingMessages.push(
+        await this.conversations.persistSystem(
+          conversation.id,
+          'crew.member.joined',
+          { userId },
+          tx,
+        ),
+      );
       const agreement = await this.agreements.stageInvitationAgreement(
         invitation,
         tx,
@@ -388,14 +434,13 @@ export class CrewInvitationsService {
   async revoke(invitationId: string, userId: string) {
     const invitation = await this.prisma.crewInvitation.findUnique({
       where: { id: invitationId },
-      include: { crew: { select: { founderId: true } } },
     });
     if (!invitation) throw new NotFoundException('Invitation not found.');
-    if (invitation.crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can revoke invitations.',
-      });
-    }
+    await this.authorization.require(
+      invitation.crewId,
+      userId,
+      'members.invite',
+    );
     if (invitation.status !== CrewInvitationStatus.pending) {
       throw new ConflictException({
         message: 'Only a pending invitation can be revoked.',
@@ -454,33 +499,20 @@ export class CrewInvitationsService {
   }
 }
 
-function invitationDto(invitation: {
-  id: string;
-  crewId: string;
-  inviteeUserId: string;
-  invitedByUserId: string;
-  roleType: string;
-  status: CrewInvitationStatus;
-  expiresAt: Date;
-  acceptedAt: Date | null;
-  declinedAt: Date | null;
-  revokedAt: Date | null;
-  agreementTitle: string | null;
-  agreementSignerName: string | null;
-  agreementSignerEmail: string | null;
-  agreement?: {
-    id: string;
-    status: string;
-  } | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
+function invitationDto(
+  invitation: CrewInvitation & {
+    agreement?: {
+      id: string;
+      status: string;
+    } | null;
+  },
+) {
   return {
     id: invitation.id,
     crewId: invitation.crewId,
     inviteeUserId: invitation.inviteeUserId,
     invitedByUserId: invitation.invitedByUserId,
-    roleType: invitation.roleType,
+    policyKeys: invitation.policyKeys.filter(isCrewPolicyKey),
     status: invitation.status,
     expiresAt: invitation.expiresAt.toISOString(),
     acceptedAt: invitation.acceptedAt?.toISOString() ?? null,

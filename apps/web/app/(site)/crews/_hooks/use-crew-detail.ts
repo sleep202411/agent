@@ -42,6 +42,28 @@ export function useUpdateCrew() {
   return useMutation({
     mutationFn: ({ id, ...rest }: UpdateCrewInput) =>
       crewApi.patch<CrewDTO>(`/crews/${encodeURIComponent(id)}`, { body: rest }),
+    onMutate: async (input) => {
+      const { id, expectedVersion, ...patch } = input;
+      void expectedVersion;
+      const key = crewKeys.detail(id);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<CrewDTO | null>(key);
+      qc.setQueryData<CrewDTO | null>(key, (current) =>
+        current
+          ? {
+              ...current,
+              ...patch,
+              version: current.version + 1,
+            }
+          : current
+      );
+      return { previous };
+    },
+    onError: (_error, vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData(crewKeys.detail(vars.id), context.previous);
+      }
+    },
     onSuccess: (data, vars) => {
       // Server returns the updated row — replace the cache directly so
       // the workspace hero reflects the change before any refetch.

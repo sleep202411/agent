@@ -34,13 +34,16 @@ function build() {
     groupBy: jest.fn(),
   };
   const crew = {
-    findFirst: jest.fn().mockResolvedValue({ founderId: OWNER_ID }),
+    findFirst: jest.fn().mockResolvedValue({ id: CREW_ID }),
   };
   const service = new ApplicationsService(
     { crew, crewApplication } as never,
     {} as never,
     {} as never,
     {} as never,
+    {
+      require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+    } as never,
   );
   return { service, crew, crewApplication };
 }

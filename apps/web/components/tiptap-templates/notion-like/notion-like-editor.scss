@@ -1,0 +1,115 @@
+@use "../../../styles/variables";
+@use "../../../styles/keyframe-animations";
+
+.notion-like-editor-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 560px;
+  color: #c6c7cb;
+  font-family: inherit;
+  --tt-bg-color: #0f1012;
+  --tt-card-bg-color: #1a1b1f;
+  --tt-card-border-color: rgba(255, 255, 255, 0.07);
+  --tt-border-color: rgba(255, 255, 255, 0.08);
+  --tt-border-color-tint: rgba(255, 255, 255, 0.05);
+  --tt-scrollbar-color: rgba(255, 255, 255, 0.11);
+  --tt-cursor-color: #e52227;
+  --tt-selection-color: rgba(255, 255, 255, 0.11);
+  --tt-theme-text: #ededee;
+}
+
+.notion-like-editor-layout {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(2rem, 1fr)
+    [content-start] minmax(0, 820px)
+    [content-end] minmax(2rem, 1fr)
+    [full-end];
+  width: 100%;
+  min-height: 560px;
+}
+
+.notion-like-editor-content {
+  grid-column: content-start / content-end;
+  width: 100%;
+  min-width: 0;
+  min-height: 560px;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor {
+  min-height: 560px;
+  padding: 0.5rem 1.5rem 30vh;
+  color: #c6c7cb;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor > :first-child {
+  margin-top: 0;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor h1 {
+  color: #f0f0f1;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor h2 {
+  color: #e8e8ea;
+  font-size: 1.3rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor h3 {
+  color: #dfdfe2;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor a {
+  color: #aeb8ca;
+  text-decoration-color: rgba(174, 184, 202, 0.45);
+  text-underline-offset: 0.15em;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor code:not(pre code) {
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0.1rem 0.3rem;
+  color: #d8d8dc;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor blockquote {
+  border-left-color: rgba(255, 255, 255, 0.16);
+  color: #a9aab0;
+}
+
+.notion-like-editor-content .tiptap.ProseMirror.notion-like-editor hr {
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+@media screen and (max-width: 768px) {
+  .notion-like-editor-layout {
+    display: block;
+  }
+
+  .notion-like-editor-content .tiptap.ProseMirror.notion-like-editor {
+    padding: 0.5rem 2rem 30vh;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .notion-like-editor-wrapper,
+  .notion-like-editor-layout,
+  .notion-like-editor-content,
+  .notion-like-editor-content .tiptap.ProseMirror.notion-like-editor {
+    min-height: 480px;
+  }
+
+  .notion-like-editor-content .tiptap.ProseMirror.notion-like-editor {
+    padding: 0.25rem 1rem 30vh;
+  }
+}

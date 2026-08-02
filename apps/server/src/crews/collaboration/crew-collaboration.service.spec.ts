@@ -53,6 +53,7 @@ function build(opts: {
   const service = new CrewCollaborationService(
     {} as never,
     { ensureDefaultAccounts: jest.fn() } as never,
+    {} as never,
   );
   return { db, service };
 }
@@ -167,7 +168,7 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
       data: {
         role: WorkspaceMemberRole.viewer,
         status: WorkspaceMemberStatus.removed,
-        removedAt: expect.any(Date),
+        removedAt: expect.any(Date) as unknown,
         seatAssigned: false,
       },
     });
@@ -179,7 +180,7 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
       },
       data: {
         status: ProjectMemberStatus.removed,
-        removedAt: expect.any(Date),
+        removedAt: expect.any(Date) as unknown,
       },
     });
     expect(t.db.crewAssetGrant.deleteMany).toHaveBeenCalledWith({
@@ -191,7 +192,7 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
         userId: INCOMING,
         role: WorkspaceMemberRole.owner,
         status: WorkspaceMemberStatus.active,
-      }),
+      }) as unknown,
     });
     expect(t.db.projectMember.create).toHaveBeenCalledWith({
       data: {

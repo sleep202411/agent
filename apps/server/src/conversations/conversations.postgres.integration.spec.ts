@@ -103,7 +103,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     const suffix = `${label}-${randomUUID().slice(0, 8)}`;
     return {
       crewId: `crew-it-${suffix}`,
-      founderId: `u-founder-it-${suffix}`,
+      ownerUserId: `u-founder-it-${suffix}`,
       memberId: `u-member-it-${suffix}`,
       outsiderId: `u-outsider-it-${suffix}`,
     };
@@ -117,16 +117,28 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
         name: 'Integration Crew',
         description: 'fixture',
         logo: 'https://example.invalid/logo.png',
-        founderId: s.founderId,
+        createdByUserId: s.ownerUserId,
       },
+    });
+    const ownerMember = await prisma.crewMember.create({
+      data: {
+        id: `cm-${s.ownerUserId}`,
+        crewId: s.crewId,
+        userId: s.ownerUserId,
+        status: 'active',
+        joinedVia: 'creation',
+      },
+    });
+    await prisma.crewOwnership.create({
+      data: { crewId: s.crewId, memberId: ownerMember.id },
     });
     await prisma.crewMember.create({
       data: {
         id: `cm-${s.memberId}`,
         crewId: s.crewId,
         userId: s.memberId,
-        roleType: 'storyboard',
-        via: 'invitation',
+        status: 'active',
+        joinedVia: 'invitation',
       },
     });
   }
@@ -240,7 +252,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   it('pages a tied burst in the total order it declares, not the order the heap holds', async () => {
     const s = scope('paging-order');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
 
     const specs = [
       ...TIED,
@@ -256,7 +268,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
       expected,
     );
 
-    const seen = await pageEverything(conversationId, s.founderId, 2);
+    const seen = await pageEverything(conversationId, s.ownerUserId, 2);
 
     // Spelled out one failure mode at a time, worst first, so a
     // regression reports what went wrong instead of only diffing two
@@ -266,7 +278,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     expect(seen).toEqual(expected);
 
     // Paged or not, the same order.
-    expect(await pageEverything(conversationId, s.founderId, 100)).toEqual(
+    expect(await pageEverything(conversationId, s.ownerUserId, 100)).toEqual(
       expected,
     );
   });
@@ -276,18 +288,18 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   it('counts server-authored system messages as unread', async () => {
     const s = scope('sysunread');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
 
     await service.persistSystem(conversationId, 'order.completed', {});
 
-    const detail = await service.detail(conversationId, s.founderId);
+    const detail = await service.detail(conversationId, s.ownerUserId);
     expect(detail._unreadCount).toBe(1);
   });
 
   it('leaves a message tied with the read cursor unread instead of swallowing it', async () => {
     const s = scope('tiecursor');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
 
     const tiedAt = Date.parse('2026-07-28T11:00:00.000Z');
     await seedMessages(conversationId, s.memberId, [
@@ -297,20 +309,20 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
 
     // Read the older half of the tie; the other one is still unread.
     const [older, newer] = await orderedIds(prisma, conversationId);
-    await service.markRead(conversationId, s.founderId, older);
+    await service.markRead(conversationId, s.ownerUserId, older);
 
-    const detail = await service.detail(conversationId, s.founderId);
+    const detail = await service.detail(conversationId, s.ownerUserId);
     expect(detail._unreadCount).toBe(1);
 
-    await service.markRead(conversationId, s.founderId, newer);
-    const cleared = await service.detail(conversationId, s.founderId);
+    await service.markRead(conversationId, s.ownerUserId, newer);
+    const cleared = await service.detail(conversationId, s.ownerUserId);
     expect(cleared._unreadCount).toBe(0);
   });
 
   it('stores the database microsecond on mark-read instead of truncating it through JavaScript', async () => {
     const s = scope('microsecond-cursor');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
     const messageId = `m-micro-${randomUUID().slice(0, 8)}`;
     await seedMessages(conversationId, s.memberId, [
       {
@@ -328,7 +340,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
       messageId,
     );
 
-    await service.markRead(conversationId, s.founderId, messageId);
+    await service.markRead(conversationId, s.ownerUserId, messageId);
 
     const rows = await prisma.$queryRaw<Array<{ cursor: string | null }>>`
       SELECT to_char(
@@ -337,18 +349,18 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
       ) AS cursor
       FROM conversation_participants
       WHERE conversation_id = ${conversationId}
-        AND user_id = ${s.founderId}
+        AND user_id = ${s.ownerUserId}
     `;
     expect(rows[0]?.cursor).toBe('2026-07-28 11:30:00.000123');
     expect(
-      (await service.detail(conversationId, s.founderId))._unreadCount,
+      (await service.detail(conversationId, s.ownerUserId))._unreadCount,
     ).toBe(0);
   });
 
   it('stores a new participant’s pre-join baseline with the database microsecond intact', async () => {
     const s = scope('microsecond-join-baseline');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
     const messageId = `m-join-micro-${randomUUID().slice(0, 8)}`;
     await seedMessages(conversationId, s.memberId, [
       {
@@ -369,8 +381,8 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
           id: `cm-${s.outsiderId}`,
           crewId: s.crewId,
           userId: s.outsiderId,
-          roleType: 'animation',
-          via: 'invitation',
+          status: 'active',
+          joinedVia: 'invitation',
         },
       });
       await service.syncCrewParticipant(s.crewId, s.outsiderId, 'join', tx);
@@ -403,7 +415,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   it('stops pushing to a member the crew removed, and keeps per-member unread accurate', async () => {
     const s = scope('fanout');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
 
     await prisma.$transaction((tx) =>
       service.syncCrewParticipant(s.crewId, s.memberId, 'leave', tx),
@@ -411,7 +423,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
 
     const msg = await service.persistText(
       conversationId,
-      s.founderId,
+      s.ownerUserId,
       'members only',
     );
     await service.broadcastMessage(msg);
@@ -419,7 +431,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     const calls = realtime.publishUserFrame.mock.calls as Array<
       [string, { data: { unreadCount: number } }, string]
     >;
-    expect(calls.map((c) => c[0])).toEqual([s.founderId]);
+    expect(calls.map((c) => c[0])).toEqual([s.ownerUserId]);
 
     // The author's own message is not unread to them.
     const frame = calls[0][1];
@@ -429,8 +441,8 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   it('keeps the read cursor across leave → rejoin', async () => {
     const s = scope('rejoin');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
-    await seedMessages(conversationId, s.founderId, [
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
+    await seedMessages(conversationId, s.ownerUserId, [
       { id: 'm-rj-1', ms: Date.parse('2026-07-28T12:00:00.000Z') },
       { id: 'm-rj-2', ms: Date.parse('2026-07-28T12:00:01.000Z') },
     ]);
@@ -460,7 +472,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   it('collapses a retried send onto one row and lets unkeyed sends repeat freely', async () => {
     const s = scope('idem');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
 
     const first = await service.sendText(
       conversationId,
@@ -479,7 +491,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     // A different author may reuse the same token.
     const other = await service.sendText(
       conversationId,
-      s.founderId,
+      s.ownerUserId,
       'network hiccup',
       'ck-1',
     );
@@ -517,10 +529,10 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
     ).toBe(1);
   });
 
-  it('404s a stale participant whose crew membership is gone, and admits the founder with no member row', async () => {
+  it('404s a stale participant and admits the owner through canonical active membership', async () => {
     const s = scope('gate');
     await seedCrew(s);
-    const conversationId = await openChatWith(s, [s.founderId, s.memberId]);
+    const conversationId = await openChatWith(s, [s.ownerUserId, s.memberId]);
     // Simulate a historical missed leave sync. The hardened join path
     // itself refuses to create this stale projection now.
     await prisma.conversationParticipant.create({
@@ -541,19 +553,20 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
       service.persistText(conversationId, s.outsiderId, 'hello?'),
     ).rejects.toThrow('Conversation not found');
 
-    const detail = await service.detail(conversationId, s.founderId);
+    const detail = await service.detail(conversationId, s.ownerUserId);
     expect(detail.participants.map((p) => p.userId).sort()).toEqual(
-      [s.founderId, s.memberId].sort(),
+      [s.ownerUserId, s.memberId].sort(),
     );
 
-    // The founder has no crew_members row at all and still gets in.
+    // Ownership is structurally attached to the canonical active member;
+    // chat access never depends on an ownership bypass.
     expect(
       await prisma.crewMember.count({
-        where: { crewId: s.crewId, userId: s.founderId },
+        where: { crewId: s.crewId, userId: s.ownerUserId },
       }),
-    ).toBe(0);
+    ).toBe(1);
     await expect(
-      service.listMessages(conversationId, s.founderId, { limit: 10 }),
+      service.listMessages(conversationId, s.ownerUserId, { limit: 10 }),
     ).resolves.toMatchObject({ items: [] });
   });
 });

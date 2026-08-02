@@ -11,14 +11,14 @@ export interface LookupUserDTO {
   userId: string;
   /** Display name. Empty string if Java returns nothing usable. */
   nickname: string;
-  /** OSS path of avatar (no base URL prefix). NULL if not set. */
+  /** Browser/native-ready absolute URL or image data URI resolved by the BFF. */
   avatar: string | null;
   /** When the request supplied `checkCrewId`: true if this user is
    *  already an active member of that crew. NULL when the check wasn't
    *  requested (callers that don't care about a specific crew). */
   isCrewMember: boolean | null;
   /** Same convention as `isCrewMember` — true if this user is the
-   *  founder of the checked crew (founders are also members, but
+   *  current owner of the checked crew (owners are also members, but
    *  surface separately for clearer UI copy). */
-  isCrewFounder: boolean | null;
+  isCrewOwner: boolean | null;
 }

@@ -98,6 +98,7 @@ import { cn } from "@/lib/utils";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import {
   isConversationAccessError,
+  isOptimisticConversationMessage,
   useConversation,
   useClearConversationAccessCache,
   useDeclineProposal,
@@ -678,6 +679,25 @@ function ConversationHeader({
 
 // ─── Per-message row ────────────────────────────────────────
 
+/**
+ * Consecutive posts share an avatar lane only while they are part of the
+ * same short burst. Author equality alone is not enough: otherwise one
+ * person's first post of the afternoon stays visually attached to a post
+ * from the morning, which makes the new message look as if it lost its
+ * avatar.
+ */
+const MESSAGE_GROUP_WINDOW_MS = 5 * 60 * 1_000;
+
+export function startsNewMessageGroup(message: MessageDTO, prev?: MessageDTO): boolean {
+  if (!prev || prev.authorId !== message.authorId || prev.type === "proposal") return true;
+  const currentAt = Date.parse(message.createdAt);
+  const previousAt = Date.parse(prev.createdAt);
+  if (!Number.isFinite(currentAt) || !Number.isFinite(previousAt) || currentAt < previousAt) {
+    return true;
+  }
+  return currentAt - previousAt > MESSAGE_GROUP_WINDOW_MS;
+}
+
 function MessageRow({
   message,
   viewerId,
@@ -717,7 +737,7 @@ function MessageRow({
   }
   const isMine = !!viewerId && message.authorId === viewerId;
   const author = participants.find((p) => p.userId === message.authorId);
-  const startsStreak = prev?.authorId !== message.authorId;
+  const startsStreak = startsNewMessageGroup(message, prev);
   const authoredProps = {
     message,
     isMine,
@@ -778,15 +798,11 @@ function TextRow({
   const tm = useTranslations("messages");
   const display = authorId ? displays.get(authorId) : undefined;
   const mentions = messageMentions(message);
+  const isOptimistic = isOptimisticConversationMessage(message);
 
   if (isCrew) {
     return (
-      <div
-        className={cn(
-          "group flex gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.025]",
-          showAvatar ? "mt-2" : "mt-0"
-        )}
-      >
+      <div className={cn("flex gap-3 px-2 py-1.5", showAvatar ? "mt-2" : "mt-0")}>
         {showAvatar ? (
           <UserAvatar
             src={display?.avatar}
@@ -795,7 +811,7 @@ function TextRow({
             className="mt-0.5 size-8 shrink-0"
           />
         ) : (
-          <time className="w-8 shrink-0 pt-1.5 text-right text-[9px] text-transparent group-hover:text-[#626873]">
+          <time className="w-8 shrink-0 pt-1.5 text-right text-[9px] text-[#565c66]">
             {formatMessageTime(message.createdAt)}
           </time>
         )}
@@ -813,8 +829,13 @@ function TextRow({
               ) : null}
             </div>
           ) : null}
-          <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-[1.55] text-[#cdd1d7]">
+          <div className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-[1.55] text-[#eef0f3]">
             <RichMessageBody body={message.body} mentions={mentions} />
+            {isOptimistic ? (
+              <span role="status" aria-label={tm("sending")} className="ml-1.5 inline-flex">
+                <IconLoader2 className="size-3 animate-spin text-[#777d87]" />
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -850,6 +871,11 @@ function TextRow({
           )}
         >
           <RichMessageBody body={message.body} mentions={mentions} />
+          {isOptimistic ? (
+            <span role="status" aria-label={tm("sending")} className="ml-1.5 inline-flex">
+              <IconLoader2 className="size-3 animate-spin opacity-70" />
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
@@ -881,12 +907,7 @@ function AuthoredCardShell({
 
   if (isCrew) {
     return (
-      <div
-        className={cn(
-          "group flex gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.025]",
-          showAvatar ? "mt-2" : "mt-0"
-        )}
-      >
+      <div className={cn("flex gap-3 px-2 py-1.5", showAvatar ? "mt-2" : "mt-0")}>
         {showAvatar ? (
           <UserAvatar
             src={display?.avatar}
@@ -895,7 +916,7 @@ function AuthoredCardShell({
             className="mt-0.5 size-8 shrink-0"
           />
         ) : (
-          <time className="w-8 shrink-0 pt-1.5 text-right text-[9px] text-transparent group-hover:text-[#626873]">
+          <time className="w-8 shrink-0 pt-1.5 text-right text-[9px] text-[#565c66]">
             {formatMessageTime(message.createdAt)}
           </time>
         )}
@@ -914,7 +935,7 @@ function AuthoredCardShell({
             </div>
           ) : null}
           {message.body ? (
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-[1.55] text-[#cdd1d7]">
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-[1.55] text-[#eef0f3]">
               <RichMessageBody body={message.body} mentions={mentions} />
             </p>
           ) : null}
@@ -1449,7 +1470,7 @@ function Composer({
 }) {
   const tm = useTranslations("messages");
   const tc = useTranslations("common");
-  const sendText = useSendText(conversationId);
+  const sendText = useSendText(conversationId, viewerId);
   const sendAttachments = useSendAttachments(conversationId);
   const sendTask = useSendTaskCard(conversationId);
   const isCrew = contextType === "crew";
@@ -1505,6 +1526,7 @@ function Composer({
   // the draft changes, because an edited draft is a DIFFERENT message
   // and reusing the key would make the server hand back the old one.
   const clientKeyRef = useRef<string | null>(null);
+  const draftVersionRef = useRef(0);
   const isSending = sendText.isPending || sendAttachments.isPending || sendTask.isPending;
   const isUploading = Object.keys(uploadProgress).length > 0;
   const canUpload =
@@ -1562,6 +1584,7 @@ function Composer({
   }, [discardUploads]);
 
   const editDraft = (value: string, caret = value.length) => {
+    draftVersionRef.current += 1;
     textRef.current = value;
     setText(value);
     const retainedMentions = mentionsRef.current.filter((mention) =>
@@ -1587,6 +1610,7 @@ function Composer({
       ...mentionsRef.current.filter((mention) => mention.userId !== candidate.userId),
       { userId: candidate.userId, label: candidate.label },
     ];
+    draftVersionRef.current += 1;
     textRef.current = next;
     setText(next);
     mentionsRef.current = nextMentions;
@@ -1603,6 +1627,7 @@ function Composer({
   };
 
   const replaceTask = (task: CrewTaskOptionDTO | null) => {
+    draftVersionRef.current += 1;
     selectedTaskRef.current = task;
     setSelectedTask(task);
     if (task) {
@@ -1615,6 +1640,7 @@ function Composer({
   };
 
   const replaceAttachments = (next: ComposerAttachment[]) => {
+    draftVersionRef.current += 1;
     attachmentsRef.current = next;
     setAttachments(next);
     if (next.length > 0) {
@@ -1704,6 +1730,8 @@ function Composer({
     clientKeyRef.current ??= newClientKey();
     const clientKey = clientKeyRef.current;
     const signature = draftSignature(draft, task, attachmentSnapshot, mentionSnapshot);
+    const draftVersion = draftVersionRef.current;
+    let clearedOptimistically = false;
     try {
       if (task) {
         await sendTask.mutateAsync({
@@ -1728,7 +1756,27 @@ function Composer({
           mentions: mentionSnapshot,
         });
       } else {
-        await sendText.mutateAsync({ body, clientKey, mentions: mentionSnapshot });
+        const send = sendText.mutateAsync({ body, clientKey, mentions: mentionSnapshot });
+        // Text sends render optimistically, so the composer should feel ready
+        // for the next thought immediately instead of waiting for HTTP + WS.
+        if (
+          draftSignature(
+            textRef.current,
+            selectedTaskRef.current,
+            attachmentsRef.current,
+            mentionsRef.current
+          ) === signature &&
+          clientKeyRef.current === clientKey
+        ) {
+          textRef.current = "";
+          setText("");
+          mentionsRef.current = [];
+          setMentions([]);
+          setMentionSearch(null);
+          clientKeyRef.current = null;
+          clearedOptimistically = true;
+        }
+        await send;
       }
       // The textarea remains editable while the request is in flight.
       // Clear only the exact draft that completed; never erase text the
@@ -1761,6 +1809,19 @@ function Composer({
       // drop before any response).
       const message = err instanceof Error && err.message ? err.message : tm("sendFailed");
       if (
+        clearedOptimistically &&
+        draftVersionRef.current === draftVersion &&
+        textRef.current === "" &&
+        selectedTaskRef.current === null &&
+        attachmentsRef.current.length === 0
+      ) {
+        textRef.current = draft;
+        setText(draft);
+        mentionsRef.current = mentionSnapshot;
+        setMentions(mentionSnapshot);
+        clientKeyRef.current = clientKey;
+        setFailure(message);
+      } else if (
         draftSignature(
           textRef.current,
           selectedTaskRef.current,

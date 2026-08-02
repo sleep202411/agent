@@ -13,6 +13,9 @@ import type {
   Crew,
   CrewApplication,
   CrewMember,
+  CrewMemberPolicy,
+  CrewMemberPosition,
+  CrewOwnership,
   CrewPosition,
 } from '@prisma/client';
 import type {
@@ -22,6 +25,7 @@ import type {
   CrewMemberDTO,
   CrewPositionDTO,
 } from '@repo/shared/crew';
+import { isCrewPolicyKey, isPresetPosition } from '@repo/shared/crew';
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const isoReq = (d: Date) => d.toISOString();
@@ -35,7 +39,17 @@ interface CrewExtras {
   pendingApplicationCount?: number;
 }
 
-export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
+type CrewWithOwnership = Crew & {
+  ownership: { member: { userId: string } } | null;
+};
+
+export function toCrewDTO(
+  c: CrewWithOwnership,
+  extras: CrewExtras = {},
+): CrewDTO {
+  if (!c.ownership) {
+    throw new Error(`Crew ${c.id} has no owner`);
+  }
   return {
     id: c.id,
     name: c.name,
@@ -49,9 +63,10 @@ export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
     // guarantee shape, so the cast is safe.
     socialLinks: (c.socialLinks as CrewDTO['socialLinks'] | null) ?? [],
     showcaseWorks: (c.showcaseWorks as CrewDTO['showcaseWorks'] | null) ?? [],
-    founderId: c.founderId,
+    ownerUserId: c.ownership.member.userId,
     listingStatus: c.listingStatus as CrewDTO['listingStatus'],
     listedAt: iso(c.listedAt),
+    version: c.version,
     createdAt: isoReq(c.createdAt),
     updatedAt: isoReq(c.updatedAt),
     ...(extras.memberCount !== undefined
@@ -105,16 +120,36 @@ export function toPositionDTO(
   };
 }
 
-export function toMemberDTO(m: CrewMember): CrewMemberDTO {
+type CrewMemberView = CrewMember & {
+  ownership: CrewOwnership | null;
+  positions: CrewMemberPosition[];
+  policies: CrewMemberPolicy[];
+};
+
+export function toMemberDTO(m: CrewMemberView): CrewMemberDTO {
   return {
     id: m.id,
     crewId: m.crewId,
     userId: m.userId,
-    roleType: m.roleType,
-    positionId: m.positionId ?? null,
-    via: m.via as CrewMemberDTO['via'],
-    isFinance: m.isFinance,
+    status: m.status as CrewMemberDTO['status'],
+    joinedVia: m.joinedVia as CrewMemberDTO['joinedVia'],
+    isOwner: m.ownership !== null,
+    positions: m.positions.map((position) => ({
+      id: position.id,
+      categoryKey:
+        position.categoryKey && isPresetPosition(position.categoryKey)
+          ? position.categoryKey
+          : null,
+      title: position.title,
+      isPrimary: position.isPrimary,
+      sourcePositionId: position.sourcePositionId,
+    })),
+    policyKeys: m.policies
+      .map((policy) => policy.policyKey)
+      .filter(isCrewPolicyKey),
     joinedAt: isoReq(m.joinedAt),
+    removedAt: iso(m.removedAt),
+    version: m.version,
   };
 }
 

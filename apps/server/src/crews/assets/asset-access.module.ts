@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { CrewRoleService } from '../crew-role.service';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewAssetAccessService } from './asset-access.service';
 
 /**
@@ -8,7 +8,7 @@ import { CrewAssetAccessService } from './asset-access.service';
  * entire crew product module (controllers, workers and collaboration stack).
  */
 @Module({
-  providers: [CrewRoleService, CrewAssetAccessService],
-  exports: [CrewRoleService, CrewAssetAccessService],
+  providers: [CrewAuthorizationService, CrewAssetAccessService],
+  exports: [CrewAuthorizationService, CrewAssetAccessService],
 })
 export class CrewAssetAccessModule {}
