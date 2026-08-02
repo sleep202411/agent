@@ -7,12 +7,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationDTO, MessageDTO } from "@repo/shared/conversation";
 import {
+  applyOptimisticMessage,
   applyIncomingMessage,
   clearConversationAccessCache,
   ConversationApiError,
   conversationKeys,
+  createOptimisticTextMessage,
   createConversationRecoveryCoordinator,
   flattenMessagePagesChronologically,
+  optimisticMessageId,
+  removeOptimisticMessage,
   shouldRetryConversationQuery,
   useConversation,
 } from "./use-conversations";
@@ -70,6 +74,72 @@ describe("flattenMessagePagesChronologically", () => {
     expect(data.pages.flatMap((page) => page.items).filter((item) => item.id === "m-old")).toEqual([
       expect.objectContaining({ body: "updated" }),
     ]);
+    qc.clear();
+  });
+});
+
+describe("optimistic text messages", () => {
+  it("shows a send immediately and replaces it when realtime wins the race", () => {
+    const qc = new QueryClient();
+    const key = conversationKeys.messages("conv-1");
+    const original = message("m-old", "2026-07-28T09:00:00.000Z");
+    qc.setQueryData(key, timeline(original));
+
+    const optimistic = createOptimisticTextMessage({
+      conversationId: "conv-1",
+      authorId: "user-1",
+      body: "The cut is ready",
+      clientKey: "send-1",
+      mentions: [{ userId: "user-2", label: "Ada" }],
+    });
+    applyOptimisticMessage(qc, "conv-1", optimistic);
+
+    let data = qc.getQueryData<InfiniteData<MessagesPage, string | null>>(key)!;
+    expect(flattenMessagePagesChronologically(data.pages).map((item) => item.id)).toEqual([
+      "m-old",
+      optimisticMessageId("send-1"),
+    ]);
+    expect(optimistic.payload).toEqual({
+      kind: "text",
+      mentions: [{ userId: "user-2", label: "Ada" }],
+    });
+
+    const persisted = {
+      ...optimistic,
+      id: "m-real",
+      clientKey: "send-1",
+      createdAt: "2026-07-28T10:00:00.000Z",
+    };
+    // The service broadcasts before its HTTP response. The realtime frame
+    // must remove the temporary row, and the later response must remain
+    // idempotent instead of rendering a duplicate.
+    applyIncomingMessage(qc, "conv-1", persisted, { revalidate: false });
+    applyIncomingMessage(qc, "conv-1", persisted, { revalidate: false });
+
+    data = qc.getQueryData<InfiniteData<MessagesPage, string | null>>(key)!;
+    expect(flattenMessagePagesChronologically(data.pages).map((item) => item.id)).toEqual([
+      "m-old",
+      "m-real",
+    ]);
+    qc.clear();
+  });
+
+  it("removes only the failed optimistic row", () => {
+    const qc = new QueryClient();
+    const key = conversationKeys.messages("conv-1");
+    const original = message("m-old", "2026-07-28T09:00:00.000Z");
+    const optimistic = createOptimisticTextMessage({
+      conversationId: "conv-1",
+      authorId: "user-1",
+      body: "Still uploading",
+      clientKey: "send-failed",
+    });
+    qc.setQueryData(key, timeline(optimistic, original));
+
+    removeOptimisticMessage(qc, "conv-1", optimistic.id);
+
+    const data = qc.getQueryData<InfiniteData<MessagesPage, string | null>>(key)!;
+    expect(data.pages[0].items).toEqual([original]);
     qc.clear();
   });
 });

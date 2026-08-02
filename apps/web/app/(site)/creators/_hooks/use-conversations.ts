@@ -291,12 +291,13 @@ export function useOpenConversation() {
  * that offer a retry MUST pass one, and must keep the SAME key for the
  * same composed text (see the composer in `conversation-view.tsx`).
  */
-export function useSendText(conversationId: string) {
+export function useSendText(conversationId: string, authorId: string | null) {
   const qc = useQueryClient();
   return useMutation<
     MessageDTO,
     ConversationApiError,
-    { body: string; clientKey?: string; mentions?: ConversationMentionPayload[] }
+    { body: string; clientKey?: string; mentions?: ConversationMentionPayload[] },
+    { optimisticId: string | null }
   >({
     mutationFn: ({ body, clientKey, mentions }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/messages`, {
@@ -306,8 +307,42 @@ export function useSendText(conversationId: string) {
           ...(mentions?.length ? { mentions } : {}),
         },
       }),
-    onSuccess: (message) => {
-      applyIncomingMessage(qc, conversationId, message);
+    onMutate: async ({ body, clientKey, mentions }) => {
+      if (!authorId || !clientKey) return { optimisticId: null };
+
+      const key = conversationKeys.messages(conversationId);
+      // Stop an older REST response from replacing the cache immediately
+      // after the optimistic row is inserted. `revert: false` preserves any
+      // realtime frames that landed while that request was in flight.
+      await qc.cancelQueries({ queryKey: key, exact: true }, { silent: true, revert: false });
+      const optimistic = createOptimisticTextMessage({
+        conversationId,
+        authorId,
+        body,
+        clientKey,
+        mentions,
+      });
+      applyOptimisticMessage(qc, conversationId, optimistic);
+      return { optimisticId: optimistic.id };
+    },
+    onSuccess: (message, variables) => {
+      // A server deployed just before `clientKey` was added to MessageDTO may
+      // omit it from the response. The mutation still knows the exact key.
+      applyIncomingMessage(
+        qc,
+        conversationId,
+        message.clientKey === undefined
+          ? { ...message, clientKey: variables.clientKey ?? null }
+          : message,
+        { optimisticClientKey: variables.clientKey }
+      );
+    },
+    onError: (_error, variables, context) => {
+      if (context?.optimisticId) {
+        removeOptimisticMessage(qc, conversationId, context.optimisticId);
+      } else if (variables.clientKey) {
+        removeOptimisticMessage(qc, conversationId, optimisticMessageId(variables.clientKey));
+      }
     },
   });
 }
@@ -420,36 +455,123 @@ export function applyIncomingMessage(
   qc: QueryClient,
   conversationId: string,
   message: MessageDTO,
-  options: { revalidate?: boolean } = {}
+  options: { revalidate?: boolean; optimisticClientKey?: string } = {}
 ) {
   const key = conversationKeys.messages(conversationId);
   qc.setQueryData<InfiniteData<MessagesResponse>>(key, (old) => {
     if (!old) return old;
+    const clientKey = message.clientKey ?? options.optimisticClientKey;
+    const optimisticId = clientKey ? optimisticMessageId(clientKey) : null;
+    const withoutOptimistic = optimisticId
+      ? {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((item) => item.id !== optimisticId),
+          })),
+        }
+      : old;
     // Server returns newest-first; the *first* page is the newest
     // batch, so prepend new messages there. Skip duplicates.
-    const firstPage = old.pages[0];
-    if (!firstPage) return old;
-    if (old.pages.some((page) => page.items.some((item) => item.id === message.id))) {
+    const firstPage = withoutOptimistic.pages[0];
+    if (!firstPage) return withoutOptimistic;
+    if (withoutOptimistic.pages.some((page) => page.items.some((item) => item.id === message.id))) {
       // Already present — could be an update (proposal status flip).
       // Patch in place by id wherever pagination put it. Looking only
       // at page zero duplicated an older proposal when its status
       // changed or when a buffered frame was replayed.
       return {
-        ...old,
-        pages: old.pages.map((p) => ({
+        ...withoutOptimistic,
+        pages: withoutOptimistic.pages.map((p) => ({
           ...p,
           items: p.items.map((m) => (m.id === message.id ? message : m)),
         })),
       };
     }
     const patchedFirst = { ...firstPage, items: [message, ...firstPage.items] };
-    return { ...old, pages: [patchedFirst, ...old.pages.slice(1)] };
+    return {
+      ...withoutOptimistic,
+      pages: [patchedFirst, ...withoutOptimistic.pages.slice(1)],
+    };
   });
   if (options.revalidate !== false) {
     qc.invalidateQueries({ queryKey: key });
     // Inbox previews go stale — fire a refetch.
     qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
   }
+}
+
+const OPTIMISTIC_MESSAGE_PREFIX = "optimistic:";
+
+export function optimisticMessageId(clientKey: string): string {
+  return `${OPTIMISTIC_MESSAGE_PREFIX}${clientKey}`;
+}
+
+export function isOptimisticConversationMessage(message: MessageDTO): boolean {
+  return message.id.startsWith(OPTIMISTIC_MESSAGE_PREFIX);
+}
+
+export function createOptimisticTextMessage({
+  conversationId,
+  authorId,
+  body,
+  clientKey,
+  mentions = [],
+}: {
+  conversationId: string;
+  authorId: string;
+  body: string;
+  clientKey: string;
+  mentions?: ConversationMentionPayload[];
+}): MessageDTO {
+  return {
+    id: optimisticMessageId(clientKey),
+    conversationId,
+    authorId,
+    clientKey,
+    type: "text",
+    body,
+    payload: mentions.length > 0 ? { kind: "text", mentions } : null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function applyOptimisticMessage(
+  qc: QueryClient,
+  conversationId: string,
+  message: MessageDTO
+) {
+  const key = conversationKeys.messages(conversationId);
+  qc.setQueryData<InfiniteData<MessagesResponse>>(key, (old) => {
+    if (!old) return old;
+    const firstPage = old.pages[0];
+    if (!firstPage) return old;
+    if (old.pages.some((page) => page.items.some((item) => item.id === message.id))) return old;
+    return {
+      ...old,
+      pages: [{ ...firstPage, items: [message, ...firstPage.items] }, ...old.pages.slice(1)],
+    };
+  });
+}
+
+export function removeOptimisticMessage(
+  qc: QueryClient,
+  conversationId: string,
+  optimisticId: string
+) {
+  qc.setQueryData<InfiniteData<MessagesResponse>>(
+    conversationKeys.messages(conversationId),
+    (old) =>
+      old
+        ? {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.filter((item) => item.id !== optimisticId),
+            })),
+          }
+        : old
+  );
 }
 
 function seedFirstMessage(qc: QueryClient, conversationId: string, message: MessageDTO) {
