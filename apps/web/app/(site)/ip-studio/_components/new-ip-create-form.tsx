@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { AiSuggestedChip } from "@/components/ui/ai-suggested-chip";
 import {
@@ -313,9 +314,9 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
           <Field>
             <FieldLabel>{regionUi("field", defaultSourceLocale)}</FieldLabel>
-            <select
+            <NativeSelect
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
+              onChange={setRegion}
               className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <option value="">{regionUi("placeholder", defaultSourceLocale)}</option>
@@ -324,7 +325,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
                   {regionLabel(r.code, defaultSourceLocale)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </Field>
 
           <Field>

@@ -17,6 +17,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   cheapestSellPoints,
@@ -464,7 +465,7 @@ function FieldControl({
     );
   }
 
-  // Enum-backed dropdown → styled <select>. Used when the schema asks for a
+  // Enum-backed dropdown. Used when the schema asks for a
   // 'select' control or when there are too many options for a button group
   // (e.g. Seedance duration: 'auto' + 4..15 = 13 options).
   if (
@@ -473,30 +474,19 @@ function FieldControl({
     (field.control === "select" || field.enum.length > 6)
   ) {
     return (
-      <div className="relative flex w-full justify-end sm:max-w-[360px]">
-        <select
+      <div className="flex w-full justify-end sm:max-w-[360px]">
+        <NativeSelect
           value={typeof value === "string" ? value : String(value ?? field.enum[0])}
           aria-labelledby={labelId}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-9 w-full appearance-none rounded-[12px] border border-white/[0.08] bg-white/[0.04] pl-3 pr-9 text-right text-sm font-semibold text-white outline-none transition-colors focus:border-white/20 sm:w-44 [&>option]:bg-[#1c1c1f] [&>option]:text-white"
+          onChange={onChange}
+          className="h-9 w-full rounded-[12px] border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-white transition-colors focus:border-white/20 sm:w-44"
         >
           {field.enum.map((option) => (
             <option key={option} value={option}>
               {enumOptionLabel(field, option, t)}
             </option>
           ))}
-        </select>
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/50">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path
-              d="M2.5 4.5L6 8l3.5-3.5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
+        </NativeSelect>
       </div>
     );
   }

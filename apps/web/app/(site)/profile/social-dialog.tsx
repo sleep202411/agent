@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
@@ -76,10 +77,10 @@ export function SocialDialog({ open, onOpenChange, initial }: SocialDialogProps)
         <div className="space-y-4 p-4">
           <Field>
             <FieldLabel required>{t("socialPlatformLabel")}</FieldLabel>
-            <select
+            <NativeSelect
               value={draft.platform}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, platform: e.target.value as SocialPlatform }))
+              onChange={(nextValue) =>
+                setDraft((d) => ({ ...d, platform: nextValue as SocialPlatform }))
               }
               className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
             >
@@ -88,7 +89,7 @@ export function SocialDialog({ open, onOpenChange, initial }: SocialDialogProps)
                   {t(p.labelKey)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </Field>
 
           <Field>

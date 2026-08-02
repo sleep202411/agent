@@ -46,6 +46,7 @@ import {
   IconWand,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch } from "@/src/store";
 import { touchCredits } from "@/src/store/slices/userSlice";
@@ -2263,9 +2264,9 @@ function InspectorSelect({
   return (
     <label className="block">
       <span className="text-xs font-semibold text-white/42">{label}</span>
-      <select
+      <NativeSelect
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         className="mt-1.5 h-10 w-full rounded-lg border border-white/[0.08] bg-[#17171a] px-3 text-sm font-medium text-white outline-none focus:border-white/18"
       >
         <option value="">{t("sbSelectEmpty")}</option>
@@ -2274,7 +2275,7 @@ function InspectorSelect({
             {displayValue(option, t)}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
 }
