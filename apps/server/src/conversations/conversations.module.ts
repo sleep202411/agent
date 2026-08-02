@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth';
+import { NotificationModule } from '../notification';
+import { ConversationRealtimeModule } from './conversation-realtime.module';
+import { ConversationRealtimeOutboxService } from './conversation-realtime-outbox.service';
 import { ConversationsController } from './conversations.controller';
-import { ConversationsGateway } from './conversations.gateway';
 import { ConversationsService } from './conversations.service';
 
 /**
@@ -12,9 +14,9 @@ import { ConversationsService } from './conversations.service';
  * status from within transactions.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, NotificationModule, ConversationRealtimeModule],
   controllers: [ConversationsController],
-  providers: [ConversationsService, ConversationsGateway],
+  providers: [ConversationsService, ConversationRealtimeOutboxService],
   exports: [ConversationsService],
 })
 export class ConversationsModule {}

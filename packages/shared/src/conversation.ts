@@ -11,8 +11,16 @@
  *   - `order`    — a buyer + creator are executing a ServiceOrder.
  *                  Always exactly one conversation per order.
  *
+ *   - `crew`     — one crew, one group chat. Conversation identity is
+ *                  the crew: lookup key `crew:<crewId>`. Participants
+ *                  are the crew's active members (role `member`),
+ *                  synced from `crew_members` by the crews module.
+ *                  Unlike service/order this is an N-party thread, so
+ *                  the inbox card projects the CREW (name / logo /
+ *                  member count) instead of a single counterparty.
+ *
  *   Future contexts (extensible by adding the literal here + a
- *   server-side resolver): `crew`, `crew_application`, `episode`,
+ *   server-side resolver): `crew_application`, `episode`,
  *   `episode_assignment`.
  *
  * Lifecycle: a `service` conversation can be promoted to an `order`
@@ -22,34 +30,41 @@
  * message history is preserved in the same thread so both sides
  * keep their full back-and-forth.
  *
- * Realtime delivery: messages are persisted first (DB is source of
- * truth), then published to a per-user Redis pub/sub channel
- * (`conversation:user:{userId}`) so every browser tab the user has
- * open receives the push. Missed-while-offline windows are
- * recovered by the client refetching on reconnect (cursor-based on
- * createdAt).
+ * Realtime delivery: messages are persisted first (DB is source of truth),
+ * then delivered through the authenticated per-user Ably channel and, for
+ * crew chat, its Ably Chat room. Conversation inbox, crew-task, and in-app
+ * notification frames share the user connection. Missed-while-offline
+ * windows are recovered by REST cursor refetch on every attach boundary.
  */
 
 import type { CurrencyCode } from "./crew.js";
 import type { ServiceTier } from "./creator-service.js";
+import type { NotificationDTO } from "./notifications.js";
 
 // ─── Enums ───────────────────────────────────────────────────
 
-export const CONVERSATION_CONTEXT_TYPES = ["service", "order"] as const;
+export const CONVERSATION_CONTEXT_TYPES = ["service", "order", "crew"] as const;
 export type ConversationContextType = (typeof CONVERSATION_CONTEXT_TYPES)[number];
 
-export const CONVERSATION_PARTICIPANT_ROLES = ["buyer", "creator"] as const;
+/**
+ * Participant roles.
+ *
+ * `buyer` / `creator` are the two sides of a service or order thread and
+ * DO carry authorization weight (only `creator` may post a proposal, only
+ * `buyer` may accept or decline one).
+ *
+ * `member` is the single role every crew-chat participant gets. It is
+ * deliberately flat — crew authority is resolved from ownership, policy
+ * bundles, and permission overrides by the crew authorization boundary.
+ * Mirroring authorization here would duplicate mutable state and give the
+ * order state machine roles it must never see. Because `member` is
+ * neither `buyer` nor `creator`, every proposal / order gate fails closed
+ * for crew rows without a single extra branch.
+ */
+export const CONVERSATION_PARTICIPANT_ROLES = ["buyer", "creator", "member"] as const;
 export type ConversationParticipantRole = (typeof CONVERSATION_PARTICIPANT_ROLES)[number];
 
-export const CONVERSATION_MESSAGE_TYPES = [
-  "text",
-  /** Reserved for v1.1 once attachments ship. */
-  "image",
-  /** Reserved for v1.1 once attachments ship. */
-  "file",
-  "proposal",
-  "system",
-] as const;
+export const CONVERSATION_MESSAGE_TYPES = ["text", "image", "file", "proposal", "system"] as const;
 // Renamed from `MessageType` to disambiguate from chat.ts (Mastra
 // assistant wire shape); re-export from shared/index.ts would
 // otherwise collide.
@@ -80,6 +95,9 @@ export const SYSTEM_MESSAGE_KINDS = [
   "order.revision_requested",
   "order.completed",
   "order.cancelled",
+  // Crew chat — membership lifecycle. params: { userId }
+  "crew.member.joined",
+  "crew.member.left",
 ] as const;
 export type SystemMessageKind = (typeof SYSTEM_MESSAGE_KINDS)[number];
 
@@ -120,11 +138,58 @@ export interface SystemMessagePayload {
 }
 
 /**
+ * A durable reference behind an inline @mention.
+ *
+ * `label` is the display-name snapshot written into `body`; `userId` is
+ * the stable identity used for notification routing and later profile
+ * changes. The server validates every id against the crew's live roster,
+ * so clients cannot smuggle an outsider into a protected thread.
+ */
+export interface ConversationMentionPayload {
+  userId: string;
+  label: string;
+}
+
+export interface ConversationAttachmentPayload {
+  /** Durable crew asset reference. Never a raw storage key or signed URL. */
+  assetNodeId: string;
+  mediaAssetId: string;
+  name: string;
+  mediaKind: "image" | "video" | "audio" | "document" | "other";
+  contentType: string;
+  sizeBytes: number | null;
+}
+
+/**
+ * Durable identity behind an inline #task reference.
+ *
+ * `label` is the exact snapshot embedded in the message body without the
+ * leading `#`. The remaining fields let clients open the referenced task and
+ * render useful context without trusting human-readable text as identity.
+ */
+export interface ConversationTaskReferencePayload {
+  taskId: string;
+  crewId: string;
+  number: number;
+  label: string;
+}
+
+/**
  * Union of payload shapes carried by a Message. The runtime
  * `type` field tells you which one to read.
  */
 export type MessagePayload =
-  | { kind: "text" }
+  | {
+      kind: "text";
+      mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
+    }
+  | {
+      kind: "attachments";
+      attachments: ConversationAttachmentPayload[];
+      mentions?: ConversationMentionPayload[];
+      tasks?: ConversationTaskReferencePayload[];
+    }
   | { kind: "proposal"; proposal: ProposalPayload }
   | { kind: "system"; system: SystemMessagePayload };
 
@@ -135,6 +200,12 @@ export interface MessageDTO {
   conversationId: string;
   /** NULL for system messages — server-authored, no user. */
   authorId: string | null;
+  /**
+   * Caller-supplied idempotency key. The sender uses it to replace an
+   * optimistic row with the persisted message even when realtime delivery
+   * arrives before the HTTP response. Optional for older producers.
+   */
+  clientKey?: string | null;
   type: ConversationMessageType;
   /** Plain text body. For type=text, the entire message; for
    *  type=proposal, the leading note (rendered above the price
@@ -175,12 +246,28 @@ export interface ConversationDTO {
  * Inbox row projection. Drops participants[] (rendered via the
  * creator/buyer profile cache instead) and shortens lastMessage to
  * a preview string + author.
+ *
+ * Two shapes share one row type:
+ *   - `service` / `order` — two-party. The row is identified by the
+ *     counterparty (avatar + nickname resolved from `counterpartyId`).
+ *   - `crew` — N-party. The row is identified by the CREW, so the
+ *     `crew*` fields below are populated and the renderer should use
+ *     them instead of resolving `counterpartyId` as a user.
+ *
+ * `counterpartyId` / `counterpartyRole` stay REQUIRED and non-nullable
+ * for both shapes — the shipped order inbox dereferences them
+ * unconditionally, and widening them to optional would be a breaking
+ * type change for a surface crew chat has no business touching. For a
+ * crew row they carry the crew's own identity (`counterpartyId` ===
+ * `contextId` === `crewId`, role `member`), which is stable, never the
+ * viewer themselves, and never a random other member.
  */
 export interface ConversationCardDTO {
   id: string;
   contextType: ConversationContextType;
   contextId: string;
-  /** The other participant from the viewer's perspective. */
+  /** The other participant from the viewer's perspective. For a `crew`
+   *  row there is no single other party — this is the crew id. */
   counterpartyId: string;
   counterpartyRole: ConversationParticipantRole;
   /** Short summary line — server-rendered (text body / "[proposal]" /
@@ -190,16 +277,27 @@ export interface ConversationCardDTO {
   lastMessageType: ConversationMessageType;
   lastMessageAt: string;
   unreadCount: number;
+
+  // ─── crew rows only (undefined for service / order) ───────
+
+  /** Crew this thread belongs to. Mirrors `contextId`. */
+  crewId?: string;
+  crewName?: string;
+  /** Crew logo URL — required on the Crew row, so always set when
+   *  `crewName` is. */
+  crewLogo?: string;
+  /** Active member count — the group-chat equivalent of an avatar. */
+  memberCount?: number;
 }
 
-// ─── WS frame envelopes ──────────────────────────────────────
+// ─── Realtime frame envelopes ────────────────────────────────
 
 /**
- * WS frames the conversations gateway pushes. Same envelope shape
- * as the existing notification gateway: `{ event, data }`.
+ * Frames delivered through the authenticated per-user Ably channel.
+ * The payload stays transport-neutral: `{ event, data }`.
  *
  * Add a new frame variant: extend the union here AND in
- * `apps/web/src/lib/conversations/ws-client.ts`.
+ * `apps/web/src/lib/conversations/ably-client.ts`.
  */
 export type ConversationFrame =
   | {
@@ -231,18 +329,100 @@ export type ConversationFrame =
         contextId: string;
       };
     }
-  | { event: "heartbeat"; data: { serverTime: number } }
+  | {
+      event: "crew.task.changed";
+      data: {
+        crewId: string;
+        taskId: string;
+        action: "created" | "updated" | "commented" | "submitted" | "reviewed";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      event: "crew.task.project.changed";
+      data: {
+        crewId: string;
+        resource:
+          | "view"
+          | "workflow"
+          | "cycle"
+          | "label"
+          | "field"
+          | "production_document"
+          | "production_project"
+          | "production_resource"
+          | "production_activity"
+          | "episode"
+          | "delivery";
+        resourceId: string;
+        action: "created" | "updated" | "deleted" | "reordered";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      event: "crew.asset.changed";
+      data: {
+        crewId: string;
+        nodeId: string;
+        action: "created" | "updated" | "trashed" | "restored" | "deleted" | "permissions_updated";
+        actorUserId: string | null;
+      };
+    }
+  | {
+      /**
+       * Notifications share the authenticated per-user Ably channel with
+       * conversation inbox and crew-task invalidations. PostgreSQL remains
+       * authoritative; this frame is only the low-latency signal.
+       */
+      event: "notification.created";
+      data: NotificationDTO;
+    }
+  /** Synthetic client boundary emitted after the Ably user channel has
+   *  attached. A client REST-refetches here to close startup/reconnect gaps. */
+  | { event: "ready"; data: { serverTime: number } }
   | { event: "terminate"; data: { reason: string; code: number } };
 
-// ─── Pub/sub channel helpers ─────────────────────────────────
+// ─── Ably channel + credential contracts ─────────────────────
 
-/** Per-user Redis pub/sub channel. Mirror of `notificationChannel`. */
+/** Per-user Ably Pub/Sub channel for inbox and domain invalidation frames. */
 export function conversationChannel(userId: string): string {
   return `conversation:user:${userId}`;
 }
 
 export const CONVERSATION_CHANNEL_PATTERN = "conversation:user:*";
 export const CONVERSATION_CHANNEL_PREFIX = "conversation:user:";
+export const CONVERSATION_REALTIME_EVENT = "frame";
+
+/** One crew conversation maps to one Ably Chat room. */
+export function crewConversationRoom(conversationId: string): string {
+  return `crew-chat:${conversationId}`;
+}
+
+export const CREW_CONVERSATION_METADATA_SCHEMA = "fizzdragon.crew-chat.signal.v1";
+
+/**
+ * The seven public fields of an Ably TokenRequest. The root key is never
+ * serialized into this contract.
+ */
+export interface ConversationAblyTokenRequestDTO {
+  keyName: string;
+  ttl?: number;
+  timestamp: number;
+  capability: string;
+  clientId?: string;
+  nonce: string;
+  mac: string;
+}
+
+export interface ConversationRealtimeGrantDTO {
+  channel: string;
+  ttlMs: number;
+  tokenRequest: ConversationAblyTokenRequestDTO;
+}
+
+export interface CrewConversationRealtimeGrantDTO extends ConversationRealtimeGrantDTO {
+  room: string;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 

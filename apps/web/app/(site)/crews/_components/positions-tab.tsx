@@ -3,37 +3,26 @@
 /**
  * Plaza "Positions" view — flat list across all crews.
  *
- * Refactored 2026-05-25 to a Milao-style two-column layout:
- *   left   sidebar with quick-filter checkboxes (employment type,
- *          seniority, work mode) plus a placeholder "Job alert" card
- *   right  job grid (3 cols at xl) of larger, breathing cards that
- *          surface logo + title + description + tag chips + dual CTA
+ * Two-column discovery layout:
+ *   left   server-backed multi-select filters for employment type,
+ *          seniority and work mode
+ *   right  responsive job cards with one deliberate application CTA
  *
- * Filtering is client-side over the first page of results (limit 64).
- * That's fine for the current data volume; promote to a server-side
- * filter pass when the list grows past a few hundred open positions.
- *
- * Data source: real aggregated positions from `GET /aurora/positions`.
+ * Filtering, sorting and cursor pagination are server-owned. The client keeps
+ * loaded pages only for rendering, so large recruitment marketplaces do not
+ * silently disappear after an arbitrary first-page cap.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  IconBriefcase,
-  IconChevronDown,
-  IconCoin,
-  IconMail,
-  IconMapPin,
-  IconUserCircle,
-} from "@tabler/icons-react";
-import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query";
+import { IconBriefcase, IconCoin, IconMapPin, IconUserCircle } from "@tabler/icons-react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import type { CrewDTO, CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
 import {
@@ -56,9 +45,10 @@ interface PositionWithCrew {
 interface PublicPositionsResult {
   items: PositionWithCrew[];
   nextCursor: string | null;
+  total: number;
 }
 
-type SortMode = "newest" | "oldest" | "salaryHigh";
+type SortMode = "newest" | "oldest";
 
 export function PositionsTab() {
   const t = useTranslations("crew");
@@ -66,37 +56,45 @@ export function PositionsTab() {
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
 
-  const { data, isError } = useQuery({
-    queryKey: ["crew", "positions", "public", "first"] as const,
-    queryFn: () => crewApi.get<PublicPositionsResult>("/positions", { query: { limit: 64 } }),
-    staleTime: 60_000,
-  });
-  const all = data?.items ?? [];
-
-  // ─── Client-side filter state ─────────────────────────
-  // Multi-select per facet; empty set = no constraint (show all).
+  // Multi-select per facet; empty set = no constraint.
   const [employment, setEmployment] = useState<Set<EmploymentType>>(new Set());
   const [seniority, setSeniority] = useState<Set<ExperienceLevel>>(new Set());
   const [workMode, setWorkMode] = useState<Set<WorkMode>>(new Set());
   const [sort, setSort] = useState<SortMode>("newest");
 
-  const filtered = useMemo(() => {
-    const rows = all.filter(({ position: p }) => {
-      if (employment.size && !employment.has(p.employmentType)) return false;
-      if (seniority.size && !seniority.has(p.experienceLevel)) return false;
-      if (workMode.size && !workMode.has(p.workMode)) return false;
-      return true;
-    });
-    // Server returns newest-first by default; manual sort handles
-    // user-chosen variants.
-    if (sort === "oldest") return [...rows].reverse();
-    if (sort === "salaryHigh") {
-      return [...rows].sort(
-        (a, b) => (b.position.salary.maxAmount ?? 0) - (a.position.salary.maxAmount ?? 0)
-      );
-    }
-    return rows;
-  }, [all, employment, seniority, workMode, sort]);
+  const employmentQuery = useMemo(() => [...employment].sort().join(","), [employment]);
+  const seniorityQuery = useMemo(() => [...seniority].sort().join(","), [seniority]);
+  const workModeQuery = useMemo(() => [...workMode].sort().join(","), [workMode]);
+  const positions = useInfiniteQuery({
+    queryKey: [
+      "crew",
+      "positions",
+      "public",
+      employmentQuery,
+      seniorityQuery,
+      workModeQuery,
+      sort,
+    ] as const,
+    queryFn: ({ pageParam }) =>
+      crewApi.get<PublicPositionsResult>("/positions", {
+        query: {
+          limit: 36,
+          cursor: pageParam,
+          employment: employmentQuery,
+          seniority: seniorityQuery,
+          workMode: workModeQuery,
+          sort,
+        },
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+  const all = useMemo(
+    () => positions.data?.pages.flatMap((page) => page.items) ?? [],
+    [positions.data]
+  );
+  const total = positions.data?.pages[0]?.total ?? 0;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
@@ -135,21 +133,46 @@ export function PositionsTab() {
       <section className="space-y-4">
         <header className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-foreground">
-            {t("showingJobsCount", { count: filtered.length })}
+            {t("showingJobsCount", { count: total })}
           </h2>
           <SortMenu value={sort} onChange={setSort} t={t} />
         </header>
 
-        {isError || all.length === 0 ? (
-          <EmptyState message={isError ? tc("loadFailed") : t("noOpenPositions")} />
-        ) : filtered.length === 0 ? (
-          <EmptyState message={t("noFilterMatches")} />
+        {positions.isLoading ? (
+          <PositionsSkeleton />
+        ) : positions.isError || all.length === 0 ? (
+          <EmptyState
+            message={
+              positions.isError
+                ? positions.error instanceof Error
+                  ? positions.error.message
+                  : tc("loadFailed")
+                : employment.size || seniority.size || workMode.size
+                  ? t("noFilterMatches")
+                  : t("noOpenPositions")
+            }
+          />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {filtered.map(({ position, crew }) => (
-              <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {all.map(({ position, crew }) => (
+                <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
+              ))}
+            </div>
+            {positions.hasNextPage ? (
+              <div className="flex justify-center pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  color="muted"
+                  disabled={positions.isFetchingNextPage}
+                  onClick={() => void positions.fetchNextPage()}
+                >
+                  {positions.isFetchingNextPage ? tc("loading") : tc("loadMore")}
+                </Button>
+              </div>
+            ) : null}
+          </>
         )}
       </section>
     </div>
@@ -254,28 +277,18 @@ function PositionCard({
         </div>
       ) : null}
 
-      {/* CTAs */}
-      <div className="mt-auto flex gap-1.5 pt-0.5">
+      {/* One deliberate CTA. FizzDragon does not support private messages:
+          communication starts in the crew group after membership is granted. */}
+      <div className="mt-auto pt-0.5">
         <Button
           asChild={canApply}
           variant="solid"
           color="primary"
           size="sm"
           disabled={!canApply}
-          className="h-8 flex-1 px-2 text-xs"
+          className="h-8 w-full px-2 text-xs"
         >
           {canApply ? <Link href={crewHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          color="muted"
-          size="sm"
-          className="h-8 flex-1 px-2 text-xs"
-          onClick={() => toast.info(tCrew("messagesComingSoon"))}
-        >
-          <IconMail className="size-3.5" />
-          {tCrew("ctaMessages")}
         </Button>
       </div>
     </article>
@@ -332,26 +345,23 @@ function SortMenu({
   const labels: Record<SortMode, string> = {
     newest: t("sortNewest"),
     oldest: t("sortOldest"),
-    salaryHigh: t("sortSalaryHigh"),
   };
   return (
-    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span>{t("sortBy")}:</span>
-      <span className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value as SortMode)}
-          className="cursor-pointer appearance-none rounded-md border border-border bg-card py-1 pl-2 pr-7 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          {(Object.keys(labels) as SortMode[]).map((k) => (
-            <option key={k} value={k}>
-              {labels[k]}
-            </option>
-          ))}
-        </select>
-        <IconChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      </span>
-    </label>
+      <NativeSelect
+        value={value}
+        onChange={(nextValue) => onChange(nextValue as SortMode)}
+        aria-label={t("sortBy")}
+        className="w-auto cursor-pointer rounded-md border-border bg-card text-xs font-medium text-foreground focus:ring-1 focus:ring-primary"
+      >
+        {(Object.keys(labels) as SortMode[]).map((k) => (
+          <option key={k} value={k}>
+            {labels[k]}
+          </option>
+        ))}
+      </NativeSelect>
+    </div>
   );
 }
 
@@ -362,6 +372,19 @@ function EmptyState({ message }: { message: string }) {
         <IconBriefcase className="size-5" />
       </div>
       <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function PositionsSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+    >
+      {Array.from({ length: 10 }).map((_, index) => (
+        <div key={index} className="h-64 animate-pulse rounded-xl bg-card" />
+      ))}
     </div>
   );
 }

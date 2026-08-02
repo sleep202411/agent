@@ -4,6 +4,7 @@
  * hint about which input broke it. Signing is offline: getSignedUrl never
  * issues a request, so throwaway credentials produce the real URL.
  */
+import { CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { S3CompatibleStorageService } from './s3-storage.service';
 
 const R2_HOST = 'c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com';
@@ -118,5 +119,38 @@ describe(S3CompatibleStorageService.name, () => {
     const url = new URL(result.url);
     expect(url.host).toBe(`fizzdragon-media.${R2_HOST}`);
     expect(url.pathname).toBe('/staging/clip.mp4');
+  });
+
+  it('bootstraps a missing local bucket once', async () => {
+    const service = buildService({
+      S3_AUTO_CREATE_BUCKET: 'true',
+    });
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('bucket missing'), {
+          name: 'NotFound',
+          $metadata: { httpStatusCode: 404 },
+        }),
+      )
+      .mockResolvedValue(undefined);
+    Object.defineProperty(service, 'client', { value: { send } });
+
+    await expect(service.isHealthy()).resolves.toBe(true);
+    expect(send.mock.calls[0]?.[0]).toBeInstanceOf(HeadBucketCommand);
+    expect(send.mock.calls[1]?.[0]).toBeInstanceOf(CreateBucketCommand);
+
+    await expect(service.isHealthy()).resolves.toBe(true);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(send.mock.calls[2]?.[0]).toBeInstanceOf(HeadBucketCommand);
+  });
+
+  it('refuses local bucket auto-creation in production', () => {
+    expect(() =>
+      buildService({
+        NODE_ENV: 'production',
+        S3_AUTO_CREATE_BUCKET: 'true',
+      }),
+    ).toThrow(/must not be enabled in production/);
   });
 });

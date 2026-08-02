@@ -86,16 +86,15 @@ export function PositionDetailSheet({
   const translatePosition = useTranslatePositionValue();
   const updatePosition = useUpdatePosition(crewId);
   const deletePosition = useDeletePosition(crewId);
-  const { data: allApplications = [] } = useCrewApplications(crewId, canManage);
+  const applicationInbox = useCrewApplications(crewId, canManage && !!position, {
+    positionId: position?.id,
+  });
+  const applications = applicationInbox.data;
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmFreeze, setConfirmFreeze] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
-  const applications = useMemo<CrewApplicationDTO[]>(
-    () => (position ? allApplications.filter((a) => a.positionId === position.id) : []),
-    [allApplications, position]
-  );
   const pending = applications.filter((a) => a.status === "pending");
   const approved = applications.filter((a) => a.status === "approved");
   const rejected = applications.filter((a) => a.status === "rejected");
@@ -114,8 +113,15 @@ export function PositionDetailSheet({
   const isFull = position.status === "full" || position.recruitedCount >= position.targetCount;
   const salaryText = formatSalaryString(position, t);
   const filled = position.recruitedCount;
-  const total = position.targetCount;
-  const progressPct = total > 0 ? Math.min(100, (filled / total) * 100) : 0;
+  const targetCount = position.targetCount;
+  const progressPct = targetCount > 0 ? Math.min(100, (filled / targetCount) * 100) : 0;
+  const applicationCounts = applicationInbox.summary ??
+    position.applicationStats ?? {
+      total: applications.length,
+      pending: pending.length,
+      approved: approved.length,
+      rejected: rejected.length,
+    };
 
   const handleFreezeToggle = () => {
     updatePosition.mutate(
@@ -210,7 +216,7 @@ export function PositionDetailSheet({
                   <span className="inline-flex items-center gap-1.5 text-foreground">
                     <IconUsers className="size-3.5 text-primary" />
                     <span className="font-semibold">
-                      {filled} / {total}
+                      {filled} / {targetCount}
                     </span>
                     <span className="text-muted-foreground">{t("filled")}</span>
                   </span>
@@ -236,37 +242,71 @@ export function PositionDetailSheet({
             {/* ─── Applicants triage ─── */}
             {canManage ? (
               <Section
-                title={t("applicantsTriageTitle", { count: applications.length })}
+                title={t("applicantsTriageTitle", { count: applicationCounts.total })}
                 defaultExpanded
               >
-                <ApplicantSection
-                  crewId={crewId}
-                  titleKey="applicantSectionPending"
-                  applicants={pending}
-                  displays={displays}
-                  kind="pending"
-                  t={t}
-                />
-                <ApplicantSection
-                  crewId={crewId}
-                  titleKey="applicantSectionApproved"
-                  applicants={approved}
-                  displays={displays}
-                  kind="approved"
-                  t={t}
-                />
-                <ApplicantSection
-                  crewId={crewId}
-                  titleKey="applicantSectionRejected"
-                  applicants={rejected}
-                  displays={displays}
-                  kind="rejected"
-                  t={t}
-                />
-                {applications.length === 0 ? (
+                {applicationInbox.isLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                    <IconLoader2 className="size-4 animate-spin" />
+                    {tc("loading")}
+                  </div>
+                ) : applicationInbox.isError ? (
+                  <p className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300">
+                    {surfaceMessage(applicationInbox.error, t("applicantsLoadFailed"))}
+                  </p>
+                ) : (
+                  <>
+                    <ApplicantSection
+                      crewId={crewId}
+                      titleKey="applicantSectionPending"
+                      applicants={pending}
+                      totalCount={applicationCounts.pending}
+                      displays={displays}
+                      kind="pending"
+                      t={t}
+                    />
+                    <ApplicantSection
+                      crewId={crewId}
+                      titleKey="applicantSectionApproved"
+                      applicants={approved}
+                      totalCount={applicationCounts.approved}
+                      displays={displays}
+                      kind="approved"
+                      t={t}
+                    />
+                    <ApplicantSection
+                      crewId={crewId}
+                      titleKey="applicantSectionRejected"
+                      applicants={rejected}
+                      totalCount={applicationCounts.rejected}
+                      displays={displays}
+                      kind="rejected"
+                      t={t}
+                    />
+                  </>
+                )}
+                {!applicationInbox.isLoading &&
+                !applicationInbox.isError &&
+                applications.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
                     {t("noApplicantsYet")}
                   </p>
+                ) : null}
+                {applicationInbox.hasNextPage ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    color="muted"
+                    size="sm"
+                    className="mt-3 w-full"
+                    disabled={applicationInbox.isFetchingNextPage}
+                    onClick={() => void applicationInbox.fetchNextPage()}
+                  >
+                    {applicationInbox.isFetchingNextPage ? (
+                      <IconLoader2 className="size-4 animate-spin" />
+                    ) : null}
+                    {tc("loadMore")}
+                  </Button>
                 ) : null}
               </Section>
             ) : null}
@@ -377,8 +417,8 @@ export function PositionDetailSheet({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("positionDeleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {pending.length > 0
-                ? t("positionDeleteBlocked", { pending: pending.length })
+              {applicationCounts.pending > 0
+                ? t("positionDeleteBlocked", { pending: applicationCounts.pending })
                 : t("positionDeleteConfirm", { name: label })}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -389,7 +429,7 @@ export function PositionDetailSheet({
             <AlertDialogAction
               variant="solid"
               color="destructive"
-              disabled={deletePosition.isPending || pending.length > 0}
+              disabled={deletePosition.isPending || applicationCounts.pending > 0}
               onClick={(e) => {
                 e.preventDefault();
                 handleDelete();
@@ -487,6 +527,7 @@ function ApplicantSection({
   crewId,
   titleKey,
   applicants,
+  totalCount,
   displays,
   kind,
   t,
@@ -494,6 +535,7 @@ function ApplicantSection({
   crewId: string;
   titleKey: string;
   applicants: CrewApplicationDTO[];
+  totalCount: number;
   displays: Map<string, LookupUserDTO>;
   kind: "pending" | "approved" | "rejected";
   t: ReturnType<typeof useTranslations>;
@@ -511,7 +553,7 @@ function ApplicantSection({
               : "text-rose-400"
         )}
       >
-        {t(titleKey, { count: applicants.length })}
+        {t(titleKey, { count: totalCount })}
       </div>
       <div className="space-y-1.5">
         {applicants.map((a) => (
@@ -677,4 +719,13 @@ function surfaceErr(err: unknown, fallback: string) {
     return;
   }
   toast.error(err instanceof Error ? err.message : fallback);
+}
+
+function surfaceMessage(err: unknown, fallback: string): string {
+  if (err instanceof CrewApiError) {
+    return typeof err.body === "object" && err.body && "message" in err.body
+      ? String((err.body as { message: unknown }).message)
+      : err.message;
+  }
+  return err instanceof Error ? err.message : fallback;
 }

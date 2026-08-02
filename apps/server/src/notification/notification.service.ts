@@ -6,8 +6,9 @@
  *      If a row with this key already exists (retry, double-click, etc),
  *      we return it without inserting a duplicate — same outbox row is
  *      NOT enqueued either, since the original is in flight or done.
- *   2. Insert NotificationOutbox row queued for the dispatcher to
- *      publish to Redis pub/sub. Outbox provides at-least-once delivery
+ *   2. Insert NotificationOutbox row queued for the dispatcher to publish a
+ *      `notification.created` frame to the user's Ably channel. The outbox
+ *      provides at-least-once delivery
  *      with retries + DLQ; the DB row is the source of truth.
  *
  * Idempotency keys are deterministic strings the caller derives from

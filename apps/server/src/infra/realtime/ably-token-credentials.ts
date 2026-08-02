@@ -43,6 +43,25 @@ export interface AblyTokenCredentials {
 }
 
 export const ABLY_TOKEN_CREDENTIALS = Symbol('ABLY_TOKEN_CREDENTIALS');
+export const ABLY_REST_CLIENT = Symbol('ABLY_REST_CLIENT');
+
+export type AblyRestClient = Pick<Ably.Rest, 'auth' | 'channels' | 'request'>;
+
+/**
+ * Creates the process-wide REST transport without exposing the root key to
+ * business modules. REST publishing holds no realtime connection.
+ */
+export function createAblyRestClient(
+  env: NodeJS.ProcessEnv = process.env,
+): Ably.Rest {
+  const parsed = ablyEnvironmentSchema.parse(env);
+  return new Ably.Rest({
+    key: parsed.ABLY_API_KEY,
+    clientId: 'fizzdragon-server',
+    idempotentRestPublishing: true,
+    restAgentOptions: { keepAlive: true, maxSockets: 64 },
+  });
+}
 
 /**
  * The sole owner of the Ably root credential in the Nest process.
@@ -112,9 +131,14 @@ const ablyTokenCredentialsProvider: Provider = {
     createAblyTokenCredentials(process.env.ABLY_API_KEY ?? ''),
 };
 
+const ablyRestClientProvider: Provider = {
+  provide: ABLY_REST_CLIENT,
+  useFactory: (): Ably.Rest => createAblyRestClient(),
+};
+
 @Module({
-  providers: [ablyTokenCredentialsProvider],
-  exports: [ABLY_TOKEN_CREDENTIALS],
+  providers: [ablyTokenCredentialsProvider, ablyRestClientProvider],
+  exports: [ABLY_TOKEN_CREDENTIALS, ABLY_REST_CLIENT],
 })
 export class AblyTokenCredentialsModule {}
 

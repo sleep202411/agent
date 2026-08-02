@@ -88,6 +88,8 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private readonly region: string | null;
   private readonly endpoint: string;
   private readonly forcePathStyle: boolean;
+  private readonly autoCreateBucket: boolean;
+  private autoCreateInitialized = false;
 
   constructor() {
     super();
@@ -103,6 +105,13 @@ export class S3CompatibleStorageService extends OutputStorageService {
     this.region = region || null;
     this.endpoint = endpoint;
     this.forcePathStyle = s3ForcePathStyle();
+    this.autoCreateBucket = envFlag('S3_AUTO_CREATE_BUCKET');
+
+    if (this.autoCreateBucket && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'S3_AUTO_CREATE_BUCKET is a local-development option and must not be enabled in production',
+      );
+    }
 
     if (!endpoint || !region || !bucket || !accessKeyId || !accessKeySecret) {
       this.logger.warn(
@@ -449,6 +458,25 @@ export class S3CompatibleStorageService extends OutputStorageService {
 
   async isHealthy(): Promise<boolean> {
     if (!this.client) return false;
+    if (this.autoCreateBucket && !this.autoCreateInitialized) {
+      try {
+        try {
+          await this.client.send(
+            new HeadBucketCommand({ Bucket: this.bucket }),
+          );
+        } catch (err) {
+          if (!isS3BucketMissing(err)) throw err;
+          await this.ensureBucket(this.client, this.bucket);
+        }
+        this.autoCreateInitialized = true;
+        return true;
+      } catch (err) {
+        this.logger.warn(
+          `S3 local bucket bootstrap failed: ${errorMessage(err)}`,
+        );
+        return false;
+      }
+    }
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       return true;
@@ -544,6 +572,15 @@ function isS3NotFound(err: unknown): boolean {
   return false;
 }
 
+function isS3BucketMissing(err: unknown): boolean {
+  if (isS3NotFound(err)) return true;
+  if (err && typeof err === 'object') {
+    const name = (err as { name?: string }).name;
+    return name === 'NoSuchBucket';
+  }
+  return false;
+}
+
 function assertSameS3Region(
   source: StorageObjectRef,
   destination: StorageObjectRef,
@@ -569,4 +606,10 @@ function isBucketAlreadyOurs(err: unknown): boolean {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function envFlag(name: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(
+    (process.env[name] ?? '').trim().toLowerCase(),
+  );
 }

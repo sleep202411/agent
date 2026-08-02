@@ -14,6 +14,7 @@ import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
 import type {
   IpCommerceAsset,
@@ -205,9 +206,9 @@ export function IpPlazaClient() {
         {/* ── Row 2: region dropdown + genre pills (wrap, like the reference) ── */}
         <div className="mb-8">
           <div className="mb-4">
-            <select
+            <NativeSelect
               value={selectedRegion}
-              onChange={(e) => setSelectedRegion(e.target.value)}
+              onChange={setSelectedRegion}
               aria-label={regionUi("field", locale)}
               className="h-10 rounded-full border border-white/15 bg-white/[0.03] px-4 text-sm font-medium text-foreground outline-none transition-colors hover:border-white/30 focus-visible:ring-2 focus-visible:ring-ring/40"
             >
@@ -217,7 +218,7 @@ export function IpPlazaClient() {
                   {regionLabel(r.code, locale)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <ul className="flex flex-wrap items-center gap-2.5">
             {categoryOptions.map((opt) => {

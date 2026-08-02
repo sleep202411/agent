@@ -520,7 +520,7 @@ export interface IpUserLookupResult {
   nickname: string;
   avatar: string | null;
   isCrewMember: boolean | null;
-  isCrewFounder: boolean | null;
+  isCrewOwner: boolean | null;
 }
 
 export interface IpCollectionItem {

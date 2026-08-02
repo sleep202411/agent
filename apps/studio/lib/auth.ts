@@ -14,6 +14,8 @@
  * rides it via credentials: "include".
  */
 
+import { resolveUserAvatarUrl } from "@repo/shared/avatar";
+
 export interface AuthUser {
   id?: string | number;
   nickName?: string;
@@ -56,7 +58,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       nickName: data.nickName ?? undefined,
       email: data.email ?? undefined,
       phone: data.phone ?? undefined,
-      avatar: data.avatar ?? undefined,
+      avatar: resolveUserAvatarUrl(data.avatar),
     };
   } catch {
     throw new AuthUnavailableError("Auth session check unavailable");

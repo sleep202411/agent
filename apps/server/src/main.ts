@@ -106,9 +106,9 @@ async function bootstrap() {
     },
   );
 
-  // Native `ws` adapter for @WebSocketGateway (platform-ws) — entity-
-  // events / chat-events / notifications gateways use plain ws frames,
-  // not socket.io.
+  // Native `ws` adapter for the remaining platform-owned realtime surfaces
+  // (for example entity events and collaborative documents). Conversations,
+  // crew chat, crew-domain events, and notifications use Ably.
   app.useWebSocketAdapter(new WsAdapter(app));
 
   // Long-lived endpoints — produce-mode `/produce/script-draft/sync`

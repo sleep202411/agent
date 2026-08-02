@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button3D } from "@/components/ui/button-3d";
 import { PlayFab } from "./play-fab";
 import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
@@ -1525,9 +1526,9 @@ function ReportDialog({
         <DialogBody>
           <label className="block space-y-2">
             <span className="text-xs font-semibold text-foreground">{t("report.reason")}</span>
-            <select
+            <NativeSelect
               value={reason}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
               className="h-10 w-full rounded-md bg-secondary px-3 text-sm text-foreground outline-none ring-1 ring-border transition focus:ring-primary"
             >
               {reasonKeys.map((key) => (
@@ -1535,7 +1536,7 @@ function ReportDialog({
                   {t(`report.reasons.${key}`)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <label className="block space-y-2">
             <span className="text-xs font-semibold text-foreground">{t("report.description")}</span>

@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect } from "@/components/ui/native-select";
 import { QuotaProvider } from "@/src/lib/quota/quota-provider";
 import { UpgradeDialogHost } from "@/components/quota/upgrade-dialog";
 import { UpgradeDialog as MembershipUpgradeDialog } from "@/components/payment/upgrade-dialog";
@@ -1135,10 +1136,10 @@ function SchemaFieldControl({
     return (
       <label className="block">
         {commonLabel}
-        <select
+        <NativeSelect
           value={serializeFieldValue(field, value)}
           disabled={disabled}
-          onChange={(event) => onChange(normalizeFieldValue(field, event.target.value))}
+          onChange={(nextValue) => onChange(normalizeFieldValue(field, nextValue))}
           className="h-8 w-full rounded-md border border-white/10 bg-black/40 px-2 text-xs text-white outline-none focus:border-primary/60"
         >
           {options.map((option) => {
@@ -1149,7 +1150,7 @@ function SchemaFieldControl({
               </option>
             );
           })}
-        </select>
+        </NativeSelect>
         <FieldHelp issue={issue} description={description} />
       </label>
     );

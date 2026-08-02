@@ -1,0 +1,103 @@
+-- Idempotency key for the authenticated send path
+-- (POST /conversations/:id/messages).
+--
+-- A group chat multiplies the cost of a duplicate send: a flaky mobile
+-- network that retries a POST used to append a second identical row that
+-- every member then saw. The client now stamps each composed message with a
+-- `clientKey`; a retry of the same logical send collapses onto the row that
+-- already exists.
+--
+-- Scoped to (conversation, author, key) rather than the key alone so two
+-- users can never collide, and PARTIAL so the overwhelming majority of rows
+-- — system messages and anything written from inside another module's
+-- transaction — stay out of the index entirely. `author_id` is NULL for
+-- system messages, and NULL never equals NULL in a unique index, so the
+-- partial predicate is belt-and-braces: system messages are structurally
+-- incapable of participating in dedupe. That is deliberate — persistSystem
+-- runs inside caller transactions (orders.service.ts) where provoking a
+-- P2002 would poison the outer transaction with 25P02.
+--
+-- ─────────────────────────────────────────────────────────────────────────
+-- OPERATOR NOTE — this migration takes ACCESS EXCLUSIVE on `messages`
+-- ─────────────────────────────────────────────────────────────────────────
+--
+-- WHAT LOCKS, AND FOR HOW LONG
+--   Prisma runs each migration file in one transaction, and Postgres holds
+--   every lock to COMMIT. `ADD COLUMN` takes ACCESS EXCLUSIVE on `messages`
+--   immediately, so from the first statement to the last, `messages` is
+--   fully locked: chat reads AND writes queue behind it. Duration is the
+--   cost of one sequential scan of `messages` (what `CREATE INDEX` does) —
+--   sub-second on a table of this size.
+--
+--   `ADD COLUMN` itself is catalog-only (nullable, no default, PG11+), so it
+--   rewrites nothing. And the index lands EMPTY: `client_key` is created in
+--   this same transaction, so every pre-existing row has NULL and the
+--   partial predicate `WHERE client_key IS NOT NULL` admits none of them.
+--   There is nothing to sort and nothing to write — only the scan that finds
+--   out there is nothing.
+--
+-- WHY NOT CONCURRENTLY
+--   `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, and
+--   Prisma gives no way out of the one it wraps this file in (same
+--   constraint as the enum `ADD VALUE` in the sibling
+--   20260728100000_conversation_crew_context migration).
+--
+--   It would not help anyway: the `ADD COLUMN` above already holds ACCESS
+--   EXCLUSIVE for the whole transaction, so a non-blocking index build in
+--   the same file would still be waited on by every writer. Making this
+--   genuinely non-blocking means splitting the column and the index into
+--   two separate RELEASES with a hand-run concurrent build in between — see
+--   the escape hatch below. That is a real cost (two deploys, per region,
+--   plus a window where the dedupe race has no unique index behind it) and
+--   it is not worth paying for a scan of this table.
+--
+-- WHEN THIS RUNS
+--   From the `db-migrate` init container of the NEW pod, while the PREVIOUS
+--   image still serves traffic — see prisma/RETIRE-HAS-AUDIO-RUNBOOK.md,
+--   "Why three". So the stall lands on live chat traffic, not on a drained
+--   pod. It is a stall, not an error: nothing in the server sets
+--   `lock_timeout` or `statement_timeout`, so queries wait rather than fail.
+--
+-- BEFORE DEPLOYING — check the table is still small (psql recipe in
+-- RETIRE-HAS-AUDIO-RUNBOOK.md, "Getting a psql session on the prod
+-- database"):
+--
+--   SELECT n_live_tup, pg_size_pretty(pg_total_relation_size('messages'))
+--   FROM pg_stat_user_tables WHERE relname = 'messages';
+--
+--   Under ~5M rows: deploy normally, expect a stall measured in
+--   milliseconds to a couple of seconds.
+--
+--   Over that, or during a chat-traffic peak: use the escape hatch.
+--
+-- ESCAPE HATCH — build the index out of band, before the deploy
+--   Both statements below are `IF NOT EXISTS` so that an operator can do
+--   this work by hand, concurrently, against a database still serving the
+--   previous image; the migration then applies as a complete no-op. (An
+--   extra column is invisible to the running image — Prisma names every
+--   column explicitly in its SELECTs.)
+--
+--     -- 1. add the column on its own (catalog-only, instant):
+--     ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "client_key" VARCHAR(64);
+--     -- 2. build the index without blocking writers (NOT in a transaction;
+--     --    minutes, and it may fail — see 3):
+--     CREATE UNIQUE INDEX CONCURRENTLY "messages_client_key_unique"
+--       ON "messages" ("conversation_id", "author_id", "client_key")
+--       WHERE "client_key" IS NOT NULL;
+--     -- 3. a failed CONCURRENTLY build leaves an INVALID index behind that
+--     --    enforces nothing and that IF NOT EXISTS would happily accept.
+--     --    Confirm it is valid; DROP INDEX + retry from 2 if not:
+--     SELECT indisvalid
+--     FROM pg_index
+--     WHERE indexrelid = 'public.messages_client_key_unique'::regclass;  -- t
+--
+--   Name and definition must match this file EXACTLY: `IF NOT EXISTS`
+--   matches on name only and would silently accept a different index.
+--   Do this per database — doing it for `.com` does nothing for `.cn`.
+
+ALTER TABLE "messages"
+  ADD COLUMN IF NOT EXISTS "client_key" VARCHAR(64);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "messages_client_key_unique"
+  ON "messages" ("conversation_id", "author_id", "client_key")
+  WHERE "client_key" IS NOT NULL;

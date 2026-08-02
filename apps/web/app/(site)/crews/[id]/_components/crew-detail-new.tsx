@@ -48,7 +48,7 @@ import {
   type CrewMemberDTO,
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
-import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { ApplyPositionDialog } from "@/app/(site)/crews/_components/apply-position-dialog";
@@ -64,10 +64,10 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
   const { data: positions = [] } = useCrewPositions(id);
   const { data: members = [] } = useCrewMembers(id);
 
-  // Single source of truth for viewer role — matches the workspace
+  // Single source of truth for viewer permissions — matches the workspace
   // tab so the dev-identity switcher works the same way here.
-  const viewer = useUserCrewRole(id);
-  const isInsider = viewer.isAdmin || viewer.isFinance || viewer.isMember;
+  const viewer = useCrewPermissions(id);
+  const isInsider = viewer.isMember;
 
   // Frozen positions are hidden from the public; insiders see them
   // via the workspace, not here.
@@ -92,13 +92,13 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
   const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
   const displays = useUserDisplays(memberIds);
 
-  // Founder spotlight + the rest in join order.
+  // Owner spotlight + the rest in join order.
   const sortedMembers = useMemo(() => {
-    const founder = members.find((m) => m.via === "founder") ?? null;
+    const owner = members.find((member) => member.isOwner) ?? null;
     const rest = members
-      .filter((m) => m.via !== "founder")
+      .filter((member) => !member.isOwner)
       .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
-    return { founder, rest };
+    return { owner, rest };
   }, [members]);
 
   // Apply dialog state lifted to parent so each position card just
@@ -217,7 +217,7 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
           {/* ─── Right sidebar: sticky team ─── */}
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <TeamSidebar
-              founder={sortedMembers.founder}
+              owner={sortedMembers.owner}
               rest={sortedMembers.rest}
               memberCount={crew.memberCount ?? members.length}
               displays={displays}
@@ -265,7 +265,7 @@ function ctaForVisitor(
 // ─── Team sidebar (sticky right column) ─────────────
 
 function TeamSidebar({
-  founder,
+  owner,
   rest,
   memberCount,
   displays,
@@ -273,7 +273,7 @@ function TeamSidebar({
   t,
   tCrew,
 }: {
-  founder: CrewMemberDTO | null;
+  owner: CrewMemberDTO | null;
   rest: CrewMemberDTO[];
   memberCount: number;
   displays: Map<string, LookupUserDTO>;
@@ -281,7 +281,7 @@ function TeamSidebar({
   t: ReturnType<typeof useTranslations>;
   tCrew: ReturnType<typeof useTranslations>;
 }) {
-  // Show up to 8 members in the sticky panel (founder + 7); deeper
+  // Show up to 8 members in the sticky panel (owner + 7); deeper
   // teams collapse into a "+N more" footer to keep the sidebar
   // height bounded. Future: a "View full team" link that scrolls to
   // a dedicated main-column section if/when team count grows large.
@@ -301,8 +301,8 @@ function TeamSidebar({
         <p className="py-2 text-center text-xs text-muted-foreground">{t("noMembersYet")}</p>
       ) : (
         <div className="space-y-1">
-          {founder ? (
-            <TeamRow member={founder} displays={displays} locale={locale} t={t} founder />
+          {owner ? (
+            <TeamRow member={owner} displays={displays} locale={locale} t={t} owner />
           ) : null}
           {visibleRest.map((m) => (
             <TeamRow key={m.id} member={m} displays={displays} locale={locale} t={t} />
@@ -323,19 +323,26 @@ function TeamRow({
   displays,
   locale,
   t,
-  founder = false,
+  owner = false,
 }: {
   member: CrewMemberDTO;
   displays: Map<string, LookupUserDTO>;
   locale: Locale;
   t: ReturnType<typeof useTranslations>;
-  founder?: boolean;
+  owner?: boolean;
 }) {
   const translatePosition = useTranslatePositionValue();
   const lookup = displays.get(member.userId);
   const displayName = lookup?.nickname?.trim() || `User ${member.userId}`;
   const initial = displayName.charAt(0).toUpperCase();
-  const role = founder ? t("memberRoleOwner") : translatePosition(member.roleType);
+  const primaryPosition =
+    member.positions.find((position) => position.isPrimary) ?? member.positions[0];
+  const role = owner
+    ? t("memberRoleOwner")
+    : primaryPosition?.title ||
+      (primaryPosition?.categoryKey
+        ? translatePosition(primaryPosition.categoryKey)
+        : t("memberRoleMember"));
   const avatarUrl = resolveAvatar(lookup?.avatar ?? null);
   const profileHref = localizePath(`/creators/${encodeUserId(member.userId)}`, locale);
 
@@ -354,7 +361,7 @@ function TeamRow({
       ) : (
         <div
           className={
-            founder
+            owner
               ? "flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary"
               : "flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground"
           }
@@ -365,10 +372,8 @@ function TeamRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
-          {founder ? (
-            <IconCrown className="size-3 shrink-0 text-primary" aria-label="Founder" />
-          ) : null}
-          {member.isFinance ? (
+          {owner ? <IconCrown className="size-3 shrink-0 text-primary" aria-label="Owner" /> : null}
+          {member.policyKeys.includes("finance") ? (
             <IconCoin className="size-3 shrink-0 text-amber-400" aria-label="Finance" />
           ) : null}
         </div>

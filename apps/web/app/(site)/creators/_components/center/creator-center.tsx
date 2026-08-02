@@ -58,7 +58,13 @@ import { useCreatorDetail, type Creator } from "@/app/(site)/creators/_hooks/use
 import { ProfileEditDialog } from "@/app/(site)/profile/profile-edit-dialog";
 import { CreatorHero } from "./hero";
 import { CreatorLeftRail } from "./left-rail";
-import { CreatorTabBar, CREATOR_TAB_ORDER, CREATOR_SECTION_ID, type CreatorTabId } from "./tab-bar";
+import {
+  CreatorTabBar,
+  CREATOR_TAB_ORDER,
+  CREATOR_SECTION_ID,
+  CREATOR_TAB_ID,
+  type CreatorTabId,
+} from "./tab-bar";
 import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { AccountSecurityDialog } from "./dialogs/account-security-dialog";
 import { ServicesTab } from "./tabs/services-tab";
@@ -75,7 +81,24 @@ export interface CreatorCenterProps {
 
 const DEFAULT_TAB: CreatorTabId = "services";
 
+/** Public creator page: always renders the complete scrollable profile. */
 export function CreatorCenter({ creatorId }: CreatorCenterProps) {
+  return <SharedCreatorCenterLayout creatorId={creatorId} contentMode="sections" />;
+}
+
+interface SharedCreatorCenterLayoutProps extends CreatorCenterProps {
+  contentMode: "sections" | "tabs";
+}
+
+/**
+ * Shared profile data, hero, rail, and dialogs. Route-owned components choose
+ * the right-pane presentation so public pages cannot accidentally opt into
+ * creator-center-only behavior.
+ */
+export function SharedCreatorCenterLayout({
+  creatorId,
+  contentMode,
+}: SharedCreatorCenterLayoutProps) {
   const t = useTranslations("creatorCenter");
   const locale = useLocale() as Locale;
   const { user: currentUser } = useCurrentUser();
@@ -89,24 +112,30 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
     [currentUser, creatorId]
   );
 
-  // Scrollspy state. `activeTab` is just visual highlight on the tab
-  // bar — clicking a tab scrolls to that section, IntersectionObserver
-  // syncs the highlight as the user scrolls. All 5 sections render
-  // stacked under the tab bar.
+  // Public pages use `activeTab` as a scrollspy highlight while `/profile`
+  // uses it as real panel state. Keeping the mode route-driven prevents a
+  // signed-in owner visiting their public URL from changing that page's
+  // presentation.
   const [activeTab, setActiveTab] = useState<CreatorTabId>(DEFAULT_TAB);
   const sectionRefs = useRef<Partial<Record<CreatorTabId, HTMLElement | null>>>({});
 
-  const handlePickTab = useCallback((id: CreatorTabId) => {
-    setActiveTab(id);
-    const el = sectionRefs.current[id];
-    if (!el) return;
-    // 60px = tab bar sticky height; pad so the section title isn't
-    // hidden underneath.
-    const top = el.getBoundingClientRect().top + window.scrollY - 80;
-    window.scrollTo({ top, behavior: "smooth" });
-  }, []);
+  const handlePickTab = useCallback(
+    (id: CreatorTabId) => {
+      setActiveTab(id);
+      if (contentMode === "tabs") return;
+      const el = sectionRefs.current[id];
+      if (!el) return;
+      // 60px = tab bar sticky height; pad so the section title isn't
+      // hidden underneath.
+      const top = el.getBoundingClientRect().top + window.scrollY - 80;
+      window.scrollTo({ top, behavior: "smooth" });
+    },
+    [contentMode]
+  );
 
   useEffect(() => {
+    if (contentMode !== "sections") return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         // Pick the entry with greatest intersectionRatio that's still
@@ -130,7 +159,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
-  }, []);
+  }, [contentMode]);
 
   // Hero "+ 新建服务包" is hoisted here so a save can both close the
   // dialog AND scroll to the services section after save.
@@ -238,35 +267,50 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
           onOpenSecurity={isOwner ? () => setSecurityOpen(true) : undefined}
         />
         <main className="min-w-0">
-          {/* Anchor menu. Sticky removed 2026-06-03 — the floating glass nav
-              already pins the top, and a second sticky bar collided with it.
-              The bar now scrolls inline with the page. */}
+          {/* Public pages use this as an anchor menu. `/profile` supplies
+              `contentMode="tabs"`, where it controls the single rendered
+              panel instead. */}
           <div>
-            <CreatorTabBar active={activeTab} onPick={handlePickTab} />
+            <CreatorTabBar active={activeTab} mode={contentMode} onPick={handlePickTab} />
           </div>
-          <div className="mt-6 space-y-12">
-            {CREATOR_TAB_ORDER.map((id) => (
+          {contentMode === "tabs" ? (
+            <div className="mt-6">
               <section
-                key={id}
-                id={CREATOR_SECTION_ID(id)}
-                data-section-id={id}
-                ref={(el) => {
-                  sectionRefs.current[id] = el;
-                }}
-                // scroll-mt = sticky bar height + breathing room; matches
-                // the offset handlePickTab uses so anchored navigation
-                // lands at the same place every time.
-                className="scroll-mt-24"
+                id={CREATOR_SECTION_ID(activeTab)}
+                role="tabpanel"
+                aria-labelledby={CREATOR_TAB_ID(activeTab)}
               >
-                {/* Section heading mirrors the tab label so users scrolling
-                    past the sticky bar still see what section they're in. */}
                 <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
-                  {t(`tabs.${id}`)}
+                  {t(`tabs.${activeTab}`)}
                 </h2>
-                <SectionContent tab={id} creator={creator} isOwner={isOwner} />
+                <SectionContent tab={activeTab} creator={creator} isOwner={isOwner} />
               </section>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-12">
+              {CREATOR_TAB_ORDER.map((id) => (
+                <section
+                  key={id}
+                  id={CREATOR_SECTION_ID(id)}
+                  data-section-id={id}
+                  ref={(el) => {
+                    sectionRefs.current[id] = el;
+                  }}
+                  // scroll-mt = sticky bar height + breathing room; matches
+                  // the offset handlePickTab uses so anchored navigation
+                  // lands at the same place every time.
+                  className="scroll-mt-24"
+                >
+                  {/* Section heading mirrors the tab label so users scrolling
+                      past the tab bar still see what section they're in. */}
+                  <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
+                    {t(`tabs.${id}`)}
+                  </h2>
+                  <SectionContent tab={id} creator={creator} isOwner={isOwner} />
+                </section>
+              ))}
+            </div>
+          )}
         </main>
       </div>
 

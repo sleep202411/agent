@@ -89,6 +89,7 @@ sharedEnv:
   # old fizzdragon.fizzspace.cn cert on the Java ECS had also expired.)
   JAVA_STUDIO_URL: https://java.fizzspace.cn/studio
   JAVA_CONTENT_URL: https://java.fizzspace.cn/content
+  USER_AVATAR_BASE_URL: https://avatar.fizzspace.cn
   # OSS media pipeline. This account blocks the OSS public endpoint
   # (PublicEndpointForbidden), so server/worker uploads + reads use the OSS
   # INTERNAL endpoint (pods run in the same VPC). Public serving goes through a

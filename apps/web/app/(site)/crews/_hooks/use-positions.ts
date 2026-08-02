@@ -6,18 +6,38 @@
  * `recruitedCount`, and a `status` of open/frozen/full.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import type { CreatePositionInput, CrewPositionDTO, UpdatePositionInput } from "./types";
+import type {
+  CreatePositionInput,
+  CrewPositionDTO,
+  CrewPositionPageDTO,
+  UpdatePositionInput,
+} from "./types";
 
-export function useCrewPositions(crewId: string | undefined) {
-  return useQuery({
+export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
+  const query = useInfiniteQuery({
     queryKey: crewKeys.positions(crewId ?? ""),
     enabled: !!crewId,
-    queryFn: () =>
-      crewApi.get<CrewPositionDTO[]>(`/crews/${encodeURIComponent(crewId!)}/positions`),
+    queryFn: ({ pageParam }) =>
+      crewApi.get<CrewPositionPageDTO>(`/crews/${encodeURIComponent(crewId!)}/positions`, {
+        query: { limit: pageSize, cursor: pageParam },
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
+  useEffect(() => {
+    if (!query.hasNextPage || query.isFetchingNextPage) return;
+    void query.fetchNextPage();
+  }, [query.fetchNextPage, query.hasNextPage, query.isFetchingNextPage]);
+  const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  return {
+    ...query,
+    data,
+    total: query.data?.pages[0]?.total ?? 0,
+  };
 }
 
 export function useCreatePosition(crewId: string) {
