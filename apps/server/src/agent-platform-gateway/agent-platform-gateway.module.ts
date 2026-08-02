@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 
-import { CrewsModule } from '../crews/crews.module';
 import { AblyTokenCredentialsModule } from '../infra/realtime/ably-token-credentials';
 import { StoryAccessModule } from '../story-studio/story-access.module';
 import { StorageModule } from '../infra/storage/storage.module';
@@ -18,12 +17,7 @@ import { AgentPlatformGatewayService } from './agent-platform-gateway.service';
 import { AgentPlatformInvocationService } from './agent-platform-invocation.service';
 
 @Module({
-  imports: [
-    StoryAccessModule,
-    CrewsModule,
-    StorageModule,
-    AblyTokenCredentialsModule,
-  ],
+  imports: [StoryAccessModule, StorageModule, AblyTokenCredentialsModule],
   controllers: [AgentPlatformGatewayController],
   providers: [
     AgentPlatformGatewayConfigService,

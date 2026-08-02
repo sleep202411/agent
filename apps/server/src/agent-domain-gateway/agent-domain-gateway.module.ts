@@ -1,18 +1,16 @@
 import { Module } from '@nestjs/common';
 
-import { NotificationModule } from '../notification';
 import { AgentPlatformGatewayModule } from '../agent-platform-gateway';
 import { StoryAccessModule } from '../story-studio/story-access.module';
 import { AgentDomainAuthGuard } from './agent-domain-auth.guard';
 import { AgentDomainGatewayConfigService } from './agent-domain-gateway.config';
 import { AgentDomainExecutionService } from './agent-domain-execution.service';
 import { AgentDomainGatewayController } from './agent-domain-gateway.controller';
-import { CrewAgentDomainService } from './crew-agent-domain.service';
 import { StoryAgentDomainService } from './story-agent-domain.service';
 import { StorySourceMaterialDomainService } from './story-source-material-domain.service';
 
 @Module({
-  imports: [NotificationModule, StoryAccessModule, AgentPlatformGatewayModule],
+  imports: [StoryAccessModule, AgentPlatformGatewayModule],
   controllers: [AgentDomainGatewayController],
   providers: [
     AgentDomainGatewayConfigService,
@@ -20,7 +18,6 @@ import { StorySourceMaterialDomainService } from './story-source-material-domain
     AgentDomainExecutionService,
     StoryAgentDomainService,
     StorySourceMaterialDomainService,
-    CrewAgentDomainService,
   ],
 })
 export class AgentDomainGatewayModule {}

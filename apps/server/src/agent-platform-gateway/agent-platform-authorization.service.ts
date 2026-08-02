@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import type { AuthUser } from '../auth';
-import { CrewRoleService } from '../crews/crew-role.service';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
 import {
   type AgentConversationScopeRequest,
@@ -10,21 +9,15 @@ import {
 
 @Injectable()
 export class AgentPlatformAuthorizationService {
-  constructor(
-    private readonly storyPermissions: StoryPermissionService,
-    private readonly crewRoles: CrewRoleService,
-  ) {}
+  constructor(private readonly storyPermissions: StoryPermissionService) {}
 
   async authorize(
     user: AuthUser,
     request: AgentConversationScopeRequest,
   ): Promise<AuthorizedAgentScope> {
-    // The crew Agent waits on the crew module's own refactor. This is the only
-    // place a scoped Agent context is signed, so refusing here makes the crew
-    // tools unreachable rather than merely absent from the UI — a crafted
-    // request from a user who legitimately holds crew.manage cannot drive them
-    // either. The capability pack, its tools, and the crew branch below stay
-    // intact; delete this guard and nothing else once the refactor lands.
+    // Crew collaboration is served by the authoritative Crew HTTP domain.
+    // No Crew Agent context is signed until a capability pack is deliberately
+    // designed against that current domain contract.
     if (isCrewSurface(request.surface)) {
       throw new NotFoundException({
         code: 'AGENT_SURFACE_UNAVAILABLE',
@@ -68,36 +61,16 @@ export class AgentPlatformAuthorizationService {
       });
     }
 
-    const role = await this.crewRoles.require(request.crewId, user.userId, [
-      'admin',
-      'finance',
-      'member',
-    ]);
-    const scope = Object.freeze({
-      kind: 'crew' as const,
-      crewId: request.crewId,
-    });
-    return Object.freeze({
-      actorId: user.userId,
-      actorDisplayName: displayName(user),
-      surface: request.surface,
-      scope,
-      locale: request.locale,
-      roles: Object.freeze([`crew.${role}`]),
-      permissions: Object.freeze([
-        'crew.read',
-        ...(role === 'admin' ? ['crew.manage'] : []),
-        ...(role === 'finance' || role === 'admin' ? ['crew.finance'] : []),
-      ]),
+    throw new NotFoundException({
+      code: 'AGENT_SURFACE_UNAVAILABLE',
+      message: 'The requested Agent surface is not available.',
     });
   }
 }
 
 /**
- * Takes the surface widened to `string` on purpose. Comparing the discriminant
- * directly would narrow `request` to `never` past the story branch and strip
- * the crew resolution of its types; that code has to stay type-checked so it is
- * ready to re-enable unchanged.
+ * Kept as a named boundary so the unsupported surface cannot accidentally be
+ * admitted while adding another Story surface.
  */
 function isCrewSurface(surface: string): boolean {
   return surface === 'crew-management';
