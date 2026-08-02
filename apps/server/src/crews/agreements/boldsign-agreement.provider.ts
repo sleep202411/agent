@@ -3,6 +3,7 @@ import {
   BadGatewayException,
   Injectable,
   ServiceUnavailableException,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -36,13 +37,24 @@ export interface BoldSignSigningSession {
 }
 
 @Injectable()
-export class BoldSignAgreementProvider {
+export class BoldSignAgreementProvider implements OnModuleInit {
+  onModuleInit(): void {
+    if (!this.isEnabled()) return;
+    this.assertEnabledConfiguration();
+  }
+
+  isEnabled(): boolean {
+    return strictBooleanEnv('BOLDSIGN_ENABLED', false);
+  }
+
   isConfigured(): boolean {
-    return Boolean(this.apiKey && this.templateId && this.webhookSecret);
+    return Boolean(
+      this.isEnabled() && this.apiKey && this.templateId && this.webhookSecret,
+    );
   }
 
   canSync(): boolean {
-    return Boolean(this.apiKey);
+    return Boolean(this.isEnabled() && this.apiKey);
   }
 
   async sendFromTemplate(input: SendAgreementInput): Promise<string> {
@@ -337,15 +349,39 @@ export class BoldSignAgreementProvider {
     if (this.isConfigured()) return;
     throw new ServiceUnavailableException({
       message:
-        'BoldSign agreement sending is not configured. Set BOLDSIGN_API_KEY, BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID, and BOLDSIGN_WEBHOOK_SECRET.',
+        'BoldSign agreement sending is not configured. Set BOLDSIGN_ENABLED=true, BOLDSIGN_API_KEY, BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID, and BOLDSIGN_WEBHOOK_SECRET.',
     });
   }
 
   private requireApiConfigured(): void {
-    if (this.apiKey) return;
+    if (this.isEnabled() && this.apiKey) return;
     throw new ServiceUnavailableException({
-      message: 'BoldSign API is not configured. Set BOLDSIGN_API_KEY.',
+      message:
+        'BoldSign API is not configured. Set BOLDSIGN_ENABLED=true and BOLDSIGN_API_KEY.',
     });
+  }
+
+  private assertEnabledConfiguration(): void {
+    const required = {
+      BOLDSIGN_API_KEY: this.apiKey,
+      BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID: this.templateId,
+      BOLDSIGN_WEBHOOK_SECRET: this.webhookSecret,
+    };
+    const missing = Object.entries(required)
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    if (missing.length > 0) {
+      throw new Error(
+        `BOLDSIGN_ENABLED=true requires ${missing.join(', ')}. Refusing to start with a partially configured agreement integration.`,
+      );
+    }
+
+    // Resolve every bounded setting during bootstrap so invalid production
+    // configuration fails readiness instead of surfacing on the first invite.
+    void this.baseUrl;
+    void this.roleIndex;
+    void this.webhookToleranceSeconds;
+    void this.archiveMaxBytes;
   }
 
   private get apiKey(): string | null {
@@ -361,10 +397,31 @@ export class BoldSignAgreementProvider {
   }
 
   private get baseUrl(): string {
-    return (
+    const raw =
       process.env.BOLDSIGN_API_BASE_URL?.trim().replace(/\/+$/, '') ||
-      'https://api.boldsign.com'
-    );
+      'https://api.boldsign.com';
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new ServiceUnavailableException({
+        message: 'BOLDSIGN_API_BASE_URL must be a valid HTTPS origin.',
+      });
+    }
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      (parsed.pathname !== '/' && parsed.pathname !== '')
+    ) {
+      throw new ServiceUnavailableException({
+        message:
+          'BOLDSIGN_API_BASE_URL must be an HTTPS origin without credentials, path, query, or fragment.',
+      });
+    }
+    return parsed.origin;
   }
 
   private get roleIndex(): number {
@@ -412,6 +469,16 @@ export class BoldSignAgreementProvider {
     }
     return parsed;
   }
+}
+
+function strictBooleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new ServiceUnavailableException({
+    message: `${name} must be either true or false.`,
+  });
 }
 
 function agreementLabel(agreementId: string): string {

@@ -60,9 +60,7 @@ import {
   type WorkMode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
-const CREATE_JOB_HERO_URL = encodeURI(
-  "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
-);
+const CREATE_JOB_HERO_URL = "/crews/publish-position-hero.jpg";
 
 interface PublishPositionDialogProps {
   open: boolean;

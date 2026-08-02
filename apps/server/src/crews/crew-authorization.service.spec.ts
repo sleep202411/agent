@@ -97,8 +97,8 @@ describe('CrewAuthorizationService', () => {
         policies: [{ policyKey: 'admin' }, { policyKey: 'finance' }],
         permissionOverrides: [
           { permissionKey: 'assets.upload', effect: 'deny' },
-          { permissionKey: 'finance.view', effect: 'deny' },
-          { permissionKey: 'finance.settle', effect: 'allow' },
+          { permissionKey: 'finance.ledger.view', effect: 'deny' },
+          { permissionKey: 'finance.earnings.reverse', effect: 'allow' },
         ],
       }),
     });
@@ -111,11 +111,11 @@ describe('CrewAuthorizationService', () => {
         'members.manage',
         'tasks.manage',
         'agreements.manage',
-        'finance.settle',
+        'finance.earnings.reverse',
       ]),
     );
     expect(context?.permissions).not.toContain('assets.upload');
-    expect(context?.permissions).not.toContain('finance.view');
+    expect(context?.permissions).not.toContain('finance.ledger.view');
   });
 
   it('never delegates structural owner powers through an override', async () => {

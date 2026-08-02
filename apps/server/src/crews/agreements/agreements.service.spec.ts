@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers are intentionally untyped in agreement lifecycle assertions. */
+import { ServiceUnavailableException } from '@nestjs/common';
 import {
   CrewAgreementArchiveJobStatus,
   CrewAgreementSendJobStatus,
@@ -96,6 +97,7 @@ function build() {
     ),
   };
   const provider = {
+    isEnabled: jest.fn().mockReturnValue(true),
     isConfigured: jest.fn().mockReturnValue(true),
     canSync: jest.fn().mockReturnValue(true),
     sendFromTemplate: jest.fn().mockResolvedValue('boldsign-document-1'),
@@ -689,6 +691,29 @@ describe('CrewAgreementsService', () => {
         eventHeader: 'Verification',
       }),
     ).resolves.toEqual({ received: true, verification: true });
+
+    expect(t.provider.verifyWebhook).not.toHaveBeenCalled();
+    expect(t.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects ordinary webhook events when BoldSign is disabled for the deployment', async () => {
+    const t = build();
+    t.provider.isEnabled.mockReturnValue(false);
+
+    await expect(
+      t.service.handleWebhook({
+        rawBody: Buffer.from(
+          JSON.stringify({
+            event: {
+              id: 'event-sent-1',
+              created: 1785319200,
+              eventType: 'Sent',
+            },
+          }),
+        ),
+        eventHeader: 'Sent',
+      }),
+    ).rejects.toThrow(ServiceUnavailableException);
 
     expect(t.provider.verifyWebhook).not.toHaveBeenCalled();
     expect(t.prisma.$transaction).not.toHaveBeenCalled();

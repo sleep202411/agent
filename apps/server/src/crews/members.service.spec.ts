@@ -207,14 +207,14 @@ describe('MembersService roster reads', () => {
     });
     t.authorization.requireMembership.mockResolvedValue({
       memberId: MEMBER_ROW_ID,
-      permissions: ['settlements.view'],
+      permissions: ['finance.ledger.view'],
     });
 
     await expect(
       t.service.membership(CREW_ID, NEWCOMER),
     ).resolves.toMatchObject({
       userId: NEWCOMER,
-      permissions: ['settlements.view'],
+      permissions: ['finance.ledger.view'],
       member: { id: MEMBER_ROW_ID, policyKeys: ['finance'] },
     });
     expect(t.prisma.crewMember.findMany).not.toHaveBeenCalled();

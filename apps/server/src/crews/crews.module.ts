@@ -33,6 +33,10 @@ import { PositionsService } from './positions.service';
 import { CrewTasksController } from './tasks/tasks.controller';
 import { CrewTasksService } from './tasks/tasks.service';
 import { CrewTaskDraftService } from './tasks/task-draft.service';
+import { CrewEarningsController } from './earnings/earnings.controller';
+import { CrewEarningsService } from './earnings/earnings.service';
+import { CrewPayoutsController } from './earnings/payouts.controller';
+import { CrewPayoutsService } from './earnings/payouts.service';
 import { CrewProductionController } from './production/production.controller';
 import { CrewProductionService } from './production/production.service';
 
@@ -70,6 +74,8 @@ import { CrewProductionService } from './production/production.service';
     CrewTasksController,
     CrewProductionController,
     CrewAgreementsController,
+    CrewEarningsController,
+    CrewPayoutsController,
   ],
   providers: [
     CrewsService,
@@ -87,6 +93,8 @@ import { CrewProductionService } from './production/production.service';
     CrewAgreementSendWorker,
     CrewAgreementArchiveWorker,
     BoldSignAgreementProvider,
+    CrewEarningsService,
+    CrewPayoutsService,
   ],
   exports: [CrewAssetAccessModule],
 })

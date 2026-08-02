@@ -27,7 +27,12 @@ vi.mock("@/src/i18n/i18n", () => ({
       memberOwnerProtected: "Protected owner",
       memberViewProfile: "Profile",
       memberFinanceBadge: "Finance",
-      memberFinanceToggleShort: "Finance",
+      memberAdminBadge: "Administrator",
+      memberAccessPresetStandard: "Standard member",
+      memberAccessPresetFinance: "Finance",
+      memberAccessPresetAdmin: "Administrator",
+      memberAccessPresetAdminFinance: "Administrator + finance",
+      addMemberAccessLabel: "Access preset",
       memberJoinedAgo: `Joined ${vars?.date ?? ""}`,
       memberViaOwnershipTransfer: "via ownership transfer",
       justNow: "just now",
@@ -118,5 +123,35 @@ describe("MemberCard", () => {
     expect(document.body.textContent).toContain("Owner");
     expect(document.body.textContent).toContain("Full workspace access");
     expect(document.querySelector('button[aria-label="Remove"]')).toBeNull();
+  });
+
+  it("represents combined atomic policies as one access preset", () => {
+    renderMember(
+      {
+        id: "member-2",
+        crewId: "crew-1",
+        userId: "8",
+        status: "active",
+        joinedVia: "invitation",
+        isOwner: false,
+        positions: [],
+        policyKeys: ["finance", "admin"],
+        joinedAt: new Date().toISOString(),
+        removedAt: null,
+        version: 1,
+      },
+      {
+        userId: "8",
+        nickname: "Ari",
+        avatar: null,
+        isCrewMember: true,
+        isCrewOwner: false,
+      },
+      true
+    );
+
+    const accessSelect = document.querySelector<HTMLElement>('[role="combobox"]');
+    expect(accessSelect?.textContent).toContain("Administrator + finance");
+    expect(accessSelect?.getAttribute("aria-label")).toBe("Access preset");
   });
 });

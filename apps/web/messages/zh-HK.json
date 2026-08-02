@@ -3860,6 +3860,7 @@
     "tabMembers": "成員管理",
     "tabEpisodes": "劇集製作",
     "tabTasks": "製作任務",
+    "tabIncome": "收入",
     "tabAssets": "資產中心",
     "chatUnavailableTitle": "群聊打不開",
     "workspaceLoading": "正在載入劇組工作台",
@@ -3918,8 +3919,9 @@
     "addMemberDialogSubtitle": "通過對方註冊的手機號或電郵發送邀請；接受後才會取得劇組權限。",
     "addMemberContactLabel": "手機號 / 電郵",
     "addMemberContactPlaceholder": "13800000000 或 user@example.com",
-    "addMemberAccessLabel": "附加權限",
-    "addMemberAccessHint": "受邀者接受後都會成為普通成員；附加策略只增加能力，不會取代成員身份。",
+    "addMemberAccessLabel": "權限範本",
+    "addMemberAccessHint": "範本只封裝原子權限，不會取代劇組成員身份。",
+    "addMemberStandardPolicyHint": "以普通成員權限參與分配給自己的協作內容。",
     "addMemberAdminPolicyHint": "管理成員、招募、任務、資產、合約與 Studio。",
     "addMemberFinancePolicyHint": "查看並處理劇組財務結算。",
     "addMemberRemarkLabel": "備註",
@@ -3986,15 +3988,14 @@
     "memberAdminBadge": "管理員",
     "memberOwnerAccess": "完整工作台權限",
     "memberStandardAccess": "標準成員權限",
+    "memberAccessPresetStandard": "普通成員",
+    "memberAccessPresetFinance": "財務",
+    "memberAccessPresetAdmin": "管理員",
+    "memberAccessPresetAdminFinance": "管理員 + 財務",
     "memberPolicy_admin": "管理員策略",
     "memberPolicy_finance": "財務策略",
     "memberOwnerProtected": "受保護的所有者",
-    "memberAdminToggleShort": "管理",
-    "memberFinanceToggleShort": "財務",
-    "memberAdminAdded": "已授予管理員權限",
-    "memberAdminRemoved": "已取消管理員權限",
-    "memberFinanceAdded": "已設為財務",
-    "memberFinanceRemoved": "已取消財務身份",
+    "memberAccessUpdated": "成員權限已更新",
     "memberAccessUpdateFailed": "更新成員權限失敗",
     "memberOwnerCannotRemove": "所有者不能被移除",
     "noJobsYet": "暫無招聘職位。",
@@ -4696,7 +4697,6 @@
     },
     "projectSubtitle": "任務、迭代與交付流程",
     "noActiveCycle": "暫無進行中的迭代",
-    "settlements": "結算記錄",
     "newCycle": "新增迭代",
     "newTask": "新增任務",
     "newView": "新增視圖",
@@ -4783,7 +4783,7 @@
       "in_progress": "正在製作的任務。此類任務可以正常移動和編輯。",
       "submitted": "審核隊列。成員提交一個版本後，任務會自動進入此類欄。",
       "revision_requested": "被退回修改的任務。此類任務可以繼續編輯並重新提交。",
-      "approved": "已經通過的任務。僅審核通過後自動進入，並可以參與結算。",
+      "approved": "已經通過的任務。僅審核通過後自動進入；已設定的任務報酬會自動入帳。",
       "cancelled": "已經取消的任務。此類任務會被鎖定，並從進行中視圖排除。"
     },
     "workflowColumnCreated": "工作流欄已建立。",
@@ -4846,7 +4846,7 @@
     "workflowManagement": "工作流欄",
     "workflowManagementDescription": "設定所有任務視圖共用的真實製作階段；已封存欄仍可在這裡恢復。",
     "workflowArchived": "已封存",
-    "workflowSettingsHint": "欄的流程行為決定提交、審核、結算資格和任務鎖定等生命週期規則。",
+    "workflowSettingsHint": "欄的流程行為決定提交、審核、自動發放任務報酬和任務鎖定等生命週期規則。",
     "editColumn": "編輯",
     "viewSettings": "視圖設定",
     "viewSettingsDescription": "設定所有成員共用的佈局、分組、排序與篩選條件。",
@@ -5257,7 +5257,7 @@
     "loadFailed": "無法載入任務。",
     "retry": "重試",
     "empty": "目前檢視沒有任務。",
-    "selectTask": "選擇一個任務，查看任務畫布、提交版本和結算。",
+    "selectTask": "選擇一個任務，查看任務畫布、提交版本和交付歷史。",
     "filter": { "active": "進行中", "review": "待審核", "approved": "已通過", "all": "全部" },
     "status": {
       "open": "待開始",
@@ -5353,15 +5353,6 @@
     "submitting": "提交中…",
     "submitted": "新版本已提交審核",
     "submitFailed": "提交失敗",
-    "settlements": "結算記錄",
-    "settlementsDescription": "審核通過時自動計入社群積分；記錄結算會按 100 積分 = 1 美元原子扣減積分，但不會發起外部轉帳。",
-    "settlementFilterAll": "全部",
-    "settlementFilterPending": "待結算",
-    "settlementFilterSettled": "已記錄",
-    "settled": "已記錄",
-    "markSettled": "記錄美元結算",
-    "usdCashOutEstimate": "結算計價：{amount}",
-    "noSettlements": "設定了報酬積分的任務審核通過後會出現在這裡。",
     "issueLabel": "任務 {id}",
     "openedBy": "由 {name} 建立 · {date}",
     "editTask": "編輯任務",
@@ -5419,7 +5410,6 @@
       "submitted": "提交了 v{version} 版本等待審核。",
       "approved": "通過了本次任務交付。",
       "revisionRequested": "要求繼續修改並提交新版本。",
-      "settled": "登記了本任務的結算記錄。",
       "changed": "更新了任務。"
     }
   },
@@ -5460,7 +5450,7 @@
     "title": "劇組合約",
     "subtitle": "與成員關聯的可選合約，未簽署不會阻塞協作。",
     "newAgreement": "新增合約",
-    "notConfigured": "目前部署尚未連接 BoldSign。邀請、任務、檔案和結算仍可正常使用。",
+    "notConfigured": "目前部署尚未連接 BoldSign。邀請、任務、檔案和收入記錄仍可正常使用。",
     "member": "劇組成員",
     "chooseMember": "選擇簽署人",
     "signerName": "簽署人姓名",
@@ -5519,6 +5509,194 @@
       "failed": "發送失敗",
       "voided": "已作廢"
     }
+  },
+  "crewIncome": {
+    "workspaceLabel": "{crew} · 財務",
+    "title": "積分與資金發放",
+    "description": "先將劇組報酬確認為積分，再透過可審計的發放單結算所選積分對應的實際資金。",
+    "pointsUnit": "積分",
+    "pointsValueTooltip": "{points} 固定等於 {amount}。100 積分始終等於 {benchmark}。",
+    "viewLabel": "財務視圖",
+    "views": { "points": "積分帳本", "payouts": "資金發放" },
+    "metrics": {
+      "confirmedPoints": "已確認積分",
+      "pendingPoints": "待審核積分",
+      "monthPoints": "本月確認",
+      "availablePoints": "可發放積分",
+      "reservedPoints": "發放中佔用",
+      "paidPoints": "已發放積分"
+    },
+    "points": {
+      "history": "積分帳本",
+      "historyDescription": "記錄任務獎勵和財務調整的不可變積分明細。",
+      "emptyTitle": "暫無積分記錄",
+      "emptyDescription": "任務通過後會自動產生積分，財務亦可手動新增積分記錄。"
+    },
+    "scopes": { "mine": "我的積分", "crew": "劇組帳本" },
+    "filters": {
+      "all": "全部",
+      "pending": "待審批",
+      "posted": "已確認",
+      "rejected": "已駁回",
+      "reversed": "已沖回",
+      "paid": "已發放",
+      "voided": "已作廢"
+    },
+    "loading": "正在載入積分帳本…",
+    "loadFailed": "無法載入積分帳本。",
+    "retry": "重試",
+    "loadMore": "載入更多",
+    "status": {
+      "pending": "待審批",
+      "posted": "已確認",
+      "rejected": "已駁回",
+      "reversed": "已沖回"
+    },
+    "sources": {
+      "task_reward": "任務獎勵",
+      "contract_compensation": "合約約定積分",
+      "milestone_bonus": "里程碑積分",
+      "revenue_share": "分成約定積分",
+      "discretionary_bonus": "獎勵積分",
+      "adjustment": "積分調整"
+    },
+    "create": {
+      "action": "新增積分",
+      "title": "新增成員積分",
+      "description": "建立一筆待審核積分。財務確認後才會進入成員可發放積分。",
+      "member": "成員",
+      "memberPlaceholder": "選擇成員",
+      "source": "積分來源",
+      "titleLabel": "標題",
+      "titlePlaceholder": "為甚麼發放這筆積分？",
+      "points": "積分",
+      "note": "備註",
+      "notePlaceholder": "補充合約、里程碑或帳務背景…",
+      "pendingNotice": "此階段只確認積分，不賦予現金金額；記錄需經財務審核後生效。",
+      "submit": "建立積分記錄"
+    },
+    "decision": {
+      "rejectTitle": "駁回積分記錄",
+      "rejectDescription": "記錄會保留在稽核帳本中，但不會增加成員積分。",
+      "reverseTitle": "沖回已確認積分",
+      "reverseDescription": "系統會扣回已確認積分；已被發放單佔用或已經發放的積分不能沖回。",
+      "reasonPlaceholder": "填寫本次決定的原因…"
+    },
+    "actions": {
+      "approve": "審批入帳",
+      "reject": "駁回",
+      "reverse": "沖回",
+      "viewDetails": "查看積分詳情",
+      "cancel": "取消",
+      "confirmReject": "確認駁回",
+      "confirmReverse": "確認沖回"
+    },
+    "detail": {
+      "title": "積分詳情",
+      "description": "查看這筆積分的來源、決策和不可篡改的審計歷史。",
+      "source": "積分來源",
+      "note": "備註",
+      "recorded": "記錄時間",
+      "createdBy": "建立人",
+      "task": "來源任務",
+      "agreement": "關聯合約",
+      "openAgreement": "開啟合約",
+      "rejectionReason": "駁回原因",
+      "reversalReason": "沖回原因",
+      "auditTrail": "審計軌跡",
+      "loading": "正在載入審計軌跡…",
+      "loadFailed": "無法載入審計軌跡。",
+      "close": "關閉",
+      "events": {
+        "created": "建立積分記錄",
+        "posted": "積分已確認",
+        "rejected": "積分記錄已駁回",
+        "reversed": "已確認積分被沖回",
+        "unknown": "積分記錄已更新"
+      }
+    },
+    "messages": {
+      "created": "積分記錄已建立",
+      "createFailed": "積分記錄建立失敗。",
+      "approved": "積分已確認",
+      "rejected": "積分記錄已駁回",
+      "reversed": "積分已沖回",
+      "actionFailed": "積分操作失敗。"
+    },
+    "payout": {
+      "history": "資金發放記錄",
+      "historyDescription": "每張發放單都會鎖定已確認積分，並保存獨立的金額快照與審計軌跡。",
+      "emptyTitle": "暫無發放記錄",
+      "emptyDescription": "財務可以使用成員的可發放積分建立資金發放單。",
+      "record": "劇組資金發放",
+      "status": {
+        "pending": "待處理",
+        "paid": "已發放",
+        "voided": "已作廢"
+      },
+      "actions": {
+        "pay": "標記已發放",
+        "void": "作廢發放單"
+      },
+      "create": {
+        "action": "建立發放單",
+        "title": "建立資金發放單",
+        "description": "鎖定已確認積分，並固化財務實際要發放的金額。",
+        "member": "成員",
+        "points": "結算積分",
+        "gross": "應發金額",
+        "withholding": "代扣金額",
+        "net": "實發金額",
+        "note": "財務備註",
+        "notice": "建立發放單後會鎖定所選積分；只有記錄付款方式和流水號後，資金才視為已發放。",
+        "submit": "建立發放單"
+      },
+      "dialog": {
+        "method": "付款方式",
+        "reference": "付款流水號",
+        "proof": "付款憑證連結",
+        "reason": "原因",
+        "pay": {
+          "title": "記錄已完成付款",
+          "description": "確認 {points} 對應的 {amount} 已真實發出。",
+          "submit": "標記已發放"
+        },
+        "void": {
+          "title": "作廢發放單",
+          "description": "作廢 {points} 對應的 {amount}，並釋放佔用積分。",
+          "submit": "確認作廢"
+        }
+      },
+      "methods": {
+        "bank_transfer": "銀行轉帳",
+        "alipay": "支付寶",
+        "wechat_pay": "微信支付",
+        "paypal": "PayPal",
+        "other": "其他"
+      },
+      "detail": {
+        "title": "發放詳情",
+        "description": "積分分配、金額快照與不可變付款歷史。",
+        "gross": "應發金額",
+        "withholding": "代扣金額",
+        "reference": "付款流水號",
+        "voidReason": "作廢原因",
+        "allocations": "積分來源分配",
+        "events": {
+          "created": "發放單已建立",
+          "paid": "付款已完成",
+          "voided": "發放單已作廢",
+          "unknown": "發放單已更新"
+        }
+      },
+      "messages": {
+        "created": "發放單已建立",
+        "pay": "付款記錄已完成",
+        "void": "發放單已作廢，積分已釋放",
+        "actionFailed": "發放操作失敗。"
+      }
+    },
+    "optional": "可選"
   },
   "crewWorkbench": {
     "globalNavigation": "劇組工作台導覽",
@@ -9451,10 +9629,33 @@
         "title": "任務需要修改：{task}",
         "body": "請開啟任務畫布修改並提交新版本。"
       },
-      "settlementSettled": {
-        "title": "結算已記錄：{task}",
-        "body": "{points} 積分已按結算匯率換算為 {payout}。",
-        "fallbackBody": "劇組已將該任務記錄為已結算。"
+      "earning": {
+        "posted": {
+          "title": "積分已確認：{title}",
+          "body": "{points} 已計入你的劇組積分帳本。"
+        },
+        "rejected": {
+          "title": "積分記錄已駁回：{title}",
+          "body": "{points} 未計入你的劇組積分帳本。"
+        },
+        "reversed": {
+          "title": "積分已沖回：{title}",
+          "body": "{points} 已從你的劇組積分帳本扣回。"
+        }
+      },
+      "payout": {
+        "scheduled": {
+          "title": "發放單已建立",
+          "body": "{points} 將按 {amount} 發放。"
+        },
+        "paid": {
+          "title": "資金已發放",
+          "body": "{points} 對應的 {amount} 已完成發放。"
+        },
+        "voided": {
+          "title": "發放單已作廢",
+          "body": "{points} 對應的 {amount} 已作廢，積分已重新可用。"
+        }
       }
     }
   },

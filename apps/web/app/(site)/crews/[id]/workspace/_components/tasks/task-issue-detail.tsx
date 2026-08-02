@@ -2258,8 +2258,6 @@ function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTra
       return t("activity.approved");
     case "task.revision_requested":
       return t("activity.revisionRequested");
-    case "task.settlement_recorded":
-      return t("activity.settled");
     default:
       return t("activity.changed");
   }

@@ -31,7 +31,11 @@ export const crewKeys = {
   productionOverview: (crewId: string) => ["crew", "production", crewId, "overview"] as const,
   productionActivity: (crewId: string) => ["crew", "production", crewId, "activity"] as const,
   episodes: (crewId: string) => ["crew", "production", crewId, "episodes"] as const,
-  settlements: (crewId: string) => ["crew", "settlements", crewId] as const,
+  earnings: (crewId: string, scope: "mine" | "crew") =>
+    ["crew", "earnings", crewId, scope] as const,
+  earning: (earningId: string) => ["crew", "earning", earningId] as const,
+  payouts: (crewId: string, scope: "mine" | "crew") => ["crew", "payouts", crewId, scope] as const,
+  payout: (payoutId: string) => ["crew", "payout", payoutId] as const,
   invitations: (crewId: string) => ["crew", "invitations", crewId] as const,
   myInvitations: ["crew", "invitations", "mine"] as const,
   invitation: (invitationId: string) => ["crew", "invitation", invitationId] as const,

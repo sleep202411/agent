@@ -19,8 +19,6 @@ import type {
   CreateCrewTaskInput,
   CrewTaskDraftDTO,
   DraftCrewTaskInput,
-  CrewSettlementItemDTO,
-  CrewSettlementPageDTO,
   CrewTaskDTO,
   CrewTaskListItemDTO,
   CrewTaskOptionPageDTO,
@@ -641,51 +639,10 @@ export function useReviewCrewTask(crewId: string) {
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.settlements(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.earnings(crewId, "mine") });
+      qc.invalidateQueries({ queryKey: crewKeys.earnings(crewId, "crew") });
       qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
-    },
-  });
-}
-
-export function useCrewSettlements(
-  crewId: string,
-  enabled: boolean,
-  status?: "pending" | "settled"
-) {
-  const result = useInfiniteQuery({
-    queryKey: [...crewKeys.settlements(crewId), status ?? "all"] as const,
-    enabled,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      crewApi.get<CrewSettlementPageDTO>(`/crews/${encodeURIComponent(crewId)}/settlements`, {
-        query: { limit: 50, cursor: pageParam, status },
-      }),
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-  });
-  return {
-    ...result,
-    data: result.data?.pages.flatMap((page) => page.items) ?? [],
-    summary: result.data?.pages[0]?.summary,
-    total: result.data?.pages[0]?.total ?? 0,
-  };
-}
-
-export function useSettleCrewItem(crewId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ itemId, note }: { itemId: string; note?: string }) =>
-      crewApi.post<CrewSettlementItemDTO>(
-        `/crew-settlements/${encodeURIComponent(itemId)}/settle`,
-        { body: { note } }
-      ),
-    onSuccess: (settlement) => {
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.task(settlement.taskId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(settlement.taskId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.settlements(crewId) });
     },
   });
 }

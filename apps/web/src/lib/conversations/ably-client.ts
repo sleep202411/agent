@@ -41,7 +41,7 @@ export interface ConversationRealtimeHandlers {
   onCrewTaskChanged?: (data: {
     crewId: string;
     taskId: string;
-    action: "created" | "updated" | "commented" | "submitted" | "reviewed" | "settled";
+    action: "created" | "updated" | "commented" | "submitted" | "reviewed";
     actorUserId: string | null;
   }) => void;
   onCrewTaskProjectChanged?: (data: {
@@ -204,9 +204,16 @@ export function openConversationRealtime(
     close() {
       if (closed) return;
       closed = true;
-      channel.unsubscribe();
-      void Promise.resolve(channel.detach()).catch(() => undefined);
-      realtime.close();
+      try {
+        channel.unsubscribe();
+      } catch {
+        // Teardown is best-effort; an already-disposed SDK object may throw.
+      }
+      try {
+        realtime.close();
+      } catch {
+        // The connection may already have closed during page teardown.
+      }
     },
     get isOpen() {
       return channel.state === "attached";

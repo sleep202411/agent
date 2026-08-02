@@ -7,6 +7,7 @@ import {
   IconHome,
   IconMessageCircle,
   IconCheckbox,
+  IconCoins,
   IconSettings,
   IconUsers,
 } from "@tabler/icons-react";
@@ -24,6 +25,7 @@ const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
   overview: IconHome,
   chat: IconMessageCircle,
   tasks: IconCheckbox,
+  income: IconCoins,
   assets: IconFolder,
   members: IconUsers,
   roles: IconBriefcase,

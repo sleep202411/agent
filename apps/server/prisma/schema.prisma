@@ -1564,8 +1564,6 @@ model WalletTransaction {
   ipPurchaseOrders          IpPurchaseOrder[]
   billingRefunds            BillingRefund[]
   ipRevenueLedgerEntries    IpRevenueLedgerEntry[]
-  crewSettlementAccruals    CrewSettlementItem[]       @relation("CrewSettlementAccrualTransaction")
-  crewSettlementCashOuts    CrewSettlementItem[]       @relation("CrewSettlementCashOutTransaction")
 
   @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
   @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
@@ -4171,9 +4169,34 @@ enum CrewTaskFieldType {
   user
 }
 
-enum CrewSettlementStatus {
+enum CrewEarningStatus {
   pending
-  settled
+  posted
+  rejected
+  reversed
+}
+
+enum CrewEarningSourceType {
+  task_reward
+  contract_compensation
+  milestone_bonus
+  revenue_share
+  discretionary_bonus
+  adjustment
+}
+
+enum CrewPayoutStatus {
+  pending
+  paid
+  voided
+}
+
+enum CrewPayoutMethod {
+  bank_transfer
+  alipay
+  wechat_pay
+  paypal
+  other
 }
 
 enum CrewAgreementStatus {
@@ -4266,7 +4289,11 @@ model Crew {
   productionActivity  CrewProductionActivity[]
   episodes            CrewEpisode[]
   agreements          CrewAgreement[]
-  settlementItems     CrewSettlementItem[]
+  earningEntries      CrewEarningEntry[]
+  earningEvents       CrewEarningEvent[]
+  payouts             CrewPayout[]
+  payoutAllocations   CrewPayoutAllocation[]
+  payoutEvents        CrewPayoutEvent[]
   workspace           Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
   productionProject   PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
 
@@ -4475,9 +4502,14 @@ model CrewMember {
   actorAuthorizationEvents CrewAuthorizationEvent[]       @relation("CrewAuthorizationActor")
   taskAssignments          CrewTaskAssignee[]
   ledProductionPages       CrewProductionPage[]           @relation("CrewProductionLead")
-  settlements              CrewSettlementItem[]
+  earningEntries           CrewEarningEntry[]
+  payouts                  CrewPayout[]
 
   @@unique([id, crewId], name: "uniq_crew_member_id_crew", map: "crew_members_id_crew_unique")
+  /// Composite identity target for historical rows that intentionally keep
+  /// user_id for direct payee queries. The FK makes that snapshot incapable
+  /// of drifting away from the referenced membership.
+  @@unique([id, crewId, userId], name: "uniq_crew_member_identity", map: "crew_members_id_crew_user_unique")
   @@index([userId, status], map: "crew_members_by_user_idx")
   @@index([crewId, status], map: "crew_members_by_crew_idx")
   @@index([crewId, status, joinedAt, id], map: "crew_members_page_idx")
@@ -4614,10 +4646,9 @@ model CrewTask {
   number              Int
   title               String           @db.VarChar(180)
   description         String           @default("") @db.Text
-  status              CrewTaskStatus   @default(open)
-  /// Product-configurable board column. `status` remains the stable lifecycle
-  /// semantic used by submission/review/settlement rules; multiple workflow
-  /// states may intentionally map to the same semantic.
+  /// Product-configurable board column and the only task lifecycle source.
+  /// Its semantic drives submission, review and settlement rules; multiple
+  /// workflow states may intentionally share one semantic.
   workflowStateId     String           @map("workflow_state_id") @db.Uuid
   priority            CrewTaskPriority @default(normal)
   startAt             DateTime?        @map("start_at") @db.Timestamptz(6)
@@ -4650,9 +4681,9 @@ model CrewTask {
   updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew                  Crew                      @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  parent                CrewTask?                 @relation("CrewTaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  parent                CrewTask?                 @relation("CrewTaskHierarchy", fields: [parentId, crewId], references: [id, crewId], onDelete: Restrict)
   children              CrewTask[]                @relation("CrewTaskHierarchy")
-  cycle                 CrewTaskCycle?            @relation(fields: [cycleId], references: [id], onDelete: SetNull)
+  cycle                 CrewTaskCycle?            @relation(fields: [cycleId, crewId], references: [id, crewId], onDelete: Restrict)
   episode               CrewEpisode?              @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Restrict)
   workflowState         CrewTaskWorkflowState     @relation(fields: [workflowStateId, crewId], references: [id, crewId], onDelete: Restrict)
   canvasProject         PlatformProject?          @relation("CrewTaskCanvasProject", fields: [canvasProjectId], references: [id], onDelete: Restrict)
@@ -4660,7 +4691,7 @@ model CrewTask {
   assignees             CrewTaskAssignee[]
   labels                CrewTaskLabelAssignment[]
   submissions           CrewTaskSubmission[]
-  settlements           CrewSettlementItem[]
+  earningEntries        CrewEarningEntry[]
   timelineItems         CrewTaskTimelineItem[]
   dependenciesAsBlocker CrewTaskDependency[]      @relation("CrewTaskDependencyBlocker")
   dependenciesAsBlocked CrewTaskDependency[]      @relation("CrewTaskDependencyBlocked")
@@ -4674,7 +4705,6 @@ model CrewTask {
   @@index([crewId, episodeId, rank, id], map: "crew_tasks_crew_episode_rank_idx")
   @@index([crewId, workflowStateId, rank, id], map: "crew_tasks_crew_workflow_state_rank_idx")
   @@index([crewId, priority, rank, id], map: "crew_tasks_crew_priority_rank_idx")
-  @@index([crewId, status, updatedAt(sort: Desc)], map: "crew_tasks_crew_status_idx")
   @@index([crewId, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_tasks_crew_updated_idx")
   @@index([crewId, dueAt], map: "crew_tasks_crew_due_idx")
   @@map("crew_tasks")
@@ -4701,7 +4731,7 @@ model CrewProductionPage {
   updatedAt             DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew          Crew                            @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  leadMember    CrewMember?                     @relation("CrewProductionLead", fields: [leadMemberId], references: [id], onDelete: SetNull)
+  leadMember    CrewMember?                     @relation("CrewProductionLead", fields: [leadMemberId, crewId], references: [id, crewId], onDelete: Restrict)
   projectLabels CrewProductionLabelAssignment[]
 
   @@map("crew_production_pages")
@@ -4722,7 +4752,7 @@ model CrewProductionResource {
   updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew      Crew           @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  assetNode CrewAssetNode? @relation(fields: [assetNodeId], references: [id], onDelete: Restrict)
+  assetNode CrewAssetNode? @relation(fields: [assetNodeId, crewId], references: [id, crewId], onDelete: Restrict)
 
   @@index([crewId, createdAt, id], map: "crew_production_resources_crew_idx")
   @@index([assetNodeId], map: "crew_production_resources_asset_idx")
@@ -4875,6 +4905,7 @@ model CrewTaskCycle {
   tasks CrewTask[]
 
   @@unique([crewId, number], map: "crew_task_cycles_crew_number_unique")
+  @@unique([id, crewId], name: "uniq_crew_task_cycle_id_crew", map: "crew_task_cycles_id_crew_unique")
   @@index([crewId, status, startAt, endAt], map: "crew_task_cycles_crew_status_idx")
   @@map("crew_task_cycles")
 }
@@ -4894,6 +4925,7 @@ model CrewTaskLabel {
   productionProjects CrewProductionLabelAssignment[]
 
   @@unique([crewId, name], map: "crew_task_labels_crew_name_unique")
+  @@unique([id, crewId], name: "uniq_crew_task_label_id_crew", map: "crew_task_labels_id_crew_unique")
   @@index([crewId, createdAt], map: "crew_task_labels_crew_created_idx")
   @@map("crew_task_labels")
 }
@@ -4907,7 +4939,7 @@ model CrewProductionLabelAssignment {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   page  CrewProductionPage @relation(fields: [crewId], references: [crewId], onDelete: Cascade)
-  label CrewTaskLabel      @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  label CrewTaskLabel      @relation(fields: [labelId, crewId], references: [id, crewId], onDelete: Cascade)
 
   @@id([crewId, labelId])
   @@index([labelId, crewId], map: "crew_production_label_assignments_label_idx")
@@ -4915,11 +4947,12 @@ model CrewProductionLabelAssignment {
 }
 
 model CrewTaskLabelAssignment {
+  crewId  String @map("crew_id")
   taskId  String @map("task_id") @db.Uuid
   labelId String @map("label_id") @db.Uuid
 
-  task  CrewTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  label CrewTaskLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  task  CrewTask      @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade)
+  label CrewTaskLabel @relation(fields: [labelId, crewId], references: [id, crewId], onDelete: Cascade)
 
   @@id([taskId, labelId])
   @@index([labelId, taskId], map: "crew_task_label_assignments_label_idx")
@@ -5036,15 +5069,17 @@ model CrewTaskTimelineAsset {
 
 model CrewTaskAssignee {
   id           String   @id @default(uuid(7)) @db.Uuid
+  crewId       String   @map("crew_id")
   taskId       String   @map("task_id") @db.Uuid
   crewMemberId String   @map("crew_member_id")
   userId       String   @map("user_id") @db.VarChar(64)
-  /// Canonical task compensation. 100 points = USD 1 at cash-out.
+  /// Canonical crew-local compensation points. One point is permanently one
+  /// USD cent; this field is not a configurable quote or exchange rate.
   rewardPoints BigInt?  @map("reward_points")
   assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
 
-  task       CrewTask   @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  crewMember CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
+  task       CrewTask   @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade)
+  crewMember CrewMember @relation(fields: [crewMemberId, crewId, userId], references: [id, crewId, userId], onDelete: Restrict)
 
   @@unique([taskId, userId], map: "crew_task_assignees_task_user_unique")
   @@index([userId, assignedAt(sort: Desc)], map: "crew_task_assignees_user_idx")
@@ -5091,37 +5126,151 @@ model CrewTaskSubmissionAsset {
   @@map("crew_task_submission_assets")
 }
 
-model CrewSettlementItem {
-  id                   String               @id @default(uuid(7)) @db.Uuid
-  crewId               String               @map("crew_id")
-  taskId               String               @map("task_id") @db.Uuid
-  crewMemberId         String               @map("crew_member_id")
-  userId               String               @map("user_id") @db.VarChar(64)
-  /// Withdrawable community points accrued when the task is approved.
-  pointsAmount         BigInt               @map("points_amount")
-  pointsPerUsd         Int                  @default(100) @map("points_per_usd")
-  status               CrewSettlementStatus @default(pending)
-  /// Immutable cash-out quote. With 100 points/USD, one point is one USD cent.
-  payoutAmountMinor    BigInt?              @map("payout_amount_minor")
-  payoutCurrency       String?              @map("payout_currency") @db.VarChar(3)
-  accrualTransactionId String               @unique(map: "crew_settlement_items_accrual_tx_unique") @map("accrual_transaction_id") @db.Uuid
-  cashOutTransactionId String?              @unique(map: "crew_settlement_items_cash_out_tx_unique") @map("cash_out_transaction_id") @db.Uuid
-  settledAt            DateTime?            @map("settled_at") @db.Timestamptz(6)
-  settledByUserId      String?              @map("settled_by_user_id") @db.VarChar(64)
-  note                 String?              @db.Text
-  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+/// Immutable crew contribution-point source of truth. These points measure
+/// compensation earned inside one crew; they are neither compute points nor
+/// community-wallet points. Their cash value is fixed by product invariant:
+/// one point is one USD cent. CrewPayout records only withholding and
+/// offline-payment evidence.
+model CrewEarningEntry {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  crewId           String                @map("crew_id")
+  crewMemberId     String                @map("crew_member_id")
+  userId           String                @map("user_id") @db.VarChar(64)
+  sourceType       CrewEarningSourceType @map("source_type")
+  taskId           String?               @map("task_id") @db.Uuid
+  agreementId      String?               @map("agreement_id") @db.Uuid
+  title            String                @db.VarChar(180)
+  description      String?               @db.Text
+  pointsAmount     BigInt                @map("points_amount")
+  status           CrewEarningStatus     @default(pending)
+  idempotencyKey   String                @unique(map: "crew_earning_entries_idempotency_unique") @map("idempotency_key") @db.VarChar(160)
+  createdByUserId  String                @map("created_by_user_id") @db.VarChar(64)
+  approvedByUserId String?               @map("approved_by_user_id") @db.VarChar(64)
+  rejectedByUserId String?               @map("rejected_by_user_id") @db.VarChar(64)
+  reversedByUserId String?               @map("reversed_by_user_id") @db.VarChar(64)
+  postedAt         DateTime?             @map("posted_at") @db.Timestamptz(6)
+  rejectedAt       DateTime?             @map("rejected_at") @db.Timestamptz(6)
+  reversedAt       DateTime?             @map("reversed_at") @db.Timestamptz(6)
+  rejectionReason  String?               @map("rejection_reason") @db.Text
+  reversalReason   String?               @map("reversal_reason") @db.Text
+  version          Int                   @default(1)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  crew               Crew               @relation(fields: [crewId], references: [id], onDelete: Restrict)
-  task               CrewTask           @relation(fields: [taskId], references: [id], onDelete: Restrict)
-  crewMember         CrewMember         @relation(fields: [crewMemberId], references: [id], onDelete: Restrict)
-  accrualTransaction WalletTransaction  @relation("CrewSettlementAccrualTransaction", fields: [accrualTransactionId], references: [id], onDelete: Restrict)
-  cashOutTransaction WalletTransaction? @relation("CrewSettlementCashOutTransaction", fields: [cashOutTransactionId], references: [id], onDelete: Restrict)
+  crew              Crew                   @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  task              CrewTask?              @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Restrict)
+  agreement         CrewAgreement?         @relation(fields: [agreementId, crewId], references: [id, crewId], onDelete: Restrict)
+  crewMember        CrewMember             @relation(fields: [crewMemberId, crewId, userId], references: [id, crewId, userId], onDelete: Restrict)
+  events            CrewEarningEvent[]
+  payoutAllocations CrewPayoutAllocation[]
 
-  @@unique([taskId, userId], map: "crew_settlement_items_task_user_unique")
-  @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_settlement_items_crew_status_created_idx")
-  @@index([userId, status, createdAt(sort: Desc)], map: "crew_settlement_items_user_idx")
-  @@map("crew_settlement_items")
+  @@unique([taskId, userId, sourceType], map: "crew_earning_entries_task_user_source_unique")
+  @@unique([id, crewId], name: "uniq_crew_earning_id_crew", map: "crew_earning_entries_id_crew_unique")
+  @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_status_created_idx")
+  @@index([crewId, sourceType, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_source_created_idx")
+  @@index([userId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_user_status_created_idx")
+  @@index([crewMemberId, createdAt(sort: Desc)], map: "crew_earning_entries_member_created_idx")
+  @@index([agreementId], map: "crew_earning_entries_agreement_idx")
+  @@map("crew_earning_entries")
+}
+
+/// One real-money disbursement for one crew member. One contribution point is
+/// permanently one USD cent (100 points = USD 1), so currency and gross cash
+/// are deliberately not stored as configurable fields. Finance may record
+/// statutory withholding; paid allocations remain the anti-double-pay boundary.
+model CrewPayout {
+  id                     String            @id @default(uuid(7)) @db.Uuid
+  crewId                 String            @map("crew_id")
+  crewMemberId           String            @map("crew_member_id")
+  userId                 String            @map("user_id") @db.VarChar(64)
+  pointsAmount           BigInt            @map("points_amount")
+  withholdingAmountMinor BigInt            @default(0) @map("withholding_amount_minor")
+  netAmountMinor         BigInt            @map("net_amount_minor")
+  status                 CrewPayoutStatus  @default(pending)
+  paymentMethod          CrewPayoutMethod? @map("payment_method")
+  paymentReference       String?           @map("payment_reference") @db.VarChar(180)
+  paymentProofUrl        String?           @map("payment_proof_url") @db.VarChar(1024)
+  note                   String?           @db.Text
+  voidReason             String?           @map("void_reason") @db.Text
+  idempotencyKey         String            @unique(map: "crew_payouts_idempotency_unique") @map("idempotency_key") @db.VarChar(160)
+  createdByUserId        String            @map("created_by_user_id") @db.VarChar(64)
+  paidByUserId           String?           @map("paid_by_user_id") @db.VarChar(64)
+  voidedByUserId         String?           @map("voided_by_user_id") @db.VarChar(64)
+  paidAt                 DateTime?         @map("paid_at") @db.Timestamptz(6)
+  voidedAt               DateTime?         @map("voided_at") @db.Timestamptz(6)
+  version                Int               @default(1)
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew        Crew                   @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  crewMember  CrewMember             @relation(fields: [crewMemberId, crewId, userId], references: [id, crewId, userId], onDelete: Restrict)
+  allocations CrewPayoutAllocation[]
+  events      CrewPayoutEvent[]
+
+  @@unique([id, crewId], name: "uniq_crew_payout_id_crew", map: "crew_payouts_id_crew_unique")
+  @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_payouts_crew_status_created_idx")
+  @@index([userId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_payouts_user_status_created_idx")
+  @@index([crewMemberId, createdAt(sort: Desc)], map: "crew_payouts_member_created_idx")
+  @@map("crew_payouts")
+}
+
+/// Immutable reservation/settlement slices. Partial payouts are supported,
+/// while the service and database guard ensure active + paid allocations never
+/// exceed the source earning's posted point amount.
+model CrewPayoutAllocation {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  crewId       String   @map("crew_id")
+  payoutId     String   @map("payout_id") @db.Uuid
+  earningId    String   @map("earning_id") @db.Uuid
+  pointsAmount BigInt   @map("points_amount")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crew    Crew             @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  payout  CrewPayout       @relation(fields: [payoutId, crewId], references: [id, crewId], onDelete: Restrict)
+  earning CrewEarningEntry @relation(fields: [earningId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@unique([payoutId, earningId], map: "crew_payout_allocations_payout_earning_unique")
+  @@index([earningId], map: "crew_payout_allocations_earning_idx")
+  @@map("crew_payout_allocations")
+}
+
+/// Append-only payout state and payment-evidence audit trail.
+model CrewPayoutEvent {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  crewId      String   @map("crew_id")
+  payoutId    String   @map("payout_id") @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.VarChar(64)
+  action      String   @db.VarChar(64)
+  before      Json?    @db.JsonB
+  after       Json?    @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crew   Crew       @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  payout CrewPayout @relation(fields: [payoutId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@index([payoutId, createdAt, id], map: "crew_payout_events_payout_idx")
+  @@index([crewId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_payout_events_crew_idx")
+  @@map("crew_payout_events")
+}
+
+/// Append-only audit trail for every finance decision and automatic task
+/// posting. Corrections never rewrite history; they append a reversal event.
+model CrewEarningEvent {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  crewId      String   @map("crew_id")
+  earningId   String   @map("earning_id") @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.VarChar(64)
+  action      String   @db.VarChar(64)
+  before      Json?    @db.JsonB
+  after       Json?    @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crew    Crew             @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  earning CrewEarningEntry @relation(fields: [earningId, crewId], references: [id, crewId], onDelete: Restrict)
+
+  @@index([earningId, createdAt, id], map: "crew_earning_events_entry_idx")
+  @@index([crewId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_events_crew_idx")
+  @@map("crew_earning_events")
 }
 
 /// Optional agreement record. Collaboration is never gated on this row.
@@ -5159,7 +5308,9 @@ model CrewAgreement {
   auditAssetNode CrewAssetNode?           @relation("CrewAgreementAuditAsset", fields: [auditAssetNodeId], references: [id], onDelete: SetNull)
   sendJob        CrewAgreementSendJob?
   archiveJob     CrewAgreementArchiveJob?
+  earningEntries CrewEarningEntry[]
 
+  @@unique([id, crewId], name: "uniq_crew_agreement_id_crew", map: "crew_agreements_id_crew_unique")
   @@index([crewId, status, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_agreements_crew_status_updated_idx")
   @@index([crewId, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_agreements_crew_updated_idx")
   @@index([memberUserId, crewId, status, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_agreements_member_status_updated_idx")

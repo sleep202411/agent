@@ -1008,13 +1008,7 @@ export class ConversationsService {
   async broadcastCrewTaskChange(
     crewId: string,
     taskId: string,
-    action:
-      | 'created'
-      | 'updated'
-      | 'commented'
-      | 'submitted'
-      | 'reviewed'
-      | 'settled',
+    action: 'created' | 'updated' | 'commented' | 'submitted' | 'reviewed',
     actorUserId: string | null,
   ): Promise<void> {
     try {

@@ -153,18 +153,32 @@ export function notificationContent(
             body: metaString(item, "reviewNote") ?? t("events.taskRevisionRequested.body"),
           }
         : fallback;
-    case "crew.settlement.settled": {
-      const points = metaString(item, "pointsAmount");
-      const amountMinor = metaString(item, "payoutAmountMinor");
-      const currency = metaString(item, "payoutCurrency");
-      const payout = formatMinorCurrency(amountMinor, currency, locale);
-      if (!taskTitle) return fallback;
+    case "crew.earning.posted":
+    case "crew.earning.rejected":
+    case "crew.earning.reversed": {
+      const earningTitle = metaString(item, "earningTitle");
+      const points = formatPoints(metaString(item, "pointsAmount"), locale);
+      if (!earningTitle || !points) return fallback;
+      const outcome = item.type.slice("crew.earning.".length) as "posted" | "rejected" | "reversed";
       return {
-        title: t("events.settlementSettled.title", { task: taskTitle }),
-        body:
-          points && payout
-            ? t("events.settlementSettled.body", { points, payout })
-            : t("events.settlementSettled.fallbackBody"),
+        title: t(`events.earning.${outcome}.title`, { title: earningTitle }),
+        body: t(`events.earning.${outcome}.body`, { points }),
+      };
+    }
+    case "crew.payout.scheduled":
+    case "crew.payout.paid":
+    case "crew.payout.voided": {
+      const points = formatPoints(metaString(item, "pointsAmount"), locale);
+      const amount = formatMinorCurrency(
+        metaString(item, "netAmountMinor"),
+        metaString(item, "currency"),
+        locale
+      );
+      if (!points || !amount) return fallback;
+      const outcome = item.type.slice("crew.payout.".length) as "scheduled" | "paid" | "voided";
+      return {
+        title: t(`events.payout.${outcome}.title`),
+        body: t(`events.payout.${outcome}.body`, { points, amount }),
       };
     }
     default:
@@ -207,13 +221,28 @@ function formatMinorCurrency(
   locale: Locale
 ): string | null {
   if (!amountMinor || !currency || !/^-?\d+$/.test(amountMinor)) return null;
-  const amount = Number(amountMinor);
-  if (!Number.isSafeInteger(amount)) return null;
   try {
+    const amount = BigInt(amountMinor);
+    if (amount > BigInt(Number.MAX_SAFE_INTEGER) || amount < BigInt(Number.MIN_SAFE_INTEGER)) {
+      const sign = amount < 0n ? "-" : "";
+      const absolute = amount < 0n ? -amount : amount;
+      const major = absolute / 100n;
+      const minor = (absolute % 100n).toString().padStart(2, "0");
+      return `${sign}${currency} ${major.toLocaleString(locale)}.${minor}`;
+    }
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
-    }).format(amount / 100);
+    }).format(Number(amount) / 100);
+  } catch {
+    return null;
+  }
+}
+
+function formatPoints(pointsAmount: string | null, locale: Locale): string | null {
+  if (!pointsAmount || !/^\d+$/.test(pointsAmount)) return null;
+  try {
+    return `${BigInt(pointsAmount).toLocaleString(locale)} pts`;
   } catch {
     return null;
   }

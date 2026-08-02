@@ -56,6 +56,7 @@ import { PositionsGrid } from "@/app/(site)/crews/[id]/workspace/_components/pos
 import { CrewTasksTab } from "@/app/(site)/crews/[id]/workspace/_components/tasks/crew-tasks-tab";
 import { CrewChatTab } from "@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab";
 import { CrewAssetsTab } from "@/app/(site)/crews/[id]/workspace/_components/assets/crew-assets-tab";
+import { CrewIncomeTab } from "@/app/(site)/crews/[id]/workspace/_components/income/crew-income-tab";
 import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 import { CrewWorkbenchShell } from "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-workbench-shell";
 import { useAnchorDeeplink } from "@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink";
@@ -388,6 +389,20 @@ export default function CrewWorkspacePage() {
               />
             ) : null}
 
+            {activeTab === "income" ? (
+              <CrewIncomeTab
+                crewId={id}
+                crewName={crewDetail.name}
+                members={members}
+                canViewCrewLedger={viewer.can("finance.ledger.view")}
+                canCreateEarning={viewer.can("finance.earnings.create")}
+                canApproveEarning={viewer.can("finance.earnings.approve")}
+                canReverseEarning={viewer.can("finance.earnings.reverse")}
+                canCreatePayout={viewer.can("finance.payouts.create")}
+                canManagePayout={viewer.can("finance.payouts.manage")}
+              />
+            ) : null}
+
             {activeTab === "tasks" ? (
               <CrewTasksTab
                 crewId={id}
@@ -398,7 +413,6 @@ export default function CrewWorkspacePage() {
                 members={members}
                 isOwner={viewer.can("tasks.manage")}
                 canEditCrewInfo={viewer.can("crew.settings.manage")}
-                canSettle={viewer.can("finance.settle")}
                 viewerUserId={viewer.effectiveUserId}
                 deeplinkTaskId={deeplinkTaskId}
                 onSelectedTaskChange={handleSelectedTaskChange}

@@ -60,7 +60,18 @@ export type {
   CrewTaskFieldType,
   CrewTaskCustomValue,
   CrewTaskReferenceDTO,
-  CrewSettlementItemDTO,
+  CrewEarningEntryDTO,
+  CrewEarningEventDTO,
+  CrewEarningDetailDTO,
+  CrewEarningPageDTO,
+  CrewEarningStatus,
+  CrewEarningSourceType,
+  CrewPayoutDTO,
+  CrewPayoutDetailDTO,
+  CrewPayoutEventDTO,
+  CrewPayoutPageDTO,
+  CrewPayoutStatus,
+  CrewPayoutMethod,
   CrewTaskTimelineItemDTO,
   CrewTaskTimelinePageDTO,
   CrewTaskActivityItemDTO,
@@ -185,8 +196,6 @@ export {
   useDeleteCrewTaskComment,
   useSubmitCrewTask,
   useReviewCrewTask,
-  useCrewSettlements,
-  useSettleCrewItem,
   useCreateCrewTaskView,
   useUpdateCrewTaskView,
   useDeleteCrewTaskView,
@@ -206,6 +215,21 @@ export {
   useReorderCrewTask,
   useBatchUpdateCrewTasks,
 } from "./use-tasks";
+export {
+  useCrewEarnings,
+  useCrewEarningDetail,
+  useCreateCrewEarning,
+  useApproveCrewEarning,
+  useRejectCrewEarning,
+  useReverseCrewEarning,
+} from "./use-earnings";
+export {
+  useCrewPayouts,
+  useCrewPayoutDetail,
+  useCreateCrewPayout,
+  usePayCrewPayout,
+  useVoidCrewPayout,
+} from "./use-payouts";
 export type { SaveCrewTaskViewInput } from "./use-tasks";
 export {
   useCrewInvitations,

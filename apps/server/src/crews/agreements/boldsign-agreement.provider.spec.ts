@@ -6,8 +6,11 @@ import { createHmac } from 'node:crypto';
 import { BoldSignAgreementProvider } from './boldsign-agreement.provider';
 
 const ENV_KEYS = [
+  'BOLDSIGN_ENABLED',
   'BOLDSIGN_API_KEY',
+  'BOLDSIGN_API_BASE_URL',
   'BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID',
+  'BOLDSIGN_CREW_AGREEMENT_ROLE_INDEX',
   'BOLDSIGN_WEBHOOK_SECRET',
   'BOLDSIGN_WEBHOOK_TOLERANCE_SECONDS',
   'BOLDSIGN_ARCHIVE_MAX_BYTES',
@@ -18,6 +21,7 @@ describe('BoldSignAgreementProvider webhook verification', () => {
 
   beforeEach(() => {
     for (const key of ENV_KEYS) original.set(key, process.env[key]);
+    process.env.BOLDSIGN_ENABLED = 'true';
     process.env.BOLDSIGN_API_KEY = 'api-key';
     process.env.BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID = 'template-1';
     process.env.BOLDSIGN_WEBHOOK_SECRET = 'webhook-secret';
@@ -97,6 +101,22 @@ describe('BoldSignAgreementProvider webhook verification', () => {
     );
   });
 
+  it('stays disabled by default even when stale local credentials exist', () => {
+    delete process.env.BOLDSIGN_ENABLED;
+    const provider = new BoldSignAgreementProvider();
+
+    expect(provider.isEnabled()).toBe(false);
+    expect(provider.isConfigured()).toBe(false);
+    expect(provider.canSync()).toBe(false);
+  });
+
+  it('fails bootstrap when an enabled deployment is only partially configured', () => {
+    delete process.env.BOLDSIGN_WEBHOOK_SECRET;
+    const provider = new BoldSignAgreementProvider();
+
+    expect(() => provider.onModuleInit()).toThrow(/BOLDSIGN_WEBHOOK_SECRET/);
+  });
+
   it('labels every template send with the stable agreement id for reconciliation', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ documentId: 'document-1' }), {
@@ -114,8 +134,12 @@ describe('BoldSignAgreementProvider webhook verification', () => {
         signerEmail: 'mina@example.com',
       }),
     ).resolves.toBe('document-1');
-    const [, request] = fetchMock.mock.calls[0]!;
-    expect(JSON.parse(String(request?.body))).toMatchObject({
+    const [, request] = fetchMock.mock.calls[0];
+    if (typeof request?.body !== 'string') {
+      throw new Error('expected BoldSign template payload to be JSON text');
+    }
+    const requestBody: unknown = JSON.parse(request.body);
+    expect(requestBody).toMatchObject({
       Labels: ['fizzdragon-agreement-01910d50-4c88-7c78-92d4-16892c06a001'],
       MetaData: {
         FizzDragonAgreementId: '01910d50-4c88-7c78-92d4-16892c06a001',
@@ -144,7 +168,11 @@ describe('BoldSignAgreementProvider webhook verification', () => {
       documentId: 'document-1',
       status: 'WaitingForOthers',
     });
-    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+    const requestInput = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestInput !== 'string') {
+      throw new Error('expected BoldSign request URL to be a string');
+    }
+    expect(requestInput).toContain(
       'labels=fizzdragon-agreement-01910d50-4c88-7c78-92d4-16892c06a001',
     );
     fetchMock.mockRestore();
@@ -176,7 +204,11 @@ describe('BoldSignAgreementProvider webhook verification', () => {
       signLink: 'https://app.boldsign.com/document/sign/?documentId=document-1',
       expiresAt: new Date('2026-07-29T12:15:00.000Z'),
     });
-    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const requestInput = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestInput !== 'string') {
+      throw new Error('expected BoldSign request URL to be a string');
+    }
+    const requestUrl = new URL(requestInput);
     expect(requestUrl.pathname).toBe('/v1/document/getEmbeddedSignLink');
     expect(requestUrl.searchParams.get('documentId')).toBe('document-1');
     expect(requestUrl.searchParams.get('signerEmail')).toBe(
@@ -208,11 +240,7 @@ describe('BoldSignAgreementProvider webhook verification', () => {
         'mina@example.com',
         new Date('2026-07-29T12:00:00.000Z'),
       ),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        message: expect.stringContaining('insecure'),
-      }),
-    });
+    ).rejects.toThrow(/insecure/);
     fetchMock.mockRestore();
   });
 
@@ -229,23 +257,20 @@ describe('BoldSignAgreementProvider webhook verification', () => {
     );
     const provider = new BoldSignAgreementProvider();
 
-    await expect(
-      provider.downloadSignedDocument('document-1'),
-    ).resolves.toMatchObject({
+    const artifact = await provider.downloadSignedDocument('document-1');
+    expect(artifact).toMatchObject({
       contentType: 'application/pdf',
       filename: 'Storyboard Agreement.pdf',
-      bytes: expect.any(Buffer),
     });
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(Buffer.isBuffer(artifact.bytes)).toBe(true);
+    const [requestInput, request] = fetchMock.mock.calls[0];
+    expect(requestInput).toBe(
       'https://api.boldsign.com/v1/document/download?documentId=document-1',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          Accept: 'application/pdf',
-          'X-API-KEY': 'api-key',
-        }),
-      }),
     );
+    expect(request?.method).toBe('GET');
+    const requestHeaders = new Headers(request?.headers);
+    expect(requestHeaders.get('Accept')).toBe('application/pdf');
+    expect(requestHeaders.get('X-API-KEY')).toBe('api-key');
     fetchMock.mockRestore();
   });
 
@@ -258,13 +283,9 @@ describe('BoldSignAgreementProvider webhook verification', () => {
     );
     const provider = new BoldSignAgreementProvider();
 
-    await expect(
-      provider.downloadAuditTrail('document-1'),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        message: expect.stringContaining('invalid PDF'),
-      }),
-    });
+    await expect(provider.downloadAuditTrail('document-1')).rejects.toThrow(
+      /invalid PDF/,
+    );
     fetchMock.mockRestore();
   });
 });

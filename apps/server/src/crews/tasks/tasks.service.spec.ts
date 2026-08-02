@@ -1,12 +1,6 @@
-import {
-  CrewSettlementStatus,
-  CrewTaskPriority,
-  CrewTaskStatus,
-  Prisma,
-} from '@prisma/client';
+import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import * as Y from 'yjs';
-import { ListCrewSettlementsQuerySchema } from '../dto';
 import {
   ListCrewTaskOptionsQuerySchema,
   ListCrewTasksQuerySchema,
@@ -77,16 +71,15 @@ function firstCallArgument<T>(mockFn: { mock: { calls: unknown[][] } }): T {
 }
 
 function task(overrides: Record<string, unknown> = {}) {
+  const { status: statusOverride, ...taskOverrides } = overrides;
   const status =
-    (overrides.status as CrewTaskStatus | undefined) ??
-    CrewTaskStatus.submitted;
+    (statusOverride as CrewTaskStatus | undefined) ?? CrewTaskStatus.submitted;
   return {
     id: TASK_ID,
     crewId: CREW_ID,
     number: 10,
     title: 'Finish SC.010 storyboard',
     description: 'Deliver the revised sequence.',
-    status,
     workflowStateId: WORKFLOW_STATE_IDS[status],
     workflowState: workflowState(status),
     priority: CrewTaskPriority.high,
@@ -163,12 +156,11 @@ function task(overrides: Record<string, unknown> = {}) {
         assets: [],
       },
     ],
-    settlements: [],
     dependenciesAsBlocked: [],
     dependenciesAsBlocker: [],
     customFieldValues: [],
     timelineItems: [],
-    ...overrides,
+    ...taskOverrides,
   };
 }
 
@@ -184,17 +176,6 @@ function build() {
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewTaskSubmission: {
       update: jest.fn().mockResolvedValue({}),
-    },
-    crewSettlementItem: {
-      create: jest.fn().mockResolvedValue({}),
-      findUnique: jest.fn(),
-      update: jest.fn(),
-    },
-    walletAccount: {
-      upsert: jest.fn().mockResolvedValue({
-        id: 'wallet-account-1',
-      }),
-      findUnique: jest.fn(),
     },
     crewTask: {
       findUniqueOrThrow: jest.fn().mockResolvedValue(current),
@@ -327,15 +308,9 @@ function build() {
       delete: jest.fn(),
       create: jest.fn(),
     },
-    crewSettlementItem: {
-      findMany: jest.fn(),
-      findFirst: jest.fn(),
-      groupBy: jest.fn(),
-      findUnique: jest.fn(),
-      update: jest.fn(),
-    },
     crewTaskWorkflowState: {
       findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     aiCostLedgerEntry: {
       aggregate: jest.fn().mockResolvedValue({
@@ -365,9 +340,9 @@ function build() {
     broadcastCrewTaskChange: jest.fn().mockResolvedValue(undefined),
     broadcastCrewTaskProjectChange: jest.fn().mockResolvedValue(undefined),
   };
-  const walletLedger = {
-    postEntryTx: jest.fn().mockResolvedValue({
-      transaction: { id: 'wallet-accrual-transaction-1' },
+  const earnings = {
+    postTaskRewardTx: jest.fn().mockResolvedValue({
+      id: 'earning-1',
     }),
   };
   return {
@@ -382,10 +357,10 @@ function build() {
       assetAccess as never,
       notifications as never,
       conversations as never,
-      walletLedger as never,
+      earnings as never,
     ),
     assetAccess,
-    walletLedger,
+    earnings,
   };
 }
 
@@ -672,8 +647,10 @@ describe('CrewTasksService', () => {
     expect(listInput.where.AND).toEqual(
       expect.arrayContaining([
         {
-          status: {
-            notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+          workflowState: {
+            semantic: {
+              notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+            },
           },
         },
         { priority: { in: ['high', 'urgent'] } },
@@ -687,10 +664,10 @@ describe('CrewTasksService', () => {
 
   it('returns exact task pulse totals without loading task rows', async () => {
     const t = build();
-    t.prisma.crewTask.groupBy.mockResolvedValue([
-      { status: CrewTaskStatus.open, _count: { _all: 3 } },
-      { status: CrewTaskStatus.submitted, _count: { _all: 2 } },
-      { status: CrewTaskStatus.approved, _count: { _all: 5 } },
+    t.prisma.crewTaskWorkflowState.findMany.mockResolvedValue([
+      { semantic: CrewTaskStatus.open, _count: { tasks: 3 } },
+      { semantic: CrewTaskStatus.submitted, _count: { tasks: 2 } },
+      { semantic: CrewTaskStatus.approved, _count: { tasks: 5 } },
     ]);
     t.prisma.crewTask.count.mockResolvedValue(2);
 
@@ -706,19 +683,19 @@ describe('CrewTasksService', () => {
 
   it('searches lightweight task options with a bounded cursor', async () => {
     const t = build();
-    const option = {
+    const persistedOption = {
       id: TASK_ID,
       number: 10,
       title: 'Finish SC.010 storyboard',
-      status: CrewTaskStatus.open,
+      workflowState: { semantic: CrewTaskStatus.open },
       priority: CrewTaskPriority.high,
       workflowStateId: WORKFLOW_STATE_IDS.open,
       parentId: null,
     };
     t.prisma.crewTask.findMany.mockResolvedValue([
-      option,
+      persistedOption,
       {
-        ...option,
+        ...persistedOption,
         id: '01910d50-4c88-7c78-92d4-16892c06a099',
       },
     ]);
@@ -729,13 +706,20 @@ describe('CrewTasksService', () => {
       limit: 1,
     });
 
-    expect(page).toEqual({ items: [option], nextCursor: TASK_ID });
+    const { workflowState: _workflowState, ...option } = persistedOption;
+    expect(_workflowState.semantic).toBe(CrewTaskStatus.open);
+    expect(page).toEqual({
+      items: [{ ...option, status: CrewTaskStatus.open }],
+      nextCursor: TASK_ID,
+    });
     const optionInput = firstCallArgument<{
       take: number;
       orderBy: unknown;
       where: {
         crewId: string;
-        status: { notIn: CrewTaskStatus[] };
+        workflowState: {
+          semantic: { notIn: CrewTaskStatus[] };
+        };
       };
     }>(t.prisma.crewTask.findMany);
     expect(optionInput).toMatchObject({
@@ -743,81 +727,12 @@ describe('CrewTasksService', () => {
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       where: {
         crewId: CREW_ID,
-        status: {
-          notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+        workflowState: {
+          semantic: {
+            notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+          },
         },
       },
-    });
-  });
-
-  it('validates bounded settlement pages and status filters', () => {
-    expect(ListCrewSettlementsQuerySchema.parse({})).toEqual({ limit: 50 });
-    expect(
-      ListCrewSettlementsQuerySchema.parse({
-        limit: '100',
-        status: 'pending',
-      }),
-    ).toEqual({ limit: 100, status: 'pending' });
-    expect(
-      ListCrewSettlementsQuerySchema.safeParse({ limit: 101 }).success,
-    ).toBe(false);
-  });
-
-  it('cursor-paginates the crew settlement ledger with exact status totals', async () => {
-    const t = build();
-    const row = {
-      id: '01910d50-4c88-7c78-92d4-16892c06c001',
-      crewId: CREW_ID,
-      taskId: TASK_ID,
-      crewMemberId: 'crew-member-1',
-      userId: ASSIGNEE_ID,
-      pointsAmount: 120000n,
-      pointsPerUsd: 100,
-      payoutAmountMinor: null,
-      payoutCurrency: null,
-      accrualTransactionId: '01910d50-4c88-7c78-92d4-16892c06c011',
-      cashOutTransactionId: null,
-      status: CrewSettlementStatus.pending,
-      settledAt: null,
-      settledByUserId: null,
-      note: null,
-      createdAt: new Date('2026-07-29T10:00:00.000Z'),
-      updatedAt: new Date('2026-07-29T10:00:00.000Z'),
-      task: { id: TASK_ID, title: 'Finish SC.010 storyboard' },
-    };
-    t.prisma.crewSettlementItem.findMany.mockResolvedValue([
-      row,
-      { ...row, id: '01910d50-4c88-7c78-92d4-16892c06c002' },
-    ]);
-    t.prisma.crewSettlementItem.groupBy.mockResolvedValue([
-      {
-        status: CrewSettlementStatus.pending,
-        _count: { _all: 4 },
-      },
-      {
-        status: CrewSettlementStatus.settled,
-        _count: { _all: 6 },
-      },
-    ]);
-
-    const page = await t.service.listSettlements(CREW_ID, OWNER_ID, {
-      limit: 1,
-      status: 'pending',
-    });
-
-    expect(t.prisma.crewSettlementItem.findMany).toHaveBeenCalledWith({
-      where: { crewId: CREW_ID, status: 'pending' },
-      include: { task: { select: { id: true, title: true } } },
-      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
-      take: 2,
-    });
-    expect(page.items).toHaveLength(1);
-    expect(page.nextCursor).toBe(row.id);
-    expect(page.total).toBe(4);
-    expect(page.summary).toEqual({
-      total: 10,
-      pending: 4,
-      settled: 6,
     });
   });
 
@@ -930,7 +845,6 @@ describe('CrewTasksService', () => {
     const updateInput = t.tx.crewTask.update.mock.calls[0]?.[0] as {
       where: { id: string };
       data: {
-        status: CrewTaskStatus;
         workflowStateId: string;
         cycleId: string | null;
         rank: Prisma.Decimal;
@@ -938,7 +852,6 @@ describe('CrewTasksService', () => {
     };
     expect(updateInput.where).toEqual({ id: TASK_ID });
     expect(updateInput.data).toMatchObject({
-      status: CrewTaskStatus.in_progress,
       workflowStateId: WORKFLOW_STATE_IDS.in_progress,
       cycleId: current.cycleId,
       rank: new Prisma.Decimal(3072),
@@ -1082,7 +995,7 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTaskTimelineItem.create).not.toHaveBeenCalled();
   });
 
-  it('turns an approved task reward into a pending settlement item', async () => {
+  it('posts an approved task reward through the immutable earnings ledger', async () => {
     const t = build();
 
     await expect(
@@ -1101,26 +1014,15 @@ describe('CrewTasksService', () => {
       OWNER_ID,
       'tasks.review',
     );
-    expect(t.walletLedger.postEntryTx).toHaveBeenCalledWith(
-      t.tx,
-      expect.objectContaining({
-        accountId: 'wallet-account-1',
-        amount: 120000n,
-        availableDelta: 120000n,
-        idempotencyKey: `crew-task-reward:${TASK_ID}:${ASSIGNEE_ID}`,
-      }),
-    );
-    expect(t.tx.crewSettlementItem.create).toHaveBeenCalledWith({
-      data: {
-        crewId: CREW_ID,
-        taskId: TASK_ID,
-        crewMemberId: 'crew-member-1',
-        userId: ASSIGNEE_ID,
-        pointsAmount: 120000n,
-        pointsPerUsd: 100,
-        status: CrewSettlementStatus.pending,
-        accrualTransactionId: 'wallet-accrual-transaction-1',
-      },
+    expect(t.earnings.postTaskRewardTx).toHaveBeenCalledWith(t.tx, {
+      crewId: CREW_ID,
+      taskId: TASK_ID,
+      taskNumber: 10,
+      taskTitle: 'Finish SC.010 storyboard',
+      crewMemberId: 'crew-member-1',
+      userId: ASSIGNEE_ID,
+      pointsAmount: 120000n,
+      approvedByUserId: OWNER_ID,
     });
     const operationCreateCalls = t.tx.platformDocumentOperation.create.mock
       .calls as unknown as Array<
@@ -1190,7 +1092,7 @@ describe('CrewTasksService', () => {
     );
   });
 
-  it('requests a new version without creating settlement rows', async () => {
+  it('requests a new version without posting task income', async () => {
     const t = build();
     t.tx.crewTask.update.mockResolvedValue(
       task({
@@ -1208,12 +1110,11 @@ describe('CrewTasksService', () => {
       status: CrewTaskStatus.revision_requested,
     });
 
-    expect(t.tx.crewSettlementItem.create).not.toHaveBeenCalled();
+    expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
     const [updateInput] = t.tx.crewTask.update.mock.calls[0] as unknown as [
       {
         where: { id: string };
         data: {
-          status: CrewTaskStatus;
           submittedAt: Date | null;
         };
         include: unknown;
@@ -1222,7 +1123,6 @@ describe('CrewTasksService', () => {
     expect(updateInput).toMatchObject({
       where: { id: TASK_ID },
       data: {
-        status: CrewTaskStatus.revision_requested,
         submittedAt: null,
         revisionRoundsUsed: { increment: 1 },
       },
@@ -1233,116 +1133,6 @@ describe('CrewTasksService', () => {
       TASK_ID,
       'reviewed',
       OWNER_ID,
-    );
-  });
-
-  it('atomically debits accrued points when cashing out a settlement', async () => {
-    const t = build();
-    const pending = {
-      id: '01910d50-4c88-7c78-92d4-16892c06c001',
-      taskId: TASK_ID,
-      crewMemberId: 'crew-member-1',
-      userId: ASSIGNEE_ID,
-      pointsAmount: 120000n,
-      pointsPerUsd: 100,
-      payoutAmountMinor: null,
-      payoutCurrency: null,
-      accrualTransactionId: 'wallet-accrual-transaction-1',
-      cashOutTransactionId: null,
-      status: CrewSettlementStatus.pending,
-      settledAt: null,
-      settledByUserId: null,
-      note: null,
-      createdAt: new Date('2026-07-29T10:00:00.000Z'),
-      updatedAt: new Date('2026-07-29T10:00:00.000Z'),
-      task: {
-        id: TASK_ID,
-        crewId: CREW_ID,
-        title: 'Finish SC.010 storyboard',
-      },
-    };
-    const settled = {
-      ...pending,
-      payoutAmountMinor: pending.pointsAmount,
-      payoutCurrency: 'USD',
-      cashOutTransactionId: 'wallet-cash-out-transaction-1',
-      status: CrewSettlementStatus.settled,
-      settledAt: new Date('2026-07-29T11:00:00.000Z'),
-      settledByUserId: OWNER_ID,
-      note: 'Paid in the July run.',
-      updatedAt: new Date('2026-07-29T11:00:00.000Z'),
-    };
-    t.prisma.crewSettlementItem.findUnique.mockResolvedValue(pending);
-    t.tx.crewSettlementItem.findUnique.mockResolvedValue(pending);
-    t.tx.crewSettlementItem.update.mockResolvedValue(settled);
-    t.tx.walletAccount.findUnique.mockResolvedValue({
-      id: 'wallet-account-1',
-    });
-    t.walletLedger.postEntryTx.mockResolvedValue({
-      transaction: { id: 'wallet-cash-out-transaction-1' },
-    });
-
-    await expect(
-      t.service.settle(pending.id, OWNER_ID, {
-        note: 'Paid in the July run.',
-      }),
-    ).resolves.toMatchObject({
-      id: pending.id,
-      pointsAmount: 120000,
-      payoutAmountMinor: 120000,
-      payoutCurrency: 'USD',
-      status: CrewSettlementStatus.settled,
-      cashOutTransactionId: 'wallet-cash-out-transaction-1',
-    });
-
-    expect(t.walletLedger.postEntryTx).toHaveBeenCalledWith(
-      t.tx,
-      expect.objectContaining({
-        accountId: 'wallet-account-1',
-        amount: 120000n,
-        availableDelta: -120000n,
-        idempotencyKey: `crew-settlement-cash-out:${pending.id}`,
-      }),
-    );
-    const settlementUpdateCalls = t.tx.crewSettlementItem.update.mock
-      .calls as unknown as Array<
-      [
-        {
-          where: { id: string };
-          data: {
-            status: CrewSettlementStatus;
-            payoutAmountMinor: bigint;
-            payoutCurrency: string;
-            cashOutTransactionId: string;
-            settledAt: unknown;
-            settledByUserId: string;
-            note: string;
-          };
-          include: { task: boolean };
-        },
-      ]
-    >;
-    const settlementUpdate = settlementUpdateCalls[0]?.[0];
-    expect(settlementUpdate).toMatchObject({
-      where: { id: pending.id },
-      data: {
-        status: CrewSettlementStatus.settled,
-        payoutAmountMinor: 120000n,
-        payoutCurrency: 'USD',
-        cashOutTransactionId: 'wallet-cash-out-transaction-1',
-        settledByUserId: OWNER_ID,
-        note: 'Paid in the July run.',
-      },
-      include: { task: true },
-    });
-    expect(settlementUpdate?.data.settledAt).toBeInstanceOf(Date);
-    expect(t.notifications.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: ASSIGNEE_ID,
-        type: 'crew.settlement.settled',
-        idempotencyKey: `crew.settlement.settled:${pending.id}`,
-      }),
-      t.tx,
     );
   });
 

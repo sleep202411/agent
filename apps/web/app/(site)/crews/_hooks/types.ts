@@ -299,33 +299,134 @@ export interface CrewTaskSubmissionDTO {
   }>;
 }
 
-export interface CrewSettlementItemDTO {
+export type CrewEarningStatus = "pending" | "posted" | "rejected" | "reversed";
+export type CrewEarningSourceType =
+  | "task_reward"
+  | "contract_compensation"
+  | "milestone_bonus"
+  | "revenue_share"
+  | "discretionary_bonus"
+  | "adjustment";
+
+export interface CrewEarningEntryDTO {
   id: string;
-  taskId: string;
-  taskTitle: string | null;
+  crewId: string;
+  crewMemberId: string;
   userId: string;
-  pointsAmount: number;
-  pointsPerUsd: number;
-  payoutAmountMinor: number | null;
-  payoutCurrency: string | null;
-  accrualTransactionId: string;
-  cashOutTransactionId: string | null;
-  status: "pending" | "settled";
-  settledAt: string | null;
-  settledByUserId: string | null;
-  note: string | null;
+  sourceType: CrewEarningSourceType;
+  task: { id: string; number: number; title: string } | null;
+  agreement: { id: string; status: string } | null;
+  title: string;
+  description: string | null;
+  pointsAmount: string;
+  status: CrewEarningStatus;
+  createdByUserId: string;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
+  reversedByUserId: string | null;
+  postedAt: string | null;
+  rejectedAt: string | null;
+  reversedAt: string | null;
+  rejectionReason: string | null;
+  reversalReason: string | null;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CrewSettlementPageDTO {
-  items: CrewSettlementItemDTO[];
+export interface CrewEarningEventDTO {
+  id: string;
+  actorUserId: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CrewEarningDetailDTO extends CrewEarningEntryDTO {
+  events: CrewEarningEventDTO[];
+}
+
+export interface CrewEarningPageDTO {
+  items: CrewEarningEntryDTO[];
   nextCursor: string | null;
-  total: number;
   summary: {
-    total: number;
-    pending: number;
-    settled: number;
+    byStatus: Record<CrewEarningStatus, { count: number; pointsAmount: string }>;
+    postedThisMonthPoints: string;
+    postedBySource: Array<{
+      sourceType: CrewEarningSourceType;
+      count: number;
+      pointsAmount: string;
+    }>;
+  };
+}
+
+export type CrewPayoutStatus = "pending" | "paid" | "voided";
+export type CrewPayoutMethod = "bank_transfer" | "alipay" | "wechat_pay" | "paypal" | "other";
+
+export interface CrewPayoutDTO {
+  id: string;
+  crewId: string;
+  crewMemberId: string;
+  userId: string;
+  pointsAmount: string;
+  withholdingAmountMinor: string;
+  netAmountMinor: string;
+  status: CrewPayoutStatus;
+  paymentMethod: CrewPayoutMethod | null;
+  paymentReference: string | null;
+  paymentProofUrl: string | null;
+  note: string | null;
+  voidReason: string | null;
+  createdByUserId: string;
+  paidByUserId: string | null;
+  voidedByUserId: string | null;
+  paidAt: string | null;
+  voidedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  allocations: Array<{
+    id: string;
+    pointsAmount: string;
+    earning: {
+      id: string;
+      title: string;
+      sourceType: CrewEarningSourceType;
+      pointsAmount: string;
+      postedAt: string | null;
+      task: { id: string; number: number; title: string } | null;
+    };
+  }>;
+}
+
+export interface CrewPayoutEventDTO {
+  id: string;
+  actorUserId: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CrewPayoutDetailDTO extends CrewPayoutDTO {
+  events: CrewPayoutEventDTO[];
+}
+
+export interface CrewPayoutPageDTO {
+  items: CrewPayoutDTO[];
+  nextCursor: string | null;
+  summary: {
+    confirmedPoints: string;
+    availablePoints: string;
+    reservedPoints: string;
+    paidPoints: string;
+    byStatus: Array<{
+      status: CrewPayoutStatus;
+      count: number;
+      pointsAmount: string;
+      netAmountMinor: string;
+    }>;
   };
 }
 
@@ -377,10 +478,9 @@ export interface CrewTaskDTO {
   updatedAt: string;
   assignees: CrewTaskAssigneeDTO[];
   submissions: CrewTaskSubmissionDTO[];
-  settlements: CrewSettlementItemDTO[];
 }
 
-export type CrewTaskListItemDTO = Omit<CrewTaskDTO, "submissions" | "settlements">;
+export type CrewTaskListItemDTO = Omit<CrewTaskDTO, "submissions">;
 
 export interface CrewTaskPageDTO {
   items: CrewTaskListItemDTO[];

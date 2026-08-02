@@ -108,19 +108,30 @@ ADMIN_BOOTSTRAP_REQUIRE_MFA=true
 
 ## 剧组合同（BoldSign）
 
-合同是剧组协作的可选能力，不阻断邀请、任务、资产或积分结算。启用发送前必须同时配置：
+合同是剧组协作的可选能力，不阻断邀请、任务、资产或积分结算。本地默认关闭且不需要建立公网隧道。
+生产部署启用前必须同时配置：
 
 ```bash
+BOLDSIGN_ENABLED=true
 BOLDSIGN_API_KEY=...
+BOLDSIGN_API_BASE_URL=https://api-eu.boldsign.com
 BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID=...
 BOLDSIGN_WEBHOOK_SECRET=...
 ```
 
+`BOLDSIGN_ENABLED=true` 时，缺少任一必填配置会让服务拒绝启动，生产环境不会静默降级为“未连接”。
+首次开通时先保持 `BOLDSIGN_ENABLED=false` 部署代码；未签名的官方 `Verification` 探针仍会返回
+200，但其他事件全部拒绝。Webhook 保存后在 BoldSign 管理页 Reveal 签名 Secret，将三个生产密钥
+写入 Key Vault，再开启功能。这样既避免启动配置的循环依赖，也不会在缺少验签 Secret 时处理业务事件。
+
 在 BoldSign 配置 Account-level webhook：
 
 ```text
-https://<server-public-origin>/webhooks/boldsign
+https://fizzdragon.com/aurora/webhooks/boldsign
 ```
+
+`/aurora` 是公网 ingress 前缀；ingress 转发给 NestJS 前会将其剥离，控制器内部路由仍是
+`/webhooks/boldsign`。不要为本地开发建立 Quick Tunnel。
 
 Webhook 使用 `X-BoldSign-Signature` 的 HMAC-SHA256 验签并校验时间窗；
 `Sent / SendFailed / Completed / Declined / Expired / Revoked` 会自动推进合同状态并发送站内通知。

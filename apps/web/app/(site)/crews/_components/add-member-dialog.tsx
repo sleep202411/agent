@@ -22,8 +22,6 @@ import {
   IconCrown,
   IconInfoCircle,
   IconLoader2,
-  IconCoin,
-  IconShield,
   IconSignature,
   IconUserCheck,
 } from "@tabler/icons-react";
@@ -41,6 +39,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   CrewApiError,
@@ -48,11 +53,13 @@ import {
   useInviteCrewMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useDebouncedValue, useUserLookup } from "@/app/(site)/crews/_hooks/use-users";
-import type { CrewPolicyKey } from "@repo/shared/crew";
+import {
+  isCrewInviteAccessPreset,
+  policyKeysForAccessPreset,
+  type CrewInviteAccessPreset,
+} from "@/app/(site)/crews/_lib/member-access-preset";
 
-const ADD_MEMBER_HERO_URL = encodeURI(
-  "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
-);
+const ADD_MEMBER_HERO_URL = "/crews/invite-member-hero.jpg";
 
 interface AddCrewMemberDialogProps {
   open: boolean;
@@ -71,7 +78,7 @@ export function AddCrewMemberDialog({
   const tc = useTranslations("common");
 
   const [queryInput, setQueryInput] = useState("");
-  const [policyKeys, setPolicyKeys] = useState<CrewPolicyKey[]>([]);
+  const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [agreementEnabled, setAgreementEnabled] = useState(false);
   const [agreementTitle, setAgreementTitle] = useState("");
   const [signerName, setSignerName] = useState("");
@@ -86,7 +93,7 @@ export function AddCrewMemberDialog({
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setQueryInput("");
-      setPolicyKeys([]);
+      setAccessPreset("standard");
       setAgreementEnabled(false);
       setAgreementTitle("");
       setSignerName("");
@@ -133,7 +140,7 @@ export function AddCrewMemberDialog({
     try {
       await inviteMember({
         account: debouncedQuery.trim(),
-        policyKeys: canGrantPolicies ? policyKeys : [],
+        policyKeys: canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
         ...(agreementEnabled
           ? {
               agreement: {
@@ -187,28 +194,29 @@ export function AddCrewMemberDialog({
             {canGrantPolicies ? (
               <Field>
                 <FieldLabel>{t("addMemberAccessLabel")}</FieldLabel>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <PolicyOption
-                    checked={policyKeys.includes("admin")}
-                    onCheckedChange={(checked) =>
-                      setPolicyKeys((current) => togglePolicy(current, "admin", checked))
-                    }
-                    icon={<IconShield className="size-4" />}
-                    title={t("memberAdminBadge")}
-                    description={t("addMemberAdminPolicyHint")}
-                    disabled={submitting}
-                  />
-                  <PolicyOption
-                    checked={policyKeys.includes("finance")}
-                    onCheckedChange={(checked) =>
-                      setPolicyKeys((current) => togglePolicy(current, "finance", checked))
-                    }
-                    icon={<IconCoin className="size-4" />}
-                    title={t("memberFinanceBadge")}
-                    description={t("addMemberFinancePolicyHint")}
-                    disabled={submitting}
-                  />
-                </div>
+                <Select
+                  value={accessPreset}
+                  onValueChange={(value) => {
+                    if (isCrewInviteAccessPreset(value)) setAccessPreset(value);
+                  }}
+                  disabled={submitting}
+                >
+                  <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper" align="start">
+                    <SelectItem value="standard">{t("memberAccessPresetStandard")}</SelectItem>
+                    <SelectItem value="finance">{t("memberAccessPresetFinance")}</SelectItem>
+                    <SelectItem value="admin">{t("memberAccessPresetAdmin")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] leading-5 text-foreground/65">
+                  {accessPreset === "admin"
+                    ? t("addMemberAdminPolicyHint")
+                    : accessPreset === "finance"
+                      ? t("addMemberFinancePolicyHint")
+                      : t("addMemberStandardPolicyHint")}
+                </p>
                 <p className="text-[11px] leading-5 text-muted-foreground">
                   {t("addMemberAccessHint")}
                 </p>
@@ -435,53 +443,4 @@ function PreviewBox({
       </span>
     </div>
   );
-}
-
-function PolicyOption({
-  checked,
-  onCheckedChange,
-  icon,
-  title,
-  description,
-  disabled,
-}: {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  disabled: boolean;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
-        checked
-          ? "border-primary/35 bg-primary/[0.08]"
-          : "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04]",
-        disabled && "pointer-events-none opacity-50"
-      )}
-    >
-      <Checkbox
-        className="mt-0.5"
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={(value) => onCheckedChange(value === true)}
-      />
-      <span className="min-w-0">
-        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-          {icon}
-          {title}
-        </span>
-        <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">
-          {description}
-        </span>
-      </span>
-    </label>
-  );
-}
-
-function togglePolicy(current: CrewPolicyKey[], policyKey: CrewPolicyKey, enabled: boolean) {
-  if (enabled) return current.includes(policyKey) ? current : [...current, policyKey];
-  return current.filter((key) => key !== policyKey);
 }

@@ -29,7 +29,13 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
-import { SwitchControl } from "@/components/ui/schema-field/switch-control";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   CrewApiError,
   useUpdateMember,
@@ -37,6 +43,11 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { displayNameOf } from "@/app/(site)/crews/_hooks/use-users";
+import {
+  accessPresetForPolicyKeys,
+  isCrewAccessPreset,
+  policyKeysForAccessPreset,
+} from "@/app/(site)/crews/_lib/member-access-preset";
 import type { LookupUserDTO } from "@repo/shared/users";
 
 interface MemberCardProps {
@@ -89,27 +100,18 @@ export function MemberCard({
           ? t("memberViaInvitation")
           : t("memberViaOwnershipTransfer");
 
-  const handleTogglePolicy = (policyKey: "admin" | "finance") => {
-    const enabled = member.policyKeys.includes(policyKey);
-    const policyKeys = enabled
-      ? member.policyKeys.filter((key) => key !== policyKey)
-      : [...member.policyKeys, policyKey];
+  const accessPreset = accessPresetForPolicyKeys(member.policyKeys);
+
+  const handleAccessPresetChange = (value: string) => {
+    if (!isCrewAccessPreset(value) || value === accessPreset) return;
+    const policyKeys = policyKeysForAccessPreset(value);
     updateMember.mutate(
       {
         memberId: member.id,
         input: { policyKeys, expectedVersion: member.version },
       },
       {
-        onSuccess: () =>
-          toast.success(
-            policyKey === "admin"
-              ? enabled
-                ? t("memberAdminRemoved")
-                : t("memberAdminAdded")
-              : enabled
-                ? t("memberFinanceRemoved")
-                : t("memberFinanceAdded")
-          ),
+        onSuccess: () => toast.success(t("memberAccessUpdated")),
         onError: (err) => surfaceErr(err, t("memberAccessUpdateFailed")),
       }
     );
@@ -118,7 +120,7 @@ export function MemberCard({
   return (
     <article
       className={cn(
-        "group relative grid min-h-[82px] grid-cols-1 gap-3 px-4 py-3.5 transition-colors sm:px-5 md:grid-cols-[minmax(240px,1.35fr)_minmax(160px,0.8fr)_minmax(150px,0.7fr)_minmax(180px,auto)] md:items-center md:gap-5",
+        "group relative grid min-h-[82px] grid-cols-1 gap-3 px-4 py-3.5 transition-colors sm:px-5 md:grid-cols-[minmax(220px,1.25fr)_minmax(145px,0.75fr)_minmax(140px,0.65fr)_minmax(270px,auto)] md:items-center md:gap-4",
         isCrewOwner ? "bg-primary/[0.025]" : "hover:bg-white/[0.018]"
       )}
     >
@@ -192,24 +194,28 @@ export function MemberCard({
           <>
             <div className="mx-0.5 h-4 w-px bg-white/[0.07]" aria-hidden="true" />
             {canManagePermissions ? (
-              <>
-                <label className="flex items-center gap-1.5 rounded-md px-1.5 text-[10px] text-[#777d87]">
-                  {t("memberAdminToggleShort")}
-                  <SwitchControl
-                    value={member.policyKeys.includes("admin")}
-                    onChange={() => handleTogglePolicy("admin")}
-                    disabled={updateMember.isPending}
-                  />
-                </label>
-                <label className="flex items-center gap-1.5 rounded-md px-1.5 text-[10px] text-[#777d87]">
-                  {t("memberFinanceToggleShort")}
-                  <SwitchControl
-                    value={member.policyKeys.includes("finance")}
-                    onChange={() => handleTogglePolicy("finance")}
-                    disabled={updateMember.isPending}
-                  />
-                </label>
-              </>
+              <Select
+                value={accessPreset}
+                onValueChange={handleAccessPresetChange}
+                disabled={updateMember.isPending}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-[132px] border-white/[0.08] bg-white/[0.025]"
+                  aria-label={t("addMemberAccessLabel")}
+                  title={t("addMemberAccessLabel")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="end">
+                  <SelectItem value="standard">{t("memberAccessPresetStandard")}</SelectItem>
+                  <SelectItem value="finance">{t("memberAccessPresetFinance")}</SelectItem>
+                  <SelectItem value="admin">{t("memberAccessPresetAdmin")}</SelectItem>
+                  <SelectItem value="admin_finance">
+                    {t("memberAccessPresetAdminFinance")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             ) : null}
             {canTransferOwnership ? (
               <Button

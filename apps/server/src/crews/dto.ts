@@ -379,8 +379,8 @@ export type ListCrewAgreementsQuery = z.infer<
 
 const TaskAssigneeSchema = z.object({
   userId: z.string().trim().min(1).max(64),
-  /// Points-native compensation. Approval accrues these as withdrawable
-  /// community points; cash-out uses the immutable 100 points = USD 1 quote.
+  /// Crew-local compensation points. Task approval posts them to the immutable
+  /// earning ledger; a later finance payout snapshots the real-cash quote.
   rewardPoints: z
     .number()
     .int()
@@ -600,15 +600,6 @@ export type ListCrewTaskTimelineQuery = z.infer<
   typeof ListCrewTaskTimelineQuerySchema
 >;
 
-export const ListCrewSettlementsQuerySchema = z.object({
-  cursor: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  status: z.enum(['pending', 'settled']).optional(),
-});
-export type ListCrewSettlementsQuery = z.infer<
-  typeof ListCrewSettlementsQuerySchema
->;
-
 export const CreateCrewTaskCommentSchema = z
   .object({
     body: z.string().trim().max(10_000).default(''),
@@ -652,11 +643,6 @@ export const ReviewCrewTaskSchema = z
     message: 'Revision instructions are required when requesting changes',
   });
 export type ReviewCrewTaskInput = z.infer<typeof ReviewCrewTaskSchema>;
-
-export const SettleCrewItemSchema = z.object({
-  note: z.string().trim().max(2000).nullable().optional(),
-});
-export type SettleCrewItemInput = z.infer<typeof SettleCrewItemSchema>;
 
 // ─── Viewer moderation ──────────────────────────────────────
 

@@ -3860,6 +3860,7 @@
     "tabMembers": "Members",
     "tabEpisodes": "Production",
     "tabTasks": "Tasks",
+    "tabIncome": "Income",
     "tabAssets": "Asset Center",
     "chatUnavailableTitle": "Crew chat could not be opened",
     "workspaceLoading": "Loading crew workspace",
@@ -3918,8 +3919,9 @@
     "addMemberDialogSubtitle": "Send an invitation to their registered phone or email. Access begins after acceptance.",
     "addMemberContactLabel": "Phone or Email",
     "addMemberContactPlaceholder": "13800000000 or user@example.com",
-    "addMemberAccessLabel": "Additional access",
-    "addMemberAccessHint": "Every invitee joins as a standard member. These additive policies never replace membership.",
+    "addMemberAccessLabel": "Access preset",
+    "addMemberAccessHint": "Presets only package atomic permissions. They never replace crew membership.",
+    "addMemberStandardPolicyHint": "Collaborate on assigned work with standard crew access.",
     "addMemberAdminPolicyHint": "Manage members, openings, tasks, assets, agreements, and Studio.",
     "addMemberFinancePolicyHint": "View and settle crew financial records.",
     "addMemberRemarkLabel": "Note",
@@ -3987,15 +3989,14 @@
     "memberAdminBadge": "Administrator",
     "memberOwnerAccess": "Full workspace access",
     "memberStandardAccess": "Standard member access",
+    "memberAccessPresetStandard": "Standard member",
+    "memberAccessPresetFinance": "Finance",
+    "memberAccessPresetAdmin": "Administrator",
+    "memberAccessPresetAdminFinance": "Administrator + finance",
     "memberPolicy_admin": "Administrator policy",
     "memberPolicy_finance": "Finance policy",
     "memberOwnerProtected": "Protected owner",
-    "memberAdminToggleShort": "Admin",
-    "memberFinanceToggleShort": "Finance",
-    "memberAdminAdded": "Administrator access granted",
-    "memberAdminRemoved": "Administrator access removed",
-    "memberFinanceAdded": "Marked as finance",
-    "memberFinanceRemoved": "Finance role removed",
+    "memberAccessUpdated": "Member access updated",
     "memberAccessUpdateFailed": "Failed to update member access",
     "memberOwnerCannotRemove": "The crew owner can't be removed",
     "applicantsLoading": "Loading applicants...",
@@ -4696,7 +4697,6 @@
     },
     "projectSubtitle": "Issues, cycles, and delivery workflow",
     "noActiveCycle": "No active cycle",
-    "settlements": "Settlements",
     "newCycle": "New cycle",
     "newTask": "New task",
     "newView": "New view",
@@ -4782,7 +4782,7 @@
       "in_progress": "Active production work. Tasks in this type can be moved and edited normally.",
       "submitted": "Review queue. Tasks enter this type when a member submits a version.",
       "revision_requested": "Work returned for changes. Tasks in this type can be edited and resubmitted.",
-      "approved": "Completed work. Tasks enter this type only after approval and become eligible for settlement.",
+      "approved": "Completed work. Tasks enter this type only after approval; configured rewards post automatically.",
       "cancelled": "Cancelled work. Tasks in this type are locked and excluded from active views."
     },
     "workflowColumnCreated": "Workflow column created.",
@@ -4845,7 +4845,7 @@
     "workflowManagement": "Workflow columns",
     "workflowManagementDescription": "Configure the real production stages shared by every task view. Archived columns remain recoverable here.",
     "workflowArchived": "Archived",
-    "workflowSettingsHint": "Column behavior controls lifecycle rules such as submission, approval, settlement eligibility, and locking.",
+    "workflowSettingsHint": "Column behavior controls lifecycle rules such as submission, approval, automatic rewards, and locking.",
     "editColumn": "Edit",
     "viewSettings": "View settings",
     "viewSettingsDescription": "Configure the layout, grouping, sorting, and filters shared by everyone in this view.",
@@ -5256,7 +5256,7 @@
     "loadFailed": "Tasks could not be loaded.",
     "retry": "Retry",
     "empty": "No tasks in this view.",
-    "selectTask": "Select a task to see its canvas, submissions, and settlement.",
+    "selectTask": "Select a task to see its canvas, submissions, and delivery history.",
     "filter": { "active": "Active", "review": "Review", "approved": "Approved", "all": "All" },
     "status": {
       "backlog": "Backlog",
@@ -5353,15 +5353,6 @@
     "submitting": "Submitting…",
     "submitted": "New task version submitted",
     "submitFailed": "Submission failed",
-    "settlements": "Settlement records",
-    "settlementsDescription": "Approval accrues community points. Recording a settlement debits points atomically at 100 points = USD 1; it does not initiate an external transfer.",
-    "settlementFilterAll": "All",
-    "settlementFilterPending": "Pending",
-    "settlementFilterSettled": "Recorded",
-    "settled": "Recorded",
-    "markSettled": "Record USD settlement",
-    "usdCashOutEstimate": "Settlement value: {amount}",
-    "noSettlements": "Approved tasks with reward points will appear here.",
     "issueLabel": "TASK {id}",
     "openedBy": "Opened by {name} · {date}",
     "editTask": "Edit task",
@@ -5419,7 +5410,6 @@
       "submitted": "submitted version v{version} for review.",
       "approved": "approved the submitted work.",
       "revisionRequested": "requested another revision.",
-      "settled": "recorded a settlement for this task.",
       "changed": "updated this task."
     }
   },
@@ -5460,7 +5450,7 @@
     "title": "Crew agreements",
     "subtitle": "Optional contracts linked to crew members. Collaboration never waits for a signature.",
     "newAgreement": "New agreement",
-    "notConfigured": "BoldSign is not connected for this deployment. Invitations, tasks, files, and settlements remain available.",
+    "notConfigured": "BoldSign is not connected for this deployment. Invitations, tasks, files, and income records remain available.",
     "member": "Crew member",
     "chooseMember": "Choose a signer",
     "signerName": "Signer name",
@@ -5519,6 +5509,197 @@
       "failed": "Failed",
       "voided": "Voided"
     }
+  },
+  "crewIncome": {
+    "workspaceLabel": "{crew} · Finance",
+    "title": "Points and payouts",
+    "description": "Confirm crew compensation as points first, then settle selected points through auditable cash payouts.",
+    "pointsUnit": "pts",
+    "pointsValueTooltip": "Fixed value: {points} = {amount}. 100 points always equal {benchmark}.",
+    "viewLabel": "Finance views",
+    "views": {
+      "points": "Points ledger",
+      "payouts": "Cash payouts"
+    },
+    "metrics": {
+      "confirmedPoints": "Confirmed points",
+      "pendingPoints": "Pending approval",
+      "monthPoints": "Confirmed this month",
+      "availablePoints": "Available for payout",
+      "reservedPoints": "Reserved in payouts",
+      "paidPoints": "Paid points"
+    },
+    "points": {
+      "history": "Points ledger",
+      "historyDescription": "Immutable compensation entries from tasks and finance adjustments.",
+      "emptyTitle": "No points recorded yet",
+      "emptyDescription": "Approved task rewards appear automatically. Finance can also add a manual point entry."
+    },
+    "scopes": { "mine": "My points", "crew": "Crew ledger" },
+    "filters": {
+      "all": "All",
+      "pending": "Pending",
+      "posted": "Posted",
+      "rejected": "Rejected",
+      "reversed": "Reversed",
+      "paid": "Paid",
+      "voided": "Voided"
+    },
+    "loading": "Loading points ledger…",
+    "loadFailed": "Points ledger could not be loaded.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "status": {
+      "pending": "Pending",
+      "posted": "Confirmed",
+      "rejected": "Rejected",
+      "reversed": "Reversed"
+    },
+    "sources": {
+      "task_reward": "Task reward",
+      "contract_compensation": "Contract compensation",
+      "milestone_bonus": "Milestone points",
+      "revenue_share": "Revenue-share points",
+      "discretionary_bonus": "Bonus points",
+      "adjustment": "Point adjustment"
+    },
+    "create": {
+      "action": "Add points",
+      "title": "Add member points",
+      "description": "Create a pending point entry. A finance approver must confirm it before it becomes available for payout.",
+      "member": "Member",
+      "memberPlaceholder": "Select a member",
+      "source": "Point source",
+      "titleLabel": "Title",
+      "titlePlaceholder": "What are these points for?",
+      "points": "Points",
+      "note": "Note",
+      "notePlaceholder": "Add contract, milestone or accounting context…",
+      "pendingNotice": "This entry remains pending until finance confirms it. No cash value is assigned at this stage.",
+      "submit": "Create point entry"
+    },
+    "decision": {
+      "rejectTitle": "Reject point entry",
+      "rejectDescription": "The pending entry remains in the audit ledger and does not add any points.",
+      "reverseTitle": "Reverse confirmed points",
+      "reverseDescription": "This removes the confirmed points. Entries reserved by or included in a payout cannot be reversed.",
+      "reasonPlaceholder": "Reason for this decision…"
+    },
+    "actions": {
+      "approve": "Approve and post",
+      "reject": "Reject",
+      "reverse": "Reverse",
+      "viewDetails": "View point details",
+      "cancel": "Cancel",
+      "confirmReject": "Reject entry",
+      "confirmReverse": "Reverse points"
+    },
+    "detail": {
+      "title": "Point details",
+      "description": "Source, decisions and immutable audit history for this point entry.",
+      "source": "Point source",
+      "note": "Note",
+      "recorded": "Recorded",
+      "createdBy": "Created by",
+      "task": "Source task",
+      "agreement": "Agreement",
+      "openAgreement": "Open agreement",
+      "rejectionReason": "Rejection reason",
+      "reversalReason": "Reversal reason",
+      "auditTrail": "Audit trail",
+      "loading": "Loading audit trail…",
+      "loadFailed": "Audit trail could not be loaded.",
+      "close": "Close",
+      "events": {
+        "created": "Point entry created",
+        "posted": "Points confirmed",
+        "rejected": "Point entry rejected",
+        "reversed": "Confirmed points reversed",
+        "unknown": "Point record updated"
+      }
+    },
+    "messages": {
+      "created": "Point entry created",
+      "createFailed": "Point entry could not be created.",
+      "approved": "Points confirmed",
+      "rejected": "Point entry rejected",
+      "reversed": "Points reversed",
+      "actionFailed": "Point action failed."
+    },
+    "payout": {
+      "history": "Payout records",
+      "historyDescription": "Every payout reserves confirmed points and keeps its own cash snapshot and audit trail.",
+      "emptyTitle": "No payouts yet",
+      "emptyDescription": "Finance can create a payout from a member's available confirmed points.",
+      "record": "Crew payout",
+      "status": {
+        "pending": "Pending",
+        "paid": "Paid",
+        "voided": "Voided"
+      },
+      "actions": {
+        "pay": "Mark paid",
+        "void": "Void payout"
+      },
+      "create": {
+        "action": "Create payout",
+        "title": "Create cash payout",
+        "description": "Reserve confirmed points and snapshot the exact cash amount finance will issue.",
+        "member": "Member",
+        "points": "Points to settle",
+        "gross": "Gross amount",
+        "withholding": "Withholding",
+        "net": "Net payout",
+        "note": "Finance note",
+        "notice": "Creating a payout reserves the selected points. Cash is only considered paid after finance records the payment method and reference.",
+        "submit": "Create payout"
+      },
+      "dialog": {
+        "method": "Payment method",
+        "reference": "Payment reference",
+        "proof": "Proof URL",
+        "reason": "Reason",
+        "pay": {
+          "title": "Record completed payment",
+          "description": "Confirm that {amount} for {points} was actually paid.",
+          "submit": "Mark paid"
+        },
+        "void": {
+          "title": "Void payout",
+          "description": "Void the {amount} payout for {points} and release its reserved points.",
+          "submit": "Void payout"
+        }
+      },
+      "methods": {
+        "bank_transfer": "Bank transfer",
+        "alipay": "Alipay",
+        "wechat_pay": "WeChat Pay",
+        "paypal": "PayPal",
+        "other": "Other"
+      },
+      "detail": {
+        "title": "Payout details",
+        "description": "Point allocations, cash snapshot and immutable payment history.",
+        "gross": "Gross amount",
+        "withholding": "Withholding",
+        "reference": "Payment reference",
+        "voidReason": "Void reason",
+        "allocations": "Point allocations",
+        "events": {
+          "created": "Payout created",
+          "paid": "Payment completed",
+          "voided": "Payout voided",
+          "unknown": "Payout updated"
+        }
+      },
+      "messages": {
+        "created": "Payout created",
+        "pay": "Payment recorded",
+        "void": "Payout voided and points released",
+        "actionFailed": "Payout action failed."
+      }
+    },
+    "optional": "Optional"
   },
   "crewWorkbench": {
     "globalNavigation": "Crew workspace navigation",
@@ -9451,10 +9632,33 @@
         "title": "Revision requested: {task}",
         "body": "Open the task canvas and submit a new version."
       },
-      "settlementSettled": {
-        "title": "Settlement recorded: {task}",
-        "body": "{points} points were converted to {payout}.",
-        "fallbackBody": "The crew recorded this work item as settled."
+      "earning": {
+        "posted": {
+          "title": "Points confirmed: {title}",
+          "body": "{points} was added to your crew points ledger."
+        },
+        "rejected": {
+          "title": "Points rejected: {title}",
+          "body": "{points} was not added to your crew points ledger."
+        },
+        "reversed": {
+          "title": "Points reversed: {title}",
+          "body": "{points} was removed from your crew points ledger."
+        }
+      },
+      "payout": {
+        "scheduled": {
+          "title": "Payout scheduled",
+          "body": "{points} will be settled as {amount}."
+        },
+        "paid": {
+          "title": "Payout completed",
+          "body": "{amount} for {points} has been paid."
+        },
+        "voided": {
+          "title": "Payout voided",
+          "body": "The {amount} payout for {points} was voided; the points are available again."
+        }
       }
     }
   },

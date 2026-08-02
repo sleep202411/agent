@@ -79,8 +79,12 @@ export const CREW_PERMISSION_KEYS = [
   "assets.manage",
   "agreements.view_own",
   "agreements.manage",
-  "finance.view",
-  "finance.settle",
+  "finance.ledger.view",
+  "finance.earnings.create",
+  "finance.earnings.approve",
+  "finance.earnings.reverse",
+  "finance.payouts.create",
+  "finance.payouts.manage",
   "studio.view",
   "studio.edit",
   "production.view",
@@ -131,7 +135,14 @@ export const CREW_POLICY_PERMISSIONS = {
     "production.manage",
     "production.review",
   ],
-  finance: ["finance.view", "finance.settle"],
+  finance: [
+    "finance.ledger.view",
+    "finance.earnings.create",
+    "finance.earnings.approve",
+    "finance.earnings.reverse",
+    "finance.payouts.create",
+    "finance.payouts.manage",
+  ],
 } as const satisfies Record<CrewPolicyKey, readonly CrewPermissionKey[]>;
 
 /** These capabilities are structural ownership powers and cannot be delegated. */
@@ -207,6 +218,13 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
 /** Currencies whose smallest unit IS the displayed unit (no decimals).
  *  JPY is the main one in our whitelist. CNY/USD/EUR are 100x scaled. */
 export const ZERO_DECIMAL_CURRENCIES = new Set<CurrencyCode>(["JPY"]);
+
+/**
+ * Crew contribution points have a permanent accounting value:
+ * 100 points = USD 1, therefore one point is exactly one USD cent.
+ * This is a domain invariant, not deployment configuration.
+ */
+export const CREW_POINTS_PER_USD = 100 as const;
 
 // ─── Crew taxonomy ─────────────────────────────────────
 

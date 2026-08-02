@@ -54,7 +54,6 @@ describe('conversation contract — crew system message kinds', () => {
       'crew.task.submitted',
       'crew.task.revision_requested',
       'crew.task.approved',
-      'crew.task.settled',
     ]) {
       expect(SYSTEM_MESSAGE_KINDS).not.toContain(kind);
     }

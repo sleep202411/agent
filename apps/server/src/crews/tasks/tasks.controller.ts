@@ -21,14 +21,10 @@ import {
   type DraftCrewTaskInput,
   CreateCrewTaskCommentSchema,
   type CreateCrewTaskCommentInput,
-  ListCrewSettlementsQuerySchema,
-  type ListCrewSettlementsQuery,
   ListCrewTaskTimelineQuerySchema,
   type ListCrewTaskTimelineQuery,
   ReviewCrewTaskSchema,
   type ReviewCrewTaskInput,
-  SettleCrewItemSchema,
-  type SettleCrewItemInput,
   SubmitCrewTaskSchema,
   type SubmitCrewTaskInput,
   UpdateCrewTaskSchema,
@@ -475,29 +471,5 @@ export class CrewTasksController {
     body: ReviewCrewTaskInput,
   ) {
     return this.tasks.review(parseIdParam(taskId, 'taskId'), user.userId, body);
-  }
-
-  @Get('crews/:crewId/settlements')
-  settlements(
-    @Param('crewId') crewId: string,
-    @CurrentUser() user: AuthUser,
-    @Query(new ZodValidationPipe(ListCrewSettlementsQuerySchema))
-    query: ListCrewSettlementsQuery,
-  ) {
-    return this.tasks.listSettlements(
-      parseIdParam(crewId, 'crewId'),
-      user.userId,
-      query,
-    );
-  }
-
-  @Post('crew-settlements/:itemId/settle')
-  settle(
-    @Param('itemId') itemId: string,
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(SettleCrewItemSchema))
-    body: SettleCrewItemInput,
-  ) {
-    return this.tasks.settle(parseIdParam(itemId, 'itemId'), user.userId, body);
   }
 }

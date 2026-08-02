@@ -165,6 +165,9 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_components/tasks/crew-tasks-tab", ()
     </div>
   ),
 }));
+vi.mock("@/app/(site)/crews/[id]/workspace/_components/income/crew-income-tab", () => ({
+  CrewIncomeTab: () => <div data-pane="income">income</div>,
+}));
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/assets/crew-assets-tab", () => ({
   CrewAssetsTab: ({
     initialAssetId,
@@ -334,6 +337,7 @@ describe("crew workspace tabs", () => {
     expect(navLabels()).toEqual([
       "Group Chat",
       "Tasks",
+      "Income",
       "Asset Center",
       "Members",
       "Positions",
@@ -369,6 +373,16 @@ describe("crew workspace tabs", () => {
     expect(pane()).toBe("assets");
   });
 
+  it("opens the member income ledger through its shareable URL", () => {
+    nav.search = new URLSearchParams("tab=tasks");
+    render();
+
+    click(tabButton("Income"));
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=income");
+    reload();
+    expect(pane()).toBe("income");
+  });
+
   it("passes a chat attachment deeplink through to the asset center", () => {
     nav.search = new URLSearchParams("tab=assets&asset=asset-from-chat");
 
@@ -400,7 +414,7 @@ describe("crew workspace tabs", () => {
     ).toBe("agreement_42");
   });
 
-  it("keeps a deeplink's task param while switching to chat and back", () => {
+  it("removes a task deeplink when leaving the task surface", () => {
     nav.search = new URLSearchParams("tab=tasks&task=task_42");
     render();
     expect(pane()).toBe("tasks");
@@ -409,7 +423,7 @@ describe("crew workspace tabs", () => {
     ).toBe("task_42");
 
     click(tabButton("Group Chat"));
-    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat&task=task_42");
+    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat");
     reload();
     expect(pane()).toBe("chat");
   });
@@ -524,6 +538,7 @@ describe("crew workspace with an unresolvable chat thread", () => {
     expect(navLabels()).toEqual([
       "Group Chat",
       "Tasks",
+      "Income",
       "Asset Center",
       "Members",
       "Positions",

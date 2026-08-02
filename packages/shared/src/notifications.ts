@@ -26,7 +26,7 @@ export const NOTIFICATION_TYPES = [
   "crew.agreement.sent",
   "crew.agreement.updated",
   "crew.chat.mentioned",
-  // Production task + settlement
+  // Production tasks + crew earnings
   "crew.task.assigned",
   "crew.task.commented",
   "crew.task.mentioned",
@@ -34,7 +34,12 @@ export const NOTIFICATION_TYPES = [
   "crew.task.submitted",
   "crew.task.approved",
   "crew.task.revision_requested",
-  "crew.settlement.settled",
+  "crew.earning.posted",
+  "crew.earning.rejected",
+  "crew.earning.reversed",
+  "crew.payout.scheduled",
+  "crew.payout.paid",
+  "crew.payout.voided",
   // Sharing (studio team collaboration — workspace + project membership)
   "workspace.member.added",
   "workspace.member.removed",

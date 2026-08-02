@@ -131,8 +131,9 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(data.taskId) });
         qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
-        if (data.action === "settled" || data.action === "reviewed") {
-          qc.invalidateQueries({ queryKey: crewKeys.settlements(data.crewId) });
+        if (data.action === "reviewed") {
+          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "mine") });
+          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "crew") });
         }
       },
       onCrewTaskProjectChanged: (data) => {

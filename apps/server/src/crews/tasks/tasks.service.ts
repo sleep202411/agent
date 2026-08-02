@@ -9,7 +9,6 @@ import {
   CrewAssetNodeKind,
   CrewAssetNodeStatus,
   CrewAssetPermission,
-  CrewSettlementStatus,
   CrewTaskFieldType,
   CrewTaskStatus,
   MediaAssetStatus,
@@ -20,26 +19,18 @@ import {
   Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
-  WalletAccountStatus,
-  WalletBalanceKind,
-  WalletCurrencyType,
-  WalletLedgerEntryType,
-  WalletOwnerType,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { DocumentStateBuilder } from '../../documents/document-crdt';
 import { rootSchemaFor } from '../../documents/document-modes';
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
-import { WalletLedgerService } from '../../workspaces/wallet-ledger.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type {
   CreateCrewTaskCommentInput,
   CreateCrewTaskInput,
-  ListCrewSettlementsQuery,
   ListCrewTaskTimelineQuery,
   ReviewCrewTaskInput,
-  SettleCrewItemInput,
   SubmitCrewTaskInput,
   UpdateCrewTaskInput,
   UpdateCrewTaskCommentInput,
@@ -47,6 +38,7 @@ import type {
 import { availableCrewAssetName } from '../assets/asset-name';
 import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { lockCrewAssetUploads } from '../assets/upload-lock';
+import { CrewEarningsService } from '../earnings/earnings.service';
 import {
   CrewTaskViewFiltersSchema,
   CrewTaskViewSortSchema,
@@ -73,7 +65,6 @@ const taskReferenceSelect = {
   id: true,
   number: true,
   title: true,
-  status: true,
   workflowState: true,
   parentId: true,
 } satisfies Prisma.CrewTaskSelect;
@@ -116,7 +107,6 @@ const taskInclude = {
     },
     orderBy: { versionNumber: 'desc' as const },
   },
-  settlements: { orderBy: { createdAt: 'asc' as const } },
   dependenciesAsBlocked: {
     include: { blockingTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
@@ -255,7 +245,7 @@ export class CrewTasksService {
     private readonly assetAccess: CrewAssetAccessService,
     private readonly notifications: NotificationService,
     private readonly conversations: ConversationsService,
-    private readonly walletLedger: WalletLedgerService,
+    private readonly earnings: CrewEarningsService,
   ) {}
 
   async getProject(crewId: string, userId: string) {
@@ -1175,7 +1165,7 @@ export class CrewTasksService {
       if (input.addLabelIds?.length) {
         await tx.crewTaskLabelAssignment.createMany({
           data: taskIds.flatMap((taskId) =>
-            input.addLabelIds!.map((labelId) => ({ taskId, labelId })),
+            input.addLabelIds!.map((labelId) => ({ crewId, taskId, labelId })),
           ),
           skipDuplicates: true,
         });
@@ -1203,9 +1193,9 @@ export class CrewTasksService {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
-      current.status === CrewTaskStatus.submitted ||
-      current.status === CrewTaskStatus.approved ||
-      current.status === CrewTaskStatus.cancelled
+      current.workflowState.semantic === CrewTaskStatus.submitted ||
+      current.workflowState.semantic === CrewTaskStatus.approved ||
+      current.workflowState.semantic === CrewTaskStatus.cancelled
     ) {
       throw new ConflictException({
         message:
@@ -1249,7 +1239,6 @@ export class CrewTasksService {
             'Review, completed, and cancelled workflow columns can only be entered through their workflow actions.',
         });
       }
-      const targetStatus = targetWorkflowState.semantic;
       const targetCycleId =
         input.cycleId === undefined ? locked.cycleId : input.cycleId;
       const anchors = [input.beforeTaskId, input.afterTaskId].filter(
@@ -1338,7 +1327,6 @@ export class CrewTasksService {
         where: { id: taskId },
         data: {
           rank,
-          status: targetStatus,
           workflowStateId: targetWorkflowState.id,
           cycleId: targetCycleId,
           version: { increment: 1 },
@@ -1420,8 +1408,10 @@ export class CrewTasksService {
         ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
         ...(query.activeOnly
           ? {
-              status: {
-                notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+              workflowState: {
+                semantic: {
+                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+                },
               },
             }
           : {}),
@@ -1435,7 +1425,7 @@ export class CrewTasksService {
         id: true,
         number: true,
         title: true,
-        status: true,
+        workflowState: { select: { semantic: true } },
         priority: true,
         workflowStateId: true,
         parentId: true,
@@ -1450,7 +1440,11 @@ export class CrewTasksService {
         : {}),
     });
     const hasMore = rows.length > query.limit;
-    const items = hasMore ? rows.slice(0, query.limit) : rows;
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    const items = page.map(({ workflowState, ...task }) => ({
+      ...task,
+      status: workflowState.semantic,
+    }));
     return {
       items,
       nextCursor: hasMore ? (items.at(-1)?.id ?? null) : null,
@@ -1460,16 +1454,17 @@ export class CrewTasksService {
   async summary(crewId: string, userId: string) {
     await this.authorization.require(crewId, userId, 'tasks.view');
     const [statusGroups, myActive] = await Promise.all([
-      this.prisma.crewTask.groupBy({
-        by: ['status'],
+      this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
-        _count: { _all: true },
+        select: { semantic: true, _count: { select: { tasks: true } } },
       }),
       this.prisma.crewTask.count({
         where: {
           crewId,
-          status: {
-            notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+          workflowState: {
+            semantic: {
+              notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+            },
           },
           assignees: { some: { userId } },
         },
@@ -1479,7 +1474,7 @@ export class CrewTasksService {
       Object.values(CrewTaskStatus).map((status) => [status, 0]),
     ) as Record<CrewTaskStatus, number>;
     for (const group of statusGroups) {
-      byStatus[group.status] = group._count._all;
+      byStatus[group.semantic] += group._count.tasks;
     }
     return {
       total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
@@ -1638,7 +1633,6 @@ export class CrewTasksService {
           number: (planningSequence._max.number ?? 0) + 1,
           title: input.title,
           description: input.description,
-          status: workflowState.semantic,
           workflowStateId: workflowState.id,
           priority: input.priority,
           startAt: input.startAt ? new Date(input.startAt) : null,
@@ -1653,10 +1647,11 @@ export class CrewTasksService {
           ),
           createdByUserId: userId,
           labels: {
-            create: input.labelIds.map((labelId) => ({ labelId })),
+            create: input.labelIds.map((labelId) => ({ crewId, labelId })),
           },
           assignees: {
             create: input.assignees.map((assignee) => ({
+              crewId,
               crewMemberId: memberByUser.get(assignee.userId)!.id,
               userId: assignee.userId,
               rewardPoints:
@@ -1721,8 +1716,8 @@ export class CrewTasksService {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
-      current.status === CrewTaskStatus.approved ||
-      current.status === CrewTaskStatus.cancelled
+      current.workflowState.semantic === CrewTaskStatus.approved ||
+      current.workflowState.semantic === CrewTaskStatus.cancelled
     ) {
       throw new ConflictException({
         message: 'Completed or cancelled tasks cannot be edited.',
@@ -1758,14 +1753,17 @@ export class CrewTasksService {
         });
       }
       if (
-        locked.status === CrewTaskStatus.approved ||
-        locked.status === CrewTaskStatus.cancelled
+        locked.workflowState.semantic === CrewTaskStatus.approved ||
+        locked.workflowState.semantic === CrewTaskStatus.cancelled
       ) {
         throw new ConflictException({
           message: 'Completed or cancelled tasks cannot be edited.',
         });
       }
-      if (input.workflowStateId && locked.status === CrewTaskStatus.submitted) {
+      if (
+        input.workflowStateId &&
+        locked.workflowState.semantic === CrewTaskStatus.submitted
+      ) {
         throw new ConflictException({
           message: 'Review the current submission before changing its status.',
         });
@@ -1899,6 +1897,7 @@ export class CrewTasksService {
           } else {
             await tx.crewTaskAssignee.create({
               data: {
+                crewId: locked.crewId,
                 taskId,
                 crewMemberId: memberByUser.get(assignee.userId)!.id,
                 userId: assignee.userId,
@@ -1978,7 +1977,11 @@ export class CrewTasksService {
         await tx.crewTaskLabelAssignment.deleteMany({ where: { taskId } });
         if (input.labelIds.length > 0) {
           await tx.crewTaskLabelAssignment.createMany({
-            data: input.labelIds.map((labelId) => ({ taskId, labelId })),
+            data: input.labelIds.map((labelId) => ({
+              crewId: locked.crewId,
+              taskId,
+              labelId,
+            })),
           });
         }
       }
@@ -2121,7 +2124,6 @@ export class CrewTasksService {
           cycleId: input.cycleId,
           episodeId: input.episodeId,
           parentId: input.parentId,
-          status: nextWorkflowState?.semantic,
           workflowStateId: nextWorkflowState?.id,
           cancelledAt:
             nextWorkflowState?.semantic === CrewTaskStatus.cancelled
@@ -2595,7 +2597,7 @@ export class CrewTasksService {
         message: 'Only a task assignee can submit this task.',
       });
     }
-    if (!ACCEPTING_TASK_STATUSES.has(task.status)) {
+    if (!ACCEPTING_TASK_STATUSES.has(task.workflowState.semantic)) {
       throw new ConflictException({
         message: 'This task is not accepting submissions.',
       });
@@ -2609,7 +2611,7 @@ export class CrewTasksService {
         where: { id: taskId },
         include: taskInclude,
       });
-      if (!ACCEPTING_TASK_STATUSES.has(locked.status)) {
+      if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
         throw new ConflictException({
           message: 'This task is not accepting submissions.',
         });
@@ -2618,8 +2620,8 @@ export class CrewTasksService {
         .map((dependency) => dependency.blockingTask)
         .filter(
           (blocker) =>
-            blocker.status !== CrewTaskStatus.approved &&
-            blocker.status !== CrewTaskStatus.cancelled,
+            blocker.workflowState.semantic !== CrewTaskStatus.approved &&
+            blocker.workflowState.semantic !== CrewTaskStatus.cancelled,
         );
       if (unresolvedBlockers.length > 0) {
         throw new ConflictException({
@@ -2716,7 +2718,6 @@ export class CrewTasksService {
       const result = await tx.crewTask.update({
         where: { id: taskId },
         data: {
-          status: CrewTaskStatus.submitted,
           workflowStateId: reviewState.id,
           submittedAt: new Date(),
           version: { increment: 1 },
@@ -2770,7 +2771,7 @@ export class CrewTasksService {
         where: { id: taskId },
         include: taskInclude,
       });
-      if (locked.status !== CrewTaskStatus.submitted) {
+      if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
         throw new ConflictException({
           message: 'Only a submitted task can be reviewed.',
         });
@@ -2819,54 +2820,15 @@ export class CrewTasksService {
           (candidate) =>
             candidate.rewardPoints != null && candidate.rewardPoints > 0n,
         )) {
-          const account = await tx.walletAccount.upsert({
-            where: {
-              ownerType_ownerId_currency_balanceKind: {
-                ownerType: WalletOwnerType.user,
-                ownerId: assignee.userId,
-                currency: WalletCurrencyType.community_point,
-                balanceKind: WalletBalanceKind.withdrawable,
-              },
-            },
-            create: {
-              ownerType: WalletOwnerType.user,
-              ownerId: assignee.userId,
-              currency: WalletCurrencyType.community_point,
-              balanceKind: WalletBalanceKind.withdrawable,
-              status: WalletAccountStatus.active,
-            },
-            update: {},
-          });
-          const accrual = await this.walletLedger.postEntryTx(tx, {
-            accountId: account.id,
-            entryType: WalletLedgerEntryType.credit,
-            amount: assignee.rewardPoints!,
-            availableDelta: assignee.rewardPoints!,
-            heldDelta: 0n,
-            reason: 'crew_task_reward_accrued',
-            sourceType: 'crew_task_reward',
-            sourceId: `${taskId}:${assignee.userId}`,
-            idempotencyKey: `crew-task-reward:${taskId}:${assignee.userId}`,
-            actorUserId: userId,
-            description: `Crew task reward accrued: ${locked.title}`,
-            metadata: {
-              crewId: locked.crewId,
-              taskId,
-              assigneeUserId: assignee.userId,
-              pointsPerUsd: 100,
-            },
-          });
-          await tx.crewSettlementItem.create({
-            data: {
-              crewId: locked.crewId,
-              taskId,
-              crewMemberId: assignee.crewMemberId,
-              userId: assignee.userId,
-              pointsAmount: assignee.rewardPoints!,
-              pointsPerUsd: 100,
-              status: CrewSettlementStatus.pending,
-              accrualTransactionId: accrual.transaction.id,
-            },
+          await this.earnings.postTaskRewardTx(tx, {
+            crewId: locked.crewId,
+            taskId,
+            taskNumber: locked.number,
+            taskTitle: locked.title,
+            crewMemberId: assignee.crewMemberId,
+            userId: assignee.userId,
+            pointsAmount: assignee.rewardPoints!,
+            approvedByUserId: userId,
           });
         }
       }
@@ -2883,14 +2845,12 @@ export class CrewTasksService {
         where: { id: taskId },
         data: approved
           ? {
-              status: CrewTaskStatus.approved,
               workflowStateId: targetWorkflowState.id,
               approvedAt: now,
               approvedByUserId: userId,
               version: { increment: 1 },
             }
           : {
-              status: CrewTaskStatus.revision_requested,
               workflowStateId: targetWorkflowState.id,
               submittedAt: null,
               revisionRoundsUsed: { increment: 1 },
@@ -2949,182 +2909,6 @@ export class CrewTasksService {
       userId,
     );
     return this.toDtoWithUsage(task);
-  }
-
-  async listSettlements(
-    crewId: string,
-    userId: string,
-    query: ListCrewSettlementsQuery,
-  ) {
-    await this.authorization.require(crewId, userId, 'finance.view');
-    const where = {
-      crewId,
-      ...(query.status ? { status: query.status } : {}),
-    } satisfies Prisma.CrewSettlementItemWhereInput;
-    if (query.cursor) {
-      const cursor = await this.prisma.crewSettlementItem.findFirst({
-        where: { ...where, id: query.cursor },
-        select: { id: true },
-      });
-      if (!cursor) {
-        throw new BadRequestException({
-          message:
-            'The settlements cursor is invalid for the current filter. Restart from the first page.',
-        });
-      }
-    }
-    const [rows, groups] = await Promise.all([
-      this.prisma.crewSettlementItem.findMany({
-        where,
-        include: { task: { select: { id: true, title: true } } },
-        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
-        take: query.limit + 1,
-        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      }),
-      this.prisma.crewSettlementItem.groupBy({
-        by: ['status'],
-        where: { crewId },
-        _count: { _all: true },
-      }),
-    ]);
-    const items = rows.slice(0, query.limit);
-    const summary = { total: 0, pending: 0, settled: 0 };
-    for (const group of groups) {
-      summary[group.status] = group._count._all;
-      summary.total += group._count._all;
-    }
-    return {
-      items: items.map(settlementDto),
-      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
-      total: query.status ? summary[query.status] : summary.total,
-      summary,
-    };
-  }
-
-  async settle(itemId: string, userId: string, input: SettleCrewItemInput) {
-    const item = await this.prisma.crewSettlementItem.findUnique({
-      where: { id: itemId },
-      include: { task: true },
-    });
-    if (!item) throw new NotFoundException('Settlement item not found.');
-    await this.authorization.require(
-      item.task.crewId,
-      userId,
-      'finance.settle',
-    );
-    if (item.status === CrewSettlementStatus.settled) {
-      return settlementDto(item);
-    }
-    const settlementResult = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`crew:settlement:${itemId}`})::bigint)
-      `;
-      const locked = await tx.crewSettlementItem.findUnique({
-        where: { id: itemId },
-        include: { task: true },
-      });
-      if (!locked) throw new NotFoundException('Settlement item not found.');
-      if (locked.status === CrewSettlementStatus.settled) {
-        return { updated: locked, changed: false };
-      }
-      const account = await tx.walletAccount.findUnique({
-        where: {
-          ownerType_ownerId_currency_balanceKind: {
-            ownerType: WalletOwnerType.user,
-            ownerId: locked.userId,
-            currency: WalletCurrencyType.community_point,
-            balanceKind: WalletBalanceKind.withdrawable,
-          },
-        },
-      });
-      if (!account) {
-        throw new ConflictException({
-          code: 'CREW_SETTLEMENT_WALLET_MISSING',
-          message:
-            'The member withdrawable-points account is missing. Reconcile the approval accrual before cash-out.',
-        });
-      }
-      const cashOut = await this.walletLedger.postEntryTx(tx, {
-        accountId: account.id,
-        entryType: WalletLedgerEntryType.settle,
-        amount: locked.pointsAmount,
-        availableDelta: -locked.pointsAmount,
-        heldDelta: 0n,
-        reason: 'crew_task_reward_cashed_out',
-        sourceType: 'crew_task_cash_out',
-        sourceId: locked.id,
-        idempotencyKey: `crew-settlement-cash-out:${locked.id}`,
-        actorUserId: userId,
-        description: `Crew task reward cashed out: ${locked.task.title}`,
-        metadata: {
-          crewId: locked.task.crewId,
-          taskId: locked.taskId,
-          settlementId: locked.id,
-          memberUserId: locked.userId,
-          pointsPerUsd: locked.pointsPerUsd,
-          payoutCurrency: 'USD',
-          payoutAmountMinor: Number(locked.pointsAmount),
-        },
-      });
-      const settled = await tx.crewSettlementItem.update({
-        where: { id: itemId },
-        data: {
-          status: CrewSettlementStatus.settled,
-          payoutAmountMinor: locked.pointsAmount,
-          payoutCurrency: 'USD',
-          cashOutTransactionId: cashOut.transaction.id,
-          settledAt: new Date(),
-          settledByUserId: userId,
-          note: input.note,
-        },
-        include: { task: true },
-      });
-      await this.writeActivity(
-        tx,
-        settled.task.id,
-        'task.settlement_recorded',
-        userId,
-        {
-          settlementId: settled.id,
-          memberUserId: settled.userId,
-          pointsAmount: Number(settled.pointsAmount),
-          payoutAmountMinor: Number(settled.payoutAmountMinor),
-          payoutCurrency: settled.payoutCurrency,
-          note: input.note ?? null,
-        },
-      );
-      await this.notifications.send(
-        {
-          userId: settled.userId,
-          type: 'crew.settlement.settled',
-          title: `Settlement recorded: ${settled.task.title}`,
-          body: `${settled.pointsAmount.toString()} points were converted to ${formatUsdMinor(settled.payoutAmountMinor)}.`,
-          meta: {
-            crewId: settled.task.crewId,
-            taskId: settled.taskId,
-            taskTitle: settled.task.title,
-            settlementId: settled.id,
-            pointsAmount: settled.pointsAmount.toString(),
-            pointsPerUsd: settled.pointsPerUsd,
-            payoutAmountMinor: locked.pointsAmount.toString(),
-            payoutCurrency: 'USD',
-            deeplink: `/crews/${settled.task.crewId}/workspace?tab=tasks&task=${settled.taskId}`,
-          },
-          idempotencyKey: `crew.settlement.settled:${settled.id}`,
-        },
-        tx,
-      );
-      return { updated: settled, changed: true };
-    });
-    if (settlementResult.changed) {
-      await this.conversations.broadcastCrewTaskChange(
-        settlementResult.updated.task.crewId,
-        settlementResult.updated.task.id,
-        'settled',
-        userId,
-      );
-    }
-    return settlementDto(settlementResult.updated);
   }
 
   /**
@@ -4032,7 +3816,11 @@ function taskViewWhere(
   const clauses: Prisma.CrewTaskWhereInput[] = [];
   if (completedMode === 'hidden') {
     clauses.push({
-      status: { notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
+      workflowState: {
+        semantic: {
+          notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+        },
+      },
     });
   } else if (completedMode === 'recent') {
     const completedAfter = new Date();
@@ -4040,12 +3828,18 @@ function taskViewWhere(
     clauses.push({
       OR: [
         {
-          status: {
-            notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+          workflowState: {
+            semantic: {
+              notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+            },
           },
         },
         {
-          status: { in: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
+          workflowState: {
+            semantic: {
+              in: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+            },
+          },
           updatedAt: { gte: completedAfter },
         },
       ],
@@ -4077,7 +3871,11 @@ function taskViewWhere(
   if (filters.overdue) {
     clauses.push({
       dueAt: { lt: new Date() },
-      status: { notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled] },
+      workflowState: {
+        semantic: {
+          notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+        },
+      },
     });
   }
   return {
@@ -4156,7 +3954,6 @@ function taskDto(task: TaskRow, computeUsedPoints: number) {
             : Number(assetNode.mediaAsset.sizeBytes),
       })),
     })),
-    settlements: task.settlements.map(settlementDto),
   };
 }
 
@@ -4167,7 +3964,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     number: task.number,
     title: task.title,
     description: task.description,
-    status: task.status,
+    status: task.workflowState.semantic,
     workflowStateId: task.workflowStateId,
     workflowState: taskWorkflowStateDto(task.workflowState),
     priority: task.priority,
@@ -4185,14 +3982,16 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     subtaskProgress: {
       total: task.children.length,
       completed: task.children.filter(
-        (child) => child.status === CrewTaskStatus.approved,
+        (child) => child.workflowState.semantic === CrewTaskStatus.approved,
       ).length,
     },
     blockedBy: task.dependenciesAsBlocked.map((dependency) => ({
       ...taskReferenceDto(dependency.blockingTask),
       resolved:
-        dependency.blockingTask.status === CrewTaskStatus.approved ||
-        dependency.blockingTask.status === CrewTaskStatus.cancelled,
+        dependency.blockingTask.workflowState.semantic ===
+          CrewTaskStatus.approved ||
+        dependency.blockingTask.workflowState.semantic ===
+          CrewTaskStatus.cancelled,
     })),
     blocking: task.dependenciesAsBlocker.map((dependency) =>
       taskReferenceDto(dependency.blockedTask),
@@ -4245,7 +4044,6 @@ function taskReferenceDto(task: {
   id: string;
   number: number;
   title: string;
-  status: CrewTaskStatus;
   workflowState: {
     id: string;
     crewId: string;
@@ -4266,7 +4064,7 @@ function taskReferenceDto(task: {
     id: task.id,
     number: task.number,
     title: task.title,
-    status: task.status,
+    status: task.workflowState.semantic,
     workflowStateId: task.workflowState.id,
     workflowState: taskWorkflowStateDto(task.workflowState),
     parentId: task.parentId,
@@ -4481,53 +4279,6 @@ function crewOwnerUserId(crew: {
 }): string {
   if (!crew.ownership) throw new Error('Crew has no active owner.');
   return crew.ownership.member.userId;
-}
-
-function settlementDto(item: {
-  id: string;
-  taskId: string;
-  userId: string;
-  pointsAmount: bigint;
-  pointsPerUsd: number;
-  payoutAmountMinor: bigint | null;
-  payoutCurrency: string | null;
-  accrualTransactionId: string;
-  cashOutTransactionId: string | null;
-  status: CrewSettlementStatus;
-  settledAt: Date | null;
-  settledByUserId: string | null;
-  note: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  task?: { id: string; title: string };
-}) {
-  return {
-    id: item.id,
-    taskId: item.taskId,
-    taskTitle: item.task?.title ?? null,
-    userId: item.userId,
-    pointsAmount: Number(item.pointsAmount),
-    pointsPerUsd: item.pointsPerUsd,
-    payoutAmountMinor:
-      item.payoutAmountMinor == null ? null : Number(item.payoutAmountMinor),
-    payoutCurrency: item.payoutCurrency,
-    accrualTransactionId: item.accrualTransactionId,
-    cashOutTransactionId: item.cashOutTransactionId,
-    status: item.status,
-    settledAt: item.settledAt?.toISOString() ?? null,
-    settledByUserId: item.settledByUserId,
-    note: item.note,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
-  };
-}
-
-function formatUsdMinor(amount: bigint | null): string {
-  if (amount == null) return 'USD 0.00';
-  const absolute = amount < 0n ? -amount : amount;
-  const dollars = absolute / 100n;
-  const cents = (absolute % 100n).toString().padStart(2, '0');
-  return `${amount < 0n ? '-' : ''}USD ${dollars.toString()}.${cents}`;
 }
 
 function mapTaskLabelWriteError(error: unknown): Error {

@@ -3860,6 +3860,7 @@
     "tabMembers": "成员管理",
     "tabEpisodes": "剧集制作",
     "tabTasks": "制作任务",
+    "tabIncome": "收入",
     "tabAssets": "资产中心",
     "chatUnavailableTitle": "群聊打不开",
     "workspaceLoading": "正在加载剧组工作台",
@@ -3918,8 +3919,9 @@
     "addMemberDialogSubtitle": "通过对方注册的手机号或邮箱发送邀请；接受后才会获得剧组权限。",
     "addMemberContactLabel": "手机号 / 邮箱",
     "addMemberContactPlaceholder": "13800000000 或 user@example.com",
-    "addMemberAccessLabel": "附加权限",
-    "addMemberAccessHint": "受邀者接受后都会成为普通成员；附加策略只增加能力，不会替代成员身份。",
+    "addMemberAccessLabel": "权限模板",
+    "addMemberAccessHint": "模板只封装原子权限，不会替代剧组成员身份。",
+    "addMemberStandardPolicyHint": "以普通成员权限参与分配给自己的协作内容。",
     "addMemberAdminPolicyHint": "管理成员、招募、任务、资产、合同与 Studio。",
     "addMemberFinancePolicyHint": "查看并处理剧组财务结算。",
     "addMemberRemarkLabel": "备注",
@@ -3987,15 +3989,14 @@
     "memberAdminBadge": "管理员",
     "memberOwnerAccess": "完整工作台权限",
     "memberStandardAccess": "标准成员权限",
+    "memberAccessPresetStandard": "普通成员",
+    "memberAccessPresetFinance": "财务",
+    "memberAccessPresetAdmin": "管理员",
+    "memberAccessPresetAdminFinance": "管理员 + 财务",
     "memberPolicy_admin": "管理员策略",
     "memberPolicy_finance": "财务策略",
     "memberOwnerProtected": "受保护的所有者",
-    "memberAdminToggleShort": "管理",
-    "memberFinanceToggleShort": "财务",
-    "memberAdminAdded": "已授予管理员权限",
-    "memberAdminRemoved": "已取消管理员权限",
-    "memberFinanceAdded": "已设为财务",
-    "memberFinanceRemoved": "已取消财务身份",
+    "memberAccessUpdated": "成员权限已更新",
     "memberAccessUpdateFailed": "更新成员权限失败",
     "memberOwnerCannotRemove": "所有者不能被移除",
     "applicantsLoading": "加载申请中...",
@@ -4696,7 +4697,6 @@
     },
     "projectSubtitle": "任务、迭代与交付流程",
     "noActiveCycle": "暂无进行中的迭代",
-    "settlements": "结算记录",
     "newCycle": "新建迭代",
     "newTask": "新建任务",
     "newView": "新建视图",
@@ -4783,7 +4783,7 @@
       "in_progress": "正在制作的任务。此类任务可以正常移动和编辑。",
       "submitted": "审核队列。成员提交一个版本后，任务会自动进入此类列。",
       "revision_requested": "被退回修改的任务。此类任务可以继续编辑并重新提交。",
-      "approved": "已经通过的任务。仅审核通过后自动进入，并可以参与结算。",
+      "approved": "已经通过的任务。仅审核通过后自动进入；已配置的任务报酬会自动入账。",
       "cancelled": "已经取消的任务。此类任务会被锁定，并从进行中视图排除。"
     },
     "workflowColumnCreated": "工作流列已创建。",
@@ -4846,7 +4846,7 @@
     "workflowManagement": "工作流列",
     "workflowManagementDescription": "配置所有任务视图共享的真实制作阶段；已归档列仍可在这里恢复。",
     "workflowArchived": "已归档",
-    "workflowSettingsHint": "列的流程行为决定提交、审核、结算资格和任务锁定等生命周期规则。",
+    "workflowSettingsHint": "列的流程行为决定提交、审核、自动发放任务报酬和任务锁定等生命周期规则。",
     "editColumn": "编辑",
     "viewSettings": "视图设置",
     "viewSettingsDescription": "配置所有成员共享的布局、分组、排序与筛选条件。",
@@ -5257,7 +5257,7 @@
     "loadFailed": "无法加载任务。",
     "retry": "重试",
     "empty": "当前视图没有任务。",
-    "selectTask": "选择一个任务，查看任务画布、提交版本和结算。",
+    "selectTask": "选择一个任务，查看任务画布、提交版本和交付历史。",
     "filter": { "active": "进行中", "review": "待审核", "approved": "已通过", "all": "全部" },
     "status": {
       "open": "待开始",
@@ -5353,15 +5353,6 @@
     "submitting": "提交中…",
     "submitted": "新版本已提交审核",
     "submitFailed": "提交失败",
-    "settlements": "结算记录",
-    "settlementsDescription": "审核通过时自动计入社区积分；记录结算会按 100 积分 = 1 美元原子扣减积分，但不会发起外部转账。",
-    "settlementFilterAll": "全部",
-    "settlementFilterPending": "待结算",
-    "settlementFilterSettled": "已记录",
-    "settled": "已记录",
-    "markSettled": "记录美元结算",
-    "usdCashOutEstimate": "结算计价：{amount}",
-    "noSettlements": "设置了报酬积分的任务审核通过后会出现在这里。",
     "issueLabel": "任务 {id}",
     "openedBy": "由 {name} 创建 · {date}",
     "editTask": "编辑任务",
@@ -5419,7 +5410,6 @@
       "submitted": "提交了 v{version} 版本等待审核。",
       "approved": "通过了本次任务交付。",
       "revisionRequested": "要求继续修改并提交新版本。",
-      "settled": "登记了本任务的结算记录。",
       "changed": "更新了任务。"
     }
   },
@@ -5460,7 +5450,7 @@
     "title": "剧组合同",
     "subtitle": "与成员关联的可选合同，未签署不会阻塞协作。",
     "newAgreement": "新建合同",
-    "notConfigured": "当前部署尚未连接 BoldSign。邀请、任务、文件和结算仍可正常使用。",
+    "notConfigured": "当前部署尚未连接 BoldSign。邀请、任务、文件和收入记录仍可正常使用。",
     "member": "剧组成员",
     "chooseMember": "选择签署人",
     "signerName": "签署人姓名",
@@ -5519,6 +5509,194 @@
       "failed": "发送失败",
       "voided": "已作废"
     }
+  },
+  "crewIncome": {
+    "workspaceLabel": "{crew} · 财务",
+    "title": "积分与资金发放",
+    "description": "先将剧组报酬确认为积分，再通过可审计的发放单结算所选积分对应的真实资金。",
+    "pointsUnit": "积分",
+    "pointsValueTooltip": "{points} 固定等于 {amount}。100 积分始终等于 {benchmark}。",
+    "viewLabel": "财务视图",
+    "views": { "points": "积分账本", "payouts": "资金发放" },
+    "metrics": {
+      "confirmedPoints": "已确认积分",
+      "pendingPoints": "待审核积分",
+      "monthPoints": "本月确认",
+      "availablePoints": "可发放积分",
+      "reservedPoints": "发放中占用",
+      "paidPoints": "已发放积分"
+    },
+    "points": {
+      "history": "积分账本",
+      "historyDescription": "记录任务奖励和财务调整的不可变积分明细。",
+      "emptyTitle": "暂无积分记录",
+      "emptyDescription": "任务通过后会自动产生积分，财务也可以手动新增积分记录。"
+    },
+    "scopes": { "mine": "我的积分", "crew": "剧组账本" },
+    "filters": {
+      "all": "全部",
+      "pending": "待审批",
+      "posted": "已确认",
+      "rejected": "已驳回",
+      "reversed": "已冲回",
+      "paid": "已发放",
+      "voided": "已作废"
+    },
+    "loading": "正在加载积分账本…",
+    "loadFailed": "无法加载积分账本。",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "status": {
+      "pending": "待审批",
+      "posted": "已确认",
+      "rejected": "已驳回",
+      "reversed": "已冲回"
+    },
+    "sources": {
+      "task_reward": "任务奖励",
+      "contract_compensation": "合同约定积分",
+      "milestone_bonus": "里程碑积分",
+      "revenue_share": "分成约定积分",
+      "discretionary_bonus": "奖励积分",
+      "adjustment": "积分调整"
+    },
+    "create": {
+      "action": "添加积分",
+      "title": "添加成员积分",
+      "description": "创建一笔待审批积分。财务确认后才会进入成员可发放积分。",
+      "member": "成员",
+      "memberPlaceholder": "选择成员",
+      "source": "积分来源",
+      "titleLabel": "标题",
+      "titlePlaceholder": "为什么发放这笔积分？",
+      "points": "积分",
+      "note": "备注",
+      "notePlaceholder": "补充合同、里程碑或账务背景…",
+      "pendingNotice": "此阶段只确认积分，不赋予现金金额；记录需经财务审核后生效。",
+      "submit": "创建积分记录"
+    },
+    "decision": {
+      "rejectTitle": "驳回积分记录",
+      "rejectDescription": "记录会保留在审计账本中，但不会增加成员积分。",
+      "reverseTitle": "冲回已确认积分",
+      "reverseDescription": "系统会扣回已确认积分；已被发放单占用或已经发放的积分不能冲回。",
+      "reasonPlaceholder": "填写本次决定的原因…"
+    },
+    "actions": {
+      "approve": "审批入账",
+      "reject": "驳回",
+      "reverse": "冲回",
+      "viewDetails": "查看积分详情",
+      "cancel": "取消",
+      "confirmReject": "确认驳回",
+      "confirmReverse": "确认冲回"
+    },
+    "detail": {
+      "title": "积分详情",
+      "description": "查看这笔积分的来源、决策和不可篡改的审计历史。",
+      "source": "积分来源",
+      "note": "备注",
+      "recorded": "记录时间",
+      "createdBy": "创建人",
+      "task": "来源任务",
+      "agreement": "关联合同",
+      "openAgreement": "打开合同",
+      "rejectionReason": "驳回原因",
+      "reversalReason": "冲回原因",
+      "auditTrail": "审计轨迹",
+      "loading": "正在加载审计轨迹…",
+      "loadFailed": "无法加载审计轨迹。",
+      "close": "关闭",
+      "events": {
+        "created": "创建积分记录",
+        "posted": "积分已确认",
+        "rejected": "积分记录已驳回",
+        "reversed": "已确认积分被冲回",
+        "unknown": "积分记录已更新"
+      }
+    },
+    "messages": {
+      "created": "积分记录已创建",
+      "createFailed": "积分记录创建失败。",
+      "approved": "积分已确认",
+      "rejected": "积分记录已驳回",
+      "reversed": "积分已冲回",
+      "actionFailed": "积分操作失败。"
+    },
+    "payout": {
+      "history": "资金发放记录",
+      "historyDescription": "每张发放单都会锁定已确认积分，并保存独立的金额快照与审计轨迹。",
+      "emptyTitle": "暂无发放记录",
+      "emptyDescription": "财务可以使用成员的可发放积分创建资金发放单。",
+      "record": "剧组资金发放",
+      "status": {
+        "pending": "待处理",
+        "paid": "已发放",
+        "voided": "已作废"
+      },
+      "actions": {
+        "pay": "标记已发放",
+        "void": "作废发放单"
+      },
+      "create": {
+        "action": "创建发放单",
+        "title": "创建资金发放单",
+        "description": "锁定已确认积分，并固化财务实际要发放的金额。",
+        "member": "成员",
+        "points": "结算积分",
+        "gross": "应发金额",
+        "withholding": "代扣金额",
+        "net": "实发金额",
+        "note": "财务备注",
+        "notice": "创建发放单后会锁定所选积分；只有记录付款方式和流水号后，资金才视为已发放。",
+        "submit": "创建发放单"
+      },
+      "dialog": {
+        "method": "付款方式",
+        "reference": "付款流水号",
+        "proof": "付款凭证链接",
+        "reason": "原因",
+        "pay": {
+          "title": "记录已完成付款",
+          "description": "确认 {points} 对应的 {amount} 已真实发出。",
+          "submit": "标记已发放"
+        },
+        "void": {
+          "title": "作废发放单",
+          "description": "作废 {points} 对应的 {amount}，并释放占用积分。",
+          "submit": "确认作废"
+        }
+      },
+      "methods": {
+        "bank_transfer": "银行转账",
+        "alipay": "支付宝",
+        "wechat_pay": "微信支付",
+        "paypal": "PayPal",
+        "other": "其他"
+      },
+      "detail": {
+        "title": "发放详情",
+        "description": "积分分配、金额快照与不可变付款历史。",
+        "gross": "应发金额",
+        "withholding": "代扣金额",
+        "reference": "付款流水号",
+        "voidReason": "作废原因",
+        "allocations": "积分来源分配",
+        "events": {
+          "created": "发放单已创建",
+          "paid": "付款已完成",
+          "voided": "发放单已作废",
+          "unknown": "发放单已更新"
+        }
+      },
+      "messages": {
+        "created": "发放单已创建",
+        "pay": "付款记录已完成",
+        "void": "发放单已作废，积分已释放",
+        "actionFailed": "发放操作失败。"
+      }
+    },
+    "optional": "可选"
   },
   "crewWorkbench": {
     "globalNavigation": "剧组工作台导航",
@@ -9451,10 +9629,33 @@
         "title": "任务需要修改：{task}",
         "body": "请打开任务画布修改并提交新版本。"
       },
-      "settlementSettled": {
-        "title": "结算已记录：{task}",
-        "body": "{points} 积分已按结算汇率换算为 {payout}。",
-        "fallbackBody": "剧组已将该任务记录为已结算。"
+      "earning": {
+        "posted": {
+          "title": "积分已确认：{title}",
+          "body": "{points} 已计入你的剧组积分账本。"
+        },
+        "rejected": {
+          "title": "积分记录已驳回：{title}",
+          "body": "{points} 未计入你的剧组积分账本。"
+        },
+        "reversed": {
+          "title": "积分已冲回：{title}",
+          "body": "{points} 已从你的剧组积分账本扣回。"
+        }
+      },
+      "payout": {
+        "scheduled": {
+          "title": "发放单已创建",
+          "body": "{points} 将按 {amount} 发放。"
+        },
+        "paid": {
+          "title": "资金已发放",
+          "body": "{points} 对应的 {amount} 已完成发放。"
+        },
+        "voided": {
+          "title": "发放单已作废",
+          "body": "{points} 对应的 {amount} 已作废，积分已重新可用。"
+        }
       }
     }
   },

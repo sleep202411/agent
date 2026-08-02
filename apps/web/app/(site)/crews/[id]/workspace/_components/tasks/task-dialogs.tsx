@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  IconCircleCheck,
-  IconFile,
-  IconGitBranch,
-  IconLoader2,
-  IconSend,
-} from "@tabler/icons-react";
+import { IconFile, IconGitBranch, IconSend } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,13 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  useCrewSettlements,
-  useSettleCrewItem,
-  useSubmitCrewTask,
-  type CrewTaskDTO,
-} from "@/app/(site)/crews/_hooks/use-crew";
-import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { useSubmitCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCrewAssets } from "../../_hooks/use-crew-assets";
 
@@ -146,157 +134,4 @@ export function SubmitTaskDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-export function SettlementsDialog({
-  open,
-  onOpenChange,
-  crewId,
-  enabled,
-  displays,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  crewId: string;
-  enabled: boolean;
-  displays: ReturnType<typeof useUserDisplays>;
-}) {
-  const t = useTranslations("crewTasks");
-  const tc = useTranslations("common");
-  const [filter, setFilter] = useState<"all" | "pending" | "settled">("all");
-  const query = useCrewSettlements(crewId, enabled && open, filter === "all" ? undefined : filter);
-  const settle = useSettleCrewItem(crewId);
-
-  const markSettled = async (itemId: string) => {
-    try {
-      await settle.mutateAsync({ itemId });
-      toast.success(t("settled"));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{t("settlements")}</DialogTitle>
-          <DialogDescription>{t("settlementsDescription")}</DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <div className="mb-3 flex items-center gap-1 rounded-lg bg-secondary/40 p-1">
-            {(["all", "pending", "settled"] as const).map((value) => {
-              const count =
-                value === "all" ? (query.summary?.total ?? 0) : (query.summary?.[value] ?? 0);
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setFilter(value)}
-                  className={
-                    filter === value
-                      ? "flex-1 rounded-md bg-background px-2 py-1.5 text-[11px] font-semibold text-foreground shadow-sm"
-                      : "flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  }
-                >
-                  {t(
-                    value === "all"
-                      ? "settlementFilterAll"
-                      : value === "pending"
-                        ? "settlementFilterPending"
-                        : "settlementFilterSettled"
-                  )}{" "}
-                  <span className="font-mono text-[10px]">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="max-h-[55vh] divide-y divide-border overflow-y-auto">
-            {query.data.map((item) => (
-              <div key={item.id} className="flex items-center gap-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{item.taskTitle}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {displayNameOf(item.userId, displays)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-xs">
-                    {formatPoints(item.pointsAmount)} {t("pointsUnit")}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {item.status === "settled" &&
-                    item.payoutAmountMinor != null &&
-                    item.payoutCurrency
-                      ? formatMoney(item.payoutAmountMinor, item.payoutCurrency)
-                      : t("usdCashOutEstimate", {
-                          amount: formatMoney(item.pointsAmount, "USD"),
-                        })}
-                  </p>
-                </div>
-                {item.status === "settled" ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
-                    <IconCircleCheck className="size-4" />
-                    {t("settled")}
-                  </span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    color="muted"
-                    disabled={settle.isPending}
-                    onClick={() => void markSettled(item.id)}
-                  >
-                    {t("markSettled")}
-                  </Button>
-                )}
-              </div>
-            ))}
-            {query.isLoading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
-                <IconLoader2 className="size-4 animate-spin" />
-                {tc("loading")}
-              </div>
-            ) : query.isError ? (
-              <p className="py-10 text-center text-xs text-destructive">
-                {query.error instanceof Error ? query.error.message : t("actionFailed")}
-              </p>
-            ) : query.data.length === 0 ? (
-              <p className="py-10 text-center text-xs text-muted-foreground">
-                {t("noSettlements")}
-              </p>
-            ) : null}
-            {query.hasNextPage ? (
-              <div className="flex justify-center py-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  color="muted"
-                  disabled={query.isFetchingNextPage}
-                  onClick={() => void query.fetchNextPage()}
-                >
-                  {query.isFetchingNextPage ? (
-                    <IconLoader2 className="size-4 animate-spin" />
-                  ) : null}
-                  {tc("loadMore")}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function formatMoney(amount: number, currency: string) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-  }).format(amount / 100);
-}
-
-function formatPoints(points: number) {
-  return new Intl.NumberFormat().format(points);
 }

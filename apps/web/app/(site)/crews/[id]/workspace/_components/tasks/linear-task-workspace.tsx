@@ -56,7 +56,7 @@ import { TaskIssueDetail } from "./task-issue-detail";
 import { TaskProjectView } from "./task-project-views";
 import { ProjectSettingsDialog } from "./task-project-settings";
 import { TaskQuickCreate } from "./task-quick-create";
-import { SettlementsDialog, SubmitTaskDialog } from "./task-dialogs";
+import { SubmitTaskDialog } from "./task-dialogs";
 import { TaskSelect } from "./task-select";
 import { ProductionOverview } from "./production-overview";
 import { ProductionActivityComposer, ProductionActivityEntry } from "./production-project-update";
@@ -72,7 +72,6 @@ interface LinearTaskWorkspaceProps {
   canEditCrewInfo: boolean;
   members: CrewMemberDTO[];
   isOwner: boolean;
-  canSettle: boolean;
   viewerUserId?: string;
   deeplinkTaskId?: string | null;
   onSelectedTaskChange?: (taskId: string | null) => void;
@@ -87,7 +86,6 @@ export function LinearTaskWorkspace({
   canEditCrewInfo,
   members,
   isOwner,
-  canSettle,
   viewerUserId,
   deeplinkTaskId,
   onSelectedTaskChange,
@@ -120,7 +118,6 @@ export function LinearTaskWorkspace({
     state: CrewTaskWorkflowStateDTO | null;
     afterStateId: string | null;
   } | null>(null);
-  const [settlementsOpen, setSettlementsOpen] = useState(false);
   const [submitTask, setSubmitTask] = useState<CrewTaskDTO | null>(null);
   const [favorite, setFavorite] = useState(false);
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
@@ -332,15 +329,7 @@ export function LinearTaskWorkspace({
                   {t("projectSettings")}
                 </button>
               ) : null}
-              {canSettle ? (
-                <button
-                  type="button"
-                  onClick={() => setSettlementsOpen(true)}
-                  className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-[11px] text-[#b9bec7] hover:bg-white/[0.06]"
-                >
-                  {t("settlements")}
-                </button>
-              ) : !isOwner ? (
+              {!isOwner ? (
                 <p className="px-2.5 py-2 text-[10px] text-[#676e79]">{t("noProjectActions")}</p>
               ) : null}
             </PopoverContent>
@@ -761,13 +750,6 @@ export function LinearTaskWorkspace({
           setSubmitTask(null);
           selectTask(taskId);
         }}
-      />
-      <SettlementsDialog
-        open={settlementsOpen}
-        onOpenChange={setSettlementsOpen}
-        crewId={crewId}
-        enabled={canSettle}
-        displays={displays}
       />
     </div>
   );

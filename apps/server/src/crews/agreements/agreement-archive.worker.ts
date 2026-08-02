@@ -80,6 +80,10 @@ export class CrewAgreementArchiveWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!this.provider.isEnabled()) {
+      this.logger.log('Crew agreement archive worker disabled');
+      return;
+    }
     this.timer = setInterval(() => void this.drainOnce(), this.pollIntervalMs);
     this.timer.unref?.();
     void this.drainOnce();

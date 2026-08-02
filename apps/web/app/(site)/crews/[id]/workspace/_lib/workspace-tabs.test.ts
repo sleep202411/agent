@@ -68,6 +68,7 @@ describe("chat is members-only", () => {
     expect(workspaceTabsFor(true).map((t) => t.id)).toEqual([
       "chat",
       "tasks",
+      "income",
       "assets",
       "members",
       "roles",
@@ -133,8 +134,15 @@ describe("?tab= round-trip", () => {
     expect(resolveWorkspaceTab(params.get("tab"), { entitled: true, reachable: false })).toBe(
       "chat"
     );
-    // Deeplink params riding alongside are not the tab's to discard.
-    expect(params.get("task")).toBe("task_42");
+    expect(params.has("task")).toBe(false);
+  });
+
+  it("removes entity deeplinks that the selected tab cannot render", () => {
+    const params = new URLSearchParams(
+      "tab=tasks&task=task_42&comment=comment_7&asset=asset_3&application=application_2"
+    );
+    applyWorkspaceTab(params, "income");
+    expect(params.toString()).toBe("tab=income&application=application_2");
   });
 
   it("replaces a previous tab rather than appending one", () => {
@@ -145,11 +153,12 @@ describe("?tab= round-trip", () => {
 });
 
 describe("isWorkspaceTabId", () => {
-  it("accepts only the six rendered tabs, in doc §4 order", () => {
-    // 群聊 / 任务 / 资产中心 / 成员 / 招募 / 概览.
+  it("accepts only the seven rendered tabs, in product order", () => {
+    // 群聊 / 任务 / 收入 / 资产中心 / 成员 / 招募 / 概览.
     expect(WORKSPACE_TABS.map((tab) => tab.id)).toEqual([
       "chat",
       "tasks",
+      "income",
       "assets",
       "members",
       "roles",
@@ -157,6 +166,7 @@ describe("isWorkspaceTabId", () => {
     ]);
     expect(isWorkspaceTabId("chat")).toBe(true);
     expect(isWorkspaceTabId("tasks")).toBe(true);
+    expect(isWorkspaceTabId("income")).toBe(true);
     expect(isWorkspaceTabId("episodes")).toBe(false);
     expect(isWorkspaceTabId("assets")).toBe(true);
     expect(isWorkspaceTabId("files")).toBe(false);

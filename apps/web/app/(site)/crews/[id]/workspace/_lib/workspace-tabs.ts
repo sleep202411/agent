@@ -8,7 +8,7 @@
  * means the nav renderer and the deeplink reader agree on exactly one
  * spelling, and the validator is testable on its own.
  *
- * Order and default come from the product flow: 群聊 / 任务 /
+ * Order and default come from the product flow: 群聊 / 任务 / 收入 /
  * 资产中心 / 成员 / 招募 / 概览, chat first and entered by default, because
  * the crew's day-to-day is the conversation and everything else is a
  * surface you go looking for. The asset center is members-only because
@@ -35,7 +35,14 @@
  * open, not a silent bounce to another tab.
  */
 
-export type WorkspaceTabId = "chat" | "tasks" | "assets" | "members" | "roles" | "overview";
+export type WorkspaceTabId =
+  | "chat"
+  | "tasks"
+  | "income"
+  | "assets"
+  | "members"
+  | "roles"
+  | "overview";
 
 export interface WorkspaceTab {
   id: WorkspaceTabId;
@@ -47,6 +54,7 @@ export interface WorkspaceTab {
 export const WORKSPACE_TABS = [
   { id: "chat", labelKey: "tabChat", membersOnly: true },
   { id: "tasks", labelKey: "tabTasks", membersOnly: true },
+  { id: "income", labelKey: "tabIncome", membersOnly: true },
   { id: "assets", labelKey: "tabAssets", membersOnly: true },
   { id: "members", labelKey: "tabMembers", membersOnly: false },
   { id: "roles", labelKey: "tabRecruitment", membersOnly: false },
@@ -114,9 +122,16 @@ export function resolveWorkspaceTab(
  * that resolves to the overview whenever the conversation is down, i.e.
  * a button that does nothing.
  *
- * Deeplink params riding alongside (`task`, `application`) are not this
- * function's to discard.
+ * Entity deeplinks belong to the tab that can render them. Strip stale
+ * task and asset ids when the reader leaves those surfaces so opening
+ * Income or Members never carries an invisible detail selection in the
+ * address bar.
  */
 export function applyWorkspaceTab(params: URLSearchParams, tab: WorkspaceTabId): void {
   params.set("tab", tab);
+  if (tab !== "tasks") {
+    params.delete("task");
+    params.delete("comment");
+  }
+  if (tab !== "assets") params.delete("asset");
 }

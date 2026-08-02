@@ -404,6 +404,11 @@ export class CrewAgreementsService {
     ) {
       return { received: true, verification: true };
     }
+    if (!this.provider.isEnabled()) {
+      throw new ServiceUnavailableException({
+        message: 'BoldSign webhook handling is disabled for this deployment.',
+      });
+    }
     this.provider.verifyWebhook(input.rawBody, input.signatureHeader);
 
     const data = payload.data;

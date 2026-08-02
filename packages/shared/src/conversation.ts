@@ -334,7 +334,7 @@ export type ConversationFrame =
       data: {
         crewId: string;
         taskId: string;
-        action: "created" | "updated" | "commented" | "submitted" | "reviewed" | "settled";
+        action: "created" | "updated" | "commented" | "submitted" | "reviewed";
         actorUserId: string | null;
       };
     }

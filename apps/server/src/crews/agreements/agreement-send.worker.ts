@@ -69,6 +69,10 @@ export class CrewAgreementSendWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!this.provider.isEnabled()) {
+      this.logger.log('Crew agreement send worker disabled');
+      return;
+    }
     this.timer = setInterval(
       () => this.runScheduledDrain(),
       this.pollIntervalMs,

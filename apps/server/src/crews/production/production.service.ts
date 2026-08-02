@@ -823,8 +823,10 @@ export class CrewProductionService {
         const incomplete = await tx.crewTask.count({
           where: {
             episodeId: delivery.episodeId,
-            status: {
-              notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+            workflowState: {
+              semantic: {
+                notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+              },
             },
           },
         });
@@ -899,34 +901,36 @@ export class CrewProductionService {
   }
 
   private async readEpisodes(crewId: string) {
-    const [episodes, taskStatusRows] = await Promise.all([
+    const [episodes, taskRows] = await Promise.all([
       this.prisma.crewEpisode.findMany({
         where: { crewId },
         include: EPISODE_INCLUDE,
         orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       }),
-      this.prisma.crewTask.groupBy({
-        by: ['episodeId', 'status'],
+      this.prisma.crewTask.findMany({
         where: { crewId, episodeId: { not: null } },
-        _count: { _all: true },
+        select: {
+          episodeId: true,
+          workflowState: { select: { semantic: true } },
+        },
       }),
     ]);
     const counts = new Map<
       string,
       { total: number; completed: number; pendingReview: number }
     >();
-    for (const row of taskStatusRows) {
+    for (const row of taskRows) {
       if (!row.episodeId) continue;
       const value = counts.get(row.episodeId) ?? {
         total: 0,
         completed: 0,
         pendingReview: 0,
       };
-      value.total += row._count._all;
-      if (row.status === CrewTaskStatus.approved)
-        value.completed += row._count._all;
-      if (row.status === CrewTaskStatus.submitted)
-        value.pendingReview += row._count._all;
+      value.total += 1;
+      if (row.workflowState.semantic === CrewTaskStatus.approved)
+        value.completed += 1;
+      if (row.workflowState.semantic === CrewTaskStatus.submitted)
+        value.pendingReview += 1;
       counts.set(row.episodeId, value);
     }
     return episodes.map((episode) =>
@@ -940,18 +944,17 @@ export class CrewProductionService {
       include: EPISODE_INCLUDE,
     });
     if (!episode) throw new NotFoundException('Episode not found.');
-    const rows = await this.prisma.crewTask.groupBy({
-      by: ['status'],
+    const rows = await this.prisma.crewTask.findMany({
       where: { episodeId },
-      _count: { _all: true },
+      select: { workflowState: { select: { semantic: true } } },
     });
     const counts = { total: 0, completed: 0, pendingReview: 0 };
     for (const row of rows) {
-      counts.total += row._count._all;
-      if (row.status === CrewTaskStatus.approved)
-        counts.completed += row._count._all;
-      if (row.status === CrewTaskStatus.submitted)
-        counts.pendingReview += row._count._all;
+      counts.total += 1;
+      if (row.workflowState.semantic === CrewTaskStatus.approved)
+        counts.completed += 1;
+      if (row.workflowState.semantic === CrewTaskStatus.submitted)
+        counts.pendingReview += 1;
     }
     return episodeDto(episode, counts);
   }
