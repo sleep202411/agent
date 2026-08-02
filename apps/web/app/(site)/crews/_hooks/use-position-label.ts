@@ -14,18 +14,18 @@
  *     non-preset role types from Java don't render blank)
  *   - `useTranslatedPresetPositions()` — full list { value, label }[]
  *     drop-in replacement for `PRESET_POSITIONS` in <Select> menus
- *   - `useTranslatedOwnerLabel()` — translation for `OWNER_ROLE`
+ *   - `useTranslatedOwnerLabel()` — ownership label (not a position)
  */
 
 import { useMemo } from "react";
-import { OWNER_ROLE, PRESET_POSITIONS } from "@repo/shared/crew";
+import { PRESET_POSITIONS } from "@repo/shared/crew";
 import { useTranslations } from "@/src/i18n/i18n";
+import type { CrewMemberDTO } from "@repo/shared/crew";
 
 export function useTranslatePositionValue() {
   const t = useTranslations("crewRoles");
   return (value: string): string => {
     if (!value) return "";
-    if (value === OWNER_ROLE) return t("owner");
     const translated = t(value);
     // `useTranslations` returns the raw key when missing → fall back
     // to the canonical English label so unknown role types from Java
@@ -49,4 +49,17 @@ export function useTranslatedPresetPositions() {
 export function useTranslatedOwnerLabel(): string {
   const t = useTranslations("crewRoles");
   return t("owner");
+}
+
+export function useCrewMemberPositionLabel() {
+  const translate = useTranslatePositionValue();
+  const t = useTranslations("workspace");
+  return (member: CrewMemberDTO): string => {
+    const position =
+      member.positions.find((candidate) => candidate.isPrimary) ?? member.positions[0];
+    return (
+      position?.title ||
+      (position?.categoryKey ? translate(position.categoryKey) : t("memberRoleMember"))
+    );
+  };
 }

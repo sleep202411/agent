@@ -6,18 +6,76 @@
  * application id so the URL doesn't need to repeat the crew context.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import type { ApplyInput, CrewApplicationDTO } from "./types";
+import type {
+  ApplyInput,
+  CrewApplicationDTO,
+  CrewApplicationPageDTO,
+  CrewApplicationStatus,
+} from "./types";
 
-/** Owner-facing inbox — pending first, then recent decisions. */
-export function useCrewApplications(crewId: string | undefined, enabled = true) {
-  return useQuery({
-    queryKey: crewKeys.applications(crewId ?? ""),
+interface CrewApplicationsOptions {
+  positionId?: string;
+  status?: CrewApplicationStatus;
+  pageSize?: number;
+}
+
+/**
+ * Owner-facing cursor inbox. The public return keeps `data` as a flat array
+ * for ergonomic rendering while exposing the infinite-query controls and
+ * authoritative server summary alongside it.
+ */
+export function useCrewApplications(
+  crewId: string | undefined,
+  enabled = true,
+  options: CrewApplicationsOptions = {}
+) {
+  const pageSize = options.pageSize ?? 50;
+  const query = useInfiniteQuery({
+    queryKey: [
+      ...crewKeys.applications(crewId ?? ""),
+      options.positionId ?? "all-positions",
+      options.status ?? "all-statuses",
+      pageSize,
+    ] as const,
     enabled: !!crewId && enabled,
+    queryFn: ({ pageParam }) =>
+      crewApi.get<CrewApplicationPageDTO>(`/crews/${encodeURIComponent(crewId!)}/applications`, {
+        query: {
+          limit: pageSize,
+          cursor: pageParam,
+          positionId: options.positionId,
+          status: options.status,
+        },
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  return {
+    ...query,
+    data,
+    summary: query.data?.pages[0]?.summary,
+    total: query.data?.pages[0]?.total ?? 0,
+  };
+}
+
+/** Direct notification/deeplink lookup — never depends on list pagination. */
+export function useCrewApplication(
+  crewId: string | undefined,
+  applicationId: string | null | undefined,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: crewKeys.application(crewId ?? "", applicationId ?? ""),
+    enabled: !!crewId && !!applicationId && enabled,
     queryFn: () =>
-      crewApi.get<CrewApplicationDTO[]>(`/crews/${encodeURIComponent(crewId!)}/applications`),
+      crewApi.get<CrewApplicationDTO>(
+        `/crews/${encodeURIComponent(crewId!)}/applications/${encodeURIComponent(applicationId!)}`
+      ),
   });
 }
 

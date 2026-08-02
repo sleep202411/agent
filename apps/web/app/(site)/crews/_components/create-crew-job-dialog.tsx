@@ -60,9 +60,7 @@ import {
   type WorkMode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
-const CREATE_JOB_HERO_URL = encodeURI(
-  "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
-);
+const CREATE_JOB_HERO_URL = "/crews/publish-position-hero.jpg";
 
 interface PublishPositionDialogProps {
   open: boolean;
@@ -155,13 +153,10 @@ export function CreateCrewJobDialog({
   // the owner is about to change material terms. Fetched once per
   // dialog open via the standard hook (cache shared with the rest of
   // the workspace, no extra round trip in practice).
-  const { data: allApplications = [] } = useCrewApplications(crewId, isEdit);
-  const pendingApplicantCount = useMemo(() => {
-    if (!editingPosition) return 0;
-    return allApplications.filter(
-      (a) => a.positionId === editingPosition.id && a.status === "pending"
-    ).length;
-  }, [allApplications, editingPosition]);
+  const applications = useCrewApplications(crewId, isEdit, {
+    positionId: editingPosition?.id,
+  });
+  const pendingApplicantCount = applications.summary?.pending ?? 0;
 
   // Reset form whenever the dialog is closed OR the editingPosition
   // identity changes (covers "open dialog from position A → close

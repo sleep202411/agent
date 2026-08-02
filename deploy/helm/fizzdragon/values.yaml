@@ -88,6 +88,7 @@ ingress:
 sharedEnv:
   JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
+  USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
   ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
   AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
@@ -188,10 +189,12 @@ serverSecrets:
     # HMAC token-signing secret for the self-hosted realtime WS plane
     # (REALTIME_TRANSPORT=self-hosted). PREREQUISITE: create the `realtime-ws-secret`
     # secret in Key Vault BEFORE deploying — the CSI projection fails if absent.
-    # Studio Agent delivery. The Nest server uses this ROOT key for exactly one
-    # thing — signing per-thread Ably token requests, locally, with an HMAC. It
-    # opens no Ably connection and publishes nothing; the activity worker does
-    # that, from its own copy of the same key (studioAgentDeliverySecrets).
+    # Shared Ably ROOT credential for server-owned token signing and
+    # Conversations delivery. Nest signs least-privilege browser credentials,
+    # publishes ordinary Conversations frames with Ably REST, and publishes
+    # committed crew messages to Ably Chat REST. It opens no Ably Realtime
+    # socket. Studio Agent model-turn delivery is still published exclusively
+    # by the activity worker from its own scoped projection below.
     # PREREQUISITE: `ably-api-key` must exist in Key Vault BEFORE this ships.
     # The CSI projection is fail-closed — a mapping to a missing entry breaks
     # the WHOLE fizzdragon-server-secrets Secret, taking every other env var in
@@ -205,6 +208,17 @@ serverSecrets:
     # the CSI projection fails if absent. (Set in kv-fizzdragon-com 2026-06-22.)
     - kv: internal-service-token
       env: INTERNAL_SERVICE_TOKEN
+    # BoldSign production rollout (global/EU cell only). Keep these commented
+    # until all three values exist in kv-fizzdragon-com; the CSI projection is
+    # fail-closed. Then uncomment them and flip server.env.BOLDSIGN_ENABLED.
+    # The sandbox API key/template created during local integration work must
+    # never be copied into these production secret names.
+    # - kv: boldsign-api-key
+    #   env: BOLDSIGN_API_KEY
+    # - kv: boldsign-crew-agreement-template-id
+    #   env: BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID
+    # - kv: boldsign-webhook-secret
+    #   env: BOLDSIGN_WEBHOOK_SECRET
 # New Agent Platform keys are isolated from the legacy server projection so an
 # unprovisioned migration cannot break billing/auth/server startup. This
 # projection is mounted only when agentPlatform.enabled=true.
@@ -417,6 +431,15 @@ server:
     - fizzdragon-r2
   env:
     FAL_ENABLED: "true"
+    # BoldSign is intentionally OFF until the production API key, production
+    # template ID, and webhook HMAC secret have all been provisioned in Key
+    # Vault and mapped into fizzdragon-server-secrets. Once provisioned, flip
+    # this to "true"; the server then fails startup on any missing credential.
+    # Public callback: https://fizzdragon.com/aurora/webhooks/boldsign
+    BOLDSIGN_ENABLED: "false"
+    BOLDSIGN_API_BASE_URL: https://api-eu.boldsign.com
+    BOLDSIGN_CREW_AGREEMENT_ROLE_INDEX: "1"
+    BOLDSIGN_WEBHOOK_TOLERANCE_SECONDS: "300"
     # Cloudflare R2 over the S3-compatible API. `auto` is R2's only region and
     # path-style is required; the bucket is APAC-placed to sit beside the cluster.
     # Credentials (S3_ACCESS_KEY_ID / S3_ACCESS_KEY_SECRET) come from the

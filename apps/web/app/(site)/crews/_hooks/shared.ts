@@ -11,12 +11,36 @@ export const crewKeys = {
   detail: (id: string) => ["crew", "detail", id] as const,
   positions: (crewId: string) => ["crew", "positions", crewId] as const,
   members: (crewId: string) => ["crew", "members", crewId] as const,
+  membership: (crewId: string) => ["crew", "members", crewId, "me"] as const,
   applications: (crewId: string) => ["crew", "applications", crewId] as const,
+  application: (crewId: string, applicationId: string) =>
+    ["crew", "applications", crewId, "detail", applicationId] as const,
   mine: ["crew", "mine"] as const,
   byUser: (userId: string) => ["crew", "by-user", userId] as const,
-  episodes: (crewId: string) => ["crew", "episodes", crewId] as const,
-  episodeAssignments: (crewId: string, episodeId: string | number) =>
-    ["crew", "episode", crewId, String(episodeId), "assignments"] as const,
-  episodeActivity: (crewId: string, episodeId: string | number) =>
-    ["crew", "episode", crewId, String(episodeId), "activity"] as const,
+  assets: (crewId: string) => ["crew", "assets", crewId] as const,
+  taskProject: (crewId: string) => ["crew", "task-project", crewId] as const,
+  tasks: (crewId: string) => ["crew", "tasks", crewId] as const,
+  taskView: (crewId: string, input: { viewId: string; query?: string; priority?: string }) =>
+    ["crew", "tasks", crewId, "view", input] as const,
+  taskOptions: (crewId: string, input: Record<string, unknown>) =>
+    ["crew", "tasks", crewId, "options", input] as const,
+  taskSummary: (crewId: string) => ["crew", "tasks", crewId, "summary"] as const,
+  taskActivity: (crewId: string) => ["crew", "tasks", crewId, "activity"] as const,
+  task: (taskId: string) => ["crew", "task", taskId] as const,
+  taskTimeline: (taskId: string) => ["crew", "task", taskId, "timeline"] as const,
+  productionOverview: (crewId: string) => ["crew", "production", crewId, "overview"] as const,
+  productionActivity: (crewId: string) => ["crew", "production", crewId, "activity"] as const,
+  episodes: (crewId: string) => ["crew", "production", crewId, "episodes"] as const,
+  earnings: (crewId: string, scope: "mine" | "crew") =>
+    ["crew", "earnings", crewId, scope] as const,
+  earning: (earningId: string) => ["crew", "earning", earningId] as const,
+  payouts: (crewId: string, scope: "mine" | "crew") => ["crew", "payouts", crewId, scope] as const,
+  payout: (payoutId: string) => ["crew", "payout", payoutId] as const,
+  invitations: (crewId: string) => ["crew", "invitations", crewId] as const,
+  myInvitations: ["crew", "invitations", "mine"] as const,
+  invitation: (invitationId: string) => ["crew", "invitation", invitationId] as const,
+  agreements: (crewId: string) => ["crew", "agreements", crewId] as const,
+  assetContext: (crewId: string) => ["crew", "assets", crewId, "context"] as const,
+  assetList: (crewId: string, query: Record<string, unknown>) =>
+    ["crew", "assets", crewId, "list", query] as const,
 };

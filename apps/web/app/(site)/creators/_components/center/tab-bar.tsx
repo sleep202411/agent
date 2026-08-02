@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * Sticky scrollspy nav for the creator center's right pane.
+ * Creator-section navigation for the right pane.
  *
- * Behavior shift (2026-05-24): the right pane no longer swaps content
- * when a tab is clicked. All 5 sections render stacked. The tab bar
- * now acts as an anchor menu — click → smooth-scroll to the section,
- * scrolling the page → highlight the section currently in view.
+ * Public creator pages use it as a scrollspy anchor menu. The private
+ * `/profile` creator center uses the same visual treatment as an accessible
+ * tablist that swaps a single content panel.
  *
  * Tab order is deliberate:
  *   1. 服务包  — commercial entry, first because it's the buy CTA.
@@ -46,19 +45,41 @@ const TAB_I18N_KEY: Record<CreatorTabId, string> = {
 
 /** DOM id prefix for each section anchor (matches creator-center.tsx). */
 export const CREATOR_SECTION_ID = (id: CreatorTabId) => `creator-section-${id}`;
+export const CREATOR_TAB_ID = (id: CreatorTabId) => `creator-tab-${id}`;
 
 interface CreatorTabBarProps {
-  /** ID of the section currently in view (driven by scrollspy in parent). */
+  /** ID of the section currently in view or the selected tab panel. */
   active: CreatorTabId;
-  /** Click — parent scrolls the matching section into view. */
+  mode?: "sections" | "tabs";
   onPick: (id: CreatorTabId) => void;
 }
 
-export function CreatorTabBar({ active, onPick }: CreatorTabBarProps) {
+export function CreatorTabBar({ active, mode = "sections", onPick }: CreatorTabBarProps) {
   const t = useTranslations("creatorCenter");
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, id: CreatorTabId) => {
+    if (mode !== "tabs") return;
+
+    const currentIndex = CREATOR_TAB_ORDER.indexOf(id);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % CREATOR_TAB_ORDER.length;
+    if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + CREATOR_TAB_ORDER.length) % CREATOR_TAB_ORDER.length;
+    }
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = CREATOR_TAB_ORDER.length - 1;
+    if (nextIndex === undefined) return;
+
+    event.preventDefault();
+    const nextId = CREATOR_TAB_ORDER[nextIndex];
+    onPick(nextId);
+    requestAnimationFrame(() => document.getElementById(CREATOR_TAB_ID(nextId))?.focus());
+  };
+
   return (
     <nav
       aria-label="creator-center-sections"
+      role={mode === "tabs" ? "tablist" : undefined}
       className="flex items-center gap-2 overflow-x-auto border-b border-border"
     >
       {CREATOR_TAB_ORDER.map((id) => {
@@ -66,9 +87,15 @@ export function CreatorTabBar({ active, onPick }: CreatorTabBarProps) {
         return (
           <button
             key={id}
+            id={mode === "tabs" ? CREATOR_TAB_ID(id) : undefined}
             type="button"
-            aria-current={isActive ? "true" : undefined}
+            role={mode === "tabs" ? "tab" : undefined}
+            aria-current={mode === "sections" && isActive ? "true" : undefined}
+            aria-selected={mode === "tabs" ? isActive : undefined}
+            aria-controls={mode === "tabs" ? CREATOR_SECTION_ID(id) : undefined}
+            tabIndex={mode === "tabs" ? (isActive ? 0 : -1) : undefined}
             onClick={() => onPick(id)}
+            onKeyDown={(event) => handleTabKeyDown(event, id)}
             className={cn(
               "relative shrink-0 px-4 py-2.5 text-sm font-medium transition-colors",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"

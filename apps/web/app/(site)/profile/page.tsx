@@ -15,15 +15,14 @@
 import { IconLoader2 } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
-import { CreatorCenter } from "@/app/(site)/creators/_components/center/creator-center";
+import { ProfileCreatorCenter } from "@/app/(site)/profile/profile-creator-center";
 
 export default function ProfilePage() {
-  const t = useTranslations("creatorCenter");
   const router = useRouter();
   const locale = useLocale() as Locale;
   const { user, isLoading, isFetched } = useCurrentUser();
@@ -51,5 +50,5 @@ export default function ProfilePage() {
     );
   }
 
-  return <CreatorCenter creatorId={user.id} />;
+  return <ProfileCreatorCenter creatorId={user.id} />;
 }

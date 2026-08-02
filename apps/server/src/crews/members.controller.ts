@@ -1,6 +1,5 @@
 /**
  *   GET    /aurora/crews/:crewId/members              List (members only)
- *   POST   /aurora/crews/:crewId/members              Add manually (owner)
  *   PATCH  /aurora/crews/:crewId/members/:memberId    Toggle finance (owner)
  *   DELETE /aurora/crews/:crewId/members/:memberId    Remove (owner)
  */
@@ -13,13 +12,13 @@ import {
   HttpStatus,
   Param,
   Patch,
-  Post,
+  Query,
 } from '@nestjs/common';
-import { CurrentUser, ViewerCookie } from '../auth';
+import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import {
-  AddMemberSchema,
-  type AddMemberInput,
+  ListCrewMembersQuerySchema,
+  type ListCrewMembersQuery,
   UpdateMemberSchema,
   type UpdateMemberInput,
 } from './dto';
@@ -32,24 +31,21 @@ export class MembersController {
   constructor(private readonly svc: MembersService) {}
 
   @Get()
-  list(@Param('crewId') crewIdRaw: string, @CurrentUser() user: AuthUser) {
-    return this.svc.list(parseIdParam(crewIdRaw, 'crewId'), user.userId);
-  }
-
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  add(
+  list(
     @Param('crewId') crewIdRaw: string,
     @CurrentUser() user: AuthUser,
-    @ViewerCookie() cookie: string,
-    @Body(new ZodValidationPipe(AddMemberSchema)) body: AddMemberInput,
+    @Query(new ZodValidationPipe(ListCrewMembersQuerySchema))
+    query: ListCrewMembersQuery,
   ) {
-    return this.svc.add(
-      parseIdParam(crewIdRaw, 'crewId'),
-      user.userId,
-      cookie,
-      body,
-    );
+    return this.svc.list(parseIdParam(crewIdRaw, 'crewId'), user.userId, query);
+  }
+
+  @Get('me')
+  membership(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.svc.membership(parseIdParam(crewIdRaw, 'crewId'), user.userId);
   }
 
   @Patch(':memberId')

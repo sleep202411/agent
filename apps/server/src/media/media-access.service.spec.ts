@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   CharacterStatus,
+  CrewAssetPermission,
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVisibility,
@@ -33,6 +34,17 @@ function readyAsset(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function allowCrewAssetAccess() {
+  return {
+    requireNodePermission: jest
+      .fn()
+      .mockResolvedValue(CrewAssetPermission.view),
+    requireContainerPermission: jest
+      .fn()
+      .mockResolvedValue(CrewAssetPermission.view),
+  };
+}
+
 describe('MediaAccessService', () => {
   it('issues an access URL for the owner', async () => {
     const prisma = {
@@ -52,6 +64,7 @@ describe('MediaAccessService', () => {
       prisma as never,
       storageAccess as never,
       permissions as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -80,6 +93,195 @@ describe('MediaAccessService', () => {
     );
   });
 
+  it('enforces a claimed crew node ACL even for the original uploader', async () => {
+    const storageAccess = { createReadUrl: jest.fn() };
+    const crewAssetAccess = {
+      ...allowCrewAssetAccess(),
+      requireNodePermission: jest.fn().mockRejectedValue(
+        new ForbiddenException({
+          code: 'CREW_ASSET_PERMISSION_DENIED',
+          message: 'You do not have permission to view this asset.',
+        }),
+      ),
+    };
+    const service = new MediaAccessService(
+      {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(
+            readyAsset({
+              metadata: {
+                crewId: 'crew-1',
+                uploadKind: 'crew_asset_file',
+              },
+            }),
+          ),
+        },
+        crewAssetNode: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'node-1', crewId: 'crew-1' }]),
+        },
+      } as never,
+      storageAccess as never,
+      { requireWorkspaceRole: jest.fn() } as never,
+      crewAssetAccess as never,
+    );
+
+    await expect(
+      service.issueAccessUrl('user-1', '11111111-1111-7111-9111-111111111111', {
+        variantKey: 'original',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'MEDIA_ASSET_ACCESS_DENIED' }),
+    });
+    expect(crewAssetAccess.requireNodePermission).toHaveBeenCalledWith(
+      'crew-1',
+      'node-1',
+      'user-1',
+      CrewAssetPermission.view,
+    );
+    expect(storageAccess.createReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('serves an attached crew asset only after its node ACL grants view', async () => {
+    const storageAccess = {
+      createReadUrl: jest.fn().mockResolvedValue({
+        url: 'https://blob.example.com/crew.png?sig=read',
+        expiresAt: '2026-06-12T12:00:00.000Z',
+      }),
+    };
+    const crewAssetAccess = allowCrewAssetAccess();
+    const service = new MediaAccessService(
+      {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(
+            readyAsset({
+              createdByUserId: 'uploader',
+              metadata: {
+                crewId: 'crew-1',
+                uploadKind: 'crew_asset_file',
+              },
+            }),
+          ),
+        },
+        crewAssetNode: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'node-1', crewId: 'crew-1' }]),
+        },
+      } as never,
+      storageAccess as never,
+      { requireWorkspaceRole: jest.fn() } as never,
+      crewAssetAccess as never,
+    );
+
+    await expect(
+      service.issueAccessUrl('viewer', '11111111-1111-7111-9111-111111111111', {
+        variantKey: 'original',
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/crew.png?sig=read',
+    });
+    expect(crewAssetAccess.requireNodePermission).toHaveBeenCalledWith(
+      'crew-1',
+      'node-1',
+      'viewer',
+      CrewAssetPermission.view,
+    );
+  });
+
+  it('routes archived agreement PDFs through the same crew node ACL', async () => {
+    const storageAccess = {
+      createReadUrl: jest.fn().mockResolvedValue({
+        url: 'https://r2.example.com/agreement.pdf?sig=read',
+        expiresAt: '2026-06-12T12:00:00.000Z',
+      }),
+    };
+    const crewAssetAccess = allowCrewAssetAccess();
+    const service = new MediaAccessService(
+      {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(
+            readyAsset({
+              createdByUserId: 'owner-1',
+              metadata: {
+                crewId: 'crew-1',
+                uploadKind: 'crew_agreement_archive',
+                agreementId: 'agreement-1',
+              },
+            }),
+          ),
+        },
+        crewAssetNode: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'contract-node', crewId: 'crew-1' }]),
+        },
+      } as never,
+      storageAccess as never,
+      { requireWorkspaceRole: jest.fn() } as never,
+      crewAssetAccess as never,
+    );
+
+    await expect(
+      service.issueAccessUrl(
+        'signer-1',
+        '11111111-1111-7111-9111-111111111111',
+        { variantKey: 'original' },
+      ),
+    ).resolves.toMatchObject({
+      url: 'https://r2.example.com/agreement.pdf?sig=read',
+    });
+    expect(crewAssetAccess.requireNodePermission).toHaveBeenCalledWith(
+      'crew-1',
+      'contract-node',
+      'signer-1',
+      CrewAssetPermission.view,
+    );
+  });
+
+  it('keeps an unclaimed crew upload private to an active crew uploader', async () => {
+    const storageAccess = {
+      createReadUrl: jest.fn().mockResolvedValue({
+        url: 'https://blob.example.com/pending.png?sig=read',
+        expiresAt: '2026-06-12T12:00:00.000Z',
+      }),
+    };
+    const crewAssetAccess = allowCrewAssetAccess();
+    const service = new MediaAccessService(
+      {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(
+            readyAsset({
+              metadata: {
+                crewId: 'crew-1',
+                uploadKind: 'crew_asset_file',
+              },
+            }),
+          ),
+        },
+        crewAssetNode: { findMany: jest.fn().mockResolvedValue([]) },
+      } as never,
+      storageAccess as never,
+      { requireWorkspaceRole: jest.fn() } as never,
+      crewAssetAccess as never,
+    );
+
+    await expect(
+      service.issueAccessUrl('user-1', '11111111-1111-7111-9111-111111111111', {
+        variantKey: 'original',
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/pending.png?sig=read',
+    });
+    expect(crewAssetAccess.requireContainerPermission).toHaveBeenCalledWith(
+      'crew-1',
+      null,
+      'user-1',
+      CrewAssetPermission.view,
+    );
+  });
+
   it('rejects blocked assets before resolving a URL', async () => {
     const prisma = {
       mediaAsset: {
@@ -94,6 +296,7 @@ describe('MediaAccessService', () => {
       prisma as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -118,6 +321,7 @@ describe('MediaAccessService', () => {
       } as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -164,6 +368,7 @@ describe('MediaAccessService', () => {
           }),
         ),
       } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -212,6 +417,7 @@ describe('MediaAccessService', () => {
         }),
       } as never,
       { requireWorkspaceRole } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -276,6 +482,7 @@ describe('MediaAccessService', () => {
       } as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -325,6 +532,7 @@ describe('MediaAccessService', () => {
       } as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -365,6 +573,7 @@ describe('MediaAccessService', () => {
           }),
         ),
       } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -398,6 +607,7 @@ describe('MediaAccessService', () => {
       } as never,
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -420,6 +630,7 @@ describe('MediaAccessService', () => {
       } as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -440,6 +651,7 @@ describe('MediaAccessService', () => {
       } as never,
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -471,6 +683,7 @@ describe('MediaAccessService', () => {
       } as never,
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -526,6 +739,7 @@ describe('MediaAccessService', () => {
       } as never,
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -584,6 +798,7 @@ describe('MediaAccessService', () => {
       } as never,
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
 
     await expect(
@@ -623,6 +838,7 @@ describe('MediaAccessService pre-broadcast moderation gate', () => {
         }),
       } as never,
       { requireWorkspaceRole: jest.fn() } as never,
+      allowCrewAssetAccess() as never,
     );
   }
 

@@ -14,82 +14,175 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { assertAllowedCurrency, toSmallestUnit } from '../common/currency';
-import type { CreatePositionInput, UpdatePositionInput } from './dto';
+import type {
+  CreatePositionInput,
+  ListCrewPositionsQuery,
+  ListPublicPositionsQuery,
+  UpdatePositionInput,
+} from './dto';
 import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';
+import { CrewAuthorizationService } from './crew-authorization.service';
 
 @Injectable()
 export class PositionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authorization: CrewAuthorizationService,
+  ) {}
 
-  async list(crewId: string, viewerId: string | null = null) {
+  async list(
+    crewId: string,
+    viewerId: string | null,
+    query: ListCrewPositionsQuery,
+  ) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { founderId: true, listingStatus: true },
+      select: { listingStatus: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
 
-    const isFounder = viewerId !== null && viewerId === crew.founderId;
-    if (crew.listingStatus !== 'listed' && !isFounder) {
+    const viewer = viewerId
+      ? await this.authorization.resolve(crewId, viewerId)
+      : null;
+    if (crew.listingStatus !== 'listed' && !viewer) {
       // Mirror crews.detail visibility — unlisted crews are accessible
       // only to founder + active members. Deep-linking to
       // /crews/:id/positions must not leak position lists either.
-      const isMember =
-        viewerId !== null &&
-        (await this.prisma.crewMember.count({
-          where: { crewId, userId: viewerId, removedAt: null },
-        })) > 0;
-      if (!isMember) throw new NotFoundException('Crew not found');
+      throw new NotFoundException('Crew not found');
     }
 
-    const canManage = isFounder;
-    const rows = await this.prisma.crewPosition.findMany({
-      where: {
-        crewId,
-        deletedAt: null,
-        ...(canManage ? {} : { status: { not: 'frozen' as const } }),
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(toPositionDTO);
+    const canManage = viewer?.permissions.includes('openings.manage') ?? false;
+    const where = {
+      crewId,
+      deletedAt: null,
+      ...(canManage ? {} : { status: { not: 'frozen' as const } }),
+    } satisfies Prisma.CrewPositionWhereInput;
+    if (query.cursor) {
+      const cursor = await this.prisma.crewPosition.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      });
+      if (!cursor) {
+        throw new BadRequestException({
+          message:
+            'The crew positions cursor is invalid for the current viewer. Restart from the first page.',
+        });
+      }
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.crewPosition.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.prisma.crewPosition.count({ where }),
+    ]);
+    const page = rows.slice(0, query.limit);
+    const applicationGroups = canManage
+      ? await this.prisma.crewApplication.groupBy({
+          by: ['positionId', 'status'],
+          where: { crewId, positionId: { in: page.map((row) => row.id) } },
+          _count: { _all: true },
+        })
+      : [];
+    const counts = new Map<
+      string,
+      { total: number; pending: number; approved: number; rejected: number }
+    >();
+    for (const group of applicationGroups) {
+      const current = counts.get(group.positionId) ?? {
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+      };
+      const count = group._count._all;
+      current[group.status] += count;
+      current.total += count;
+      counts.set(group.positionId, current);
+    }
+    return {
+      items: page.map((row) =>
+        toPositionDTO(
+          row,
+          canManage
+            ? (counts.get(row.id) ?? {
+                total: 0,
+                pending: 0,
+                approved: 0,
+                rejected: 0,
+              })
+            : undefined,
+        ),
+      ),
+      nextCursor:
+        rows.length > query.limit ? (page[page.length - 1]?.id ?? null) : null,
+      total,
+    };
   }
 
-  async listPublic(opts: { limit?: number; cursor?: string }) {
-    const limit = clampLimit(opts.limit);
+  async listPublic(query: ListPublicPositionsQuery) {
+    const limit = query.limit;
     const today = new Date(new Date().toISOString().slice(0, 10));
-    const rows = await this.prisma.crewPosition.findMany({
-      where: {
-        deletedAt: null,
-        status: 'open',
-        OR: [{ closeDate: null }, { closeDate: { gte: today } }],
-        // Mirror crews.list visibility: positions on unlisted crews
-        // must not surface in the public plaza, otherwise a clicker
-        // lands on a 404 crew-detail page (crews.detail rejects
-        // non-member viewers for unlisted crews).
-        crew: { deletedAt: null, listingStatus: 'listed' },
-      },
-      include: {
-        crew: {
-          select: {
-            id: true,
-            name: true,
-            logo: true,
-            tagline: true,
-            genres: true,
-            styles: true,
+    const where = {
+      deletedAt: null,
+      status: 'open',
+      OR: [{ closeDate: null }, { closeDate: { gte: today } }],
+      ...(query.employment.length
+        ? { employmentType: { in: query.employment } }
+        : {}),
+      ...(query.seniority.length
+        ? { experienceLevel: { in: query.seniority } }
+        : {}),
+      ...(query.workMode.length ? { workMode: { in: query.workMode } } : {}),
+      // Mirror crews.list visibility: positions on unlisted crews
+      // must not surface in the public plaza, otherwise a clicker
+      // lands on a 404 crew-detail page (crews.detail rejects
+      // non-member viewers for unlisted crews).
+      crew: { deletedAt: null, listingStatus: 'listed' },
+    } satisfies Prisma.CrewPositionWhereInput;
+    const direction = query.sort === 'oldest' ? 'asc' : 'desc';
+    if (query.cursor) {
+      const cursor = await this.prisma.crewPosition.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      });
+      if (!cursor) {
+        throw new BadRequestException({
+          message:
+            'The positions cursor is invalid for the current filters. Restart from the first page.',
+        });
+      }
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.crewPosition.findMany({
+        where,
+        include: {
+          crew: {
+            select: {
+              id: true,
+              name: true,
+              logo: true,
+              tagline: true,
+              genres: true,
+              styles: true,
+            },
           },
         },
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-    });
+        orderBy: [{ createdAt: direction }, { id: direction }],
+        take: limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.prisma.crewPosition.count({ where }),
+    ]);
 
     const page = rows.slice(0, limit);
     return {
@@ -106,11 +199,12 @@ export class PositionsService {
       })),
       nextCursor:
         rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
+      total,
     };
   }
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
     const ccy = input.salary?.currency ?? null;
     const row = await this.prisma.crewPosition.create({
@@ -158,7 +252,7 @@ export class PositionsService {
     ownerId: string,
     input: UpdatePositionInput,
   ) {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     const pos = await this.requirePosition(crewId, positionId);
     assertAllowedCurrency(input.salary?.currency, 'salary.currency');
 
@@ -255,7 +349,7 @@ export class PositionsService {
     positionId: string,
     ownerId: string,
   ): Promise<void> {
-    await this.assertOwner(crewId, ownerId);
+    await this.authorization.require(crewId, ownerId, 'openings.manage');
     await this.requirePosition(crewId, positionId);
 
     const pendingCount = await this.prisma.crewApplication.count({
@@ -273,19 +367,6 @@ export class PositionsService {
     });
   }
 
-  private async assertOwner(crewId: string, userId: string) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
-    });
-    if (!crew) throw new NotFoundException('Crew not found');
-    if (crew.founderId !== userId) {
-      throw new ForbiddenException({
-        message: 'Only the crew owner can do this',
-      });
-    }
-  }
-
   private async requirePosition(crewId: string, positionId: string) {
     const pos = await this.prisma.crewPosition.findFirst({
       where: { id: positionId, crewId, deletedAt: null },
@@ -293,9 +374,4 @@ export class PositionsService {
     if (!pos) throw new NotFoundException('Position not found');
     return pos;
   }
-}
-
-function clampLimit(raw: number | undefined): number {
-  if (raw == null || !Number.isFinite(raw)) return 48;
-  return Math.min(60, Math.max(1, Math.trunc(raw)));
 }

@@ -1,0 +1,127 @@
+.tiptap-menu-content {
+  --tt-combobox-bg-color: var(--white);
+  --tt-combobox-border-color: var(--tt-gray-light-a-100);
+  --tt-combobox-text-color: var(--tt-gray-light-a-600);
+
+  .dark & {
+    --tt-combobox-border-color: var(--tt-gray-dark-a-50);
+    --tt-combobox-bg-color: var(--tt-gray-dark-50);
+    --tt-combobox-text-color: var(--tt-gray-dark-a-600);
+  }
+
+  --padding: 0.375rem;
+  --border-width: 1px;
+
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  outline: none;
+  min-width: var(--popover-anchor-width);
+  border-radius: calc(var(--padding) + var(--tt-radius-lg) + var(--border-width));
+  border: var(--border-width) solid var(--tt-combobox-border-color);
+  background-color: var(--tt-combobox-bg-color);
+  color: var(--tt-combobox-text-color);
+  padding: var(--padding);
+  box-shadow: var(--tt-shadow-elevated-md);
+  max-width: 16rem;
+  max-height: var(--popover-available-height);
+  overflow-y: auto;
+  margin-block: 0.375rem;
+
+  &:has(> .tiptap-combobox-list) {
+    overflow: hidden;
+  }
+
+  > .tiptap-combobox-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  &:has(> .tiptap-combobox-list:empty) {
+    display: none !important;
+  }
+
+  &[data-state="closed"] {
+    animation: dropdown-out 100ms ease forwards;
+  }
+
+  &[data-state="open"] {
+    animation: dropdown-in 100ms ease forwards;
+  }
+}
+
+.tiptap-menu-group {
+  display: none;
+
+  &:has([role="menuitem"]),
+  &:has([role="option"]) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+}
+
+.tiptap-menu-item {
+  width: 100%;
+}
+
+.tiptap-menu-group-label {
+  --tt-label-color: var(--tt-gray-light-a-800);
+
+  .dark & {
+    --tt-label-color: var(--tt-gray-dark-a-800);
+  }
+
+  margin-top: 0.75rem;
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: normal;
+  color: var(--tt-label-color);
+}
+
+/* --------------------------------------------
+---------- SEPARATOR COLOR VARIABLES -----------
+-------------------------------------------- */
+.tiptap-separator {
+  --tt-link-border-color: var(--tt-gray-light-a-200);
+
+  .dark & {
+    --tt-link-border-color: var(--tt-gray-dark-a-200);
+  }
+}
+
+.tiptap-menu-separator {
+  flex-shrink: 0;
+  background-color: var(--tt-link-border-color);
+  height: 1px;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+@keyframes popover {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

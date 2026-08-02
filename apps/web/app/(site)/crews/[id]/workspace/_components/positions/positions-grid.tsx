@@ -14,7 +14,7 @@ import { IconBriefcase, IconPlus } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useCrewApplications, type CrewPositionDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import type { CrewPositionDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { PositionCard } from "./position-card";
 import { PositionDetailSheet } from "./position-detail-sheet";
 
@@ -31,20 +31,6 @@ export function PositionsGrid({ crewId, positions, isOwner, onPublish }: Positio
   const t = useTranslations("workspace");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data: allApplications = [] } = useCrewApplications(crewId, isOwner);
-
-  // Count applicants per position once for both the cards and filter tabs.
-  const stats = useMemo(() => {
-    const total = new Map<string, number>();
-    const pending = new Map<string, number>();
-    for (const a of allApplications) {
-      total.set(a.positionId, (total.get(a.positionId) ?? 0) + 1);
-      if (a.status === "pending") {
-        pending.set(a.positionId, (pending.get(a.positionId) ?? 0) + 1);
-      }
-    }
-    return { total, pending };
-  }, [allApplications]);
 
   const counts = useMemo(() => {
     const c = { all: positions.length, open: 0, full: 0, frozen: 0 };
@@ -90,8 +76,8 @@ export function PositionsGrid({ crewId, positions, isOwner, onPublish }: Positio
             <PositionCard
               key={p.id}
               position={p}
-              applicantCount={stats.total.get(p.id) ?? 0}
-              pendingApplicantCount={stats.pending.get(p.id) ?? 0}
+              applicantCount={p.applicationStats?.total ?? 0}
+              pendingApplicantCount={p.applicationStats?.pending ?? 0}
               onClick={() => setSelectedId(p.id)}
             />
           ))}

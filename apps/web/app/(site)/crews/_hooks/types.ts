@@ -13,17 +13,20 @@ export type {
   CrewDTO,
   CrewListingStatus,
   CrewPositionDTO,
+  CrewPositionPageDTO,
   CrewPositionStatus,
   CrewMemberDTO,
-  CrewMemberVia,
+  CrewMemberPageDTO,
+  CrewMembershipDTO,
+  CrewMemberStatus,
+  CrewJoinSource,
+  CrewPolicyKey,
+  CrewPermissionKey,
+  CrewPermissionEffect,
   CrewApplicationDTO,
+  CrewApplicationListSummary,
+  CrewApplicationPageDTO,
   CrewApplicationStatus,
-  EpisodeDTO,
-  EpisodeStatus,
-  EpisodeAssignmentDTO,
-  AssignmentStatus,
-  EpisodeActivityDTO,
-  EpisodeActivityType,
   PresetPositionValue,
   WorkMode,
   EmploymentType,
@@ -39,9 +42,11 @@ export type {
 
 export {
   PRESET_POSITIONS,
-  OWNER_ROLE,
   isPresetPosition,
-  isValidRoleType,
+  CREW_POLICY_KEYS,
+  CREW_PERMISSION_KEYS,
+  CREW_MEMBER_PERMISSIONS,
+  CREW_POLICY_PERMISSIONS,
   WORK_MODES,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
@@ -65,6 +70,10 @@ import type {
   SalaryPeriod,
   SocialLink,
   ShowcaseWork,
+  PresetPositionValue,
+  CrewPolicyKey,
+  CrewPermissionKey,
+  CrewPermissionEffect,
 } from "@repo/shared/crew";
 
 export interface CreateCrewInput {
@@ -80,6 +89,7 @@ export interface CreateCrewInput {
 
 export interface UpdateCrewInput extends Partial<CreateCrewInput> {
   id: string;
+  expectedVersion?: number;
 }
 
 export interface UpdateCrewListingInput {
@@ -129,14 +139,857 @@ export interface ApplyInput {
     currency?: CurrencyCode | null;
     period?: SalaryPeriod | null;
   } | null;
-  /** Legacy CN-only yuan field. Kept for compatibility; prefer expectedCompensation. */
-  expectedSalary?: number | null;
   /** YYYY-MM-DD. */
   availableStartDate?: string | null;
   yearsExperience?: number | null;
 }
 
-export interface AddMemberInput {
+export interface CreateCrewInvitationInput {
   account: string;
-  roleType: string;
+  policyKeys: CrewPolicyKey[];
+  expiresInDays?: number;
+  agreement?: {
+    signerName: string;
+    signerEmail: string;
+    title: string;
+  };
+}
+
+export type CrewTaskStatus =
+  | "open"
+  | "in_progress"
+  | "submitted"
+  | "revision_requested"
+  | "approved"
+  | "cancelled";
+export type CrewTaskPriority = "low" | "normal" | "high" | "urgent";
+export type CrewTaskViewLayout = "list" | "board";
+export type CrewTaskCompletedMode = "all" | "recent" | "hidden";
+export type CrewTaskViewGroup = "none" | "status" | "priority" | "assignee" | "cycle";
+export type CrewTaskFieldType =
+  | "text"
+  | "number"
+  | "single_select"
+  | "multi_select"
+  | "date"
+  | "checkbox"
+  | "user";
+export type CrewTaskCustomValue = string | number | boolean | string[] | null;
+
+export interface CrewTaskWorkflowStateDTO {
+  id: string;
+  crewId: string;
+  name: string;
+  color: string;
+  semantic: CrewTaskStatus;
+  systemKey: CrewTaskStatus | "backlog" | null;
+  position: number;
+  archived: boolean;
+  version: number;
+  /** Present on project configuration payloads so destructive actions can be planned safely. */
+  taskCount?: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewTaskLabelDTO {
+  id: string;
+  crewId: string;
+  name: string;
+  color: string;
+  description: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewTaskCycleDTO {
+  id: string;
+  crewId: string;
+  number: number;
+  name: string;
+  goal: string;
+  status: "planned" | "active" | "completed" | "cancelled";
+  startAt: string;
+  endAt: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewTaskFieldDTO {
+  id: string;
+  crewId: string;
+  name: string;
+  description: string;
+  type: CrewTaskFieldType;
+  options: Array<{ id: string; label: string; color?: string }>;
+  position: number;
+  required: boolean;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewTaskViewDTO {
+  id: string;
+  crewId: string;
+  name: string;
+  layout: CrewTaskViewLayout;
+  groupBy: Exclude<CrewTaskViewGroup, "none"> | null;
+  filters: {
+    workflowStateIds?: string[];
+    priorities?: CrewTaskPriority[];
+    assigneeUserIds?: string[];
+    cycleIds?: string[];
+    labelIds?: string[];
+    unassigned?: boolean;
+    overdue?: boolean;
+  };
+  sorts: Array<{
+    field: "rank" | "number" | "title" | "status" | "priority" | "startAt" | "dueAt" | "updatedAt";
+    direction: "asc" | "desc";
+  }>;
+  visibleFields: string[];
+  completedMode: CrewTaskCompletedMode;
+  showSubIssues: boolean;
+  showEmptyGroups: boolean;
+  position: number;
+  isSystem: boolean;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewTaskProjectDTO {
+  views: CrewTaskViewDTO[];
+  cycles: CrewTaskCycleDTO[];
+  labels: CrewTaskLabelDTO[];
+  fields: CrewTaskFieldDTO[];
+  workflowStates: CrewTaskWorkflowStateDTO[];
+}
+
+export interface CrewTaskAssigneeDTO {
+  id: string;
+  userId: string;
+  crewMemberId: string;
+  rewardPoints: number | null;
+  assignedAt: string;
+}
+
+export interface CrewTaskSubmissionDTO {
+  id: string;
+  versionNumber: number;
+  submittedByUserId: string;
+  note: string;
+  canvasVersionId: string | null;
+  productionVersionId: string | null;
+  reviewNote: string | null;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  mergedAt: string | null;
+  createdAt: string;
+  assets: Array<{
+    id: string;
+    name: string;
+    mediaAssetId: string | null;
+    contentType: string | null;
+    sizeBytes: number | null;
+  }>;
+}
+
+export type CrewEarningStatus = "pending" | "posted" | "rejected" | "reversed";
+export type CrewEarningSourceType =
+  | "task_reward"
+  | "contract_compensation"
+  | "milestone_bonus"
+  | "revenue_share"
+  | "discretionary_bonus"
+  | "adjustment";
+
+export interface CrewEarningEntryDTO {
+  id: string;
+  crewId: string;
+  crewMemberId: string;
+  userId: string;
+  sourceType: CrewEarningSourceType;
+  task: { id: string; number: number; title: string } | null;
+  agreement: { id: string; status: string } | null;
+  title: string;
+  description: string | null;
+  pointsAmount: string;
+  status: CrewEarningStatus;
+  createdByUserId: string;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
+  reversedByUserId: string | null;
+  postedAt: string | null;
+  rejectedAt: string | null;
+  reversedAt: string | null;
+  rejectionReason: string | null;
+  reversalReason: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewEarningEventDTO {
+  id: string;
+  actorUserId: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CrewEarningDetailDTO extends CrewEarningEntryDTO {
+  events: CrewEarningEventDTO[];
+}
+
+export interface CrewEarningPageDTO {
+  items: CrewEarningEntryDTO[];
+  nextCursor: string | null;
+  summary: {
+    byStatus: Record<CrewEarningStatus, { count: number; pointsAmount: string }>;
+    postedThisMonthPoints: string;
+    postedBySource: Array<{
+      sourceType: CrewEarningSourceType;
+      count: number;
+      pointsAmount: string;
+    }>;
+  };
+}
+
+export type CrewPayoutStatus = "pending" | "paid" | "voided";
+export type CrewPayoutMethod = "bank_transfer" | "alipay" | "wechat_pay" | "paypal" | "other";
+
+export interface CrewPayoutDTO {
+  id: string;
+  crewId: string;
+  crewMemberId: string;
+  userId: string;
+  pointsAmount: string;
+  withholdingAmountMinor: string;
+  netAmountMinor: string;
+  status: CrewPayoutStatus;
+  paymentMethod: CrewPayoutMethod | null;
+  paymentReference: string | null;
+  paymentProofUrl: string | null;
+  note: string | null;
+  voidReason: string | null;
+  createdByUserId: string;
+  paidByUserId: string | null;
+  voidedByUserId: string | null;
+  paidAt: string | null;
+  voidedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  allocations: Array<{
+    id: string;
+    pointsAmount: string;
+    earning: {
+      id: string;
+      title: string;
+      sourceType: CrewEarningSourceType;
+      pointsAmount: string;
+      postedAt: string | null;
+      task: { id: string; number: number; title: string } | null;
+    };
+  }>;
+}
+
+export interface CrewPayoutEventDTO {
+  id: string;
+  actorUserId: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CrewPayoutDetailDTO extends CrewPayoutDTO {
+  events: CrewPayoutEventDTO[];
+}
+
+export interface CrewPayoutPageDTO {
+  items: CrewPayoutDTO[];
+  nextCursor: string | null;
+  summary: {
+    confirmedPoints: string;
+    availablePoints: string;
+    reservedPoints: string;
+    paidPoints: string;
+    byStatus: Array<{
+      status: CrewPayoutStatus;
+      count: number;
+      pointsAmount: string;
+      netAmountMinor: string;
+    }>;
+  };
+}
+
+export interface CrewTaskDTO {
+  id: string;
+  crewId: string;
+  number: number;
+  title: string;
+  description: string;
+  status: CrewTaskStatus;
+  workflowStateId: string;
+  workflowState: CrewTaskWorkflowStateDTO;
+  priority: CrewTaskPriority;
+  startAt: string | null;
+  dueAt: string | null;
+  estimatePoints: number | null;
+  computeBudgetPoints: number | null;
+  computeUsedPoints: number;
+  revisionLimit: number | null;
+  revisionRoundsUsed: number;
+  rank: string;
+  parentId: string | null;
+  parent: CrewTaskReferenceDTO | null;
+  children: CrewTaskReferenceDTO[];
+  subtaskProgress: { total: number; completed: number };
+  blockedBy: Array<CrewTaskReferenceDTO & { resolved: boolean }>;
+  blocking: CrewTaskReferenceDTO[];
+  customFieldValues: Array<{
+    fieldId: string;
+    value: Exclude<CrewTaskCustomValue, null>;
+    updatedByUserId: string;
+    updatedAt: string;
+  }>;
+  cycleId: string | null;
+  cycle: CrewTaskCycleDTO | null;
+  episodeId: string | null;
+  episode: Pick<CrewEpisodeDTO, "id" | "number" | "title" | "status"> | null;
+  labels: CrewTaskLabelDTO[];
+  version: number;
+  canvasProjectId: string | null;
+  canvasDocumentId: string | null;
+  canvasHref: string | null;
+  createdByUserId: string;
+  approvedByUserId: string | null;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assignees: CrewTaskAssigneeDTO[];
+  submissions: CrewTaskSubmissionDTO[];
+}
+
+export type CrewTaskListItemDTO = Omit<CrewTaskDTO, "submissions">;
+
+export interface CrewTaskPageDTO {
+  items: CrewTaskListItemDTO[];
+  nextCursor: string | null;
+  total: number;
+  workflowCounts: Record<string, number>;
+}
+
+export interface CrewTaskOptionDTO {
+  id: string;
+  number: number;
+  title: string;
+  status: CrewTaskStatus;
+  priority: CrewTaskPriority;
+  workflowStateId: string;
+  parentId: string | null;
+}
+
+export interface CrewTaskOptionPageDTO {
+  items: CrewTaskOptionDTO[];
+  nextCursor: string | null;
+}
+
+export interface CrewTaskSummaryDTO {
+  total: number;
+  active: number;
+  myActive: number;
+  pendingReview: number;
+  completed: number;
+  byStatus: Record<CrewTaskStatus, number>;
+}
+
+export interface CrewTaskReferenceDTO {
+  id: string;
+  number: number;
+  title: string;
+  status: CrewTaskStatus;
+  workflowStateId: string;
+  workflowState: CrewTaskWorkflowStateDTO;
+  parentId: string | null;
+}
+
+export interface CrewTaskMentionDTO {
+  userId: string;
+  label: string;
+}
+
+export interface CrewTaskTimelineAttachmentDTO {
+  id: string;
+  name: string;
+  mediaAssetId: string | null;
+  mediaKind: "image" | "video" | "audio" | "document" | "other" | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+}
+
+export interface CrewTaskTimelineItemDTO {
+  id: string;
+  taskId: string;
+  kind: string;
+  actorUserId: string | null;
+  body: string | null;
+  mentions: CrewTaskMentionDTO[];
+  payload: Record<string, unknown>;
+  replyTo: {
+    id: string;
+    kind: string;
+    actorUserId: string | null;
+    body: string | null;
+    deleted: boolean;
+  } | null;
+  version: number;
+  editedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  attachments: CrewTaskTimelineAttachmentDTO[];
+}
+
+export interface CrewTaskTimelinePageDTO {
+  items: CrewTaskTimelineItemDTO[];
+  nextCursor: string | null;
+}
+
+export interface CrewTaskActivityItemDTO extends CrewTaskTimelineItemDTO {
+  task: {
+    id: string;
+    number: number;
+    title: string;
+  };
+}
+
+export interface CrewTaskActivityPageDTO {
+  items: CrewTaskActivityItemDTO[];
+  nextCursor: string | null;
+}
+
+export interface UpdateCrewTaskInput {
+  expectedVersion: number;
+  title?: string;
+  description?: string;
+  priority?: CrewTaskPriority;
+  startAt?: string | null;
+  dueAt?: string | null;
+  estimatePoints?: number | null;
+  computeBudgetPoints?: number | null;
+  revisionLimit?: number | null;
+  cycleId?: string | null;
+  episodeId?: string | null;
+  parentId?: string | null;
+  blockedByTaskIds?: string[];
+  customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
+  labelIds?: string[];
+  workflowStateId?: string;
+  assignees?: CreateCrewTaskInput["assignees"];
+}
+
+export type CrewTaskCommentAttachmentInput =
+  | { source: "asset"; assetNodeId: string }
+  | { source: "upload"; mediaAssetId: string; name: string };
+
+export interface CreateCrewTaskCommentInput {
+  body: string;
+  mentions: CrewTaskMentionDTO[];
+  replyToId?: string | null;
+  attachments: CrewTaskCommentAttachmentInput[];
+  clientKey: string;
+}
+
+export interface UpdateCrewTaskCommentInput {
+  expectedVersion: number;
+  body: string;
+  mentions: CrewTaskMentionDTO[];
+}
+
+export interface CreateCrewTaskInput {
+  title: string;
+  description: string;
+  workflowStateId?: string;
+  priority: CrewTaskPriority;
+  startAt?: string | null;
+  dueAt?: string | null;
+  estimatePoints?: number | null;
+  computeBudgetPoints?: number | null;
+  revisionLimit?: number | null;
+  cycleId?: string | null;
+  episodeId?: string | null;
+  parentId?: string | null;
+  blockedByTaskIds?: string[];
+  customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
+  labelIds?: string[];
+  assignees: Array<{
+    userId: string;
+    rewardPoints?: number | null;
+  }>;
+}
+
+export interface CrewProductionDocumentNode {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: CrewProductionDocumentNode[];
+  text?: string;
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+}
+
+export interface CrewProductionDocument {
+  type: "doc";
+  content: CrewProductionDocumentNode[];
+}
+
+export interface CrewProductionPageDTO {
+  crewId: string;
+  document: CrewProductionDocument;
+  version: number;
+  createdByUserId: string;
+  updatedByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CrewProductionStatus =
+  | "backlog"
+  | "planned"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
+export type CrewProductionDateGranularity = "day" | "month" | "quarter" | "half_year" | "year";
+
+export interface CrewProductionProjectDTO {
+  crewId: string;
+  status: CrewProductionStatus;
+  priority: CrewTaskPriority | null;
+  leadMemberId: string | null;
+  startDate: string | null;
+  startDateGranularity: CrewProductionDateGranularity;
+  targetDate: string | null;
+  targetDateGranularity: CrewProductionDateGranularity;
+  version: number;
+  updatedByUserId: string;
+  updatedAt: string;
+}
+
+export interface CrewProductionResourceDTO {
+  id: string;
+  crewId: string;
+  kind: "link" | "asset";
+  title: string;
+  url: string | null;
+  assetNodeId: string | null;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  asset: {
+    name: string;
+    kind: "image" | "video" | "audio" | "document" | "other" | null;
+    contentType: string | null;
+  } | null;
+}
+
+export type CrewProductionUpdateHealth = "on_track" | "at_risk" | "off_track";
+
+export type CrewProductionActivityKind =
+  | "comment"
+  | "update"
+  | "project_created"
+  | "properties_changed"
+  | "labels_changed"
+  | "resource_added"
+  | "resource_removed";
+
+export interface CrewProductionActivityDTO {
+  id: string;
+  crewId: string;
+  kind: CrewProductionActivityKind;
+  health: CrewProductionUpdateHealth | null;
+  content: CrewProductionDocument | null;
+  plainText: string;
+  progress: number | null;
+  payload: Record<string, unknown>;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+export type CrewProductionUpdateDTO = CrewProductionActivityDTO & {
+  kind: "update";
+  health: CrewProductionUpdateHealth;
+};
+
+export interface CrewProductionActivityPageDTO {
+  items: CrewProductionActivityDTO[];
+  nextCursor: string | null;
+}
+
+export type CrewEpisodeStatus =
+  | "planned"
+  | "in_production"
+  | "in_review"
+  | "completed"
+  | "cancelled";
+
+export type CrewEpisodeDeliveryStatus = "submitted" | "approved" | "rejected";
+
+export interface CrewEpisodeDeliveryDTO {
+  id: string;
+  episodeId: string;
+  versionNumber: number;
+  assetNodeId: string;
+  status: CrewEpisodeDeliveryStatus;
+  note: string;
+  reviewNote: string;
+  submittedByUserId: string;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  asset: {
+    name: string;
+    kind: "image" | "video" | "audio" | "document" | "other" | null;
+    contentType: string | null;
+    sizeBytes: number | null;
+    durationSeconds: number | null;
+  };
+}
+
+export interface CrewEpisodeDTO {
+  id: string;
+  crewId: string;
+  number: number;
+  title: string;
+  synopsis: string;
+  status: CrewEpisodeStatus;
+  durationSeconds: number | null;
+  plannedReleaseAt: string | null;
+  rank: string;
+  version: number;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  taskProgress: { total: number; completed: number; pendingReview: number };
+  deliveries: CrewEpisodeDeliveryDTO[];
+}
+
+export interface CrewProductionOverviewDTO {
+  page: CrewProductionPageDTO;
+  project: CrewProductionProjectDTO;
+  labels: CrewTaskLabelDTO[];
+  labelOptions: CrewTaskLabelDTO[];
+  resources: CrewProductionResourceDTO[];
+  latestUpdate: CrewProductionUpdateDTO | null;
+  capabilities: { manage: boolean };
+}
+
+export interface UpdateCrewProductionProjectInput {
+  expectedVersion: number;
+  status?: CrewProductionStatus;
+  priority?: CrewTaskPriority | null;
+  leadMemberId?: string | null;
+  startDate?: string | null;
+  startDateGranularity?: CrewProductionDateGranularity;
+  targetDate?: string | null;
+  targetDateGranularity?: CrewProductionDateGranularity;
+  labelIds?: string[];
+}
+
+export interface UpdateCrewProductionProjectResult {
+  project: CrewProductionProjectDTO;
+  labels: CrewTaskLabelDTO[];
+}
+
+export type CreateCrewProductionResourceInput =
+  | { kind: "link"; title?: string; url: string }
+  | { kind: "asset"; assetNodeId: string; title?: string };
+
+export type CreateCrewProductionActivityInput =
+  | { kind: "comment"; content: CrewProductionDocument }
+  | {
+      kind: "update";
+      health: CrewProductionUpdateHealth;
+      content: CrewProductionDocument;
+      progress?: number | null;
+    };
+
+export interface CreateCrewEpisodeInput {
+  number?: number;
+  title: string;
+  synopsis?: string;
+  status?: CrewEpisodeStatus;
+  durationSeconds?: number | null;
+  plannedReleaseAt?: string | null;
+}
+
+export interface UpdateCrewEpisodeInput {
+  expectedVersion: number;
+  number?: number;
+  title?: string;
+  synopsis?: string;
+  status?: CrewEpisodeStatus;
+  durationSeconds?: number | null;
+  plannedReleaseAt?: string | null;
+}
+
+export interface DraftCrewTaskInput {
+  prompt: string;
+  locale: "en-US" | "zh-CN" | "zh-HK";
+  timeZone: string;
+  memberHints: Array<{
+    userId: string;
+    displayName: string;
+  }>;
+}
+
+export interface CrewTaskDraftDTO {
+  title: string;
+  description: string;
+  priority: CrewTaskPriority;
+  startDate: string | null;
+  dueDate: string | null;
+  estimatePoints: number | null;
+  computeBudgetPoints: number | null;
+  revisionLimit: number | null;
+  cycleId: string | null;
+  parentId: string | null;
+  blockedByTaskIds: string[];
+  assigneeUserIds: string[];
+  questions: string[];
+}
+
+export interface CrewInvitationDTO {
+  id: string;
+  crewId: string;
+  inviteeUserId: string;
+  invitedByUserId: string;
+  policyKeys: CrewPolicyKey[];
+  status: "pending" | "accepted" | "declined" | "revoked" | "expired";
+  expiresAt: string;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  revokedAt: string | null;
+  agreementRequest: {
+    title: string;
+    signerName: string;
+    signerEmail: string;
+    agreementId: string | null;
+    status: CrewAgreementStatus | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  crew?: {
+    id: string;
+    name: string;
+    logo: string;
+    tagline: string | null;
+  };
+}
+
+export interface UpdateCrewMemberInput {
+  positions?: Array<{
+    categoryKey?: PresetPositionValue | null;
+    title?: string | null;
+  }>;
+  policyKeys?: CrewPolicyKey[];
+  permissionOverrides?: Array<{
+    permissionKey: CrewPermissionKey;
+    effect: CrewPermissionEffect;
+  }>;
+  expectedVersion: number;
+}
+
+export interface CrewInvitationPageDTO {
+  items: CrewInvitationDTO[];
+  nextCursor: string | null;
+  total: number;
+}
+
+export type CrewAgreementStatus =
+  | "draft"
+  | "sending"
+  | "sent"
+  | "signed"
+  | "declined"
+  | "expired"
+  | "failed"
+  | "voided";
+
+export type CrewAgreementView = "all" | "active" | "signed" | "attention";
+export type CrewAgreementArchiveStatus =
+  | "not_applicable"
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export interface CrewAgreementDTO {
+  id: string;
+  crewId: string;
+  memberUserId: string;
+  signerName: string;
+  signerEmail: string;
+  title: string;
+  provider: "boldsign";
+  providerDocumentId: string | null;
+  providerStatus: string | null;
+  status: CrewAgreementStatus;
+  capabilities: {
+    sign: boolean;
+  };
+  delivery: {
+    status: "pending" | "processing" | "completed" | "failed";
+    attempt: number;
+    error: string | null;
+    canRetry: boolean;
+  };
+  archive: {
+    status: CrewAgreementArchiveStatus;
+    signedAssetNodeId: string | null;
+    auditAssetNodeId: string | null;
+    signedDocumentUrl: string | null;
+    auditTrailUrl: string | null;
+    attempt: number;
+    canRetry: boolean;
+  };
+  sentAt: string | null;
+  signedAt: string | null;
+  lastSyncedAt: string | null;
+  voidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewAgreementsResponse {
+  capabilities: {
+    create: boolean;
+    sync: boolean;
+    provider: "boldsign";
+  };
+  items: CrewAgreementDTO[];
+  nextCursor: string | null;
+  total: number;
+  summary: Record<CrewAgreementView, number>;
+}
+
+export interface CreateCrewAgreementInput {
+  memberUserId: string;
+  signerName: string;
+  signerEmail: string;
+  title: string;
+}
+
+export interface CrewAgreementSigningSession {
+  signLink: string;
+  expiresAt: string;
 }

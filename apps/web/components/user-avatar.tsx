@@ -3,6 +3,12 @@
 import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
 import { notionists } from "@dicebear/collection";
+import {
+  isPlaceholderUserAvatar,
+  resolveUserAvatarUrl as resolveSharedUserAvatarUrl,
+  USER_AVATAR_DICEBEAR_BACKGROUND_COLORS,
+  userAvatarSeed,
+} from "@repo/shared/avatar";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { env } from "@/src/env";
@@ -18,11 +24,7 @@ import { cn } from "@/lib/utils";
  * through to its DiceBear fallback.
  */
 export function resolveUserAvatarUrl(path: string | null | undefined): string | undefined {
-  if (!path) return undefined;
-  if (path.startsWith("http")) return path;
-  const base = (env.USER_BASE_URL || env.OSS_BASE_URL || "").replace(/\/+$/, "");
-  if (!base) return undefined;
-  return `${base}/${path.replace(/^\/+/, "")}`;
+  return resolveSharedUserAvatarUrl(path, env.USER_BASE_URL || env.OSS_BASE_URL);
 }
 
 /**
@@ -45,12 +47,10 @@ export function resolveUserAvatarUrl(path: string | null | undefined): string | 
 // pastel from the palette per seed — same user always gets the same
 // background, and the figure now has a proper Notion-style coloured
 // circle behind it. Palette matches DiceBear's recommended default.
-const DICEBEAR_BG_PALETTE = ["b6e3f4", "c0aede", "d1d4f9", "ffd5dc", "ffdfbf"];
-
 export function getDicebearAvatar(seed: string | number): string {
   return createAvatar(notionists, {
     seed: String(seed),
-    backgroundColor: DICEBEAR_BG_PALETTE,
+    backgroundColor: [...USER_AVATAR_DICEBEAR_BACKGROUND_COLORS],
   }).toDataUri();
 }
 
@@ -70,16 +70,14 @@ export function getDicebearAvatar(seed: string | number): string {
  * "Upload avatar" CTA, etc.) can apply the same rule without re-deriving
  * the magic string.
  */
-const PLACEHOLDER_AVATAR_UUID = "d17b1d5e-282e-47e0-bd99-9a72477adf93";
-
 export function isPlaceholderAvatar(src: string | null | undefined): boolean {
-  if (!src) return true;
-  return src.includes(PLACEHOLDER_AVATAR_UUID);
+  return isPlaceholderUserAvatar(src);
 }
 
 interface UserAvatarProps {
-  /** Real avatar URL (already resolved against USER_BASE_URL by the caller).
-   *  Empty / missing → falls through to the DiceBear fallback. */
+  /** Avatar URL or backend OSS object path. Relative paths are resolved
+   *  against USER_BASE_URL here so callers cannot accidentally render a
+   *  broken same-origin image. Empty / missing → DiceBear fallback. */
   src?: string | null;
   /** Stable seed for the DiceBear fallback (typically user id). When omitted
    *  we fall back to `name`, then to the literal string "anon" — the avatar
@@ -113,7 +111,7 @@ export function UserAvatar({
   // same id from a future crew / project / character DiceBear use.
   // Auto-increment user ids are short by themselves but still produce
   // well-distributed avatars once hashed.
-  const effectiveSeed = `user:${seed ?? name ?? "anon"}`;
+  const effectiveSeed = userAvatarSeed(seed ?? name ?? "anon");
   // DiceBear is synchronous + pure, but the data URI is a few KB string;
   // memoize so re-renders of a long list don't regenerate per row.
   const fallbackUri = useMemo(() => getDicebearAvatar(effectiveSeed), [effectiveSeed]);
@@ -123,7 +121,7 @@ export function UserAvatar({
   // Treat the backend placeholder PNG the same as a missing src so we
   // always fall through to the DiceBear fallback instead of rendering
   // the generic stock image.
-  const effectiveSrc = isPlaceholderAvatar(src) ? undefined : src;
+  const effectiveSrc = isPlaceholderAvatar(src) ? undefined : resolveUserAvatarUrl(src);
 
   // Avoid the "DiceBear flash → real avatar" swap by ONLY rendering the
   // DiceBear fallback when there is genuinely no avatar URL to load.
@@ -147,6 +145,7 @@ export function UserAvatar({
         </>
       ) : (
         <AvatarFallback className={cn("bg-transparent", imageClassName)}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- generated data URI fallback */}
           <img src={fallbackUri} alt={name ?? ""} className={cn("h-full w-full", imageClassName)} />
         </AvatarFallback>
       )}

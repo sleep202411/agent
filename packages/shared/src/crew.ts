@@ -1,9 +1,10 @@
 /**
  * Crew domain — shared wire types and the preset position list.
  *
- * The 13 preset positions are the only string values allowed for
- * `CrewPosition.positionType` / `CrewMember.roleType` (plus the
- * reserved literal `"owner"` for founders). Adding a position:
+ * Preset positions provide a stable, translatable taxonomy for recruitment
+ * and member-position classification. A member position may instead use a
+ * custom title, so production responsibility is never confused with access
+ * control or ownership.
  *
  *   1. Append to PRESET_POSITIONS below.
  *   2. Add the i18n entry under "crew.position.<value>" in
@@ -34,28 +35,133 @@ export const PRESET_POSITIONS = [
 
 export type PresetPositionValue = (typeof PRESET_POSITIONS)[number]["value"];
 
-/** Reserved role for the crew founder. */
-export const OWNER_ROLE = "owner";
-
 const PRESET_VALUE_SET = new Set(PRESET_POSITIONS.map((p) => p.value));
 
 export function isPresetPosition(value: string): value is PresetPositionValue {
   return PRESET_VALUE_SET.has(value as PresetPositionValue);
 }
 
-/** Validates `roleType` for a CrewMember — preset position OR "owner". */
-export function isValidRoleType(value: string): boolean {
-  return value === OWNER_ROLE || isPresetPosition(value);
-}
-
 // ─── DTOs (wire shapes) ──────────────────────────────────────
 
 export type CrewPositionStatus = "open" | "frozen" | "full";
 export type CrewListingStatus = "unlisted" | "listed";
-export type CrewMemberVia = "founder" | "application" | "manual";
+export type CrewMemberStatus = "active" | "suspended" | "removed";
+export type CrewJoinSource = "creation" | "application" | "invitation" | "ownership_transfer";
 export type CrewApplicationStatus = "pending" | "approved" | "rejected";
-export type EpisodeStatus = "not_started" | "in_production" | "approved";
-export type AssignmentStatus = "in_progress" | "submitted" | "approved" | "rejected";
+
+// ─── Authorization ───────────────────────────────────────────
+
+/**
+ * Active membership always grants the member baseline. Policies are additive
+ * bundles, not mutually-exclusive roles: the same member may be both an
+ * administrator and a finance manager.
+ */
+export const CREW_POLICY_KEYS = ["admin", "finance"] as const;
+export type CrewPolicyKey = (typeof CREW_POLICY_KEYS)[number];
+
+export const CREW_PERMISSION_KEYS = [
+  "crew.settings.manage",
+  "crew.delete",
+  "ownership.transfer",
+  "members.view",
+  "members.invite",
+  "members.manage",
+  "members.permissions.manage",
+  "openings.manage",
+  "applications.review",
+  "tasks.view",
+  "tasks.manage",
+  "tasks.comment",
+  "tasks.submit_assigned",
+  "tasks.review",
+  "assets.view",
+  "assets.upload",
+  "assets.manage",
+  "agreements.view_own",
+  "agreements.manage",
+  "finance.ledger.view",
+  "finance.earnings.create",
+  "finance.earnings.approve",
+  "finance.earnings.reverse",
+  "finance.payouts.create",
+  "finance.payouts.manage",
+  "studio.view",
+  "studio.edit",
+  "production.view",
+  "production.deliver",
+  "production.manage",
+  "production.review",
+] as const;
+export type CrewPermissionKey = (typeof CREW_PERMISSION_KEYS)[number];
+export type CrewPermissionEffect = "allow" | "deny";
+
+/** Permissions every active crew member receives. */
+export const CREW_MEMBER_PERMISSIONS = [
+  "members.view",
+  "tasks.view",
+  "tasks.comment",
+  "tasks.submit_assigned",
+  "assets.view",
+  "assets.upload",
+  "agreements.view_own",
+  "studio.view",
+  "production.view",
+  "production.deliver",
+] as const satisfies readonly CrewPermissionKey[];
+
+/** Additive, code-owned policy bundles. */
+export const CREW_POLICY_PERMISSIONS = {
+  admin: [
+    "crew.settings.manage",
+    "members.view",
+    "members.invite",
+    "members.manage",
+    "openings.manage",
+    "applications.review",
+    "tasks.view",
+    "tasks.manage",
+    "tasks.comment",
+    "tasks.submit_assigned",
+    "tasks.review",
+    "assets.view",
+    "assets.upload",
+    "assets.manage",
+    "agreements.view_own",
+    "agreements.manage",
+    "studio.view",
+    "studio.edit",
+    "production.view",
+    "production.deliver",
+    "production.manage",
+    "production.review",
+  ],
+  finance: [
+    "finance.ledger.view",
+    "finance.earnings.create",
+    "finance.earnings.approve",
+    "finance.earnings.reverse",
+    "finance.payouts.create",
+    "finance.payouts.manage",
+  ],
+} as const satisfies Record<CrewPolicyKey, readonly CrewPermissionKey[]>;
+
+/** These capabilities are structural ownership powers and cannot be delegated. */
+export const CREW_OWNER_ONLY_PERMISSIONS = [
+  "crew.delete",
+  "ownership.transfer",
+  "members.permissions.manage",
+] as const satisfies readonly CrewPermissionKey[];
+
+const CREW_POLICY_KEY_SET = new Set<string>(CREW_POLICY_KEYS);
+const CREW_PERMISSION_KEY_SET = new Set<string>(CREW_PERMISSION_KEYS);
+
+export function isCrewPolicyKey(value: string): value is CrewPolicyKey {
+  return CREW_POLICY_KEY_SET.has(value);
+}
+
+export function isCrewPermissionKey(value: string): value is CrewPermissionKey {
+  return CREW_PERMISSION_KEY_SET.has(value);
+}
 
 // ─── Recruitment enums ───────────────────────────────────
 
@@ -112,6 +218,13 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
 /** Currencies whose smallest unit IS the displayed unit (no decimals).
  *  JPY is the main one in our whitelist. CNY/USD/EUR are 100x scaled. */
 export const ZERO_DECIMAL_CURRENCIES = new Set<CurrencyCode>(["JPY"]);
+
+/**
+ * Crew contribution points have a permanent accounting value:
+ * 100 points = USD 1, therefore one point is exactly one USD cent.
+ * This is a domain invariant, not deployment configuration.
+ */
+export const CREW_POINTS_PER_USD = 100 as const;
 
 // ─── Crew taxonomy ─────────────────────────────────────
 
@@ -188,11 +301,13 @@ export interface CrewDTO {
   socialLinks: SocialLink[];
   /** Featured works carousel. First entry powers the hero. */
   showcaseWorks: ShowcaseWork[];
-  founderId: string;
+  ownerUserId: string;
   /** User-controlled Crew Hall visibility. */
   listingStatus: CrewListingStatus;
   /** Last time the owner made the crew visible in Crew Hall. */
   listedAt: string | null;
+  /** Optimistic concurrency token for crew-level edits. */
+  version: number;
   createdAt: string;
   updatedAt: string;
   /** Aggregated counts populated by list / detail endpoints. */
@@ -240,18 +355,52 @@ export interface CrewPositionDTO {
   revenueSharePercent: number | null;
   /** Optional auto-archive date (YYYY-MM-DD). */
   closeDate: string | null;
+  /**
+   * Owner-only recruitment inbox totals. Public position discovery omits
+   * this block so applicant activity is never leaked outside the crew.
+   */
+  applicationStats?: CrewApplicationStatusCounts;
   createdAt: string;
+}
+
+export interface CrewPositionPageDTO {
+  items: CrewPositionDTO[];
+  nextCursor: string | null;
+  total: number;
 }
 
 export interface CrewMemberDTO {
   id: string;
   crewId: string;
   userId: string;
-  roleType: string; // preset value or "owner"
-  positionId: string | null;
-  via: CrewMemberVia;
-  isFinance: boolean;
+  status: CrewMemberStatus;
+  joinedVia: CrewJoinSource;
+  isOwner: boolean;
+  positions: CrewMemberPositionDTO[];
+  policyKeys: CrewPolicyKey[];
   joinedAt: string;
+  removedAt: string | null;
+  version: number;
+}
+
+export interface CrewMemberPositionDTO {
+  id: string;
+  categoryKey: PresetPositionValue | null;
+  title: string | null;
+  isPrimary: boolean;
+  sourcePositionId: string | null;
+}
+
+export interface CrewMemberPageDTO {
+  items: CrewMemberDTO[];
+  nextCursor: string | null;
+  total: number;
+}
+
+export interface CrewMembershipDTO {
+  userId: string;
+  member: CrewMemberDTO;
+  permissions: CrewPermissionKey[];
 }
 
 export interface CrewApplicationDTO {
@@ -277,52 +426,20 @@ export interface CrewApplicationDTO {
   reviewerId: string | null;
 }
 
-// ─── Episode sub-domain ─────────────────────────────────────
-
-export interface EpisodeDTO {
-  id: string;
-  crewId: string;
-  number: number;
-  title: string | null;
-  description: string | null;
-  status: EpisodeStatus;
-  deadline: string | null;
-  approvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+export interface CrewApplicationStatusCounts {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
 }
 
-export interface EpisodeAssignmentDTO {
-  id: string;
-  crewId: string;
-  episodeId: string;
-  userId: string;
-  positionId: string | null;
-  roleName: string | null;
-  status: AssignmentStatus;
-  submission: { url: string | null; note: string | null; submittedAt: string } | null;
-  reviewNote: { reason: string; suggestion: string | null; rejectedAt: string } | null;
-  revenue: { amount: number; currency: CurrencyCode; setAt: string; setByUserId: string } | null;
-  updatedAt: string;
+export interface CrewApplicationListSummary extends CrewApplicationStatusCounts {
+  byPosition: Record<string, CrewApplicationStatusCounts>;
 }
 
-export type EpisodeActivityType =
-  | "episode_created"
-  | "member_assigned"
-  | "member_unassigned"
-  | "submission_made"
-  | "submission_approved"
-  | "submission_rejected"
-  | "revenue_set"
-  | "episode_approved";
-
-export interface EpisodeActivityDTO {
-  id: string;
-  crewId: string;
-  episodeId: string;
-  type: EpisodeActivityType | string;
-  actorUserId: string;
-  actorName: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
+export interface CrewApplicationPageDTO {
+  items: CrewApplicationDTO[];
+  nextCursor: string | null;
+  total: number;
+  summary: CrewApplicationListSummary;
 }

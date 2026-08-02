@@ -108,122 +108,133 @@ export class WalletLedgerService {
   }
 
   async postEntry(input: PostWalletEntryInput): Promise<PostedWalletEntry> {
-    if (input.amount <= 0n) {
-      throw new ConflictException({
-        code: 'INVALID_LEDGER_AMOUNT',
-        msg: 'Ledger amount must be positive.',
-      });
-    }
+    assertPositiveLedgerAmount(input.amount);
 
     // Sweep lapsed grants first so the denormalized balance is honest before the
     // admission check (a stale-inflated balance would admit a spend the FIFO
     // consume then can't fulfill). No-op + cheap when nothing has lapsed.
     await this.expireLapsedGrants(input.accountId);
 
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.walletTransaction.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-        include: { entries: true },
-      });
-      if (existing?.entries[0]) {
-        const account = await tx.walletAccount.findUniqueOrThrow({
-          where: { id: existing.entries[0].accountId },
-        });
-        return {
-          transaction: existing,
-          entry: existing.entries[0],
-          account,
-          deduped: true,
-        };
-      }
+    return this.prisma.$transaction((tx) => this.postEntryTx(tx, input));
+  }
 
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${input.accountId}`})::bigint)
-      `;
+  /**
+   * Post a wallet entry inside an existing business transaction. This is the
+   * financial boundary for flows such as crew approval/cash-out: the domain
+   * state and the wallet journal either commit together or both roll back.
+   *
+   * Callers that debit expiring consumable grants must sweep those grants
+   * before entering their transaction. Withdrawable creator/crew earnings do
+   * not expire and can use this method directly.
+   */
+  async postEntryTx(
+    tx: Prisma.TransactionClient,
+    input: PostWalletEntryInput,
+  ): Promise<PostedWalletEntry> {
+    assertPositiveLedgerAmount(input.amount);
 
-      const account = await tx.walletAccount.findUniqueOrThrow({
-        where: { id: input.accountId },
-      });
-      if (account.status !== WalletAccountStatus.active) {
-        throw new ConflictException({
-          code: 'WALLET_ACCOUNT_NOT_ACTIVE',
-          msg: 'Wallet account is not active.',
-        });
-      }
-
-      const nextAvailable = account.availableBalance + input.availableDelta;
-      const nextHeld = account.heldBalance + input.heldDelta;
-      if (nextAvailable < 0n || nextHeld < 0n) {
-        throw new ConflictException({
-          code: 'INSUFFICIENT_WALLET_BALANCE',
-          msg: 'Wallet balance is insufficient.',
-        });
-      }
-
-      const transaction = await tx.walletTransaction.create({
-        data: {
-          status: WalletTransactionStatus.posted,
-          sourceType: input.sourceType,
-          sourceId: input.sourceId ?? null,
-          idempotencyKey: input.idempotencyKey,
-          actorUserId: input.actorUserId ?? null,
-          workspaceId: input.workspaceId ?? null,
-          projectId: input.projectId ?? null,
-          description: input.description ?? null,
-          metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-        },
-      });
-
-      const entry = await tx.walletLedgerEntry.create({
-        data: {
-          transactionId: transaction.id,
-          accountId: account.id,
-          entryType: input.entryType,
-          currency: account.currency,
-          balanceKind: account.balanceKind,
-          amount: input.amount,
-          availableDelta: input.availableDelta,
-          heldDelta: input.heldDelta,
-          availableBalanceAfter: nextAvailable,
-          heldBalanceAfter: nextHeld,
-          reason: input.reason,
-        },
-      });
-
-      if (isCreditGrantBackedAccount(account)) {
-        if (input.availableDelta > 0n && input.heldDelta === 0n) {
-          await createCreditGrantTx(tx, {
-            account,
-            transaction,
-            entry,
-            input,
-          });
-        } else if (input.availableDelta < 0n && input.heldDelta === 0n) {
-          await consumeAvailableGrantsTx(tx, {
-            accountId: account.id,
-            transactionId: transaction.id,
-            ledgerEntryId: entry.id,
-            amount: -input.availableDelta,
-            entryType: input.entryType,
-          });
-        }
-      }
-
-      const updated = await tx.walletAccount.update({
-        where: { id: account.id },
-        data: {
-          availableBalance: nextAvailable,
-          heldBalance: nextHeld,
-          version: { increment: 1 },
-        },
-      });
-
-      // Realtime: reflect the new compute balance without polling (atomic in this
-      // tx — the event and the balance write commit together). No-op non-compute.
-      await enqueueWalletChanged(tx, updated, input.actorUserId);
-
-      return { transaction, entry, account: updated, deduped: false };
+    const existing = await tx.walletTransaction.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: { entries: true },
     });
+    if (existing?.entries[0]) {
+      const account = await tx.walletAccount.findUniqueOrThrow({
+        where: { id: existing.entries[0].accountId },
+      });
+      return {
+        transaction: existing,
+        entry: existing.entries[0],
+        account,
+        deduped: true,
+      };
+    }
+
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${input.accountId}`})::bigint)
+    `;
+
+    const account = await tx.walletAccount.findUniqueOrThrow({
+      where: { id: input.accountId },
+    });
+    if (account.status !== WalletAccountStatus.active) {
+      throw new ConflictException({
+        code: 'WALLET_ACCOUNT_NOT_ACTIVE',
+        msg: 'Wallet account is not active.',
+      });
+    }
+
+    const nextAvailable = account.availableBalance + input.availableDelta;
+    const nextHeld = account.heldBalance + input.heldDelta;
+    if (nextAvailable < 0n || nextHeld < 0n) {
+      throw new ConflictException({
+        code: 'INSUFFICIENT_WALLET_BALANCE',
+        msg: 'Wallet balance is insufficient.',
+      });
+    }
+
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        status: WalletTransactionStatus.posted,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId ?? null,
+        idempotencyKey: input.idempotencyKey,
+        actorUserId: input.actorUserId ?? null,
+        workspaceId: input.workspaceId ?? null,
+        projectId: input.projectId ?? null,
+        description: input.description ?? null,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      },
+    });
+
+    const entry = await tx.walletLedgerEntry.create({
+      data: {
+        transactionId: transaction.id,
+        accountId: account.id,
+        entryType: input.entryType,
+        currency: account.currency,
+        balanceKind: account.balanceKind,
+        amount: input.amount,
+        availableDelta: input.availableDelta,
+        heldDelta: input.heldDelta,
+        availableBalanceAfter: nextAvailable,
+        heldBalanceAfter: nextHeld,
+        reason: input.reason,
+      },
+    });
+
+    if (isCreditGrantBackedAccount(account)) {
+      if (input.availableDelta > 0n && input.heldDelta === 0n) {
+        await createCreditGrantTx(tx, {
+          account,
+          transaction,
+          entry,
+          input,
+        });
+      } else if (input.availableDelta < 0n && input.heldDelta === 0n) {
+        await consumeAvailableGrantsTx(tx, {
+          accountId: account.id,
+          transactionId: transaction.id,
+          ledgerEntryId: entry.id,
+          amount: -input.availableDelta,
+          entryType: input.entryType,
+        });
+      }
+    }
+
+    const updated = await tx.walletAccount.update({
+      where: { id: account.id },
+      data: {
+        availableBalance: nextAvailable,
+        heldBalance: nextHeld,
+        version: { increment: 1 },
+      },
+    });
+
+    // Realtime: reflect the new compute balance without polling (atomic in this
+    // tx — the event and the balance write commit together). No-op non-compute.
+    await enqueueWalletChanged(tx, updated, input.actorUserId);
+
+    return { transaction, entry, account: updated, deduped: false };
   }
 
   /**
@@ -264,6 +275,15 @@ export class WalletLedgerService {
 }
 
 type WalletTx = Prisma.TransactionClient;
+
+function assertPositiveLedgerAmount(amount: bigint) {
+  if (amount <= 0n) {
+    throw new ConflictException({
+      code: 'INVALID_LEDGER_AMOUNT',
+      msg: 'Ledger amount must be positive.',
+    });
+  }
+}
 
 /**
  * Expire lapsed grants for an account INSIDE a caller's transaction (the

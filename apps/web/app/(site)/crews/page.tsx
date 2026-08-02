@@ -241,7 +241,6 @@ function CrewCard({ item, locale }: { item: CrewDTO; locale: Locale }) {
  *   ┌──────────────────────────────┐
  *   │ ◯ Studio name [tier badge]    │  ← logo + name + open badge
  *   │   tagline · 5人 · 6mo · 北京    │  ← stats line
- *   │ 🎬 新片场认证后期制作            │  ← cert (omitted MVP)
  *   │ Description...                │
  *   │ ─────────────────────────    │
  *   │ [thumb][title · 12.4w 看过]    │  ← featured work 1

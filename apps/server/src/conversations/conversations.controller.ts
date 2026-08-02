@@ -4,6 +4,7 @@
  *   GET    /aurora/conversations/:id                      detail
  *   GET    /aurora/conversations/:id/messages             paginated messages
  *   POST   /aurora/conversations/:id/messages             send text
+ *   POST   /aurora/conversations/:id/attachments          send crew assets
  *   POST   /aurora/conversations/:id/proposals            creator sends proposal
  *   POST   /aurora/conversations/:id/proposals/:mid/decline  buyer declines proposal
  *   POST   /aurora/conversations/:id/read                 advance read cursor
@@ -18,8 +19,10 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
+  Inject,
   NotFoundException,
   Param,
   Post,
@@ -41,12 +44,14 @@ import {
   ListMessagesQuerySchema,
   MarkReadSchema,
   OpenConversationSchema,
+  SendAttachmentsSchema,
   SendMessageSchema,
   SendProposalSchema,
   type ListInboxQuery,
   type ListMessagesQuery,
   type MarkReadInput,
   type OpenConversationInput,
+  type SendAttachmentsInput,
   type SendMessageInput,
   type SendProposalInput,
 } from './dto';
@@ -54,14 +59,21 @@ import {
   toConversationCardDTO,
   toConversationDTO,
   toMessageDTO,
+  type CrewCardContext,
 } from './mappers';
 import { PrismaService } from '../infra/db/db.module';
+import {
+  CONVERSATION_REALTIME,
+  type ConversationRealtimePublisher,
+} from './conversation-realtime.service';
 
 @Controller('conversations')
 export class ConversationsController {
   constructor(
     private readonly svc: ConversationsService,
     private readonly prisma: PrismaService,
+    @Inject(CONVERSATION_REALTIME)
+    private readonly realtime: ConversationRealtimePublisher,
   ) {}
 
   @Post()
@@ -131,10 +143,43 @@ export class ConversationsController {
     @Query(new ZodValidationPipe(ListInboxQuerySchema)) query: ListInboxQuery,
   ): Promise<{ items: ConversationCardDTO[]; nextCursor: string | null }> {
     const { items, nextCursor } = await this.svc.listInbox(user.userId, query);
+    const crews = await this.loadCrewCardContexts(
+      items.filter((c) => c.contextType === 'crew').map((c) => c.contextId),
+    );
     return {
-      items: items.map((c) => toConversationCardDTO(c as never, user.userId)),
+      items: items.map((c) =>
+        toConversationCardDTO(c as never, user.userId, crews.get(c.contextId)),
+      ),
       nextCursor,
     };
+  }
+
+  /**
+   * Short-lived credential for this user's private Conversations event
+   * channel. The token is identity-bound and subscribe-only.
+   */
+  @Get('realtime-token')
+  @Header('Cache-Control', 'no-store')
+  async realtimeToken(@CurrentUser() user: AuthUser) {
+    return this.realtime.issueUserGrant(user.userId);
+  }
+
+  /**
+   * Short-lived room credential for a crew conversation. Authorization is
+   * re-evaluated on every refresh, so a removed member cannot renew access.
+   */
+  @Get(':id/realtime-token')
+  @Header('Cache-Control', 'no-store')
+  async crewRealtimeToken(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const conversationId = parseIdParam(idRaw, 'id');
+    const conversation = await this.svc.detail(conversationId, user.userId);
+    if (conversation.contextType !== 'crew') {
+      throw new NotFoundException('Crew conversation not found');
+    }
+    return this.realtime.issueCrewGrant(conversationId, user.userId);
   }
 
   @Get(':id')
@@ -161,6 +206,12 @@ export class ConversationsController {
     return { items: items.map(toMessageDTO), nextCursor };
   }
 
+  /**
+   * Send a text message. When the client supplies `clientKey`, a
+   * retry of the same send returns the row the first attempt created
+   * rather than appending a duplicate — still 201, still the same
+   * body, so the client needs no special case.
+   */
   @Post(':id/messages')
   @HttpCode(HttpStatus.CREATED)
   async sendText(
@@ -172,6 +223,25 @@ export class ConversationsController {
       parseIdParam(idRaw, 'id'),
       user.userId,
       body.body,
+      body.clientKey ?? null,
+      body.mentions,
+      body.tasks,
+    );
+    return toMessageDTO(msg);
+  }
+
+  @Post(':id/attachments')
+  @HttpCode(HttpStatus.CREATED)
+  async sendAttachments(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SendAttachmentsSchema))
+    body: SendAttachmentsInput,
+  ): Promise<MessageDTO> {
+    const msg = await this.svc.sendAttachments(
+      parseIdParam(idRaw, 'id'),
+      user.userId,
+      body,
     );
     return toMessageDTO(msg);
   }
@@ -229,5 +299,49 @@ export class ConversationsController {
     return {
       lastReadMessageId: updated.lastReadMessageId ?? body.lastReadMessageId,
     };
+  }
+
+  /**
+   * Crew name / logo / member count for the crew rows on this inbox
+   * page. A crew row renders the CREW, not a counterparty, so without
+   * this the row would have nothing to show.
+   *
+   * Two batched queries for the whole page (never per-row): the crew
+   * rows, and a grouped count of their active members.
+   *
+   * `deletedAt: null` matches every other crew read on the platform. A
+   * soft-deleted crew's thread 404s on open (the service's crew gate
+   * filters the same way), so naming and previewing it in the inbox
+   * would advertise a row that cannot be opened. `listInbox` already
+   * drops those rows before they reach here; this keeps the display
+   * lookup from being the one place that would still resurrect one.
+   */
+  private async loadCrewCardContexts(
+    crewIdsRaw: string[],
+  ): Promise<Map<string, CrewCardContext>> {
+    const crewIds = [...new Set(crewIdsRaw)];
+    if (crewIds.length === 0) return new Map();
+    const [crews, counts] = await Promise.all([
+      this.prisma.crew.findMany({
+        where: { id: { in: crewIds }, deletedAt: null },
+        select: { id: true, name: true, logo: true },
+      }),
+      this.prisma.crewMember.groupBy({
+        by: ['crewId'],
+        where: { crewId: { in: crewIds }, status: 'active' },
+        _count: { _all: true },
+      }),
+    ]);
+    const memberCounts = new Map(counts.map((c) => [c.crewId, c._count._all]));
+    return new Map(
+      crews.map((c) => [
+        c.id,
+        {
+          name: c.name,
+          logo: c.logo,
+          memberCount: memberCounts.get(c.id) ?? 0,
+        },
+      ]),
+    );
   }
 }

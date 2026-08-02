@@ -6,6 +6,7 @@
  *   GET    /aurora/crews/my             "My Crews" — founded + joined for /profile tab
  *   GET    /aurora/crews/by-user/:userId  Public: a user's LISTED crews (visitor profile tab)
  *   GET    /aurora/crews/:id            Detail (public; pending-app count hidden from non-owners)
+ *   GET    /aurora/crews/:id/conversation  The crew's one group chat (members only; 404 otherwise)
  *   PATCH  /aurora/crews/:id            Edit (owner only)
  *   PATCH  /aurora/crews/:id/listing    Show / hide in Crew Hall (owner only)
  *   DELETE /aurora/crews/:id            Soft delete (owner only)
@@ -94,6 +95,23 @@ export class CrewsController {
     return this.svc.listPublicCreatorCrews(userId, user?.userId ?? null);
   }
 
+  /**
+   * The crew's group chat — the crew workspace's chat panel resolves
+   * its thread here and then talks to `/aurora/conversations/*` like
+   * any other conversation.
+   *
+   * Authenticated (no `@Public()`): a crew page is public, its chat is
+   * not. Non-members get 404, never 403 — see
+   * {@link CrewsService.conversation}. Declared above `@Get(':id')`
+   * only for readability; a `:id` segment cannot span a slash, so the
+   * two never compete.
+   */
+  @Get(':id/conversation')
+  conversation(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.conversation(id, user.userId);
+  }
+
   @Public()
   @Get(':id')
   detail(@Param('id') idRaw: string, @CurrentUser() user?: AuthUser) {
@@ -143,7 +161,7 @@ export class CrewsController {
   ) {
     const id = parseIdParam(idRaw, 'id');
     return this.svc.transferOwnership(id, body.toUserId, {
-      requireCurrentFounderId: user.userId,
+      actor: { type: 'member', userId: user.userId },
       requireTargetActiveMember: true,
       removeOldOwner: body.removeOldOwner,
       expectedVersion: body.expectedVersion,

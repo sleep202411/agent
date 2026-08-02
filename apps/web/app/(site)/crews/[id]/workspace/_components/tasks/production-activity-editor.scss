@@ -1,0 +1,118 @@
+.production-activity-editor {
+  min-height: 110px;
+}
+
+.production-activity-editor .tiptap.ProseMirror.production-activity-prosemirror {
+  min-height: 110px;
+  padding: 0.5rem 0.125rem 0.75rem;
+  color: #d9dce1;
+  font-family: inherit;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.production-activity-editor .tiptap.ProseMirror.production-activity-prosemirror > :first-child {
+  margin-top: 0;
+}
+
+.production-activity-editor .tiptap.ProseMirror.production-activity-prosemirror > :last-child {
+  margin-bottom: 0;
+}
+
+.production-activity-editor
+  .tiptap.ProseMirror.production-activity-prosemirror
+  p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: #5f6570;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.production-activity-editor .tiptap.ProseMirror h1,
+.production-activity-content h1 {
+  margin: 0.45rem 0 0.25rem;
+  color: #eceef1;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.production-activity-editor .tiptap.ProseMirror h2,
+.production-activity-content h2 {
+  margin: 0.4rem 0 0.2rem;
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  font-weight: 620;
+  line-height: 1.45;
+}
+
+.production-activity-editor .tiptap.ProseMirror h3,
+.production-activity-content h3 {
+  margin: 0.35rem 0 0.2rem;
+  color: #dfe2e7;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.production-activity-editor .tiptap.ProseMirror ul,
+.production-activity-editor .tiptap.ProseMirror ol,
+.production-activity-content ul,
+.production-activity-content ol {
+  margin: 0.3rem 0;
+  padding-left: 1.25rem;
+}
+
+.production-activity-editor .tiptap.ProseMirror blockquote,
+.production-activity-content blockquote {
+  margin: 0.35rem 0;
+  border-left: 2px solid rgb(255 255 255 / 14%);
+  padding-left: 0.75rem;
+  color: #aeb3bb;
+}
+
+.production-activity-editor .tiptap.ProseMirror pre,
+.production-activity-content pre {
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  border-radius: 0.45rem;
+  background: rgb(0 0 0 / 24%);
+  padding: 0.55rem 0.65rem;
+  color: #ced2d8;
+  font-size: 0.6875rem;
+  line-height: 1.55;
+}
+
+.production-activity-editor .tiptap.ProseMirror code:not(pre code),
+.production-activity-content code:not(pre code) {
+  border-radius: 0.25rem;
+  background: rgb(255 255 255 / 6%);
+  padding: 0.08rem 0.25rem;
+}
+
+.production-activity-editor .tiptap.ProseMirror a,
+.production-activity-content a {
+  color: #b8c4d8;
+  text-decoration: underline;
+  text-decoration-color: rgb(184 196 216 / 45%);
+  text-underline-offset: 0.15em;
+}
+
+.production-activity-content {
+  color: #b5bac2;
+  font-size: 0.6875rem;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.production-activity-content > :first-child {
+  margin-top: 0;
+}
+
+.production-activity-content > :last-child {
+  margin-bottom: 0;
+}

@@ -39,6 +39,7 @@ export class CrewsAdminController {
     body: TransferCrewOwnerInput,
   ) {
     const data = await this.crews.transferOwnership(id, body.toUserId, {
+      actor: { type: 'platform_admin', actorId: admin.id },
       removeOldOwner: body.removeOldOwner,
       expectedVersion: body.expectedVersion,
     });

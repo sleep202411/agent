@@ -1,8 +1,8 @@
 /**
- * Drop-in replacement for the original native `<select>`-based component.
+ * Drop-in replacement for the original browser-native select component.
  *
- * Implementation note (May 2026): originally rendered a native `<select>`.
- * Chromium on Windows refuses to render the OS-painted `<select>` popup
+ * Implementation note (May 2026): originally rendered a browser-native control.
+ * Chromium on Windows refuses to render the OS-painted popup
  * with `color-scheme: dark` reliably — even when both root and element
  * declare it — leaving creator-tool dialogs with a jarring white panel
  * over a dark surface. Swapped to a Radix-based shadcn Select so the
@@ -18,8 +18,9 @@
  * synthetic event — call sites used to do `(event) => setX(event.target.value)`
  * and have been updated to `setX` directly.
  *
- * Empty-string-valued children are not rendered as items (Radix forbids
- * `value=""` on items). Their text becomes the trigger placeholder.
+ * Empty-string-valued children are mapped to an internal sentinel because
+ * Radix reserves `value=""`. This keeps optional fields genuinely clearable
+ * while the public API continues to read and write an empty string.
  */
 import * as React from "react";
 
@@ -33,6 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const EMPTY_VALUE = "__native_select_empty__";
+
 type NativeSelectProps = {
   value?: string;
   onChange?: (value: string) => void;
@@ -40,6 +43,8 @@ type NativeSelectProps = {
   className?: string;
   size?: "sm" | "default";
   placeholder?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
   children?: React.ReactNode;
 };
 
@@ -64,25 +69,31 @@ function NativeSelect({
   className,
   size = "default",
   placeholder,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   children,
 }: NativeSelectProps) {
-  // Walk children: strip any `value=""` placeholder option, surface its
-  // text as the trigger placeholder. Translate every option-shaped child
+  // Translate every option-shaped child
   // (whether <NativeSelectOption> or raw <option>) into <SelectItem> so
-  // Radix's SelectContent renders correctly. Other nodes (SelectGroup,
-  // SelectSeparator, etc) pass through.
+  // Radix's SelectContent renders correctly. Empty values use a sentinel so
+  // optional fields remain clearable. Other nodes pass through.
   let extractedPlaceholder: React.ReactNode = placeholder;
+  let hasEmptyOption = false;
   const items: React.ReactNode[] = [];
 
   React.Children.forEach(children, (child, index) => {
     if (isOptionElement(child)) {
       const { value: itemValue, disabled: itemDisabled, children: itemChildren } = child.props;
-      if (itemValue === "" || itemValue == null) {
+      if (itemValue === "") {
+        hasEmptyOption = true;
         if (extractedPlaceholder == null) extractedPlaceholder = itemChildren;
-        return;
       }
       items.push(
-        <SelectItem key={child.key ?? `opt-${index}`} value={itemValue} disabled={itemDisabled}>
+        <SelectItem
+          key={child.key ?? `opt-${index}`}
+          value={itemValue === "" ? EMPTY_VALUE : itemValue}
+          disabled={itemDisabled}
+        >
           {itemChildren}
         </SelectItem>
       );
@@ -91,16 +102,24 @@ function NativeSelect({
     items.push(child);
   });
 
-  // Radix needs `undefined` (not "") to show the placeholder on Trigger.
-  const radixValue = value === "" ? undefined : value;
+  const radixValue = value === "" ? (hasEmptyOption ? EMPTY_VALUE : undefined) : value;
   const placeholderText =
     typeof extractedPlaceholder === "string" || typeof extractedPlaceholder === "number"
       ? String(extractedPlaceholder)
       : undefined;
 
   return (
-    <Select value={radixValue} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger size={size} className={cn("w-full", className)}>
+    <Select
+      value={radixValue}
+      onValueChange={(nextValue) => onChange?.(nextValue === EMPTY_VALUE ? "" : nextValue)}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        size={size}
+        className={cn("w-full", className)}
+      >
         <SelectValue placeholder={placeholderText} />
       </SelectTrigger>
       <SelectContent>{items}</SelectContent>

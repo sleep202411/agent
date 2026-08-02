@@ -12,11 +12,17 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ApplicationsService } from './applications.service';
-import { ApplySchema, type ApplyInput } from './dto';
+import {
+  ApplySchema,
+  type ApplyInput,
+  ListCrewApplicationsQuerySchema,
+  type ListCrewApplicationsQuery,
+} from './dto';
 import { parseIdParam } from '../common/params';
 import { ZodValidationPipe } from '../common/zod.pipe';
 
@@ -41,9 +47,28 @@ export class ApplicationsController {
   }
 
   @Get('crews/:crewId/applications')
-  list(@Param('crewId') crewIdRaw: string, @CurrentUser() user: AuthUser) {
+  list(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewApplicationsQuerySchema))
+    query: ListCrewApplicationsQuery,
+  ) {
     return this.svc.listForOwner(
       parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      query,
+    );
+  }
+
+  @Get('crews/:crewId/applications/:applicationId')
+  get(
+    @Param('crewId') crewIdRaw: string,
+    @Param('applicationId') applicationIdRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.svc.getForOwner(
+      parseIdParam(crewIdRaw, 'crewId'),
+      parseIdParam(applicationIdRaw, 'applicationId'),
       user.userId,
     );
   }

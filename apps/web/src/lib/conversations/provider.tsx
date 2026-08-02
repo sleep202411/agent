@@ -1,47 +1,55 @@
 "use client";
 
 /**
- * ConversationsProvider — bridges the conversation WS push channel
+ * ConversationsProvider — bridges the authenticated Ably user channel
  * into React Query.
  *
  * Mount ONCE near the app root, INSIDE the auth boundary (after the
  * user is hydrated) but ABOVE any consumer of `useInbox` /
  * `useMessages`. The provider:
  *
- *   1. Opens a single WS to `/aurora/ws/conversations` when
- *      logged in; closes on logout.
- *   2. Patches the per-conversation timeline cache on every
- *      `message.created` frame so live views update without a
- *      refetch.
+ *   1. Opens one Ably connection when logged in; closes on logout. The same
+ *      authenticated user channel carries conversation, crew-task, and
+ *      notification frames.
+ *   2. Buffers `message.created` frames behind an authoritative REST
+ *      pass, then replays by id so a stale response cannot erase a
+ *      realtime message or establish the wrong total order.
  *   3. Surfaces a non-intrusive toast for an incoming message when
  *      it's NOT from the viewer themselves and they're NOT already
  *      on the matching conversation page.
- *   4. Auto-reconnect handled inside the WS client; on reconnect we
- *      invalidate all conversation queries so any missed-while-
- *      offline messages are recovered from REST.
+ *   4. Ably owns continuity/reconnect; every authenticated channel attach
+ *      awaits the same buffered recovery protocol.
  *
- * Logged-out users: provider no-ops; no WS opened.
+ * Logged-out users: provider no-ops; no Ably connection is opened.
  */
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { ConversationDTO } from "@repo/shared/conversation";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { useTranslations } from "@/src/i18n/i18n";
-import { openConversationWs, type ConversationWsClient } from "./ws-client";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
+import { notificationContent, notificationHref, notificationKeys } from "@/src/lib/notifications";
+import { openConversationRealtime, type ConversationRealtimeClient } from "./ably-client";
 import {
-  applyIncomingMessage,
+  createConversationRecoveryCoordinator,
   conversationKeys,
 } from "@/app/(site)/creators/_hooks/use-conversations";
+import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
+import { crewConversationKey } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
   const { user } = useCurrentUser();
   const qc = useQueryClient();
   const router = useRouter();
   const t = useTranslations("messages");
+  const notificationT = useTranslations("notifications");
+  const locale = useLocale() as Locale;
 
-  const clientRef = useRef<ConversationWsClient | null>(null);
+  const clientRef = useRef<ConversationRealtimeClient | null>(null);
   // Guard against re-opening on every parent re-render.
   const userIdRef = useRef<string | null>(null);
 
@@ -57,11 +65,14 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     userIdRef.current = uid;
 
     clientRef.current?.close();
-    clientRef.current = openConversationWs({
+    const recovery = createConversationRecoveryCoordinator(qc);
+    clientRef.current = openConversationRealtime(uid, {
       onMessage: (data) => {
-        applyIncomingMessage(qc, data.conversationId, data.message);
-        // Inbox preview / unread badge stale.
-        qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+        // Do not patch a realtime frame directly over an in-flight
+        // recovery response. The coordinator buffers by message id,
+        // awaits the authoritative REST order, then replays and repeats
+        // when another frame arrived during that request.
+        void recovery.receiveMessage(data);
 
         // Toast if the message is incoming (not from us) and we're
         // not already on the /messages/[id] page for it. The
@@ -69,21 +80,37 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         // routes (`/en-US/messages/abc`) by suffix match.
         const isMine = data.message.authorId === uid;
         if (isMine) return;
-        const onConv =
+        const onInboxConversation =
           typeof window !== "undefined" &&
           window.location.pathname.endsWith(`/messages/${data.conversationId}`);
-        if (onConv) return;
+        const timelineQuery = qc.getQueryCache().find({
+          queryKey: conversationKeys.messages(data.conversationId),
+          exact: true,
+        });
+        const timelineVisible =
+          typeof document !== "undefined" &&
+          document.visibilityState === "visible" &&
+          (timelineQuery?.getObserversCount() ?? 0) > 0;
+        // The same timeline can be embedded in a crew workspace, whose
+        // pathname does not contain the conversation id. An observed,
+        // visible timeline is the reliable "already reading it" signal.
+        if (onInboxConversation || timelineVisible) return;
 
+        const detail = qc.getQueryData<ConversationDTO>(
+          conversationKeys.detail(data.conversationId)
+        );
         const preview =
           data.message.type === "text"
             ? data.message.body.slice(0, 80)
             : data.message.type === "proposal"
               ? t("toastNewProposal")
-              : t("toastNewSystemMessage");
+              : detail?.contextType === "crew"
+                ? t("toastNewCrewUpdate")
+                : t("toastNewSystemMessage");
         toast(preview, {
           action: {
             label: t("toastOpen"),
-            onClick: () => router.push(`/messages/${data.conversationId}`),
+            onClick: () => router.push(localizePath(`/messages/${data.conversationId}`, locale)),
           },
         });
       },
@@ -98,18 +125,115 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         });
         qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
       },
-      onReconnected: () => {
-        // Recover any missed messages by refetching every active
-        // conversation surface.
-        qc.invalidateQueries({ queryKey: conversationKeys.all });
+      onCrewTaskChanged: (data) => {
+        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
+        qc.invalidateQueries({ queryKey: crewKeys.task(data.taskId) });
+        qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(data.taskId) });
+        qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
+        qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+        if (data.action === "reviewed") {
+          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "mine") });
+          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "crew") });
+        }
+      },
+      onCrewTaskProjectChanged: (data) => {
+        qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
+        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
+        if (
+          data.resource === "production_document" ||
+          data.resource === "production_project" ||
+          data.resource === "production_resource" ||
+          data.resource === "production_activity" ||
+          data.resource === "episode" ||
+          data.resource === "delivery"
+        ) {
+          qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
+          qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+          if (data.resource === "production_activity") {
+            qc.invalidateQueries({ queryKey: crewKeys.productionActivity(data.crewId) });
+          }
+        }
+      },
+      onCrewAssetChanged: (data) => {
+        qc.invalidateQueries({ queryKey: crewKeys.assets(data.crewId) });
+      },
+      onNotification: (notification) => {
+        qc.invalidateQueries({ queryKey: notificationKeys.all });
+        const crewId =
+          typeof notification.meta?.crewId === "string" ? notification.meta.crewId : null;
+        if (crewId) {
+          if (notification.type === "crew.application.submitted") {
+            qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
+            qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
+          }
+          if (notification.type === "crew.invitation.accepted") {
+            qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+            qc.invalidateQueries({ queryKey: crewKeys.invitations(crewId) });
+          }
+          if (
+            notification.type === "crew.application.approved" ||
+            notification.type === "crew.application.rejected" ||
+            notification.type === "crew.member.added"
+          ) {
+            qc.invalidateQueries({ queryKey: crewKeys.all });
+          }
+          if (notification.type === "crew.invitation.received") {
+            qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
+            const invitationId =
+              typeof notification.meta?.invitationId === "string"
+                ? notification.meta.invitationId
+                : null;
+            if (invitationId) {
+              qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
+            }
+          }
+          if (
+            notification.type === "crew.agreement.sent" ||
+            notification.type === "crew.agreement.updated"
+          ) {
+            qc.invalidateQueries({ queryKey: crewKeys.agreements(crewId) });
+          }
+        }
+        if (notification.type === "crew.member.removed") {
+          // Access revocation is authoritative. Remove previously authorized
+          // crew and conversation payloads from memory immediately.
+          qc.removeQueries({ queryKey: conversationKeys.all });
+          qc.removeQueries({ queryKey: crewKeys.all });
+          if (crewId) {
+            qc.removeQueries({ queryKey: crewConversationKey(crewId) });
+          }
+        }
+
+        const href = notificationHref(notification, locale);
+        const content = notificationContent(notification, locale, notificationT);
+        toast(content.title, {
+          description: content.body,
+          action: href
+            ? {
+                label: notificationT("view"),
+                onClick: () => router.push(href),
+              }
+            : undefined,
+        });
+      },
+      onReady: () => {
+        // The server sends ready only after auth + user-channel
+        // registration. A buffered, awaited recovery here (including
+        // on the first connection) closes both startup and reconnect
+        // gaps without allowing an older REST response to erase a
+        // realtime frame.
+        void recovery.recoverAll();
+        qc.invalidateQueries({ queryKey: crewKeys.all });
+        qc.invalidateQueries({ queryKey: notificationKeys.all });
       },
     });
 
     return () => {
+      recovery.dispose();
       clientRef.current?.close();
       clientRef.current = null;
     };
-  }, [user?.id, qc, router, t]);
+  }, [user?.id, qc, router, t, notificationT, locale]);
 
   return <>{children}</>;
 }

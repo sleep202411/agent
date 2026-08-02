@@ -23,7 +23,6 @@ import { CopilotModule } from './copilot/copilot.module';
 import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { DocumentsModule } from './documents';
-import { EpisodesModule } from './crews/episodes/episodes.module';
 import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
@@ -90,7 +89,6 @@ const agentPlatformModules = loadAgentPlatformFeatureEnabled()
     StudioAgentModule.register(),
     MediaModule,
     CrewsModule,
-    EpisodesModule,
     CreatorServicesModule,
     ReferralsModule,
     ConversationsModule,

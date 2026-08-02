@@ -1,9 +1,9 @@
 /**
- * NotificationDispatcherService — drains NotificationOutbox to Redis
- * pub/sub. Mirrors AiGenerationOutboxService line-for-line.
+ * NotificationDispatcherService — durably publishes NotificationOutbox rows
+ * to the authenticated per-user Ably channel.
  *
  * State machine per outbox row:
- *   created → (try publish) → dispatchedAt SET
+ *   created → (try Ably publish) → dispatchedAt SET
  *   created → fail           → attempt++, lastError, nextAttemptAt = now + backoff
  *                            → (next tick) → ...
  *                            → after MAX_ATTEMPTS → deadAt SET (DLQ)
@@ -25,16 +25,18 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import Redis from 'ioredis';
-import { notificationChannel, type NotificationDTO } from '@repo/shared';
+import type { NotificationDTO } from '@repo/shared';
+import {
+  CONVERSATION_REALTIME,
+  type ConversationRealtimePublisher,
+} from '../conversations/conversation-realtime.service';
 import { PrismaService } from '../infra/db/db.module';
-import { REDIS } from '../infra/redis/redis.module';
 
 const DISPATCH_INTERVAL_MS = 2_000;
 const DISPATCH_BATCH = 50;
 /** Lock TTL — if a pod claimed a row but didn't finish in this window,
  *  another pod can reclaim it. Should exceed the longest expected
- *  Redis publish round-trip plus generous slack. */
+ *  Ably publish round-trip plus generous slack. */
 const LOCK_TTL_MS = 30_000;
 /** Per-row max retries before DLQ. */
 const MAX_ATTEMPTS = 12;
@@ -44,6 +46,15 @@ const BACKOFFS_MS = [500, 2_000, 5_000, 15_000, 60_000, 180_000, 300_000];
 const GC_DISPATCHED_OLDER_THAN_MS = 7 * 24 * 60 * 60 * 1000;
 /** Each pod tags its locks so we can debug who held what. */
 const POD_ID = `${hostname()}-${process.pid}`;
+
+type ClaimedNotificationOutbox = {
+  id: string;
+  notificationId: string;
+  userId: string;
+  payload: Prisma.JsonValue;
+  attempt: number;
+  lockedAt: Date | null;
+};
 
 @Injectable()
 export class NotificationDispatcherService
@@ -55,11 +66,13 @@ export class NotificationDispatcherService
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(REDIS) private readonly redis: Redis,
+    @Inject(CONVERSATION_REALTIME)
+    private readonly realtime: ConversationRealtimePublisher,
   ) {}
 
   onApplicationBootstrap() {
-    this.timer = setInterval(() => void this.drain(), DISPATCH_INTERVAL_MS);
+    this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
+    void this.drainOnce();
     this.logger.log(
       `Notification outbox dispatcher running every ${DISPATCH_INTERVAL_MS}ms (pod=${POD_ID})`,
     );
@@ -71,12 +84,12 @@ export class NotificationDispatcherService
 
   /**
    * One drain cycle:
-   *   1. Claim up to BATCH eligible rows (atomic via updateMany).
-   *   2. Publish each one to Redis.
+   *   1. Claim up to BATCH eligible rows with SKIP LOCKED.
+   *   2. Publish each one to Ably with a deterministic message id.
    *   3. Mark dispatched OR schedule retry / DLQ.
    *   4. GC old dispatched rows once per cycle.
    */
-  private async drain(): Promise<void> {
+  async drainOnce(): Promise<void> {
     if (this.draining) return; // overlap guard
     this.draining = true;
     try {
@@ -93,65 +106,63 @@ export class NotificationDispatcherService
     }
   }
 
-  private async claim(batch: number) {
+  private async claim(batch: number): Promise<ClaimedNotificationOutbox[]> {
     const now = new Date();
     const lockExpiry = new Date(now.getTime() - LOCK_TTL_MS);
-    // Eligible row: not dispatched, not dead, due (nextAttemptAt NULL
-    // or in the past), and either unlocked or lock expired.
-    const eligible = await this.prisma.notificationOutbox.findMany({
-      where: {
-        dispatchedAt: null,
-        deadAt: null,
-        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-        AND: [
-          {
-            OR: [{ lockedAt: null }, { lockedAt: { lt: lockExpiry } }],
-          },
-        ],
-      },
-      orderBy: { createdAt: 'asc' },
-      take: batch,
-      select: { id: true },
-    });
-    if (eligible.length === 0) return [];
+    return this.prisma.$transaction(async (tx) => {
+      const eligible = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT id
+        FROM notification_outbox
+        WHERE dispatched_at IS NULL
+          AND dead_at IS NULL
+          AND (next_attempt_at IS NULL OR next_attempt_at <= ${now})
+          AND (locked_at IS NULL OR locked_at < ${lockExpiry})
+        ORDER BY created_at ASC
+        LIMIT ${batch}
+        FOR UPDATE SKIP LOCKED
+      `);
+      if (eligible.length === 0) return [];
 
-    const ids = eligible.map((e) => e.id);
-    // Atomic claim — only rows still eligible at this exact moment get
-    // locked. Other pods racing the same batch lose the claim.
-    await this.prisma.notificationOutbox.updateMany({
-      where: {
-        id: { in: ids },
-        dispatchedAt: null,
-        deadAt: null,
-        OR: [{ lockedAt: null }, { lockedAt: { lt: lockExpiry } }],
-      },
-      data: { lockedAt: now, lockedBy: POD_ID },
-    });
-    return this.prisma.notificationOutbox.findMany({
-      where: {
-        id: { in: ids },
-        lockedBy: POD_ID,
-        dispatchedAt: null,
-        deadAt: null,
-      },
+      const ids = eligible.map((row) => row.id);
+      await tx.notificationOutbox.updateMany({
+        where: { id: { in: ids } },
+        data: { lockedAt: now, lockedBy: POD_ID },
+      });
+      return tx.notificationOutbox.findMany({
+        where: {
+          id: { in: ids },
+          lockedBy: POD_ID,
+          lockedAt: now,
+          dispatchedAt: null,
+          deadAt: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
     });
   }
 
-  private async dispatchOne(row: {
-    id: string;
-    userId: string;
-    payload: Prisma.JsonValue;
-    attempt: number;
-  }) {
+  private async dispatchOne(row: ClaimedNotificationOutbox) {
     try {
       const dto = row.payload as unknown as NotificationDTO;
-      await this.redis.publish(
-        notificationChannel(row.userId),
-        JSON.stringify(dto),
+      await this.realtime.publishUserFrame(
+        row.userId,
+        { event: 'notification.created', data: dto },
+        `notification:${row.notificationId}`,
       );
-      await this.prisma.notificationOutbox.update({
-        where: { id: row.id },
-        data: { dispatchedAt: new Date(), lockedAt: null, lockedBy: null },
+      await this.prisma.notificationOutbox.updateMany({
+        where: {
+          id: row.id,
+          lockedBy: POD_ID,
+          lockedAt: row.lockedAt,
+          dispatchedAt: null,
+          deadAt: null,
+        },
+        data: {
+          dispatchedAt: new Date(),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: null,
+        },
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -159,8 +170,14 @@ export class NotificationDispatcherService
       const isDead = nextAttempt >= MAX_ATTEMPTS;
       const backoff =
         BACKOFFS_MS[Math.min(row.attempt, BACKOFFS_MS.length - 1)];
-      await this.prisma.notificationOutbox.update({
-        where: { id: row.id },
+      await this.prisma.notificationOutbox.updateMany({
+        where: {
+          id: row.id,
+          lockedBy: POD_ID,
+          lockedAt: row.lockedAt,
+          dispatchedAt: null,
+          deadAt: null,
+        },
         data: {
           attempt: nextAttempt,
           lastError: msg.slice(0, 500),

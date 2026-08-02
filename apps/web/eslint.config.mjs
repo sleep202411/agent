@@ -16,6 +16,14 @@ const eslintConfig = defineConfig([
   ]),
   {
     rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message:
+            "Use the shadcn Select primitives or NativeSelect so dropdowns remain theme-controlled across platforms.",
+        },
+      ],
       // React Compiler is not enabled in next.config.ts. Keep these diagnostics
       // visible, but do not make them the current production gate until the app
       // is intentionally migrated to compiler-compatible patterns.
