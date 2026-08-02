@@ -10,6 +10,7 @@ import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
 import { BillingModule } from './billing';
+import { BoldSignWebhookProvisioningModule } from './boldsign-webhook-provisioning/boldsign-webhook-provisioning.module';
 import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { CharactersModule } from './characters/characters.module';
@@ -80,6 +81,7 @@ const agentPlatformModules = loadAgentPlatformFeatureEnabled()
     WorkspacesModule,
     SharingModule,
     BillingModule,
+    BoldSignWebhookProvisioningModule,
     InternalModule,
     LegacyPointsModule,
     IpCommerceModule,
