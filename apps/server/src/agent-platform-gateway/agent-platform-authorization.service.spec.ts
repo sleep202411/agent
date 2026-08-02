@@ -14,16 +14,9 @@ function fixture() {
       capabilities: ['story.read', 'story.edit', 'story.generate'],
     }),
   };
-  const crewRoles = {
-    require: jest.fn().mockResolvedValue('member'),
-  };
   return {
     storyPermissions,
-    crewRoles,
-    service: new AgentPlatformAuthorizationService(
-      storyPermissions as never,
-      crewRoles as never,
-    ),
+    service: new AgentPlatformAuthorizationService(storyPermissions as never),
   };
 }
 
@@ -91,7 +84,7 @@ describe('AgentPlatformAuthorizationService', () => {
   });
 
   it('refuses to sign a Crew context while the Crew module is being refactored', async () => {
-    const { service, crewRoles } = fixture();
+    const { service } = fixture();
 
     await expect(
       service.authorize(USER, {
@@ -101,44 +94,5 @@ describe('AgentPlatformAuthorizationService', () => {
         locale: 'en-US',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    // Refused before any authority is consulted: the surface is unavailable,
-    // not merely unauthorised for this caller.
-    expect(crewRoles.require).not.toHaveBeenCalled();
-  });
-
-  // Re-enable together with the guard in the service — the Crew capability pack
-  // and the resolution below are intact and still type-checked, they are only
-  // waiting on the Crew module's refactor.
-  describe.skip('once the Crew Agent surface is enabled', () => {
-    it.each([
-      ['member', ['crew.read']],
-      ['finance', ['crew.read', 'crew.finance']],
-      ['admin', ['crew.read', 'crew.manage', 'crew.finance']],
-    ] as const)(
-      'maps the authoritative %s Crew role to least-privilege permissions',
-      async (role, permissions) => {
-        const { service, crewRoles } = fixture();
-        crewRoles.require.mockResolvedValue(role);
-
-        const context = await service.authorize(USER, {
-          schemaVersion: 'agent-conversation-resolve/v1',
-          surface: 'crew-management',
-          crewId: 'crew-7',
-          locale: 'en-US',
-        });
-
-        expect(crewRoles.require).toHaveBeenCalledWith('crew-7', '42', [
-          'admin',
-          'finance',
-          'member',
-        ]);
-        expect(context).toMatchObject({
-          scope: { kind: 'crew', crewId: 'crew-7' },
-          roles: [`crew.${role}`],
-          permissions,
-        });
-        expect(context.scope).not.toHaveProperty('workspaceId');
-      },
-    );
   });
 });

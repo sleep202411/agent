@@ -63,7 +63,6 @@ describePostgres('Story Agent atomic PostgreSQL boundary', () => {
       prisma as never,
       story,
       {} as never,
-      {} as never,
     );
   });
 

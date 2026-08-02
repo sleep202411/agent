@@ -20,7 +20,6 @@ import {
   type AgentDomainToolResult,
 } from './agent-domain.dto';
 import { parseAgentDomainToolArguments } from './agent-domain-tool.schemas';
-import { CrewAgentDomainService } from './crew-agent-domain.service';
 import { StoryAgentDomainService } from './story-agent-domain.service';
 import { StorySourceMaterialDomainService } from './story-source-material-domain.service';
 
@@ -35,7 +34,6 @@ export class AgentDomainExecutionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly story: StoryAgentDomainService,
-    private readonly crew: CrewAgentDomainService,
     private readonly sourceMaterial: StorySourceMaterialDomainService,
   ) {}
 
@@ -123,13 +121,13 @@ export class AgentDomainExecutionService {
       case 'story_apply_change_set':
         return this.story.applyChangeSet(tx, request, args, execution);
       case 'crew_get_state':
-        return this.crew.readState(tx, request, args);
       case 'crew_apply_management_command':
-        return this.crew.applyManagementCommand(tx, request, args, execution);
       case 'crew_apply_finance_command':
-        return this.crew.applyFinanceCommand(tx, request, args, execution);
       case 'crew_submit_own_assignment':
-        return this.crew.submitOwnAssignment(tx, request, args, execution);
+        throw new NotFoundException({
+          code: 'AGENT_SURFACE_UNAVAILABLE',
+          message: 'The crew Agent surface is not available.',
+        });
     }
   }
 }
