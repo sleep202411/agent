@@ -7,7 +7,10 @@ import { useParams } from "next/navigation";
 import { IconArrowLeft, IconEye, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ProjectProvider } from "@/app/[locale]/project/_components/project-context";
+import {
+  ProjectProvider,
+  type ShellInset,
+} from "@/app/[locale]/project/_components/project-context";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
 import { getProject, renameProject, type ProjectRole } from "@/lib/collab/projects-api";
@@ -35,7 +38,11 @@ export default function ProjectLayout({
   const [name, setName] = useState("");
   const [role, setRole] = useState<ProjectRole | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const [canvasChromeInset, setCanvasChromeInset] = useState(0);
+  // The shell owns three regions: left panels, the mode's content, right
+  // panels. A mode reports what its panels occupy on each edge and the
+  // chrome that lives there yields — the canvas is only special in that its
+  // content is full-bleed, so its panels cover the board instead of shrinking it.
+  const [shellInset, setShellInsetState] = useState({ left: 0, right: 0 });
   const dirtyRef = useRef(false);
   const committedRef = useRef("");
   useEffect(() => {
@@ -59,7 +66,10 @@ export default function ProjectLayout({
   const canEdit = role == null ? true : role !== "viewer";
   const canManage = role === "owner" || role === "admin";
   const openShare = useCallback(() => setShareOpen(true), []);
-  const shellLeftInset = activeMode === "canvas" ? canvasChromeInset : 0;
+  const setShellInset = useCallback(
+    (inset: ShellInset) => setShellInsetState((current) => ({ ...current, ...inset })),
+    []
+  );
 
   const commitName = (next: string) => {
     if (!canEdit) return; // viewers can't rename (server rejects too)
@@ -87,7 +97,7 @@ export default function ProjectLayout({
       projectId={projectId}
       role={role}
       openShare={openShare}
-      setCanvasChromeInset={setCanvasChromeInset}
+      setShellInset={setShellInset}
     >
       <div className="relative h-dvh">
         {children}
@@ -95,7 +105,7 @@ export default function ProjectLayout({
         {/* Back + editable project name (top-left). */}
         <div
           className="absolute top-4 z-30 flex items-center gap-1 transition-[left] duration-200 ease-out"
-          style={{ left: `calc(1rem + ${shellLeftInset}px)` }}
+          style={{ left: `calc(1rem + ${shellInset.left}px)` }}
         >
           <Link
             href="/projects"
@@ -123,7 +133,10 @@ export default function ProjectLayout({
         </div>
 
         {/* Share + view-only state (top-right). */}
-        <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+        <div
+          className="absolute top-4 z-30 flex items-center gap-2 transition-[right] duration-200 ease-out"
+          style={{ right: `calc(1rem + ${shellInset.right}px)` }}
+        >
           {role === "viewer" && (
             <span className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-xs font-medium text-white/70 shadow-md backdrop-blur-xl">
               <IconEye className="size-4" stroke={1.8} />

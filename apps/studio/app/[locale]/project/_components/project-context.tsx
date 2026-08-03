@@ -15,8 +15,21 @@ interface ProjectContextValue {
   /** Opens the project share/members dialog (owned by the project shell), so any
    *  mode's own toolbar can host the Share button without owning the dialog. */
   openShare: () => void;
-  /** Lets full-screen mode panels reserve horizontal space in the shell chrome. */
-  setCanvasChromeInset: (inset: number) => void;
+  /**
+   * A mode reports how much of the shell's left/right edge its panels occupy.
+   *
+   * The project workspace is three regions — left panels, the mode's content,
+   * right panels — and the shell's own chrome (back + project name, share)
+   * lives on those same edges. Reporting an inset is how a mode says "a drawer
+   * is standing here", so the chrome slides aside instead of being covered.
+   * Partial updates merge, so a mode can own one edge without touching the other.
+   */
+  setShellInset: (inset: ShellInset) => void;
+}
+
+export interface ShellInset {
+  left?: number;
+  right?: number;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -26,13 +39,13 @@ export function ProjectProvider({
   projectId,
   role,
   openShare,
-  setCanvasChromeInset,
+  setShellInset,
   children,
 }: {
   projectId: string;
   role: ProjectRole | null;
   openShare: () => void;
-  setCanvasChromeInset?: (inset: number) => void;
+  setShellInset?: (inset: ShellInset) => void;
   children: React.ReactNode;
 }) {
   const value = useMemo<ProjectContextValue>(() => {
@@ -46,14 +59,14 @@ export function ProjectProvider({
       canEdit,
       canManage,
       openShare,
-      setCanvasChromeInset: setCanvasChromeInset ?? noopCanvasChromeInset,
+      setShellInset: setShellInset ?? noopShellInset,
     };
-  }, [projectId, role, openShare, setCanvasChromeInset]);
+  }, [projectId, role, openShare, setShellInset]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
 
-function noopCanvasChromeInset(_inset: number) {
+function noopShellInset(_inset: ShellInset) {
   void _inset;
 }
 

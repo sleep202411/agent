@@ -52,7 +52,7 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
   const tCopilot = useTranslations("copilot");
   const tProject = useTranslations("project");
   const tCanvasControls = useTranslations("canvasControls");
-  const { canManage, openShare, setCanvasChromeInset } = useProjectContext();
+  const { canManage, openShare, setShellInset } = useProjectContext();
   const { data: catalog } = useAiCatalog();
   const { user } = useAuth();
   const canvasUser = useMemo(() => toCanvasUser(user, t("guest")), [t, user]);
@@ -121,7 +121,7 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
             uploadKinds={CREATIVE_UPLOAD_KINDS}
             assetLibrary={{ crewProjectId: projectId }}
             grouping={grouping}
-            onDrawerInsetChange={setCanvasChromeInset}
+            onDrawerInsetChange={(left) => setShellInset({ left })}
             onCanvasPointerMove={publishCursor}
             onCanvasPointerLeave={clearCursor}
             renderViewportLayers={(nodes) => (
