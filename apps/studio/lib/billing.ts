@@ -41,7 +41,12 @@ export interface MembershipPlan {
 
 export function listMembershipPlans(input: {
   productType: "membership_plan" | "team_membership_plan";
-  currency: "USD" | "SGD" | "CNY";
+  /**
+   * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
+   * Never ask for a currency the catalog has no rows for — the API answers
+   * with price-less plans and the dialog degrades to "Contact Sales".
+   */
+  currency: "USD" | "CNY";
 }) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(
     "/aurora/billing/membership-plans",
