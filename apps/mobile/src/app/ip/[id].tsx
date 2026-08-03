@@ -2,7 +2,7 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEvent } from "expo";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -562,60 +562,32 @@ export default function IpDetailScreen() {
               </View>
             </View>
             <View style={styles.engagementRow}>
-              <View
-                style={[
-                  styles.engagementPill,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                ]}
-              >
-                <SymbolView
-                  name={{ ios: "eye", android: "visibility", web: "visibility" }}
-                  size={14}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="smallBold">
-                  {formatEngagementCount(ip.viewCount, locale)}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">
-                  {t("ipDetail.views")}
-                </ThemedText>
-              </View>
-              <Pressable
+              <EngagementPill
+                icon={{ ios: "eye", android: "visibility", web: "visibility" }}
+                count={formatEngagementCount(ip.viewCount, locale)}
+                label={t("ipDetail.views")}
+                tint={theme.textSecondary}
+                backgroundColor={theme.backgroundElement}
+                borderColor={theme.border}
+              />
+              <EngagementPill
                 accessibilityLabel={ip.viewerHasLiked ? t("ipDetail.unlike") : t("ipDetail.like")}
-                accessibilityRole="button"
+                icon={{
+                  ios: ip.viewerHasLiked ? "heart.fill" : "heart",
+                  android: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                  web: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                }}
+                count={formatEngagementCount(ip.likeCount, locale)}
+                label={t("ipDetail.likes")}
+                tint={ip.viewerHasLiked ? theme.brand : theme.textSecondary}
+                countColor={ip.viewerHasLiked ? theme.brand : undefined}
+                backgroundColor={
+                  ip.viewerHasLiked ? "rgba(229,34,39,0.14)" : theme.backgroundElement
+                }
+                borderColor={ip.viewerHasLiked ? theme.brand : theme.border}
                 disabled={likeBusy}
                 onPress={toggleLike}
-                style={({ pressed }) => [
-                  styles.engagementPill,
-                  {
-                    backgroundColor: ip.viewerHasLiked
-                      ? "rgba(229,34,39,0.14)"
-                      : theme.backgroundElement,
-                    borderColor: ip.viewerHasLiked ? theme.brand : theme.border,
-                  },
-                  pressed && styles.pressed,
-                  likeBusy && styles.engagementDisabled,
-                ]}
-              >
-                <SymbolView
-                  name={{
-                    ios: ip.viewerHasLiked ? "heart.fill" : "heart",
-                    android: ip.viewerHasLiked ? "favorite" : "favorite_border",
-                    web: ip.viewerHasLiked ? "favorite" : "favorite_border",
-                  }}
-                  size={14}
-                  tintColor={ip.viewerHasLiked ? theme.brand : theme.textSecondary}
-                />
-                <ThemedText
-                  type="smallBold"
-                  style={ip.viewerHasLiked ? { color: theme.brand } : undefined}
-                >
-                  {formatEngagementCount(ip.likeCount, locale)}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">
-                  {t("ipDetail.likes")}
-                </ThemedText>
-              </Pressable>
+              />
             </View>
           </View>
 
@@ -744,6 +716,70 @@ export default function IpDetailScreen() {
         onClose={() => setShareOpen(false)}
       />
     </ThemedView>
+  );
+}
+
+/**
+ * Views / likes chip.
+ * Visual shell (border/bg) always on a View — like a Tag/div.
+ * Pressable is only the click wrapper (like wrapping Tag with onClick);
+ * painting chrome on Pressable itself often fails to show on iOS.
+ */
+function EngagementPill({
+  icon,
+  count,
+  label,
+  tint,
+  countColor,
+  backgroundColor,
+  borderColor,
+  accessibilityLabel,
+  disabled,
+  onPress,
+}: {
+  icon: ComponentProps<typeof SymbolView>["name"];
+  count: string;
+  label: string;
+  tint: string;
+  countColor?: string;
+  backgroundColor: string;
+  borderColor: string;
+  accessibilityLabel?: string;
+  disabled?: boolean;
+  onPress?: () => void;
+}) {
+  const pill = (
+    <View style={[styles.engagementPillChrome, { backgroundColor, borderColor }]}>
+      <View style={styles.engagementPillRow}>
+        <View style={styles.engagementIconBox}>
+          <SymbolView name={icon} size={14} tintColor={tint} />
+        </View>
+        <ThemedText
+          type="smallBold"
+          numberOfLines={1}
+          style={countColor ? { color: countColor } : undefined}
+        >
+          {count}
+        </ThemedText>
+        <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+          {label}
+        </ThemedText>
+      </View>
+    </View>
+  );
+
+  if (!onPress) return pill;
+
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [pressed && styles.pressed, disabled && styles.engagementDisabled]}
+    >
+      {pill}
+    </Pressable>
   );
 }
 
@@ -1031,16 +1067,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.two,
   },
-  engagementPill: {
-    minWidth: 92,
-    height: 34,
+  // Shared chrome for views + likes — identical shell so the two chips align.
+  engagementPillChrome: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  engagementPillRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.one,
+    minHeight: 34,
     paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: 8,
+    paddingVertical: Spacing.one,
+  },
+  engagementIconBox: {
+    width: 14,
+    height: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   engagementDisabled: {
     opacity: 0.6,
