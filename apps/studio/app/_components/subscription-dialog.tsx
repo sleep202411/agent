@@ -26,7 +26,7 @@ import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
-import { useCountry, useIsCnSite } from "./region-provider";
+import { useIsCnSite } from "./region-provider";
 import { useWorkspace } from "./workspace-context";
 
 type BillingInterval = "month" | "year";
@@ -88,12 +88,14 @@ export function SubscriptionDialog({
 }) {
   const t = useTranslations("billing");
   const tc = useTranslations("common");
-  const country = useCountry();
-  // The CELL (deployment), not the currency/country, decides CN behaviour: .cn is a
-  // one-off CNY pass (no interval toggle) paid via WeChat 扫码; .com is a USD/SGD
-  // subscription via Airwallex.
+  // The CELL (deployment) decides both behaviour and currency: .cn is a one-off
+  // CNY pass (no interval toggle) paid via WeChat 扫码; .com is a USD subscription
+  // via Airwallex. Membership pricing is deliberately NOT geo-derived — the
+  // catalog stocks exactly one currency per cell, so asking for anything else
+  // (SG visitors used to request SGD off cf-ipcountry) returns price-less plans
+  // and silently degrades every card to "Contact Sales".
   const isCn = useIsCnSite();
-  const currency = isCn ? "CNY" : membershipCurrencyForCountry(country);
+  const currency = isCn ? "CNY" : "USD";
   const { user, signIn } = useAuth();
   const { workspaces, activeWorkspace, createTeam } = useWorkspace();
   const signedIn = Boolean(user);
@@ -258,7 +260,15 @@ export function SubscriptionDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t("dialogLabel")}
-      className="fixed left-0 top-0 z-50 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
+      /*
+        z-60 + pointer-events-auto, not the usual z-50: this dialog is opened
+        from inside the Radix settings overlay, which is modal and therefore
+        sets `pointer-events: none` on <body> and paints its own z-50 backdrop
+        LATER in the DOM. At z-50 with inherited pointer-events this panel
+        rendered on top visually but every click landed on the settings
+        backdrop instead (live incident 2026-08-03).
+      */
+      className="pointer-events-auto fixed left-0 top-0 z-60 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
     >
       {wechatScan && (
         <WechatScanPayDialog
@@ -654,10 +664,6 @@ function LoadingPlans() {
       ))}
     </div>
   );
-}
-
-function membershipCurrencyForCountry(country: string): "USD" | "SGD" {
-  return country.toUpperCase() === "SG" ? "SGD" : "USD";
 }
 
 function priceForInterval(plan: MembershipPlan, interval: BillingInterval) {
