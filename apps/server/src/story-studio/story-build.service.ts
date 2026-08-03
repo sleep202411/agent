@@ -49,7 +49,6 @@ import {
   type StoryBuildListQuery,
   type StoryBuildPathReportDto,
   type StoryBuildSummaryDto,
-  type CreatableStoryFormat,
   type StoryFrameProfile,
   type InteractiveStoryDraftContent,
 } from './dto';
@@ -61,7 +60,6 @@ import {
   type StoryBuildVideoInput,
 } from './story-build-compiler';
 import { resolveStoryCover } from './story-cover-media';
-import { resolveStoryMusicUrls } from './story-music-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
@@ -165,12 +163,6 @@ type BuildSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
   include: typeof BUILD_SELECTION_INCLUDE;
 }>;
 
-function isCreatableStoryFormat(
-  format: string,
-): format is CreatableStoryFormat {
-  return format === 'interactive_film' || format === 'text_adventure';
-}
-
 const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
@@ -188,9 +180,8 @@ interface ValidatedBuildSnapshot {
     workspaceId: string;
     title: string;
     summary: string | null;
-    format: CreatableStoryFormat;
     defaultLocale: string;
-    frameProfile: StoryFrameProfile | null;
+    frameProfile: StoryFrameProfile;
   };
   draft: {
     revision: number;
@@ -200,8 +191,6 @@ interface ValidatedBuildSnapshot {
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
   videos: StoryBuildVideoInput[];
-  /** Plain public URL per bound music asset; a missing entry is silence. */
-  musicUrls: Map<string, string>;
   /** Plain public cover reference; `asset: null` warns instead of failing. */
   cover: StoryBuildCoverInput;
 }
@@ -285,7 +274,6 @@ export class StoryBuildService {
             });
             const compilation = compileStoryBuild({
               projectId,
-              format: snapshot.project.format,
               buildId,
               sourceDraftRevision: snapshot.draft.revision,
               channel:
@@ -299,7 +287,6 @@ export class StoryBuildService {
               },
               draft: snapshot.draft.content,
               videos: snapshot.videos,
-              musicUrls: snapshot.musicUrls,
               cover: snapshot.cover,
             });
             if (
@@ -782,20 +769,12 @@ async function loadValidatedBuildSnapshot(
       workspaceId: true,
       title: true,
       summary: true,
-      format: true,
       defaultLocale: true,
       frameProfile: true,
       coverAssetId: true,
     },
   });
   if (!project) throw projectNotFound();
-  const format = project.format;
-  if (!isCreatableStoryFormat(format)) {
-    throw new GoneException({
-      code: 'STORY_BUILD_PROJECT_FORMAT_UNSUPPORTED',
-      message: `Story format ${project.format} is not supported by the unified story compiler.`,
-    });
-  }
   const draft = await tx.storyDraft.findUnique({
     where: { storyProjectId: projectId },
   });
@@ -848,10 +827,7 @@ async function loadValidatedBuildSnapshot(
       })),
     });
   }
-  const clipNodes = lockable.data.graph.nodes.filter(
-    (node): node is Extract<typeof node, { kind: 'clip' }> =>
-      node.kind === 'clip',
-  );
+  const clipNodes = lockable.data.graph.nodes;
   const selections =
     clipNodes.length === 0
       ? []
@@ -892,7 +868,6 @@ async function loadValidatedBuildSnapshot(
   return {
     project: {
       ...project,
-      format,
       frameProfile: project.frameProfile,
     },
     draft: {
@@ -903,12 +878,6 @@ async function loadValidatedBuildSnapshot(
     videoSnapshotHash,
     entries,
     videos,
-    musicUrls: await resolveStoryMusicUrls(
-      tx,
-      project.workspaceId,
-      format,
-      lockable.data,
-    ),
     cover: await resolveStoryCover(
       tx,
       project.workspaceId,
@@ -964,7 +933,7 @@ function prepareBuildVideo(
   project: {
     id: string;
     workspaceId: string;
-    frameProfile: StoryFrameProfile | null;
+    frameProfile: StoryFrameProfile;
   },
   buildId: string,
   graphNodeId: string,
@@ -1071,7 +1040,7 @@ function prepareBuildVideo(
         ),
       );
     }
-    if (project.frameProfile && variant.width && variant.height) {
+    if (variant.width && variant.height) {
       const expected = STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile];
       if (
         variant.width !== expected.width ||
@@ -1087,8 +1056,6 @@ function prepareBuildVideo(
         );
       }
     }
-    // A text-first (null-profile) project accepts the video's native
-    // dimensions; only a film project pins clips to a fixed picture contract.
     // The frame profile is an authoring intent, not a delivery contract: a
     // 1280×720 clip is the same 16:9 picture as 1920×1080 and plays correctly.
     // Blocking Build on exact pixel dimensions only forced creators to
@@ -1193,7 +1160,6 @@ export function storyBuildInputManifest(
     scope: input.scope,
     project: {
       id: snapshot.project.id,
-      format: snapshot.project.format,
       frameProfile: snapshot.project.frameProfile,
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
@@ -1618,8 +1584,8 @@ function parsePathReport(
   const row = value;
   if (
     !Number.isInteger(row.enumeratedPathCount) ||
-    !Array.isArray(row.reachableEndingIds) ||
-    !row.reachableEndingIds.every((item) => typeof item === 'string') ||
+    !Array.isArray(row.reachableTerminalNodeIds) ||
+    !row.reachableTerminalNodeIds.every((item) => typeof item === 'string') ||
     !Array.isArray(row.unreachableNodeIds) ||
     !row.unreachableNodeIds.every((item) => typeof item === 'string') ||
     !Number.isInteger(row.ambiguousPathCount) ||
@@ -1750,8 +1716,8 @@ async function resolveBuildKind(
       ? StoryBuildKind.production
       : StoryBuildKind.preview);
   if (requested === StoryBuildKind.production && input.scope.kind === 'full') {
-    // A serial work has no publishable whole-work Build: every chapter ends in
-    // an ending, so composing them into one manifest leaves each later chapter
+    // A serial work has no publishable whole-work Build: every chapter reaches
+    // its own terminal clip, so composing them into one manifest leaves each later chapter
     // an unreachable scene and compilation fails. Without this the failure
     // surfaces as an unreachable-scene diagnostic, which names a symptom of the
     // graph rather than the reason — that this work publishes one manifest per

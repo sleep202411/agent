@@ -5,7 +5,6 @@ import {
   IconArrowLeft,
   IconBook2,
   IconCheck,
-  IconFileText,
   IconGitBranch,
   IconMovie,
   IconPhoto,
@@ -117,7 +116,6 @@ export function StoryProjectWorkbench({
 
 function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
-  const FormatIcon = workbench.project.format === "text_adventure" ? IconFileText : IconMovie;
   return (
     <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
       <div className="min-w-0">
@@ -130,7 +128,7 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
         </Link>
         <div className="mt-4 flex items-center gap-3">
           <div className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/[0.055] text-white/72">
-            <FormatIcon className="size-5" stroke={1.7} />
+            <IconMovie className="size-5" stroke={1.7} />
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-[-0.025em] text-white">
@@ -146,15 +144,10 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
         <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
           {t(`visibility.${workbench.project.visibility}`)}
         </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
-          {t(`formats.${workbench.project.format}.label`)}
+        <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
+          {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
+          {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
         </span>
-        {workbench.project.frameProfile ? (
-          <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
-            {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
-            {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
-          </span>
-        ) : null}
       </div>
     </header>
   );
@@ -197,7 +190,6 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   const t = useTranslations("storyStudio");
   const production = workbench.project.production;
   const choices = countChoices(workbench.draft.content);
-  const endings = workbench.draft.content.storyBible.endings.length;
   const sceneNodes = workbench.draft.content.graph.nodes.length;
 
   return (
@@ -215,7 +207,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               {t("overview.draftRevisionStatus", { revision: workbench.draft.revision })}
             </span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <OverviewMetric
               icon={IconPhoto}
               label={t("metrics.references")}
@@ -245,7 +237,6 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               label={t("metrics.choices")}
               value={String(choices)}
             />
-            <OverviewMetric icon={IconRoute} label={t("metrics.endings")} value={String(endings)} />
             <OverviewMetric
               icon={IconRoute}
               label={t("metrics.graphScenes")}
@@ -307,7 +298,7 @@ function StoryStage({ content }: { content: InteractiveStoryDraftContent }) {
   const locale = useLocale();
   const bible = content.storyBible;
   const choices = countChoices(content);
-  const decisions = collectDecisions(content, locale);
+  const decisions = collectDecisions(content);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
@@ -400,27 +391,8 @@ function StoryStage({ content }: { content: InteractiveStoryDraftContent }) {
           <h2 className="text-sm font-semibold text-white">{t("story.storyGraph")}</h2>
           <dl className="mt-4 space-y-3 text-xs">
             <InfoRow label={t("metrics.choices")} value={String(choices)} />
-            <InfoRow label={t("metrics.endings")} value={String(bible.endings.length)} />
             <InfoRow label={t("story.graphNodes")} value={String(content.graph.nodes.length)} />
           </dl>
-        </FrostedPanel>
-        <FrostedPanel className="p-5">
-          <h2 className="text-sm font-semibold text-white">{t("story.endings")}</h2>
-          <div className="mt-4 space-y-3">
-            {bible.endings.map((ending) => {
-              const summary = localizedText(ending.summary, locale);
-              return (
-                <div key={ending.id} className="rounded-xl bg-white/[0.035] p-3">
-                  <p className="text-xs font-semibold text-white/76">
-                    {localizedText(ending.title, locale)}
-                  </p>
-                  {summary !== "—" ? (
-                    <p className="mt-2 text-[11px] leading-5 text-white/40">{summary}</p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
         </FrostedPanel>
       </aside>
     </div>
@@ -618,21 +590,11 @@ interface AuthoredDecision {
   }>;
 }
 
-function collectDecisions(
-  content: InteractiveStoryDraftContent,
-  locale: string
-): AuthoredDecision[] {
+function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
     if (node.exit.kind !== "choice") continue;
-    const sourceLabel =
-      node.kind === "clip"
-        ? node.clipKey
-        : node.title?.[locale]?.trim() ||
-          Object.values(node.title ?? {})
-            .find((value) => value.trim())
-            ?.trim() ||
-          node.nodeId;
+    const sourceLabel = node.name?.trim() || node.clipKey;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {
       existing.sourceSceneLabels.push(sourceLabel);

@@ -119,6 +119,7 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
             ready={documentStatus === "ready" && connectionStatus === "synced"}
             scopeKey={documentId}
             uploadKinds={CREATIVE_UPLOAD_KINDS}
+            assetLibrary={{ crewProjectId: projectId }}
             grouping={grouping}
             onDrawerInsetChange={setCanvasChromeInset}
             onCanvasPointerMove={publishCursor}

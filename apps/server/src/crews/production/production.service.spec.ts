@@ -9,9 +9,13 @@ import {
   CrewTaskPriority,
   MediaAssetKind,
   MediaAssetStatus,
+  ProjectMemberRole,
   Prisma,
+  WorkspaceMemberRole,
+  WorkspaceType,
 } from '@prisma/client';
 import {
+  CrewProductionDocumentSchema,
   CreateProductionActivitySchema,
   ReviewEpisodeDeliverySchema,
   UpdateProductionDocumentSchema,
@@ -69,6 +73,17 @@ function build() {
     crewMember: {
       findFirst: jest.fn(),
     },
+    crew: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ studioProject: null }),
+      findFirstOrThrow: jest.fn(),
+      update: jest.fn(),
+    },
+    workspaceMember: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    platformProject: {
+      findFirst: jest.fn(),
+    },
     crewEpisode: {
       findUnique: jest.fn(),
       delete: jest.fn(),
@@ -111,6 +126,9 @@ function build() {
   const conversations = {
     broadcastCrewTaskProjectChange: jest.fn().mockResolvedValue(undefined),
   };
+  const workspacePermissions = {
+    requireProjectRole: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     prisma,
     authorization,
@@ -120,6 +138,7 @@ function build() {
       authorization as never,
       assetAccess as never,
       conversations as never,
+      workspacePermissions as never,
     ),
   };
 }
@@ -146,12 +165,124 @@ function episode(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CrewProductionService', () => {
-  it('keeps the default overview document focused on editable production content', () => {
-    const document = createDefaultProductionDocument();
-    const content = document.content as Prisma.InputJsonObject[];
+  it('enables editable team projects even when they already serve a crew workflow', async () => {
+    const t = build();
+    t.prisma.crew.findUniqueOrThrow.mockResolvedValue({
+      studioProjectId: null,
+    });
+    t.prisma.workspaceMember.findMany.mockResolvedValue([
+      {
+        role: WorkspaceMemberRole.owner,
+        joinedAt: new Date(),
+        workspace: {
+          id: 'personal-1',
+          name: 'Isaac',
+          type: WorkspaceType.personal,
+          projects: [
+            {
+              id: 'project-personal',
+              name: 'Personal draft',
+              description: null,
+              members: [],
+              studioCrew: null,
+              productionCrew: null,
+              crewTaskCanvas: null,
+            },
+          ],
+        },
+      },
+      {
+        role: WorkspaceMemberRole.editor,
+        joinedAt: new Date(),
+        workspace: {
+          id: 'team-1',
+          name: 'Animation team',
+          type: WorkspaceType.team,
+          projects: [
+            {
+              id: 'project-team',
+              name: 'Episode canvas',
+              description: 'Production project',
+              members: [{ role: ProjectMemberRole.editor }],
+              studioCrew: null,
+              productionCrew: { id: 'another-crew' },
+              crewTaskCanvas: { id: 'task-canvas' },
+            },
+          ],
+        },
+      },
+    ]);
 
-    expect(content.map((node) => node.type)).toEqual(['paragraph']);
+    const result = await t.service.studioProjectOptions(CREW_ID, USER_ID);
+
+    expect(result.workspaces).toHaveLength(2);
+    expect(result.workspaces[0].projects[0]).toMatchObject({
+      selectable: false,
+      disabledReason: 'personal_workspace',
+    });
+    expect(result.workspaces[1].projects[0]).toMatchObject({
+      selectable: true,
+      disabledReason: null,
+    });
   });
+
+  it('links a team Studio project without replacing the internal production project', async () => {
+    const t = build();
+    const projectId = '01910d50-4c88-7c78-92d4-16892c06e010';
+    t.prisma.crew.findFirstOrThrow.mockResolvedValue({ studioProjectId: null });
+    t.prisma.platformProject.findFirst.mockResolvedValue({
+      id: projectId,
+      name: 'Episode canvas',
+      workspace: {
+        id: 'team-1',
+        name: 'Animation team',
+        type: WorkspaceType.team,
+      },
+      studioCrew: null,
+      productionCrew: { id: 'another-crew' },
+      crewTaskCanvas: { id: 'task-canvas' },
+    });
+
+    const result = await t.service.linkStudioProject(CREW_ID, USER_ID, {
+      projectId,
+    });
+
+    expect(t.prisma.crew.update).toHaveBeenCalledWith({
+      where: { id: CREW_ID },
+      data: { studioProjectId: projectId },
+    });
+    expect(result.studioProject).toMatchObject({
+      id: projectId,
+      name: 'Episode canvas',
+    });
+  });
+
+  it.each([
+    ['en-US', 'Production goal'],
+    ['zh-CN', '制作目标'],
+    ['zh-HK', '製作目標'],
+  ] as const)(
+    'creates a valid, editable %s production template',
+    (locale, expectedHeading) => {
+      const document = createDefaultProductionDocument(locale);
+      const content = document.content as Prisma.InputJsonObject[];
+
+      expect(CrewProductionDocumentSchema.safeParse(document).success).toBe(
+        true,
+      );
+      expect(content.map((node) => node.type)).toEqual([
+        'heading',
+        'paragraph',
+        'heading',
+        'table',
+        'heading',
+        'bulletList',
+        'heading',
+        'paragraph',
+      ]);
+      expect(JSON.stringify(document)).toContain(expectedHeading);
+    },
+  );
 
   it('returns the canonical project metadata, resources, and latest update', async () => {
     const t = build();

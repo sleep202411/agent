@@ -58,7 +58,7 @@ function textExperienceFixture() {
     metadata: {
       title: localized('The Last Letter', '最后一封信', '最後一封信'),
       summary: localized(
-        'A text-first mystery.',
+        'A cinematic mystery.',
         '一段文字悬疑。',
         '一段文字懸疑。',
       ),

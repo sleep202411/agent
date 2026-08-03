@@ -7,8 +7,8 @@ import type {
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 
-type StoryCanvasNodeKind = "clip" | "text" | "decision" | "ending" | "character";
-type StoryCanvasExitKind = "auto" | "choice" | "ending";
+type StoryCanvasNodeKind = "clip" | "decision" | "character";
+type StoryCanvasExitKind = "auto" | "choice";
 
 interface StoryCanvasChoiceData {
   choiceId: string;
@@ -25,7 +25,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   sourceNodeId?: string;
   decisionId?: string;
   clipKey?: string;
-  endingId?: string;
   characterId?: string;
   /** First appearance-reference image, shown as the card avatar. */
   characterImageUrl?: string;
@@ -62,8 +61,7 @@ type StoryCanvasEdgeData =
   | { kind: "membership" }
   | { kind: "continuation" }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
-  | { kind: "choice"; sourceNodeId: string; choiceId: string }
-  | { kind: "ending"; endingId: string };
+  | { kind: "choice"; sourceNodeId: string; choiceId: string };
 
 export type StoryCanvasEdge = Edge & { data: StoryCanvasEdgeData };
 
@@ -80,12 +78,11 @@ interface CanvasConnection {
 
 const COLUMN_GAP = 420;
 const ROW_GAP = 220;
-// The cast lane is a dedicated column to the LEFT of the Story World root,
+// The cast lane is a dedicated column to the LEFT of the story entry,
 // kept clear of the right-hand story-flow lane (COLUMN_GAP steps rightward).
 const CAST_COLUMN_GAP = 480;
 const CAST_ROW_GAP = 150;
 const SYNTHETIC_DECISION_NODE_PREFIX = "__decision__:";
-const SYNTHETIC_ENDING_NODE_PREFIX = "__ending__:";
 // Character nodes are a canvas projection of storyBible.characters. The
 // "character:" prefix keeps their synthetic ids from colliding with graph node
 // ids (which the membership tether and inspector map back through).
@@ -93,16 +90,12 @@ const SYNTHETIC_CHARACTER_NODE_PREFIX = "character:";
 
 export interface StoryCanvasCopy {
   clip: string;
-  text: string;
   decision?: string;
-  ending: string;
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
   clip: "Clip",
-  text: "Text scene",
   decision: "Decision",
-  ending: "Ending",
 };
 
 /**
@@ -114,37 +107,18 @@ export function buildStoryCanvasModel(
   locale: string,
   clips: StoryClipVideoSummary[] = [],
   copy: StoryCanvasCopy = DEFAULT_COPY,
-  // A text-first project carries no frame profile: its cards keep a neutral
-  // media box and never advertise a frame contract the project doesn't have.
-  frameProfile: StoryFrameProfile | null = "landscape_16_9"
+  frameProfile: StoryFrameProfile = "landscape_16_9"
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
-  // Null-profile (text-first) projects yield undefined so no card ever shows a
-  // frame tag for a contract that doesn't exist.
-  const frameAspectRatioOf = (profile: StoryFrameProfile | null): "16:9" | "9:16" | undefined =>
-    profile === null ? undefined : profile === "portrait_9_16" ? "9:16" : "16:9";
+  const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
+    profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipOrdinalsByNodeId = new Map<string, number>();
   let nextClipOrdinal = 0;
   content.graph.nodes.forEach((node) => {
-    if (node.kind === "clip") clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
+    clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
   });
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
-  // `storyBible.endings` is draft-level — one list for the whole work — while a
-  // canvas shows ONE chapter. Projecting all of them put every other chapter's
-  // endings on this canvas as cards nothing could ever connect to, which reads
-  // as a graph full of orphans. Only the endings this chapter actually exits to
-  // belong here.
-  const chapterEndingIds = new Set(
-    content.graph.nodes.flatMap((node) => (node.exit.kind === "ending" ? [node.exit.endingId] : []))
-  );
-  const chapterEndings = content.storyBible.endings.filter((ending) =>
-    chapterEndingIds.has(ending.id)
-  );
-  const endingCanvasIds = new Map(
-    chapterEndings.map((ending) => [ending.id, syntheticEndingNodeId(ending.id)])
-  );
   let clipOrdinal = 0;
-  let textOrdinal = 0;
 
   const projections: CanvasProjection[] = [
     ...content.graph.nodes.flatMap<CanvasProjection>((node, index) => {
@@ -156,49 +130,11 @@ export function buildStoryCanvasModel(
               targetNodeId: choice.nextNodeId,
               targetTitle: graphNodeDisplayTitle(
                 graphNodesById.get(choice.nextNodeId),
-                locale,
                 copy.clip,
                 clipOrdinalsByNodeId.get(choice.nextNodeId)
               ),
             }))
           : undefined;
-
-      if (node.kind === "text") {
-        textOrdinal += 1;
-        const textProjection: CanvasProjection = {
-          id: node.nodeId,
-          order: index * 2,
-          data: {
-            kind: "text",
-            title: localizedText(node.title, locale, `${copy.text} ${textOrdinal}`),
-            eyebrow: `${copy.text} ${String(textOrdinal).padStart(2, "0")}`,
-            nodeId: node.nodeId,
-            exitKind: node.exit.kind,
-            continuationTargetNodeId:
-              node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
-            summary: localizedText(node.body, locale, ""),
-          },
-        };
-        if (node.exit.kind !== "choice") return [textProjection];
-        const decisionNodeId = syntheticDecisionNodeId(node.nodeId);
-        return [
-          textProjection,
-          {
-            id: decisionNodeId,
-            order: index * 2 + 1,
-            data: {
-              kind: "decision",
-              title: localizedText(node.exit.prompt, locale, ""),
-              eyebrow: copy.decision ?? DEFAULT_COPY.decision!,
-              nodeId: decisionNodeId,
-              sourceNodeId: node.nodeId,
-              decisionId: node.exit.decisionId,
-              exitKind: "choice",
-              choices,
-            },
-          },
-        ];
-      }
 
       clipOrdinal += 1;
       const clip = clipsByGraphNodeId.get(node.nodeId);
@@ -242,28 +178,13 @@ export function buildStoryCanvasModel(
     }),
   ];
 
-  chapterEndings.forEach((ending, index) => {
-    const id = endingCanvasIds.get(ending.id)!;
-    projections.push({
-      id,
-      order: content.graph.nodes.length * 2 + index,
-      data: {
-        kind: "ending",
-        title: localizedText(ending.title, locale, ending.id),
-        eyebrow: `${copy.ending} ${String(index + 1).padStart(2, "0")}`,
-        nodeId: id,
-        endingId: ending.id,
-      },
-    });
-  });
-
-  // Character cards are a projection of storyBible.characters, exactly as the
-  // root node projects the bible. They never enter the story-flow layout graph
-  // (below); they live in a dedicated cast lane left of the root.
+  // Character cards are a projection of storyBible.characters. They never
+  // enter the story-flow layout graph (below); they live in a dedicated cast
+  // lane left of the entry scene.
   const characterProjections: CanvasProjection[] = content.storyBible.characters.map(
     (character, index) => ({
       id: characterCanvasNodeId(character.id),
-      order: content.graph.nodes.length * 2 + chapterEndings.length + index,
+      order: content.graph.nodes.length * 2 + index,
       data: {
         kind: "character",
         title: localizedText(character.name, locale, ""),
@@ -276,12 +197,7 @@ export function buildStoryCanvasModel(
     })
   );
 
-  const connections = buildConnections(
-    content.graph.nodes,
-    graphNodesById,
-    endingCanvasIds,
-    locale
-  );
+  const connections = buildConnections(content.graph.nodes, graphNodesById, locale);
   const storyEdges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
@@ -300,10 +216,8 @@ export function buildStoryCanvasModel(
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      // Every projected element can be deleted from the canvas. Deleting the
-      // Story World root is a layout-only presence flip (it can be summoned
-      // back from the creator menu); characters may also use their inspector's
-      // guarded delete.
+      // Every projected element can be deleted from the canvas; characters may
+      // also use their inspector's guarded delete.
       deletable: true,
       dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
@@ -313,10 +227,10 @@ export function buildStoryCanvasModel(
 }
 
 /**
- * Places character cards in a tidy vertical column to the LEFT of the Story
- * World root (or the layout seed when the root is hidden), centred on the
- * anchor's row. Manual drags still persist under the `character:` layout keys;
- * this is only the default auto-layout seed on first appearance.
+ * Places character cards in a tidy vertical column to the LEFT of the entry
+ * scene, centred on the anchor's row. Manual drags still persist under the
+ * `character:` layout keys; this is only the default auto-layout seed on first
+ * appearance.
  */
 function seedCastLanePositions(
   positions: Map<string, { x: number; y: number }>,
@@ -337,7 +251,6 @@ function seedCastLanePositions(
 function buildConnections(
   graphNodes: StoryGraphNode[],
   graphNodesById: ReadonlyMap<string, StoryGraphNode>,
-  endingCanvasIds: ReadonlyMap<string, string>,
   locale: string
 ): CanvasConnection[] {
   const connections: CanvasConnection[] = [];
@@ -396,24 +309,7 @@ function buildConnections(
           },
         });
       }
-      continue;
     }
-
-    if (node.exit.kind !== "ending") continue;
-
-    const target = endingCanvasIds.get(node.exit.endingId);
-    if (!target) continue;
-    connections.push({
-      order: order++,
-      edge: {
-        id: `ending:${node.nodeId}:${node.exit.endingId}`,
-        source: node.nodeId,
-        target,
-        sourceHandle: "completion",
-        targetHandle: "ending-in",
-        data: { kind: "ending", endingId: node.exit.endingId },
-      },
-    });
   }
 
   return connections;
@@ -465,19 +361,8 @@ function buildLayeredPositions(
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
     .forEach((projection) => visit(projection.id));
   projections
-    .filter((projection) => projection.data.kind !== "ending")
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
     .forEach((projection) => visit(projection.id));
-
-  const finalGraphLayer = Math.max(
-    0,
-    ...projections
-      .filter((projection) => projection.data.kind !== "ending")
-      .map((projection) => layerById.get(projection.id) ?? 0)
-  );
-  projections
-    .filter((projection) => projection.data.kind === "ending" && !layerById.has(projection.id))
-    .forEach((projection) => layerById.set(projection.id, finalGraphLayer + 1));
 
   const idsByLayer = new Map<number, string[]>();
   projections.forEach((projection) => {
@@ -523,12 +408,8 @@ export function estimateStoryNodeHeight(data: StoryCanvasNodeData): number {
     case "decision":
       // Prompt + one row per option + the "add option" affordance.
       return 168 + (data.choices?.length ?? 0) * 54 + 56;
-    case "ending":
-      return 132;
     case "character":
       return 120;
-    case "text":
-      return 240;
     default:
       return 236;
   }
@@ -577,15 +458,11 @@ function localizedText(
 
 function graphNodeDisplayTitle(
   node: StoryGraphNode | undefined,
-  locale: string,
   clipLabel: string,
   clipOrdinal?: number
 ): string | null {
   if (!node) return null;
-  if (node.kind === "clip") {
-    return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
-  }
-  return localizedText(node.title, locale, "") || null;
+  return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
 }
 
 export function syntheticDecisionNodeId(sourceNodeId: string): string {
@@ -594,10 +471,6 @@ export function syntheticDecisionNodeId(sourceNodeId: string): string {
 
 export function isSyntheticDecisionNodeId(canvasNodeId: string): boolean {
   return canvasNodeId.startsWith(SYNTHETIC_DECISION_NODE_PREFIX);
-}
-
-export function syntheticEndingNodeId(endingId: string): string {
-  return `${SYNTHETIC_ENDING_NODE_PREFIX}${endingId}`;
 }
 
 export function characterCanvasNodeId(characterId: string): string {
@@ -615,7 +488,7 @@ export function characterIdForCanvasNode(canvasNodeId: string): string | null {
 }
 
 /**
- * The cast red line. Character cards tether only to the Story World root's
+ * The cast red line. Character cards tether only to the film foundation's
  * cast anchor and must never participate in a story-flow connection in either
  * direction. Returns true for any connection touching a character node or a
  * cast handle, so both the connection guard and the live validator can reject

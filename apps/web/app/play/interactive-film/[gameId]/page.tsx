@@ -7,7 +7,6 @@ import zhHK from "@/messages/zh-HK.json";
 import { defaultLocale, isValidLocale, type Locale } from "@/src/i18n/config";
 import { ExperienceLoadError } from "../../_components/experience-load-error";
 import { ExperienceRuntimePlayer } from "../../_components/experience-runtime-player";
-import { StoryNarrativePlayer } from "../../_components/story-narrative-player";
 import { PlayChapterMenu } from "./_components/play-chapter-menu";
 import { PlayShareButton } from "./_components/play-share-button";
 import {
@@ -19,19 +18,6 @@ type RouteProps = {
   params: Promise<{ gameId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
-
-function localizeManifestTitle(
-  manifest: {
-    metadata: { title: Record<string, string> };
-    localization: { defaultLocale: string };
-  },
-  locale: Locale
-): string {
-  const { title } = manifest.metadata;
-  return (
-    title[locale] ?? title[manifest.localization.defaultLocale] ?? Object.values(title)[0] ?? ""
-  );
-}
 
 const PLAYER_COPY = {
   "en-US": enUS.experiencePlayer,
@@ -106,31 +92,6 @@ export default async function InteractiveFilmPage({ params, searchParams }: Rout
   }
 
   if (published) {
-    // A narrative experience is an authored skeleton the model narrates between
-    // anchors, so it plays through its own turn-loop shell. Cinematic
-    // experiences keep the frozen-manifest player untouched.
-    if (published.manifest.metadata.experienceProfile === "narrative") {
-      return (
-        <main className="relative h-[100dvh] bg-black text-white">
-          <StoryNarrativePlayer
-            gameId={gameId}
-            contentVersion={published.game.currentVersion}
-            title={localizeManifestTitle(published.manifest, locale)}
-          />
-          <ChapterMenu published={published} gameId={gameId} locale={locale} copy={playerCopy} />
-          <PlayShareButton
-            gameId={gameId}
-            locale={locale}
-            chapterId={published.activeChapterId}
-            copy={{
-              share: playerCopy.share,
-              shareCopied: playerCopy.shareCopied,
-              shareFailed: playerCopy.shareFailed,
-            }}
-          />
-        </main>
-      );
-    }
     return (
       <main className="relative h-[100dvh] bg-black text-white">
         <ExperienceRuntimePlayer

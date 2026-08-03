@@ -60,8 +60,6 @@ export interface StudioAgentCanvasPreviewPart {
       | "story_bible.update_overview"
       | "story_bible.put_character"
       | "story_bible.remove_character"
-      | "story_bible.put_ending"
-      | "story_bible.remove_ending"
       | "story_graph.set_entry_node"
       | "story_graph.put_node"
       | "story_graph.remove_node"

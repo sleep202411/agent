@@ -69,6 +69,7 @@ const initialDocument: CrewProductionDocument = {
 function overview(manage = true): CrewProductionOverviewDTO {
   return {
     capabilities: { manage },
+    studioProject: null,
     project: {
       crewId: "crew-1",
       status: "backlog",

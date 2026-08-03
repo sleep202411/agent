@@ -3,12 +3,12 @@ import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-p
 import {
   createStoryCharacter,
   deleteStoryCharacter,
-  StoryWorldMutationError,
-  type StoryWorldMutationErrorCode,
+  StoryFoundationMutationError,
+  type StoryFoundationMutationErrorCode,
   updateStoryCharacter,
-} from "./story-world-mutations";
+} from "./story-foundation-mutations";
 
-describe("story world mutations", () => {
+describe("story foundation mutations", () => {
   it("creates immutable character records with deterministic stable identifiers", () => {
     const original = draft({
       storyBible: {
@@ -192,9 +192,7 @@ function draft(overrides: DraftOverrides = {}): InteractiveStoryDraftContent {
     storyBible: {
       logline: "",
       synopsis: "",
-      worldview: "",
       characters: [],
-      endings: [],
       ...overrides.storyBible,
     },
     graph: { entryNodeId: null, nodes: overrides.nodes ?? [] },
@@ -212,12 +210,12 @@ function character(id: string): InteractiveStoryDraftContent["storyBible"]["char
   };
 }
 
-function expectMutationCode(action: () => unknown, code: StoryWorldMutationErrorCode): void {
+function expectMutationCode(action: () => unknown, code: StoryFoundationMutationErrorCode): void {
   try {
     action();
     throw new Error(`Expected mutation ${code} to fail.`);
   } catch (error) {
-    expect(error).toBeInstanceOf(StoryWorldMutationError);
+    expect(error).toBeInstanceOf(StoryFoundationMutationError);
     expect(error).toMatchObject({ code });
   }
 }

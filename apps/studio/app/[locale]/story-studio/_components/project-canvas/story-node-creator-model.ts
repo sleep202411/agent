@@ -3,7 +3,7 @@ export interface StoryNodeCreationPoint {
   y: number;
 }
 
-export type StoryNodeCreationKind = "root" | "clip" | "text" | "ending" | "character";
+export type StoryNodeCreationKind = "clip" | "character";
 
 export interface StoryNodeCreationMenuPlacement {
   left: number;
@@ -29,7 +29,6 @@ export function resolveStoryNodeCreationMenuPlacement({
   clientPosition: StoryNodeCreationPoint;
   container: { left: number; top: number; width: number; height: number };
   flowPosition: StoryNodeCreationPoint;
-  /** Offer the Story World entry only while the card is absent from the canvas. */
 }): StoryNodeCreationMenuPlacement {
   const localX = clientPosition.x - container.left;
   const localY = clientPosition.y - container.top;

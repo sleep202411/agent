@@ -248,11 +248,6 @@ export const StoryAgentLocalizedTextSchema = z.record(
   StoryAgentLocaleSchema,
   z.string().max(4_000)
 );
-export const StoryAgentTextBodyLocalizedTextSchema = z.record(
-  StoryAgentLocaleSchema,
-  z.string().max(20_000)
-);
-
 export const StoryAgentCharacterSchema = z
   .object({
     id: StoryAgentStableIdSchema,
@@ -261,15 +256,6 @@ export const StoryAgentCharacterSchema = z
   })
   .strict();
 export type StoryAgentCharacter = z.infer<typeof StoryAgentCharacterSchema>;
-
-export const StoryAgentEndingSchema = z
-  .object({
-    id: StoryAgentStableIdSchema,
-    title: StoryAgentLocalizedTextSchema,
-    summary: StoryAgentLocalizedTextSchema.optional(),
-  })
-  .strict();
-export type StoryAgentEnding = z.infer<typeof StoryAgentEndingSchema>;
 
 export const StoryAgentGraphChoiceSchema = z
   .object({
@@ -281,17 +267,6 @@ export const StoryAgentGraphChoiceSchema = z
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
 
 /**
- * A scene's background-music binding, named by the audio MediaAsset the creator
- * uploaded. The agent never authors one — it has no media to name — but the
- * node schema is `.strict()` and `story_graph.put_node` replaces a node
- * wholesale, so the field has to be expressible or a patch that echoes a node
- * back would be rejected outright. The executor is what actually protects a
- * creator's binding: an incoming node that omits `music` keeps the existing one.
- */
-export const StoryAgentNodeMusicSchema = z.object({ mediaAssetId: z.uuid() }).strict();
-export type StoryAgentNodeMusic = z.infer<typeof StoryAgentNodeMusicSchema>;
-
-/**
  * A clip node's editorial labels.
  *
  * Declared rather than inlined so the projection-fidelity guard can name them:
@@ -301,71 +276,31 @@ export type StoryAgentNodeMusic = z.infer<typeof StoryAgentNodeMusicSchema>;
 const StoryAgentNodeNameSchema = z.string().trim().max(120);
 const StoryAgentNodeDescriptionSchema = z.string().trim().max(4_000);
 
-export const StoryAgentGraphNodeSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("clip"),
-      nodeId: StoryAgentStableIdSchema,
-      clipKey: StoryAgentClipKeySchema,
-      name: StoryAgentNodeNameSchema.optional(),
-      description: StoryAgentNodeDescriptionSchema.optional(),
-      music: StoryAgentNodeMusicSchema.optional(),
-      exit: z.discriminatedUnion("kind", [
-        z
-          .object({
-            kind: z.literal("auto"),
-            nextNodeId: StoryAgentStableIdSchema.nullable(),
-          })
-          .strict(),
-        z
-          .object({
-            kind: z.literal("choice"),
-            decisionId: StoryAgentStableIdSchema,
-            prompt: StoryAgentLocalizedTextSchema,
-            choices: z.array(StoryAgentGraphChoiceSchema).max(6),
-          })
-          .strict(),
-        z
-          .object({
-            kind: z.literal("ending"),
-            endingId: StoryAgentStableIdSchema,
-          })
-          .strict(),
-      ]),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("text"),
-      nodeId: StoryAgentStableIdSchema,
-      title: StoryAgentLocalizedTextSchema.optional(),
-      body: StoryAgentTextBodyLocalizedTextSchema,
-      music: StoryAgentNodeMusicSchema.optional(),
-      exit: z.discriminatedUnion("kind", [
-        z
-          .object({
-            kind: z.literal("auto"),
-            nextNodeId: StoryAgentStableIdSchema.nullable(),
-          })
-          .strict(),
-        z
-          .object({
-            kind: z.literal("choice"),
-            decisionId: StoryAgentStableIdSchema,
-            prompt: StoryAgentLocalizedTextSchema,
-            choices: z.array(StoryAgentGraphChoiceSchema).max(6),
-          })
-          .strict(),
-        z
-          .object({
-            kind: z.literal("ending"),
-            endingId: StoryAgentStableIdSchema,
-          })
-          .strict(),
-      ]),
-    })
-    .strict(),
-]);
+export const StoryAgentGraphNodeSchema = z
+  .object({
+    kind: z.literal("clip"),
+    nodeId: StoryAgentStableIdSchema,
+    clipKey: StoryAgentClipKeySchema,
+    name: StoryAgentNodeNameSchema.optional(),
+    description: StoryAgentNodeDescriptionSchema.optional(),
+    exit: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("auto"),
+          nextNodeId: StoryAgentStableIdSchema.nullable(),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("choice"),
+          decisionId: StoryAgentStableIdSchema,
+          prompt: StoryAgentLocalizedTextSchema,
+          choices: z.array(StoryAgentGraphChoiceSchema).max(6),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
 export type StoryAgentGraphNode = z.infer<typeof StoryAgentGraphNodeSchema>;
 
 /**
@@ -390,13 +325,12 @@ const StoryAgentOperationBaseShape = {
 
 const StoryAgentPutIntentSchema = z.enum(["create", "replace"]);
 
-const STORY_AGENT_OVERVIEW_FIELDS = ["logline", "synopsis", "worldview"] as const;
+const STORY_AGENT_OVERVIEW_FIELDS = ["logline", "synopsis"] as const;
 
 const StoryAgentOverviewPayloadSchema = z
   .object({
     logline: z.string().max(1_000).optional(),
     synopsis: z.string().max(20_000).optional(),
-    worldview: z.string().max(20_000).optional(),
   })
   .strict()
   .refine(
@@ -407,7 +341,7 @@ const StoryAgentOverviewPayloadSchema = z
   // handed to the model would silently lose this rule. Metadata is zod's own
   // escape hatch for JSON-Schema keywords it cannot infer. The object is
   // closed and every property optional, so "at least one key" and "at least
-  // one of the three is set" describe the same JSON — a wire payload cannot
+  // one of the two is set" describe the same JSON — a wire payload cannot
   // carry `undefined`.
   .meta({ minProperties: 1 });
 
@@ -444,25 +378,6 @@ export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
       ...StoryAgentOperationBaseShape,
       kind: z.literal("story_bible.remove_character"),
       payload: z.object({ characterId: StoryAgentStableIdSchema }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.put_ending"),
-      payload: z
-        .object({
-          intent: StoryAgentPutIntentSchema,
-          ending: StoryAgentEndingSchema,
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...StoryAgentOperationBaseShape,
-      kind: z.literal("story_bible.remove_ending"),
-      payload: z.object({ endingId: StoryAgentStableIdSchema }).strict(),
     })
     .strict(),
   z
@@ -554,8 +469,6 @@ export const STORY_PATCH_OPERATION_LABELS: Record<StoryPatchOperation["kind"], s
   "story_bible.update_overview": "Update the story overview.",
   "story_bible.put_character": "Write a story-bible character.",
   "story_bible.remove_character": "Remove a story-bible character.",
-  "story_bible.put_ending": "Write a story ending.",
-  "story_bible.remove_ending": "Remove a story ending.",
   "story_graph.set_entry_node": "Set the chapter entry node.",
   "story_graph.put_node": "Write a story graph node.",
   "story_graph.remove_node": "Remove a story graph node.",
@@ -977,7 +890,7 @@ export type StoryAgentRunStatus = z.infer<typeof StoryAgentRunStatusSchema>;
  * without a module cycle.
  */
 export const STORY_AUTHORING_STAGE_KEYS = [
-  "worldview",
+  "foundation",
   "structure",
   "branch",
   "scene",

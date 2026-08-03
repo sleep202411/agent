@@ -15,13 +15,13 @@ vi.mock("next-intl", () => ({
 }));
 
 /**
- * The cover editor is reached through the canvas "Story world" header button,
+ * The cover editor is reached through the canvas film-foundation header button,
  * which opens this inspector in `showFoundation` mode. These tests drive that
  * real panel rather than the section in isolation, because the thing worth
  * protecting is that a human can get to the control at all — shipping the
  * publish pipeline without a reachable tap is what makes a dead feature.
  */
-describe("Story world cover authoring", () => {
+describe("film foundation cover authoring", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -38,12 +38,12 @@ describe("Story world cover authoring", () => {
     document.body.replaceChildren();
   });
 
-  it("offers the cover control in the Story world panel", async () => {
+  it("offers the cover control in the film foundation panel", async () => {
     await render({ cover: null });
 
-    expect(container.textContent ?? "").toContain("world.cover.title");
-    expect(container.textContent ?? "").toContain("world.cover.empty");
-    const choose = buttonByText("world.cover.choose");
+    expect(container.textContent ?? "").toContain("filmFoundation.cover.title");
+    expect(container.textContent ?? "").toContain("filmFoundation.cover.empty");
+    const choose = buttonByText("filmFoundation.cover.choose");
     expect(choose.disabled).toBe(false);
   });
 
@@ -53,8 +53,8 @@ describe("Story world cover authoring", () => {
     const image = container.querySelector("img");
     expect(image?.getAttribute("src")).toBe("https://example.com/cover.png");
     expect(container.textContent ?? "").toContain("1600×900");
-    buttonByText("world.cover.replace");
-    buttonByText("world.cover.remove");
+    buttonByText("filmFoundation.cover.replace");
+    buttonByText("filmFoundation.cover.remove");
   });
 
   /**
@@ -70,7 +70,7 @@ describe("Story world cover authoring", () => {
       onSelectCandidate,
     });
 
-    await click(buttonByText("world.cover.choose"));
+    await click(buttonByText("filmFoundation.cover.choose"));
 
     // The picker scopes its own translations, so its keys arrive unprefixed.
     const body = document.body.textContent ?? "";
@@ -103,9 +103,9 @@ describe("Story world cover authoring", () => {
 
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("video")).toBeNull();
-    expect(container.textContent ?? "").toContain("world.cover.unavailable");
+    expect(container.textContent ?? "").toContain("filmFoundation.cover.unavailable");
     // Still replaceable: this is the one place the mistake can be corrected.
-    buttonByText("world.cover.replace");
+    buttonByText("filmFoundation.cover.replace");
   });
 
   async function render(coverMedia: {
@@ -115,7 +115,6 @@ describe("Story world cover authoring", () => {
   }) {
     const props: ComponentProps<typeof StoryNodeInspector> = {
       content: emptyDraft(),
-      format: "text_adventure",
       locale: "en-US",
       selectedNode: null,
       showFoundation: true,
@@ -134,14 +133,10 @@ describe("Story world cover authoring", () => {
       onUpdateCharacter: vi.fn(),
       onDeleteCharacter: vi.fn(),
       onCloseNode: vi.fn(),
-      onUpdateEnding: vi.fn(),
       onDeleteSelected: vi.fn(),
       onUpdateClipMeta: vi.fn(),
-      onUpdateText: vi.fn(),
-      onUpdateMusic: vi.fn(),
       onSetSceneExit: vi.fn(),
       onSetEntryNode: vi.fn(),
-      workspaceId: "workspace-1",
     };
     await act(async () => {
       root.render(<StoryNodeInspector {...props} />);
@@ -222,9 +217,7 @@ function emptyDraft(): InteractiveStoryDraftContent {
     storyBible: {
       logline: "",
       synopsis: "",
-      worldview: "",
       characters: [],
-      endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],

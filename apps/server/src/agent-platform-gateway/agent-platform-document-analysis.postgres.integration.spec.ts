@@ -295,7 +295,7 @@ describePostgres('Agent Platform document analysis redelivery', () => {
   ): Promise<string[]> {
     const created: string[] = [];
     for (let ordinal = 0; ordinal < count; ordinal += 1) {
-      const chunkId = job.chunkIds[ordinal]!;
+      const chunkId = job.chunkIds[ordinal];
       const artifact = await prisma.agentDocumentAnalysisArtifact.create({
         data: {
           jobId: job.id,

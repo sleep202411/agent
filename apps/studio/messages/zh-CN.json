@@ -1184,7 +1184,20 @@
       },
       "tab": {
         "myCreations": "我的创作",
-        "uploaded": "已上传"
+        "uploaded": "已上传",
+        "crew": "剧组资产"
+      },
+      "crew": {
+        "back": "返回上一级",
+        "unsupported": "该文件类型暂不能放入画布",
+        "unlinkedTitle": "未关联剧组",
+        "unlinkedBody": "该画布不属于剧组生产空间或剧组任务。",
+        "errorTitle": "无法读取剧组资产",
+        "errorBody": "请检查你的剧组资产权限后重试。",
+        "emptyTitle": "此文件夹为空",
+        "emptyBody": "剧组云盘中的图片、视频和音频会显示在这里。",
+        "loadMore": "加载更多",
+        "loadingMore": "正在加载…"
       },
       "empty": {
         "title": "暂无素材",
@@ -1653,10 +1666,10 @@
   },
   "storyStudio": {
     "metaTitle": "Story Studio",
-    "metaDescription": "创作、制作、审核并发布影像与文字并存的互动故事。",
+    "metaDescription": "创作、制作、审核并发布电影化互动故事。",
     "eyebrow": "互动故事制作",
     "title": "Story Studio",
-    "subtitle": "在一个可追溯版本的工作台内设计故事、混合文字与影像场景并完成发布。",
+    "subtitle": "在一个可追溯版本的工作台内设计分支影像场景并完成发布。",
     "newProject": "新建故事项目",
     "projects": {
       "title": "故事项目",
@@ -1664,8 +1677,6 @@
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
-      "textFirstWithoutVideo": "文字优先 · 视频可选",
-      "textFirstProgress": "文字优先故事",
       "updatedUnknown": "更新时间不可用",
       "tabAll": "全部",
       "tabJoined": "共享给我的",
@@ -1676,7 +1687,6 @@
       "clips": "镜头",
       "videos": "当前视频",
       "choices": "选择",
-      "endings": "结局",
       "graphClips": "剧情镜头",
       "graphScenes": "互动场景"
     },
@@ -1699,11 +1709,11 @@
     },
     "empty": {
       "title": "还没有故事项目",
-      "description": "创建一份可编辑、可追溯的故事草稿，在同一画布中组合文字与影像场景。"
+      "description": "创建一份可编辑、可追溯的互动影游草稿。"
     },
     "create": {
       "title": "创建故事项目",
-      "description": "在当前工作区创建一份私有、可追溯的草稿；之后可随时混合文字与影像。"
+      "description": "在当前工作区创建一份私有、可追溯的互动影游草稿。"
     },
     "edit": {
       "title": "编辑项目信息"
@@ -1713,22 +1723,10 @@
       "titlePlaceholder": "未命名互动故事",
       "summary": "简介",
       "summaryPlaceholder": "描述故事前提与目标体验。",
-      "primaryExperience": "故事形态",
-      "primaryExperienceHint": "决定 AI 起草形态与视频画幅契约；画布上仍可手动混用文字与影像场景。",
       "frameProfile": "视频画幅",
-      "frameProfileHint": "仅作用于视频节点；项目内所有生成视频片段都将使用该固定画幅。",
+      "frameProfileHint": "项目内所有生成视频片段都将使用该固定画幅。",
       "storyLocale": "故事语言",
       "storyLocaleHint": "（写作与发布的主语言）"
-    },
-    "formats": {
-      "interactive_film": {
-        "label": "互动影游",
-        "description": "以影像场景为主线，全项目共用固定画幅；AI 起草产出影像分镜。"
-      },
-      "text_adventure": {
-        "label": "文字冒险",
-        "description": "以文字剧情为主线，AI 起草为纯文字；可手动加入视频场景。"
-      }
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -2042,13 +2040,13 @@
           "halftoneCollage": {
             "title": "半调纸拼贴",
             "description": "纯色纸底、半调剪贴与卡纸点缀，每个选择拼装成一个视觉隐喻。",
-            "prompt": "创作一个互动短篇：一只装满旧车票与照片的手提箱在午夜自动打开，每个剪贴物件都是一段被折叠的记忆。剧情：主人公整理遗物时，逐渐拼出母亲隐瞒一生的旅程。整体节奏：10-14 个节点，开场 2 个节点内抛出悬念，之后每 2-3 个节点一次关键选择。结局：3 个——启程、留下、把箱子重新锁上，分别对应玩家把哪些记忆拼回、哪些撕碎。",
+            "prompt": "创作一个互动短篇：一只装满旧车票与照片的手提箱在午夜自动打开，每个剪贴物件都是一段被折叠的记忆。主人公整理遗物时，逐渐拼出母亲隐瞒一生的旅程。使用 10-14 个影视片段，开场 2 个片段内抛出悬念，之后每 2-3 个片段一次关键选择，让每条路线自然结束于最后一个片段。",
             "styleBrief": "美术方向：纯色纸底、黑白半调剪贴与卡纸点缀，每个节点用三到六件物件拼出一个视觉隐喻。不要文字排版、不要 3D、不要写实照片感。"
           },
           "symmetricalStorybook": {
             "title": "对称童话电影",
             "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。",
-            "prompt": "创作一个互动短篇：粉色山间旅馆迎来一位从不摘帽的神秘住客，门童奉命查明缘由。剧情：按章节推进，每章一次关键选择，让旅馆秩序更荒诞一分、真相更近一步。整体节奏：12 个节点左右，三幕结构，每幕收在一个小反转。结局：3 个——揭开帽子、替他守密、成为下一个戴帽人，分别改写门童与旅馆的关系。",
+            "prompt": "创作一个互动短篇：粉色山间旅馆迎来一位从不摘帽的神秘住客，门童奉命查明缘由。按影视章节推进，每章一次关键选择，让旅馆秩序更荒诞一分、真相更近一步。使用约 12 个影视片段和三幕结构，每幕收在一个视觉反转，让每条路线自然结束于最后一个片段。",
             "styleBrief": "美术方向：刻意对称的居中构图，每一幕一个章节母题，克制的复古配色，揭示时机精准而收敛。"
           }
         }
@@ -2063,10 +2061,8 @@
       },
       "nodeKinds": {
         "clip": "影像镜头",
-        "text": "关键剧情",
         "choice": "玩家选择",
         "decision": "玩家选择",
-        "ending": "故事结局",
         "character": "角色"
       },
       "ports": {
@@ -2075,8 +2071,7 @@
         "completion": "场景的下一步",
         "choiceTrigger": "触发选择",
         "choiceOption": "选择：{label}",
-        "newChoice": "连接新选项",
-        "ending": "进入结局"
+        "newChoice": "连接新选项"
       },
       "decisionCard": {
         "promptPlaceholder": "玩家此刻必须决定什么？",
@@ -2093,48 +2088,36 @@
         "description": "创建互动故事结构中的图元素。",
         "clip": "影像镜头",
         "clipDescription": "一段带有明确后续走向的生成视频。",
-        "text": "关键剧情",
-        "textDescription": "带有独立后续走向或玩家选择的关键剧情。",
         "character": "角色",
-        "characterDescription": "隶属于本故事世界的角色卡。",
+        "characterDescription": "属于当前故事项目的可复用角色卡。",
         "choice": "玩家选择",
-        "choiceDescription": "把当前镜头的结尾转换为玩家选择。",
-        "choiceUnavailable": "请先选中一个影像镜头。",
-        "ending": "故事结局",
-        "endingDescription": "保存于故事圣经中的命名结局。",
-        "root": "故事世界",
-        "rootDescription": "将世界观节点重新添加到画布。"
+        "choiceDescription": "从当前镜头继续进入玩家选择。",
+        "choiceUnavailable": "请先选中一个影像镜头。"
       },
       "connectionCreator": {
         "title": "创建下一步",
         "description": "选择这个场景结束后发生什么。",
         "clip": "影片片段",
         "clipDescription": "直接继续到另一个生成的视频片段。",
-        "text": "关键剧情",
-        "textDescription": "继续到一个不依赖视频的关键剧情。",
         "choice": "玩家选择",
         "choiceDescription": "暂停播放，让玩家选择后续分支。",
         "cancel": "取消"
       },
       "projection": {
         "clip": "镜头",
-        "text": "关键剧情",
-        "decision": "玩家选择",
-        "ending": "结局"
+        "decision": "玩家选择"
       },
       "foundation": {
         "description": "先固化戏剧承诺，再展开分支图；修改会自动保存到可编辑草稿。",
         "logline": "一句话梗概",
         "loglinePlaceholder": "用一句话写清主角、压力与不可逆的选择。",
         "synopsis": "完整梗概",
-        "synopsisPlaceholder": "描述完整戏剧弧线，包括核心转折与可能结局。",
-        "worldview": "世界与规则",
-        "worldviewPlaceholder": "定义时代与场景、世界运行逻辑、视觉质感，以及故事不能违反的规则。"
+        "synopsisPlaceholder": "描述完整影视弧线，包括核心转折，以及每条路线如何抵达终止片段。"
       },
-      "world": {
-        "eyebrow": "故事世界",
-        "title": "故事设定",
-        "description": "支撑每个分支的前提、角色与世界规则；修改会自动保存到草稿。",
+      "filmFoundation": {
+        "eyebrow": "世界观",
+        "title": "世界观",
+        "description": "支撑每个影视分支的前提、梗概、角色与封面；修改会自动保存到草稿。",
         "cover": {
           "title": "封面图",
           "description": "本故事的一张静态封面图：既是这里的项目封面，也是播放器标题页的背景，以及已发布作品的分享图。",
@@ -2213,7 +2196,7 @@
             "initialNotAllowed": "初始值不在允许值列表中。草稿仍可保存，但该变量无法用于试玩。"
           },
           "deleteTitle": "删除这个状态变量？",
-          "deleteDescription": "“{key}”将从故事世界中移除。",
+          "deleteDescription": "“{key}”将从世界观中移除。",
           "cancel": "取消",
           "confirmDelete": "删除变量",
           "boolean": {
@@ -2353,7 +2336,6 @@
         "entry": "入口场景",
         "exitAuto": "继续到场景",
         "exitChoice": "玩家选择",
-        "exitEnding": "故事结局",
         "continuationTarget": "下一个场景",
         "continuationDescription": "一个场景只有一个直接后续；需要分支时请使用玩家选择。",
         "choicePrompt": "选择问题",
@@ -2368,41 +2350,14 @@
         "moveChoiceDown": "下移选项",
         "choiceMinimum": "可试玩的选择至少需要 2 个选项，当前为 {count} 个。",
         "requiredForPlayableStory": "可试玩故事必须填写。",
-        "endingTarget": "目标结局",
-        "endingTargetPlaceholder": "选择一个结局",
+        "terminalAfterPlayback": "未连接后续节点时，播放将在这里自然结束。",
         "convertExitTitle": "替换当前后续走向？",
         "convertExitDescription": "这会删除现有的 {count} 条分支，以及其中已经编写的条件或选项细节。",
         "confirmConversion": "替换后续走向",
-        "endingTitle": "结局标题",
-        "endingSummary": "结局摘要",
         "delete": "删除节点",
-        "deleteEnding": "删除结局",
         "removeDecision": "移除选择环节",
         "cancel": "取消",
-        "nodeName": "名称",
-        "textTitle": "场景标题",
-        "textTitlePlaceholder": "为这个关键剧情命名",
-        "textBody": "场景正文",
-        "textBodyPlaceholder": "写下玩家在这个场景中读到的内容…",
-        "music": {
-          "title": "场景音乐",
-          "description": "播放进入该场景时开始，直到另一个场景更换音乐为止。",
-          "empty": "尚未附加音轨",
-          "trackLabel": "音轨 {letter}",
-          "usedIn": "{count, plural, other {# 个场景}}",
-          "reuse": "复用本故事中的音轨",
-          "upload": "上传音轨",
-          "replace": "更换音轨",
-          "remove": "移除音轨",
-          "play": "试听音轨",
-          "stop": "停止试听",
-          "uploading": "上传中 · {progress}%",
-          "accepted": "MP3 或 WAV 音频",
-          "errors": {
-            "upload": "音轨上传失败。",
-            "type": "仅支持附加 MP3 或 WAV 音频。"
-          }
-        }
+        "nodeName": "名称"
       },
       "conflict": {
         "description": "其他会话保存了更新版本。你的本地草稿已保留；如需留存，请先导出再丢弃。",
@@ -2422,7 +2377,7 @@
           },
           "layout": {
             "title": "画布布局",
-            "description": "未保存的节点位置或故事世界显示状态将会丢失。"
+            "description": "未保存的节点位置将会丢失。"
           }
         },
         "stay": "留在画布",
@@ -2437,20 +2392,6 @@
       "error": {
         "title": "无法打开故事画布",
         "retry": "重试"
-      },
-      "textPlay": {
-        "eyebrow": "试玩 · 草稿",
-        "back": "返回画布",
-        "restart": "重新开始",
-        "loading": "正在加载工作区…",
-        "thinking": "旁白正在书写…",
-        "anchorLabel": "场景",
-        "continue": "继续",
-        "theEnd": "全剧终",
-        "playAgain": "再玩一次",
-        "inputPlaceholder": "输入你的行动…",
-        "send": "发送",
-        "errorFallback": "出错了，请重试。"
       },
       "tidy": {
         "action": "整理画布"
@@ -2478,7 +2419,7 @@
       "productionSubtitle": "当前工作草稿的参考就绪度与视频覆盖。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事结构",
-      "storyStructureSubtitle": "选择、状态与结局均以创作图为唯一真源。",
+      "storyStructureSubtitle": "镜头、选择、状态与终止路线均以创作图为唯一真源。",
       "videoState": "当前视频状态",
       "videoStateReady": "{total} 个镜头中已有 {current} 个绑定当前视频。",
       "revisionTitle": "版本标识",
@@ -2492,7 +2433,6 @@
       "characters": "人物",
       "storyGraph": "剧情图",
       "graphNodes": "图节点",
-      "endings": "结局",
       "decisions": "分支选择",
       "decisionsSubtitle": "稳定决策、选项、状态效果及其下一剧情节点。",
       "decisionSources": "出现于 {scenes} 之后"
@@ -2631,8 +2571,8 @@
     "videoLabel": "画面 {nodeId} 的故事视频",
     "continue": "继续",
     "noVisibleChoices": "当前故事状态下没有可用选择。",
-    "endingEyebrow": "抵达结局",
-    "unknownEnding": "结局 {endingId}",
+    "completionEyebrow": "播放完成",
+    "completionTitle": "这条路线已播放完毕",
     "playAgain": "再玩一次",
     "runtimeError": "试玩无法继续",
     "mediaError": "无法播放冻结媒体资产 {assetId}。",

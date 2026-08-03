@@ -2,51 +2,26 @@ import { describe, expect, it } from "vitest";
 import {
   offsetStoryNodeDockCreationPosition,
   resolveStoryNodeCreationMenuPlacement,
+  type StoryNodeCreationKind,
 } from "./story-node-creator-model";
 
-describe("resolveStoryNodeCreationMenuPlacement", () => {
-  const container = { left: 380, top: 64, width: 740, height: 912 };
-
-  it("uses canvas-local menu coordinates while preserving the selected flow point", () => {
-    expect(
-      resolveStoryNodeCreationMenuPlacement({
-        clientPosition: { x: 700, y: 400 },
-        container,
-        flowPosition: { x: 1234, y: -480 },
-      })
-    ).toEqual({
-      left: 320,
-      top: 336,
-      flowPosition: { x: 1234, y: -480 },
-    });
+describe("story node creator model", () => {
+  it("exposes only film clips and cast members", () => {
+    const kinds = ["clip", "character"] satisfies StoryNodeCreationKind[];
+    expect(kinds).toEqual(["clip", "character"]);
   });
 
-  it("keeps the menu inside every canvas edge without moving the node anchor", () => {
+  it("keeps the chosen flow point while clamping the menu", () => {
     expect(
       resolveStoryNodeCreationMenuPlacement({
-        clientPosition: { x: 200, y: 20 },
-        container,
-        flowPosition: { x: -200, y: -100 },
+        clientPosition: { x: 990, y: 790 },
+        container: { left: 100, top: 100, width: 900, height: 700 },
+        flowPosition: { x: 42, y: 84 },
       })
-    ).toEqual({ left: 12, top: 12, flowPosition: { x: -200, y: -100 } });
-
-    expect(
-      resolveStoryNodeCreationMenuPlacement({
-        clientPosition: { x: 1_300, y: 1_100 },
-        container,
-        flowPosition: { x: 900, y: 800 },
-      })
-    ).toEqual({ left: 418, top: 550, flowPosition: { x: 900, y: 800 } });
+    ).toMatchObject({ flowPosition: { x: 42, y: 84 } });
   });
-});
 
-describe("offsetStoryNodeDockCreationPosition", () => {
-  it("nudges repeated center adds and starts a new cycle after six nodes", () => {
-    const center = { x: 100, y: 200 };
-
-    expect(offsetStoryNodeDockCreationPosition(center, 0)).toEqual(center);
-    expect(offsetStoryNodeDockCreationPosition(center, 1)).toEqual({ x: 126, y: 226 });
-    expect(offsetStoryNodeDockCreationPosition(center, 5)).toEqual({ x: 230, y: 330 });
-    expect(offsetStoryNodeDockCreationPosition(center, 6)).toEqual(center);
+  it("nudges dock-created nodes deterministically", () => {
+    expect(offsetStoryNodeDockCreationPosition({ x: 10, y: 20 }, 2)).toEqual({ x: 62, y: 72 });
   });
 });

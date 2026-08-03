@@ -5,7 +5,6 @@ import {
 } from '@repo/shared/interactive-film-runtime';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
 import type {
-  CreatableStoryFormat,
   StoryBuildDiagnosticDto,
   StoryBuildPathReportDto,
   StoryFrameProfile,
@@ -79,14 +78,11 @@ export interface StoryBuildCoverInput {
 
 export interface StoryBuildCompilerInput {
   projectId: string;
-  format: CreatableStoryFormat;
   buildId: string;
   sourceDraftRevision: number;
   channel: 'preview' | 'production';
   scope: StoryBuildScope;
-  // Null for a text-first (narrative) project: video is inline media at its
-  // native size, not a full-frame clip bound to a fixed picture contract.
-  frameProfile: StoryFrameProfile | null;
+  frameProfile: StoryFrameProfile;
   defaultLocale: string;
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
@@ -156,7 +152,7 @@ export function compileStoryBuild(
   unreachableNodeIds.forEach((nodeId) =>
     diagnostics.push(
       diagnostic(
-        'error',
+        'warning',
         'STORY_BUILD_UNREACHABLE_NODE',
         `Node ${nodeId} is unreachable from Build entry ${entryNodeId ?? '<missing>'}.`,
         'revision',
@@ -166,7 +162,11 @@ export function compileStoryBuild(
   );
   detectStructuralCycles(entryNodeId, nodes, selection, diagnostics);
 
-  const requiredGraphNodeIds = requiredVideoNodeIds(selection, nodes);
+  // Disconnected canvas work remains editable and is reported above, but it is
+  // not part of this playable cut. Compiling it into the runtime would make the
+  // manifest invalid even though the connected film itself is ready.
+  const runtimeSelection = reachable;
+  const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
   const includedVideos = [...requiredGraphNodeIds]
     .flatMap((graphNodeId) => {
       const video = videos.get(graphNodeId);
@@ -179,7 +179,7 @@ export function compileStoryBuild(
         diagnostic(
           input.channel === 'preview' ? 'warning' : 'error',
           'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
-          `Clip ${node?.kind === 'clip' ? node.clipKey : graphNodeId} has no current video selection.`,
+          `Clip ${node?.clipKey ?? graphNodeId} has no current video selection.`,
           'clip',
           graphNodeId,
         ),
@@ -193,50 +193,34 @@ export function compileStoryBuild(
     entryNodeId,
     nodes,
     videos,
-    selection,
+    runtimeSelection,
     diagnostics,
   );
   const pathReport: StoryBuildPathReportDto = {
     enumeratedPathCount: analysis.pathCount,
-    reachableEndingIds: [...analysis.endingIds].sort(),
+    reachableTerminalNodeIds: [...analysis.terminalNodeIds].sort(),
     unreachableNodeIds,
     ambiguousPathCount: analysis.ambiguousPathCount,
     durationMinMs: analysis.durationMinMs ?? 0,
     durationMaxMs: analysis.durationMaxMs ?? 0,
   };
-  if (pathReport.reachableEndingIds.length === 0) {
+  if (pathReport.reachableTerminalNodeIds.length === 0) {
     diagnostics.push(
       diagnostic(
         'error',
-        'STORY_BUILD_NO_REACHABLE_ENDING',
-        'The selected graph has no reachable ending.',
-        'ending',
+        'STORY_BUILD_NO_REACHABLE_TERMINAL',
+        'The selected graph has no reachable terminal clip.',
+        'revision',
         null,
       ),
     );
   }
-  if (input.scope.kind === 'full') {
-    const reachableEndingIds = new Set(pathReport.reachableEndingIds);
-    input.draft.storyBible.endings.forEach((ending) => {
-      if (reachableEndingIds.has(ending.id)) return;
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_ENDING_UNREACHABLE',
-          `Authored ending ${ending.id} is not reachable from the story entry.`,
-          'ending',
-          ending.id,
-        ),
-      );
-    });
-  }
-
   let runtime: ExperienceRuntimeManifest | null = null;
   if (!diagnostics.some((item) => item.severity === 'error') && entryNodeId) {
     const releaseCandidate = compileIntermediateRelease(
       input,
       entryNodeId,
-      selection,
+      runtimeSelection,
       nodes,
       videos,
       includedVideos,
@@ -276,8 +260,7 @@ export function compileStoryBuild(
       ];
       const compiled = compileStoryExperienceManifest({
         release: release.data,
-        experienceProfile:
-          input.format === 'interactive_film' ? 'cinematic' : 'narrative',
+        experienceProfile: 'cinematic',
         metadata: {
           ...input.metadata,
           // Set together with the `media` entry above or not at all: a manifest
@@ -406,7 +389,7 @@ function requiredVideoNodeIds(
   const required = new Set<string>();
   [...selection].forEach((nodeId) => {
     const node = nodes.get(nodeId);
-    if (node?.kind === 'clip') required.add(node.nodeId);
+    if (node) required.add(node.nodeId);
   });
   return required;
 }
@@ -546,9 +529,9 @@ function detectStructuralCycles(
 
 /** Per-node roll-up: what every complete route *from this node onward* looks like. */
 interface NodePathFacts {
-  /** Distinct complete routes from here to any ending. 0 means dead end. */
+  /** Distinct complete routes from here to a terminal clip. 0 means dead end. */
   pathCount: number;
-  endingIds: ReadonlySet<string>;
+  terminalNodeIds: ReadonlySet<string>;
   /**
    * Shortest / longest remaining runtime, this node's own clip included. Null
    * when `pathCount === 0` — a dead end must not read as a 0 ms route, which is
@@ -560,7 +543,7 @@ interface NodePathFacts {
 
 const DEAD_END: NodePathFacts = {
   pathCount: 0,
-  endingIds: new Set(),
+  terminalNodeIds: new Set(),
   durationMinMs: null,
   durationMaxMs: null,
 };
@@ -570,7 +553,7 @@ const DEAD_END: NodePathFacts = {
  * walking every route through it.
  *
  * The report only ever needed three scalars — shortest runtime, longest runtime,
- * and which endings are reachable — but this used to materialise every distinct
+ * and which terminal clips are reachable — but this used to materialise every distinct
  * path to derive them. Route count is the *product* of the branch factors, so a
  * story that offers a choice per scene explodes: nine 3-to-4-way choices over 55
  * nodes is 46,656 routes, which blew the old safety budget and reported
@@ -600,7 +583,7 @@ function analyzePaths(
   }
   const reported = new Set<string>();
   const reportOnce = (item: StoryBuildDiagnosticDto) => {
-    const key = [item.code, item.entityId ?? '', item.message].join(' ');
+    const key = JSON.stringify([item.code, item.entityId ?? '', item.message]);
     if (reported.has(key)) return;
     reported.add(key);
     diagnostics.push(item);
@@ -644,16 +627,13 @@ function analyzePaths(
     }
 
     onStack.add(nodeId);
-    const selfMs =
-      node.kind === 'clip'
-        ? (videos.get(node.nodeId)?.asset?.durationMs ?? 0)
-        : 0;
+    const selfMs = videos.get(node.nodeId)?.asset?.durationMs ?? 0;
 
-    let facts: NodePathFacts;
-    if (node.exit.kind === 'ending') {
+    let facts: NodePathFacts = DEAD_END;
+    if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) {
       facts = {
         pathCount: 1,
-        endingIds: new Set([node.exit.endingId]),
+        terminalNodeIds: new Set([node.nodeId]),
         durationMinMs: selfMs,
         durationMaxMs: selfMs,
       };
@@ -665,21 +645,13 @@ function analyzePaths(
         });
       } else if (node.exit.nextNodeId) {
         successors.push(node.exit.nextNodeId);
-      } else {
-        reportOnce(
-          diagnostic(
-            'error',
-            'STORY_BUILD_SCENE_CONTINUATION_MISSING',
-            `Scene ${node.nodeId} has no next step.`,
-            'revision',
-            node.nodeId,
-          ),
+      }
+      if (successors.length > 0) {
+        facts = combineSuccessorFacts(
+          successors.map((next) => factsFor(next)),
+          selfMs,
         );
       }
-      facts = combineSuccessorFacts(
-        successors.map((next) => factsFor(next)),
-        selfMs,
-      );
     }
     onStack.delete(nodeId);
     memo.set(nodeId, facts);
@@ -696,7 +668,7 @@ function combineSuccessorFacts(
 ): NodePathFacts {
   const live = parts.filter((part) => part.pathCount > 0);
   if (live.length === 0) return DEAD_END;
-  const endingIds = new Set<string>();
+  const terminalNodeIds = new Set<string>();
   let pathCount = 0;
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
@@ -704,13 +676,13 @@ function combineSuccessorFacts(
     // Clamp so a pathological graph reports a huge count rather than drifting
     // out of the exact-integer range.
     pathCount = Math.min(Number.MAX_SAFE_INTEGER, pathCount + part.pathCount);
-    part.endingIds.forEach((id) => endingIds.add(id));
+    part.terminalNodeIds.forEach((id) => terminalNodeIds.add(id));
     min = Math.min(min, part.durationMinMs ?? 0);
     max = Math.max(max, part.durationMaxMs ?? 0);
   });
   return {
     pathCount,
-    endingIds,
+    terminalNodeIds,
     durationMinMs: selfMs + min,
     durationMaxMs: selfMs + max,
   };
@@ -727,9 +699,7 @@ function compileIntermediateRelease(
   videos: ReadonlyMap<string, StoryBuildVideoInput>,
   includedVideos: FrozenStoryBuildVideoInput[],
 ): InteractiveFilmRelease {
-  // A film project pins every clip to its project-wide orientation. A narrative
-  // (null-profile) project derives each clip's orientation from its own native
-  // dimensions, so inline video keeps its intrinsic frame.
+  // Every clip is pinned to the project's film orientation.
   const videoMedia = includedVideos.map((video) => {
     const node = clipNodeById(nodes, video.graphNodeId);
     const variant = {
@@ -744,12 +714,7 @@ function compileIntermediateRelease(
         ? { durationSeconds: video.asset.durationMs / 1_000 }
         : {}),
     };
-    const landscape =
-      input.frameProfile === null
-        ? video.asset.width !== null && video.asset.height !== null
-          ? video.asset.width >= video.asset.height
-          : true
-        : input.frameProfile === 'landscape_16_9';
+    const landscape = input.frameProfile === 'landscape_16_9';
     return {
       assetId: storyRuntimeAssetId(node.clipKey),
       kind: 'video' as const,
@@ -758,45 +723,10 @@ function compileIntermediateRelease(
     };
   });
   const media = [...videoMedia, ...coverMedia(input.cover?.asset ?? null)];
-  // Music ships for the NARRATIVE profile only: it is the one runtime that
-  // reads a scene's bed. The cinematic player never looks at it, so emitting it
-  // there would cost bandwidth and review surface for something no player can
-  // hear — a cinematic Build is byte-identical with and without bindings.
-  const musicReference = (
-    node: InteractiveStoryDraftContent['graph']['nodes'][number],
-  ) => {
-    if (input.format === 'interactive_film' || !node.music) return {};
-    const url = input.musicUrls?.get(node.music.mediaAssetId);
-    // No resolvable URL — deleted, blocked, or another workspace's asset — is
-    // silence on this scene, never a diagnostic and never a failed Build.
-    return url
-      ? { music: { trackId: storyMusicTrackId(node.music.mediaAssetId), url } }
-      : {};
-  };
   const runtimeNodes: InteractiveFilmRelease['nodes'] = [];
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
     if (!node) return;
-    if (node.kind === 'text') {
-      runtimeNodes.push({
-        nodeId: node.nodeId,
-        ...musicReference(node),
-        presentation: {
-          kind: 'text',
-          ...(hasNonEmptyLocalizedText(node.title)
-            ? { title: node.title }
-            : {}),
-          body: node.body,
-          completion:
-            node.exit.kind === 'auto' || node.exit.kind === 'ending'
-              ? 'continue'
-              : 'passive',
-        },
-        overlays: [],
-        exit: compileExit(node),
-      });
-      return;
-    }
     const video = videos.get(node.nodeId);
     // A preview keeps the shot in the story with an empty sequence so the work
     // stays playable end to end while its footage is still being made; the
@@ -808,7 +738,6 @@ function compileIntermediateRelease(
     if (!video && input.channel !== 'preview') return;
     runtimeNodes.push({
       nodeId: node.nodeId,
-      ...musicReference(node),
       presentation: {
         kind: 'video',
         sequence: hasFootage
@@ -820,9 +749,7 @@ function compileIntermediateRelease(
               },
             ]
           : [],
-        // Narrative (null-profile) stories present inline video at native size;
-        // film stories cover their fixed frame.
-        fit: input.frameProfile === null ? 'native' : 'cover',
+        fit: 'cover',
       },
       overlays: [],
       exit: compileExit(node),
@@ -841,35 +768,16 @@ function compileIntermediateRelease(
     entryNodeId,
     defaultLocale: input.defaultLocale,
     locales,
-    endings: input.draft.storyBible.endings.map((ending) => ({
-      endingId: ending.id,
-      title: ending.title,
-      ...(hasNonEmptyLocalizedText(ending.summary)
-        ? { summary: ending.summary }
-        : {}),
-    })),
     media,
     nodes: runtimeNodes,
   };
-}
-
-function hasNonEmptyLocalizedText(
-  value: Record<string, string> | undefined,
-): value is Record<string, string> {
-  return Boolean(value && Object.values(value).some((text) => text.trim()));
 }
 
 function compileExit(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): InteractiveFilmRelease['nodes'][number]['exit'] {
   const exit = node.exit;
-  if (exit.kind === 'ending') return exit;
   if (exit.kind === 'auto') {
-    if (exit.nextNodeId === null) {
-      // A dead-end scene fails Build before compilation; every auto exit that
-      // reaches here has a validated target.
-      throw new Error(`Scene ${node.nodeId} auto exit has no target.`);
-    }
     return { kind: 'auto', nextNodeId: exit.nextNodeId };
   }
   return {
@@ -895,7 +803,7 @@ function clipNodeById(
   { kind: 'clip' }
 > {
   const node = nodes.get(graphNodeId);
-  if (!node || node.kind !== 'clip') {
+  if (!node) {
     throw new Error(
       `Frozen video ${graphNodeId} does not identify a clip node.`,
     );
@@ -980,7 +888,6 @@ export function storyMusicTrackId(mediaAssetId: string): string {
 function nextNodeIds(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
-  if (node.exit.kind === 'ending') return [];
   if (node.exit.kind === 'choice') {
     return node.exit.choices.map((choice) => choice.nextNodeId);
   }

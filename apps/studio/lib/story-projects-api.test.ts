@@ -32,7 +32,6 @@ import {
   updateStoryChapter,
   type StoryClipVideoFinalization,
   type StoryCandidateAsset,
-  type CreatableStoryFormat,
   type StoryProductionCanvas,
   type StoryProjectSummary,
   type StoryVideoLibraryItem,
@@ -44,64 +43,35 @@ describe("current-draft Story production routes", () => {
     vi.clearAllMocks();
   });
 
-  it("lists cinematic and text-adventure projects without a format filter", async () => {
+  it("lists film projects without a legacy format filter", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
-      items: [storyProject("interactive_film"), storyProject("text_adventure")],
+      items: [storyProject()],
       nextCursor: null,
     });
 
     const page = await listStoryProjects("workspace-1", { limit: 100 });
 
-    expect(page.items.map((project) => project.format)).toEqual([
-      "interactive_film",
-      "text_adventure",
-    ]);
+    expect(page.items).toHaveLength(1);
     expect(api.get).toHaveBeenCalledWith("/aurora/story-projects", {
       params: { limit: 100 },
       headers: { "x-fizz-workspace-id": "workspace-1" },
     });
   });
 
-  it("creates a text-adventure project without a video frame contract", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject("text_adventure") });
+  it("creates a film project with its required frame contract", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject() });
 
     await expect(
       createStoryProject("workspace-1", {
-        format: "text_adventure",
-        title: "The Archive",
-        summary: null,
-        defaultLocale: "en-US",
-        visibility: "private",
-      })
-    ).resolves.toMatchObject({ format: "text_adventure", frameProfile: null });
-    expect(api.post).toHaveBeenCalledWith("/aurora/story-projects", {
-      data: {
-        format: "text_adventure",
-        title: "The Archive",
-        summary: null,
-        defaultLocale: "en-US",
-        visibility: "private",
-      },
-      headers: { "x-fizz-workspace-id": "workspace-1" },
-    });
-  });
-
-  it("creates an interactive-film project with its required frame contract", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject("interactive_film") });
-
-    await expect(
-      createStoryProject("workspace-1", {
-        format: "interactive_film",
         frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
         visibility: "private",
       })
-    ).resolves.toMatchObject({ format: "interactive_film", frameProfile: "portrait_9_16" });
+    ).resolves.toMatchObject({ frameProfile: "landscape_16_9" });
     expect(api.post).toHaveBeenCalledWith("/aurora/story-projects", {
       data: {
-        format: "interactive_film",
         frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
@@ -529,15 +499,14 @@ describe("current-draft Story production routes", () => {
   });
 });
 
-function storyProject(format: CreatableStoryFormat): StoryProjectSummary {
+function storyProject(): StoryProjectSummary {
   return {
-    id: `project-${format}`,
+    id: "project-film",
     workspaceId: "workspace-1",
-    format,
-    frameProfile: format === "text_adventure" ? null : "portrait_9_16",
+    frameProfile: "landscape_16_9",
     status: "active",
     visibility: "private",
-    title: format === "text_adventure" ? "The Archive" : "Moving Pictures",
+    title: "Moving Pictures",
     summary: null,
     defaultLocale: "en-US",
     cover: null,

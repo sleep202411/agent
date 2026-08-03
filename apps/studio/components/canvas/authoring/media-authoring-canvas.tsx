@@ -80,6 +80,8 @@ export interface MediaAuthoringCanvasProps {
   assetLibrary?: {
     variant?: "default" | "floating";
     description?: string;
+    /** Enables the project-scoped crew cloud-drive tab when linked. */
+    crewProjectId?: string;
   };
   onDrawerInsetChange?: (inset: number) => void;
   backdrop?: ReactNode;
@@ -419,6 +421,7 @@ export function MediaAuthoringCanvas({
             onClose={() => setAssetsOpen(false)}
             variant={assetLibrary?.variant}
             description={assetLibrary?.description}
+            crewProjectId={assetLibrary?.crewProjectId}
           />
 
           {panels}

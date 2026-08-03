@@ -102,7 +102,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     const { runs, pipeline, worker } = harness();
     pipeline.author.mockImplementation(
       async ({ onStage }: { onStage: (s: string) => Promise<void> }) => {
-        await onStage('worldview');
+        await onStage('foundation');
         await onStage('structure');
         return { operations: AUTHORED_OPERATIONS };
       },
@@ -116,7 +116,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       1,
       RUN_ID,
       workerId,
-      'worldview',
+      'foundation',
     );
     expect(runs.advanceAuthoringStage).toHaveBeenNthCalledWith(
       2,

@@ -40,6 +40,10 @@ import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { lockCrewAssetUploads } from '../assets/upload-lock';
 import { CrewEarningsService } from '../earnings/earnings.service';
 import {
+  DEFAULT_CREW_TASK_WORKFLOW_STATES,
+  defaultCrewTaskView,
+} from './task-defaults';
+import {
   CrewTaskViewFiltersSchema,
   CrewTaskViewSortSchema,
 } from './project-dto';
@@ -184,57 +188,6 @@ const MANUALLY_MOVABLE_TASK_STATUSES = new Set<CrewTaskStatus>([
   CrewTaskStatus.in_progress,
   CrewTaskStatus.revision_requested,
 ]);
-const DEFAULT_WORKFLOW_STATES = [
-  {
-    name: 'Backlog',
-    color: '#8B919B',
-    semantic: CrewTaskStatus.open,
-    systemKey: 'backlog',
-    position: 0,
-  },
-  {
-    name: 'To do',
-    color: '#8B919B',
-    semantic: CrewTaskStatus.open,
-    systemKey: CrewTaskStatus.open,
-    position: 1,
-  },
-  {
-    name: 'In progress',
-    color: '#63A8FF',
-    semantic: CrewTaskStatus.in_progress,
-    systemKey: CrewTaskStatus.in_progress,
-    position: 2,
-  },
-  {
-    name: 'In review',
-    color: '#E9B949',
-    semantic: CrewTaskStatus.submitted,
-    systemKey: CrewTaskStatus.submitted,
-    position: 3,
-  },
-  {
-    name: 'Changes requested',
-    color: '#EF646B',
-    semantic: CrewTaskStatus.revision_requested,
-    systemKey: CrewTaskStatus.revision_requested,
-    position: 4,
-  },
-  {
-    name: 'Completed',
-    color: '#58B889',
-    semantic: CrewTaskStatus.approved,
-    systemKey: CrewTaskStatus.approved,
-    position: 5,
-  },
-  {
-    name: 'Cancelled',
-    color: '#6F7580',
-    semantic: CrewTaskStatus.cancelled,
-    systemKey: CrewTaskStatus.cancelled,
-    position: 6,
-  },
-] as const;
 const MAX_ACTIVE_WORKFLOW_STATES = 24;
 
 @Injectable()
@@ -3413,7 +3366,7 @@ export class CrewTasksService {
     client: Prisma.TransactionClient = this.prisma,
   ) {
     await client.crewTaskWorkflowState.createMany({
-      data: DEFAULT_WORKFLOW_STATES.map((state) => ({
+      data: DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => ({
         crewId,
         name: state.name,
         color: state.color,
@@ -3447,32 +3400,7 @@ export class CrewTasksService {
 
   private async ensureDefaultViews(crewId: string, userId: string) {
     await this.prisma.crewTaskView.createMany({
-      data: [
-        {
-          crewId,
-          name: 'issues',
-          layout: 'list',
-          groupBy: 'status',
-          filters: {},
-          sorts: [{ field: 'rank', direction: 'asc' }],
-          visibleFields: [
-            'number',
-            'status',
-            'priority',
-            'assignees',
-            'cycle',
-            'estimate',
-            'points',
-            'dueAt',
-          ],
-          completedMode: 'all',
-          showSubIssues: true,
-          showEmptyGroups: false,
-          position: 0,
-          isSystem: true,
-          createdByUserId: userId,
-        },
-      ],
+      data: [defaultCrewTaskView(crewId, userId)],
       skipDuplicates: true,
     });
   }

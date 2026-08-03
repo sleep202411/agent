@@ -83,8 +83,9 @@ interface ChapterRelease {
  *
  * A single-chapter work is still one manifest and is delegated, unchanged, to
  * the Build publication lifecycle. A multi-chapter work publishes each chapter
- * manifest as its own object and hands Java the Game Manifest listing them,
- * because chapters end in endings and cannot be composed into one manifest.
+ * manifest as its own object and hands Java the Game Manifest listing them.
+ * Each chapter is an independently built film with its own natural completion,
+ * so publication never mutates or composes frozen chapter manifests.
  *
  * ## Where this lifecycle is deliberately weaker than the Build one
  *

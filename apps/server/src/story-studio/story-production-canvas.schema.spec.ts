@@ -156,7 +156,7 @@ describe('StoryProductionCanvasContentSchema', () => {
       assets: [],
       groups: [
         { id: 'opening', nodeIds: ['node-1', 'node-1'] },
-        { id: 'ending', nodeIds: ['node-1', 'missing'] },
+        { id: 'invalid-membership', nodeIds: ['node-1', 'missing'] },
       ],
     };
 

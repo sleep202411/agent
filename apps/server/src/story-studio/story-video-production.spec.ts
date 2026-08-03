@@ -131,9 +131,7 @@ describe('StoryVideoProductionService', () => {
       storyBible: {
         logline: 'A choice.',
         synopsis: 'The protagonist reaches the truth.',
-        worldview: 'Choices leave traces.',
         characters: [],
-        endings: [{ id: 'truth', title: { 'en-US': 'Truth' } }],
       },
       graph: {
         entryNodeId: 'clip.start',
@@ -142,7 +140,7 @@ describe('StoryVideoProductionService', () => {
             kind: 'clip',
             nodeId: 'clip.start',
             clipKey: 'START',
-            exit: { kind: 'ending', endingId: 'truth' },
+            exit: { kind: 'auto', nextNodeId: null },
           },
         ],
       },

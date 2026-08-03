@@ -4,7 +4,6 @@ import {
 } from '@repo/shared/interactive-film-runtime';
 import {
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
-  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceRuntimeManifestSchema,
 } from '@repo/shared/experience-runtime';
@@ -52,18 +51,6 @@ function release(): InteractiveFilmRelease {
     entryNodeId: 'clip.start',
     defaultLocale: 'en-US',
     locales: ['en-US'],
-    endings: [
-      {
-        endingId: 'truth',
-        title: { 'en-US': 'Truth' },
-        summary: { 'en-US': 'Truth wins.' },
-      },
-      {
-        endingId: 'echo',
-        title: { 'en-US': 'Echo' },
-        summary: { 'en-US': 'The moment echoes.' },
-      },
-    ],
     media: [
       {
         assetId: 'video:START',
@@ -128,7 +115,7 @@ function release(): InteractiveFilmRelease {
           fit: 'cover',
         },
         overlays: [],
-        exit: { kind: 'ending', endingId: 'truth' },
+        exit: { kind: 'auto', nextNodeId: null },
       },
       {
         nodeId: 'clip.echo',
@@ -144,82 +131,7 @@ function release(): InteractiveFilmRelease {
           fit: 'cover',
         },
         overlays: [],
-        exit: { kind: 'ending', endingId: 'echo' },
-      },
-    ],
-  });
-}
-
-function textChoiceRelease(): InteractiveFilmRelease {
-  return InteractiveFilmReleaseSchema.parse({
-    schemaVersion: 1,
-    channel: 'production',
-    gameId: PROJECT_ID,
-    releaseId: BUILD_ID,
-    contentVersion: BUILD_ID,
-    entryNodeId: 'text.start',
-    defaultLocale: 'en-US',
-    locales: ['en-US'],
-    endings: [
-      {
-        endingId: 'truth',
-        title: { 'en-US': 'Truth' },
-        summary: { 'en-US': 'Truth wins.' },
-      },
-      {
-        endingId: 'echo',
-        title: { 'en-US': 'Echo' },
-        summary: { 'en-US': 'The moment echoes.' },
-      },
-    ],
-    media: [],
-    nodes: [
-      {
-        nodeId: 'text.start',
-        presentation: {
-          kind: 'text',
-          title: { 'en-US': 'A question' },
-          body: { 'en-US': 'The sealed door waits.' },
-          completion: 'passive',
-        },
-        overlays: [],
-        exit: {
-          kind: 'choice',
-          decisionId: 'decision.path',
-          prompt: { 'en-US': 'Choose.' },
-          choices: [
-            {
-              choiceId: 'choose.truth',
-              label: { 'en-US': 'Open it' },
-              nextNodeId: 'text.truth',
-            },
-            {
-              choiceId: 'choose.echo',
-              label: { 'en-US': 'Walk away' },
-              nextNodeId: 'text.echo',
-            },
-          ],
-        },
-      },
-      {
-        nodeId: 'text.truth',
-        presentation: {
-          kind: 'text',
-          body: { 'en-US': 'The truth is inside.' },
-          completion: 'continue',
-        },
-        overlays: [],
-        exit: { kind: 'ending', endingId: 'truth' },
-      },
-      {
-        nodeId: 'text.echo',
-        presentation: {
-          kind: 'text',
-          body: { 'en-US': 'Footsteps fade.' },
-          completion: 'continue',
-        },
-        overlays: [],
-        exit: { kind: 'ending', endingId: 'echo' },
+        exit: { kind: 'auto', nextNodeId: null },
       },
     ],
   });
@@ -241,59 +153,6 @@ function compile(value = release()) {
 }
 
 describe('Story Runtime Manifest v2 compiler', () => {
-  it('lowers a text choice to immediately visible core text and choice renderers', () => {
-    const result = compileStoryExperienceManifest({
-      release: textChoiceRelease(),
-      experienceProfile: 'narrative',
-      metadata: { title: 'Text Story', summary: null },
-      mediaIdentities: [],
-    });
-
-    expect(result.diagnostics).toEqual([]);
-    expect(result.manifest?.metadata.experienceProfile).toBe('narrative');
-    const entry = result.manifest?.graph.nodes.find(
-      (node) => node.kind === 'scene' && node.sceneId === 'text.start',
-    );
-    if (!entry || entry.kind !== 'scene') {
-      throw new Error('Compiled text entry scene is missing.');
-    }
-    expect(entry.clock).toEqual({ kind: 'none' });
-    const textRenderer = entry.renderers.find(
-      (renderer) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID,
-    );
-    const choiceRenderer = entry.renderers.find(
-      (renderer) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID,
-    );
-    expect(textRenderer?.config).toMatchObject({ completion: 'passive' });
-    expect(choiceRenderer?.config).toMatchObject({ initiallyOpen: true });
-    const actions = entry.eventBindings.flatMap((binding) =>
-      binding.routes.flatMap((route) => route.actions),
-    );
-    expect(
-      actions.some(
-        (action) =>
-          action.kind === 'renderer.command' && action.commandType === 'open',
-      ),
-    ).toBe(false);
-    const endingScene = result.manifest?.graph.nodes.find(
-      (node) => node.kind === 'scene' && node.sceneId === 'text.truth',
-    );
-    const endingTextRenderer =
-      endingScene?.kind === 'scene'
-        ? endingScene.renderers.find(
-            (renderer) =>
-              renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID,
-          )
-        : undefined;
-    expect(endingTextRenderer?.config).not.toHaveProperty('title');
-    expect(
-      endingScene?.kind === 'scene' &&
-        endingScene.eventBindings.some(
-          (binding) => binding.on.qualifierId === 'text-completed',
-        ),
-    ).toBe(true);
-  });
-
   it('is deterministic and preserves raw UUID release identity', () => {
     const first = compile();
     const second = compile();
@@ -359,51 +218,6 @@ describe('Story Runtime Manifest v2 compiler', () => {
         ),
       ),
     ).toBe(true);
-  });
-
-  it('presents narrative video clips inline at native size', () => {
-    const base = release();
-    const narrative: InteractiveFilmRelease = {
-      ...base,
-      nodes: base.nodes.map((node) =>
-        'presentation' in node && node.presentation.kind === 'video'
-          ? {
-              ...node,
-              presentation: { ...node.presentation, fit: 'native' as const },
-            }
-          : node,
-      ),
-    };
-
-    const result = compileStoryExperienceManifest({
-      release: narrative,
-      experienceProfile: 'narrative',
-      metadata: { title: 'Story', summary: null },
-      mediaIdentities: [
-        {
-          runtimeAssetId: 'video:START',
-          variantId: VARIANT_ID,
-          mediaType: 'video/mp4',
-        },
-      ],
-    });
-
-    expect(result.diagnostics).toEqual([]);
-    const videoConfigs =
-      result.manifest?.graph.nodes.flatMap((node) =>
-        node.kind === 'scene'
-          ? node.renderers
-              .filter(
-                (renderer) =>
-                  renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID,
-              )
-              .map((renderer) => renderer.config as { fit: string })
-          : [],
-      ) ?? [];
-    // Every primary video clip presents inline at native size rather than
-    // covering a fixed frame.
-    expect(videoConfigs.length).toBeGreaterThan(1);
-    expect(videoConfigs.every((config) => config.fit === 'native')).toBe(true);
   });
 
   /**

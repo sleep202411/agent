@@ -1184,7 +1184,20 @@
       },
       "tab": {
         "myCreations": "My Creations",
-        "uploaded": "Uploaded"
+        "uploaded": "Uploaded",
+        "crew": "Crew Assets"
+      },
+      "crew": {
+        "back": "Back to parent folder",
+        "unsupported": "This file type cannot be placed on the canvas",
+        "unlinkedTitle": "No crew linked",
+        "unlinkedBody": "This canvas is not a crew production space or crew task.",
+        "errorTitle": "Crew assets are unavailable",
+        "errorBody": "Check your crew asset permissions and try again.",
+        "emptyTitle": "This folder is empty",
+        "emptyBody": "Images, videos, and audio from the crew drive appear here.",
+        "loadMore": "Load more",
+        "loadingMore": "Loading…"
       },
       "empty": {
         "title": "No assets yet",
@@ -1653,10 +1666,10 @@
   },
   "storyStudio": {
     "metaTitle": "Story Studio",
-    "metaDescription": "Author, produce, review, and release cinematic and text-first interactive stories.",
+    "metaDescription": "Author, produce, review, and release cinematic interactive stories.",
     "eyebrow": "Interactive story production",
     "title": "Story Studio",
-    "subtitle": "Design the story, mix text and video scenes, and release from one versioned workspace.",
+    "subtitle": "Design branching cinematic scenes and release from one versioned workspace.",
     "newProject": "New story project",
     "projects": {
       "title": "Story projects",
@@ -1664,8 +1677,6 @@
       "draft": "Draft",
       "noSummary": "No project summary yet.",
       "videoProgress": "{current}/{total} current videos",
-      "textFirstWithoutVideo": "Text-first · video optional",
-      "textFirstProgress": "Text-first story",
       "updatedUnknown": "Update time unavailable",
       "tabAll": "All",
       "tabJoined": "Shared with me",
@@ -1676,7 +1687,6 @@
       "clips": "Clips",
       "videos": "Videos",
       "choices": "Choices",
-      "endings": "Endings",
       "graphClips": "Graph clips",
       "graphScenes": "Interactive scenes"
     },
@@ -1699,11 +1709,11 @@
     },
     "empty": {
       "title": "No story projects yet",
-      "description": "Create a project to start an editable story draft, then combine written and cinematic scenes on the same canvas."
+      "description": "Create a project to start an editable cinematic story draft."
     },
     "create": {
       "title": "Create a story project",
-      "description": "Create a private, versioned draft in the active workspace. You can mix text and video at any time."
+      "description": "Create a private, versioned cinematic draft in the active workspace."
     },
     "edit": {
       "title": "Edit project details"
@@ -1713,22 +1723,10 @@
       "titlePlaceholder": "Untitled interactive story",
       "summary": "Summary",
       "summaryPlaceholder": "Describe the premise and intended experience.",
-      "primaryExperience": "Story format",
-      "primaryExperienceHint": "Shapes AI drafting and the video frame contract. Both scene types can still be mixed on the canvas.",
       "frameProfile": "Video format",
-      "frameProfileHint": "Used only by video nodes. Every generated clip in this project uses this fixed format.",
+      "frameProfileHint": "Every generated clip in this project uses this fixed format.",
       "storyLocale": "Story language",
       "storyLocaleHint": "(authoring & publish primary language)"
-    },
-    "formats": {
-      "interactive_film": {
-        "label": "Cinematic",
-        "description": "Video-first: scenes share one fixed frame; AI drafts cinematic storyboards."
-      },
-      "text_adventure": {
-        "label": "Text adventure",
-        "description": "Text-first: AI drafts are text-only; video scenes can be added by hand."
-      }
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -2042,13 +2040,13 @@
           "halftoneCollage": {
             "title": "Halftone collage",
             "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
-            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Pacing: 10-14 beats, hook within the first 2, then a meaningful choice every 2-3 beats. Endings: 3 — departing, staying, locking the case again — each decided by which memories the player restores or tears up.",
+            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Use 10-14 cinematic clips, hook within the first 2, then a meaningful choice every 2-3 clips. Let each route finish naturally on its terminal clip according to which memories the player restores or tears up.",
             "styleBrief": "Art direction: flat paper fields, black-and-white halftone cutouts and cardstock accents, one visual metaphor per beat assembled from a few objects. No typography, no 3D, no photoreal."
           },
           "symmetricalStorybook": {
             "title": "Symmetrical storybook cinema",
             "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
-            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Plot: advance in chapters, one pivotal choice per chapter, each making the hotel more absurd and the truth closer. Pacing: around 12 beats in three acts, each act closing on a small reversal. Endings: 3 — lifting the hat, keeping his secret, becoming the next hat-wearer — each rewriting the bellboy’s place in the hotel.",
+            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Advance through cinematic clips, with one pivotal choice per chapter that makes the hotel more absurd and brings the truth closer. Use around 12 clips in three acts, each act closing on a visual reversal. Let each route finish naturally on its terminal clip.",
             "styleBrief": "Art direction: deliberate symmetry and centered compositions, one chapter motif per act, a controlled vintage palette, and precise, restrained reveals."
           }
         }
@@ -2063,10 +2061,8 @@
       },
       "nodeKinds": {
         "clip": "Film clip",
-        "text": "Plot beat",
         "choice": "Player choice",
         "decision": "Player choice",
-        "ending": "Story ending",
         "character": "Character"
       },
       "ports": {
@@ -2075,8 +2071,7 @@
         "completion": "Next step from this scene",
         "choiceTrigger": "Trigger choice",
         "choiceOption": "Choice: {label}",
-        "newChoice": "Connect a new option",
-        "ending": "Enter ending"
+        "newChoice": "Connect a new option"
       },
       "decisionCard": {
         "promptPlaceholder": "What must the player decide?",
@@ -2093,48 +2088,36 @@
         "description": "Create an element in the interactive story structure.",
         "clip": "Film clip",
         "clipDescription": "A generated video segment with a defined next step.",
-        "text": "Plot beat",
-        "textDescription": "A plot beat with its own continuation or player choice.",
         "character": "Character",
-        "characterDescription": "A cast member that belongs to this story world.",
+        "characterDescription": "A reusable character card for this story project.",
         "choice": "Player choice",
-        "choiceDescription": "Turn the selected clip ending into a player decision.",
-        "choiceUnavailable": "Select a film clip first.",
-        "ending": "Story ending",
-        "endingDescription": "A named outcome stored in the story bible.",
-        "root": "Story world",
-        "rootDescription": "Restore the world overview to the canvas."
+        "choiceDescription": "Continue from the selected clip with a player decision.",
+        "choiceUnavailable": "Select a film clip first."
       },
       "connectionCreator": {
         "title": "Create next step",
         "description": "Choose what happens when this scene finishes.",
         "clip": "Film clip",
         "clipDescription": "Continue directly into another generated video segment.",
-        "text": "Plot beat",
-        "textDescription": "Continue into a plot beat without requiring video.",
         "choice": "Player choice",
         "choiceDescription": "Pause playback and let the player choose a branch.",
         "cancel": "Cancel"
       },
       "projection": {
         "clip": "Clip",
-        "text": "Plot beat",
-        "decision": "Player choice",
-        "ending": "Ending"
+        "decision": "Player choice"
       },
       "foundation": {
         "description": "Define the dramatic promise before expanding the branch graph. Changes autosave to the mutable draft.",
         "logline": "Logline",
         "loglinePlaceholder": "One sentence that captures the protagonist, pressure, and irreversible choice.",
         "synopsis": "Synopsis",
-        "synopsisPlaceholder": "Describe the complete dramatic arc, including the central turn and possible outcomes.",
-        "worldview": "World and rules",
-        "worldviewPlaceholder": "Define the setting, its logic, visual texture, and any rules the story cannot break."
+        "synopsisPlaceholder": "Describe the complete cinematic arc, including the central turn and how each route reaches a terminal clip."
       },
-      "world": {
-        "eyebrow": "Story World",
-        "title": "Story Bible",
-        "description": "The premise, cast, and world rules that ground every branch. Changes autosave to the draft.",
+      "filmFoundation": {
+        "eyebrow": "Worldbuilding",
+        "title": "Worldbuilding",
+        "description": "The premise, synopsis, cast, and cover that ground every cinematic branch. Changes autosave to the draft.",
         "cover": {
           "title": "Cover image",
           "description": "One still for this story: the project tile here, the title-screen backdrop in the player, and the share image of the published game.",
@@ -2213,7 +2196,7 @@
             "initialNotAllowed": "Initial value is not in the allowed-values list. The draft can save, but this variable cannot run in a preview."
           },
           "deleteTitle": "Delete this state variable?",
-          "deleteDescription": "“{key}” will be removed from the story world.",
+          "deleteDescription": "“{key}” will be removed from worldbuilding.",
           "cancel": "Cancel",
           "confirmDelete": "Delete variable",
           "boolean": {
@@ -2353,7 +2336,6 @@
         "entry": "Entry scene",
         "exitAuto": "Continue to scene",
         "exitChoice": "Player choice",
-        "exitEnding": "Story ending",
         "continuationTarget": "Next scene",
         "continuationDescription": "A scene has one direct continuation. Use a player choice when the story must branch.",
         "choicePrompt": "Decision prompt",
@@ -2368,41 +2350,14 @@
         "moveChoiceDown": "Move option down",
         "choiceMinimum": "A playable choice needs at least 2 options. It currently has {count}.",
         "requiredForPlayableStory": "Required for a playable story.",
-        "endingTarget": "Target ending",
-        "endingTargetPlaceholder": "Choose an ending",
+        "terminalAfterPlayback": "Playback ends here when no continuation is connected.",
         "convertExitTitle": "Replace the current next step?",
         "convertExitDescription": "This will remove {count} existing branches and their authored conditions or option details.",
         "confirmConversion": "Replace next step",
-        "endingTitle": "Ending title",
-        "endingSummary": "Ending summary",
         "delete": "Delete node",
-        "deleteEnding": "Delete ending",
         "removeDecision": "Remove choice step",
         "cancel": "Cancel",
-        "nodeName": "Name",
-        "textTitle": "Scene title",
-        "textTitlePlaceholder": "Name this plot beat",
-        "textBody": "Scene text",
-        "textBodyPlaceholder": "Write what the player reads in this scene…",
-        "music": {
-          "title": "Scene music",
-          "description": "Starts when play enters this scene and keeps playing until another scene changes it.",
-          "empty": "No track attached",
-          "trackLabel": "Track {letter}",
-          "usedIn": "{count, plural, one {# scene} other {# scenes}}",
-          "reuse": "Reuse a track from this story",
-          "upload": "Upload track",
-          "replace": "Replace track",
-          "remove": "Remove track",
-          "play": "Preview track",
-          "stop": "Stop preview",
-          "uploading": "Uploading · {progress}%",
-          "accepted": "MP3 or WAV audio",
-          "errors": {
-            "upload": "The track could not be uploaded.",
-            "type": "Only MP3 or WAV audio can be attached."
-          }
-        }
+        "nodeName": "Name"
       },
       "conflict": {
         "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",
@@ -2422,7 +2377,7 @@
           },
           "layout": {
             "title": "Canvas layout",
-            "description": "Unsaved node positions or Story World visibility will be lost."
+            "description": "Unsaved node positions will be lost."
           }
         },
         "stay": "Stay on canvas",
@@ -2437,20 +2392,6 @@
       "error": {
         "title": "The story canvas could not be opened",
         "retry": "Retry"
-      },
-      "textPlay": {
-        "eyebrow": "Playtest · Draft",
-        "back": "Back to canvas",
-        "restart": "Restart",
-        "loading": "Loading workspace…",
-        "thinking": "The narrator is writing…",
-        "anchorLabel": "Scene",
-        "continue": "Continue",
-        "theEnd": "The End",
-        "playAgain": "Play again",
-        "inputPlaceholder": "Type what you do…",
-        "send": "Send",
-        "errorFallback": "Something went wrong. Try again."
       },
       "tidy": {
         "action": "Tidy layout"
@@ -2478,7 +2419,7 @@
       "productionSubtitle": "Reference readiness and current video coverage for this working draft.",
       "draftRevisionStatus": "Working draft r{revision}",
       "storyStructureTitle": "Story structure",
-      "storyStructureSubtitle": "The authored graph is the single source for choices, state, and endings.",
+      "storyStructureSubtitle": "The authored graph is the single source for clips, choices, state, and terminal routes.",
       "videoState": "Current video state",
       "videoStateReady": "{current} of {total} clips currently have a video.",
       "revisionTitle": "Version identity",
@@ -2492,7 +2433,6 @@
       "characters": "Characters",
       "storyGraph": "Story graph",
       "graphNodes": "Graph nodes",
-      "endings": "Endings",
       "decisions": "Branch decisions",
       "decisionsSubtitle": "Stable decisions, options, state effects, and their next graph nodes.",
       "decisionSources": "Presented after {scenes}"
@@ -2631,8 +2571,8 @@
     "videoLabel": "Story video for scene {nodeId}",
     "continue": "Continue",
     "noVisibleChoices": "No choice is currently available for this story state.",
-    "endingEyebrow": "Ending reached",
-    "unknownEnding": "Ending {endingId}",
+    "completionEyebrow": "Playback complete",
+    "completionTitle": "This route is complete",
     "playAgain": "Play again",
     "runtimeError": "The playtest cannot continue",
     "mediaError": "Frozen media asset {assetId} could not be played.",

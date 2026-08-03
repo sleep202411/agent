@@ -129,7 +129,6 @@ const PATCH_CAPABILITY = {
 const PROJECT_ID = '019f9b10-0000-7000-8000-000000000001';
 const CHAPTER_ID = '019f9b10-0000-7000-8000-000000000002';
 const OPERATION_ID = '019f9b10-0000-7000-8000-000000000003';
-const MEDIA_ASSET_ID = '019f9b10-0000-7000-8000-000000000004';
 
 /**
  * One maximal payload per operation kind — every field the kind accepts,
@@ -150,7 +149,6 @@ const OPERATION_FIXTURES: ReadonlyArray<{
     payload: {
       logline: 'A chef inherits a haunted kitchen.',
       synopsis: 'Three nights, three services, one ghost.',
-      worldview: 'Modern Nanjing, one restaurant, one memory per dish.',
     },
   },
   {
@@ -169,21 +167,6 @@ const OPERATION_FIXTURES: ReadonlyArray<{
     payload: { characterId: 'char.chef' },
   },
   {
-    kind: 'story_bible.put_ending',
-    payload: {
-      intent: 'replace',
-      ending: {
-        id: 'ending.reopened',
-        title: { 'en-US': 'Reopened' },
-        summary: { 'en-US': 'The kitchen serves again.' },
-      },
-    },
-  },
-  {
-    kind: 'story_bible.remove_ending',
-    payload: { endingId: 'ending.reopened' },
-  },
-  {
     kind: 'story_graph.set_entry_node',
     payload: { nodeId: 'scene.opening' },
   },
@@ -197,7 +180,6 @@ const OPERATION_FIXTURES: ReadonlyArray<{
         clipKey: 'OPENING',
         name: 'Opening service',
         description: 'The chef unlocks the door.',
-        music: { mediaAssetId: MEDIA_ASSET_ID },
         exit: {
           kind: 'choice',
           decisionId: 'decision.first-service',
@@ -423,22 +405,11 @@ function advertisedOperationBranches(): Array<{
  * inventories are read off the zod schemas, so a union that gains a branch fails
  * these tests instead of shipping unadvertised.
  */
-const NODE_UNION = StoryAgentGraphNodeSchema.options as ReadonlyArray<{
-  shape: {
-    kind: { value: string };
-    exit: { options: ReadonlyArray<{ shape: { kind: { value: string } } }> };
-  };
-}>;
-
 /** Every node kind and every exit kind, read off the schema that validates. */
-const NODE_KINDS = NODE_UNION.map((option) => option.shape.kind.value);
-const EXIT_KINDS = [
-  ...new Set(
-    NODE_UNION.flatMap((option) =>
-      option.shape.exit.options.map((exit) => exit.shape.kind.value),
-    ),
-  ),
-];
+const NODE_KINDS = [StoryAgentGraphNodeSchema.shape.kind.value];
+const EXIT_KINDS = StoryAgentGraphNodeSchema.shape.exit.options.map(
+  (exit) => exit.shape.kind.value,
+);
 
 const EXIT_FIXTURES: Record<string, Record<string, unknown>> = {
   auto: { kind: 'auto', nextNodeId: 'scene.service' },
@@ -454,7 +425,6 @@ const EXIT_FIXTURES: Record<string, Record<string, unknown>> = {
       },
     ],
   },
-  ending: { kind: 'ending', endingId: 'ending.reopened' },
 };
 
 /** One maximal node per kind, with its exit left to the caller. */
@@ -462,23 +432,16 @@ function nodeFixture(
   kind: string,
   exit: Record<string, unknown>,
 ): Record<string, unknown> {
-  const base = {
-    clip: {
-      kind: 'clip',
-      nodeId: 'scene.opening',
-      clipKey: 'OPENING',
-      name: 'Opening service',
-      description: 'The chef unlocks the door.',
-      music: { mediaAssetId: MEDIA_ASSET_ID },
-    },
-    text: {
-      kind: 'text',
-      nodeId: 'scene.opening',
-      title: { 'en-US': 'Prologue' },
-      body: { 'en-US': 'The rain had not stopped for three days.' },
-      music: { mediaAssetId: MEDIA_ASSET_ID },
-    },
-  }[kind];
+  const base =
+    kind === 'clip'
+      ? {
+          kind: 'clip',
+          nodeId: 'scene.opening',
+          clipKey: 'OPENING',
+          name: 'Opening service',
+          description: 'The chef unlocks the door.',
+        }
+      : undefined;
   if (!base) {
     throw new Error(
       `The zod node union gained the kind "${kind}" and this spec has no maximal fixture for it. Add one — the projection is only proven for the variants exercised here.`,
@@ -570,10 +533,13 @@ describe('story.canvas.apply_patch projection ↔ zod union', () => {
     const putNode = branches.find(
       (branch) => branch.kind === 'story_graph.put_node',
     );
-    const nodeBranches = (
+    const projectedNode = (
       (putNode?.properties.payload as Record<string, unknown>)
         .properties as Record<string, Record<string, unknown>>
-    ).node.anyOf as Array<Record<string, unknown>>;
+    ).node;
+    const nodeBranches = Array.isArray(projectedNode.anyOf)
+      ? (projectedNode.anyOf as Array<Record<string, unknown>>)
+      : [projectedNode];
     const advertisedNodeKinds = nodeBranches.map(
       (branch) =>
         (branch.properties as Record<string, Record<string, unknown>>).kind
@@ -676,9 +642,9 @@ describe('story.canvas.apply_patch projection ↔ zod union', () => {
         payload: {
           intent: 'create',
           node: {
-            kind: 'text',
+            kind: 'clip',
             nodeId: 'scene.a',
-            body: { 'en-US': 'b' },
+            clipKey: 'A',
             exit: { kind: 'router', nextNodeId: null },
           },
         },
@@ -908,7 +874,7 @@ describe('story.canvas.apply_patch rejection feedback', () => {
         payload: {
           intent: 'create',
           node: {
-            kind: 'text',
+            kind: 'clip',
             nodeId: 'scene.a',
             exit: { kind: 'auto', nextNodeId: null },
           },
@@ -918,7 +884,7 @@ describe('story.canvas.apply_patch rejection feedback', () => {
 
     expect(issues).toEqual([
       {
-        path: 'operations.0.payload.node.body',
+        path: 'operations.0.payload.node.clipKey',
         message: 'is required',
       },
     ]);

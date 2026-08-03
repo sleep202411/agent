@@ -22,8 +22,6 @@ export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v3" as const;
 export const STORY_PRODUCTION_CANVAS_SCHEMA_VERSION = "story-production-canvas-v2" as const;
 
-export type StoryFormat = "text_adventure" | "interactive_film";
-export type CreatableStoryFormat = StoryFormat;
 export type StoryProjectStatus = "active" | "archived";
 export type StoryVisibility = "private" | "unlisted" | "public";
 export type StoryFrameProfile = "landscape_16_9" | "portrait_9_16";
@@ -140,8 +138,7 @@ export interface StoryProjectProductionSummary {
 export interface StoryProjectSummary {
   id: string;
   workspaceId: string;
-  format: StoryFormat;
-  frameProfile: StoryFrameProfile | null;
+  frameProfile: StoryFrameProfile;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -164,7 +161,7 @@ export interface StoryGraphChoice {
   nextNodeId: string;
 }
 
-/** Clip and text nodes share one choice exit: a prompt and its labelled choices. */
+/** A choice shown when its clip finishes. */
 export interface StoryChoiceExit {
   kind: "choice";
   decisionId: string;
@@ -172,51 +169,19 @@ export interface StoryChoiceExit {
   choices: StoryGraphChoice[];
 }
 
-/**
- * A scene's music binding. Attaching the same asset to several nodes is legal
- * and normal (a theme that returns), and play emits a cue when it enters a node
- * whose track differs from the one already playing.
- *
- * Publishing does NOT freeze the asset: unlike a clip, the manifest carries the
- * track's ordinary public media URL and nothing in the integrity graph points at
- * it. Losing a video breaks the story, losing a bed only means silence — so
- * music must never be able to fail a build, a publish, or a run.
- */
-export interface StoryNodeMusic {
-  /** An audio MediaAsset owned by the workspace, by its UUID. */
-  mediaAssetId: string;
+export interface StoryGraphNode {
+  kind: "clip";
+  nodeId: string;
+  clipKey: string;
+  name?: string;
+  description?: string;
+  exit: { kind: "auto"; nextNodeId: string | null } | StoryChoiceExit;
 }
-
-export type StoryGraphNode =
-  | {
-      kind: "clip";
-      nodeId: string;
-      clipKey: string;
-      name?: string;
-      description?: string;
-      music?: StoryNodeMusic;
-      exit:
-        | { kind: "auto"; nextNodeId: string | null }
-        | StoryChoiceExit
-        | { kind: "ending"; endingId: string };
-    }
-  | {
-      kind: "text";
-      nodeId: string;
-      title?: Record<string, string>;
-      body: Record<string, string>;
-      music?: StoryNodeMusic;
-      exit:
-        | { kind: "auto"; nextNodeId: string | null }
-        | StoryChoiceExit
-        | { kind: "ending"; endingId: string };
-    };
 
 export interface InteractiveStoryDraftContent {
   storyBible: {
     logline: string;
     synopsis: string;
-    worldview: string;
     characters: Array<{
       id: string;
       name: Record<string, string>;
@@ -226,11 +191,6 @@ export interface InteractiveStoryDraftContent {
       /** Voice-clone sample (音色), hard-capped at 5 seconds. */
       voice: { mediaAssetId: string; url: string; durationMs: number } | null;
     }>;
-    endings: Array<{
-      id: string;
-      title: Record<string, string>;
-      summary?: Record<string, string>;
-    }>;
   };
   graph: { entryNodeId: string | null; nodes: StoryGraphNode[] };
   productionNotes: string[];
@@ -239,7 +199,6 @@ export interface InteractiveStoryDraftContent {
 export interface StoryDraft {
   projectId: string;
   chapterId: string | null;
-  format: CreatableStoryFormat;
   schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
   content: InteractiveStoryDraftContent;
   contentHash: string;
@@ -387,13 +346,13 @@ export interface StoryBuildDiagnostic {
   severity: "error" | "warning";
   code: string;
   message: string;
-  entityType: "revision" | "clip" | "reference" | "choice" | "ending" | "asset" | null;
+  entityType: "revision" | "clip" | "reference" | "choice" | "asset" | null;
   entityId: string | null;
 }
 
 export interface StoryBuildPathReport {
   enumeratedPathCount: number;
-  reachableEndingIds: string[];
+  reachableTerminalNodeIds: string[];
   unreachableNodeIds: string[];
   ambiguousPathCount: number;
   durationMinMs: number;
@@ -553,9 +512,7 @@ export interface StoryChapter {
 }
 
 export interface CreateStoryProjectInput {
-  format: CreatableStoryFormat;
-  // Film-only: required for interactive_film, omitted for text_adventure.
-  frameProfile?: StoryFrameProfile;
+  frameProfile: StoryFrameProfile;
   title: string;
   summary?: string | null;
   defaultLocale: string;
@@ -594,7 +551,6 @@ export async function createStoryProject(
 export async function listStoryProjects(
   workspaceId: string,
   query: {
-    format?: StoryFormat;
     status?: StoryProjectStatus;
     cursor?: string;
     limit?: number;
@@ -621,7 +577,6 @@ export async function listStoryProjects(
  */
 export async function listJoinedStoryProjects(
   query: {
-    format?: StoryFormat;
     status?: StoryProjectStatus;
     cursor?: string;
     limit?: number;
@@ -1035,80 +990,6 @@ export async function getStoryExperienceCurrentRelease(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Creator-side text-adventure 试玩 (the public player runtime is Java's).
-
-/** The entry angle a public player picked; creator 试玩 always carries null. */
-export interface StoryTextPlayDirection {
-  id: string;
-  title: string;
-  logline: string;
-  tags: string[];
-  conflict: string;
-  hook: string;
-  twist: string;
-  tagline: string;
-}
-
-export interface StoryTextPlayState {
-  nodeId: string | null;
-  direction: StoryTextPlayDirection | null;
-  freeTurnsUsed: number;
-  transcript: Array<{ role: "narration" | "player" | "anchor"; text: string }>;
-}
-
-export type StoryTextPlayAction =
-  | { kind: "choice"; choiceId: string }
-  | { kind: "free"; text: string }
-  | { kind: "continue" };
-
-export interface StoryTextPlayEvent {
-  kind: "anchor" | "narration" | "choices" | "suggestions" | "ending" | "end";
-  nodeId?: string;
-  title?: string;
-  body?: string;
-  text?: string;
-  prompt?: string;
-  choices?: Array<{ choiceId: string; label: string }>;
-  items?: string[];
-  endingId?: string;
-  summary?: string;
-}
-
-export interface StoryTextPlayTurnResult {
-  events: StoryTextPlayEvent[];
-  state: StoryTextPlayState;
-  ended: boolean;
-}
-
-export async function startStoryTextPlay(
-  workspaceId: string,
-  projectId: string
-): Promise<StoryTextPlayTurnResult> {
-  return api.post<StoryTextPlayTurnResult>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/text-play/start`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
-export async function turnStoryTextPlay(
-  workspaceId: string,
-  projectId: string,
-  input: {
-    state: StoryTextPlayState;
-    action: StoryTextPlayAction;
-    /** Biases how hard the narrator pushes toward the next authored beat. */
-    pace?: "slow" | "standard" | "compact";
-    /** Runaway backstop only — normal play never reaches it. */
-    runawayTurnGuard?: number;
-  }
-): Promise<StoryTextPlayTurnResult> {
-  return api.post<StoryTextPlayTurnResult>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/text-play/turn`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
 export async function getStoryWorkingPreview(
   workspaceId: string,
   projectId: string,
@@ -1319,10 +1200,7 @@ function assertProjectSummary(value: unknown): asserts value is StoryProjectSumm
   }
   const project = value as Partial<StoryProjectSummary>;
   if (
-    (project.format !== "interactive_film" && project.format !== "text_adventure") ||
-    (project.frameProfile !== null &&
-      project.frameProfile !== "landscape_16_9" &&
-      project.frameProfile !== "portrait_9_16") ||
+    (project.frameProfile !== "landscape_16_9" && project.frameProfile !== "portrait_9_16") ||
     !Array.isArray(project.capabilities) ||
     !project.production ||
     typeof project.production !== "object" ||

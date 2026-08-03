@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  GoneException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -21,7 +20,6 @@ import {
   InteractiveStoryDraftContentSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   type StoryBuildDiagnosticDto,
-  type CreatableStoryFormat,
   type StoryWorkingPreviewDto,
 } from './dto';
 import {
@@ -83,22 +81,9 @@ export class StoryWorkingPreviewService {
         message: 'Story project not found.',
       });
     }
-    const format = access.project.format;
-    if (format !== 'interactive_film' && format !== 'text_adventure') {
-      throw new GoneException({
-        code: 'STORY_WORKING_PREVIEW_PROJECT_FORMAT_UNSUPPORTED',
-        message: `Story format ${format} is not supported by Working Preview.`,
-      });
-    }
-
     return this.prisma.$transaction(
       (tx) =>
-        this.compileLatestSavedDraft(
-          tx,
-          { ...access.project, format },
-          projectId,
-          chapterId,
-        ),
+        this.compileLatestSavedDraft(tx, access.project, projectId, chapterId),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -108,8 +93,7 @@ export class StoryWorkingPreviewService {
     project: {
       id: string;
       workspaceId: string;
-      format: CreatableStoryFormat;
-      frameProfile: 'landscape_16_9' | 'portrait_9_16' | null;
+      frameProfile: 'landscape_16_9' | 'portrait_9_16';
       defaultLocale: string;
       title: string;
       summary: string | null;
@@ -162,10 +146,8 @@ export class StoryWorkingPreviewService {
     if (!playableDraft.success) {
       const emptySnapshotHash = draftShape.success
         ? storyVideoSnapshotHash(
-            draftShape.data.graph.nodes.flatMap((node) =>
-              node.kind === 'clip'
-                ? [emptyVideoSnapshotEntry(node.nodeId, 0)]
-                : [],
+            draftShape.data.graph.nodes.map((node) =>
+              emptyVideoSnapshotEntry(node.nodeId, 0),
             ),
           )
         : null;
@@ -187,9 +169,7 @@ export class StoryWorkingPreviewService {
       };
     }
 
-    const clipNodes = playableDraft.data.graph.nodes.filter(
-      (node) => node.kind === 'clip',
-    );
+    const clipNodes = playableDraft.data.graph.nodes;
     const selections =
       clipNodes.length === 0
         ? []
@@ -255,7 +235,6 @@ export class StoryWorkingPreviewService {
 
     const compiled = compileStoryBuild({
       projectId,
-      format: project.format,
       buildId: previewBuildId,
       sourceDraftRevision: draft.revision,
       channel: 'preview',
@@ -272,17 +251,7 @@ export class StoryWorkingPreviewService {
       },
       draft: playableDraft.data,
       videos: prepared.map((item) => item.video),
-      // No `musicUrls`: music is PUBLISHED-ONLY. No creator surface plays a
-      // bed — a text_adventure playtest runs through StoryTextPlayPanel, which
-      // has no audio at all — so resolving one here would be a MediaAsset query
-      // per Preview whose result nothing can ever hear.
-      //
-      // The cover is the opposite case and ships here for a different reason
-      // than being painted: a cinematic playtest does run the ExperiencePlayer
-      // that paints it, but a text_adventure playtest renders through
-      // StoryTextPlayPanel and shows no cover at all. What both need is the
-      // publishability verdict — this is the surface that tells a creator, while
-      // they are still authoring, that the still they picked cannot ship.
+      // Preview validates and paints the selected cover through ExperiencePlayer.
       cover: await resolveStoryCover(
         tx,
         project.workspaceId,
@@ -321,9 +290,9 @@ function prepareWorkingPreviewVideo(
   if (!selection?.currentAssetId) {
     diagnostics.push(
       previewDiagnostic(
-        'error',
+        'warning',
         'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
-        `Graph clip ${graphNodeId} has no current video selection.`,
+        `Clip ${graphNodeId} has no video yet; Preview is using an empty shot placeholder.`,
         'clip',
         graphNodeId,
       ),

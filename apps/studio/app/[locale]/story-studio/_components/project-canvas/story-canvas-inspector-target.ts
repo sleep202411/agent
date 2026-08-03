@@ -3,11 +3,11 @@ import { nextStoryCanvasFocusedNodeId } from "./story-project-canvas-selection";
 
 export type StoryCanvasInspectorTarget =
   | { kind: "closed" }
-  | { kind: "world" }
+  | { kind: "foundation" }
   | { kind: "node"; nodeId: string };
 
 export const CLOSED_STORY_CANVAS_INSPECTOR: StoryCanvasInspectorTarget = { kind: "closed" };
-export const STORY_WORLD_INSPECTOR: StoryCanvasInspectorTarget = { kind: "world" };
+export const STORY_FOUNDATION_INSPECTOR: StoryCanvasInspectorTarget = { kind: "foundation" };
 
 export function storyNodeInspectorTarget(nodeId: string): StoryCanvasInspectorTarget {
   // Player choices are edited directly on their canvas card. Treating their
@@ -32,5 +32,5 @@ export function reconcileStoryCanvasInspectorTarget(
     preferredNodeId
   );
   if (nextNodeId) return storyNodeInspectorTarget(nextNodeId);
-  return current.kind === "world" ? current : CLOSED_STORY_CANVAS_INSPECTOR;
+  return current.kind === "foundation" ? current : CLOSED_STORY_CANVAS_INSPECTOR;
 }

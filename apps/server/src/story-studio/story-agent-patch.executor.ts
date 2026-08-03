@@ -42,8 +42,6 @@ export class StoryPatchExecutionError extends Error {
 type StoryGraphNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryCharacter =
   InteractiveStoryDraftContent['storyBible']['characters'][number];
-type StoryEnding =
-  InteractiveStoryDraftContent['storyBible']['endings'][number];
 
 /**
  * Apply a typed Story patch as a pure, deterministic operation. It never mutates
@@ -158,45 +156,6 @@ function applyOperation(input: {
       );
       return;
     }
-    case 'story_bible.put_ending': {
-      const ending = operation.payload.ending as StoryEnding;
-      const existed = draft.storyBible.endings.some(
-        (value) => value.id === ending.id,
-      );
-      draft.storyBible.endings = putEntity({
-        values: draft.storyBible.endings,
-        keyOf: (value) => value.id,
-        key: ending.id,
-        value: ending,
-        intent: operation.payload.intent,
-        operation,
-        entityLabel: 'ending',
-      });
-      affectedNodeIds.add(ending.id);
-      if (!existed) createdNodeIds.add(ending.id);
-      return;
-    }
-    case 'story_bible.remove_ending': {
-      const endingId = operation.payload.endingId;
-      requireExistingEntity(
-        draft.storyBible.endings.some((value) => value.id === endingId),
-        operation,
-        'ending',
-        endingId,
-      );
-      if (draftReferencesEnding(draft, endingId)) {
-        throw operationError(
-          operation,
-          'STORY_PATCH_ENTITY_REFERENCED',
-          `Ending ${endingId} is still referenced by a node or effect. Update those references before removing it.`,
-        );
-      }
-      draft.storyBible.endings = draft.storyBible.endings.filter(
-        (value) => value.id !== endingId,
-      );
-      affectedNodeIds.add(endingId);
-      return;
-    }
     case 'story_graph.set_entry_node': {
       const nodeId = operation.payload.nodeId;
       if (nodeId !== null) {
@@ -216,13 +175,7 @@ function applyOperation(input: {
       const existing = draft.graph.nodes.find(
         (value) => value.nodeId === incoming.nodeId,
       );
-      // The agent authors prose and structure; the music bed is a file a human
-      // uploaded, so it survives a wholesale replace exactly like a character's
-      // appearance images do. Without this a Copilot edit silently unbinds it.
-      const node: StoryGraphNode =
-        incoming.music === undefined && existing?.music !== undefined
-          ? { ...incoming, music: existing.music }
-          : incoming;
+      const node: StoryGraphNode = incoming;
       const existed = existing !== undefined;
       draft.graph.nodes = putEntity({
         values: draft.graph.nodes,
@@ -361,17 +314,10 @@ function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
     'STORY_PATCH_DUPLICATE_NODE_ID',
     'Graph node ids must be unique.',
   );
-  const endingIds = uniqueIdentitySet(
-    draft.storyBible.endings.map((ending) => ending.id),
-    'STORY_PATCH_DUPLICATE_ENDING_ID',
-    'Ending ids must be unique.',
-  );
   // Enforced for its throw-on-duplicate side effect; clip keys are no longer
   // referenced elsewhere now that choices carry no reaction clip.
   uniqueIdentitySet(
-    draft.graph.nodes.flatMap((node) =>
-      node.kind === 'clip' ? [node.clipKey] : [],
-    ),
+    draft.graph.nodes.map((node) => node.clipKey),
     'STORY_PATCH_DUPLICATE_CLIP_KEY',
     'Clip keys must be unique.',
   );
@@ -393,12 +339,6 @@ function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
         );
       }
     }
-    if (node.exit.kind === 'ending' && !endingIds.has(node.exit.endingId)) {
-      throw integrityError(
-        'STORY_PATCH_DANGLING_ENDING_REFERENCE',
-        `Node ${node.nodeId} references missing ending ${node.exit.endingId}.`,
-      );
-    }
   }
 }
 
@@ -416,19 +356,7 @@ function graphNodeTargets(node: StoryGraphNode): string[] {
   if (node.exit.kind === 'auto') {
     return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
   }
-  if (node.exit.kind === 'choice') {
-    return node.exit.choices.map((choice) => choice.nextNodeId);
-  }
-  return [];
-}
-
-function draftReferencesEnding(
-  draft: InteractiveStoryDraftContent,
-  endingId: string,
-): boolean {
-  return draft.graph.nodes.some(
-    (node) => node.exit.kind === 'ending' && node.exit.endingId === endingId,
-  );
+  return node.exit.choices.map((choice) => choice.nextNodeId);
 }
 
 function removeOrphanedCanvasPositions(
@@ -441,9 +369,6 @@ function removeOrphanedCanvasPositions(
     if (node.exit.kind === 'choice') {
       validIds.add(`__decision__:${node.nodeId}`);
     }
-  });
-  draft.storyBible.endings.forEach((ending) => {
-    validIds.add(`__ending__:${ending.id}`);
   });
   return Object.fromEntries(
     Object.entries(positions)

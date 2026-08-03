@@ -1184,7 +1184,20 @@
       },
       "tab": {
         "myCreations": "我的創作",
-        "uploaded": "已上載"
+        "uploaded": "已上載",
+        "crew": "劇組資產"
+      },
+      "crew": {
+        "back": "返回上一級",
+        "unsupported": "此檔案類型暫不能放入畫布",
+        "unlinkedTitle": "未關聯劇組",
+        "unlinkedBody": "此畫布不屬於劇組製作空間或劇組任務。",
+        "errorTitle": "無法讀取劇組資產",
+        "errorBody": "請檢查你的劇組資產權限後重試。",
+        "emptyTitle": "此資料夾為空",
+        "emptyBody": "劇組雲端硬碟中的圖片、影片和音訊會顯示在這裡。",
+        "loadMore": "載入更多",
+        "loadingMore": "正在載入…"
       },
       "empty": {
         "title": "暫無素材",
@@ -1653,10 +1666,10 @@
   },
   "storyStudio": {
     "metaTitle": "Story Studio",
-    "metaDescription": "創作、製作、審核並發佈影像與文字並存的互動故事。",
+    "metaDescription": "創作、製作、審核並發佈電影化互動故事。",
     "eyebrow": "互動故事製作",
     "title": "Story Studio",
-    "subtitle": "在一個可追溯版本的工作台內設計故事、混合文字與影像場景並完成發佈。",
+    "subtitle": "在一個可追溯版本的工作台內設計分支影像場景並完成發佈。",
     "newProject": "新增故事專案",
     "projects": {
       "title": "故事專案",
@@ -1664,8 +1677,6 @@
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
-      "textFirstWithoutVideo": "文字優先 · 影片可選",
-      "textFirstProgress": "文字優先故事",
       "updatedUnknown": "更新時間不可用",
       "tabAll": "全部",
       "tabJoined": "共享給我的",
@@ -1676,7 +1687,6 @@
       "clips": "鏡頭",
       "videos": "目前影片",
       "choices": "選擇",
-      "endings": "結局",
       "graphClips": "劇情鏡頭",
       "graphScenes": "互動場景"
     },
@@ -1699,11 +1709,11 @@
     },
     "empty": {
       "title": "還沒有故事專案",
-      "description": "建立一份可編輯、可追溯的故事草稿，在同一畫布中組合文字與影像場景。"
+      "description": "建立一份可編輯、可追溯的互動影遊草稿。"
     },
     "create": {
       "title": "建立故事專案",
-      "description": "在目前工作區建立一份私人、可追溯的草稿；之後可隨時混合文字與影像。"
+      "description": "在目前工作區建立一份私人、可追溯的互動影遊草稿。"
     },
     "edit": {
       "title": "編輯專案資料"
@@ -1713,22 +1723,10 @@
       "titlePlaceholder": "未命名互動故事",
       "summary": "簡介",
       "summaryPlaceholder": "描述故事前提與目標體驗。",
-      "primaryExperience": "故事形態",
-      "primaryExperienceHint": "決定 AI 起草形態與影片畫幅契約；畫布上仍可手動混用文字與影像場景。",
       "frameProfile": "影片畫幅",
-      "frameProfileHint": "只作用於影片節點；專案內所有生成影片片段都會使用此固定畫幅。",
+      "frameProfileHint": "專案內所有生成影片片段都會使用此固定畫幅。",
       "storyLocale": "故事語言",
       "storyLocaleHint": "（寫作與發佈的主語言）"
-    },
-    "formats": {
-      "interactive_film": {
-        "label": "互動影遊",
-        "description": "以影像場景為主線，全專案共用固定畫幅；AI 起草產出影像分鏡。"
-      },
-      "text_adventure": {
-        "label": "文字冒險",
-        "description": "以文字劇情為主線，AI 起草為純文字；可手動加入影片場景。"
-      }
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -2042,13 +2040,13 @@
           "halftoneCollage": {
             "title": "半調紙拼貼",
             "description": "純色紙底、半調剪貼與卡紙點綴，每個選擇拼裝成一個視覺隱喻。",
-            "prompt": "創作一個互動短篇：一隻裝滿舊車票與照片的手提箱在午夜自動打開，每個剪貼物件都是一段被摺疊的記憶。劇情：主人公整理遺物時，逐漸拼出母親隱瞞一生的旅程。整體節奏：10-14 個節點，開場 2 個節點內拋出懸念，之後每 2-3 個節點一次關鍵選擇。結局：3 個——啟程、留下、把箱子重新鎖上，分別對應玩家把哪些記憶拼回、哪些撕碎。",
+            "prompt": "創作一個互動短篇：一隻裝滿舊車票與照片的手提箱在午夜自動打開，每個剪貼物件都是一段被摺疊的記憶。主人公整理遺物時，逐漸拼出母親隱瞞一生的旅程。使用 10-14 個影視片段，開場 2 個片段內拋出懸念，之後每 2-3 個片段一次關鍵選擇，讓每條路線自然結束於最後一個片段。",
             "styleBrief": "美術方向：純色紙底、黑白半調剪貼與卡紙點綴，每個節點用三至六件物件拼出一個視覺隱喻。不要文字排版、不要 3D、不要寫實照片感。"
           },
           "symmetricalStorybook": {
             "title": "對稱童話電影",
             "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
-            "prompt": "創作一個互動短篇：粉色山間旅館迎來一位從不摘帽的神秘住客，門童奉命查明緣由。劇情：按章節推進，每章一次關鍵選擇，讓旅館秩序更荒誕一分、真相更近一步。整體節奏：12 個節點左右，三幕結構，每幕收在一個小反轉。結局：3 個——揭開帽子、替他守密、成為下一個戴帽人，分別改寫門童與旅館的關係。",
+            "prompt": "創作一個互動短篇：粉色山間旅館迎來一位從不摘帽的神秘住客，門童奉命查明緣由。按影視章節推進，每章一次關鍵選擇，讓旅館秩序更荒誕一分、真相更近一步。使用約 12 個影視片段和三幕結構，每幕收在一個視覺反轉，讓每條路線自然結束於最後一個片段。",
             "styleBrief": "美術方向：刻意對稱的置中構圖，每一幕一個章節母題，克制的復古配色，揭示時機精準而收斂。"
           }
         }
@@ -2063,10 +2061,8 @@
       },
       "nodeKinds": {
         "clip": "影像鏡頭",
-        "text": "關鍵劇情",
         "choice": "玩家選擇",
         "decision": "玩家選擇",
-        "ending": "故事結局",
         "character": "角色"
       },
       "ports": {
@@ -2075,8 +2071,7 @@
         "completion": "場景的下一步",
         "choiceTrigger": "觸發選擇",
         "choiceOption": "選擇：{label}",
-        "newChoice": "連接新選項",
-        "ending": "進入結局"
+        "newChoice": "連接新選項"
       },
       "decisionCard": {
         "promptPlaceholder": "玩家此刻必須決定甚麼？",
@@ -2093,48 +2088,36 @@
         "description": "建立互動故事結構中的圖元素。",
         "clip": "影像鏡頭",
         "clipDescription": "一段帶有明確後續走向的生成影片。",
-        "text": "關鍵劇情",
-        "textDescription": "帶有獨立後續走向或玩家選擇的關鍵劇情。",
         "character": "角色",
-        "characterDescription": "隸屬於本故事世界的角色卡。",
+        "characterDescription": "屬於目前故事專案的可重用角色卡。",
         "choice": "玩家選擇",
-        "choiceDescription": "把目前鏡頭的結尾轉換成玩家選擇。",
-        "choiceUnavailable": "請先選取一個影像鏡頭。",
-        "ending": "故事結局",
-        "endingDescription": "儲存於故事聖經中的命名結局。",
-        "root": "故事世界",
-        "rootDescription": "將故事世界節點重新加入畫布。"
+        "choiceDescription": "從目前鏡頭繼續進入玩家選擇。",
+        "choiceUnavailable": "請先選取一個影像鏡頭。"
       },
       "connectionCreator": {
         "title": "建立下一步",
         "description": "選擇這個場景結束後會發生甚麼。",
         "clip": "影片片段",
         "clipDescription": "直接繼續到另一個生成的影片片段。",
-        "text": "關鍵劇情",
-        "textDescription": "繼續到一個不依賴影片的關鍵劇情。",
         "choice": "玩家選擇",
         "choiceDescription": "暫停播放，讓玩家選擇後續分支。",
         "cancel": "取消"
       },
       "projection": {
         "clip": "鏡頭",
-        "text": "關鍵劇情",
-        "decision": "玩家選擇",
-        "ending": "結局"
+        "decision": "玩家選擇"
       },
       "foundation": {
         "description": "先固定戲劇承諾，再展開分支圖；修改會自動儲存到可編輯草稿。",
         "logline": "一句話梗概",
         "loglinePlaceholder": "用一句話寫清主角、壓力與不可逆的選擇。",
         "synopsis": "完整梗概",
-        "synopsisPlaceholder": "描述完整戲劇弧線，包括核心轉折與可能結局。",
-        "worldview": "世界與規則",
-        "worldviewPlaceholder": "定義時代與場景、世界運作邏輯、視覺質感，以及故事不能違反的規則。"
+        "synopsisPlaceholder": "描述完整影視弧線，包括核心轉折，以及每條路線如何抵達終止片段。"
       },
-      "world": {
-        "eyebrow": "故事世界",
-        "title": "故事設定",
-        "description": "支撐每個分支的前提、角色與世界規則；修改會自動儲存到草稿。",
+      "filmFoundation": {
+        "eyebrow": "世界觀",
+        "title": "世界觀",
+        "description": "支撐每個影視分支的前提、梗概、角色與封面；修改會自動儲存到草稿。",
         "cover": {
           "title": "封面圖",
           "description": "本故事的一張靜態封面圖：既是這裡的項目封面，也是播放器標題頁的背景，以及已發布作品的分享圖。",
@@ -2213,7 +2196,7 @@
             "initialNotAllowed": "初始值不在允許值列表中。草稿仍可儲存，但該變數無法用於試玩。"
           },
           "deleteTitle": "刪除這個狀態變數？",
-          "deleteDescription": "「{key}」將從故事世界中移除。",
+          "deleteDescription": "「{key}」將從世界觀中移除。",
           "cancel": "取消",
           "confirmDelete": "刪除變數",
           "boolean": {
@@ -2353,7 +2336,6 @@
         "entry": "入口場景",
         "exitAuto": "繼續到場景",
         "exitChoice": "玩家選擇",
-        "exitEnding": "故事結局",
         "continuationTarget": "下一個場景",
         "continuationDescription": "一個場景只有一個直接後續；需要分支時請使用玩家選擇。",
         "choicePrompt": "選擇問題",
@@ -2368,41 +2350,14 @@
         "moveChoiceDown": "下移選項",
         "choiceMinimum": "可試玩的選擇至少需要 2 個選項，目前為 {count} 個。",
         "requiredForPlayableStory": "可試玩故事必須填寫。",
-        "endingTarget": "目標結局",
-        "endingTargetPlaceholder": "選擇一個結局",
+        "terminalAfterPlayback": "未連接後續節點時，播放將在這裡自然結束。",
         "convertExitTitle": "取代目前後續走向？",
         "convertExitDescription": "這會刪除現有的 {count} 條分支，以及其中已編寫的條件或選項細節。",
         "confirmConversion": "取代後續走向",
-        "endingTitle": "結局標題",
-        "endingSummary": "結局摘要",
         "delete": "刪除節點",
-        "deleteEnding": "刪除結局",
         "removeDecision": "移除選擇環節",
         "cancel": "取消",
-        "nodeName": "名稱",
-        "textTitle": "場景標題",
-        "textTitlePlaceholder": "為這個關鍵劇情命名",
-        "textBody": "場景正文",
-        "textBodyPlaceholder": "寫下玩家在這個場景中讀到的內容…",
-        "music": {
-          "title": "場景音樂",
-          "description": "播放進入該場景時開始，直到另一個場景更換音樂為止。",
-          "empty": "尚未附加音軌",
-          "trackLabel": "音軌 {letter}",
-          "usedIn": "{count, plural, other {# 個場景}}",
-          "reuse": "重用本故事中的音軌",
-          "upload": "上傳音軌",
-          "replace": "更換音軌",
-          "remove": "移除音軌",
-          "play": "試聽音軌",
-          "stop": "停止試聽",
-          "uploading": "上傳中 · {progress}%",
-          "accepted": "MP3 或 WAV 音訊",
-          "errors": {
-            "upload": "音軌上傳失敗。",
-            "type": "僅支援附加 MP3 或 WAV 音訊。"
-          }
-        }
+        "nodeName": "名稱"
       },
       "conflict": {
         "description": "其他工作階段儲存了更新版本。你的本機草稿已保留；如需留存，請先匯出再捨棄。",
@@ -2422,7 +2377,7 @@
           },
           "layout": {
             "title": "畫布佈局",
-            "description": "未儲存的節點位置或故事世界顯示狀態將會遺失。"
+            "description": "未儲存的節點位置將會遺失。"
           }
         },
         "stay": "留在畫布",
@@ -2437,20 +2392,6 @@
       "error": {
         "title": "無法開啟故事畫布",
         "retry": "重試"
-      },
-      "textPlay": {
-        "eyebrow": "試玩 · 草稿",
-        "back": "返回畫布",
-        "restart": "重新開始",
-        "loading": "正在載入工作區…",
-        "thinking": "旁白正在書寫…",
-        "anchorLabel": "場景",
-        "continue": "繼續",
-        "theEnd": "全劇終",
-        "playAgain": "再玩一次",
-        "inputPlaceholder": "輸入你的行動…",
-        "send": "傳送",
-        "errorFallback": "出錯了，請重試。"
       },
       "tidy": {
         "action": "整理畫布"
@@ -2478,7 +2419,7 @@
       "productionSubtitle": "目前工作草稿的參考就緒度與影片覆蓋。",
       "draftRevisionStatus": "工作草稿 r{revision}",
       "storyStructureTitle": "故事結構",
-      "storyStructureSubtitle": "選擇、狀態與結局均以創作圖為唯一真源。",
+      "storyStructureSubtitle": "鏡頭、選擇、狀態與終止路線均以創作圖為唯一真源。",
       "videoState": "目前影片狀態",
       "videoStateReady": "{total} 個鏡頭中已有 {current} 個綁定目前影片。",
       "revisionTitle": "版本識別",
@@ -2492,7 +2433,6 @@
       "characters": "人物",
       "storyGraph": "劇情圖",
       "graphNodes": "圖節點",
-      "endings": "結局",
       "decisions": "分支選擇",
       "decisionsSubtitle": "穩定決策、選項、狀態效果及其下一劇情節點。",
       "decisionSources": "出現於 {scenes} 之後"
@@ -2631,8 +2571,8 @@
     "videoLabel": "畫面 {nodeId} 的故事影片",
     "continue": "繼續",
     "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
-    "endingEyebrow": "抵達結局",
-    "unknownEnding": "結局 {endingId}",
+    "completionEyebrow": "播放完成",
+    "completionTitle": "這條路線已播放完畢",
     "playAgain": "再玩一次",
     "runtimeError": "試玩無法繼續",
     "mediaError": "無法播放凍結媒體資產 {assetId}。",

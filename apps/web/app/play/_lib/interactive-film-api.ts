@@ -35,6 +35,7 @@ export class InteractiveFilmLoadError extends Error {
       | "GAME_ID_MISMATCH"
       | "MANIFEST_REQUEST_FAILED"
       | "MANIFEST_INVALID"
+      | "MANIFEST_PROFILE_INVALID"
       | "MANIFEST_NOT_MATERIALIZED"
       | "MANIFEST_IDENTITY_MISMATCH"
       | "CHAPTER_NOT_FOUND",
@@ -250,6 +251,15 @@ function verifyRuntimeManifest(
     );
   }
   const manifest = materializeExperienceRuntimeManifest(parsed.data);
+  if (
+    manifest.metadata.experienceProfile !== "cinematic" ||
+    !manifest.compatibility.requiredCapabilities.includes("core.video")
+  ) {
+    throw new InteractiveFilmLoadError(
+      "MANIFEST_PROFILE_INVALID",
+      "The published release is not an interactive-film manifest."
+    );
+  }
   if (
     canonicalizeExperienceJson(rawManifest.data) !== canonicalizeExperienceRuntimeManifest(manifest)
   ) {

@@ -13,7 +13,6 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
-  StoryFormat,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
@@ -36,7 +35,6 @@ import {
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
-  STORY_WORLD_CANVAS_NODE_ID,
   StoryCanvasNodePositionsSchema,
   StoryProductionCanvasContentSchema,
   StoryUuidSchema,
@@ -226,8 +224,7 @@ export class StoryProjectsService {
       const project = await tx.storyProject.create({
         data: {
           workspaceId,
-          format: input.format,
-          frameProfile: input.frameProfile ?? null,
+          frameProfile: input.frameProfile,
           status: StoryProjectStatus.active,
           visibility: input.visibility,
           title: input.title,
@@ -328,11 +325,6 @@ export class StoryProjectsService {
       where: {
         workspaceId,
         status: query.status,
-        format: query.format
-          ? query.format
-          : {
-              in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
-            },
         members: {
           some: {
             userId: user.userId,
@@ -402,11 +394,6 @@ export class StoryProjectsService {
     const rows = await this.prisma.storyProject.findMany({
       where: {
         status: query.status,
-        format: query.format
-          ? query.format
-          : {
-              in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
-            },
         members: {
           some: {
             userId: user.userId,
@@ -460,7 +447,7 @@ export class StoryProjectsService {
     workspaceId: string,
     projectId: string,
   ): Promise<StoryProjectSummaryDto> {
-    const access = await this.requireScopedProject(
+    await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
@@ -469,7 +456,6 @@ export class StoryProjectsService {
         allowArchived: true,
       },
     );
-    this.requireSupportedStoryFormat(access.project.format);
     const row = await this.loadProjectSummary(projectId);
     return this.toProjectSummary(row, user.userId);
   }
@@ -480,13 +466,7 @@ export class StoryProjectsService {
     projectId: string,
     input: PatchStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    const access = await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.edit',
-    );
-    this.requireSupportedStoryFormat(access.project.format);
+    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
@@ -562,13 +542,12 @@ export class StoryProjectsService {
     projectId: string,
     input: ArchiveStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    const access = await this.requireScopedProject(
+    await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
       'story.admin',
     );
-    this.requireSupportedStoryFormat(access.project.format);
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       return tx.storyProject.updateMany({
@@ -854,7 +833,6 @@ export class StoryProjectsService {
       projectId,
       'story.edit',
     );
-    this.requireSupportedStoryFormat(access.project.format);
     const saved = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const [current, chapters] = await Promise.all([
@@ -974,7 +952,6 @@ export class StoryProjectsService {
       return this.throwDraftConflict(
         projectId,
         input.expectedRevision,
-        access.project,
         chapterId,
       );
     }
@@ -1266,7 +1243,7 @@ export class StoryProjectsService {
     projectId: string,
     revisionId: string,
   ): Promise<StoryRevisionDto> {
-    const access = await this.requireScopedProject(
+    await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
@@ -1279,7 +1256,7 @@ export class StoryProjectsService {
       where: { id: revisionId, storyProjectId: projectId },
     });
     if (!revision) throwRevisionNotFound();
-    return this.toRevision(revision, access.project.format);
+    return this.toRevision(revision);
   }
 
   async lockRevision(
@@ -1294,7 +1271,6 @@ export class StoryProjectsService {
       projectId,
       'story.edit',
     );
-    this.requireSupportedStoryFormat(access.project.format);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -1403,13 +1379,9 @@ export class StoryProjectsService {
 
         if (result.kind === 'missing') throwDraftNotFound();
         if (result.kind === 'conflict') {
-          throwDraftConflict(
-            input.expectedDraftRevision,
-            result.draft,
-            access.project,
-          );
+          throwDraftConflict(input.expectedDraftRevision, result.draft);
         }
-        return this.toRevision(result.revision, access.project.format);
+        return this.toRevision(result.revision);
       } catch (error) {
         if (!isUniqueConstraintError(error) || attempt > 0) throw error;
         // A concurrent lock won. Retry the serializable transaction so the
@@ -1429,14 +1401,13 @@ export class StoryProjectsService {
     projectId: string,
     query: StoryWorkbenchQuery,
   ): Promise<StoryWorkbenchDto> {
-    const access = await this.requireScopedProject(
+    await this.requireScopedProject(
       user,
       workspaceId,
       projectId,
       'story.read',
       { allowArchived: true },
     );
-    this.requireSupportedStoryFormat(access.project.format);
 
     const {
       project,
@@ -1617,21 +1588,6 @@ export class StoryProjectsService {
     return chapter;
   }
 
-  private requireSupportedStoryFormat(
-    format: StoryFormat,
-  ): asserts format is 'interactive_film' | 'text_adventure' {
-    if (
-      format !== StoryFormat.interactive_film &&
-      format !== StoryFormat.text_adventure
-    ) {
-      throw new UnprocessableEntityException({
-        code: 'STORY_FORMAT_UNSUPPORTED',
-        message:
-          'This endpoint supports interactive-film and text-adventure story profiles.',
-      });
-    }
-  }
-
   private async loadProjectSummary(
     projectId: string,
     client: Pick<Prisma.TransactionClient, 'storyProject'> = this.prisma,
@@ -1671,7 +1627,6 @@ export class StoryProjectsService {
   private async throwDraftConflict(
     projectId: string,
     expectedRevision: number,
-    project: { id: string; format: StoryFormat },
     chapterId: string,
   ): Promise<never> {
     const [current, chapter] = await Promise.all([
@@ -1686,7 +1641,7 @@ export class StoryProjectsService {
       message: 'The story draft changed. Refresh it before saving again.',
       expectedRevision,
       actualRevision: current.revision,
-      current: this.toChapterDraft(current, project, chapter),
+      current: this.toChapterDraft(current, { id: projectId }, chapter),
     });
   }
 
@@ -1719,7 +1674,6 @@ export class StoryProjectsService {
     row: ProjectSummaryRow,
     userId: string,
   ): StoryProjectSummaryDto {
-    this.requireSupportedStoryFormat(row.format);
     const membership = row.members.find((member) => member.userId === userId);
     const capabilities = membership
       ? (this.permissions.capabilities(membership.role) as StoryCapability[])
@@ -1750,7 +1704,6 @@ export class StoryProjectsService {
     return {
       id: row.id,
       workspaceId: row.workspaceId,
-      format: row.format,
       frameProfile: row.frameProfile,
       status: row.status,
       visibility: row.visibility,
@@ -1817,14 +1770,13 @@ export class StoryProjectsService {
       createdAt: Date;
       updatedAt: Date;
     },
-    project: { id: string; format: StoryFormat },
+    project: { id: string },
     chapter: {
       id: string;
       nodeIds: Prisma.JsonValue;
       entryNodeId: string | null;
     },
   ): StoryDraftDto {
-    this.requireSupportedStoryFormat(project.format);
     if (row.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       throw unsupportedStorySchema('draft', row.schemaVersion);
     }
@@ -1845,7 +1797,6 @@ export class StoryProjectsService {
     return {
       projectId: row.storyProjectId,
       chapterId: chapter.id,
-      format: project.format,
       schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
       content,
       contentHash: canonicalJsonHash(content),
@@ -1878,14 +1829,6 @@ export class StoryProjectsService {
       row.nodePositions,
     );
     if (!nodePositions.success) {
-      throw corruptData('STORY_CANVAS_LAYOUT_CORRUPT', 'canvas layout');
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(
-        nodePositions.data,
-        STORY_WORLD_CANVAS_NODE_ID,
-      )
-    ) {
       throw corruptData('STORY_CANVAS_LAYOUT_CORRUPT', 'canvas layout');
     }
     return {
@@ -1955,30 +1898,25 @@ export class StoryProjectsService {
     };
   }
 
-  private toRevision(
-    row: {
-      id: string;
-      storyProjectId: string;
-      number: number;
-      sourceDraftRevision: number;
-      schemaVersion: string;
-      content: Prisma.JsonValue;
-      contentHash: string;
-      label: string | null;
-      source: StoryRevisionSource;
-      createdByUserId: string;
-      createdAt: Date;
-    },
-    format: StoryFormat,
-  ): StoryRevisionDto {
-    this.requireSupportedStoryFormat(format);
+  private toRevision(row: {
+    id: string;
+    storyProjectId: string;
+    number: number;
+    sourceDraftRevision: number;
+    schemaVersion: string;
+    content: Prisma.JsonValue;
+    contentHash: string;
+    label: string | null;
+    source: StoryRevisionSource;
+    createdByUserId: string;
+    createdAt: Date;
+  }): StoryRevisionDto {
     if (row.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
       throw unsupportedStorySchema('revision', row.schemaVersion);
     }
     return {
       ...this.toRevisionSummary(row),
       projectId: row.storyProjectId,
-      format,
       content: parseDraftContent(row.content, 'STORY_REVISION_CORRUPT'),
     };
   }
@@ -2145,20 +2083,14 @@ function throwDraftConflict(
     createdAt: Date;
     updatedAt: Date;
   },
-  project: { format: StoryFormat },
 ): never {
-  if (
-    (project.format !== StoryFormat.interactive_film &&
-      project.format !== StoryFormat.text_adventure) ||
-    current.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION
-  ) {
+  if (current.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
     throw unsupportedStorySchema('draft', current.schemaVersion);
   }
   const content = parseDraftContent(current.content, 'STORY_DRAFT_CORRUPT');
   const dto: StoryDraftDto = {
     projectId: current.storyProjectId,
     chapterId: null,
-    format: project.format,
     schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
     content,
     contentHash: current.contentHash,

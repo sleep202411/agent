@@ -16,7 +16,8 @@ import type { CanvasAsset, CanvasNodeShape } from "@/lib/canvas-core/types";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
-import { ASSET_DRAG_MIME, ASSET_LIBRARY_WIDTH } from "@/components/canvas/authoring/asset-library";
+import { ASSET_LIBRARY_WIDTH } from "@/components/canvas/authoring/asset-library";
+import { ASSET_DRAG_MIME } from "@/components/canvas/authoring/asset-library-dnd";
 import { handleColor } from "@/components/canvas/authoring/port-colors";
 import {
   createUploadStateStore,

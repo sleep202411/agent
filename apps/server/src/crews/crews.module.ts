@@ -8,7 +8,10 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { ApplicationsController } from './applications.controller';
 import { ApplicationsService } from './applications.service';
-import { CrewAssetsController } from './assets/assets.controller';
+import {
+  CrewAssetsController,
+  ProjectCrewAssetsController,
+} from './assets/assets.controller';
 import { CrewAssetAccessModule } from './assets/asset-access.module';
 import { CrewAssetsService } from './assets/assets.service';
 import { CrewAssetUploadCleanupWorker } from './assets/upload-cleanup.worker';
@@ -70,6 +73,7 @@ import { CrewProductionService } from './production/production.service';
     ApplicationsController,
     MembersController,
     CrewAssetsController,
+    ProjectCrewAssetsController,
     CrewInvitationsController,
     CrewTasksController,
     CrewProductionController,

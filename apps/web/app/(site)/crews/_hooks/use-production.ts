@@ -20,6 +20,8 @@ import type {
   CrewProductionOverviewDTO,
   CrewProductionPageDTO,
   CrewProductionResourceDTO,
+  CrewStudioProjectOptionsDTO,
+  LinkCrewStudioProjectResult,
   CrewProductionActivityDTO,
   CrewProductionActivityPageDTO,
   UpdateCrewProductionProjectInput,
@@ -35,6 +37,35 @@ export function useCrewProductionOverview(crewId: string, enabled = true) {
       crewApi.get<CrewProductionOverviewDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-overview`
       ),
+  });
+}
+
+export function useCrewStudioProjectOptions(crewId: string, enabled = true) {
+  return useQuery({
+    queryKey: crewKeys.studioProjectOptions(crewId),
+    enabled: enabled && Boolean(crewId),
+    queryFn: () =>
+      crewApi.get<CrewStudioProjectOptionsDTO>(
+        `/crews/${encodeURIComponent(crewId)}/studio-project-options`
+      ),
+  });
+}
+
+export function useLinkCrewStudioProject(crewId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string | null) =>
+      crewApi.patch<LinkCrewStudioProjectResult>(
+        `/crews/${encodeURIComponent(crewId)}/studio-project`,
+        { body: { projectId } }
+      ),
+    onSuccess: (result) => {
+      queryClient.setQueryData<CrewProductionOverviewDTO>(
+        crewKeys.productionOverview(crewId),
+        (current) => (current ? { ...current, studioProject: result.studioProject } : current)
+      );
+      void queryClient.invalidateQueries({ queryKey: crewKeys.studioProjectOptions(crewId) });
+    },
   });
 }
 

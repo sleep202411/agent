@@ -22,6 +22,8 @@ import {
   type CreateProductionActivityInput,
   ListProductionActivityQuerySchema,
   type ListProductionActivityQuery,
+  LinkCrewStudioProjectSchema,
+  type LinkCrewStudioProjectInput,
   ReorderCrewEpisodeSchema,
   type ReorderCrewEpisodeInput,
   ReviewEpisodeDeliverySchema,
@@ -46,6 +48,31 @@ export class CrewProductionController {
     return this.production.overview(
       parseIdParam(crewIdRaw, 'crewId'),
       user.userId,
+    );
+  }
+
+  @Get('crews/:crewId/studio-project-options')
+  studioProjectOptions(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.production.studioProjectOptions(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+    );
+  }
+
+  @Patch('crews/:crewId/studio-project')
+  linkStudioProject(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(LinkCrewStudioProjectSchema))
+    input: LinkCrewStudioProjectInput,
+  ) {
+    return this.production.linkStudioProject(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      input,
     );
   }
 

@@ -175,6 +175,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
         name: name.trim(),
         logo: logoPath,
         description: description.trim(),
+        productionTemplateLocale: locale,
       },
       {
         onSuccess: (crew) => {

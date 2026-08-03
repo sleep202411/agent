@@ -270,7 +270,6 @@
   "nav": {
     "studio": "Enter FizzStudio",
     "brand": "Brand",
-    "narrative": "Narrative",
     "liquidEngine": "Liquid Engine",
     "about": "About",
     "getInTouch": "Get in Touch",
@@ -1658,8 +1657,6 @@
     }
   },
   "newIpDetail": {
-    "playCta": "Play",
-    "playComingSoon": "Coming soon — the interactive story is being wired up.",
     "loading": "Loading IP detail...",
     "back": "Back to IP plaza",
     "previewBadge": "Public-page preview visible only to you",
@@ -1839,27 +1836,6 @@
       "notForSale": "Not available for purchase",
       "disclaimerTitle": "Order fulfillment",
       "disclaimerBody": "After purchase, users receive content access. Point deduction, refunds, and ledger records are handled by the backend loop."
-    },
-    "narrative": {
-      "eyebrow": "Interactive text game",
-      "title": "Playable stories",
-      "body": "This IP now has a text-game draft. Players enter text turns, AI continuation, clues, and endings directly.",
-      "fallbackTitle": "Text-game entry is ready",
-      "fallbackBody": "The local IP detail API is still loading or unavailable, but this IP already has a temporary playable text-game draft attached.",
-      "viewAll": "View game list",
-      "play": "Play draft",
-      "status": {
-        "draft": "Draft",
-        "published": "Published"
-      },
-      "items": {
-        "story36Hours": {
-          "type": "AI text RPG",
-          "title": "36-Hour Drowning Case",
-          "summary": "A 17-year-old girl is sent to an elite school for correction, then finds the truth inside the first drowning case.",
-          "coverAlt": "Campus entrance frame for 36-Hour Drowning Case"
-        }
-      }
     },
     "notFound": {
       "title": "This IP is not available",
@@ -2248,7 +2224,12 @@
       "loadFailedTitle": "Crews failed to load",
       "loadFailedBody": "The crew service is temporarily unavailable. Please try again.",
       "retry": "Retry",
-      "memberCount": "{count} members"
+      "memberCount": "{count} members",
+      "filterLabel": "Filter crews",
+      "filterPlaceholder": "Filter crews…",
+      "clearFilter": "Clear crew filter",
+      "noResultsTitle": "No matching crews",
+      "noResultsBody": "No crews match “{query}”."
     },
     "about": {
       "bioHeading": "Biography",
@@ -4746,6 +4727,7 @@
       "blockedBy": "Blocked by"
     },
     "status": {
+      "backlog": "Backlog",
       "open": "To do",
       "in_progress": "In progress",
       "submitted": "In review",
@@ -4999,6 +4981,22 @@
       "dateInput": "Date or time period",
       "dateInputPlaceholder": "Try 2027-05, 2027-Q4, or 2027-05-20",
       "labels": "Labels",
+      "studioProject": "Studio project",
+      "linkStudioProject": "Link Studio project",
+      "searchStudioProjects": "Search workspaces and projects…",
+      "loadingStudioProjects": "Loading projects…",
+      "noStudioProjects": "No matching projects.",
+      "unlinkStudioProject": "Unlink Studio project",
+      "teamWorkspace": "Team workspace",
+      "personalWorkspace": "Personal workspace",
+      "workspaceHasNoProjects": "No projects in this workspace.",
+      "projectLinkFailed": "The Studio project could not be linked.",
+      "projectOptionsFailed": "Projects could not be loaded.",
+      "projectDisabled": {
+        "personal_workspace": "Crew links require a project in a team workspace.",
+        "alreadyLinked": "Already linked to {crew}.",
+        "insufficient_permission": "You need edit access to link this project."
+      },
       "addLabel": "Add label",
       "addAnotherLabel": "Add another label",
       "searchLabels": "Search labels…",
@@ -5257,7 +5255,12 @@
     "retry": "Retry",
     "empty": "No tasks in this view.",
     "selectTask": "Select a task to see its canvas, submissions, and delivery history.",
-    "filter": { "active": "Active", "review": "Review", "approved": "Approved", "all": "All" },
+    "filter": {
+      "active": "Active",
+      "review": "Review",
+      "approved": "Approved",
+      "all": "All"
+    },
     "status": {
       "backlog": "Backlog",
       "open": "Open",
@@ -5267,7 +5270,12 @@
       "approved": "Approved",
       "cancelled": "Cancelled"
     },
-    "priority": { "low": "Low", "normal": "Normal", "high": "High", "urgent": "Urgent" },
+    "priority": {
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High",
+      "urgent": "Urgent"
+    },
     "openCanvas": "Open canvas",
     "submit": "Submit",
     "noDescription": "No brief has been added.",
@@ -5535,7 +5543,10 @@
       "emptyTitle": "No points recorded yet",
       "emptyDescription": "Approved task rewards appear automatically. Finance can also add a manual point entry."
     },
-    "scopes": { "mine": "My points", "crew": "Crew ledger" },
+    "scopes": {
+      "mine": "My points",
+      "crew": "Crew ledger"
+    },
     "filters": {
       "all": "All",
       "pending": "Pending",
@@ -7595,7 +7606,28 @@
     "viewDetails": "View details",
     "attachment": "Attachment",
     "openAttachment": "Open",
-    "preview": "Preview",
+    "preview": {
+      "proposal": "[Sent a proposal]",
+      "image": "[Image]",
+      "file": "[File]",
+      "task": "[Task]",
+      "empty": "(no messages yet)",
+      "system": {
+        "conversation.created": "Conversation started.",
+        "conversation.context_changed_to_order": "Order created from this conversation.",
+        "proposal.declined": "Proposal declined.",
+        "order.submitted": "Order submitted, awaiting creator.",
+        "order.accepted": "Order accepted.",
+        "order.declined": "Order declined.",
+        "order.delivered": "Marked delivered.",
+        "order.revision_requested": "Revision requested.",
+        "order.completed": "Order completed.",
+        "order.cancelled": "Order cancelled.",
+        "fallback": "Status updated",
+        "crew.member.joined": "A member joined.",
+        "crew.member.left": "A member left."
+      }
+    },
     "contextPanelLabel": "Conversation context",
     "assetContextLabel": "Asset preview",
     "closeContextPanel": "Close context panel",
@@ -7649,28 +7681,6 @@
       "service": "Inquiry",
       "order": "Order",
       "crew": "Crew"
-    },
-    "preview": {
-      "proposal": "[Sent a proposal]",
-      "image": "[Image]",
-      "file": "[File]",
-      "task": "[Task]",
-      "empty": "(no messages yet)",
-      "system": {
-        "conversation.created": "Conversation started.",
-        "conversation.context_changed_to_order": "Order created from this conversation.",
-        "proposal.declined": "Proposal declined.",
-        "order.submitted": "Order submitted, awaiting creator.",
-        "order.accepted": "Order accepted.",
-        "order.declined": "Order declined.",
-        "order.delivered": "Marked delivered.",
-        "order.revision_requested": "Revision requested.",
-        "order.completed": "Order completed.",
-        "order.cancelled": "Order cancelled.",
-        "fallback": "Status updated",
-        "crew.member.joined": "A member joined.",
-        "crew.member.left": "A member left."
-      }
     },
     "system": {
       "conversation.created": "Conversation started.",
@@ -9030,15 +9040,15 @@
     }
   },
   "experiencePlayer": {
-    "metadataFallbackTitle": "Interactive story",
-    "metadataDescription": "Play {title}, an interactive story by FizzDragon.",
+    "metadataFallbackTitle": "Interactive film",
+    "metadataDescription": "Watch {title}, an interactive film by FizzDragon.",
     "invalidManifest": "This experience cannot start because its manifest is invalid.",
     "manifestRoot": "manifest",
-    "interactiveFilm": "Interactive story",
+    "interactiveFilm": "Interactive film",
     "starting": "Starting…",
     "start": "Start experience",
-    "endingEyebrow": "Ending reached",
-    "unknownEnding": "Ending {endingId}",
+    "endingEyebrow": "Playback complete",
+    "unknownEnding": "Route complete",
     "playAgain": "Play again",
     "runtimeError": "Playback stopped",
     "restart": "Restart experience",
@@ -9046,7 +9056,7 @@
     "videoLabel": "Story video",
     "noVisibleChoices": "No available choices match the current story state.",
     "continue": "Continue",
-    "regionLabel": "Interactive story player",
+    "regionLabel": "Interactive film player",
     "chapters": "Chapters",
     "loadErrorTitle": "This experience is not available",
     "loadErrorDescription": "The published release could not pass the player’s integrity checks. The service response is shown below.",
@@ -9071,472 +9081,18 @@
   },
   "games": {
     "back": "Back to IP plaza",
-    "eyebrow": "Playable stories",
-    "title": "Games",
-    "subtitle": "A home for published interactive films, text games, RPGs, and every playable story built with FizzDragon.",
-    "sourceIp": "Source IP",
-    "start": "Start",
+    "eyebrow": "Interactive films",
+    "title": "Interactive films",
+    "subtitle": "A home for every published interactive film built with FizzDragon.",
     "catalogue": {
-      "playableStory": "Playable story",
+      "playableStory": "Interactive film",
       "currentVersion": "Current release",
       "open": "Play",
-      "empty": "No playable stories have been published yet.",
-      "unavailable": "The playable-story catalogue is unavailable"
+      "empty": "No interactive films have been published yet.",
+      "unavailable": "The interactive-film catalogue is unavailable"
     },
     "status": {
-      "draft": "Draft",
-      "published": "Published",
-      "inProduction": "In production"
-    },
-    "tags": {
-      "textRpg": "Text game",
-      "mystery": "Mystery",
-      "aiRuntime": "AI continuation"
-    },
-    "stats": {
-      "aiRuntime": "AI turn runtime",
-      "plotNodes": "2 plot nodes",
-      "clues": "4 clues",
-      "endings": "3 endings"
-    },
-    "items": {
-      "story36Hours": {
-        "type": "Text-game draft",
-        "title": "36-Hour Drowning Case",
-        "summary": "In modern China, a 17-year-old girl is sent to an elite school for correction, then discovers the truth inside a classmate's drowning case.",
-        "coverAlt": "Campus entrance frame for 36-Hour Drowning Case"
-      }
-    }
-  },
-  "narrativeDemo": {
-    "brand": {
-      "referenceTitle": "FizzDragon RPG"
-    },
-    "topbar": {
-      "back": "Back",
-      "ended": "Ended",
-      "menu": "Game menu",
-      "turns": "{count} turns"
-    },
-    "concepts": {
-      "actions": {
-        "exit": "Exit story",
-        "regenerate": "Explore again"
-      },
-      "loading": {
-        "title": "Exploring this world…",
-        "description": "FizzDragon is shaping several different ways into the story.",
-        "ariaLabel": "Generating story concepts",
-        "steps": {
-          "premise": "Finding the strongest premise",
-          "conflict": "Sharpening the central conflict",
-          "contrast": "Testing a surprising reversal",
-          "hook": "Looking for the visual hook",
-          "possibility": "Opening another path"
-        }
-      },
-      "select": {
-        "eyebrow": "Story direction",
-        "title": "Which story do you want to enter?",
-        "description": "Choose one possibility. FizzDragon will build this run around it.",
-        "resultCount": "{count} story directions",
-        "optionLabel": "Story concept {index}",
-        "selected": "Selected",
-        "confirm": "Continue",
-        "resume": "Continue with this story"
-      },
-      "entering": {
-        "title": "Building your story…",
-        "description": "Setting the cast, hiding clues, and preparing the opening scene.",
-        "ariaLabel": "Building your story",
-        "steps": {
-          "world": "Surveying this world",
-          "characters": "Placing the cast",
-          "secrets": "Giving everyone a secret",
-          "clues": "Hiding clues in the details",
-          "structure": "Shaping the four-act arc",
-          "truth": "Locking away the final truth",
-          "endings": "Testing every ending",
-          "opening": "Lighting the opening scene"
-        },
-        "selectedLabel": "Your chosen story"
-      },
-      "error": {
-        "conceptsTitle": "We couldn’t create story concepts",
-        "conceptsFallback": "Please try generating them again.",
-        "emptyStory": "This IP does not contain enough story information to generate concepts.",
-        "requestTimeout": "The story service took too long to respond. Please try again.",
-        "network": "The story service could not be reached. Check your connection and try again.",
-        "invalidResponse": "The story service returned an incomplete response. Please try again.",
-        "invalidConcept": "That story concept can no longer be used.",
-        "enterTitle": "We couldn’t build this story",
-        "enterFallback": "Your choice is saved. Try building it again.",
-        "freshRunHint": "This session cannot be resumed safely. Build a fresh run from the selected concept.",
-        "chooseAnotherHint": "Choose a different story concept to continue.",
-        "retryConcepts": "Generate again",
-        "retryEnter": "Try again",
-        "buildFresh": "Build a fresh run"
-      }
-    },
-    "errors": {
-      "sessionExpired": "This run has expired. Start a new one to keep playing.",
-      "releaseNotFound": "This story is no longer available to play.",
-      "generationFailed": "The story service could not write this turn. Please try again.",
-      "invalidAction": "This run can no longer continue. Start a new one.",
-      "actionNotAllowed": "That action isn’t available right now. Pick one of the options instead.",
-      "runAlreadyStarted": "This run is already underway. Continue it from where it is.",
-      "runNotStarted": "This run hasn’t started yet. Begin it to keep playing.",
-      "turnInFlight": "The previous turn is still playing. Wait a moment and try again.",
-      "rateLimited": "Too many requests. Wait a moment and try again."
-    },
-    "setup": {
-      "step": "Step {current} of {total}",
-      "stage": {
-        "prologue": "Opening",
-        "role": "Viewpoint",
-        "direction": "Direction",
-        "preferences": "Pacing"
-      },
-      "prologueTitle": "You are not here to adapt.",
-      "prologueBody1": "The morning gate looks like black glass. You stand outside with the transfer notice in your hand. The reception teacher has not appeared yet, but the guard already looks up at you.",
-      "prologueBody2": "The elite school says you need correction. You know what they really want to correct: the way you notice contradictions, remember details, and pull lies apart.",
-      "roleTitle": "Which viewpoint do you enter from?",
-      "roleDescription": "The first version defaults to the protagonist. Other viewpoints tune narration and visibility without revealing the truth early.",
-      "directionTitle": "What should this run feel like?",
-      "directionDescription": "This is an adaptation direction, not a fixed ending. The AI uses it to tune mood, conflict focus, and information density.",
-      "preferenceTitle": "Choose story pacing",
-      "preferenceDescription": "Set how quickly this run moves. Hint strength and open-input boundaries are handled automatically by the story system.",
-      "roles": {
-        "linFeng": {
-          "meta": "Recommended",
-          "label": "Lin Feng",
-          "description": "A 17-year-old transfer student with precise memory and deduction. This is the most complete player viewpoint."
-        },
-        "brother": {
-          "meta": "Relationship view",
-          "label": "Brother",
-          "description": "Protector and watcher. Good for a stronger control layer, while the AI limits direct scene visibility."
-        },
-        "observer": {
-          "meta": "Observer view",
-          "label": "Case recorder",
-          "description": "A cooler case-record tone for players who want more distance and less embodiment."
-        }
-      },
-      "directions": {
-        "mystery": {
-          "label": "Mystery",
-          "description": "Focus on clues, contradictions, testimony, and the evidence chain."
-        },
-        "pressure": {
-          "label": "School pressure",
-          "description": "Emphasize rules, surveillance, institutional language, and isolation."
-        },
-        "relationship": {
-          "label": "Relationship tension",
-          "description": "Lean into trust, misunderstanding, and intervention between the protagonist and others."
-        },
-        "truth": {
-          "label": "Higher truth",
-          "description": "Touch deeper secrets sooner, with higher risk and stronger brother intervention."
-        }
-      },
-      "preferences": {
-        "pace": {
-          "title": "Story pacing",
-          "slow": {
-            "label": "Slow burn",
-            "description": "More environment and internal detail."
-          },
-          "standard": {
-            "label": "Standard",
-            "description": "Balanced action, feedback, and progress."
-          },
-          "fast": {
-            "label": "Tight",
-            "description": "Reach conflict and node changes sooner."
-          }
-        },
-        "hint": {
-          "title": "Hint strength",
-          "low": {
-            "label": "Low",
-            "description": "Let the player find direction."
-          },
-          "normal": {
-            "label": "Normal",
-            "description": "Suggest actions when useful."
-          },
-          "high": {
-            "label": "Clear",
-            "description": "Offer investigation leads more actively."
-          }
-        },
-        "freedom": {
-          "title": "Openness",
-          "open": {
-            "label": "More open",
-            "description": "Accept wider free input."
-          },
-          "balanced": {
-            "label": "Balanced",
-            "description": "Balance freedom and story limits."
-          },
-          "guided": {
-            "label": "More guided",
-            "description": "Pull back to the main line more often."
-          }
-        }
-      },
-      "dynamic": {
-        "prologueEyebrow": "Opening",
-        "prologueTitle": "Step into this story",
-        "roleTitle": "Who do you want to play?",
-        "directionTitle": "What kind of adaptation do you want?",
-        "paceTitle": "How fast should the story move?",
-        "enterStory": "Enter the story",
-        "paceOptions": {
-          "slow": "Slow burn",
-          "standard": "Standard",
-          "compact": "Compact"
-        }
-      },
-      "back": "Back",
-      "next": "Next",
-      "start": "Start"
-    },
-    "play": {
-      "scenarioTitle": "36-Hour Drowning Case",
-      "fallbackName": "Lin Feng",
-      "identityFallback": "17-year-old transfer student with precise memory and logical deduction.",
-      "detailsFallback": "The AI will infer character details from your early actions.",
-      "character": "Character",
-      "inputPlaceholder": "Say something, or describe what you do...",
-      "takeTurn": "Send",
-      "turnErrorFallback": "The story could not respond. Please try another action.",
-      "takeTurnPrompt": "I act",
-      "continue": "Continue",
-      "retry": "Retry",
-      "erase": "Erase",
-      "suggestion": "Hint",
-      "suggestedAction": "I quietly observe the gate log and the guard before speaking.",
-      "freeInputLabel": "Free input",
-      "suggestedActionsLabel": "You could try",
-      "closeComposer": "Collapse input",
-      "undo": "Undo",
-      "redo": "Redo",
-      "settings": "Settings",
-      "soundOn": "Sound on",
-      "soundOff": "Sound off",
-      "turnCount": "{count} turns",
-      "riskCount": "Risk {count}",
-      "statusReady": "Ready",
-      "statusStarted": "You entered the case.",
-      "statusThinking": "AI is handling intent: {judgement}",
-      "statusTurnRecorded": "Turn recorded. The story stays inside the current plot node.",
-      "statusClueUnlocked": "Unlocked {count} clue(s).",
-      "statusContinued": "Narrator continued the scene.",
-      "statusRetried": "Last narrator response rewritten.",
-      "statusSuggestion": "Suggested action filled.",
-      "statusLLMTurnRecorded": "Qwen generated this turn.",
-      "statusFallbackTurnRecorded": "LLM is not connected. Local rules handled this turn.",
-      "statusLLMError": "LLM call failed: {message}",
-      "llmUnknownError": "Unknown error",
-      "soundBlocked": "The browser did not start sound yet. Press the sound button again.",
-      "clueUnlocked": "Unlocked {count} clue(s)",
-      "intentHandled": "Intent handled: {judgement}",
-      "intentHandledByLLM": "Qwen handled: {judgement}",
-      "intentHandledFallback": "Local rules handled: {judgement}",
-      "systemContinue": "AI continuation",
-      "systemContinueLLM": "Qwen continuation",
-      "aiThinking": "AI is reasoning",
-      "runtimeStatus": "Runtime status",
-      "turnMetric": "Turns",
-      "riskMetric": "Risk",
-      "clueMetric": "Clues",
-      "unlockedClues": "Unlocked clues",
-      "noClues": "No evidence state yet. Observe, ask, or inspect objects to unlock clues.",
-      "mediaAssets": "Scene / media assets",
-      "restart": "Restart",
-      "endingReached": "Run ended",
-      "endingReview": "Ending review",
-      "playerPersonality": "Player profile",
-      "music": {
-        "mute": "Mute music",
-        "unmute": "Play music",
-        "blocked": "Your browser blocked audio. Tap to start the music."
-      },
-      "pendingAriaLabel": "Story response loading",
-      "pendingPhrases": {
-        "fate": "Fate is answering",
-        "world": "The world is changing",
-        "story": "The story keeps unfolding",
-        "choice": "Your choice is taking root",
-        "nextScene": "The next scene is surfacing"
-      },
-      "plotNodeLabel": "Plot Node A",
-      "openAnswerLabel": "Open answer",
-      "presetChoicesLabel": "Preset choices 3",
-      "cluesLabel": "Clues {count}",
-      "supportPanel": "Support layer",
-      "characterPanel": "Character",
-      "cluePanel": "Clues",
-      "mediaPanel": "Media",
-      "audioPanel": "SFX",
-      "closePanel": "Close panel",
-      "characterRuleTitle": "AI role rules",
-      "characterRuleBody": "The AI should treat this as character context, not as visible narration. It can reference memory, deduction, pressure and intervention risk when resolving the player's intent.",
-      "mediaPanelHint": "Images, clips and generated shots support the scene, but the main play loop remains text-first.",
-      "videoLabel": "Video layer",
-      "videoTitle": "Generated Campus Entrance Clip",
-      "videoDescription": "A generated atmosphere clip from this story's assets. It supports scene entry without replacing the text-game loop.",
-      "videoSource": "Source: generated video asset from the current project.",
-      "bgmLabel": "Event SFX",
-      "bgmTitle": "Text-triggered sound effects",
-      "bgmDescription": "No always-on background music for now. Short effects play when narration mentions a door closing, a gate event, or the registry being shut.",
-      "bgmSource": "Test SFX source: Mixkit Door hard shut."
-    },
-    "runtime": {
-      "story": {
-        "title": "36-Hour Drowning Case",
-        "plotANodeLabel": "Plot Node A",
-        "plotTitle": "Enter the Elite School",
-        "location": "Elite school gate",
-        "objective": "Establish the situation: she has been sent here for correction, while the school and her brother both control information.",
-        "boundary": "Stay within gate registration, the transfer notice, the reception teacher, the guard, and brother messages; do not jump into the drowning case, principal office, or culprit reveal.",
-        "openingMeta": "Plot Node A / Elite school gate",
-        "opening": "The morning gate looks like black glass. You stand outside with the transfer notice in your hand. The reception teacher has not appeared yet, but the guard already looks up as if he knew you would arrive.",
-        "plotAVideoTitle": "Generated Campus Entrance Clip",
-        "plotAVideoDescription": "A short environmental clip for the entry beat: the gate, morning light, and a reception process that feels prearranged.",
-        "plotBNodeLabel": "Plot Node B",
-        "plotBTitle": "First Mention of the Drowning",
-        "plotBLocation": "Class 2-3 hallway",
-        "plotBObjective": "Move from school entry into the first case: the player hears the abnormal version of a classmate's drowning, without learning the culprit yet.",
-        "plotBBoundary": "Classroom, hallway, student rumors, accident report, and suicide classification are allowed; do not reveal the culprit or complete evidence chain.",
-        "plotBOpeningMeta": "Plot Node B / Class 2-3 hallway",
-        "plotBOpening": "The reception teacher leads you through the side gate, and the hallway smells more strongly of disinfectant than the entrance. A temporary notice outside Class 2-3 says today's psychological assessment is delayed. Inside, someone whispers that the police line went up again near the water last night. You hear the name for the first time: Lina.",
-        "plotBVideoTitle": "Generated Hallway Transition",
-        "plotBVideoDescription": "A generated transition for entering the first case: the mood shifts from school procedure into the pressure of an accident scene."
-      },
-      "endings": {
-        "truth": {
-          "label": "Mainline",
-          "title": "Truth Ending",
-          "body": "You connect the transfer arrangement, the school's preset identity process, and the blank space inside the accident brief into one evidence chain. The drowning can no longer be written off as suicide, and the person no one dared suspect is pushed into view.",
-          "review": "Achieved by finding the school's preset identity leak during entry and securing the key accident clue in the drowning phase. The AI stops generating and keeps this run's evidence chain for review."
-        },
-        "intervention": {
-          "label": "Interrupted",
-          "title": "Brother Intervention Ending",
-          "body": "You get close enough to a higher-level truth to trigger your brother's limit. He gives no explanation and removes you from the school. The case continues, but you lose access to the scene.",
-          "review": "Achieved when risk rises too high, or when your actions touch a larger secret behind the first case. This is not a simple failure; it means protection and surveillance have overtaken the investigation."
-        },
-        "coverup": {
-          "label": "Failure",
-          "title": "Surface Suicide Ending",
-          "body": "The evidence chain never forms. The school and police keep the suicide classification, and you are told to stop asking. The contradictions remain, but procedure pushes them back into the file.",
-          "review": "Achieved when enough clues are not gathered in the key turns, or when the contradiction inside the accident brief is missed. Restarting lets you focus more tightly on observing, questioning, and checking documents."
-        }
-      },
-      "characters": {
-        "linFeng": {
-          "name": "Lin Feng",
-          "role": "Player character",
-          "summary": "17-year-old transfer student with precise memory and logical deduction.",
-          "detail": "She does not naturally accept explanations that break logic, so the AI should make her reasoning traceable through observable evidence."
-        },
-        "brother": {
-          "name": "Brother / Intelligence department",
-          "role": "Relationship character",
-          "summary": "Protector and watcher at the same time. His intervention rises whenever she gets close to a higher-level truth.",
-          "detail": "He should feel emotionally protective, but every protection action also narrows the investigation space."
-        },
-        "receptionTeacher": {
-          "name": "Reception teacher",
-          "role": "Institution character",
-          "summary": "Controls the official explanation at the gate and tries to keep every question inside administrative language.",
-          "detail": "Useful for showing how the school converts contradictions into procedure."
-        },
-        "securityGuard": {
-          "name": "Gate security",
-          "role": "Observation target",
-          "summary": "Knows her name before checking the transfer notice. He is the first visible leak in the school's preset process.",
-          "detail": "He should not confess; his value is in habits, timing, registry details and small reactions."
-        }
-      },
-      "choices": {
-        "transfer": {
-          "label": "Show the transfer notice",
-          "intent": "Enter school procedure",
-          "response": "You hand over the notice. The reception teacher glances at the date and quickly presses the paper under the registry. You remember where her finger paused: the signing date is three days earlier than your brother told you."
-        },
-        "project": {
-          "label": "Ask about the correction program",
-          "intent": "Challenge the official explanation",
-          "response": "You ask about the so-called correction program. The teacher's expression does not change; she simply repeats the official language. You message your brother. The screen turns read almost immediately, but no reply comes."
-        },
-        "security": {
-          "label": "Observe gate security",
-          "intent": "Low-risk investigation",
-          "response": "You say nothing at first and watch the guard booth and registry. Before you hand over the notice, the guard calls your name, and the booth door closes behind him. This school knows more than it should."
-        }
-      },
-      "clues": {
-        "transferDate": {
-          "title": "Abnormal transfer notice date",
-          "type": "Document clue",
-          "summary": "The date on the notice is earlier than the day her brother officially told her, which means the transfer was arranged in advance."
-        },
-        "brotherRead": {
-          "title": "Brother read but did not reply",
-          "type": "Communication clue",
-          "summary": "Her brother saw the message but did not explain the transfer. Protection and surveillance are both plausible."
-        },
-        "guardName": {
-          "title": "Guard knew her name in advance",
-          "type": "Observation clue",
-          "summary": "The guard called her name before seeing the transfer notice, proving the school had already preset her identity."
-        },
-        "caseReportNoStruggle": {
-          "title": "Accident brief says there were no struggle marks",
-          "type": "Case clue",
-          "summary": "An ordinary drowning usually leaves signs of struggle or contact with the environment. The blankness in the brief feels more processed than natural."
-        }
-      },
-      "freeInput": {
-        "guard": {
-          "judgement": "Observe environment",
-          "response": "You focus on the gate and guard booth. The first line of the registry already contains your name, but the time column is empty. The guard does not ask who you are. He only says: Lin Feng, go inside."
-        },
-        "brother": {
-          "judgement": "Contact brother",
-          "response": "You send your brother a short question: when did you know I would transfer? The message becomes read almost instantly, but the chat remains silent. Inside the gate, the broadcast begins to call names."
-        },
-        "transfer": {
-          "judgement": "Inspect transfer notice",
-          "response": "You look at the notice again. The paper edge is creased, but the signing date is unusually clear: it predates your brother's explanation. Someone arranged your arrival ahead of time."
-        },
-        "offTopic": {
-          "judgement": "Redirect off-topic input",
-          "response": "Your attention drifts for a moment, but the cold air at the gate brings you back. The reception teacher has noticed you waiting, and the registry in the guard booth is still open."
-        }
-      },
-      "continuations": {
-        "first": "The reception teacher steps closer. Her badge has no surname, only a number. Behind her, the gate camera silently turns toward you.",
-        "second": "A group of students pass without looking at you, but one of them slows down for half a second. He notices the notice in your hand, then quickly lowers his head.",
-        "third": "The guard closes the registry before you can read the next line. You still remember the shape of the page and the empty time column."
-      },
-      "retryResult": "The AI reframes the result: the same action does not jump to the next plot node, but it exposes a smaller contradiction in the school's process.",
-      "assets": {
-        "gate": "Gate scene",
-        "security": "Security detail",
-        "brotherMessage": "Brother message",
-        "pendingShot": "Pending shot",
-        "campusVideo": "Campus video",
-        "characterPortraits": "Character portraits",
-        "clueCards": "Clue cards",
-        "generatedShots": "Generated shots"
-      }
+      "published": "Published"
     }
   },
   "notifications": {

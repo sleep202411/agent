@@ -778,9 +778,10 @@ describe("projectStudioAgentPanel — non-canonical canvas preview", () => {
         payload: {
           intent: "create",
           node: {
-            kind: "text",
+            kind: "clip",
             nodeId: "arrival",
-            body: { "en-US": "She arrives." },
+            clipKey: "ARRIVAL",
+            description: "She arrives.",
             exit: { kind: "auto", nextNodeId: null },
           },
         },

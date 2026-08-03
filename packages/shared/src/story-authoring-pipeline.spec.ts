@@ -10,102 +10,71 @@ function skeleton(overrides: Partial<StorySkeleton> = {}): StorySkeleton {
   return {
     entryId: "opening",
     nodes: [
-      { id: "opening", kind: "text", beat: "The visitor arrives.", nextIds: ["gate"] },
-      { id: "gate", kind: "text", beat: "A choice at the gate.", nextIds: ["truth", "leave"] },
-      { id: "truth", kind: "text", beat: "The truth is faced.", nextIds: [] },
-      { id: "leave", kind: "text", beat: "The visitor retreats.", nextIds: [] },
+      { id: "opening", clipKey: "OPENING", beat: "The visitor arrives.", nextIds: ["gate"] },
+      { id: "gate", clipKey: "GATE", beat: "A choice at the gate.", nextIds: ["truth", "leave"] },
+      { id: "truth", clipKey: "TRUTH", beat: "The truth is faced.", nextIds: [] },
+      { id: "leave", clipKey: "LEAVE", beat: "The visitor retreats.", nextIds: [] },
     ],
     ...overrides,
   };
 }
 
 describe("validateStorySkeleton", () => {
-  it("passes a sound, fully-reachable skeleton", () => {
+  it("passes a sound, fully reachable film skeleton", () => {
     expect(validateStorySkeleton(skeleton())).toEqual([]);
   });
 
-  it("catches a dangling successor deterministically (the failure mode the pipeline prevents)", () => {
-    const issues = validateStorySkeleton(
+  it("rejects dangling, missing-entry, and unreachable clips", () => {
+    const dangling = validateStorySkeleton(
       skeleton({
-        nodes: [
-          { id: "opening", kind: "text", beat: "Arrive.", nextIds: ["gate"] },
-          { id: "gate", kind: "text", beat: "Branch.", nextIds: ["recovery_path"] },
-        ],
+        nodes: [{ id: "opening", clipKey: "OPENING", beat: "Arrive.", nextIds: ["missing"] }],
       })
     );
-    expect(issues.map((i) => i.code)).toContain("DANGLING_NEXT");
-    expect(issues.find((i) => i.code === "DANGLING_NEXT")?.detail).toContain("recovery_path");
-  });
-
-  it("flags a missing entry node", () => {
-    const issues = validateStorySkeleton(skeleton({ entryId: "nowhere" }));
-    expect(issues.map((i) => i.code)).toContain("ENTRY_NOT_FOUND");
-  });
-
-  it("flags unreachable orphan beats", () => {
-    const issues = validateStorySkeleton(
-      skeleton({
-        nodes: [
-          { id: "opening", kind: "text", beat: "Arrive.", nextIds: [] },
-          { id: "orphan", kind: "text", beat: "Never reached.", nextIds: [] },
-        ],
-      })
+    expect(dangling.map((issue) => issue.code)).toContain("DANGLING_NEXT");
+    expect(validateStorySkeleton(skeleton({ entryId: "nowhere" })).map((i) => i.code)).toContain(
+      "ENTRY_NOT_FOUND"
     );
-    expect(issues.map((i) => i.code)).toContain("UNREACHABLE_NODE");
+    expect(
+      validateStorySkeleton(
+        skeleton({
+          nodes: [
+            { id: "opening", clipKey: "OPENING", beat: "Arrive.", nextIds: [] },
+            { id: "orphan", clipKey: "ORPHAN", beat: "Never reached.", nextIds: [] },
+          ],
+        })
+      ).map((i) => i.code)
+    ).toContain("UNREACHABLE_NODE");
   });
 
-  it("enforces clip-key rules per node kind", () => {
-    const issues = validateStorySkeleton(
-      skeleton({
-        entryId: "a",
-        nodes: [
-          { id: "a", kind: "clip", beat: "No key.", nextIds: ["b"] },
-          { id: "b", kind: "text", clipKey: "STRAY", beat: "Text with key.", nextIds: [] },
-        ],
-      })
-    );
-    const codes = issues.map((i) => i.code);
-    expect(codes).toContain("CLIP_KEY_REQUIRED");
-    expect(codes).toContain("CLIP_KEY_ON_TEXT");
-  });
-
-  it("catches duplicate node ids and clip keys", () => {
-    const issues = validateStorySkeleton({
+  it("rejects duplicate node ids and clip keys", () => {
+    const codes = validateStorySkeleton({
       entryId: "a",
       nodes: [
-        { id: "a", kind: "clip", clipKey: "K", beat: "One.", nextIds: [] },
-        { id: "a", kind: "clip", clipKey: "K", beat: "Two.", nextIds: [] },
+        { id: "a", clipKey: "SAME", beat: "One.", nextIds: [] },
+        { id: "a", clipKey: "SAME", beat: "Two.", nextIds: [] },
       ],
-    });
-    const codes = issues.map((i) => i.code);
+    }).map((issue) => issue.code);
     expect(codes).toContain("DUPLICATE_NODE_ID");
     expect(codes).toContain("DUPLICATE_CLIP_KEY");
   });
 });
 
-describe("stage product schemas", () => {
-  it("requires the bible to declare at least one ending", () => {
-    const base = {
+describe("film authoring stage schemas", () => {
+  it("accepts the complete film-foundation shape", () => {
+    const bible = {
       logline: "One night, one gate.",
       synopsis: "A visitor probes a sealed villa.",
-      worldview: "A mythic villa at night.",
       characters: [],
     };
-    expect(StoryBibleDraftSchema.safeParse({ ...base, endings: [] }).success).toBe(false);
-    expect(
-      StoryBibleDraftSchema.safeParse({
-        ...base,
-        endings: [{ id: "truth", title: { "zh-CN": "真相" } }],
-      }).success
-    ).toBe(true);
+    expect(StoryBibleDraftSchema.safeParse(bible).success).toBe(true);
   });
 
-  it("accepts a well-formed skeleton and rejects unknown keys", () => {
+  it("requires every planned node to identify a film clip", () => {
     expect(StorySkeletonSchema.safeParse(skeleton()).success).toBe(true);
     expect(
       StorySkeletonSchema.safeParse({
-        ...skeleton(),
-        nodes: [{ id: "x", kind: "text", beat: "b", nextIds: [], stray: true }],
+        entryId: "x",
+        nodes: [{ id: "x", beat: "b", nextIds: [] }],
       }).success
     ).toBe(false);
   });

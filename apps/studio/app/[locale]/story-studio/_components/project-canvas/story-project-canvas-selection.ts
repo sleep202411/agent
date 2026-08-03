@@ -20,7 +20,7 @@ export function reconcileStoryCanvasSelectedIds(
  * not pop the drawer open on a node the user did not click. So this returns a
  * node id only when the click path names it (`preferredNodeId`) or when the
  * already-focused node stays selected — otherwise null, which closes the node
- * inspector (or keeps the world panel).
+ * inspector (or keeps the film-foundation panel).
  */
 export function nextStoryCanvasFocusedNodeId(
   currentNodeId: string | null,

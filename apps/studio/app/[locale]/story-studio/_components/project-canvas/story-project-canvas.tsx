@@ -38,7 +38,6 @@ import {
   IconCheck,
   IconCloudUpload,
   IconDownload,
-  IconFileText,
   IconGitBranch,
   IconLoader2,
   IconBook,
@@ -123,7 +122,6 @@ import {
   characterCanvasNodeId,
   rejectsStoryCastWiring,
   syntheticDecisionNodeId,
-  syntheticEndingNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
@@ -134,7 +132,7 @@ import {
 import { storyVideoCardMetadata } from "./story-video-card-metadata";
 import {
   CLOSED_STORY_CANVAS_INSPECTOR,
-  STORY_WORLD_INSPECTOR,
+  STORY_FOUNDATION_INSPECTOR,
   reconcileStoryCanvasInspectorTarget,
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
@@ -181,18 +179,12 @@ import {
   connectChoiceTarget,
   convertExitToAuto,
   convertSceneExitToChoice,
-  convertSceneExitToEnding,
   createClipNode,
-  createEndingNode,
-  createTextNode,
   moveChoiceOption,
   removeChoiceOption,
   setEntryNode,
-  setNodeMusic,
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
-  updateEndingNode,
-  updateTextNode,
 } from "./story-project-canvas-mutations";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
 import {
@@ -218,13 +210,13 @@ import {
   deleteStoryCharacter,
   updateStoryCharacter,
   updateStoryClipMeta,
-} from "./story-world-mutations";
+} from "./story-foundation-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
-type FoundationField = "logline" | "synopsis" | "worldview";
+type FoundationField = "logline" | "synopsis";
 type PersistDraftOptions = {
   bypassSnapshotBarrier?: boolean;
   propagateError?: boolean;
@@ -1061,9 +1053,7 @@ function StoryProjectCanvasInner({
 
   const projectionCopy = {
     clip: t("projection.clip"),
-    text: t("projection.text"),
     decision: t("projection.decision"),
-    ending: t("projection.ending"),
   };
   const model = useMemo(
     () =>
@@ -1085,9 +1075,7 @@ function StoryProjectCanvasInner({
       project?.defaultLocale,
       project?.frameProfile,
       projectionCopy.clip,
-      projectionCopy.text,
       projectionCopy.decision,
-      projectionCopy.ending,
     ]
   );
   const editPolicy = resolveStoryCanvasEditPolicy({
@@ -2105,7 +2093,7 @@ function StoryProjectCanvasInner({
         const isMembership = edge.data.kind === "membership";
         return {
           ...edge,
-          // The membership tether reads as "belongs to this world", never story
+          // The membership tether reads as "belongs to this project", never story
           // flow: it stays behind the flow edges and never lifts on focus.
           zIndex: isMembership ? 0 : related ? 2 : 0,
           style: {
@@ -2116,9 +2104,7 @@ function StoryProjectCanvasInner({
               ? STORY_MEMBERSHIP_EDGE_COLOR
               : edge.data.kind === "choice" || edge.data.kind === "decision"
                 ? STORY_PORT_COLORS.choice
-                : edge.data.kind === "ending"
-                  ? STORY_PORT_COLORS.ending
-                  : "rgba(255,255,255,0.34)",
+                : "rgba(255,255,255,0.34)",
           },
           labelStyle: { fill: "rgba(255,255,255,0.68)", fontSize: 10, fontWeight: 600 },
           labelBgStyle: { fill: "rgba(24,24,24,0.88)", fillOpacity: 1 },
@@ -2349,22 +2335,14 @@ function StoryProjectCanvasInner({
       let nextContent: InteractiveStoryDraftContent;
       let createdCanvasNodeId: string;
       // Characters are never wired into the story-flow graph; a fresh cast card
-      // is seeded in the cast lane left of the root regardless of the click
-      // point that opened the creator.
+      // is seeded in the cast lane left of the entry scene regardless of the
+      // click point that opened the creator.
       let placement = position;
 
       if (kind === "clip") {
         const result = createClipNode(content);
         nextContent = result.content;
         createdCanvasNodeId = result.created.nodeId;
-      } else if (kind === "text") {
-        const result = createTextNode(content, { locale: authoringLocale });
-        nextContent = result.content;
-        createdCanvasNodeId = result.created.nodeId;
-      } else if (kind === "ending") {
-        const result = createEndingNode(content, { locale: authoringLocale });
-        nextContent = result.content;
-        createdCanvasNodeId = syntheticEndingNodeId(result.created.id);
       } else if (kind === "character") {
         const result = createStoryCharacter(content, { locale: authoringLocale });
         nextContent = result.content;
@@ -2434,8 +2412,7 @@ function StoryProjectCanvasInner({
     );
     const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
     if (createsChoice && !pendingLabel) return;
-    // Red line: character cards tether only to the Story World root and can
-    // never participate in a story-flow connection in either direction.
+    // Character cards never participate in a story-flow connection in either direction.
     if (
       rejectsStoryCastWiring({
         sourceKind: source.data.kind,
@@ -2465,11 +2442,8 @@ function StoryProjectCanvasInner({
           { label: pendingLabel }
         ).content;
       }
-      if (target.data.kind === "ending" && target.data.endingId) {
-        return convertSceneExitToEnding(current, source.data.nodeId, target.data.endingId);
-      }
       if (
-        (source.data.kind === "clip" || source.data.kind === "text") &&
+        source.data.kind === "clip" &&
         source.data.exitKind === "auto" &&
         connection.sourceHandle === "completion"
       ) {
@@ -2516,7 +2490,7 @@ function StoryProjectCanvasInner({
     if (createsChoice && !pendingLabel) return;
 
     if (
-      (source.data.kind === "clip" || source.data.kind === "text") &&
+      source.data.kind === "clip" &&
       source.data.exitKind === "auto" &&
       sourceHandleId === "completion"
     ) {
@@ -2536,10 +2510,7 @@ function StoryProjectCanvasInner({
         source.data,
         sourceHandleId,
         authoringLocale,
-        {
-          sceneKind: project.format === "text_adventure" ? "text" : "clip",
-          newChoiceLabel: pendingLabel || undefined,
-        }
+        { newChoiceLabel: pendingLabel || undefined }
       );
       if (!created) return;
 
@@ -2568,11 +2539,7 @@ function StoryProjectCanvasInner({
       return;
     }
     const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
-    if (
-      !source ||
-      (source.data.kind !== "clip" && source.data.kind !== "text") ||
-      source.data.exitKind !== "auto"
-    ) {
+    if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
       setPendingCompletionDrop(null);
       return;
     }
@@ -2592,7 +2559,7 @@ function StoryProjectCanvasInner({
           source.data,
           pending.sourceHandleId,
           authoringLocale,
-          { sceneKind: kind }
+          {}
         );
         if (!created) return;
         pendingNodePositionsRef.current.set(created.createdNodeId, {
@@ -2633,9 +2600,6 @@ function StoryProjectCanvasInner({
       return;
     }
     applyGraphMutation((current) => {
-      if (intent.kind === "ending") {
-        return convertSceneExitToEnding(current, nodeId, intent.endingId);
-      }
       const asAuto = convertExitToAuto(current, nodeId);
       return intent.nextNodeId
         ? connectSceneContinuation(asAuto, nodeId, intent.nextNodeId)
@@ -2650,7 +2614,7 @@ function StoryProjectCanvasInner({
     }
     const source = model?.nodes.find((node) => node.id === connection.source);
     const target = model?.nodes.find((node) => node.id === connection.target);
-    if (!source || !target || target.data.kind === "decision" || source.data.kind === "ending") {
+    if (!source || !target || target.data.kind === "decision") {
       return false;
     }
     // Red line: character cards tether only to the root cast anchor. Reject any
@@ -2671,25 +2635,16 @@ function StoryProjectCanvasInner({
         (Boolean(choiceDraftIdFromHandle(connection.sourceHandle)) ||
           Boolean(connection.sourceHandle?.startsWith("choice:"))) &&
         connection.targetHandle === "in" &&
-        (target.data.kind === "clip" || target.data.kind === "text")
-      );
-    }
-    if (target.data.kind === "ending") {
-      return (
-        (source.data.kind === "clip" || source.data.kind === "text") &&
-        source.data.exitKind === "auto" &&
-        !source.data.continuationTargetNodeId &&
-        connection.sourceHandle === "completion" &&
-        connection.targetHandle === "ending-in"
+        target.data.kind === "clip"
       );
     }
     if (connection.targetHandle !== "in") return false;
-    if (source.data.kind === "clip" || source.data.kind === "text") {
+    if (source.data.kind === "clip") {
       return (
         source.data.exitKind === "auto" &&
         !source.data.continuationTargetNodeId &&
         connection.sourceHandle === "completion" &&
-        (target.data.kind === "clip" || target.data.kind === "text")
+        target.data.kind === "clip"
       );
     }
     return false;
@@ -2767,29 +2722,6 @@ function StoryProjectCanvasInner({
       }
       return current;
     });
-  };
-
-  const updateEnding = (
-    endingId: string,
-    patch: Partial<InteractiveStoryDraftContent["storyBible"]["endings"][number]>
-  ) => {
-    applyGraphMutation(
-      (current) =>
-        updateEndingNode(current, endingId, {
-          ...(patch.summary
-            ? {
-                summary: {
-                  locale: authoringLocale,
-                  value: patch.summary[authoringLocale] ?? "",
-                },
-              }
-            : {}),
-          ...(patch.title
-            ? { title: { locale: authoringLocale, value: patch.title[authoringLocale] ?? "" } }
-            : {}),
-        }),
-      { mergeKey: `ending:${endingId}:${Object.keys(patch).sort().join(",")}` }
-    );
   };
 
   const deleteCharacter = (characterId: string) => {
@@ -3163,19 +3095,8 @@ function StoryProjectCanvasInner({
         onAgentWrote={handleAgentWrote}
         onCanvasPreviewChange={setAgentCanvasPreview}
         nodeLinks={nodeLinks}
-        // A brand-new project renders an empty graph on purpose, and this hero
-        // is what fills that space until the first node exists.
-        //
-        // It replaces the `storyWorldNodePresent` layout flag, which is NOT
-        // being reinstated. That flag defaulted a fresh project's canvas to
-        // "no Story World card" precisely so the old launcher could own the
-        // first-open screen; the 2026-07-24 Studio Agent rewrite deleted the
-        // flag, the layout field, and the canvas card together — the layout
-        // payload is `{ nodePositions }` only and Story World is now a
-        // header-toggled inspector. Bringing the default back would mean
-        // reviving a layout field nothing reads, plus a layout-schema
-        // migration, to gate a card that no longer exists. The emptiness it
-        // used to arrange for is now stated directly, right here.
+        // A brand-new project renders an empty graph on purpose; this hero
+        // fills that space until the first clip exists.
         firstOpen={{
           chapters: workbenchProjection.chapters,
           canvasNodeCount: model.nodes.length,
@@ -3200,10 +3121,12 @@ function StoryProjectCanvasInner({
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
           onOpenMediaCreation={openProductionCanvas}
-          storyWorldOpen={inspectorTarget.kind === "world"}
-          onToggleStoryWorld={() =>
+          foundationOpen={inspectorTarget.kind === "foundation"}
+          onToggleFoundation={() =>
             setInspectorTarget((current) =>
-              current.kind === "world" ? CLOSED_STORY_CANVAS_INSPECTOR : STORY_WORLD_INSPECTOR
+              current.kind === "foundation"
+                ? CLOSED_STORY_CANVAS_INSPECTOR
+                : STORY_FOUNDATION_INSPECTOR
             )
           }
           chapterControl={
@@ -3439,7 +3362,6 @@ function StoryProjectCanvasInner({
         {inspectorOpen ? (
           <StoryNodeInspector
             content={content}
-            format={project.format}
             locale={authoringLocale}
             selectedNode={focusedNode}
             clipMedia={
@@ -3465,24 +3387,14 @@ function StoryProjectCanvasInner({
                 mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
               })
             }
-            onUpdateText={(nodeId, patch) =>
-              applyGraphMutation(
-                (current) => updateTextNode(current, nodeId, authoringLocale, patch),
-                { mergeKey: `text:${nodeId}:${Object.keys(patch).sort().join(",")}` }
-              )
-            }
-            workspaceId={workspaceId}
-            onUpdateMusic={(nodeId, music) =>
-              applyGraphMutation((current) => setNodeMusic(current, nodeId, music))
-            }
-            showFoundation={inspectorTarget.kind === "world"}
+            showFoundation={inspectorTarget.kind === "foundation"}
             canEdit={canMutateCanvasLayout}
             coverMedia={{
               cover: project.cover,
               candidateAssets: candidateAssets.items,
               candidateAssetsLoading: candidateAssets.loading,
               candidateAssetsError: candidateAssets.failed
-                ? candidateAssets.error || t("world.cover.candidateLoadError")
+                ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
                 : null,
               disabledReason: coverMediaDisabledReason,
               onRetryCandidates: () => void candidateAssets.refresh(),
@@ -3509,7 +3421,6 @@ function StoryProjectCanvasInner({
                   chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
               )}
             onConnectChapter={connectChapterTarget}
-            onUpdateEnding={updateEnding}
             onSetSceneExit={setSceneExit}
             onSetEntryNode={(nodeId) =>
               applyGraphMutation((current) => setEntryNode(current, nodeId))
@@ -3579,8 +3490,8 @@ function CanvasHeader({
   onPreview,
   onPublish,
   onOpenMediaCreation,
-  storyWorldOpen,
-  onToggleStoryWorld,
+  foundationOpen,
+  onToggleFoundation,
   chapterControl,
   shareControl,
   assistantOpen,
@@ -3597,8 +3508,8 @@ function CanvasHeader({
   onPreview: () => void;
   onPublish: () => void;
   onOpenMediaCreation: () => void;
-  storyWorldOpen: boolean;
-  onToggleStoryWorld: () => void;
+  foundationOpen: boolean;
+  onToggleFoundation: () => void;
   chapterControl: ReactNode;
   shareControl: ReactNode;
   assistantOpen: boolean;
@@ -3670,17 +3581,17 @@ function CanvasHeader({
         </button>
         <button
           type="button"
-          aria-pressed={storyWorldOpen}
-          onClick={onToggleStoryWorld}
+          aria-pressed={foundationOpen}
+          onClick={onToggleFoundation}
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            storyWorldOpen
+            foundationOpen
               ? "bg-white/[0.14] text-white"
               : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
           )}
         >
           <IconBook className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("world.title")}</span>
+          <span className={HEADER_LABEL_CLASS}>{t("filmFoundation.title")}</span>
         </button>
         <button
           type="button"
@@ -3780,7 +3691,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
   const t = useTranslations("storyStudio.canvas");
   const focusedNodeId = useContext(StoryCanvasFocusContext);
   const choiceContext = useContext(StoryCanvasChoiceContext);
-  const isEnding = data.kind === "ending";
   const isDecision = data.kind === "decision";
   const isCharacter = data.kind === "character";
   const decisionChoices = data.choices ?? [];
@@ -3809,11 +3719,9 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
   const chipStyle =
     data.kind === "decision"
       ? { background: "rgba(91,157,255,0.38)", iconBackground: "rgba(91,157,255,0.62)" }
-      : data.kind === "ending"
-        ? { background: "rgba(229,34,39,0.36)", iconBackground: "rgba(229,34,39,0.60)" }
-        : isCharacter
-          ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
-          : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
+      : isCharacter
+        ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
+        : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
     <div
       className={cn(
@@ -3846,9 +3754,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           style={{ backgroundColor: chipStyle.iconBackground }}
         >
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
-          {data.kind === "text" ? <IconFileText className="size-3.5" stroke={2} /> : null}
           {isDecision ? <IconGitBranch className="size-3.5" stroke={2} /> : null}
-          {isEnding ? <IconSparkles className="size-3.5" stroke={2} /> : null}
           {isCharacter ? <IconUser className="size-3.5" stroke={2} /> : null}
         </span>
         {t(`nodeKinds.${data.kind}`)}
@@ -3857,9 +3763,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         {...mediaPreview.hoverProps}
         className={cn(
           "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
-          data.kind === "text" && "w-[330px]",
           isDecision && "w-[340px]",
-          isEnding && "w-[280px]",
           isCharacter && "w-[236px]",
           selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]",
           agentPreviewKind &&
@@ -3869,18 +3773,12 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         <GlassRim width="1px" />
         {!isCharacter ? (
           <StoryPortHandle
-            id={isDecision ? "decision-in" : isEnding ? "ending-in" : "in"}
+            id={isDecision ? "decision-in" : "in"}
             type="target"
             position={Position.Left}
             isConnectable={isConnectable && !isDecision}
-            color={
-              isDecision
-                ? STORY_PORT_COLORS.choice
-                : isEnding
-                  ? STORY_PORT_COLORS.ending
-                  : STORY_PORT_COLORS.flow
-            }
-            label={isEnding ? t("ports.ending") : t("ports.input")}
+            color={isDecision ? STORY_PORT_COLORS.choice : STORY_PORT_COLORS.flow}
+            label={t("ports.input")}
             className="-left-1.75!"
           />
         ) : null}
@@ -3895,18 +3793,12 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             className="-right-1.75!"
           />
         ) : null}
-        {data.kind === "clip" || data.kind === "text" ? (
+        {data.kind === "clip" ? (
           <StoryPortHandle
             id="completion"
             type="source"
             position={Position.Right}
-            color={
-              data.exitKind === "choice"
-                ? STORY_PORT_COLORS.choice
-                : data.exitKind === "ending"
-                  ? STORY_PORT_COLORS.ending
-                  : STORY_PORT_COLORS.flow
-            }
+            color={data.exitKind === "choice" ? STORY_PORT_COLORS.choice : STORY_PORT_COLORS.flow}
             label={t("ports.completion")}
             isConnectable={
               isConnectable && data.exitKind === "auto" && !data.continuationTargetNodeId
@@ -3993,7 +3885,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 ) : (
                   <>
                     <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
-                      {isCharacter ? t("world.characters.cardEyebrow") : data.eyebrow}
+                      {isCharacter ? t("filmFoundation.characters.cardEyebrow") : data.eyebrow}
                     </p>
                     <h2
                       className={cn(
@@ -4001,16 +3893,16 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         isCharacter && !data.title ? "text-white/40" : "text-white/90"
                       )}
                     >
-                      {isCharacter ? data.title || t("world.characters.cardUntitled") : data.title}
+                      {isCharacter
+                        ? data.title || t("filmFoundation.characters.cardUntitled")
+                        : data.title}
                     </h2>
                   </>
                 )}
               </div>
               <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.07] text-white/58">
                 {isDecision ? <IconGitBranch className="size-4" /> : null}
-                {isEnding ? <IconSparkles className="size-4" /> : null}
                 {isCharacter ? <IconUser className="size-4" /> : null}
-                {data.kind === "text" ? <IconFileText className="size-4" /> : null}
               </span>
             </div>
           )}
@@ -4246,8 +4138,6 @@ function StoryVideoPreview({
             <IconMovie className="size-4" />
           </span>
           <span className="text-[9px] font-semibold">{emptyLabel}</span>
-          {/* Null-profile (text-first) projects have no frame contract — never
-              advertise the film default on them. */}
           {frameAspectRatio ? (
             <span className="text-[8px] tabular-nums text-white/18">{frameAspectRatio}</span>
           ) : null}
@@ -4433,14 +4323,13 @@ function CanvasError({
 }
 
 // Cast-lane geometry mirrors the model's auto-layout: characters stack in a
-// dedicated column to the LEFT of the Story World root, clear of the story-flow
+// dedicated column to the LEFT of the entry scene, clear of the story-flow
 // lane on the right.
 const CAST_LANE_COLUMN_GAP = 480;
 const CAST_LANE_ROW_GAP = 150;
 
 function nextCastLanePosition(nodes: readonly StoryCanvasNode[]): StoryCanvasPosition {
-  const anchor = nodes.find((node) => node.data.kind === "clip" || node.data.kind === "text")
-    ?.position ?? { x: 0, y: 0 };
+  const anchor = nodes.find((node) => node.data.kind === "clip")?.position ?? { x: 0, y: 0 };
   const existingCharacters = nodes.filter((node) => node.data.kind === "character").length;
   return {
     x: anchor.x - CAST_LANE_COLUMN_GAP,
@@ -4486,9 +4375,6 @@ function storyCanvasContentNodeIds(content: InteractiveStoryDraftContent): Set<s
     if (node.exit.kind === "choice") {
       nodeIds.add(syntheticDecisionNodeId(node.nodeId));
     }
-  });
-  content.storyBible.endings.forEach((ending) => {
-    nodeIds.add(syntheticEndingNodeId(ending.id));
   });
   // Character cards persist their layout under `character:` keys. Including them
   // here keeps their positions in history snapshots and drops a deleted

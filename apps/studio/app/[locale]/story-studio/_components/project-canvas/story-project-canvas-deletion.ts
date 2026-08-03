@@ -2,11 +2,10 @@ import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasEdge, StoryCanvasNode } from "./story-project-canvas-model";
 import {
   convertExitToAuto,
-  deleteEndingNode,
   deleteGraphNode,
   disconnectStoryBranch,
 } from "./story-project-canvas-mutations";
-import { deleteStoryCharacter } from "./story-world-mutations";
+import { deleteStoryCharacter } from "./story-foundation-mutations";
 
 export function deleteStoryCanvasElements(
   content: InteractiveStoryDraftContent,
@@ -22,9 +21,7 @@ export function deleteStoryCanvasElements(
   const deletableNodes = selectedNodes;
   const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
   const deletedGraphNodeIds = new Set(
-    deletableNodes.flatMap((node) =>
-      node.data.kind === "clip" || node.data.kind === "text" ? [node.data.nodeId] : []
-    )
+    deletableNodes.flatMap((node) => (node.data.kind === "clip" ? [node.data.nodeId] : []))
   );
   const standaloneEdges = edges.filter(
     (edge) => !deletedCanvasNodeIds.has(edge.source) && !deletedCanvasNodeIds.has(edge.target)
@@ -36,10 +33,6 @@ export function deleteStoryCanvasElements(
       if (!deletedGraphNodeIds.has(node.data.sourceNodeId)) {
         next = convertExitToAuto(next, node.data.sourceNodeId);
       }
-      continue;
-    }
-    if (node.data.kind === "ending" && node.data.endingId) {
-      next = deleteEndingNode(next, node.data.endingId);
       continue;
     }
     if (node.data.kind === "character") {
@@ -85,13 +78,6 @@ function deleteStandaloneEdges(
         kind: "choice",
         sourceNodeId: edge.data.sourceNodeId,
         choiceId: edge.data.choiceId,
-      });
-    }
-    if (edge.data.kind === "ending") {
-      return disconnectStoryBranch(next, {
-        kind: "ending",
-        sourceNodeId: edge.source,
-        endingId: edge.data.endingId,
       });
     }
     // Membership tethers are non-selectable and non-deletable, so they never

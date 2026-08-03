@@ -213,7 +213,11 @@ export function StoryCanvasAssistantLayer({
     : null;
   const [acknowledgedFailureKey, setAcknowledgedFailureKey] = useState<string | null>(null);
   useEffect(() => {
-    if (panelOpen && closedPanelFailureKey) setAcknowledgedFailureKey(closedPanelFailureKey);
+    if (!panelOpen || !closedPanelFailureKey) return;
+    const frame = requestAnimationFrame(() => {
+      setAcknowledgedFailureKey(closedPanelFailureKey);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [closedPanelFailureKey, panelOpen]);
   const showClosedPanelFailure =
     closedPanelFailure !== null &&

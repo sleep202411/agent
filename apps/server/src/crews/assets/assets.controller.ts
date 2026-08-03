@@ -241,3 +241,44 @@ export class CrewAssetsController {
     );
   }
 }
+
+/**
+ * Read-only project-canvas adapter over the crew cloud drive. It deliberately
+ * resolves the crew server-side from the production/task project relation so
+ * the client cannot substitute an unrelated crew id.
+ */
+@Controller('projects/:projectId/crew-assets')
+export class ProjectCrewAssetsController {
+  constructor(private readonly assets: CrewAssetsService) {}
+
+  @Get('context')
+  async context(
+    @Param('projectId') projectIdRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return {
+      code: 200,
+      data: await this.assets.projectContext(
+        parseIdParam(projectIdRaw, 'projectId'),
+        user.userId,
+      ),
+    };
+  }
+
+  @Get()
+  async list(
+    @Param('projectId') projectIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewAssetsSchema))
+    query: ListCrewAssetsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.assets.listForProject(
+        parseIdParam(projectIdRaw, 'projectId'),
+        user.userId,
+        query,
+      ),
+    };
+  }
+}
