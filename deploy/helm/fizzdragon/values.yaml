@@ -322,7 +322,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: e65bcf1bd6cdc67242dabd13029fa4d994a5f35c
+    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -348,7 +348,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: e65bcf1bd6cdc67242dabd13029fa4d994a5f35c
+    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -422,7 +422,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: e65bcf1bd6cdc67242dabd13029fa4d994a5f35c
+    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -536,7 +536,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-api
-      tag: f376f064c751c85b06a50e9634285ee11dda8414
+      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
     port: 4111
     terminationGracePeriodSeconds: 45
     memoryPoolMax: 10
@@ -552,7 +552,7 @@ agentPlatform:
     replicaCount: 3
     image:
       repository: fizzdragon-agent-platform-worker
-      tag: f376f064c751c85b06a50e9634285ee11dda8414
+      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
     healthPort: 3010
     metricsPort: 9464
     terminationGracePeriodSeconds: 240
@@ -576,7 +576,7 @@ agentPlatform:
   migrator:
     image:
       repository: fizzdragon-agent-memory-migrator
-      tag: f376f064c751c85b06a50e9634285ee11dda8414
+      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
     activeDeadlineSeconds: 600
     resources:
       # Schema migration is latency-insensitive and single-threaded. Keep the
@@ -862,7 +862,7 @@ temporalDatabaseSecrets:
 studioAgentRuntime:
   image:
     repository: fizzdragon-studio-agent-runtime
-    tag: f254d5394f8aeb4e60677e7915ac734ff204a3aa
+    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
   internalBaseUrl: http://fizzdragon-server:3001
   temporal:
     # The in-cluster Temporal Service this chart renders. Kept in values rather
