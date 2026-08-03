@@ -77,3 +77,12 @@ export function useProjectContext(): ProjectContextValue {
   }
   return value;
 }
+
+/**
+ * The project identity when there is one, else null — for shared canvas parts
+ * that gain a project-only affordance (e.g. a shot's link into the storyboard
+ * mode) but must still render on canvases that have no project shell.
+ */
+export function useOptionalProjectContext(): ProjectContextValue | null {
+  return useContext(ProjectContext);
+}

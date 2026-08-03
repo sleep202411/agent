@@ -30,17 +30,23 @@ import {
   defaultSettingsForModel,
 } from "@/lib/canvas-authoring/generation-api";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
-import {
-  modelAcceptsKind,
-  routeReferenceField as routeReferenceFieldFor,
-} from "@/lib/canvas-authoring/reference-routing";
+import { modelAcceptsKind } from "@/lib/canvas-authoring/reference-routing";
 import {
   bindEdgeReference,
+  routeTargetReferenceField,
   sourceMediaUrl,
   sourceOutputKind,
   stripEdgeRef,
 } from "@/lib/canvas-authoring/canvas-wiring";
-import type { AddNodeAction } from "@/components/canvas/add-node-menu";
+import {
+  SHOT_NODE_ESTIMATED_HEIGHT,
+  SHOT_NODE_TYPE,
+  nextShotOrder,
+  routeShotReferenceField,
+  shotNodeData,
+} from "@/lib/canvas-authoring/shot-node";
+import { DEFAULT_ADD_NODE_ACTIONS, type AddNodeAction } from "@/components/canvas/add-node-menu";
+import type { CardReferences } from "@/components/canvas/authoring/reference-stack";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 
 export type UploadMediaKind = "image" | "video" | "audio";
@@ -63,6 +69,14 @@ const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly UploadMe
   "generate-image": ["image"],
   "generate-video": ["image", "video", "audio"],
 };
+
+/** A shot takes pictures — a still for its frame, a clip for its motion. */
+const SHOT_ACCEPTS: readonly UploadMediaKind[] = ["image", "video"];
+
+/** Tidy reserves a shot's full frame height; the 200px default would overlap. */
+function estimateCanvasNodeHeight(node: Node): number | undefined {
+  return node.type === SHOT_NODE_TYPE ? SHOT_NODE_ESTIMATED_HEIGHT : undefined;
+}
 
 const UPLOAD_CONTENT_TYPES: Record<UploadMediaKind, readonly string[]> = {
   image: ["image/jpeg", "image/png", "image/webp"],
@@ -126,6 +140,8 @@ export function useMediaAuthoringCanvas({
   workspaceId,
   scopeKey,
   uploadKinds,
+  addNodeActions = DEFAULT_ADD_NODE_ACTIONS,
+  initialFocusNodeId,
   fitEmptyCanvas = false,
   tidySelection = false,
 }: {
@@ -136,6 +152,13 @@ export function useMediaAuthoringCanvas({
   /** Cancels transient uploads when the owning canvas document changes. */
   scopeKey?: string | null;
   uploadKinds: readonly UploadMediaKind[];
+  /** Creation actions this canvas offers (dock, add-menu, shortcuts). */
+  addNodeActions?: readonly AddNodeAction[];
+  /**
+   * Node to select and frame instead of fitting the whole canvas on open —
+   * how another mode hands a specific node over ("show me this shot").
+   */
+  initialFocusNodeId?: string | null;
   fitEmptyCanvas?: boolean;
   tidySelection?: boolean;
 }) {
@@ -160,6 +183,10 @@ export function useMediaAuthoringCanvas({
     undo,
     redo,
     getNode,
+    // Aliased: React Flow's own `getNodes` (below) is the rendered store, this
+    // one is the document — the order key of a new shot must come from the
+    // document, or two shots created in the same frame collide.
+    getNodes: getDocumentNodes,
   } = graph;
   const { screenToFlowPosition, fitView, getNodes, setCenter } = useReactFlow();
   const acceptedKinds = useMemo(() => new Set(uploadKinds), [uploadKinds]);
@@ -191,14 +218,22 @@ export function useMediaAuthoringCanvas({
     fittedRef.current = true;
     const timer = window.setTimeout(() => {
       const canvasNodes = getNodes();
-      if (canvasNodes.length > 0) {
+      // One owner for the opening frame: a handed-over node wins over fit-all,
+      // otherwise the two would animate against each other.
+      const focused = initialFocusNodeId
+        ? canvasNodes.find((node) => node.id === initialFocusNodeId)
+        : undefined;
+      if (focused) {
+        selectNodes([focused.id]);
+        void fitView({ nodes: [focused], padding: 0.6, maxZoom: 1, duration: 320 });
+      } else if (canvasNodes.length > 0) {
         void fitView({ nodes: canvasNodes, padding: 0.4, duration: 280 });
       } else if (fitEmptyCanvas) {
         void setCenter(0, 0, { zoom: 0.76, duration: 280 });
       }
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [fitEmptyCanvas, fitView, getNodes, nodes, ready, setCenter]);
+  }, [fitEmptyCanvas, fitView, getNodes, initialFocusNodeId, nodes, ready, selectNodes, setCenter]);
 
   const outputKind = useCallback(
     (nodeId: string | null | undefined) => (nodeId ? sourceOutputKind(getNode, nodeId) : undefined),
@@ -209,14 +244,8 @@ export function useMediaAuthoringCanvas({
     [getNode]
   );
   const routeReferenceField = useCallback(
-    (nodeId: string | null | undefined, kind: string) => {
-      if (!nodeId) return undefined;
-      const node = getNode(nodeId);
-      if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
-      const data = node.data as GenerationNodeData;
-      const model = catalog?.models.find((candidate) => candidate.id === data.modelId);
-      return routeReferenceFieldFor(model, data.mode, data.references, kind);
-    },
+    (nodeId: string | null | undefined, kind: string) =>
+      nodeId ? routeTargetReferenceField(getNode(nodeId), catalog, kind) : undefined,
     [catalog, getNode]
   );
   const canConnect = useCallback(
@@ -255,6 +284,21 @@ export function useMediaAuthoringCanvas({
     },
     [canConnect]
   );
+  /** Could a source of `kind` ever bind here (ignoring transient fullness)? */
+  const targetAcceptsKind = useCallback(
+    (nodeId: string, kind: UploadMediaKind) => {
+      const node = getNode(nodeId);
+      if (!node) return false;
+      if (node.type === SHOT_NODE_TYPE) {
+        return Boolean(routeShotReferenceField(shotNodeData(node).references, kind));
+      }
+      const model = catalog?.models.find(
+        (candidate) => candidate.id === (node.data as GenerationNodeData).modelId
+      );
+      return modelAcceptsKind(model, kind);
+    },
+    [catalog, getNode]
+  );
   const menuDisabledActions = useMemo<ReadonlySet<AddNodeAction>>(() => {
     const disabled = new Set<AddNodeAction>();
     const pending = addMenu?.pending;
@@ -264,19 +308,17 @@ export function useMediaAuthoringCanvas({
       if (kind) {
         if (!GEN_ACCEPTS["generate-image"].includes(kind)) disabled.add("generate-image");
         if (!GEN_ACCEPTS["generate-video"].includes(kind)) disabled.add("generate-video");
+        if (!SHOT_ACCEPTS.includes(kind)) disabled.add("shot");
       }
     } else {
-      const node = getNode(pending.nodeId);
-      const model = node
-        ? catalog?.models.find(
-            (candidate) => candidate.id === (node.data as GenerationNodeData).modelId
-          )
-        : undefined;
-      if (!modelAcceptsKind(model, "image")) disabled.add("generate-image");
-      if (!modelAcceptsKind(model, "video")) disabled.add("generate-video");
+      // Dragging from an INPUT: the new node has to feed the pending one, and a
+      // shot has no output — it can never be that source.
+      disabled.add("shot");
+      if (!targetAcceptsKind(pending.nodeId, "image")) disabled.add("generate-image");
+      if (!targetAcceptsKind(pending.nodeId, "video")) disabled.add("generate-video");
     }
     return disabled;
-  }, [addMenu?.pending, catalog, getNode, outputKind]);
+  }, [addMenu?.pending, outputKind, targetAcceptsKind]);
 
   const bindReference = useCallback(
     (edgeId: string, source: string | null, target: string | null) => {
@@ -308,12 +350,16 @@ export function useMediaAuthoringCanvas({
     [bindReference, graphAddEdge]
   );
 
+  // Keep every wire's bound reference honest: bind one that never bound (wired
+  // before its source had an output) and refresh one whose source has since
+  // produced a new URL. Runs for EVERY reference-holding target (generation
+  // card or shot) — a target that takes none simply routes to nothing.
   useEffect(() => {
     if (!catalog) return;
     edges.forEach((edge) => {
       const target = getNode(edge.target);
-      if (!target || (target.type !== "prompt" && target.type !== "video")) return;
-      const references = (target.data as GenerationNodeData).references ?? {};
+      if (!target) return;
+      const references = (target.data as { references?: CardReferences }).references ?? {};
       let boundField: string | undefined;
       let boundUrl: string | undefined;
       Object.entries(references).some(([field, list]) => {
@@ -331,7 +377,7 @@ export function useMediaAuthoringCanvas({
       if (!url || url.startsWith("blob:") || url === boundUrl) return;
       const field = boundField;
       patchNodeData(edge.target, (node) => {
-        const current = (node.data as GenerationNodeData).references ?? {};
+        const current = (node.data as { references?: CardReferences }).references ?? {};
         return {
           references: {
             ...current,
@@ -492,8 +538,21 @@ export function useMediaAuthoringCanvas({
       }
       const id = crypto.randomUUID();
       const nodeType =
-        action === "generate-image" ? "prompt" : action === "generate-video" ? "video" : "note";
-      if (nodeType === "prompt") {
+        action === "generate-image"
+          ? "prompt"
+          : action === "generate-video"
+            ? "video"
+            : action === "shot"
+              ? SHOT_NODE_TYPE
+              : "note";
+      if (nodeType === SHOT_NODE_TYPE) {
+        addNode({
+          id,
+          type: SHOT_NODE_TYPE,
+          position: flow,
+          data: { order: nextShotOrder(getDocumentNodes()) },
+        });
+      } else if (nodeType === "prompt") {
         addNode({
           id,
           type: nodeType,
@@ -522,7 +581,21 @@ export function useMediaAuthoringCanvas({
       } else {
         addNode({ id, type: "note", position: flow, data: { text: "" } });
       }
-      if (pending && (nodeType === "prompt" || nodeType === "video")) {
+      if (!pending) return;
+      // A shot only ever takes the pending wire as its INPUT (it has no output),
+      // so a drag started from some card's input can't be closed with one.
+      if (nodeType === SHOT_NODE_TYPE) {
+        if (pending.handleType === "source") {
+          onConnect({
+            source: pending.nodeId,
+            sourceHandle: "output",
+            target: id,
+            targetHandle: "input",
+          });
+        }
+        return;
+      }
+      if (nodeType === "prompt" || nodeType === "video") {
         onConnect(
           pending.handleType === "source"
             ? {
@@ -540,7 +613,7 @@ export function useMediaAuthoringCanvas({
         );
       }
     },
-    [addNode, generationDefaults, nodes, onConnect, t]
+    [addNode, generationDefaults, getDocumentNodes, nodes, onConnect, t]
   );
   const addNodeFromDock = useCallback(
     (action: AddNodeAction) => {
@@ -563,6 +636,7 @@ export function useMediaAuthoringCanvas({
     addNodesAndEdges: graphAddNodesAndEdges,
     selectNodes,
     addNode: addNodeFromDock,
+    addNodeActions,
   });
 
   const addAssetToCanvas = useCallback(
@@ -733,7 +807,12 @@ export function useMediaAuthoringCanvas({
     },
     [graphRemoveEdge, patchNodeData]
   );
-  const tidyCanvas = useCanvasTidy({ edges, onNodesChange, tidySelection });
+  const tidyCanvas = useCanvasTidy({
+    edges,
+    onNodesChange,
+    tidySelection,
+    estimateHeight: estimateCanvasNodeHeight,
+  });
   const onDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       if (!(event.target as HTMLElement).classList.contains("react-flow__pane")) return;

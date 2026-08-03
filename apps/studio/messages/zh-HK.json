@@ -983,7 +983,8 @@
       "upload": "上載",
       "image": "圖像",
       "video": "影片",
-      "note": "便箋"
+      "note": "便箋",
+      "shot": "分鏡"
     },
     "guest": "訪客",
     "uploadFailed": "上載失敗",
@@ -1030,6 +1031,7 @@
       "image": "圖像",
       "video": "影片",
       "note": "便箋",
+      "shot": "分鏡",
       "searchPlaceholder": "搜尋節點",
       "noMatches": "沒有符合的節點"
     },
@@ -1569,12 +1571,122 @@
     "share": "分享",
     "thisProject": "此專案",
     "documentOpenError": "無法開啟此文件——請檢查連結或你的存取權限。",
-    "briefPlaceholder": "撰寫簡介…",
+    "briefPlaceholder": "撰寫說明…",
     "offlineSaved": "離線——變更已儲存至本機",
     "connecting": "連線中…",
     "modes": {
       "canvas": "畫布",
-      "brief": "簡報"
+      "storyboard": "分鏡表",
+      "brief": "說明"
+    }
+  },
+  "storyboard": {
+    "title": "分鏡表",
+    "openError": "無法開啟此項目的畫布——請檢查連結或存取權限。",
+    "loading": "正在開啟分鏡表…",
+    "addShot": "新增分鏡",
+    "shotCount": "{count, plural, =0 {尚無分鏡} other {# 個分鏡}}",
+    "emptyTitle": "尚未有分鏡",
+    "emptyBody": "新增一個分鏡開始創作。每個分鏡同時也是畫布上的一張卡片。",
+    "emptyReadOnly": "此項目尚未有分鏡。",
+    "node": {
+      "title": "分鏡 {index}",
+      "emptyHint": "連入圖像或影片",
+      "pictureAlt": "分鏡畫面",
+      "openInStoryboard": "在分鏡表中檢視"
+    },
+    "column": {
+      "number": "鏡號",
+      "id": "鏡號ID",
+      "frame": "分鏡圖",
+      "clip": "分鏡影片",
+      "size": "景別",
+      "angle": "視角",
+      "movement": "運鏡",
+      "duration": "時長",
+      "dialogue": "對白",
+      "notes": "備註"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "大遠景",
+        "wide": "遠景",
+        "full": "全景",
+        "medium": "中景",
+        "closeUp": "近景",
+        "extremeCloseUp": "特寫"
+      },
+      "angle": {
+        "eyeLevel": "平視",
+        "high": "俯視",
+        "low": "仰視",
+        "birdsEye": "鳥瞰",
+        "overShoulder": "過肩",
+        "pov": "主觀視角",
+        "dutch": "傾斜"
+      },
+      "movement": {
+        "static": "固定",
+        "pan": "橫搖",
+        "tilt": "直搖",
+        "dolly": "推拉",
+        "tracking": "跟拍",
+        "zoom": "變焦",
+        "handheld": "手持",
+        "crane": "升降"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds} 秒",
+      "durationUnit": "秒",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "對白或旁白…",
+      "notesPlaceholder": "備註…"
+    },
+    "frame": {
+      "add": "新增畫面",
+      "generateImage": "生成圖像",
+      "generateVideo": "生成影片",
+      "pickFromCanvas": "從畫布選擇",
+      "noSources": "畫布上尚未有可選素材",
+      "unlink": "中斷連結",
+      "viewOnCanvas": "在畫布中檢視",
+      "generating": "生成中…",
+      "failed": "生成失敗",
+      "waiting": "等待畫面"
+    },
+    "row": {
+      "reorder": "拖曳排序",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "insertAbove": "在上方插入分鏡",
+      "insertBelow": "在下方插入分鏡",
+      "delete": "刪除分鏡",
+      "actions": "分鏡操作",
+      "copyId": "複製鏡號ID",
+      "copiedId": "已複製鏡號ID"
+    },
+    "drawer": {
+      "title": "分鏡 {index} · 畫面",
+      "close": "關閉",
+      "slotFrame": "分鏡圖",
+      "slotClip": "分鏡影片",
+      "emptySlot": "這裡尚未有畫面",
+      "generate": "生成",
+      "upload": "上載",
+      "pick": "從畫布選擇",
+      "uploading": "上載中 · {progress}%",
+      "uploadFailed": "上載失敗",
+      "openViewer": "檢視大圖",
+      "sourceHeading": "這張畫面怎麼來的",
+      "sourceModel": "模型",
+      "sourceMade": "由畫布上的生成卡產出",
+      "sourceUploaded": "上載",
+      "sourcePicked": "取自畫布素材",
+      "noPrompt": "沒有記錄提示詞",
+      "candidates": "候選",
+      "candidatesSoon": "多候選與定稿將於後續版本提供。"
     }
   },
   "invite": {

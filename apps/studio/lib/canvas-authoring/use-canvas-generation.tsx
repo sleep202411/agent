@@ -11,14 +11,15 @@ import {
 } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { useReactFlow, useStore } from "@xyflow/react";
 import { toast } from "sonner";
 import { ComputeRechargeDialog } from "@/app/_components/compute-recharge-dialog";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { ApiRequestError } from "@/lib/api";
 import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
-import { outputKindForType, routeReferenceField } from "./reference-routing";
+import { outputKindForType } from "./reference-routing";
+import { routeTargetReferenceField } from "./canvas-wiring";
+import { SHOT_NODE_TYPE } from "./shot-node";
 import {
   computeWalletBalanceQueryKey,
   useComputeWalletBalance,
@@ -261,17 +262,24 @@ export function CanvasGenerationProvider({
   const generationProjectId = context.projectId;
   const generationDocumentId = context.documentId;
   const sourceSurface = context.sourceSurface;
-  const { getNodes } = useReactFlow();
   // Destructured mutators/accessors are individually stable (useCallback in
   // useCanvasGraph), unlike the graph object itself whose identity tracks
   // nodes/edges. Every callback and effect below depends on these — NEVER on
   // the whole graph — so the realtime subscription and the reconcile loop stay
   // armed exactly once instead of re-firing (and re-fetching) per re-derive.
+  // `getNodes` reads the document synchronously and is stable per document, so
+  // the realtime subscription arms once instead of re-arming on every graph
+  // re-derive — and it sees a write made earlier in the same turn. Reading the
+  // graph rather than React Flow's store is also what lets a NON-canvas
+  // rendering of the same document (the storyboard table) host this provider
+  // and get the identical generation loop.
   const {
     addAssets,
     addNode,
     getEdges,
     getNode,
+    getNodes,
+    nodes,
     patchNodeData,
     removeAssetsByMediaAssetId,
     removeEdge,
@@ -375,19 +383,18 @@ export function CanvasGenerationProvider({
           const doneUrl = incoming === "done" ? (out?.url ?? out?.accessUrl) : null;
           const kind = outputKindForType(out?.type);
           if (doneUrl && kind) {
-            const allNodes = getNodes();
             for (const edge of getEdges()) {
               if (edge.source !== match.id || !edge.target) continue;
-              const target = allNodes.find((n) => n.id === edge.target);
-              if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
               const edgeId = edge.id;
-              // Resolve model + field INSIDE the patch from the node's CURRENT
+              // Resolve the target slot INSIDE the patch from the node's CURRENT
               // data, so a card wired from multiple sources (or re-modelled
               // meanwhile) routes against fresh state, not a stale snapshot.
+              // A target that takes no pictures (or has no room) routes to
+              // nothing and is left alone; a shot's frame/clip slot is filled
+              // exactly like a card's reference field.
               patchNodeData(edge.target, (node) => {
                 const tdata = node.data as GenNodeData;
-                const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
-                const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
+                const routed = routeTargetReferenceField(node, catalogRef.current, kind, edgeId);
                 if (!routed) return {};
                 const refs = tdata.references ?? {};
                 const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
@@ -524,7 +531,10 @@ export function CanvasGenerationProvider({
           const blockedOutputSourceNodeIds = new Set<string>();
           for (const node of currentNodes) {
             if (
-              (node.type === "image" || node.type === "panorama") &&
+              (node.type === "image" ||
+                node.type === "panorama" ||
+                node.type === "videoAsset" ||
+                node.type === "audioAsset") &&
               (node.data as { mediaAssetId?: string }).mediaAssetId === event.assetId
             ) {
               placedNodeIds.add(node.id);
@@ -547,6 +557,17 @@ export function CanvasGenerationProvider({
           for (const node of currentNodes) {
             if (placedNodeIds.has(node.id)) {
               removeNode(node.id);
+              continue;
+            }
+            // A shot holds nothing but pictures: drop any slot fed by media
+            // that was just taken down, so the board never shows blocked media.
+            if (node.type === SHOT_NODE_TYPE) {
+              const shotData = node.data as GenNodeData;
+              const references = removeReferencesFromSources(
+                shotData.references,
+                blockedReferenceSources
+              );
+              if (references !== shotData.references) patchNodeData(node.id, { references });
               continue;
             }
             if (node.type !== "prompt" && node.type !== "video") continue;
@@ -601,18 +622,18 @@ export function CanvasGenerationProvider({
     workspaceId,
   ]);
 
-  // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
-  const activeJobIds = useStore((s) => {
+  // Non-terminal job ids in the document, reactive to doc hydration + node edits.
+  const activeJobIds = useMemo(() => {
     const ids: string[] = [];
-    s.nodeLookup.forEach((n) => {
-      if (n.type !== "prompt" && n.type !== "video") return;
-      const generation = (n.data as GenNodeData).generation;
+    for (const node of nodes) {
+      if (node.type !== "prompt" && node.type !== "video") continue;
+      const generation = (node.data as GenNodeData).generation;
       if (generation?.jobId && !isTerminalGenerationStatus(generation.status)) {
         ids.push(generation.jobId);
       }
-    });
+    }
     return ids.sort().join(",");
-  });
+  }, [nodes]);
 
   // Reconcile the instant an active card appears (e.g. after the doc hydrates
   // from IndexedDB on load). While the realtime channel is live the socket

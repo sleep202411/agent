@@ -983,7 +983,8 @@
       "upload": "Upload",
       "image": "Image",
       "video": "Video",
-      "note": "Note"
+      "note": "Note",
+      "shot": "Shot"
     },
     "guest": "Guest",
     "uploadFailed": "Upload failed",
@@ -1030,6 +1031,7 @@
       "image": "Image",
       "video": "Video",
       "note": "Note",
+      "shot": "Shot",
       "searchPlaceholder": "Search nodes",
       "noMatches": "No matching nodes"
     },
@@ -1574,7 +1576,117 @@
     "connecting": "Connecting…",
     "modes": {
       "canvas": "Canvas",
+      "storyboard": "Storyboard",
       "brief": "Brief"
+    }
+  },
+  "storyboard": {
+    "title": "Storyboard",
+    "openError": "Couldn't open this project's canvas — check the link or your access.",
+    "loading": "Opening the storyboard…",
+    "addShot": "Add shot",
+    "shotCount": "{count, plural, =0 {No shots} one {# shot} other {# shots}}",
+    "emptyTitle": "No shots yet",
+    "emptyBody": "Add a shot to start the board. Every shot is a card on the canvas too.",
+    "emptyReadOnly": "This project has no shots yet.",
+    "node": {
+      "title": "Shot {index}",
+      "emptyHint": "Wire an image or video in",
+      "pictureAlt": "Shot picture",
+      "openInStoryboard": "Open in storyboard"
+    },
+    "column": {
+      "number": "#",
+      "id": "ID",
+      "frame": "Frame",
+      "clip": "Clip",
+      "size": "Size",
+      "angle": "Angle",
+      "movement": "Movement",
+      "duration": "Duration",
+      "dialogue": "Dialogue",
+      "notes": "Notes"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "Extreme wide",
+        "wide": "Wide",
+        "full": "Full",
+        "medium": "Medium",
+        "closeUp": "Close-up",
+        "extremeCloseUp": "Extreme close-up"
+      },
+      "angle": {
+        "eyeLevel": "Eye level",
+        "high": "High",
+        "low": "Low",
+        "birdsEye": "Bird's eye",
+        "overShoulder": "Over shoulder",
+        "pov": "POV",
+        "dutch": "Dutch"
+      },
+      "movement": {
+        "static": "Static",
+        "pan": "Pan",
+        "tilt": "Tilt",
+        "dolly": "Dolly",
+        "tracking": "Tracking",
+        "zoom": "Zoom",
+        "handheld": "Handheld",
+        "crane": "Crane"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds}s",
+      "durationUnit": "s",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "Dialogue or voice-over…",
+      "notesPlaceholder": "Notes…"
+    },
+    "frame": {
+      "add": "Add a picture",
+      "generateImage": "Generate image",
+      "generateVideo": "Generate video",
+      "pickFromCanvas": "Pick from canvas",
+      "noSources": "Nothing on the canvas to pick yet",
+      "unlink": "Unlink",
+      "viewOnCanvas": "View on canvas",
+      "generating": "Generating…",
+      "failed": "Generation failed",
+      "waiting": "Waiting for the picture"
+    },
+    "row": {
+      "reorder": "Drag to reorder",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "insertAbove": "Insert shot above",
+      "insertBelow": "Insert shot below",
+      "delete": "Delete shot",
+      "actions": "Shot actions",
+      "copyId": "Copy shot ID",
+      "copiedId": "Shot ID copied"
+    },
+    "drawer": {
+      "title": "Shot {index} · picture",
+      "close": "Close",
+      "slotFrame": "Frame",
+      "slotClip": "Clip",
+      "emptySlot": "Nothing here yet",
+      "generate": "Generate",
+      "upload": "Upload",
+      "pick": "From canvas",
+      "uploading": "Uploading · {progress}%",
+      "uploadFailed": "Upload failed",
+      "openViewer": "View full size",
+      "sourceHeading": "How this was made",
+      "sourceModel": "Model",
+      "sourceMade": "Made from a card on the canvas",
+      "sourceUploaded": "Uploaded",
+      "sourcePicked": "Taken from the canvas",
+      "noPrompt": "No prompt recorded",
+      "candidates": "Candidates",
+      "candidatesSoon": "Multiple takes and picking a winner land in a later version."
     }
   },
   "invite": {

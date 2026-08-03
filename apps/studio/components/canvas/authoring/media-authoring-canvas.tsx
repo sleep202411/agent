@@ -11,7 +11,11 @@ import {
 import "@xyflow/react/dist/style.css";
 import { IconLayoutGrid, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { AddNodeMenu } from "@/components/canvas/add-node-menu";
+import {
+  AddNodeMenu,
+  DEFAULT_ADD_NODE_ACTIONS,
+  type AddNodeAction,
+} from "@/components/canvas/add-node-menu";
 import {
   CanvasAuthoringControls,
   CanvasAuthoringDock,
@@ -27,6 +31,7 @@ import { ImageNode } from "@/components/canvas/authoring/image-node";
 import { AudioAssetNode, VideoAssetNode } from "@/components/canvas/authoring/media-node";
 import { NoteNode } from "@/components/canvas/authoring/note-node";
 import { PanoramaNode } from "@/components/canvas/authoring/panorama-node";
+import { ShotNode } from "@/components/canvas/authoring/shot-node";
 import { PromptNode, VideoNode } from "@/components/canvas/authoring/generation-card";
 import { UploadStateContext } from "@/components/canvas/authoring/upload-state-context";
 import {
@@ -46,6 +51,7 @@ const MIN_ZOOM = 0.16;
 const MAX_ZOOM = 2.4;
 const GRID_SIZE = 24;
 
+// Node type strings live in the CRDT forever — add, never rename.
 const NODE_TYPES = {
   image: ImageNode,
   panorama: PanoramaNode,
@@ -54,6 +60,7 @@ const NODE_TYPES = {
   audioAsset: AudioAssetNode,
   prompt: PromptNode,
   video: VideoNode,
+  shot: ShotNode,
 };
 const EDGE_TYPES = { gradient: GradientEdge };
 
@@ -73,6 +80,14 @@ export interface MediaAuthoringCanvasProps {
   workspaceId?: string;
   scopeKey?: string | null;
   uploadKinds: readonly UploadMediaKind[];
+  /**
+   * Creation actions this canvas offers, in display order (dock, add-menu and
+   * their shortcuts). Products opt into node types they have a home for — a
+   * shot only makes sense where a storyboard mode can project it.
+   */
+  addNodeActions?: readonly AddNodeAction[];
+  /** Node to select and frame on open, instead of fitting the whole canvas. */
+  initialFocusNodeId?: string | null;
   fitEmptyCanvas?: boolean;
   tidySelection?: boolean;
   grouping?: CanvasGroupingController;
@@ -110,6 +125,8 @@ export function MediaAuthoringCanvas({
   workspaceId,
   scopeKey,
   uploadKinds,
+  addNodeActions = DEFAULT_ADD_NODE_ACTIONS,
+  initialFocusNodeId,
   fitEmptyCanvas = false,
   tidySelection = false,
   grouping,
@@ -179,6 +196,8 @@ export function MediaAuthoringCanvas({
     workspaceId,
     scopeKey,
     uploadKinds,
+    addNodeActions,
+    initialFocusNodeId,
     fitEmptyCanvas,
     tidySelection,
   });
@@ -403,7 +422,9 @@ export function MediaAuthoringCanvas({
             onChange={onPickFiles}
           />
 
-          {canEdit ? <CanvasAuthoringDock onAdd={addNodeFromDock} /> : null}
+          {canEdit ? (
+            <CanvasAuthoringDock actions={addNodeActions} onAdd={addNodeFromDock} />
+          ) : null}
           {canEdit ? (
             <CanvasHistoryControls
               canUndo={canUndo}
@@ -459,6 +480,7 @@ export function MediaAuthoringCanvas({
             <AddNodeMenu
               left={addMenu.left}
               top={addMenu.top}
+              actions={addNodeActions}
               disabledActions={menuDisabledActions}
               onAction={(action) => {
                 if (!addMenu) return;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
 import { IconHistory, IconLoader2, IconSparkles, IconUsers } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
@@ -27,6 +28,14 @@ import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
 const CREATIVE_UPLOAD_KINDS = ["image", "video"] as const;
+/** Creative Studio adds the shot — the node its storyboard mode projects. */
+const CREATIVE_ADD_NODE_ACTIONS = [
+  "upload",
+  "generate-image",
+  "generate-video",
+  "note",
+  "shot",
+] as const;
 
 function toCanvasUser(user: AuthUser | null, guestName: string): CanvasUser | null {
   if (!user) return null;
@@ -54,6 +63,8 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
   const tCanvasControls = useTranslations("canvasControls");
   const { canManage, openShare, setShellInset } = useProjectContext();
   const { data: catalog } = useAiCatalog();
+  // Handed over from another mode ("show me this shot on the board").
+  const focusNodeId = useSearchParams().get("focus");
   const { user } = useAuth();
   const canvasUser = useMemo(() => toCanvasUser(user, t("guest")), [t, user]);
   const { documentId, status: documentStatus } = useCanvasDocument(projectId);
@@ -119,6 +130,8 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
             ready={documentStatus === "ready" && connectionStatus === "synced"}
             scopeKey={documentId}
             uploadKinds={CREATIVE_UPLOAD_KINDS}
+            addNodeActions={CREATIVE_ADD_NODE_ACTIONS}
+            initialFocusNodeId={focusNodeId}
             assetLibrary={{ crewProjectId: projectId }}
             grouping={grouping}
             onDrawerInsetChange={(left) => setShellInset({ left })}

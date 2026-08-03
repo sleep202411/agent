@@ -983,7 +983,8 @@
       "upload": "上传",
       "image": "图像",
       "video": "视频",
-      "note": "便签"
+      "note": "便签",
+      "shot": "分镜"
     },
     "guest": "访客",
     "uploadFailed": "上传失败",
@@ -1030,6 +1031,7 @@
       "image": "图像",
       "video": "视频",
       "note": "便签",
+      "shot": "分镜",
       "searchPlaceholder": "搜索节点",
       "noMatches": "没有匹配的节点"
     },
@@ -1569,12 +1571,122 @@
     "share": "分享",
     "thisProject": "此项目",
     "documentOpenError": "无法打开此文档——请检查链接或你的访问权限。",
-    "briefPlaceholder": "撰写简介…",
+    "briefPlaceholder": "撰写说明…",
     "offlineSaved": "离线——更改已保存到本地",
     "connecting": "连接中…",
     "modes": {
       "canvas": "画布",
-      "brief": "简报"
+      "storyboard": "分镜表",
+      "brief": "说明"
+    }
+  },
+  "storyboard": {
+    "title": "分镜表",
+    "openError": "无法打开该项目的画布——请检查链接或访问权限。",
+    "loading": "正在打开分镜表…",
+    "addShot": "添加分镜",
+    "shotCount": "{count, plural, =0 {暂无分镜} other {# 个分镜}}",
+    "emptyTitle": "还没有分镜",
+    "emptyBody": "添加一个分镜开始创作。每个分镜同时也是画布上的一张卡片。",
+    "emptyReadOnly": "该项目还没有分镜。",
+    "node": {
+      "title": "分镜 {index}",
+      "emptyHint": "连入图像或视频",
+      "pictureAlt": "分镜画面",
+      "openInStoryboard": "在分镜表中查看"
+    },
+    "column": {
+      "number": "镜号",
+      "id": "镜号ID",
+      "frame": "分镜图",
+      "clip": "分镜视频",
+      "size": "景别",
+      "angle": "视角",
+      "movement": "运镜",
+      "duration": "时长",
+      "dialogue": "台词",
+      "notes": "备注"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "大远景",
+        "wide": "远景",
+        "full": "全景",
+        "medium": "中景",
+        "closeUp": "近景",
+        "extremeCloseUp": "特写"
+      },
+      "angle": {
+        "eyeLevel": "平视",
+        "high": "俯视",
+        "low": "仰视",
+        "birdsEye": "鸟瞰",
+        "overShoulder": "过肩",
+        "pov": "主观视角",
+        "dutch": "倾斜"
+      },
+      "movement": {
+        "static": "固定",
+        "pan": "横摇",
+        "tilt": "竖摇",
+        "dolly": "推拉",
+        "tracking": "跟拍",
+        "zoom": "变焦",
+        "handheld": "手持",
+        "crane": "升降"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds} 秒",
+      "durationUnit": "秒",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "台词或旁白…",
+      "notesPlaceholder": "备注…"
+    },
+    "frame": {
+      "add": "添加画面",
+      "generateImage": "生成图像",
+      "generateVideo": "生成视频",
+      "pickFromCanvas": "从画布选择",
+      "noSources": "画布上还没有可选素材",
+      "unlink": "断开连接",
+      "viewOnCanvas": "在画布中查看",
+      "generating": "生成中…",
+      "failed": "生成失败",
+      "waiting": "等待画面"
+    },
+    "row": {
+      "reorder": "拖动排序",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "insertAbove": "在上方插入分镜",
+      "insertBelow": "在下方插入分镜",
+      "delete": "删除分镜",
+      "actions": "分镜操作",
+      "copyId": "复制镜号ID",
+      "copiedId": "已复制镜号ID"
+    },
+    "drawer": {
+      "title": "分镜 {index} · 画面",
+      "close": "关闭",
+      "slotFrame": "分镜图",
+      "slotClip": "分镜视频",
+      "emptySlot": "这里还没有画面",
+      "generate": "生成",
+      "upload": "上传",
+      "pick": "从画布选择",
+      "uploading": "上传中 · {progress}%",
+      "uploadFailed": "上传失败",
+      "openViewer": "查看大图",
+      "sourceHeading": "这张画面怎么来的",
+      "sourceModel": "模型",
+      "sourceMade": "由画布上的生成卡产出",
+      "sourceUploaded": "上传",
+      "sourcePicked": "取自画布素材",
+      "noPrompt": "没有记录提示词",
+      "candidates": "候选",
+      "candidatesSoon": "多候选与定稿将在后续版本提供。"
     }
   },
   "invite": {
