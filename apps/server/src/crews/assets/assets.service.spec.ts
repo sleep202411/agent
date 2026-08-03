@@ -14,6 +14,7 @@ const USER_ID = 'user-1';
 const NODE_ID = '01910d50-4c88-7c78-92d4-16892c06a001';
 const FOLDER_ID = '01910d50-4c88-7c78-92d4-16892c06a002';
 const MEDIA_ID = '01910d50-4c88-7c78-92d4-16892c06a003';
+const PROJECT_ID = '01910d50-4c88-7c78-92d4-16892c06a004';
 
 function assetNode(overrides: Record<string, unknown> = {}) {
   return {
@@ -92,6 +93,14 @@ function build() {
     delete: jest.fn().mockResolvedValue(assetNode()),
   };
   const prisma = {
+    platformProject: {
+      findUnique: jest.fn().mockResolvedValue({
+        productionCrew: null,
+        crewTaskCanvas: {
+          crew: { id: CREW_ID, name: 'Production crew', logo: '/crew.png' },
+        },
+      }),
+    },
     crewAssetNode: {
       ...crewAssetNode,
     },
@@ -151,6 +160,9 @@ function build() {
   const authorization = {
     require: jest.fn().mockResolvedValue(authorizationContext),
   };
+  const workspacePermissions = {
+    requireProjectRole: jest.fn(),
+  };
   const access = {
     resolveNodePermission: jest
       .fn()
@@ -179,6 +191,7 @@ function build() {
   };
   return {
     prisma,
+    workspacePermissions,
     authorization,
     access,
     storageRegistry,
@@ -187,6 +200,7 @@ function build() {
     conversations,
     service: new CrewAssetsService(
       prisma as never,
+      workspacePermissions as never,
       authorization as never,
       access as never,
       storageRegistry as never,
@@ -197,6 +211,61 @@ function build() {
 }
 
 describe('CrewAssetsService', () => {
+  it('prefers the explicitly linked Studio crew over internal canvas ownership', async () => {
+    const t = build();
+    t.prisma.platformProject.findUnique.mockResolvedValue({
+      studioCrew: {
+        id: CREW_ID,
+        name: 'Linked Studio crew',
+        logo: '/linked-crew.png',
+      },
+      productionCrew: {
+        id: 'internal-crew',
+        name: 'Internal crew',
+        logo: '/internal-crew.png',
+      },
+      crewTaskCanvas: null,
+    });
+
+    const result = await t.service.projectContext(PROJECT_ID, USER_ID);
+
+    expect(t.authorization.require).toHaveBeenCalledWith(
+      CREW_ID,
+      USER_ID,
+      'assets.view',
+    );
+    expect(result.crew).toEqual({
+      id: CREW_ID,
+      name: 'Linked Studio crew',
+      logo: '/linked-crew.png',
+    });
+  });
+
+  it('resolves the linked crew from a task canvas without trusting a client crew id', async () => {
+    const t = build();
+
+    const result = await t.service.projectContext(PROJECT_ID, USER_ID);
+
+    expect(t.workspacePermissions.requireProjectRole).toHaveBeenCalledWith(
+      USER_ID,
+      PROJECT_ID,
+      'viewer',
+    );
+    expect(t.prisma.platformProject.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: PROJECT_ID } }),
+    );
+    expect(t.authorization.require).toHaveBeenCalledWith(
+      CREW_ID,
+      USER_ID,
+      'assets.view',
+    );
+    expect(result.crew).toEqual({
+      id: CREW_ID,
+      name: 'Production crew',
+      logo: '/crew.png',
+    });
+  });
+
   it('lists live metadata with a protected media content URL', async () => {
     const t = build();
 

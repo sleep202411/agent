@@ -23,9 +23,10 @@ const previewInput = {
           payload: {
             intent: "create",
             node: {
-              kind: "text",
+              kind: "clip",
               nodeId: "xinyi_arrival",
-              body: { "zh-CN": "心怡抵达。" },
+              clipKey: "XINYI_ARRIVAL",
+              description: "心怡抵达。",
               exit: { kind: "auto", nextNodeId: null },
             },
           },

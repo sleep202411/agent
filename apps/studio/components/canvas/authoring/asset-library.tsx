@@ -3,103 +3,28 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import { MEDIA_ASSET_READINESS_CAPABILITY, type MediaAssetReadinessResult } from "@repo/shared";
-import { IconLayoutGrid, IconMusic, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
+import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
+import { IconLayoutGrid, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
 import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
-import type { CanvasAsset } from "@/lib/canvas-core/types";
 import {
   getMediaAssetReadinessStatuses,
   mediaAssetReadinessKeys,
 } from "@/lib/media-asset-readiness";
-import { Icon720 } from "./panorama-viewer";
-import {
-  MediaAssetReadinessChip,
-  mediaAssetReadinessState,
-  type MediaAssetReadinessState,
-} from "./media-asset-readiness";
+import { AssetThumb } from "./asset-library-thumb";
+import { ProjectCrewAssetLibrary } from "./project-crew-asset-library";
 
-/** dataTransfer type carrying a dragged library asset to the canvas. */
-export const ASSET_DRAG_MIME = "application/x-fizz-asset";
 export const ASSET_LIBRARY_WIDTH = 320;
 
-type AssetTab = "generated" | "uploaded";
+type AssetTab = "generated" | "uploaded" | "crew";
 
-const TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" }[] = [
+const BASE_TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" | "crew" }[] = [
   { id: "generated", labelKey: "myCreations" },
   { id: "uploaded", labelKey: "uploaded" },
 ];
 
 const SEEDANCE_REFERENCE_CAPABILITY = MEDIA_ASSET_READINESS_CAPABILITY.seedanceAigcReference;
-
-function AssetThumb({
-  asset,
-  readinessStatus,
-  readinessFallback,
-  floating = false,
-}: {
-  asset: CanvasAsset;
-  readinessStatus?: MediaAssetReadinessResult;
-  readinessFallback: MediaAssetReadinessState | null;
-  floating?: boolean;
-}) {
-  const t = useTranslations("canvasNodes");
-  const title = asset.name ?? asset.prompt ?? undefined;
-  const state =
-    asset.kind === "image" || asset.kind === "video"
-      ? mediaAssetReadinessState(readinessStatus, readinessFallback)
-      : null;
-  return (
-    <div
-      title={title}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData(ASSET_DRAG_MIME, JSON.stringify(asset));
-        event.dataTransfer.effectAllowed = "copy";
-      }}
-      className={cn(
-        "group cursor-grab overflow-hidden bg-white/[0.04] transition-colors hover:bg-white/[0.08] active:cursor-grabbing",
-        floating ? "rounded-2xl" : "rounded-lg"
-      )}
-    >
-      <div className="relative aspect-square overflow-hidden">
-        {asset.kind === "video" ? (
-          <video
-            src={asset.url}
-            muted
-            playsInline
-            draggable={false}
-            className="pointer-events-none size-full object-cover"
-          />
-        ) : asset.kind === "audio" ? (
-          <div className="pointer-events-none flex size-full items-center justify-center">
-            <IconMusic className="size-7 text-white/70" stroke={1.7} />
-          </div>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={asset.url}
-            alt={title ?? t("asset.alt")}
-            draggable={false}
-            className="pointer-events-none size-full object-cover"
-          />
-        )}
-        {asset.panorama && (
-          <span className="pointer-events-none absolute top-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-0.5 text-[9px] font-medium text-white/90 backdrop-blur-sm">
-            <Icon720 className="size-2.5" /> 720°
-          </span>
-        )}
-        <MediaAssetReadinessChip capability={SEEDANCE_REFERENCE_CAPABILITY} state={state} />
-      </div>
-      <div className="min-w-0 px-2 py-1.5">
-        <p className="truncate text-[11px] leading-tight text-white/75">
-          {title ?? t("asset.untitled")}
-        </p>
-      </div>
-    </div>
-  );
-}
 
 function EmptyState({
   icon,
@@ -142,21 +67,31 @@ export function AssetLibrary({
   onClose,
   variant = "default",
   description,
+  crewProjectId,
 }: {
   open: boolean;
   onClose: () => void;
   variant?: "default" | "floating";
   description?: string;
+  crewProjectId?: string;
 }) {
   const t = useTranslations("canvasNodes");
   const { assets } = useCanvasGraphContext();
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
+  const tabs = useMemo(
+    () =>
+      crewProjectId
+        ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
+        : BASE_TABS,
+    [crewProjectId]
+  );
 
   const filteredAssets = useMemo(() => {
     const q = query.trim().toLowerCase();
     return assets.filter(
       (a) =>
+        tab !== "crew" &&
         a.source === tab &&
         (!q ||
           (a.name ?? "").toLowerCase().includes(q) ||
@@ -189,39 +124,44 @@ export function AssetLibrary({
   if (!open) return null;
   const empty = filteredAssets.length === 0;
   const floating = variant === "floating";
-  const content = empty ? (
-    <EmptyState
-      icon={<IconPhoto className={floating ? "size-5" : "size-7 text-white/20"} stroke={1.4} />}
-      title={t("asset.empty.title")}
-      body={tab === "generated" ? t("asset.empty.generated") : t("asset.empty.uploaded")}
-      floating={floating}
-    />
-  ) : (
-    <div
-      className={cn(
-        "grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto",
-        floating ? "min-h-0 flex-1 px-4 pb-4" : "p-4"
-      )}
-    >
-      {filteredAssets.map((asset) => (
-        <AssetThumb
-          key={asset.id}
-          asset={asset}
-          readinessStatus={asset.mediaAssetId ? statusQuery.data?.[asset.mediaAssetId] : undefined}
-          readinessFallback={
-            (asset.kind === "image" || asset.kind === "video") && asset.mediaAssetId
-              ? statusQuery.isError
-                ? { kind: "unavailable" }
-                : statusQuery.isPending
-                  ? null
-                  : { kind: "not_requested" }
-              : null
-          }
-          floating={floating}
-        />
-      ))}
-    </div>
-  );
+  const content =
+    tab === "crew" && crewProjectId ? (
+      <ProjectCrewAssetLibrary projectId={crewProjectId} query={query} floating={floating} />
+    ) : empty ? (
+      <EmptyState
+        icon={<IconPhoto className={floating ? "size-5" : "size-7 text-white/20"} stroke={1.4} />}
+        title={t("asset.empty.title")}
+        body={tab === "generated" ? t("asset.empty.generated") : t("asset.empty.uploaded")}
+        floating={floating}
+      />
+    ) : (
+      <div
+        className={cn(
+          "grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto",
+          floating ? "min-h-0 flex-1 px-4 pb-4" : "p-4"
+        )}
+      >
+        {filteredAssets.map((asset) => (
+          <AssetThumb
+            key={asset.id}
+            asset={asset}
+            readinessStatus={
+              asset.mediaAssetId ? statusQuery.data?.[asset.mediaAssetId] : undefined
+            }
+            readinessFallback={
+              (asset.kind === "image" || asset.kind === "video") && asset.mediaAssetId
+                ? statusQuery.isError
+                  ? { kind: "unavailable" }
+                  : statusQuery.isPending
+                    ? null
+                    : { kind: "not_requested" }
+                : null
+            }
+            floating={floating}
+          />
+        ))}
+      </div>
+    );
 
   if (floating) {
     return (
@@ -234,7 +174,7 @@ export function AssetLibrary({
         onClose={onClose}
       >
         <div className="flex gap-1 px-4 py-3" role="tablist" aria-label={t("asset.title")}>
-          {TABS.map((tabItem) => (
+          {tabs.map((tabItem) => (
             <button
               key={tabItem.id}
               type="button"
@@ -286,7 +226,7 @@ export function AssetLibrary({
       </div>
 
       <div className="flex items-center gap-1.5 px-4">
-        {TABS.map((tabItem) => (
+        {tabs.map((tabItem) => (
           <button
             key={tabItem.id}
             type="button"

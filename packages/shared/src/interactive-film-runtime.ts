@@ -184,7 +184,8 @@ const ChoiceSchema = z
 export const RuntimeAutoExitSchema = z
   .object({
     kind: z.literal("auto"),
-    nextNodeId: stableId,
+    /** Null marks a clip that naturally completes playback. */
+    nextNodeId: stableId.nullable(),
   })
   .strict();
 
@@ -196,19 +197,6 @@ export const RuntimeChoiceExitSchema = z
     choices: z.array(ChoiceSchema).min(2).max(6),
   })
   .strict();
-
-export const RuntimeEndingExitSchema = z
-  .object({ kind: z.literal("ending"), endingId: stableId })
-  .strict();
-
-export const RuntimeEndingSchema = z
-  .object({
-    endingId: stableId,
-    title: localizedText,
-    summary: localizedText.optional(),
-  })
-  .strict();
-export type RuntimeEnding = z.infer<typeof RuntimeEndingSchema>;
 
 const VideoSequenceEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z.object({ behavior: z.literal("advance") }).strict(),
@@ -244,9 +232,7 @@ const VideoPresentationSchema = z
     // an error, so an empty sequence cannot reach a published experience.
     sequence: z.array(VideoSequenceClipSchema),
     posterAssetId: stableId.optional(),
-    // "native" is emitted for narrative (frame-profile-less) stories so inline
-    // video keeps its intrinsic size instead of being cropped to a fixed frame.
-    fit: z.enum(["cover", "contain", "native"]),
+    fit: z.enum(["cover", "contain"]),
   })
   .strict()
   .superRefine((presentation, context) => {
@@ -287,15 +273,6 @@ const ImagePresentationSchema = z
   })
   .strict();
 
-const TextPresentationSchema = z
-  .object({
-    kind: z.literal("text"),
-    title: localizedText.optional(),
-    body: localizedText,
-    completion: z.enum(["continue", "passive"]),
-  })
-  .strict();
-
 const ExtensionPresentationSchema = z
   .object({
     kind: z.literal("extension"),
@@ -309,7 +286,6 @@ const ExtensionPresentationSchema = z
 const RuntimeNodeExitSchema = z.discriminatedUnion("kind", [
   RuntimeAutoExitSchema,
   RuntimeChoiceExitSchema,
-  RuntimeEndingExitSchema,
 ]);
 
 const SceneNodeSchema = z
@@ -318,7 +294,6 @@ const SceneNodeSchema = z
     presentation: z.discriminatedUnion("kind", [
       VideoPresentationSchema,
       ImagePresentationSchema,
-      TextPresentationSchema,
       ExtensionPresentationSchema,
     ]),
     /**
@@ -345,7 +320,6 @@ export const InteractiveFilmReleaseSchema = z
     entryNodeId: stableId,
     defaultLocale: stableId,
     locales: z.array(stableId).min(1),
-    endings: z.array(RuntimeEndingSchema).default([]),
     media: z.array(RuntimeMediaAssetSchema).default([]),
     nodes: z.array(InteractiveFilmRuntimeNodeSchema).min(1),
   })
@@ -353,7 +327,6 @@ export const InteractiveFilmReleaseSchema = z
   .superRefine((release, context) => {
     const media = uniqueIndex(release.media, (asset) => asset.assetId, ["media"], context);
     const nodes = uniqueIndex(release.nodes, (node) => node.nodeId, ["nodes"], context);
-    const endings = uniqueIndex(release.endings, (ending) => ending.endingId, ["endings"], context);
     validateRuntimeDecisionDefinitions(release.nodes, context);
 
     if (!release.locales.includes(release.defaultLocale)) {
@@ -408,21 +381,6 @@ export const InteractiveFilmReleaseSchema = z
       });
     };
 
-    release.endings.forEach((ending, endingIndex) => {
-      requireLocaleCoverage(ending.title, ["endings", endingIndex, "title"]);
-      if (ending.summary) {
-        requireLocaleCoverage(ending.summary, ["endings", endingIndex, "summary"]);
-      }
-    });
-
-    const requireEnding = (endingId: string, path: PropertyKey[]): void => {
-      // Once a release declares an endings catalog, every graph ending must
-      // resolve through it so a player never has to invent display copy.
-      if (endings.size > 0 && !endings.has(endingId)) {
-        context.addIssue({ code: "custom", path, message: `Unknown ending ${endingId}` });
-      }
-    };
-
     release.nodes.forEach((node, nodeIndex) => {
       const presentationPath = ["nodes", nodeIndex, "presentation"];
       if ("presentation" in node) {
@@ -453,11 +411,6 @@ export const InteractiveFilmReleaseSchema = z
           }
         } else if (node.presentation.kind === "image") {
           requireAsset(node.presentation.assetId, ["image"], [...presentationPath, "assetId"]);
-        } else if (node.presentation.kind === "text") {
-          if (node.presentation.title) {
-            requireLocaleCoverage(node.presentation.title, [...presentationPath, "title"]);
-          }
-          requireLocaleCoverage(node.presentation.body, [...presentationPath, "body"]);
         } else {
           requireAsset(
             node.presentation.configAssetId,
@@ -500,7 +453,9 @@ export const InteractiveFilmReleaseSchema = z
 
       const exitPath = ["nodes", nodeIndex, "exit"];
       if (node.exit.kind === "auto") {
-        requireNode(node.exit.nextNodeId, [...exitPath, "nextNodeId"]);
+        if (node.exit.nextNodeId !== null) {
+          requireNode(node.exit.nextNodeId, [...exitPath, "nextNodeId"]);
+        }
       }
       if (node.exit.kind === "choice") {
         requireLocaleCoverage(node.exit.prompt, [...exitPath, "prompt"]);
@@ -518,9 +473,6 @@ export const InteractiveFilmReleaseSchema = z
           requireNode(choice.nextNodeId, [...exitPath, "choices", choiceIndex, "nextNodeId"]);
         });
       }
-      if (node.exit.kind === "ending") {
-        requireEnding(node.exit.endingId, [...exitPath, "endingId"]);
-      }
     });
 
     const reachable = new Set<string>();
@@ -537,7 +489,9 @@ export const InteractiveFilmReleaseSchema = z
           : node.exit.kind === "choice"
             ? node.exit.choices.map((choice) => choice.nextNodeId)
             : [];
-      nextNodeIds.forEach((nextNodeId) => pending.push(nextNodeId));
+      nextNodeIds.forEach((nextNodeId) => {
+        if (nextNodeId !== null) pending.push(nextNodeId);
+      });
     }
     release.nodes.forEach((node, nodeIndex) => {
       if (!reachable.has(node.nodeId)) {
@@ -548,14 +502,15 @@ export const InteractiveFilmReleaseSchema = z
         });
       }
     });
-    const hasReachableEnding = release.nodes.some(
-      (node) => reachable.has(node.nodeId) && node.exit.kind === "ending"
+    const hasReachableTerminal = release.nodes.some(
+      (node) =>
+        reachable.has(node.nodeId) && node.exit.kind === "auto" && node.exit.nextNodeId === null
     );
-    if (!hasReachableEnding) {
+    if (!hasReachableTerminal) {
       context.addIssue({
         code: "custom",
         path: ["nodes"],
-        message: "Release graph has no reachable ending",
+        message: "Release graph has no reachable terminal clip",
       });
     }
   });
@@ -564,7 +519,6 @@ export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema
 export type InteractiveFilmRuntimeNode = z.infer<typeof InteractiveFilmRuntimeNodeSchema>;
 export type RuntimeAutoExit = z.infer<typeof RuntimeAutoExitSchema>;
 export type RuntimeChoiceExit = z.infer<typeof RuntimeChoiceExitSchema>;
-export type RuntimeEndingExit = z.infer<typeof RuntimeEndingExitSchema>;
 export type RuntimeVideoSequenceClip = z.infer<typeof VideoSequenceClipSchema>;
 export type RuntimeVideoVariant = z.infer<typeof VideoVariantSchema>;
 

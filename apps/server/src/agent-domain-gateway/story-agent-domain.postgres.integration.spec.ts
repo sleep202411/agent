@@ -26,18 +26,17 @@ const initialDraft: InteractiveStoryDraftContent = {
   storyBible: {
     logline: 'A stranger arrives after midnight.',
     synopsis: '',
-    worldview: '',
     characters: [],
-    endings: [],
   },
   graph: {
     entryNodeId: 'intro_night',
     nodes: [
       {
-        kind: 'text',
+        kind: 'clip',
         nodeId: 'intro_night',
-        title: { 'en-US': 'Midnight' },
-        body: { 'en-US': 'Rain taps against the window.' },
+        clipKey: 'INTRO_NIGHT',
+        name: 'Midnight',
+        description: 'Rain taps against the window.',
         exit: { kind: 'auto', nextNodeId: null },
       },
     ],
@@ -222,10 +221,11 @@ function storyChangeRequest() {
             payload: {
               intent: 'replace',
               node: {
-                kind: 'text',
+                kind: 'clip',
                 nodeId: 'intro_night',
-                title: { 'en-US': 'Midnight' },
-                body: { 'en-US': 'Rain taps against the window.' },
+                clipKey: 'INTRO_NIGHT',
+                name: 'Midnight',
+                description: 'Rain taps against the window.',
                 exit: {
                   kind: 'auto',
                   nextNodeId: 'xinyi_arrival',
@@ -238,10 +238,11 @@ function storyChangeRequest() {
             payload: {
               intent: 'create',
               node: {
-                kind: 'text',
+                kind: 'clip',
                 nodeId: 'xinyi_arrival',
-                title: { 'en-US': 'Xinyi Arrives' },
-                body: { 'en-US': 'Xinyi steps in from the rain.' },
+                clipKey: 'XINYI_ARRIVAL',
+                name: 'Xinyi Arrives',
+                description: 'Xinyi steps in from the rain.',
                 exit: { kind: 'auto', nextNodeId: null },
               },
             },
@@ -289,7 +290,7 @@ async function createFixture(prisma: PrismaClient): Promise<void> {
     data: {
       id: PROJECT_ID,
       workspaceId: WORKSPACE_ID,
-      format: 'text_adventure',
+      frameProfile: 'landscape_16_9',
       status: 'active',
       visibility: 'private',
       title: 'Forward reference integration story',

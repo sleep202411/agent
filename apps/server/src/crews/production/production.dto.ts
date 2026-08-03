@@ -634,6 +634,15 @@ export type UpdateProductionPropertiesInput = z.infer<
   typeof UpdateProductionPropertiesSchema
 >;
 
+export const LinkCrewStudioProjectSchema = z
+  .object({
+    projectId: z.string().uuid().nullable(),
+  })
+  .strict();
+export type LinkCrewStudioProjectInput = z.infer<
+  typeof LinkCrewStudioProjectSchema
+>;
+
 export const CreateProductionResourceSchema = z.discriminatedUnion('kind', [
   z
     .object({

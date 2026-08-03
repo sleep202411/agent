@@ -46,10 +46,11 @@ describe("storyChangeSetSchema", () => {
           payload: {
             intent: "create",
             node: {
-              kind: "text",
+              kind: "clip",
               nodeId: "xinyi_arrival",
-              title: { "en-US": "Arrival" },
-              body: { "en-US": "Xinyi steps out of the rain." },
+              clipKey: "XINYI_ARRIVAL",
+              name: "Arrival",
+              description: "Xinyi steps out of the rain.",
               exit: { kind: "auto", nextNodeId: null },
             },
           },
@@ -89,9 +90,10 @@ describe("storyChangeSetSchema", () => {
             payload: {
               intent: "create",
               node: {
-                kind: "text",
+                kind: "clip",
                 nodeId: "arrival",
-                body: { "en-US": "Arrival." },
+                clipKey: "ARRIVAL",
+                description: "Arrival.",
                 music: {
                   mediaAssetId: "0197f4a2-0800-7000-8000-000000000004",
                 },
@@ -117,9 +119,10 @@ describe("storyChangeSetSchema", () => {
             payload: {
               intent: "create",
               node: {
-                kind: "text",
+                kind: "clip",
                 nodeId: "arrival",
-                body: { "en-US": "Arrival." },
+                clipKey: "ARRIVAL",
+                description: "Arrival.",
                 exit: { kind: "auto", nextNodeId: null },
               },
             },

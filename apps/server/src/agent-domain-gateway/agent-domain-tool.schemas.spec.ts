@@ -41,9 +41,10 @@ describe('Agent Domain tool contracts', () => {
               payload: {
                 intent: 'create',
                 node: {
-                  kind: 'text',
+                  kind: 'clip',
                   nodeId: 'xinyi_arrival',
-                  body: { 'en-US': 'Xinyi arrives.' },
+                  clipKey: 'XINYI_ARRIVAL',
+                  description: 'Xinyi arrives.',
                   exit: { kind: 'auto', nextNodeId: null },
                 },
               },
@@ -53,9 +54,10 @@ describe('Agent Domain tool contracts', () => {
               payload: {
                 intent: 'replace',
                 node: {
-                  kind: 'text',
+                  kind: 'clip',
                   nodeId: 'intro_night',
-                  body: { 'en-US': 'Night.' },
+                  clipKey: 'INTRO_NIGHT',
+                  description: 'Night.',
                   exit: { kind: 'auto', nextNodeId: 'xinyi_arrival' },
                 },
               },

@@ -23,24 +23,6 @@ describe("story canvas blank-drop connections", () => {
     });
   });
 
-  it("creates and connects a text scene from a scene completion handle", () => {
-    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-    const opening = canvasNode(content, "opening");
-    const result = createConnectedSceneForBlankDrop(content, opening.data, "completion", "en-US", {
-      sceneKind: "text",
-    })!;
-
-    expect(graphNode(result.content, result.createdNodeId)).toMatchObject({
-      kind: "text",
-      title: { "en-US": "" },
-      body: { "en-US": "" },
-    });
-    expect(graphNode(result.content, "opening").exit).toEqual({
-      kind: "auto",
-      nextNodeId: result.createdNodeId,
-    });
-  });
-
   it("supports both decision option handle forms", () => {
     let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     content = createClipNode(content, { nodeId: "old-target", clipKey: "OLD_TARGET" }).content;
@@ -111,9 +93,7 @@ function draft(): InteractiveStoryDraftContent {
     storyBible: {
       logline: "",
       synopsis: "",
-      worldview: "",
       characters: [],
-      endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],

@@ -16,9 +16,9 @@ import {
   type StoryCandidateAssetUploadState,
 } from "./story-candidate-asset-picker-dialog";
 
-type FoundationField = "logline" | "synopsis" | "worldview";
+type FoundationField = "logline" | "synopsis";
 
-export interface StoryWorldCoverMediaProps {
+export interface StoryFoundationCoverMediaProps {
   cover: MediaAssetSummary | null;
   candidateAssets: StoryCandidateAsset[];
   candidateAssetsLoading: boolean;
@@ -34,31 +34,33 @@ export interface StoryWorldCoverMediaProps {
   ) => Promise<void>;
 }
 
-interface StoryWorldLibraryProps {
+interface StoryFoundationLibraryProps {
   content: InteractiveStoryDraftContent;
   canEdit: boolean;
-  coverMedia: StoryWorldCoverMediaProps;
+  coverMedia: StoryFoundationCoverMediaProps;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
   onClose: () => void;
 }
 
-export function StoryWorldLibrary({
+export function StoryFoundationLibrary({
   content,
   canEdit,
   coverMedia,
   onUpdateFoundation,
   onClose,
-}: StoryWorldLibraryProps) {
+}: StoryFoundationLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
   return (
     <>
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
-            {t("world.eyebrow")}
+            {t("filmFoundation.eyebrow")}
           </p>
-          <h2 className="mt-1 text-base font-semibold">{t("world.title")}</h2>
-          <p className="mt-1 text-[11px] leading-5 text-white/38">{t("world.description")}</p>
+          <h2 className="mt-1 text-base font-semibold">{t("filmFoundation.title")}</h2>
+          <p className="mt-1 text-[11px] leading-5 text-white/38">
+            {t("filmFoundation.description")}
+          </p>
         </div>
         <button
           type="button"
@@ -87,7 +89,7 @@ function ProjectCoverEditor({
   media,
 }: {
   canEdit: boolean;
-  media: StoryWorldCoverMediaProps;
+  media: StoryFoundationCoverMediaProps;
 }) {
   const t = useTranslations("storyStudio.canvas");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -111,8 +113,12 @@ function ProjectCoverEditor({
     <section className="border-b border-white/[0.06] pb-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h3 className="text-[11px] font-semibold text-white/72">{t("world.cover.title")}</h3>
-          <p className="mt-1 text-[10px] leading-4 text-white/34">{t("world.cover.description")}</p>
+          <h3 className="text-[11px] font-semibold text-white/72">
+            {t("filmFoundation.cover.title")}
+          </h3>
+          <p className="mt-1 text-[10px] leading-4 text-white/34">
+            {t("filmFoundation.cover.description")}
+          </p>
         </div>
         {dimensions ? (
           <span className="shrink-0 text-[9px] text-white/30">{dimensions}</span>
@@ -124,7 +130,7 @@ function ProjectCoverEditor({
           // eslint-disable-next-line @next/next/no-img-element -- signed project media URL
           <img
             src={cover.previewUrl as string}
-            alt={t("world.cover.imageAlt")}
+            alt={t("filmFoundation.cover.imageAlt")}
             className="size-full object-cover"
           />
         ) : (
@@ -133,7 +139,9 @@ function ProjectCoverEditor({
               <IconPhoto className="size-4" stroke={1.6} />
             </span>
             <span className="text-[9px] font-medium">
-              {media.cover ? t("world.cover.unavailable") : t("world.cover.empty")}
+              {media.cover
+                ? t("filmFoundation.cover.unavailable")
+                : t("filmFoundation.cover.empty")}
             </span>
           </div>
         )}
@@ -150,7 +158,7 @@ function ProjectCoverEditor({
           className="h-8 rounded-xl px-3 text-[10px]"
         >
           <IconPhoto className="size-3.5" stroke={1.8} />
-          {media.cover ? t("world.cover.replace") : t("world.cover.choose")}
+          {media.cover ? t("filmFoundation.cover.replace") : t("filmFoundation.cover.choose")}
         </Button>
         {media.cover ? (
           <Button
@@ -176,7 +184,7 @@ function ProjectCoverEditor({
             ) : (
               <IconTrash className="size-3.5" stroke={1.8} />
             )}
-            {t("world.cover.remove")}
+            {t("filmFoundation.cover.remove")}
           </Button>
         ) : null}
       </div>
@@ -202,7 +210,7 @@ function ProjectCoverEditor({
           candidate.asset.moderationStatus !== "blocked" &&
           Boolean(candidate.asset.previewUrl)
         }
-        unavailableReason={() => t("world.cover.unavailable")}
+        unavailableReason={() => t("filmFoundation.cover.unavailable")}
         onSelect={media.onSelectCandidate}
         onClearSelection={media.onClearSelection}
         uploadAccept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
@@ -216,7 +224,7 @@ function FoundationEditor({
   content,
   canEdit,
   onUpdateFoundation,
-}: Pick<StoryWorldLibraryProps, "content" | "canEdit" | "onUpdateFoundation">) {
+}: Pick<StoryFoundationLibraryProps, "content" | "canEdit" | "onUpdateFoundation">) {
   const t = useTranslations("storyStudio.canvas");
   return (
     <div>
@@ -238,15 +246,6 @@ function FoundationEditor({
         maxLength={20_000}
         disabled={!canEdit}
         onChange={(value) => onUpdateFoundation("synopsis", value)}
-      />
-      <FoundationField
-        label={t("foundation.worldview")}
-        placeholder={t("foundation.worldviewPlaceholder")}
-        value={content.storyBible.worldview}
-        rows={5}
-        maxLength={20_000}
-        disabled={!canEdit}
-        onChange={(value) => onUpdateFoundation("worldview", value)}
       />
     </div>
   );

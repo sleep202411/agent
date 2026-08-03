@@ -1,6 +1,5 @@
 import {
   Prisma,
-  StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
@@ -395,7 +394,6 @@ async function createFixture(
   const project = await prisma.storyProject.create({
     data: {
       workspaceId: workspace.id,
-      format: StoryFormat.interactive_film,
       frameProfile: StoryFrameProfile.landscape_16_9,
       status: StoryProjectStatus.active,
       visibility: StoryVisibility.private,
@@ -655,10 +653,11 @@ async function createFixture(
             payload: {
               intent: 'create',
               node: {
-                kind: 'text',
+                kind: 'clip',
                 nodeId: SCENE_ID,
-                title: { 'en-US': 'Prologue: Rainy Night' },
-                body: { 'en-US': 'The rain had not stopped for three days.' },
+                clipKey: 'RAINY_NIGHT',
+                name: 'Prologue: Rainy Night',
+                description: 'The rain had not stopped for three days.',
                 exit: { kind: 'auto', nextNodeId: null },
               },
             },

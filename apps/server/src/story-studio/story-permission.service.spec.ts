@@ -1,5 +1,4 @@
 import {
-  StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
@@ -18,7 +17,6 @@ function fixture() {
       findFirst: jest.fn().mockResolvedValue({
         id: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
-        format: StoryFormat.interactive_film,
         frameProfile: StoryFrameProfile.landscape_16_9,
         status: StoryProjectStatus.active,
         visibility: StoryVisibility.private,

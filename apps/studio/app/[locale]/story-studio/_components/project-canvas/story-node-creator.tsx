@@ -1,25 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  IconFileText,
-  IconMovie,
-  IconSparkles,
-  IconUser,
-  IconWorld,
-  type Icon,
-} from "@tabler/icons-react";
+import { IconMovie, IconUser, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDismiss } from "@/lib/use-dismiss";
-import type { StoryNodeCreationKind } from "./story-node-creator-model";
+import { type StoryNodeCreationKind } from "./story-node-creator-model";
 
 export type { StoryNodeCreationKind } from "./story-node-creator-model";
 
 interface StoryNodeCreatorProps {
   position: { left: number; top: number };
-  /** Offer the Story World entry only while the card is absent from the canvas. */
   onCreate: (kind: StoryNodeCreationKind) => void;
   onCancel: () => void;
 }
@@ -33,34 +25,16 @@ interface CreatorItem {
 
 const CREATOR_ITEMS: CreatorItem[] = [
   {
-    kind: "root",
-    icon: IconWorld,
-    color: "rgba(157,140,255,0.28)",
-    iconBackground: "rgba(157,140,255,0.48)",
-  },
-  {
     kind: "clip",
     icon: IconMovie,
     color: "rgba(255,255,255,0.14)",
     iconBackground: "rgba(255,255,255,0.22)",
   },
   {
-    kind: "text",
-    icon: IconFileText,
-    color: "rgba(255,255,255,0.12)",
-    iconBackground: "rgba(255,255,255,0.20)",
-  },
-  {
     kind: "character",
     icon: IconUser,
     color: "rgba(255,255,255,0.10)",
     iconBackground: "rgba(255,255,255,0.18)",
-  },
-  {
-    kind: "ending",
-    icon: IconSparkles,
-    color: "rgba(229,34,39,0.36)",
-    iconBackground: "rgba(229,34,39,0.60)",
   },
 ];
 
@@ -101,7 +75,6 @@ export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreation
 export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCreatorProps) {
   const t = useTranslations("storyStudio.canvas");
   const firstActionRef = useRef<HTMLButtonElement>(null);
-  const creatorItems = CREATOR_ITEMS;
 
   useDismiss(true, onCancel);
   useEffect(() => firstActionRef.current?.focus(), []);
@@ -125,7 +98,7 @@ export function StoryNodeCreator({ position, onCreate, onCancel }: StoryNodeCrea
         <p className="mt-1 text-[10px] leading-4 text-white/38">{t("creator.description")}</p>
       </div>
       <div className="grid gap-1">
-        {creatorItems.map((item, index) => {
+        {CREATOR_ITEMS.map((item, index) => {
           const ItemIcon = item.icon;
           return (
             <button

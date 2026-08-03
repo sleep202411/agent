@@ -1716,7 +1716,6 @@ function canonicalProjectRow() {
     id: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     title: 'Dream',
-    format: 'interactive_film',
     frameProfile: StoryFrameProfile.landscape_16_9,
     defaultLocale: 'en-US',
     draft: {

@@ -1,11 +1,11 @@
 "use client";
 
 import { forwardRef, useEffect, useRef, type ReactNode } from "react";
-import { IconFileText, IconGitBranch, IconMovie, IconX } from "@tabler/icons-react";
+import { IconGitBranch, IconMovie, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 
-export type StoryConnectionCreationKind = "clip" | "text" | "choice";
+export type StoryConnectionCreationKind = "clip" | "choice";
 
 export function StoryConnectionCreator({
   position,
@@ -71,12 +71,6 @@ export function StoryConnectionCreator({
             title={t("clip")}
             description={t("clipDescription")}
             onClick={() => onCreate("clip")}
-          />
-          <ConnectionCreatorItem
-            icon={<IconFileText className="size-4" stroke={2} />}
-            title={t("text")}
-            description={t("textDescription")}
-            onClick={() => onCreate("text")}
           />
           <ConnectionCreatorItem
             icon={<IconGitBranch className="size-4" stroke={2} />}

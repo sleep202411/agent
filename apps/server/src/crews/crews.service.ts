@@ -20,6 +20,7 @@
  * panel resolves its thread there, and a crew that predates crew chat
  * gets one opened on the spot.
  */
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -51,7 +52,15 @@ import type {
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { newCrewDomainId, newCrewId } from './id';
 import { toCrewDTO } from './mappers';
-import { createDefaultProductionDocument } from './production/production-document';
+import {
+  CREW_PRODUCTION_TEMPLATE_VERSION,
+  createDefaultProductionDocument,
+  createDefaultProductionPlan,
+} from './production/production-document';
+import {
+  DEFAULT_CREW_TASK_WORKFLOW_STATES,
+  defaultCrewTaskView,
+} from './tasks/task-defaults';
 
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
@@ -70,6 +79,9 @@ export class CrewsService {
 
   async create(creatorUserId: string, input: CreateCrewInput) {
     const crew = await this.prisma.$transaction(async (tx) => {
+      const productionPlan = createDefaultProductionPlan(
+        input.productionTemplateLocale,
+      );
       const c = await tx.crew.create({
         data: {
           id: newCrewId(),
@@ -98,7 +110,9 @@ export class CrewsService {
           listedAt: new Date(),
           productionPage: {
             create: {
-              document: createDefaultProductionDocument(),
+              document: createDefaultProductionDocument(
+                input.productionTemplateLocale,
+              ),
               createdByUserId: creatorUserId,
               updatedByUserId: creatorUserId,
             },
@@ -107,6 +121,10 @@ export class CrewsService {
             create: {
               kind: 'project_created',
               createdByUserId: creatorUserId,
+              payload: {
+                productionTemplateVersion: CREW_PRODUCTION_TEMPLATE_VERSION,
+                productionTemplateLocale: input.productionTemplateLocale,
+              },
             },
           },
         },
@@ -122,6 +140,71 @@ export class CrewsService {
       });
       await tx.crewOwnership.create({
         data: { crewId: c.id, memberId: ownerMember.id },
+      });
+      const workflowStateIds = new Map(
+        DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => [
+          state.systemKey,
+          randomUUID(),
+        ]),
+      );
+      await tx.crewTaskWorkflowState.createMany({
+        data: DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => ({
+          id: workflowStateIds.get(state.systemKey)!,
+          crewId: c.id,
+          name: state.name,
+          color: state.color,
+          semantic: state.semantic,
+          systemKey: state.systemKey,
+          position: state.position,
+          createdByUserId: creatorUserId,
+        })),
+      });
+      await tx.crewTaskView.create({
+        data: defaultCrewTaskView(c.id, creatorUserId),
+      });
+
+      const episodeId = randomUUID();
+      await tx.crewEpisode.create({
+        data: {
+          id: episodeId,
+          crewId: c.id,
+          number: 1,
+          title: productionPlan.episode.title,
+          synopsis: productionPlan.episode.synopsis,
+          status: 'planned',
+          rank: 1024,
+          createdByUserId: creatorUserId,
+        },
+      });
+
+      const initialTasks = productionPlan.tasks.map((task, index) => ({
+        id: randomUUID(),
+        crewId: c.id,
+        number: index + 1,
+        title: task.title,
+        description: task.description,
+        workflowStateId: workflowStateIds.get('open')!,
+        priority: 'normal' as const,
+        episodeId,
+        rank: (index + 1) * 1024,
+        createdByUserId: creatorUserId,
+      }));
+      await tx.crewTask.createMany({ data: initialTasks });
+      await tx.crewTaskDependency.createMany({
+        data: initialTasks.slice(1).map((task, index) => ({
+          crewId: c.id,
+          blockingTaskId: initialTasks[index].id,
+          blockedTaskId: task.id,
+          createdByUserId: creatorUserId,
+        })),
+      });
+      await tx.crewTaskTimelineItem.createMany({
+        data: initialTasks.map((task) => ({
+          taskId: task.id,
+          kind: 'task.created',
+          actorUserId: creatorUserId,
+          payload: { title: task.title, template: true },
+        })),
       });
       // One crew, one group chat — opened with the crew so there is
       // never a window where a member exists without a thread to talk

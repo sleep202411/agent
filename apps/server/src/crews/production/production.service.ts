@@ -16,10 +16,14 @@ import {
   CrewTaskStatus,
   MediaAssetKind,
   MediaAssetStatus,
+  ProjectMemberRole,
   Prisma,
+  WorkspaceMemberRole,
+  WorkspaceType,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
+import { WorkspacePermissionService } from '../../workspaces';
 import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { productionDocumentPlainText } from './production.dto';
@@ -28,6 +32,7 @@ import type {
   CreateProductionResourceInput,
   CreateProductionActivityInput,
   ListProductionActivityQuery,
+  LinkCrewStudioProjectInput,
   ReorderCrewEpisodeInput,
   ReviewEpisodeDeliveryInput,
   SubmitEpisodeDeliveryInput,
@@ -72,6 +77,7 @@ export class CrewProductionService {
     private readonly authorization: CrewAuthorizationService,
     private readonly assetAccess: CrewAssetAccessService,
     private readonly conversations: ConversationsService,
+    private readonly workspacePermissions: WorkspacePermissionService,
   ) {}
 
   async overview(crewId: string, userId: string) {
@@ -80,7 +86,7 @@ export class CrewProductionService {
       userId,
       'production.view',
     );
-    const [page, resources, latestUpdate, projectLabels, labelOptions] =
+    const [page, resources, latestUpdate, projectLabels, labelOptions, crew] =
       await Promise.all([
         this.prisma.crewProductionPage.findUniqueOrThrow({ where: { crewId } }),
         this.prisma.crewProductionResource.findMany({
@@ -101,6 +107,18 @@ export class CrewProductionService {
           where: { crewId },
           orderBy: [{ name: 'asc' }, { id: 'asc' }],
         }),
+        this.prisma.crew.findUniqueOrThrow({
+          where: { id: crewId },
+          select: {
+            studioProject: {
+              select: {
+                id: true,
+                name: true,
+                workspace: { select: { id: true, name: true } },
+              },
+            },
+          },
+        }),
       ]);
 
     return {
@@ -110,10 +128,194 @@ export class CrewProductionService {
       labelOptions: labelOptions.map(productionLabelDto),
       resources: resources.map(productionResourceDto),
       latestUpdate: latestUpdate ? productionActivityDto(latestUpdate) : null,
+      studioProject: crew.studioProject
+        ? studioProjectSummary(crew.studioProject)
+        : null,
       capabilities: {
         manage: context.permissions.includes('production.manage'),
       },
     };
+  }
+
+  async studioProjectOptions(crewId: string, userId: string) {
+    await this.authorization.require(crewId, userId, 'production.view');
+    const [crew, memberships] = await Promise.all([
+      this.prisma.crew.findUniqueOrThrow({
+        where: { id: crewId },
+        select: { studioProjectId: true },
+      }),
+      this.prisma.workspaceMember.findMany({
+        where: {
+          userId,
+          status: 'active',
+          removedAt: null,
+          workspace: { status: 'active', deletedAt: null },
+        },
+        include: {
+          workspace: {
+            include: {
+              projects: {
+                where: { status: 'active', deletedAt: null },
+                include: {
+                  members: {
+                    where: { userId, status: 'active', removedAt: null },
+                    select: { role: true },
+                  },
+                  studioCrew: { select: { id: true, name: true } },
+                },
+                orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+              },
+            },
+          },
+        },
+        orderBy: [{ joinedAt: 'asc' }],
+      }),
+    ]);
+
+    return {
+      linkedProjectId: crew.studioProjectId,
+      workspaces: memberships.map((membership) => ({
+        id: membership.workspace.id,
+        name: membership.workspace.name,
+        type: membership.workspace.type,
+        projects: membership.workspace.projects.map((project) => {
+          const linkedElsewhere =
+            project.studioCrew && project.studioCrew.id !== crewId;
+          const canEdit = canEditStudioProject(
+            membership.role,
+            project.members[0]?.role ?? null,
+          );
+          const disabledReason =
+            membership.workspace.type !== WorkspaceType.team
+              ? 'personal_workspace'
+              : linkedElsewhere
+                ? 'already_linked'
+                : !canEdit
+                  ? 'insufficient_permission'
+                  : null;
+          return {
+            id: project.id,
+            name: project.name,
+            description: project.description,
+            selected: project.id === crew.studioProjectId,
+            selectable: disabledReason === null,
+            disabledReason,
+            linkedCrewName: linkedElsewhere
+              ? (project.studioCrew?.name ?? null)
+              : null,
+          };
+        }),
+      })),
+    };
+  }
+
+  async linkStudioProject(
+    crewId: string,
+    userId: string,
+    input: LinkCrewStudioProjectInput,
+  ) {
+    await this.authorization.require(crewId, userId, 'production.manage');
+    if (input.projectId) {
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        input.projectId,
+        ProjectMemberRole.editor,
+      );
+    }
+
+    let linked: {
+      id: string;
+      name: string;
+      workspace: { id: string; name: string; type: WorkspaceType };
+    } | null;
+    try {
+      linked = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
+        `;
+        const crew = await tx.crew.findFirstOrThrow({
+          where: { id: crewId, deletedAt: null },
+          select: { studioProjectId: true },
+        });
+        let project: {
+          id: string;
+          name: string;
+          workspace: { id: string; name: string; type: WorkspaceType };
+        } | null = null;
+
+        if (input.projectId) {
+          const candidate = await tx.platformProject.findFirst({
+            where: { id: input.projectId, status: 'active', deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              workspace: { select: { id: true, name: true, type: true } },
+              studioCrew: { select: { id: true, name: true } },
+            },
+          });
+          if (!candidate)
+            throw new NotFoundException('Studio project not found.');
+          if (candidate.workspace.type !== WorkspaceType.team) {
+            throw new BadRequestException({
+              code: 'CREW_STUDIO_PROJECT_REQUIRES_TEAM_WORKSPACE',
+              message:
+                'Only projects in a team workspace can be linked to a crew.',
+            });
+          }
+          if (candidate.studioCrew && candidate.studioCrew.id !== crewId) {
+            throw new ConflictException({
+              code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
+              message: `This project is already linked to ${candidate.studioCrew.name}.`,
+            });
+          }
+          project = candidate;
+        }
+
+        if (crew.studioProjectId !== (project?.id ?? null)) {
+          await tx.crew.update({
+            where: { id: crewId },
+            data: { studioProjectId: project?.id ?? null },
+          });
+          await tx.crewProductionActivity.create({
+            data: {
+              crewId,
+              kind: CrewProductionActivityKind.properties_changed,
+              payload: {
+                changes: [
+                  {
+                    field: 'studio_project_id',
+                    from: crew.studioProjectId,
+                    to: project?.id ?? null,
+                  },
+                ],
+              },
+              createdByUserId: userId,
+            },
+          });
+        }
+        return project;
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
+          message: 'This Studio project is already linked to another crew.',
+        });
+      }
+      throw error;
+    }
+
+    await this.conversations.broadcastCrewTaskProjectChange(
+      crewId,
+      'production_project',
+      crewId,
+      'updated',
+      userId,
+    );
+    return { studioProject: linked ? studioProjectSummary(linked) : null };
   }
 
   async updateDocument(
@@ -1002,6 +1204,33 @@ async function resolveRank(
   if (before) return before.rank.plus(1024);
   if (after) return after.rank.dividedBy(2);
   return new Prisma.Decimal(1024);
+}
+
+function studioProjectSummary(project: {
+  id: string;
+  name: string;
+  workspace: { id: string; name: string };
+}) {
+  return { id: project.id, name: project.name, workspace: project.workspace };
+}
+
+function canEditStudioProject(
+  workspaceRole: WorkspaceMemberRole,
+  projectRole: ProjectMemberRole | null,
+) {
+  if (
+    projectRole === ProjectMemberRole.owner ||
+    projectRole === ProjectMemberRole.admin ||
+    projectRole === ProjectMemberRole.editor
+  ) {
+    return true;
+  }
+  return (
+    workspaceRole === WorkspaceMemberRole.owner ||
+    workspaceRole === WorkspaceMemberRole.admin ||
+    workspaceRole === WorkspaceMemberRole.billing ||
+    workspaceRole === WorkspaceMemberRole.editor
+  );
 }
 
 function productionPageDto(page: {

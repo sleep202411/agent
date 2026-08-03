@@ -1,10 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
-import {
-  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-  LockableInteractiveStoryDraftContentSchema,
-} from './interactive-film.schema';
+import { INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION } from './interactive-film.schema';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
@@ -40,7 +37,6 @@ function scopedService(
   draftContent: Draft,
   selections: unknown[] = currentPreviewSelections(draftContent),
   schemaVersion: string = INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-  format: 'interactive_film' | 'text_adventure' = 'interactive_film',
   cover: { coverAssetId: string; row: unknown } | null = null,
 ) {
   const contentHash = canonicalJsonHash(draftContent);
@@ -70,7 +66,6 @@ function scopedService(
       project: {
         id: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
-        format,
         frameProfile: 'landscape_16_9',
         defaultLocale: 'zh-CN',
         title: 'Branching Film Test',
@@ -95,38 +90,6 @@ function scopedService(
       assetUrls as never,
     ),
   };
-}
-
-function pureTextDraft(): Draft {
-  return LockableInteractiveStoryDraftContentSchema.parse({
-    storyBible: {
-      logline: '',
-      synopsis: '',
-      worldview: '',
-      characters: [],
-      endings: [
-        {
-          id: 'ending.truth',
-          title: { 'zh-CN': '真相' },
-        },
-      ],
-    },
-    graph: {
-      entryNodeId: 'text.entry',
-      nodes: [
-        {
-          kind: 'text',
-          nodeId: 'text.entry',
-          body: { 'zh-CN': '你在一封未署名的信旁醒来。' },
-          exit: {
-            kind: 'ending',
-            endingId: 'ending.truth',
-          },
-        },
-      ],
-    },
-    productionNotes: [],
-  });
 }
 
 function currentPreviewSelections(draft: Draft) {
@@ -201,38 +164,17 @@ function currentPreviewSelections(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
-  it('previews a pure-text project without loading or inventing video selections', async () => {
-    const { service, tx } = scopedService(
-      pureTextDraft(),
-      [],
-      INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-      'text_adventure',
-    );
-
-    await expect(
-      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID),
-    ).resolves.toMatchObject({
-      videoSnapshotHash: storyVideoSnapshotHash([]),
-      diagnostics: [],
-      sources: [],
-      runtime: {
-        metadata: { experienceProfile: 'narrative' },
-      },
-    });
-    expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
-  });
-
   /**
    * The playtest runs the same ExperiencePlayer the published game does, so this
    * is where a creator actually sees the cover they just picked. Without it the
    * only way to find out whether a cover works would be to publish.
    */
   it('paints the project cover into the Preview manifest', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(
-      pureTextDraft(),
-      [],
+      draft,
+      currentPreviewSelections(draft),
       INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-      'text_adventure',
       { coverAssetId: COVER_ASSET_ID, row: previewCoverRow() },
     );
 
@@ -260,12 +202,8 @@ describe('StoryWorkingPreviewService', () => {
   });
 
   it('costs a Preview no query at all when the project has no cover', async () => {
-    const { service, tx } = scopedService(
-      pureTextDraft(),
-      [],
-      INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-      'text_adventure',
-    );
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const { service, tx } = scopedService(draft);
 
     const preview = await service.getWorkingPreview(
       USER as never,
@@ -279,26 +217,44 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
-  it('returns actionable diagnostics for an incomplete draft before loading videos', async () => {
+  it('uses the first film as entry when the canvas has not chosen one yet', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     draft.graph.entryNodeId = null;
     const { service, tx } = scopedService(draft);
 
-    await expect(
-      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID),
-    ).resolves.toMatchObject({
-      draftRevision: 9,
-      runtimeSchemaVersion: 2,
-      runtime: null,
-      pathReport: null,
-      diagnostics: [
-        expect.objectContaining({
-          code: 'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
-          severity: 'error',
-        }),
-      ],
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.runtime).toMatchObject({
+      graph: { entrySceneId: draft.graph.nodes[0]?.nodeId },
     });
-    expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
+    expect(preview.diagnostics).toEqual([]);
+    expect(tx.storyVideoSelection.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not block Preview on an unfinished player choice', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const choiceNode = draft.graph.nodes.find(
+      (node) => node.exit.kind === 'choice',
+    );
+    if (!choiceNode || choiceNode.exit.kind !== 'choice') {
+      throw new Error('Choice fixture missing.');
+    }
+    choiceNode.exit.prompt = {};
+    choiceNode.exit.choices[0].label = {};
+    const preview = await scopedService(draft).service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.diagnostics).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ severity: 'error' })]),
+    );
+    expect(preview.runtime).not.toBeNull();
   });
 
   it('compiles the current draft and exact video selections to a Preview manifest', async () => {
@@ -336,7 +292,12 @@ describe('StoryWorkingPreviewService', () => {
     });
     expect(preview.diagnostics).toEqual([]);
     expect(preview.pathReport).toMatchObject({
-      reachableEndingIds: ['E01', 'E02', 'E03', 'E04'],
+      reachableTerminalNodeIds: [
+        'clip:E01',
+        'clip:E02',
+        'clip:E03',
+        'clip:E04',
+      ],
     });
     expect(preview.sources).toHaveLength(21);
     expect(preview.sources[0]).toMatchObject({
@@ -403,7 +364,7 @@ describe('StoryWorkingPreviewService', () => {
     );
   });
 
-  it('returns null runtime and explicit diagnostics when one clip has no selection', async () => {
+  it('keeps Preview playable with an empty shot when one clip has no selection', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const selections = currentPreviewSelections(draft);
     const missing = selections.shift();
@@ -416,17 +377,19 @@ describe('StoryWorkingPreviewService', () => {
       PROJECT_ID,
     );
 
-    expect(preview.runtime).toBeNull();
+    expect(preview.runtime).not.toBeNull();
     expect(preview.sources).toHaveLength(20);
     expect(preview.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
           entityId: missing.graphNodeId,
+          severity: 'warning',
         }),
         expect.objectContaining({
           code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
           entityId: missing.graphNodeId,
+          severity: 'warning',
         }),
       ]),
     );

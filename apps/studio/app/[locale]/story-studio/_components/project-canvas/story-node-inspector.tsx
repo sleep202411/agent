@@ -24,19 +24,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
-import type {
-  CreatableStoryFormat,
-  InteractiveStoryDraftContent,
-  StoryGraphNode,
-  StoryNodeMusic,
-} from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
-import { collectStoryMusicTracks, StoryNodeMusicPanel } from "./story-node-music-panel";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
-import { StoryWorldLibrary, type StoryWorldCoverMediaProps } from "./story-world-library";
+import {
+  StoryFoundationLibrary,
+  type StoryFoundationCoverMediaProps,
+} from "./story-foundation-library";
 
-type FoundationField = "logline" | "synopsis" | "worldview";
-type Ending = InteractiveStoryDraftContent["storyBible"]["endings"][number];
+type FoundationField = "logline" | "synopsis";
 type Character = InteractiveStoryDraftContent["storyBible"]["characters"][number];
 type StoryChapterTarget = {
   id: string;
@@ -47,41 +43,30 @@ type StoryChapterTarget = {
 /**
  * What the creator asked a scene's next step to become. The inspector states the
  * intent; the canvas owns which mutation realizes it, because only the canvas
- * knows the surrounding draft (a choice mints a decision, an ending has to name
- * one).
+ * knows the surrounding draft and can mint a decision for a choice exit.
  */
-export type SceneExitIntent =
-  | { kind: "auto"; nextNodeId: string | null }
-  | { kind: "choice" }
-  | { kind: "ending"; endingId: string };
+export type SceneExitIntent = { kind: "auto"; nextNodeId: string | null } | { kind: "choice" };
 
 type SceneExitKind = SceneExitIntent["kind"];
 
-const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice", "ending"];
+const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice"];
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
-  /** Decides which authoring surfaces this project's runtime can actually use. */
-  format: CreatableStoryFormat;
   locale: string;
   selectedNode: StoryCanvasNode | null;
   showFoundation: boolean;
   canEdit: boolean;
-  coverMedia: StoryWorldCoverMediaProps;
+  coverMedia: StoryFoundationCoverMediaProps;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
   onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
   onDeleteCharacter: (characterId: string) => void;
   onCloseNode: () => void;
   chapterTargets?: StoryChapterTarget[];
   onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
-  onUpdateEnding: (endingId: string, patch: Partial<Ending>) => void;
   onDeleteSelected: () => void;
   clipMedia?: StoryClipMediaPanelProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
-  onUpdateText: (nodeId: string, patch: { title?: string; body?: string }) => void;
-  /** Ownership scope for a track uploaded from the inspector. */
-  workspaceId: string | null;
-  onUpdateMusic: (nodeId: string, music: StoryNodeMusic | null) => void;
   onSetSceneExit: (nodeId: string, intent: SceneExitIntent) => void;
   /**
    * Promotes a scene to the entry of the chapter being edited. Scoped, not
@@ -93,7 +78,6 @@ interface StoryNodeInspectorProps {
 
 export function StoryNodeInspector({
   content,
-  format,
   locale,
   selectedNode,
   showFoundation,
@@ -105,13 +89,9 @@ export function StoryNodeInspector({
   onCloseNode,
   chapterTargets = [],
   onConnectChapter = () => undefined,
-  onUpdateEnding,
   onDeleteSelected,
   clipMedia,
   onUpdateClipMeta,
-  onUpdateText,
-  workspaceId,
-  onUpdateMusic,
   onSetSceneExit,
   onSetEntryNode,
 }: StoryNodeInspectorProps) {
@@ -121,9 +101,6 @@ export function StoryNodeInspector({
     canvasData?.kind === "decision" ? canvasData.sourceNodeId : canvasData?.nodeId;
   const graphNode =
     content.graph.nodes.find((candidate) => candidate.nodeId === canonicalNodeId) ?? null;
-  const ending = canvasData?.endingId
-    ? (content.storyBible.endings.find((candidate) => candidate.id === canvasData.endingId) ?? null)
-    : null;
   const inspectedCharacter =
     canvasData?.kind === "character" && canvasData.characterId
       ? (content.storyBible.characters.find(
@@ -138,7 +115,7 @@ export function StoryNodeInspector({
       <div className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]" />
       {showFoundation ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-          <StoryWorldLibrary
+          <StoryFoundationLibrary
             content={content}
             canEdit={canEdit}
             coverMedia={coverMedia}
@@ -155,7 +132,7 @@ export function StoryNodeInspector({
               </p>
               <h2 className="mt-1 truncate text-base font-semibold">
                 {canvasData.kind === "character"
-                  ? canvasData.title || t("world.characters.cardUntitled")
+                  ? canvasData.title || t("filmFoundation.characters.cardUntitled")
                   : canvasData.title}
               </h2>
               <p className="mt-1 text-[10px] text-white/34">{t(`nodeKinds.${canvasData.kind}`)}</p>
@@ -184,28 +161,14 @@ export function StoryNodeInspector({
             {graphNode ? (
               <GraphNodeEditor
                 content={content}
-                format={format}
-                locale={locale}
                 node={graphNode}
                 canEdit={canEdit}
                 clipMedia={clipMedia}
-                workspaceId={workspaceId}
                 onUpdateClipMeta={onUpdateClipMeta}
-                onUpdateText={onUpdateText}
-                onUpdateMusic={onUpdateMusic}
                 chapterTargets={chapterTargets}
                 onConnectChapter={onConnectChapter}
                 onSetSceneExit={onSetSceneExit}
                 onSetEntryNode={onSetEntryNode}
-              />
-            ) : null}
-
-            {ending ? (
-              <EndingEditor
-                ending={ending}
-                locale={locale}
-                canEdit={canEdit}
-                onUpdate={(patch) => onUpdateEnding(ending.id, patch)}
               />
             ) : null}
           </div>
@@ -220,10 +183,10 @@ export function StoryNodeInspector({
                 className="w-full"
               >
                 <IconTrash className="size-4" />
-                {t("world.characters.delete")}
+                {t("filmFoundation.characters.delete")}
               </Button>
               <p className="mt-2 text-[9px] leading-4 text-white/30">
-                {t("world.characters.deleteAvailable")}
+                {t("filmFoundation.characters.deleteAvailable")}
               </p>
             </div>
           ) : null}
@@ -239,11 +202,7 @@ export function StoryNodeInspector({
               >
                 <IconTrash className="size-4" />
                 {t(
-                  ending
-                    ? "inspector.deleteEnding"
-                    : canvasData.kind === "decision"
-                      ? "inspector.removeDecision"
-                      : "inspector.delete"
+                  canvasData.kind === "decision" ? "inspector.removeDecision" : "inspector.delete"
                 )}
               </Button>
             </div>
@@ -256,50 +215,32 @@ export function StoryNodeInspector({
 
 function GraphNodeEditor({
   content,
-  format,
-  locale,
   node,
   canEdit,
   clipMedia,
-  workspaceId,
   onUpdateClipMeta,
-  onUpdateText,
-  onUpdateMusic,
   chapterTargets,
   onConnectChapter,
   onSetSceneExit,
   onSetEntryNode,
 }: {
   content: InteractiveStoryDraftContent;
-  format: StoryNodeInspectorProps["format"];
-  locale: string;
   node: StoryGraphNode;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
-  workspaceId: StoryNodeInspectorProps["workspaceId"];
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
-  onUpdateText: StoryNodeInspectorProps["onUpdateText"];
-  onUpdateMusic: StoryNodeInspectorProps["onUpdateMusic"];
   chapterTargets: StoryChapterTarget[];
   onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
   onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
   onSetEntryNode: StoryNodeInspectorProps["onSetEntryNode"];
 }) {
   const t = useTranslations("storyStudio.canvas");
-  // Only the narrative runtime reads a scene's bed — the cinematic player never
-  // does, and the Build compiler drops music for that format. Offering the panel
-  // there would let a creator upload a 50 MB bed, bind it, publish, and get
-  // silence with nothing to explain it.
-  const playsMusic = format !== "interactive_film";
-  const musicTracks = collectStoryMusicTracks(content.graph.nodes, (letter) =>
-    t("inspector.music.trackLabel", { letter })
-  );
   const isEntry = content.graph.entryNodeId === node.nodeId;
   return (
     <>
       {/*
         The chapter's entry used to be reachable only by dragging off the story
-        world card. That card is going away, and it never belonged to a chapter
+        project foundation. It does not belong to a chapter
         anyway — the entry does.
       */}
       <button
@@ -319,79 +260,26 @@ function GraphNodeEditor({
         {isEntry ? <IconCheck className="size-3.5 shrink-0" /> : null}
       </button>
 
-      {node.kind === "clip" ? (
-        <label className="mt-4 block" htmlFor="story-clip-name">
-          <span className="text-[9px] font-semibold text-white/32">{t("inspector.nodeName")}</span>
-          <Input
-            id="story-clip-name"
-            value={node.name ?? ""}
-            disabled={!canEdit}
-            maxLength={120}
-            placeholder={node.clipKey}
-            onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
-            className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
-          />
-        </label>
-      ) : null}
-
-      {node.kind === "text" ? (
-        <div className="mt-6 space-y-4">
-          <label className="block" htmlFor="story-text-title">
-            <span className="text-[9px] font-semibold text-white/32">
-              {t("inspector.textTitle")}
-            </span>
-            <Input
-              id="story-text-title"
-              value={localizedValue(node.title, locale)}
-              disabled={!canEdit}
-              maxLength={4_000}
-              placeholder={t("inspector.textTitlePlaceholder")}
-              onChange={(event) => onUpdateText(node.nodeId, { title: event.target.value })}
-              className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
-            />
-          </label>
-          <label className="block" htmlFor="story-text-body">
-            <span className="text-[9px] font-semibold text-white/32">
-              {t("inspector.textBody")}
-            </span>
-            <Textarea
-              id="story-text-body"
-              value={localizedValue(node.body, locale)}
-              disabled={!canEdit}
-              maxLength={20_000}
-              rows={10}
-              placeholder={t("inspector.textBodyPlaceholder")}
-              onChange={(event) => onUpdateText(node.nodeId, { body: event.target.value })}
-              className="mt-1.5 resize-y rounded-lg bg-white/[0.05] px-3 text-xs leading-5"
-            />
-            {!localizedValue(node.body, locale).trim() ? (
-              <span className="mt-1.5 block text-[9px] text-[#e0a45c]/82">
-                {t("inspector.requiredForPlayableStory")}
-              </span>
-            ) : null}
-          </label>
-        </div>
-      ) : null}
-
-      {node.kind === "clip" && clipMedia ? (
-        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
-      ) : null}
-
-      {playsMusic ? (
-        <StoryNodeMusicPanel
-          key={node.nodeId}
-          music={node.music ?? null}
-          tracks={musicTracks}
-          canEdit={canEdit}
-          workspaceId={workspaceId}
-          onChange={(music) => onUpdateMusic(node.nodeId, music)}
+      <label className="mt-4 block" htmlFor="story-clip-name">
+        <span className="text-[9px] font-semibold text-white/32">{t("inspector.nodeName")}</span>
+        <Input
+          id="story-clip-name"
+          value={node.name ?? ""}
+          disabled={!canEdit}
+          maxLength={120}
+          placeholder={node.clipKey}
+          onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
+          className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
         />
+      </label>
+
+      {clipMedia ? (
+        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
       ) : null}
 
       <SceneExitEditor
         content={content}
         node={node}
-        locale={locale}
         canEdit={canEdit}
         onSetSceneExit={onSetSceneExit}
       />
@@ -416,13 +304,11 @@ function GraphNodeEditor({
 function SceneExitEditor({
   content,
   node,
-  locale,
   canEdit,
   onSetSceneExit,
 }: {
   content: InteractiveStoryDraftContent;
   node: StoryGraphNode;
-  locale: string;
   canEdit: boolean;
   onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
 }) {
@@ -436,13 +322,11 @@ function SceneExitEditor({
   const branchCount = node.exit.kind === "choice" ? node.exit.choices.length : 0;
 
   const targets = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
-  const endings = content.storyBible.endings;
 
   const intentFor = (kind: SceneExitKind): SceneExitIntent | null => {
     if (kind === "auto") return { kind: "auto", nextNodeId: currentTarget };
     if (kind === "choice") return { kind: "choice" };
-    const endingId = node.exit.kind === "ending" ? node.exit.endingId : endings[0]?.id;
-    return endingId ? { kind: "ending", endingId } : null;
+    return null;
   };
 
   const commitKind = (kind: SceneExitKind) => {
@@ -459,9 +343,6 @@ function SceneExitEditor({
     }
     commitKind(kind);
   };
-
-  const kindDisabled = (kind: SceneExitKind) =>
-    !canEdit || (kind === "ending" && endings.length === 0);
 
   return (
     <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
@@ -485,7 +366,7 @@ function SceneExitEditor({
               type="button"
               role="radio"
               aria-checked={active}
-              disabled={kindDisabled(kind)}
+              disabled={!canEdit}
               onClick={() => requestKind(kind)}
               className={cn(
                 "rounded-xl px-3 py-2 text-[10px] transition disabled:cursor-default disabled:opacity-40",
@@ -494,9 +375,7 @@ function SceneExitEditor({
                   : "bg-white/[0.045] text-white/58 hover:bg-white/[0.09] hover:text-white"
               )}
             >
-              {t(
-                `inspector.exit${kind === "auto" ? "Auto" : kind === "choice" ? "Choice" : "Ending"}`
-              )}
+              {t(`inspector.exit${kind === "auto" ? "Auto" : "Choice"}`)}
             </button>
           );
         })}
@@ -549,40 +428,16 @@ function SceneExitEditor({
             <SelectContent>
               {targets.map((candidate) => (
                 <SelectItem key={candidate.nodeId} value={candidate.nodeId}>
-                  {sceneLabel(candidate, locale)}
+                  {sceneLabel(candidate)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {currentTarget ? null : (
-            <span className="mt-1.5 block text-[9px] text-[#e0a45c]/82">
-              {t("inspector.requiredForPlayableStory")}
+            <span className={cn("mt-1.5 block text-[9px]", "text-white/38")}>
+              {t("inspector.terminalAfterPlayback")}
             </span>
           )}
-        </label>
-      ) : null}
-
-      {currentKind === "ending" ? (
-        <label className="mt-3 block">
-          <span className="text-[9px] font-semibold text-white/32">
-            {t("inspector.endingTarget")}
-          </span>
-          <Select
-            value={node.exit.kind === "ending" ? node.exit.endingId : ""}
-            disabled={!canEdit || endings.length === 0}
-            onValueChange={(endingId) => onSetSceneExit(node.nodeId, { kind: "ending", endingId })}
-          >
-            <SelectTrigger className="mt-1.5 w-full" aria-label={t("inspector.endingTarget")}>
-              <SelectValue placeholder={t("inspector.endingTargetPlaceholder")} />
-            </SelectTrigger>
-            <SelectContent>
-              {endings.map((candidate) => (
-                <SelectItem key={candidate.id} value={candidate.id}>
-                  {localizedValue(candidate.title, locale) || candidate.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </label>
       ) : null}
 
@@ -593,9 +448,8 @@ function SceneExitEditor({
   );
 }
 
-function sceneLabel(node: StoryGraphNode, locale: string): string {
-  if (node.kind === "clip") return node.name?.trim() || node.clipKey;
-  return localizedValue(node.title, locale).trim() || node.nodeId;
+function sceneLabel(node: StoryGraphNode): string {
+  return node.name?.trim() || node.clipKey;
 }
 
 function ChapterDestinationEditor({
@@ -668,55 +522,6 @@ function ChapterDestinationEditor({
   );
 }
 
-function EndingEditor({
-  ending,
-  locale,
-  canEdit,
-  onUpdate,
-}: {
-  ending: Ending;
-  locale: string;
-  canEdit: boolean;
-  onUpdate: (patch: Partial<Ending>) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas");
-  return (
-    <div className="mt-6 grid gap-4">
-      <label>
-        <span className="text-[10px] font-semibold text-white/42">
-          {t("inspector.endingTitle")}
-        </span>
-        <Input
-          value={localizedValue(ending.title, locale)}
-          maxLength={4_000}
-          disabled={!canEdit}
-          onChange={(event) =>
-            onUpdate({ title: { ...ending.title, [locale]: event.target.value } })
-          }
-          className="mt-2 h-9 rounded-xl bg-white/[0.055] px-3"
-        />
-      </label>
-      <label>
-        <span className="text-[10px] font-semibold text-white/42">
-          {t("inspector.endingSummary")}
-        </span>
-        <Textarea
-          value={localizedValue(ending.summary, locale)}
-          maxLength={4_000}
-          disabled={!canEdit}
-          rows={5}
-          onChange={(event) =>
-            onUpdate({
-              summary: { ...(ending.summary ?? {}), [locale]: event.target.value },
-            })
-          }
-          className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
-        />
-      </label>
-    </div>
-  );
-}
-
 function InspectorRow({
   label,
   value,
@@ -763,7 +568,7 @@ function CharacterNodeEditor({
   canEdit: boolean;
   onUpdate: (id: string, patch: Partial<Omit<Character, "id">>) => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.world.characters");
+  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
   const character =
     content.storyBible.characters.find((candidate) => candidate.id === characterId) ?? null;
   if (!character) return null;
@@ -825,7 +630,7 @@ function CharacterImagesEditor({
   canEdit: boolean;
   onUpdate: (images: Character["images"]) => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.world.characters");
+  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -954,7 +759,7 @@ function CharacterVoiceEditor({
   canEdit: boolean;
   onUpdate: (voice: Character["voice"]) => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.world.characters");
+  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -1200,7 +1005,7 @@ function ImageLabelInput({
   canEdit: boolean;
   onCommit: (label: string) => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.world.characters");
+  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
   const [draft, setDraft] = useState(label);
 
   const commit = () => {
@@ -1346,8 +1151,4 @@ function FieldLabel({ id, children }: { id?: string; children: ReactNode }) {
       {children}
     </span>
   );
-}
-
-function localizedValue(value: Record<string, string> | undefined, locale: string): string {
-  return value?.[locale] ?? "";
 }

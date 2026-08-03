@@ -9,8 +9,8 @@ import {
 
 const JAVA_URL = "https://java.example.test/studio";
 const MANIFEST_URL = "https://media.example.test/interactive-film/game-one/version-1/manifest.json";
-const TEXT_MANIFEST_URL =
-  "https://media.example.test/interactive-film/text-game/version-1/manifest.json";
+const UNSUPPORTED_MANIFEST_URL =
+  "https://media.example.test/interactive-film/unsupported-profile/version-1/manifest.json";
 const HASH = "a".repeat(64);
 
 function manifestFixture() {
@@ -22,7 +22,7 @@ function manifestFixture() {
     buildId: "build-one",
     contentVersion: "version-1",
     completionPolicy: "finite",
-    metadata: { title: { "en-US": "Game one" } },
+    metadata: { title: { "en-US": "Game one" }, experienceProfile: "cinematic" },
     compatibility: {
       engineApiVersion: "2.0.0",
       experienceApiVersion: "1.0.0",
@@ -132,17 +132,17 @@ function manifestFixture() {
   });
 }
 
-function textManifestFixture() {
+function unsupportedProfileManifestFixture() {
   return ExperienceRuntimeManifestSchema.parse({
     manifestType: "fizzdragon.experience",
     schemaVersion: 2,
     channel: "production",
-    gameId: "text-game",
-    buildId: "build-text-one",
+    gameId: "unsupported-profile",
+    buildId: "build-unsupported-profile",
     contentVersion: "version-1",
     completionPolicy: "finite",
     metadata: {
-      title: { "en-US": "Text game" },
+      title: { "en-US": "Unsupported profile" },
       experienceProfile: "narrative",
     },
     compatibility: {
@@ -191,8 +191,8 @@ function textManifestFixture() {
               rendererId: "core.text",
               layer: 0,
               config: {
-                title: { "en-US": "The first page" },
-                body: { "en-US": "A text-first story can start without any video assets." },
+                title: { "en-US": "Unsupported renderer" },
+                body: { "en-US": "This manifest must not enter the film player." },
                 completion: "continue",
               },
               bindings: {},
@@ -272,39 +272,34 @@ test("loads and identity-checks Java metadata plus its immutable CDN manifest", 
   assert.equal(result.manifest.buildId, "build-one");
 });
 
-test("loads a text-first release without requiring a video asset", async () => {
-  const manifest = textManifestFixture();
+test("rejects a non-cinematic release at the interactive-film boundary", async () => {
+  const manifest = unsupportedProfileManifestFixture();
   const fetcher = async (input: string | URL) => {
     const url = String(input);
-    if (url === `${JAVA_URL}/api/player/interactive-film/games/text-game`) {
+    if (url === `${JAVA_URL}/api/player/interactive-film/games/unsupported-profile`) {
       return Response.json({
         code: 200,
         msg: "success",
         data: {
-          gameId: "text-game",
-          title: "Text game",
+          gameId: "unsupported-profile",
+          title: "Unsupported profile",
           currentVersion: "version-1",
-          manifestUrl: TEXT_MANIFEST_URL,
+          manifestUrl: UNSUPPORTED_MANIFEST_URL,
         },
       });
     }
-    assert.equal(url, TEXT_MANIFEST_URL);
+    assert.equal(url, UNSUPPORTED_MANIFEST_URL);
     return Response.json(manifest);
   };
 
-  const result = await loadPublishedInteractiveFilm("text-game", {
-    fetcher,
-    javaStudioUrl: JAVA_URL,
-  });
-
-  assert.equal(result.manifest.metadata.experienceProfile, "narrative");
-  assert.equal(
-    result.manifest.assets.some((asset) => asset.kind === "video"),
-    false
+  await assert.rejects(
+    loadPublishedInteractiveFilm("unsupported-profile", {
+      fetcher,
+      javaStudioUrl: JAVA_URL,
+    }),
+    (error: unknown) =>
+      error instanceof InteractiveFilmLoadError && error.code === "MANIFEST_PROFILE_INVALID"
   );
-  const entry = result.manifest.graph.nodes[0];
-  assert.equal(entry?.kind, "scene");
-  assert.equal(entry?.kind === "scene" ? entry.renderers[0]?.rendererId : null, "core.text");
 });
 
 test("surfaces Java's message when the current game cannot be resolved", async () => {
@@ -351,7 +346,7 @@ function chapterManifestFixture(contentVersion: string, title: string) {
     gameId: "serial",
     buildId: contentVersion,
     contentVersion,
-    metadata: { title: { "en-US": title } },
+    metadata: { title: { "en-US": title }, experienceProfile: "cinematic" },
   });
 }
 

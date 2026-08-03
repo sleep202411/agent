@@ -1,9 +1,9 @@
 /**
  * Deciding what a project-level release actually contains.
  *
- * A multi-chapter work cannot publish as one manifest: chapters end in endings,
- * so every chapter after the first would be an unreachable scene, which the
- * Runtime Manifest rejects outright. Such a work therefore publishes one
+ * A multi-chapter work cannot publish as one manifest: every chapter is an
+ * independently built film with its own entry and natural completion. Such a
+ * work therefore publishes one
  * manifest PER CHAPTER, all of them byte-identical to their Build, plus a small
  * generated table-of-contents manifest that lists them. Nothing is composed
  * onto a frozen Build, so the publish-time check that the document hashes to

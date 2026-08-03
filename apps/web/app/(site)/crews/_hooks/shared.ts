@@ -29,6 +29,8 @@ export const crewKeys = {
   task: (taskId: string) => ["crew", "task", taskId] as const,
   taskTimeline: (taskId: string) => ["crew", "task", taskId, "timeline"] as const,
   productionOverview: (crewId: string) => ["crew", "production", crewId, "overview"] as const,
+  studioProjectOptions: (crewId: string) =>
+    ["crew", "production", crewId, "studio-project-options"] as const,
   productionActivity: (crewId: string) => ["crew", "production", crewId, "activity"] as const,
   episodes: (crewId: string) => ["crew", "production", crewId, "episodes"] as const,
   earnings: (crewId: string, scope: "mine" | "crew") =>

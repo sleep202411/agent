@@ -4,11 +4,13 @@
  * CrewsTab — crews this creator founded or belongs to. Fully on the Nest
  * crew system (`/aurora/crews`): the owner sees all their crews (founded +
  * joined, incl. unlisted) via `/crews/my`; visitors see the creator's public
- * (listed) crews via the public per-user endpoint. Cards link to the crew
- * page. The legacy Java `/project/user/joined` endpoint is no longer used.
+ * (listed) crews via the public per-user endpoint. Public cards link to crew
+ * details; the `/profile` variant opens its workspace in a new tab. The legacy
+ * Java `/project/user/joined` endpoint is no longer used.
  */
-import { IconLoader2, IconUsers } from "@tabler/icons-react";
+import { IconLoader2, IconSearch, IconUsers, IconX } from "@tabler/icons-react";
 import Link from "next/link";
+import { useState } from "react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -20,11 +22,13 @@ import type { CrewDTO } from "@/app/(site)/crews/_hooks/types";
 interface CrewsTabProps {
   creator: Creator;
   isOwner: boolean;
+  variant?: "profile" | "public";
 }
 
-export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
+export function CrewsTab({ creator, isOwner, variant = "public" }: CrewsTabProps) {
   const t = useTranslations("creatorCenter");
   const locale = useLocale() as Locale;
+  const [query, setQuery] = useState("");
 
   // Owner: every crew you're in (founded + joined, incl. unlisted) via
   // /crews/my. Visitor: the creator's public (listed) crews via the public
@@ -37,6 +41,14 @@ export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
     : (visitorCrews.data?.items ?? []);
 
   const active = isOwner ? myCrews : visitorCrews;
+  const normalizedQuery = query.trim().toLocaleLowerCase(locale);
+  const filteredCrews = normalizedQuery
+    ? crews.filter((crew) =>
+        String(crew.name ?? "")
+          .toLocaleLowerCase(locale)
+          .includes(normalizedQuery)
+      )
+    : crews;
 
   if (active.isLoading) {
     return (
@@ -85,20 +97,65 @@ export function CrewsTab({ creator, isOwner }: CrewsTabProps) {
     );
   }
 
+  if (variant === "public") {
+    return (
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        {crews.map((crew) => (
+          <PublicCrewCard key={crew.id} crew={crew} locale={locale} />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-      {crews.map((crew) => (
-        <CrewCard key={crew.id} crew={crew} locale={locale} />
-      ))}
+    <div className="space-y-4">
+      <div className="flex justify-start">
+        <div className="flex h-9 w-full items-center gap-2 rounded-lg bg-secondary px-3 text-muted-foreground transition-colors focus-within:bg-card focus-within:text-foreground sm:max-w-72">
+          <IconSearch className="size-4 shrink-0" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label={t("crews.filterLabel")}
+            placeholder={t("crews.filterPlaceholder")}
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label={t("crews.clearFilter")}
+              className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 hover:text-foreground"
+            >
+              <IconX className="size-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {filteredCrews.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          {filteredCrews.map((crew) => (
+            <ProfileCrewCard key={crew.id} crew={crew} locale={locale} />
+          ))}
+        </div>
+      ) : (
+        <EmptyShell
+          title={t("crews.noResultsTitle")}
+          body={t("crews.noResultsBody", { query: query.trim() })}
+          cta={null}
+        />
+      )}
     </div>
   );
 }
 
-function CrewCard({ crew, locale }: { crew: CrewDTO; locale: Locale }) {
+function PublicCrewCard({ crew, locale }: { crew: CrewDTO; locale: Locale }) {
   const t = useTranslations("creatorCenter");
   const cover = resolveAsset(String(crew.logo ?? ""), env.BANNER_BASE_URL);
   const title = String(crew.name ?? "").trim() || "—";
   const href = localizePath(`/crews/${crew.id}`, locale);
+
   return (
     <Link
       href={href}
@@ -122,6 +179,42 @@ function CrewCard({ crew, locale }: { crew: CrewDTO; locale: Locale }) {
       <div className="px-3 py-2.5">
         <h3 className="line-clamp-1 text-sm font-medium text-foreground">{title}</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
+          {t("crews.memberCount", { count: crew.memberCount ?? 0 })}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function ProfileCrewCard({ crew, locale }: { crew: CrewDTO; locale: Locale }) {
+  const t = useTranslations("creatorCenter");
+  const cover = resolveAsset(String(crew.logo ?? ""), env.BANNER_BASE_URL);
+  const title = String(crew.name ?? "").trim() || "—";
+  const href = localizePath(`/crews/${crew.id}/workspace`, locale);
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group relative aspect-video overflow-hidden rounded-xl bg-secondary outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {cover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={cover}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        />
+      ) : (
+        <div className="flex size-full items-center justify-center text-muted-foreground">
+          <IconUsers className="size-7" aria-hidden="true" />
+        </div>
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 p-3.5">
+        <h3 className="line-clamp-1 text-sm font-semibold text-white">{title}</h3>
+        <p className="mt-0.5 text-xs text-white/65">
           {t("crews.memberCount", { count: crew.memberCount ?? 0 })}
         </p>
       </div>

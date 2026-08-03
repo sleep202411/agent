@@ -24,6 +24,7 @@ const CREATE_INPUT = {
   name: 'Night Shift',
   description: 'We animate after dark.',
   logo: 'https://cdn.example/logo.png',
+  productionTemplateLocale: 'en-US' as const,
   genres: ['scifi'],
   styles: ['2d'],
   socialLinks: [],
@@ -75,7 +76,10 @@ function build(
 
   const tx = {
     crew: {
-      create: jest.fn().mockResolvedValue(crewRow),
+      create: jest.fn((args: { data: Record<string, unknown> }) => {
+        void args;
+        return Promise.resolve(crewRow);
+      }),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue({ version: 2, deletedAt: null }),
@@ -101,6 +105,18 @@ function build(
         },
       }),
       update: jest.fn().mockResolvedValue({}),
+    },
+    crewTaskWorkflowState: {
+      createMany: jest.fn().mockResolvedValue({ count: 7 }),
+    },
+    crewTaskView: { create: jest.fn().mockResolvedValue({}) },
+    crewEpisode: { create: jest.fn().mockResolvedValue({}) },
+    crewTask: { createMany: jest.fn().mockResolvedValue({ count: 6 }) },
+    crewTaskDependency: {
+      createMany: jest.fn().mockResolvedValue({ count: 5 }),
+    },
+    crewTaskTimelineItem: {
+      createMany: jest.fn().mockResolvedValue({ count: 6 }),
     },
     crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
     $executeRaw: jest.fn().mockResolvedValue(0),
@@ -192,6 +208,75 @@ function build(
 }
 
 describe('CrewsService.create — the crew chat is born with the crew', () => {
+  it('creates a localized production template and records its provenance atomically', async () => {
+    const t = build();
+
+    await t.service.create(FOUNDER, {
+      ...CREATE_INPUT,
+      productionTemplateLocale: 'zh-CN',
+    } as never);
+
+    const create = t.tx.crew.create.mock.calls[0]?.[0] as {
+      data: {
+        productionPage: { create: { document: unknown } };
+        productionActivity: {
+          create: { payload: Record<string, unknown> };
+        };
+      };
+    };
+    expect(
+      JSON.stringify(create.data.productionPage.create.document),
+    ).toContain('制作目标');
+    expect(create.data.productionActivity.create.payload).toEqual({
+      productionTemplateVersion: 3,
+      productionTemplateLocale: 'zh-CN',
+    });
+    expect(
+      JSON.stringify(create.data.productionPage.create.document),
+    ).toContain('tableHeader');
+    expect(t.tx.crewTaskWorkflowState.createMany).toHaveBeenCalledTimes(1);
+    expect(t.tx.crewTaskView.create).toHaveBeenCalledTimes(1);
+    const episodeCreateMock = t.tx.crewEpisode.create as jest.MockedFunction<
+      (args: {
+        data: { crewId: string; number: number; title: string };
+      }) => Promise<unknown>
+    >;
+    const episodeCreate = episodeCreateMock.mock.calls[0]?.[0];
+    expect(episodeCreate?.data).toMatchObject({
+      crewId: CREW_ID,
+      number: 1,
+      title: '第 1 集',
+    });
+
+    const taskCreateMock = t.tx.crewTask.createMany as jest.MockedFunction<
+      (args: {
+        data: Array<{ number: number; episodeId: string }>;
+      }) => Promise<unknown>
+    >;
+    const taskCreate = taskCreateMock.mock.calls[0]?.[0];
+    const taskRows = taskCreate?.data ?? [];
+    expect(taskRows).toHaveLength(6);
+    expect(taskRows.map((task: { number: number }) => task.number)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
+    expect(
+      new Set(taskRows.map((task: { episodeId: string }) => task.episodeId))
+        .size,
+    ).toBe(1);
+    const dependencyCreateMock = t.tx.crewTaskDependency
+      .createMany as jest.MockedFunction<
+      (args: { data: unknown[] }) => Promise<unknown>
+    >;
+    const timelineCreateMock = t.tx.crewTaskTimelineItem
+      .createMany as jest.MockedFunction<
+      (args: { data: unknown[] }) => Promise<unknown>
+    >;
+    const dependencyCreate = dependencyCreateMock.mock.calls[0]?.[0];
+    const timelineCreate = timelineCreateMock.mock.calls[0]?.[0];
+    expect(dependencyCreate?.data).toHaveLength(5);
+    expect(timelineCreate?.data).toHaveLength(6);
+  });
+
   it('opens the crew conversation and joins the founder inside the create tx', async () => {
     const t = build();
 

@@ -968,6 +968,7 @@ model PlatformProject {
   characterGrants  CharacterProjectGrant[]
   castingInvites   CharacterCastingInvite[]
   productionCrew   Crew?                    @relation("CrewProductionProject")
+  studioCrew       Crew?                    @relation("CrewStudioProject")
   crewTaskCanvas   CrewTask?                @relation("CrewTaskCanvasProject")
 
   /// Active slug uniqueness is enforced by partial unique SQL:
@@ -4264,6 +4265,10 @@ model Crew {
   /// one main production project; task projects branch from this context.
   workspaceId         String?           @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
   productionProjectId String?           @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
+  /// User-selected FizzStudio project that consumes this crew's asset library.
+  /// This is intentionally separate from productionProjectId: linking an
+  /// existing Studio project must never mutate the crew's task/canvas trunk.
+  studioProjectId     String?           @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
@@ -4296,6 +4301,7 @@ model Crew {
   payoutEvents        CrewPayoutEvent[]
   workspace           Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
   productionProject   PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
+  studioProject       PlatformProject?          @relation("CrewStudioProject", fields: [studioProjectId], references: [id], onDelete: SetNull)
 
   @@index([createdByUserId, deletedAt], map: "crews_creator_idx")
   /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
@@ -7732,23 +7738,14 @@ model ReferralRewardItem {
 // shared ownership/billing boundary. Drafts are mutable CAS heads; revisions,
 // releases, reviews and approvals are append-only/immutable in migration SQL.
 
-enum StoryFormat {
-  text_adventure
-  interactive_film
-  narrative_rpg
-}
-
 enum StoryProjectStatus {
   active
   archived
 }
 
-/// Immutable project-wide picture contract for interactive-film production.
-/// Film-only: an `interactive_film` project owns exactly one profile for its
-/// whole lifecycle and every selected or generated video must match it. A
-/// text-first (`text_adventure`) project sets no profile at all — its
-/// `frame_profile` is null and any video it contains plays inline at native
-/// size rather than being forced to a fixed frame.
+/// Immutable project-wide picture contract. Every Story Studio project owns
+/// exactly one profile for its whole lifecycle and every selected or generated
+/// video must match it.
 enum StoryFrameProfile {
   landscape_16_9
   portrait_9_16
@@ -7882,8 +7879,7 @@ enum StoryReferenceVersionStatus {
 model StoryProject {
   id              String             @id @default(uuid(7)) @db.Uuid
   workspaceId     String             @map("workspace_id") @db.Uuid
-  format          StoryFormat
-  frameProfile    StoryFrameProfile? @map("frame_profile")
+  frameProfile    StoryFrameProfile  @map("frame_profile")
   status          StoryProjectStatus @default(active)
   visibility      StoryVisibility    @default(private)
   title           String             @db.VarChar(160)
@@ -7923,7 +7919,7 @@ model StoryProject {
   videoUploadSessions     StoryVideoUploadSession[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
-  @@index([workspaceId, format, status, updatedAt(sort: Desc)], map: "story_projects_workspace_format_recent_idx")
+  @@index([workspaceId, status, updatedAt(sort: Desc)], map: "story_projects_workspace_recent_idx")
   @@index([createdByUserId, status, updatedAt(sort: Desc)], map: "story_projects_creator_recent_idx")
   @@map("story_projects")
 }

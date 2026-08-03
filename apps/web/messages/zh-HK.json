@@ -270,7 +270,6 @@
   "nav": {
     "studio": "進入 FizzStudio",
     "brand": "品牌",
-    "narrative": "敘事",
     "liquidEngine": "流動引擎",
     "about": "關於",
     "getInTouch": "聯絡我們",
@@ -1658,8 +1657,6 @@
     }
   },
   "newIpDetail": {
-    "playCta": "開始遊玩",
-    "playComingSoon": "互動版接入中,敬請期待。",
     "loading": "正在載入 IP 詳情...",
     "back": "返回 IP 廣場",
     "previewBadge": "僅本人可見的公開頁預覽",
@@ -1839,27 +1836,6 @@
       "notForSale": "暫未開放購買",
       "disclaimerTitle": "訂單履約",
       "disclaimerBody": "用戶購買後獲得的是內容訪問權益，積分扣減、退款和帳本記錄由後端閉環處理。"
-    },
-    "narrative": {
-      "eyebrow": "互動文字遊戲",
-      "title": "可玩故事",
-      "body": "這個 IP 已經掛載文字遊戲草稿。玩家會直接進入文字回合、AI 續寫、線索和結局流程。",
-      "fallbackTitle": "文字遊戲入口已準備好",
-      "fallbackBody": "當前本地 IP 詳情接口還在載入或不可用，但這個 IP 已經臨時掛載了可玩的文字遊戲草稿。",
-      "viewAll": "查看遊戲列表",
-      "play": "開始試玩",
-      "status": {
-        "draft": "Draft 草稿",
-        "published": "已發佈"
-      },
-      "items": {
-        "story36Hours": {
-          "type": "AI 文遊",
-          "title": "36 小時溺亡案",
-          "summary": "17 歲少女被送入精英學校矯正，卻在首宗溺亡案中發現真相。",
-          "coverAlt": "36 小時溺亡案的校園入口畫面"
-        }
-      }
     },
     "notFound": {
       "title": "這個 IP 暫不可訪問",
@@ -2248,7 +2224,12 @@
       "loadFailedTitle": "劇組載入失敗",
       "loadFailedBody": "劇組服務暫時不可用，請稍後重試。",
       "retry": "重試",
-      "memberCount": "{count} 名成員"
+      "memberCount": "{count} 名成員",
+      "filterLabel": "篩選劇組",
+      "filterPlaceholder": "篩選劇組…",
+      "clearFilter": "清除劇組篩選",
+      "noResultsTitle": "沒有相符的劇組",
+      "noResultsBody": "找不到與「{query}」相符的劇組。"
     },
     "about": {
       "bioHeading": "簡介",
@@ -5000,6 +4981,22 @@
       "dateInput": "日期或時間段",
       "dateInputPlaceholder": "例如 2027-05、2027-Q4 或 2027-05-20",
       "labels": "標籤",
+      "studioProject": "Studio 項目",
+      "linkStudioProject": "關聯 Studio 項目",
+      "searchStudioProjects": "搜尋工作區和項目…",
+      "loadingStudioProjects": "正在載入項目…",
+      "noStudioProjects": "沒有符合的項目。",
+      "unlinkStudioProject": "解除 Studio 項目關聯",
+      "teamWorkspace": "團隊工作區",
+      "personalWorkspace": "個人工作區",
+      "workspaceHasNoProjects": "這個工作區暫無項目。",
+      "projectLinkFailed": "無法關聯 Studio 項目。",
+      "projectOptionsFailed": "無法載入項目。",
+      "projectDisabled": {
+        "personal_workspace": "劇組只能關聯團隊工作區下的項目。",
+        "alreadyLinked": "已關聯到劇組「{crew}」。",
+        "insufficient_permission": "需要項目編輯權限才能關聯。"
+      },
       "addLabel": "加入標籤",
       "addAnotherLabel": "繼續加入標籤",
       "searchLabels": "搜尋標籤…",
@@ -5258,8 +5255,14 @@
     "retry": "重試",
     "empty": "目前檢視沒有任務。",
     "selectTask": "選擇一個任務，查看任務畫布、提交版本和交付歷史。",
-    "filter": { "active": "進行中", "review": "待審核", "approved": "已通過", "all": "全部" },
+    "filter": {
+      "active": "進行中",
+      "review": "待審核",
+      "approved": "已通過",
+      "all": "全部"
+    },
     "status": {
+      "backlog": "待規劃",
       "open": "待開始",
       "in_progress": "製作中",
       "submitted": "待審核",
@@ -5267,7 +5270,12 @@
       "approved": "已通過",
       "cancelled": "已取消"
     },
-    "priority": { "low": "低優先級", "normal": "普通", "high": "高優先級", "urgent": "緊急" },
+    "priority": {
+      "low": "低優先級",
+      "normal": "普通",
+      "high": "高優先級",
+      "urgent": "緊急"
+    },
     "openCanvas": "打開任務畫布",
     "submit": "提交",
     "noDescription": "尚未填寫任務說明。",
@@ -5517,7 +5525,10 @@
     "pointsUnit": "積分",
     "pointsValueTooltip": "{points} 固定等於 {amount}。100 積分始終等於 {benchmark}。",
     "viewLabel": "財務視圖",
-    "views": { "points": "積分帳本", "payouts": "資金發放" },
+    "views": {
+      "points": "積分帳本",
+      "payouts": "資金發放"
+    },
     "metrics": {
       "confirmedPoints": "已確認積分",
       "pendingPoints": "待審核積分",
@@ -5532,7 +5543,10 @@
       "emptyTitle": "暫無積分記錄",
       "emptyDescription": "任務通過後會自動產生積分，財務亦可手動新增積分記錄。"
     },
-    "scopes": { "mine": "我的積分", "crew": "劇組帳本" },
+    "scopes": {
+      "mine": "我的積分",
+      "crew": "劇組帳本"
+    },
     "filters": {
       "all": "全部",
       "pending": "待審批",
@@ -7592,7 +7606,28 @@
     "viewDetails": "查看詳情",
     "attachment": "附件",
     "openAttachment": "打開",
-    "preview": "預覽",
+    "preview": {
+      "proposal": "[傳來一份報價]",
+      "image": "[圖片]",
+      "file": "[檔案]",
+      "task": "[任務]",
+      "empty": "（尚無訊息）",
+      "system": {
+        "conversation.created": "會話已建立。",
+        "conversation.context_changed_to_order": "已從這條會話建立訂單。",
+        "proposal.declined": "報價已拒絕。",
+        "order.submitted": "訂單已提交，等待創作者。",
+        "order.accepted": "訂單已接受。",
+        "order.declined": "訂單已被拒絕。",
+        "order.delivered": "已標記交付。",
+        "order.revision_requested": "已請求修改。",
+        "order.completed": "訂單已完成。",
+        "order.cancelled": "訂單已取消。",
+        "fallback": "狀態有更新",
+        "crew.member.joined": "有成員加入。",
+        "crew.member.left": "有成員離開。"
+      }
+    },
     "contextPanelLabel": "會話上下文",
     "assetContextLabel": "資產預覽",
     "closeContextPanel": "關閉詳情",
@@ -7646,28 +7681,6 @@
       "service": "諮詢",
       "order": "訂單",
       "crew": "劇組"
-    },
-    "preview": {
-      "proposal": "[傳來一份報價]",
-      "image": "[圖片]",
-      "file": "[檔案]",
-      "task": "[任務]",
-      "empty": "（尚無訊息）",
-      "system": {
-        "conversation.created": "會話已建立。",
-        "conversation.context_changed_to_order": "已從這條會話建立訂單。",
-        "proposal.declined": "報價已拒絕。",
-        "order.submitted": "訂單已提交，等待創作者。",
-        "order.accepted": "訂單已接受。",
-        "order.declined": "訂單已被拒絕。",
-        "order.delivered": "已標記交付。",
-        "order.revision_requested": "已請求修改。",
-        "order.completed": "訂單已完成。",
-        "order.cancelled": "訂單已取消。",
-        "fallback": "狀態有更新",
-        "crew.member.joined": "有成員加入。",
-        "crew.member.left": "有成員離開。"
-      }
     },
     "system": {
       "conversation.created": "會話已建立。",
@@ -9027,15 +9040,15 @@
     }
   },
   "experiencePlayer": {
-    "metadataFallbackTitle": "互動故事",
-    "metadataDescription": "遊玩氣泡龍互動故事《{title}》。",
+    "metadataFallbackTitle": "影遊",
+    "metadataDescription": "觀看由 FizzDragon 創作的影遊《{title}》。",
     "invalidManifest": "內容清單無效，目前體驗無法啟動。",
     "manifestRoot": "內容清單",
-    "interactiveFilm": "互動故事",
+    "interactiveFilm": "影遊",
     "starting": "正在啟動…",
     "start": "開始體驗",
-    "endingEyebrow": "已抵達結局",
-    "unknownEnding": "結局 {endingId}",
+    "endingEyebrow": "播放完成",
+    "unknownEnding": "路線播放完成",
     "playAgain": "再玩一次",
     "runtimeError": "播放已停止",
     "restart": "重新開始",
@@ -9043,7 +9056,7 @@
     "videoLabel": "故事影片",
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
     "continue": "繼續",
-    "regionLabel": "互動故事播放器",
+    "regionLabel": "影遊播放器",
     "chapters": "章節",
     "loadErrorTitle": "目前體驗不可用",
     "loadErrorDescription": "已發佈版本未通過播放器完整性校驗，服務回傳的資訊如下。",
@@ -9068,472 +9081,18 @@
   },
   "games": {
     "back": "返回 IP 廣場",
-    "eyebrow": "Playable stories",
-    "title": "遊戲",
-    "subtitle": "這裏聚合已發佈的互動影遊、文字遊戲、RPG，以及用氣泡龍創作的所有可玩故事。",
-    "sourceIp": "來源 IP",
-    "start": "開始",
+    "eyebrow": "影遊",
+    "title": "影遊",
+    "subtitle": "FizzDragon 發佈影遊的統一入口。",
     "catalogue": {
-      "playableStory": "可玩故事",
+      "playableStory": "影遊",
       "currentVersion": "目前版本",
       "open": "開始遊玩",
-      "empty": "暫時還沒有已發佈的可玩故事。",
-      "unavailable": "可玩故事目錄暫時不可用"
+      "empty": "暫時還沒有已發佈的影遊。",
+      "unavailable": "影遊目錄暫時不可用"
     },
     "status": {
-      "draft": "Draft 草稿",
-      "published": "已發佈",
-      "inProduction": "正式製作中"
-    },
-    "tags": {
-      "textRpg": "文字遊戲",
-      "mystery": "懸疑推理",
-      "aiRuntime": "AI 續寫"
-    },
-    "stats": {
-      "aiRuntime": "AI 回合運行",
-      "plotNodes": "2 個劇情節點",
-      "clues": "4 條線索",
-      "endings": "3 個結局"
-    },
-    "items": {
-      "story36Hours": {
-        "type": "文字遊戲 Draft",
-        "title": "36 小時溺亡案",
-        "summary": "現代中國，一名 17 歲少女被送入精英學校矯正，卻在首宗同學溺亡案中發現真相。",
-        "coverAlt": "36 小時溺亡案的校園入口畫面"
-      }
-    }
-  },
-  "narrativeDemo": {
-    "brand": {
-      "referenceTitle": "氣泡龍 RPG"
-    },
-    "topbar": {
-      "back": "返回",
-      "ended": "已結束",
-      "menu": "遊戲選單",
-      "turns": "{count} 回合"
-    },
-    "concepts": {
-      "actions": {
-        "exit": "退出故事",
-        "regenerate": "換一批"
-      },
-      "loading": {
-        "title": "探索這個世界的可能…",
-        "description": "氣泡龍正在構思幾種不同的入場方式。",
-        "ariaLabel": "正在生成故事高概念",
-        "steps": {
-          "premise": "尋找最有力的故事命題",
-          "conflict": "打磨故事的核心衝突",
-          "contrast": "推演意料之外的反差",
-          "hook": "尋找一眼難忘的視覺鉤子",
-          "possibility": "打開另一種可能"
-        }
-      },
-      "select": {
-        "eyebrow": "故事方向",
-        "title": "你想進入哪一個故事？",
-        "description": "選擇一種可能，氣泡龍會以它為核心構建這一局。",
-        "resultCount": "{count} 個故事方向",
-        "optionLabel": "故事高概念 {index}",
-        "selected": "已選擇",
-        "confirm": "繼續",
-        "resume": "繼續這個故事"
-      },
-      "entering": {
-        "title": "正在構建你的故事…",
-        "description": "安置人物、埋下線索，並準備第一幕。",
-        "ariaLabel": "正在構建你的故事",
-        "steps": {
-          "world": "勘測這片世界",
-          "characters": "安置登場人物",
-          "secrets": "給每個人留一個秘密",
-          "clues": "把線索藏進細節裏",
-          "structure": "編排起承轉合",
-          "truth": "鎖住藏到最後的真相",
-          "endings": "反覆推演每一種結局",
-          "opening": "擦亮第一幕的燈"
-        },
-        "selectedLabel": "你選擇的故事"
-      },
-      "error": {
-        "conceptsTitle": "暫時無法生成故事方向",
-        "conceptsFallback": "請重新生成一次。",
-        "emptyStory": "這個 IP 暫時沒有足夠的故事內容來生成高概念。",
-        "requestTimeout": "故事服務回應逾時，請稍後重試。",
-        "network": "暫時無法連接故事服務，請檢查網絡後重試。",
-        "invalidResponse": "故事服務返回了不完整的資料，請重試。",
-        "invalidConcept": "這個故事方向已失效。",
-        "enterTitle": "暫時無法構建這個故事",
-        "enterFallback": "你的選擇已保留，請再試一次。",
-        "freshRunHint": "目前會話無法安全恢復，請根據已選方向重新構建一次。",
-        "chooseAnotherHint": "請選擇另一個故事方向後繼續。",
-        "retryConcepts": "重新生成",
-        "retryEnter": "再試一次",
-        "buildFresh": "重新構建"
-      }
-    },
-    "errors": {
-      "sessionExpired": "本局已過期，重新開始一局即可繼續。",
-      "releaseNotFound": "這個故事已經無法遊玩。",
-      "generationFailed": "故事服務未能寫出這一回合，請再試一次。",
-      "invalidAction": "本局無法繼續，請重新開始一局。",
-      "actionNotAllowed": "目前無法執行這個動作，換一個選項試試。",
-      "runAlreadyStarted": "本局已經開始了，從目前進度繼續即可。",
-      "runNotStarted": "本局尚未開始，先開始這一局再繼續。",
-      "turnInFlight": "上一回合仍在進行，稍等片刻再試。",
-      "rateLimited": "請求過於頻密，稍等片刻再試。"
-    },
-    "setup": {
-      "step": "第 {current} / {total} 步",
-      "stage": {
-        "prologue": "開場序章",
-        "role": "選擇視角",
-        "direction": "改編方向",
-        "preferences": "故事節奏"
-      },
-      "prologueTitle": "你不是來適應學校的。",
-      "prologueBody1": "清晨的校門像一塊黑色玻璃。你握着轉學通知書站在門外，接待老師還沒出現，保安卻已經抬頭看向你。",
-      "prologueBody2": "這所精英學校說你需要矯正。你知道他們更想矯正的是你看見異常、記住細節、把謊言拆開的方式。",
-      "roleTitle": "你從哪個視角進入？",
-      "roleDescription": "第一版預設以主角推進；其他視角用於改變敘事口吻和資訊可見度，不會提前洩露真相。",
-      "directionTitle": "你希望這局更像哪種故事？",
-      "directionDescription": "這是改編方向，不是固定結局。AI 會用它控制氛圍、衝突重心和每回合資訊密度。",
-      "preferenceTitle": "選擇故事節奏",
-      "preferenceDescription": "決定這局推進速度。提示力度和開放輸入邊界由系統根據目前劇情自動控制。",
-      "roles": {
-        "linFeng": {
-          "meta": "推薦",
-          "label": "林風",
-          "description": "17 歲轉學生。擁有過目不忘和邏輯推演能力，是目前故事最完整的玩家視角。"
-        },
-        "brother": {
-          "meta": "關係視角",
-          "label": "哥哥",
-          "description": "保護者與監控者。適合更強控制感，但 AI 會減少現場可見資訊。"
-        },
-        "observer": {
-          "meta": "旁觀視角",
-          "label": "旁觀記錄者",
-          "description": "像案件記錄一樣旁觀推進，適合更冷靜的推理文本和低代入感體驗。"
-        }
-      },
-      "directions": {
-        "mystery": {
-          "label": "懸疑推理",
-          "description": "重點放在線索、矛盾、證詞和證據鏈，節奏更像案件拆解。"
-        },
-        "pressure": {
-          "label": "校園壓迫",
-          "description": "強化制度、監控、校方話術和被孤立感，讓每次行動都有壓力。"
-        },
-        "relationship": {
-          "label": "關係拉扯",
-          "description": "強化哥哥、老師、同學和主角之間的信任、誤解與干預。"
-        },
-        "truth": {
-          "label": "高層真相",
-          "description": "更快觸碰校方背後的秘密，但風險和哥哥介入概率也更高。"
-        }
-      },
-      "preferences": {
-        "pace": {
-          "title": "故事節奏",
-          "slow": {
-            "label": "慢熱",
-            "description": "更多環境和心理細節。"
-          },
-          "standard": {
-            "label": "標準",
-            "description": "行動、回饋和推進保持均衡。"
-          },
-          "fast": {
-            "label": "緊湊",
-            "description": "更快進入衝突和節點變化。"
-          }
-        },
-        "hint": {
-          "title": "提示力度",
-          "low": {
-            "label": "少提示",
-            "description": "讓玩家自己發現方向。"
-          },
-          "normal": {
-            "label": "適中",
-            "description": "必要時給可嘗試行動。"
-          },
-          "high": {
-            "label": "明顯",
-            "description": "更主動地給調查建議。"
-          }
-        },
-        "freedom": {
-          "title": "開放程度",
-          "open": {
-            "label": "更開放",
-            "description": "容納更多自由輸入。"
-          },
-          "balanced": {
-            "label": "平衡",
-            "description": "自由輸入和劇情約束並重。"
-          },
-          "guided": {
-            "label": "更收斂",
-            "description": "更頻繁拉回主線。"
-          }
-        }
-      },
-      "dynamic": {
-        "prologueEyebrow": "開場設定",
-        "prologueTitle": "走進這個故事",
-        "roleTitle": "你想扮演誰？",
-        "directionTitle": "想要哪種改編？",
-        "paceTitle": "想要多快的節奏？",
-        "enterStory": "進入故事",
-        "paceOptions": {
-          "slow": "慢熱",
-          "standard": "標準",
-          "compact": "緊湊"
-        }
-      },
-      "back": "返回",
-      "next": "下一步",
-      "start": "開始"
-    },
-    "play": {
-      "scenarioTitle": "36 小時溺亡案",
-      "fallbackName": "林風",
-      "identityFallback": "17 歲轉學生，擁有過目不忘和邏輯推演能力。",
-      "detailsFallback": "AI 會從你的前幾次行動中推斷角色細節。",
-      "character": "角色",
-      "inputPlaceholder": "說一句話，或描述你想做甚麼...",
-      "takeTurn": "發送",
-      "turnErrorFallback": "故事暫時沒有回應，請嘗試另一個行動。",
-      "takeTurnPrompt": "我來行動",
-      "continue": "繼續",
-      "retry": "重試",
-      "erase": "清空",
-      "suggestion": "給點提示",
-      "suggestedAction": "我先不說話，觀察校門登記冊和保安反應。",
-      "freeInputLabel": "自由輸入",
-      "suggestedActionsLabel": "可以嘗試",
-      "closeComposer": "收起輸入",
-      "undo": "撤銷",
-      "redo": "重做",
-      "settings": "設定",
-      "soundOn": "聲音開",
-      "soundOff": "聲音關",
-      "turnCount": "{count} 回合",
-      "riskCount": "風險 {count}",
-      "statusReady": "準備就緒",
-      "statusStarted": "你進入了案件。",
-      "statusThinking": "AI 正在處理意圖：{judgement}",
-      "statusTurnRecorded": "回合已記錄。故事仍停留在當前劇情節點內。",
-      "statusClueUnlocked": "解鎖 {count} 條線索。",
-      "statusContinued": "敘事系統繼續了場景。",
-      "statusRetried": "已重寫上一次敘事回饋。",
-      "statusSuggestion": "已填入建議行動。",
-      "statusLLMTurnRecorded": "Qwen 已生成本回合。",
-      "statusFallbackTurnRecorded": "LLM 未接通，已使用本地規則降級。",
-      "statusLLMError": "LLM 調用失敗：{message}",
-      "llmUnknownError": "未知錯誤",
-      "soundBlocked": "瀏覽器暫時沒有開啟聲音，請再點一次聲音按鈕。",
-      "clueUnlocked": "解鎖 {count} 條線索",
-      "intentHandled": "處理意圖：{judgement}",
-      "intentHandledByLLM": "Qwen 處理：{judgement}",
-      "intentHandledFallback": "本地規則處理：{judgement}",
-      "systemContinue": "AI 續寫",
-      "systemContinueLLM": "Qwen 續寫",
-      "aiThinking": "AI 正在推演",
-      "runtimeStatus": "運行狀態",
-      "turnMetric": "回合",
-      "riskMetric": "風險",
-      "clueMetric": "線索",
-      "unlockedClues": "已解鎖線索",
-      "noClues": "當前還沒有證據狀態。玩家觀察、詢問或檢查物件後會解鎖線索。",
-      "mediaAssets": "場景 / 媒體資產",
-      "restart": "重新開始",
-      "endingReached": "本局結束",
-      "endingReview": "結局復盤",
-      "playerPersonality": "玩家畫像",
-      "music": {
-        "mute": "關閉音樂",
-        "unmute": "播放音樂",
-        "blocked": "瀏覽器攔截了音訊，點擊以開始播放音樂。"
-      },
-      "pendingAriaLabel": "故事回覆載入中",
-      "pendingPhrases": {
-        "fate": "命運正在回應",
-        "world": "世界正在變化",
-        "story": "故事繼續展開",
-        "choice": "你的選擇正在發酵",
-        "nextScene": "下一幕正在浮現"
-      },
-      "plotNodeLabel": "劇情節點 A",
-      "openAnswerLabel": "自由行動",
-      "presetChoicesLabel": "預設選項 3",
-      "cluesLabel": "線索 {count}",
-      "supportPanel": "輔助層",
-      "characterPanel": "角色",
-      "cluePanel": "線索",
-      "mediaPanel": "媒體",
-      "audioPanel": "音效",
-      "closePanel": "關閉面板",
-      "characterRuleTitle": "AI 角色規則",
-      "characterRuleBody": "這裏是給 AI 看的角色上下文，不是直接展示給玩家的正文。AI 可以在處理玩家意圖時引用記憶、推理、壓力和干預風險。",
-      "mediaPanelHint": "角色圖、影片片段和生成鏡頭負責輔助氛圍，但主玩法仍然以文字推進為核心。",
-      "videoLabel": "影片層",
-      "videoTitle": "校園入口生成片段",
-      "videoDescription": "由當前故事資產生成的劇情氛圍片段，用來輔助場景進入，不替代文字遊戲主循環。",
-      "videoSource": "來源：當前項目生成影片資產。",
-      "bgmLabel": "事件音效",
-      "bgmTitle": "文字觸發音效",
-      "bgmDescription": "當前不使用持續背景音樂；當正文出現關門、門禁、合上登記冊等動作時播放短音效。",
-      "bgmSource": "測試音效來源：Mixkit Door hard shut。"
-    },
-    "runtime": {
-      "story": {
-        "title": "36 小時溺亡案",
-        "plotANodeLabel": "劇情節點 A",
-        "plotTitle": "進入精英學校",
-        "location": "精英學校校門",
-        "objective": "建立處境：她被送來矯正，但學校和哥哥都在控制資訊。",
-        "boundary": "只能處理校門登記、轉學通知書、接待老師、保安和哥哥訊息；不能提前進入溺亡案、校長室或真兇。",
-        "openingMeta": "劇情節點 A / 精英學校校門",
-        "opening": "清晨的校門像一塊黑色玻璃。你站在門外，手裏捏着轉學通知書。接待老師還未出現，保安卻已經抬頭看向你，像是早就知道你會來。",
-        "plotAVideoTitle": "校園入口生成片段",
-        "plotAVideoDescription": "入校前的環境氛圍片段：校門、晨光、被提前安排好的接待流程。",
-        "plotBNodeLabel": "劇情節點 B",
-        "plotBTitle": "第一次聽說溺亡案",
-        "plotBLocation": "高二（3）班教室走廊",
-        "plotBObjective": "把入校流程轉入首宗案件：玩家第一次接觸同學溺亡的異常說法，但仍不能直接知道真兇。",
-        "plotBBoundary": "允許出現教室、走廊、同學議論、事故報告和自殺定性；不能揭露真兇，不能直接給完整證據鏈。",
-        "plotBOpeningMeta": "劇情節點 B / 高二（3）班教室走廊",
-        "plotBOpening": "接待老師把你帶過側門，走廊裏的消毒水味比校門更重。高二（3）班門口貼着一張臨時通知：今日心理評估延後。教室裏有人壓低聲音說，昨晚水域邊又拉了警戒線。你第一次聽見那個名字：莉娜。",
-        "plotBVideoTitle": "走廊轉場生成片段",
-        "plotBVideoDescription": "進入首宗案件前的生成轉場：從校門進入教學樓，環境從流程感轉向事故現場的壓迫感。"
-      },
-      "endings": {
-        "truth": {
-          "label": "主線",
-          "title": "真相結局",
-          "body": "你把轉學安排、校方預設身份和事故簡報裏的空白串成同一條證據鏈。溺亡案不再能被輕易寫成自殺，那個眾人不敢懷疑的人第一次被推到台前。",
-          "review": "達成方式：在入校階段發現校方提前預設身份，並在溺亡案階段拿到關鍵事故線索。AI 會停止繼續生成，保留本局證據鏈供復盤。"
-        },
-        "intervention": {
-          "label": "中斷",
-          "title": "哥哥介入結局",
-          "body": "你靠近了更高層的真相，也觸發了哥哥的底線。他沒有解釋，只把你從學校帶離。案件還在繼續，但你失去了現場調查權。",
-          "review": "達成方式：風險值過高，或行動觸碰到首案背後的更大秘密。這個結局不是失敗，而是說明保護和監控已經壓過了調查空間。"
-        },
-        "coverup": {
-          "label": "失敗",
-          "title": "表面自殺結局",
-          "body": "證據鏈沒有建立起來。校方和警方保留了自殺定性，你被要求停止追問。所有異常都還在，但它們暫時被流程壓回了檔案裏。",
-          "review": "達成方式：在關鍵回合內沒有拿到足夠線索，或錯過了事故簡報裏的矛盾點。重新開始後可以嘗試更聚焦地觀察、詢問和核對文件。"
-        }
-      },
-      "characters": {
-        "linFeng": {
-          "name": "林風",
-          "role": "玩家角色",
-          "summary": "17 歲轉學生，擁有過目不忘和邏輯推演能力。",
-          "detail": "她不會自然接受不合邏輯的解釋，所以 AI 處理她的行動時，要把推理落到可觀察證據上。"
-        },
-        "brother": {
-          "name": "哥哥 / 情報部門",
-          "role": "關係角色",
-          "summary": "既是保護者，也是監控者。主角越接近高層真相，他的干預越強。",
-          "detail": "他需要有情感上的保護感，但每一次保護都會壓縮玩家的調查空間。"
-        },
-        "receptionTeacher": {
-          "name": "接待老師",
-          "role": "機構角色",
-          "summary": "控制校門口的官方解釋，試圖把所有問題都收束到行政話術裏。",
-          "detail": "她適合展示學校如何把異常解釋成流程。"
-        },
-        "securityGuard": {
-          "name": "校門保安",
-          "role": "觀察對象",
-          "summary": "在檢查轉學通知書之前就知道主角名字，是校方預設流程暴露的第一個裂口。",
-          "detail": "他不需要直接招認，價值在習慣、時機、登記冊細節和微小反應。"
-        }
-      },
-      "choices": {
-        "transfer": {
-          "label": "出示轉學通知書",
-          "intent": "進入校方流程",
-          "response": "你把通知書遞過去。接待老師掃了一眼日期，很快把紙壓在登記冊下。你記住了她手指停頓的位置：落款時間比哥哥告訴你的時間早了三日。"
-        },
-        "project": {
-          "label": "詢問矯正項目",
-          "intent": "質疑制度說明",
-          "response": "你問起所謂的矯正項目。接待老師的表情沒有變化，只是重複官方說法。你給哥哥發了訊息，屏幕很快顯示已讀，但沒有任何回覆。"
-        },
-        "security": {
-          "label": "觀察校門保安",
-          "intent": "低風險調查",
-          "response": "你沒有急着開口，而是觀察保安亭和登記冊。保安在你遞交通知書之前就叫出了你的名字，保安亭的小門在他身後關上。這間學校知道的資訊比表面更多。"
-        }
-      },
-      "clues": {
-        "transferDate": {
-          "title": "轉學通知書日期異常",
-          "type": "文檔線索",
-          "summary": "通知書落款時間早於哥哥正式通知主角的時間，說明這次轉學並不是臨時決定。"
-        },
-        "brotherRead": {
-          "title": "哥哥沒有回覆但已讀",
-          "type": "通訊線索",
-          "summary": "哥哥看到了主角的訊息，卻沒有解釋轉學原因；保護和監控的關係同時成立。"
-        },
-        "guardName": {
-          "title": "保安提前知道主角姓名",
-          "type": "觀察線索",
-          "summary": "保安在主角遞交通知書之前就叫出了她的名字，證明校方早已完成身份預設。"
-        },
-        "caseReportNoStruggle": {
-          "title": "事故簡報寫着無掙扎痕跡",
-          "type": "案情線索",
-          "summary": "如果是普通溺亡，身體通常會留下掙扎或環境接觸痕跡；簡報裏的空白反而更像被處理過。"
-        }
-      },
-      "freeInput": {
-        "guard": {
-          "judgement": "觀察環境",
-          "response": "你把注意力放在校門和保安亭。登記冊第一頁已經寫着你的名字，時間欄卻是空的。保安沒有問你是誰，只說了一句：林風，往裏走。"
-        },
-        "brother": {
-          "judgement": "聯絡哥哥",
-          "response": "你給哥哥發出一句很短的問題：你何時知道我要轉學？訊息幾乎立刻變成已讀，但對話框沉默下來。校門內的廣播開始點名。"
-        },
-        "transfer": {
-          "judgement": "檢查轉學通知書",
-          "response": "你重新看向通知書。紙張邊緣有摺痕，但落款日期異常清晰：它比哥哥說出這件事更早。有人提前安排好了你的到來。"
-        },
-        "offTopic": {
-          "judgement": "跑題拉回",
-          "response": "你的思緒短暫偏離，但校門口的冷空氣把你拉回現實。接待老師已經看見你停在原地，保安亭裏的登記冊還攤開着。"
-        }
-      },
-      "continuations": {
-        "first": "接待老師終於走近。她胸牌上沒有姓氏，只有一個編號。她身後的攝像頭無聲轉向你。",
-        "second": "一群學生從你身邊經過，沒有人看你，但其中一個男生腳步慢了半拍。他看見你手裏的通知書，又很快低下頭。",
-        "third": "保安合上登記冊，不讓你繼續看下一行。可你已經記住了那一頁的形狀和空着的時間欄。"
-      },
-      "retryResult": "AI 重新組織結果：同一個行動不會直接跳到下一劇情節點，但會暴露校方流程裏的一個更小矛盾。",
-      "assets": {
-        "gate": "校門場景",
-        "security": "保安細節",
-        "brotherMessage": "哥哥訊息",
-        "pendingShot": "待生成鏡頭",
-        "campusVideo": "校園影片",
-        "characterPortraits": "角色圖",
-        "clueCards": "線索卡",
-        "generatedShots": "生成鏡頭"
-      }
+      "published": "已發佈"
     }
   },
   "notifications": {

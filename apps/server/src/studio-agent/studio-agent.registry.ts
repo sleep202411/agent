@@ -123,7 +123,6 @@ const STORY_CANVAS_READ_OUTPUT_SCHEMA: StudioAgentJsonObject = {
         'id',
         'workspaceId',
         'title',
-        'format',
         'frameProfile',
         'defaultLocale',
         'coverAssetId',
@@ -132,8 +131,7 @@ const STORY_CANVAS_READ_OUTPUT_SCHEMA: StudioAgentJsonObject = {
         id: { type: 'string', format: 'uuid' },
         workspaceId: { type: 'string', format: 'uuid' },
         title: { type: 'string' },
-        format: { enum: ['interactive_film', 'text_adventure'] },
-        frameProfile: { type: ['string', 'null'] },
+        frameProfile: { type: 'string' },
         defaultLocale: { type: 'string', minLength: 2, maxLength: 35 },
         coverAssetId: {
           type: ['string', 'null'],

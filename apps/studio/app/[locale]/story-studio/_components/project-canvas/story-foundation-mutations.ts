@@ -13,7 +13,7 @@ const MAX_CHARACTER_VOICE_DURATION_MS = 5_000;
 const MAX_MEDIA_URL_LENGTH = 2_048;
 const MAX_CHARACTERS = 100;
 
-export type StoryWorldMutationErrorCode =
+export type StoryFoundationMutationErrorCode =
   | "INVALID_STABLE_ID"
   | "INVALID_LOCALE"
   | "DUPLICATE_CHARACTER_ID"
@@ -22,13 +22,13 @@ export type StoryWorldMutationErrorCode =
   | "INVALID_CHARACTER"
   | "CLIP_NODE_NOT_FOUND";
 
-export class StoryWorldMutationError extends Error {
+export class StoryFoundationMutationError extends Error {
   constructor(
-    readonly code: StoryWorldMutationErrorCode,
+    readonly code: StoryFoundationMutationErrorCode,
     message: string
   ) {
     super(message);
-    this.name = "StoryWorldMutationError";
+    this.name = "StoryFoundationMutationError";
   }
 }
 
@@ -37,7 +37,7 @@ export interface CreateStoryCharacterOptions {
   id?: string;
 }
 
-export interface StoryWorldCreationResult<T> {
+export interface StoryFoundationCreationResult<T> {
   content: InteractiveStoryDraftContent;
   created: T;
 }
@@ -49,7 +49,7 @@ export type StoryCharacterPatch = Partial<
 export function createStoryCharacter(
   content: InteractiveStoryDraftContent,
   options: CreateStoryCharacterOptions
-): StoryWorldCreationResult<StoryCharacter> {
+): StoryFoundationCreationResult<StoryCharacter> {
   if (content.storyBible.characters.length >= MAX_CHARACTERS) {
     throw mutationError(
       "CHARACTER_LIMIT_REACHED",
@@ -306,8 +306,8 @@ function invalidCharacter(message: string): never {
 }
 
 function mutationError(
-  code: StoryWorldMutationErrorCode,
+  code: StoryFoundationMutationErrorCode,
   message: string
-): StoryWorldMutationError {
-  return new StoryWorldMutationError(code, message);
+): StoryFoundationMutationError {
+  return new StoryFoundationMutationError(code, message);
 }

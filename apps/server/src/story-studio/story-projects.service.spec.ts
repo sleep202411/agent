@@ -4,7 +4,6 @@ import {
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
-  StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
@@ -20,7 +19,6 @@ import {
   InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-  StoryProjectListQuerySchema,
   type InteractiveStoryDraftContent,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
@@ -49,7 +47,6 @@ function lockableDraft(): InteractiveStoryDraftContent {
     storyBible: {
       logline: 'At night, a sealed gate asks who owns the truth.',
       synopsis: "A visitor must choose whether to reveal the villa's secret.",
-      worldview: 'One night inside a mythic villa.',
       characters: [
         {
           id: 'hero',
@@ -57,13 +54,6 @@ function lockableDraft(): InteractiveStoryDraftContent {
           summary: 'A visitor searching for the truth.',
           images: [],
           voice: null,
-        },
-      ],
-      endings: [
-        {
-          id: 'ending.truth',
-          title: { 'zh-CN': '真相' },
-          summary: { 'zh-CN': '门打开了。' },
         },
       ],
     },
@@ -74,7 +64,7 @@ function lockableDraft(): InteractiveStoryDraftContent {
           kind: 'clip',
           nodeId: 'node.opening',
           clipKey: 'S00',
-          exit: { kind: 'ending', endingId: 'ending.truth' },
+          exit: { kind: 'auto', nextNodeId: null },
         },
       ],
     },
@@ -94,7 +84,7 @@ function multiChapterDraft(): InteractiveStoryDraftContent {
           kind: 'clip',
           nodeId: 'node.chapter-two',
           clipKey: 'S10',
-          exit: { kind: 'ending', endingId: 'ending.truth' },
+          exit: { kind: 'auto', nextNodeId: null },
         },
       ],
     },
@@ -105,7 +95,6 @@ function projectRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
-    format: StoryFormat.interactive_film,
     frameProfile: StoryFrameProfile.landscape_16_9,
     status: StoryProjectStatus.active,
     visibility: 'private',
@@ -555,32 +544,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
-  it('keeps retired project formats out of the target project-list contract', async () => {
-    expect(
-      StoryProjectListQuerySchema.safeParse({
-        format: 'narrative_rpg',
-      }).success,
-    ).toBe(false);
-
-    const findMany = jest.fn((input: { where: { format: unknown } }) => {
-      void input;
-      return Promise.resolve([]);
-    });
-    const { service } = serviceWith({ storyProject: { findMany } });
-
-    await expect(
-      service.list(USER as never, WORKSPACE_ID, {
-        status: 'active',
-        limit: 20,
-      }),
-    ).resolves.toEqual({ items: [], nextCursor: null });
-
-    expect(findMany).toHaveBeenCalledTimes(1);
-    expect(findMany.mock.calls[0]?.[0].where.format).toEqual({
-      in: [StoryFormat.interactive_film, StoryFormat.text_adventure],
-    });
-  });
-
   it('lists joined projects across tenants, excluding the ones you own', async () => {
     // The three properties that make "Shared with me" both useful and safe. A
     // workspace id in this predicate would defeat the point; dropping the role
@@ -614,75 +577,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           status: WorkspaceMemberStatus.active,
         },
       },
-    });
-  });
-
-  it('creates a text-adventure profile with no frame profile on the unified schema', async () => {
-    const project = summaryProject({
-      format: StoryFormat.text_adventure,
-      frameProfile: null,
-      draft: draftRow({
-        revision: 0,
-        content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
-      }),
-    });
-    const create = jest.fn(
-      (input: {
-        data: {
-          format: StoryFormat;
-          frameProfile: unknown;
-          draft: { create: { schemaVersion: string; content: unknown } };
-          productionCanvas: {
-            create: { schemaVersion: string; content: unknown };
-          };
-        };
-      }) => {
-        expect(input.data).toMatchObject({
-          format: StoryFormat.text_adventure,
-          draft: {
-            create: {
-              schemaVersion: 'interactive-story-draft-v1',
-              content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
-            },
-          },
-          productionCanvas: {
-            create: {
-              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-              content: { nodes: [], edges: [], assets: [], groups: [] },
-            },
-          },
-        });
-        // A text-first project persists no frame contract.
-        expect(input.data.frameProfile).toBeNull();
-        return Promise.resolve(project);
-      },
-    );
-    const tx = {
-      storyProject: {
-        create,
-        findUnique: jest.fn().mockResolvedValue(project),
-      },
-      storyChapter: {
-        create: jest
-          .fn()
-          .mockResolvedValue(chapterRow({ nodeIds: [], entryNodeId: null })),
-      },
-      storyCanvasLayout: {
-        create: jest.fn().mockResolvedValue(canvasLayoutRow()),
-      },
-    };
-    const { service } = serviceWith({ $transaction: transactionMock(tx) });
-
-    await expect(
-      service.create(USER as never, WORKSPACE_ID, {
-        format: 'text_adventure',
-        title: 'A Text Story',
-        defaultLocale: 'en-US',
-        visibility: 'private',
-      }),
-    ).resolves.toMatchObject({
-      project: { format: 'text_adventure', frameProfile: null },
-      draft: { format: 'text_adventure' },
     });
   });
 
@@ -730,7 +624,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service, workspacePermissions } = serviceWith(prisma);
 
     const result = await service.create(USER as never, WORKSPACE_ID, {
-      format: 'interactive_film',
       frameProfile: 'landscape_16_9',
       title: 'Branching Film Test',
       defaultLocale: 'zh-CN',

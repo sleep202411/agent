@@ -16,21 +16,12 @@ const clipKeySchema = z
   .max(40)
   .regex(/^[A-Z][A-Z0-9_-]*$/, "Use an uppercase stable clip key.");
 const localizedTextSchema = z.record(z.string().min(2).max(16), z.string().max(4_000));
-const localizedBodySchema = z.record(z.string().min(2).max(16), z.string().max(20_000));
 
 const characterSchema = z
   .object({
     id: stableIdSchema,
     name: localizedTextSchema,
     summary: z.string().max(4_000),
-  })
-  .strict();
-
-const endingSchema = z
-  .object({
-    id: stableIdSchema,
-    title: localizedTextSchema,
-    summary: localizedTextSchema.optional(),
   })
   .strict();
 
@@ -57,35 +48,18 @@ const exitSchema = z.discriminatedUnion("kind", [
       choices: z.array(choiceSchema).max(6),
     })
     .strict(),
-  z
-    .object({
-      kind: z.literal("ending"),
-      endingId: stableIdSchema,
-    })
-    .strict(),
 ]);
 
-const graphNodeSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("clip"),
-      nodeId: stableIdSchema,
-      clipKey: clipKeySchema,
-      name: z.string().trim().max(120).optional(),
-      description: z.string().trim().max(4_000).optional(),
-      exit: exitSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("text"),
-      nodeId: stableIdSchema,
-      title: localizedTextSchema.optional(),
-      body: localizedBodySchema,
-      exit: exitSchema,
-    })
-    .strict(),
-]);
+const graphNodeSchema = z
+  .object({
+    kind: z.literal("clip"),
+    nodeId: stableIdSchema,
+    clipKey: clipKeySchema,
+    name: z.string().trim().max(120).optional(),
+    description: z.string().trim().max(4_000).optional(),
+    exit: exitSchema,
+  })
+  .strict();
 
 /**
  * Model-authored Story commands. The Domain Gateway deterministically adds
@@ -102,14 +76,10 @@ export const storyOperationSchema = z
           .object({
             logline: z.string().max(1_000).optional(),
             synopsis: z.string().max(20_000).optional(),
-            worldview: z.string().max(20_000).optional(),
           })
           .strict()
           .refine(
-            (payload) =>
-              payload.logline !== undefined ||
-              payload.synopsis !== undefined ||
-              payload.worldview !== undefined,
+            (payload) => payload.logline !== undefined || payload.synopsis !== undefined,
             "At least one overview field is required."
           ),
       })
@@ -129,23 +99,6 @@ export const storyOperationSchema = z
       .object({
         kind: z.literal("story_bible.remove_character"),
         payload: z.object({ characterId: stableIdSchema }).strict(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("story_bible.put_ending"),
-        payload: z
-          .object({
-            intent: z.enum(["create", "replace"]),
-            ending: endingSchema,
-          })
-          .strict(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("story_bible.remove_ending"),
-        payload: z.object({ endingId: stableIdSchema }).strict(),
       })
       .strict(),
     z

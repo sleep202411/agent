@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import {
   STORY_AUTHORING_STAGE_KEYS,
   StoryBibleDraftSchema,
@@ -60,32 +59,25 @@ export class StoryAuthoringPipelineService {
     const { job, signal } = request;
     const source = buildSourceBlock(job);
 
-    await request.onStage?.('worldview');
+    await request.onStage?.('foundation');
     const bible = await runStoryAuthoringStage<StoryBibleDraft>(model, {
-      stage: 'worldview',
+      stage: 'foundation',
       schema: StoryBibleDraftSchema,
-      system: WORLDVIEW_SYSTEM,
+      system: FOUNDATION_SYSTEM,
       prompt: `${source}\n\n${briefBlock(job)}\n\nProduce the story bible now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
       timeoutMs: STAGE_TIMEOUT_MS,
       maxAttempts: STAGE_MAX_ATTEMPTS,
       signal,
-      validate: (value) =>
-        value.endings.length === 0
-          ? ['The bible must declare at least one ending.']
-          : [],
       onAttempt: (attempt, outcome, detail) =>
-        this.log('worldview', attempt, outcome, detail),
+        this.log('foundation', attempt, outcome, detail),
     });
 
     await request.onStage?.('structure');
-    // A text adventure is pure written beats: force every node to "text" so the
-    // pipeline never mints filmed clip nodes for a project that has no video.
-    const textOnly = job.format === 'text_adventure';
     const skeleton = await runStoryAuthoringStage<StorySkeleton>(model, {
       stage: 'structure',
       schema: StorySkeletonSchema,
-      system: structureSystem(textOnly),
+      system: STRUCTURE_SYSTEM,
       prompt: `${source}\n\n${bibleContext(bible)}\n\n${briefBlock(job)}\n\nProduce the node skeleton now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
       timeoutMs: STAGE_TIMEOUT_MS,
@@ -93,17 +85,8 @@ export class StoryAuthoringPipelineService {
       signal,
       // Deterministic referential integrity — this is what makes danglers
       // impossible downstream.
-      validate: (value) => [
-        ...validateStorySkeleton(value).map((issue) => issue.detail),
-        ...(textOnly
-          ? value.nodes
-              .filter((node) => node.kind === 'clip')
-              .map(
-                (node) =>
-                  `Node "${node.id}" is a clip, but this is a text adventure — every node must be kind "text".`,
-              )
-          : []),
-      ],
+      validate: (value) =>
+        validateStorySkeleton(value).map((issue) => issue.detail),
       onAttempt: (attempt, outcome, detail) =>
         this.log('structure', attempt, outcome, detail),
     });
@@ -118,7 +101,7 @@ export class StoryAuthoringPipelineService {
       timeoutMs: STAGE_TIMEOUT_MS,
       maxAttempts: STAGE_MAX_ATTEMPTS,
       signal,
-      validate: (value) => validateBranchPlan(value, skeleton, bible),
+      validate: (value) => validateBranchPlan(value, skeleton),
       onAttempt: (attempt, outcome, detail) =>
         this.log('branch', attempt, outcome, detail),
     });
@@ -168,7 +151,7 @@ export class StoryAuthoringPipelineService {
           system: SCENE_SYSTEM,
           prompt: [
             bibleContext(bible),
-            `Write the prose for this one node (id "${node.id}", kind "${node.kind}"). Beat: ${node.beat}`,
+            `Write the editorial copy for this clip (id "${node.id}"). Beat: ${node.beat}`,
             'Return only this node; use its exact id.',
           ].join('\n\n'),
           maxOutputTokens: 2_048,
@@ -213,11 +196,9 @@ export class StoryAuthoringPipelineService {
 function validateBranchPlan(
   plan: StoryBranchPlan,
   skeleton: StorySkeleton,
-  bible: StoryBibleDraft,
 ): string[] {
   const issues: string[] = [];
   const nodeIds = new Set(skeleton.nodes.map((n) => n.id));
-  const endingIds = new Set(bible.endings.map((e) => e.id));
   const allowedTargets = new Map(
     skeleton.nodes.map((n) => [n.id, new Set(n.nextIds)]),
   );
@@ -234,6 +215,15 @@ function validateBranchPlan(
     const edges: string[] = [];
 
     if (branch.kind === 'auto') {
+      if (branch.nextNodeId === null) {
+        if (allowed.size > 0) {
+          issues.push(
+            `Terminal clip "${branch.nodeId}" still declares allowed successors.`,
+          );
+        }
+        planned.set(branch.nodeId, edges);
+        continue;
+      }
       // The target only needs to be one the skeleton allowed for this node.
       if (!allowed.has(branch.nextNodeId)) {
         issues.push(
@@ -252,10 +242,6 @@ function validateBranchPlan(
           edges.push(choice.nextNodeId);
         }
       }
-    } else if (!endingIds.has(branch.endingId)) {
-      issues.push(
-        `Node "${branch.nodeId}" ends on unknown ending "${branch.endingId}".`,
-      );
     }
     planned.set(branch.nodeId, edges);
   }
@@ -305,25 +291,14 @@ function assembleOperations(input: {
     } as StoryPatchOperation);
   };
 
-  op(
-    'Set the story premise, synopsis, and worldview.',
-    'story_bible.update_overview',
-    {
-      logline: bible.logline,
-      synopsis: bible.synopsis,
-      worldview: bible.worldview,
-    },
-  );
+  op('Set the story premise and synopsis.', 'story_bible.update_overview', {
+    logline: bible.logline,
+    synopsis: bible.synopsis,
+  });
   for (const character of bible.characters) {
     op(`Add character ${character.id}.`, 'story_bible.put_character', {
       intent: 'create',
       character,
-    });
-  }
-  for (const ending of bible.endings) {
-    op(`Add ending ${ending.id}.`, 'story_bible.put_ending', {
-      intent: 'create',
-      ending,
     });
   }
 
@@ -334,23 +309,15 @@ function assembleOperations(input: {
     const branch = branchByNode.get(node.id)!;
     const scene = proseByNode.get(node.id);
     const exit = assembleExit(branch);
-    const graphNode =
-      node.kind === 'clip'
-        ? {
-            kind: 'clip',
-            nodeId: node.id,
-            clipKey: node.clipKey!,
-            ...(scene?.body ? { description: firstLocale(scene.body) } : {}),
-            exit,
-          }
-        : {
-            kind: 'text',
-            nodeId: node.id,
-            ...(scene?.title ? { title: scene.title } : {}),
-            body: scene?.body ?? { 'zh-CN': '' },
-            exit,
-          };
-    op(`Add ${node.kind} node ${node.id}.`, 'story_graph.put_node', {
+    const graphNode = {
+      kind: 'clip' as const,
+      nodeId: node.id,
+      clipKey: node.clipKey,
+      ...(scene?.name ? { name: scene.name } : {}),
+      ...(scene?.description ? { description: scene.description } : {}),
+      exit,
+    };
+    op(`Add clip ${node.id}.`, 'story_graph.put_node', {
       intent: 'create',
       node: graphNode,
     });
@@ -362,13 +329,10 @@ function assembleOperations(input: {
   return ops;
 }
 
-/** Builds a node's exit. Clip and text nodes share one choice exit shape. */
+/** Builds a clip's automatic or choice exit. */
 function assembleExit(branch: StoryBranchPlan['branches'][number]) {
   if (branch.kind === 'auto') {
     return { kind: 'auto', nextNodeId: branch.nextNodeId };
-  }
-  if (branch.kind === 'ending') {
-    return { kind: 'ending', endingId: branch.endingId };
   }
   return {
     kind: 'choice',
@@ -380,10 +344,6 @@ function assembleExit(branch: StoryBranchPlan['branches'][number]) {
       nextNodeId: choice.nextNodeId,
     })),
   };
-}
-
-function firstLocale(text: Record<string, string>): string {
-  return Object.values(text)[0] ?? '';
 }
 
 // ── Prompt context builders ────────────────────────────────────────────────
@@ -421,34 +381,28 @@ function skeletonContext(skeleton: StorySkeleton): string {
 const LOCALE_NOTE =
   'Localized text values are objects mapping a locale code to a string, e.g. {"zh-CN":"…"}. Use the same language as the source material.';
 
-const WORLDVIEW_SYSTEM = [
-  'You are the Worldbuilder for an interactive story. From the source material and brief, distill the story bible: a one-line logline, a synopsis, a worldview, the principal characters (id + localized name + a short summary each), and 2-6 distinct endings.',
-  'Invent stable string ids (^[A-Za-z][A-Za-z0-9._:-]*$) for characters and endings. Stay faithful to the source; do not invent core facts it does not contain.',
+const FOUNDATION_SYSTEM = [
+  'You are the Story Architect for an interactive film. From the source material and brief, distill a one-line logline, a concise cinematic synopsis, and the principal characters. Keep the product entirely clip-based; playback ends naturally on a terminal clip.',
+  'Invent stable string ids (^[A-Za-z][A-Za-z0-9._:-]*$) for characters.',
+  'Stay faithful to the source; do not invent core facts it does not contain.',
   LOCALE_NOTE,
 ].join('\n\n');
 
-function structureSystem(textOnly: boolean): string {
-  const kindRule = textOnly
-    ? 'Every node MUST be kind "text" (this is a text adventure — there is no filmed video). Never emit a "clip" node and never set clipKey.'
-    : 'Each node is kind "clip" for a filmed beat (which needs a required uppercase clipKey) or "text" for a written beat.';
-  return [
-    'You are the Story Architect. Using the bible, lay out the key-plot SKELETON: an ordered set of nodes, each with a stable id, a kind, a one-line beat summary, and nextIds — the FULL set of beats it can flow into.',
-    kindRule,
-    'Rules you MUST satisfy: every id in any nextIds must be a node you define; the entryId must be one of the nodes; every node must be reachable from the entry; a node with an empty nextIds terminates (it will resolve to an ending later). Prefer 6-12 nodes unless the brief asks otherwise. A branching beat lists 2-3 nextIds; a linear beat lists exactly 1; a terminal beat lists 0.',
-    LOCALE_NOTE,
-  ].join('\n\n');
-}
+const STRUCTURE_SYSTEM = [
+  'You are the Story Architect. Using the film foundation, lay out a cinematic clip plan: an ordered set of film clips, each with a stable id, an uppercase clipKey, a one-line beat summary, and nextIds — the full set of clips it can flow into.',
+  'Every id in nextIds must be a clip you define; entryId must be one of the clips; every clip must be reachable from the entry; a clip with empty nextIds is the natural end of playback. Prefer 6-12 clips unless the brief asks otherwise. A branching clip lists 2-3 nextIds; a linear clip lists exactly 1; a terminal clip lists 0.',
+  LOCALE_NOTE,
+].join('\n\n');
 
 const BRANCH_SYSTEM = [
-  'You are the Branch Weaver. For EVERY skeleton node, emit exactly one branch: "auto" (flows straight on — name the single nextNodeId), "choice" (2-6 player choices, each a localized label targeting a successor, with a localized prompt), or "ending" (the node terminates on one of the bible\'s endings).',
-  "Every target you name (auto nextNodeId, each choice nextNodeId) MUST be one of that node's allowed successors listed in its skeleton nextIds; you may use a subset but never invent a target. Endings must be ids the bible declared. Keep the whole graph reachable from the entry. Choice/decision/choiceId ids are new stable ids you mint.",
+  'You are the Branch Weaver. For every film clip, emit exactly one branch: "auto" with one nextNodeId, "choice" with 2-6 player choices, or terminal "auto" with nextNodeId null when the clip has no successors.',
+  "Every non-null target you name MUST be one of that node's allowed successors listed in its skeleton nextIds; you may use a subset but never invent a target. Keep the whole graph reachable from the entry. Choice/decision/choiceId ids are new stable ids you mint.",
   LOCALE_NOTE,
 ].join('\n\n');
 
 const SCENE_SYSTEM = [
-  'You are the Scene Writer. For EVERY skeleton node, write its prose: for a text node, the body the player reads (vivid, in second person, 120-260 words); for a clip node, a shot description. Optionally a short localized title.',
-  "Write only prose for the nodes given — do not add, rename, or reference other nodes. Stay consistent with the bible and each node's beat.",
-  LOCALE_NOTE,
+  'You are the Scene Writer. Write concise production-facing editorial copy for the given film clip: an optional short name and a concrete shot description.',
+  "Do not add, rename, or reference other clips. Stay consistent with the bible and the clip's beat.",
 ].join('\n\n');
 
 // Re-exported for the worker's stage ordering.

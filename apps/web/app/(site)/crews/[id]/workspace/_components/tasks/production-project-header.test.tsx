@@ -28,6 +28,8 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", async () => {
       mutateAsync: state.updateProject,
       isPending: false,
     }),
+    useCrewStudioProjectOptions: () => ({ data: undefined, isLoading: false, isError: false }),
+    useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useCreateCrewProductionResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useDeleteCrewProductionResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
@@ -44,6 +46,7 @@ vi.mock("@/components/user-avatar", () => ({
 
 const overview: CrewProductionOverviewDTO = {
   capabilities: { manage: true },
+  studioProject: null,
   project: {
     crewId: "crew-1",
     status: "backlog",

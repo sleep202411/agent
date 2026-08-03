@@ -280,10 +280,12 @@ export function SharedCreatorCenterLayout({
                 role="tabpanel"
                 aria-labelledby={CREATOR_TAB_ID(activeTab)}
               >
-                <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
-                  {t(`tabs.${activeTab}`)}
-                </h2>
-                <SectionContent tab={activeTab} creator={creator} isOwner={isOwner} />
+                <SectionContent
+                  tab={activeTab}
+                  creator={creator}
+                  isOwner={isOwner}
+                  contentMode={contentMode}
+                />
               </section>
             </div>
           ) : (
@@ -306,7 +308,12 @@ export function SharedCreatorCenterLayout({
                   <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
                     {t(`tabs.${id}`)}
                   </h2>
-                  <SectionContent tab={id} creator={creator} isOwner={isOwner} />
+                  <SectionContent
+                    tab={id}
+                    creator={creator}
+                    isOwner={isOwner}
+                    contentMode={contentMode}
+                  />
                 </section>
               ))}
             </div>
@@ -389,10 +396,12 @@ function SectionContent({
   tab,
   creator,
   isOwner,
+  contentMode,
 }: {
   tab: CreatorTabId;
   creator: Creator;
   isOwner: boolean;
+  contentMode: "sections" | "tabs";
 }) {
   switch (tab) {
     case "services":
@@ -404,6 +413,12 @@ function SectionContent({
     case "ips":
       return <IpsTab creator={creator} isOwner={isOwner} />;
     case "crews":
-      return <CrewsTab creator={creator} isOwner={isOwner} />;
+      return (
+        <CrewsTab
+          creator={creator}
+          isOwner={isOwner}
+          variant={contentMode === "tabs" ? "profile" : "public"}
+        />
+      );
   }
 }

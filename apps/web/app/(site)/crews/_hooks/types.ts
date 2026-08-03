@@ -85,9 +85,12 @@ export interface CreateCrewInput {
   styles?: CrewStyle[];
   socialLinks?: SocialLink[];
   showcaseWorks?: ShowcaseWork[];
+  productionTemplateLocale?: "en-US" | "zh-CN" | "zh-HK";
 }
 
-export interface UpdateCrewInput extends Partial<CreateCrewInput> {
+export interface UpdateCrewInput extends Partial<
+  Omit<CreateCrewInput, "productionTemplateLocale">
+> {
   id: string;
   expectedVersion?: number;
 }
@@ -790,7 +793,43 @@ export interface CrewProductionOverviewDTO {
   labelOptions: CrewTaskLabelDTO[];
   resources: CrewProductionResourceDTO[];
   latestUpdate: CrewProductionUpdateDTO | null;
+  studioProject: CrewStudioProjectSummaryDTO | null;
   capabilities: { manage: boolean };
+}
+
+export interface CrewStudioProjectSummaryDTO {
+  id: string;
+  name: string;
+  workspace: { id: string; name: string };
+}
+
+export type CrewStudioProjectDisabledReason =
+  | "personal_workspace"
+  | "already_linked"
+  | "insufficient_permission";
+
+export interface CrewStudioProjectOptionDTO {
+  id: string;
+  name: string;
+  description: string | null;
+  selected: boolean;
+  selectable: boolean;
+  disabledReason: CrewStudioProjectDisabledReason | null;
+  linkedCrewName: string | null;
+}
+
+export interface CrewStudioProjectOptionsDTO {
+  linkedProjectId: string | null;
+  workspaces: Array<{
+    id: string;
+    name: string;
+    type: "personal" | "team";
+    projects: CrewStudioProjectOptionDTO[];
+  }>;
+}
+
+export interface LinkCrewStudioProjectResult {
+  studioProject: CrewStudioProjectSummaryDTO | null;
 }
 
 export interface UpdateCrewProductionProjectInput {

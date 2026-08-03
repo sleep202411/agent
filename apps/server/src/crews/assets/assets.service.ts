@@ -13,6 +13,7 @@ import {
   MediaAssetVariantStatus,
   MediaObjectPlacementStatus,
   MediaStorageProvider,
+  ProjectMemberRole,
   Prisma,
 } from '@prisma/client';
 import { CURRENT_CELL } from '../../common/region/current-cell';
@@ -24,6 +25,7 @@ import {
 } from '../../infra/storage/crew-asset-storage-policy';
 import { MediaStorageAccessService } from '../../infra/storage/media-storage-access.service';
 import { StorageProviderRegistry } from '../../infra/storage/storage-provider-registry.service';
+import { WorkspacePermissionService } from '../../workspaces';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewAssetAccessService } from './asset-access.service';
 import type {
@@ -88,12 +90,68 @@ type AssetNode = Prisma.CrewAssetNodeGetPayload<{
 export class CrewAssetsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly workspacePermissions: WorkspacePermissionService,
     private readonly authorization: CrewAuthorizationService,
     private readonly access: CrewAssetAccessService,
     private readonly storageRegistry: StorageProviderRegistry,
     private readonly mediaStorage: MediaStorageAccessService,
     private readonly conversations: ConversationsService,
   ) {}
+
+  /**
+   * Resolve the crew explicitly linked to a Studio project, or the crew whose
+   * internal production/task canvas owns it. Project and crew permissions stay
+   * independent so a link never broadens workspace access.
+   */
+  private async projectCrew(projectId: string, userId: string) {
+    await this.workspacePermissions.requireProjectRole(
+      userId,
+      projectId,
+      ProjectMemberRole.viewer,
+    );
+    const project = await this.prisma.platformProject.findUnique({
+      where: { id: projectId },
+      select: {
+        studioCrew: { select: { id: true, name: true, logo: true } },
+        productionCrew: { select: { id: true, name: true, logo: true } },
+        crewTaskCanvas: {
+          select: {
+            crew: { select: { id: true, name: true, logo: true } },
+          },
+        },
+      },
+    });
+    return (
+      project?.studioCrew ??
+      project?.productionCrew ??
+      project?.crewTaskCanvas?.crew ??
+      null
+    );
+  }
+
+  async projectContext(projectId: string, userId: string) {
+    const crew = await this.projectCrew(projectId, userId);
+    if (!crew) return { crew: null, assetContext: null };
+    return {
+      crew,
+      assetContext: await this.context(crew.id, userId),
+    };
+  }
+
+  async listForProject(
+    projectId: string,
+    userId: string,
+    query: ListCrewAssetsQuery,
+  ) {
+    const crew = await this.projectCrew(projectId, userId);
+    if (!crew) {
+      throw new NotFoundException({
+        code: 'PROJECT_CREW_NOT_LINKED',
+        message: 'This project is not linked to a crew.',
+      });
+    }
+    return this.list(crew.id, userId, query);
+  }
 
   async context(crewId: string, userId: string) {
     const context = await this.authorization.require(

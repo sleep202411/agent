@@ -5,7 +5,6 @@ import {
   connectSceneContinuation,
   connectChoiceTarget,
   createClipNode,
-  createTextNode,
   setEntryNode,
 } from "./story-project-canvas-mutations";
 
@@ -23,7 +22,6 @@ export interface ConnectedSceneDropResult {
 }
 
 export interface ConnectedSceneDropOptions {
-  sceneKind?: "clip" | "text";
   newChoiceLabel?: string;
 }
 
@@ -53,7 +51,7 @@ export function resolveBlankDropConnectionPlan(
       : null;
   }
 
-  if (source.kind === "clip" || source.kind === "text") {
+  if (source.kind === "clip") {
     return source.exitKind === "auto" && sourceHandle === "completion"
       ? { kind: "scene-continuation", sourceNodeId: source.nodeId }
       : null;
@@ -73,8 +71,7 @@ export function createConnectedSceneForBlankDrop(
   const plan = resolveBlankDropConnectionPlan(source, sourceHandle);
   if (!plan) return null;
 
-  const created =
-    options.sceneKind === "text" ? createTextNode(content, { locale }) : createClipNode(content);
+  const created = createClipNode(content);
   const createdNodeId = created.created.nodeId;
   let next = created.content;
 

@@ -5,17 +5,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { StoryNodeInspector } from "./story-node-inspector";
-import {
-  buildStoryCanvasModel,
-  characterCanvasNodeId,
-  syntheticEndingNodeId,
-} from "./story-project-canvas-model";
+import { buildStoryCanvasModel, characterCanvasNodeId } from "./story-project-canvas-model";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
-describe("StoryNodeInspector optional localized fields", () => {
+describe("StoryNodeInspector film authoring", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -31,101 +27,31 @@ describe("StoryNodeInspector optional localized fields", () => {
     container.remove();
   });
 
-  it("renders an omitted text title and creates an omitted ending summary on edit", async () => {
-    const content = draftWithoutOptionalCopy();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const onUpdateEnding = vi.fn<ComponentProps<typeof StoryNodeInspector>["onUpdateEnding"]>();
-    const baseProps = inspectorProps(content, onUpdateEnding);
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...baseProps} selectedNode={requiredNode(model.nodes, "untitled")} />
-      );
-    });
-
-    expect(container.querySelector<HTMLInputElement>("#story-text-title")?.value).toBe("");
-    expect(container.querySelector<HTMLTextAreaElement>("#story-text-body")?.value).toBe(
-      "The story begins."
-    );
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector
-          {...baseProps}
-          selectedNode={requiredNode(model.nodes, syntheticEndingNodeId("finish"))}
-        />
-      );
-    });
-
-    const summary = requiredElement(
-      container.querySelector<HTMLTextAreaElement>("textarea"),
-      "ending summary"
-    );
-    expect(summary.value).toBe("");
-    await input(summary, "An optional epilogue.");
-    expect(onUpdateEnding).toHaveBeenLastCalledWith("finish", {
-      summary: { "en-US": "An optional epilogue." },
-    });
-  });
-
-  it("shows the Story Bible panel as basics only, with no characters section", async () => {
-    const content = draftWithoutOptionalCopy();
-    const baseProps = inspectorProps(content, vi.fn());
-
-    await act(async () => {
-      root.render(<StoryNodeInspector {...baseProps} selectedNode={null} showFoundation />);
-    });
-
-    const text = container.textContent ?? "";
-    // Story Bible header + the story-basics foundation copy.
-    expect(text).toContain("world.title");
-    expect(text).toContain("world.cover.title");
-    expect(text).toContain("foundation.logline");
-    // The characters live on the canvas now: no character tab/section here, and
-    // no worldbuilding surfaces either.
-    expect(text).not.toContain("world.tabs");
-    expect(text).not.toContain("world.characters");
-  });
-});
-
-describe("StoryNodeInspector character node", () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-  });
-
-  it("edits the character's relocated name/role/summary fields through the update mutation", async () => {
+  it("edits and deletes a character through the dedicated character inspector", async () => {
     const content = draftWithCharacter();
-    const model = buildStoryCanvasModel(content, "en-US");
+    const model = buildStoryCanvasModel(content, "en-US", [], {
+      clip: "Clip",
+      decision: "Decision",
+    });
     const onUpdateCharacter =
       vi.fn<ComponentProps<typeof StoryNodeInspector>["onUpdateCharacter"]>();
-    const baseProps = { ...inspectorProps(content, vi.fn()), onUpdateCharacter };
+    const onDeleteCharacter =
+      vi.fn<ComponentProps<typeof StoryNodeInspector>["onDeleteCharacter"]>();
 
     await act(async () => {
       root.render(
         <StoryNodeInspector
-          {...baseProps}
+          {...inspectorProps(content)}
+          onUpdateCharacter={onUpdateCharacter}
+          onDeleteCharacter={onDeleteCharacter}
           selectedNode={requiredNode(model.nodes, characterCanvasNodeId("hero"))}
         />
       );
     });
 
-    // The character node routes to a dedicated character inspector, not a graph
-    // editor.
-    expect(container.textContent ?? "").toContain("nodeKinds.character");
     const nameInput = requiredElement(
       container.querySelector<HTMLInputElement>('input[placeholder="namePlaceholder"]'),
-      "character name field"
+      "character name"
     );
     expect(nameInput.value).toBe("Hero");
     await inputValue(nameInput, "Nova");
@@ -133,309 +59,79 @@ describe("StoryNodeInspector character node", () => {
       name: { "en-US": "Nova" },
     });
 
-    const summaryInput = requiredElement(
-      container.querySelector<HTMLTextAreaElement>('textarea[placeholder="summaryPlaceholder"]'),
-      "character summary field"
+    const deleteButton = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "filmFoundation.characters.delete"
+      ) ?? null,
+      "character delete button"
     );
-    expect(summaryInput.value).toBe("The lead.");
+    await click(deleteButton);
+    expect(onDeleteCharacter).toHaveBeenCalledWith("hero");
   });
 
-  it("allows deleting a character", async () => {
-    const content = draftWithCharacter();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const onDeleteCharacter =
-      vi.fn<ComponentProps<typeof StoryNodeInspector>["onDeleteCharacter"]>();
-    const baseProps = { ...inspectorProps(content, vi.fn()), onDeleteCharacter };
+  it("confirms before replacing an authored choice with a direct continuation", async () => {
+    const content = branchingDraft();
+    const model = buildStoryCanvasModel(content, "en-US", [], {
+      clip: "Clip",
+      decision: "Decision",
+    });
+    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
 
     await act(async () => {
       root.render(
         <StoryNodeInspector
-          {...baseProps}
-          selectedNode={requiredNode(model.nodes, characterCanvasNodeId("hero"))}
+          {...inspectorProps(content)}
+          onSetSceneExit={onSetSceneExit}
+          selectedNode={requiredNode(model.nodes, "opening")}
         />
       );
     });
-
-    const deleteButton = requiredElement(
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => (button.textContent ?? "").trim() === "world.characters.delete"
-      ) ?? null,
-      "character delete button"
-    );
-    expect(deleteButton.disabled).toBe(false);
-    expect(container.textContent ?? "").toContain("deleteAvailable");
-
-    await act(async () => {
-      deleteButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(onDeleteCharacter).toHaveBeenCalledWith("hero");
-  });
-});
-
-describe("StoryNodeInspector scene music", () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-  });
-
-  it("attaches a track already used elsewhere in the story and clears the binding", async () => {
-    const content = draftWithMusic();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const onUpdateMusic = vi.fn<ComponentProps<typeof StoryNodeInspector>["onUpdateMusic"]>();
-    const baseProps = { ...inspectorProps(content, vi.fn()), onUpdateMusic };
-
-    // A scene with no binding offers the story's existing tracks for reuse.
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...baseProps} selectedNode={requiredNode(model.nodes, "second")} />
-      );
-    });
-    expect(container.querySelector('button[aria-label="remove"]')).toBeNull();
-    const reuse = requiredElement(
-      container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]'),
-      "reuse chip"
-    );
-    await act(async () => {
-      reuse.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(onUpdateMusic).toHaveBeenLastCalledWith("second", { mediaAssetId: "asset-theme" });
-
-    // The bound scene shows the track and can clear it.
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...baseProps} selectedNode={requiredNode(model.nodes, "opening")} />
-      );
-    });
-    expect(container.textContent ?? "").toContain("asset-theme");
-    const remove = requiredElement(
-      container.querySelector<HTMLButtonElement>('button[aria-label="remove"]'),
-      "remove track button"
-    );
-    await act(async () => {
-      remove.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(onUpdateMusic).toHaveBeenLastCalledWith("opening", null);
-  });
-
-  /**
-   * The cinematic runtime reads no scene music and the Build compiler drops it,
-   * so offering the panel there would let a creator upload a bed, bind it,
-   * publish successfully — and hear silence with nothing to explain it.
-   */
-  it("offers no music panel at all on a cinematic project", async () => {
-    const content = draftWithMusic();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const baseProps = { ...inspectorProps(content, vi.fn()), format: "interactive_film" as const };
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...baseProps} selectedNode={requiredNode(model.nodes, "opening")} />
-      );
-    });
-
-    // Not the bound track, not the reuse chips, not the upload affordance.
-    expect(container.textContent ?? "").not.toContain("asset-theme");
-    expect(container.querySelector('button[aria-label="remove"]')).toBeNull();
-    expect(container.querySelector("button[aria-pressed]")).toBeNull();
-    expect(container.querySelector('input[type="file"][accept*="audio"]')).toBeNull();
-  });
-
-  it("renders no music binding for a story without music", async () => {
-    const content = draftWithoutOptionalCopy();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const baseProps = inspectorProps(content, vi.fn());
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...baseProps} selectedNode={requiredNode(model.nodes, "untitled")} />
-      );
-    });
-
-    expect(container.querySelector('button[aria-label="remove"]')).toBeNull();
-    expect(container.querySelector("button[aria-pressed]")).toBeNull();
-    expect(container.textContent ?? "").toContain("empty");
-  });
-});
-
-describe("StoryNodeInspector scene exit editor", () => {
-  let container: HTMLDivElement;
-  let root: Root;
-
-  beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-  });
-
-  const render = async (
-    content: InteractiveStoryDraftContent,
-    nodeId: string,
-    onSetSceneExit: ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]
-  ) => {
-    const model = buildStoryCanvasModel(content, "en-US");
-    const props = inspectorProps(content, vi.fn(), onSetSceneExit);
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, nodeId)} />
-      );
-    });
-  };
-
-  it("leaves an ending unavailable when the bible names none", async () => {
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-    await render(draftWithCharacter(), "opening", onSetSceneExit);
-
-    expect(exitButton(container, "Ending").disabled).toBe(true);
-  });
-
-  it("confirms before replacing a choice exit that already holds branches", async () => {
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-    await render(draftWithChoiceBranches(), "opening", onSetSceneExit);
 
     await click(exitButton(container, "Auto"));
     expect(onSetSceneExit).not.toHaveBeenCalled();
     expect(container.textContent).toContain("inspector.convertExitTitle");
 
-    const confirm = [...container.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent?.trim() === "inspector.confirmConversion"
+    const confirm = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "inspector.confirmConversion"
+      ) ?? null,
+      "exit conversion confirmation"
     );
-    await click(requiredElement(confirm ?? null, "confirm button"));
-
-    expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "auto", nextNodeId: null });
+    await click(confirm);
+    expect(onSetSceneExit).toHaveBeenCalledWith("opening", {
+      kind: "auto",
+      nextNodeId: null,
+    });
   });
 
-  /**
-   * The entry marker is per chapter, so it has to be reachable from any scene —
-   * not only by dragging off a story-world card that is leaving the canvas.
-   */
-  it("promotes a scene to the chapter entry, and marks the one already holding it", async () => {
+  it("promotes a clip to the chapter entry", async () => {
+    const content = linearDraft();
+    const model = buildStoryCanvasModel(content, "en-US", [], {
+      clip: "Clip",
+      decision: "Decision",
+    });
     const onSetEntryNode = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetEntryNode"]>();
-    const content = draftWithMusic();
-    const model = buildStoryCanvasModel(content, "en-US");
-    const props = { ...inspectorProps(content, vi.fn()), onSetEntryNode };
 
     await act(async () => {
       root.render(
-        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, "second")} />
+        <StoryNodeInspector
+          {...inspectorProps(content)}
+          onSetEntryNode={onSetEntryNode}
+          selectedNode={requiredNode(model.nodes, "second")}
+        />
       );
     });
-    const promote = entryButton(container);
-    expect(promote.disabled).toBe(false);
-    await click(promote);
+
+    await click(entryButton(container));
     expect(onSetEntryNode).toHaveBeenCalledWith("second");
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector {...props} selectedNode={requiredNode(model.nodes, "opening")} />
-      );
-    });
-    const current = entryButton(container);
-    expect(current.getAttribute("aria-current")).toBe("true");
-    expect(current.disabled).toBe(true);
-  });
-
-  it("switches straight to a choice when no branch would be destroyed", async () => {
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-    await render(draftWithMusic(), "opening", onSetSceneExit);
-
-    await click(exitButton(container, "Choice"));
-
-    expect(onSetSceneExit).toHaveBeenCalledWith("opening", { kind: "choice" });
   });
 });
-
-function draftWithChoiceBranches(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      worldview: "",
-      characters: [],
-      endings: [],
-    },
-    graph: {
-      entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          exit: {
-            kind: "choice",
-            decisionId: "decision:1",
-            prompt: { "en-US": "Which way?" },
-            choices: [
-              { choiceId: "choice:1", label: { "en-US": "Left" }, nextNodeId: "second" },
-              { choiceId: "choice:2", label: { "en-US": "Right" }, nextNodeId: "second" },
-            ],
-          },
-        },
-        {
-          kind: "clip",
-          nodeId: "second",
-          clipKey: "SECOND",
-          exit: { kind: "auto", nextNodeId: null },
-        },
-      ],
-    },
-    productionNotes: [],
-  };
-}
-
-function draftWithoutOptionalCopy(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      worldview: "",
-      characters: [],
-      endings: [
-        {
-          id: "finish",
-          title: { "en-US": "Finish" },
-        },
-      ],
-    },
-    graph: {
-      entryNodeId: "untitled",
-      nodes: [
-        {
-          kind: "text",
-          nodeId: "untitled",
-          body: { "en-US": "The story begins." },
-          exit: { kind: "ending", endingId: "finish" },
-        },
-      ],
-    },
-    productionNotes: [],
-  };
-}
 
 function draftWithCharacter(): InteractiveStoryDraftContent {
   return {
     storyBible: {
       logline: "",
       synopsis: "",
-      worldview: "",
       characters: [
         {
           id: "hero",
@@ -445,8 +141,18 @@ function draftWithCharacter(): InteractiveStoryDraftContent {
           voice: null,
         },
       ],
-      endings: [],
     },
+    graph: {
+      entryNodeId: "opening",
+      nodes: [clip("opening", "OPENING", null)],
+    },
+    productionNotes: [],
+  };
+}
+
+function branchingDraft(): InteractiveStoryDraftContent {
+  return {
+    storyBible: { logline: "", synopsis: "", characters: [] },
     graph: {
       entryNodeId: "opening",
       nodes: [
@@ -454,55 +160,51 @@ function draftWithCharacter(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "opening",
           clipKey: "OPENING",
-          exit: { kind: "auto", nextNodeId: null },
+          exit: {
+            kind: "choice",
+            decisionId: "decision.route",
+            prompt: { "en-US": "Which route?" },
+            choices: [
+              {
+                choiceId: "choice.continue",
+                label: { "en-US": "Continue" },
+                nextNodeId: "second",
+              },
+            ],
+          },
         },
+        clip("second", "SECOND", null),
       ],
     },
     productionNotes: [],
   };
 }
 
-function draftWithMusic(): InteractiveStoryDraftContent {
+function linearDraft(): InteractiveStoryDraftContent {
   return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      worldview: "",
-      characters: [],
-      endings: [],
-    },
+    storyBible: { logline: "", synopsis: "", characters: [] },
     graph: {
       entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          music: { mediaAssetId: "asset-theme" },
-          exit: { kind: "auto", nextNodeId: "second" },
-        },
-        {
-          kind: "clip",
-          nodeId: "second",
-          clipKey: "SECOND",
-          exit: { kind: "auto", nextNodeId: null },
-        },
-      ],
+      nodes: [clip("opening", "OPENING", "second"), clip("second", "SECOND", null)],
     },
     productionNotes: [],
+  };
+}
+
+function clip(nodeId: string, clipKey: string, nextNodeId: string | null) {
+  return {
+    kind: "clip" as const,
+    nodeId,
+    clipKey,
+    exit: { kind: "auto" as const, nextNodeId },
   };
 }
 
 function inspectorProps(
-  content: InteractiveStoryDraftContent,
-  onUpdateEnding: ComponentProps<typeof StoryNodeInspector>["onUpdateEnding"],
-  onSetSceneExit: ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"] = vi.fn()
+  content: InteractiveStoryDraftContent
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
-    onSetSceneExit,
-    onSetEntryNode: vi.fn(),
     content,
-    format: "text_adventure",
     locale: "en-US",
     showFoundation: false,
     canEdit: true,
@@ -520,12 +222,10 @@ function inspectorProps(
     onUpdateCharacter: vi.fn(),
     onDeleteCharacter: vi.fn(),
     onCloseNode: vi.fn(),
-    onUpdateEnding,
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
-    onUpdateText: vi.fn(),
-    workspaceId: "workspace-1",
-    onUpdateMusic: vi.fn(),
+    onSetSceneExit: vi.fn(),
+    onSetEntryNode: vi.fn(),
   };
 }
 
@@ -541,35 +241,26 @@ function requiredElement<T extends Element>(element: T | null, label: string): T
 }
 
 function entryButton(container: HTMLElement): HTMLButtonElement {
-  const found = [...container.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === "inspector.entry"
+  return requiredElement(
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "inspector.entry"
+    ) ?? null,
+    "entry button"
   );
-  if (!found) throw new Error("Missing entry-scene button");
-  return found;
 }
 
 function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
-  const label = `inspector.exit${kind}`;
-  const found = [...container.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === label
+  return requiredElement(
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === `inspector.exit${kind}`
+    ) ?? null,
+    `${kind} exit button`
   );
-  if (!found) throw new Error(`Missing exit button ${label}`);
-  return found;
 }
 
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-  });
-}
-
-async function input(element: HTMLTextAreaElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  if (!setter) throw new Error("Missing textarea value setter.");
-  await act(async () => {
-    setter.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
 }

@@ -37,12 +37,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
   /^\/ips(\/|$)/,
-  // Playing an interactive film (影游) requires login; the rest of /play —
-  // the narrative demo (/play/jinling-v2) and legacy /play/[id] — stays public
-  // so browsing/showcasing is unauthenticated. Only the interactive-film
-  // experience is gated (negative lookahead on the sub-path).
-  /^\/play(?!\/interactive-film(?:\/|$))(\/|$)/,
-  /^\/narrative-demo(\/|$)/,
+  // Keep the frozen Jinling interactive-film showcase public. Published
+  // StoryOS interactive films remain login-gated.
+  /^\/play\/jinling-v2(\/|$)/,
   // Generic tag landing pages (e.g. competitions like SGWander) are public +
   // shareable; entries link to the public IP detail page.
   /^\/tags\/[^/]+(\/|$)/,

@@ -6,7 +6,6 @@ import {
   StoryBuildKind,
   StoryBuildStatus,
   StoryExperiencePublicationStatus,
-  StoryFormat,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
@@ -173,9 +172,10 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         entryNodeId: null,
         nodes: [
           {
-            kind: 'text',
+            kind: 'clip',
             nodeId: secondNodeId,
-            body: { 'en-US': 'The second chapter waits beyond the gate.' },
+            clipKey: 'CHAPTER_TWO_SCENE',
+            description: 'The second chapter waits beyond the gate.',
             exit: { kind: 'auto', nextNodeId: null },
           },
         ],
@@ -986,7 +986,6 @@ async function createFixture(
   const project = await prisma.storyProject.create({
     data: {
       workspaceId: workspace.id,
-      format: StoryFormat.interactive_film,
       frameProfile: StoryFrameProfile.landscape_16_9,
       status: StoryProjectStatus.active,
       visibility: StoryVisibility.private,

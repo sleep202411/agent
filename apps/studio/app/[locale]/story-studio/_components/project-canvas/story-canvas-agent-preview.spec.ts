@@ -17,7 +17,7 @@ const canonicalNode: StoryCanvasNode = {
   type: "storyCanvas",
   position: { x: 0, y: 0 },
   data: {
-    kind: "text",
+    kind: "clip",
     title: "Intro",
     eyebrow: "",
     nodeId: "intro",
@@ -52,10 +52,10 @@ describe("projectStoryCanvasAgentPreview", () => {
           payload: {
             intent: "create",
             node: {
-              kind: "text",
+              kind: "clip",
               nodeId: "new-scene",
-              title: { "zh-CN": "新场景" },
-              body: { "zh-CN": "场景内容" },
+              clipKey: "NEW_SCENE",
+              name: "新场景",
               exit: { kind: "auto", nextNodeId: null },
             },
           },
@@ -76,7 +76,6 @@ describe("projectStoryCanvasAgentPreview", () => {
       deletable: false,
       data: {
         title: "新场景",
-        summary: "场景内容",
         agentPreview: { previewId: "preview-1", kind: "create" },
       },
     });
@@ -91,10 +90,10 @@ describe("projectStoryCanvasAgentPreview", () => {
           payload: {
             intent: "replace",
             node: {
-              kind: "text",
+              kind: "clip",
               nodeId: "intro",
-              title: { "en-US": "Changed" },
-              body: { "en-US": "Changed" },
+              clipKey: "INTRO",
+              name: "Changed",
               exit: { kind: "auto", nextNodeId: null },
             },
           },
@@ -126,7 +125,7 @@ describe("projectStoryCanvasAgentPreview", () => {
     expect(result.nodes[0]?.data.agentPreview).toBeUndefined();
   });
 
-  it("projects character and ending creates into their presentation lanes", () => {
+  it("projects character creates into the cast lane", () => {
     const result = projectStoryCanvasAgentPreview({
       preview: preview([
         {
@@ -140,24 +139,13 @@ describe("projectStoryCanvasAgentPreview", () => {
             },
           },
         },
-        {
-          kind: "story_bible.put_ending",
-          payload: {
-            intent: "create",
-            ending: { id: "ending-a", title: { "en-US": "Home" } },
-          },
-        },
       ]),
       authority,
       nodes: [canonicalNode],
       locale: "en-US",
     });
 
-    expect(result.nodes.map((node) => node.id)).toEqual([
-      "intro",
-      "character:hero",
-      "__ending__:ending-a",
-    ]);
+    expect(result.nodes.map((node) => node.id)).toEqual(["intro", "character:hero"]);
     expect(result.nodes.slice(1).every((node) => node.data.agentPreview?.kind === "create")).toBe(
       true
     );

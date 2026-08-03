@@ -10,7 +10,6 @@ import {
   IconDots,
   IconEdit,
   IconUsers,
-  IconFileText,
   IconGitBranch,
   IconLoader2,
   IconMovie,
@@ -62,7 +61,6 @@ import {
   listJoinedStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
-  type CreatableStoryFormat,
   type StoryFrameProfile,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
@@ -311,9 +309,6 @@ function StoryProjectCard({
     project.cover.previewUrl
       ? project.cover
       : null;
-  const isTextFirstWithoutVideo =
-    project.format === "text_adventure" && project.production.clipCount === 0;
-
   return (
     <div className="group relative min-w-0">
       <Link
@@ -333,11 +328,7 @@ function StoryProjectCard({
               <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.055),transparent_48%,rgba(255,255,255,0.018))]" />
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:28px_28px] opacity-70" />
               <div className="absolute inset-0 grid place-items-center">
-                {project.format === "text_adventure" ? (
-                  <IconFileText className="size-9 text-white/16" stroke={1.4} />
-                ) : (
-                  <IconMovie className="size-9 text-white/16" stroke={1.4} />
-                )}
+                <IconMovie className="size-9 text-white/16" stroke={1.4} />
               </div>
             </>
           )}
@@ -346,36 +337,26 @@ function StoryProjectCard({
             <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] text-white/70 uppercase backdrop-blur-md">
               {t("projects.draft")}
             </span>
-            <span className="rounded-full bg-black/48 px-2.5 py-1 text-[10px] font-semibold text-white/78 backdrop-blur-md">
-              {t(`formats.${project.format}.label`)}
-            </span>
           </div>
 
           <div className="absolute right-2.5 bottom-2.5 left-2.5 flex items-center gap-1.5">
-            {isTextFirstWithoutVideo ? (
-              <ProjectStateChip
-                icon={<IconFileText className="size-3" />}
-                label={t("projects.textFirstWithoutVideo")}
+            <>
+              <ProjectMetricChip
+                icon={<IconPhoto className="size-3" />}
+                value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
+                label={t("metrics.references")}
               />
-            ) : (
-              <>
-                <ProjectMetricChip
-                  icon={<IconPhoto className="size-3" />}
-                  value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
-                  label={t("metrics.references")}
-                />
-                <ProjectMetricChip
-                  icon={<IconMovie className="size-3" />}
-                  value={String(project.production.clipCount)}
-                  label={t("metrics.clips")}
-                />
-                <ProjectMetricChip
-                  icon={<IconSparkles className="size-3" />}
-                  value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
-                  label={t("metrics.videos")}
-                />
-              </>
-            )}
+              <ProjectMetricChip
+                icon={<IconMovie className="size-3" />}
+                value={String(project.production.clipCount)}
+                label={t("metrics.clips")}
+              />
+              <ProjectMetricChip
+                icon={<IconSparkles className="size-3" />}
+                value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
+                label={t("metrics.videos")}
+              />
+            </>
           </div>
         </div>
 
@@ -398,12 +379,10 @@ function StoryProjectCard({
             </p>
             <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white/38">
               <span className="truncate">
-                {isTextFirstWithoutVideo
-                  ? t("projects.textFirstProgress")
-                  : t("projects.videoProgress", {
-                      current: project.production.currentVideoCount,
-                      total: project.production.clipCount,
-                    })}
+                {t("projects.videoProgress", {
+                  current: project.production.currentVideoCount,
+                  total: project.production.clipCount,
+                })}
               </span>
               <IconArrowRight
                 className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-white/66"
@@ -447,15 +426,6 @@ function StoryProjectCard({
         </DropdownMenu>
       ) : null}
     </div>
-  );
-}
-
-function ProjectStateChip({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-black/52 px-2 py-1 text-[9px] font-semibold text-white/72 backdrop-blur-md">
-      {icon}
-      <span className="truncate">{label}</span>
-    </span>
   );
 }
 
@@ -528,19 +498,13 @@ function CreateProjectDialog({
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [storyLocale, setStoryLocale] = useState(defaultLocale);
-  // Text adventures are moving into their own product (product split,
-  // 2026-08-01): Story Studio creates cinematic projects only, so nobody
-  // seeds soon-to-be-legacy text_adventure rows here. Existing text
-  // projects keep their full read/canvas/playtest paths.
-  const format: CreatableStoryFormat = "interactive_film";
-  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile | null>(DEFAULT_FRAME_PROFILE);
+  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile>(DEFAULT_FRAME_PROFILE);
   const createMutation = useMutation({
     mutationFn: () => {
-      if (!workspaceId || !frameProfile) {
+      if (!workspaceId) {
         throw new Error(t("errors.createProject"));
       }
       return createStoryProject(workspaceId, {
-        format,
         frameProfile,
         title: title.trim(),
         summary: summary.trim() || null,
@@ -644,7 +608,7 @@ function CreateProjectDialog({
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
-            disabled={!workspaceId || !title.trim() || !frameProfile || createMutation.isPending}
+            disabled={!workspaceId || !title.trim() || createMutation.isPending}
           >
             {createMutation.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("actions.create")}
@@ -655,7 +619,7 @@ function CreateProjectDialog({
   );
 }
 
-// Landscape is the dominant story format in practice — preselect it so a film
+// Landscape is the dominant film orientation in practice — preselect it so a film
 // project is creatable with only a title typed.
 const DEFAULT_FRAME_PROFILE: StoryFrameProfile = "landscape_16_9";
 

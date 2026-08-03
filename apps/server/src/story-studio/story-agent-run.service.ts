@@ -47,7 +47,6 @@ import {
   InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   StoryCanvasNodePositionsSchema,
-  type CreatableStoryFormat,
   type InteractiveStoryDraftContent,
 } from './dto';
 import {
@@ -182,12 +181,6 @@ export interface StoryAgentAuthoringJob {
   projectId: string;
   chapterId: string;
   workspaceId: string;
-  /**
-   * The project's creation profile. text_adventure stories are pure written
-   * beats, so the pipeline must skeleton them as all-text nodes; interactive_film
-   * stories may compose filmed clip nodes.
-   */
-  format: CreatableStoryFormat;
   brief: StoryPatchBrief;
   /** Canonical project + draft JSON the author must work from. */
   contextJson: string;
@@ -217,8 +210,7 @@ interface CanonicalAuthoringState {
     id: string;
     workspaceId: string;
     title: string;
-    format: CreatableStoryFormat;
-    frameProfile: string | null;
+    frameProfile: string;
     defaultLocale: string;
   };
   chapter: {
@@ -1586,7 +1578,6 @@ export class StoryAgentRunService {
         projectId: run.storyProjectId,
         chapterId: run.storyChapterId,
         workspaceId: run.workspaceId,
-        format: state.project.format,
         brief: briefResult.data,
         contextJson,
         document,
@@ -2272,7 +2263,6 @@ export class StoryAgentRunService {
         id: true,
         workspaceId: true,
         title: true,
-        format: true,
         frameProfile: true,
         defaultLocale: true,
         draft: true,
@@ -2304,15 +2294,6 @@ export class StoryAgentRunService {
       throw new InternalServerErrorException({
         code: 'STORY_AGENT_CANONICAL_STATE_MISSING',
         message: 'The story project is missing its canonical draft or layout.',
-      });
-    }
-    if (
-      project.format !== 'interactive_film' &&
-      project.format !== 'text_adventure'
-    ) {
-      throw new ConflictException({
-        code: 'STORY_AGENT_PROJECT_FORMAT_UNSUPPORTED',
-        message: `The Story Agent does not support story format ${project.format}.`,
       });
     }
     if (
@@ -2374,7 +2355,6 @@ export class StoryAgentRunService {
         id: project.id,
         workspaceId: project.workspaceId,
         title: project.title,
-        format: project.format,
         frameProfile: project.frameProfile,
         defaultLocale: project.defaultLocale,
       },

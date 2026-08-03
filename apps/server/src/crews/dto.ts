@@ -47,7 +47,7 @@ const ShowcaseWorkSchema = z.object({
     .optional(),
 });
 
-export const CreateCrewSchema = z.object({
+const CrewProfileSchema = z.object({
   name: z.string().trim().min(1).max(128),
   description: z.string().trim().min(1).max(2000),
   /** Square logo URL (≤512 chars). Cropped to circle in UI. */
@@ -62,9 +62,15 @@ export const CreateCrewSchema = z.object({
   /** Featured works — max 10. First powers hero bg. */
   showcaseWorks: z.array(ShowcaseWorkSchema).max(10).default([]),
 });
+
+export const CreateCrewSchema = CrewProfileSchema.extend({
+  productionTemplateLocale: z
+    .enum(['en-US', 'zh-CN', 'zh-HK'])
+    .default('en-US'),
+});
 export type CreateCrewInput = z.infer<typeof CreateCrewSchema>;
 
-export const UpdateCrewSchema = CreateCrewSchema.partial().extend({
+export const UpdateCrewSchema = CrewProfileSchema.partial().extend({
   /// Optimistic concurrency token from the row read prior to edit.
   expectedVersion: z.number().int().min(0).optional(),
 });

@@ -23,7 +23,7 @@ import {
 export * from './interactive-film.schema';
 export * from './story-production-canvas.schema';
 
-/** Product-level Story Studio contracts shared by cinematic and narrative profiles. */
+/** Product-level contracts for interactive-film production. */
 
 export const STORY_TITLE_MAX = 160;
 export const STORY_SUMMARY_MAX = 2_000;
@@ -33,16 +33,8 @@ export const STORY_CHAPTER_COUNT_MAX = 200;
 export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
   'story-canvas-layout-v3' as const;
-export const STORY_WORLD_CANVAS_NODE_ID = '__story_root__' as const;
 export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 1_000;
 export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 1_000_000;
-
-export const StoryFormatSchema = z.enum(['text_adventure', 'interactive_film']);
-export type StoryFormat = z.infer<typeof StoryFormatSchema>;
-
-/** Supported creation profiles. A format sets defaults; it never restricts graph node kinds. */
-export const CreatableStoryFormatSchema = StoryFormatSchema;
-export type CreatableStoryFormat = z.infer<typeof CreatableStoryFormatSchema>;
 
 export const StoryProjectStatusSchema = z.enum(['active', 'archived']);
 export type StoryProjectStatus = z.infer<typeof StoryProjectStatusSchema>;
@@ -223,7 +215,6 @@ export type StoryBuildAssetParams = z.infer<typeof StoryBuildAssetParamsSchema>;
 
 export const StoryProjectListQuerySchema = z
   .object({
-    format: StoryFormatSchema.optional(),
     status: StoryProjectStatusSchema.default('active'),
     cursor: z.string().trim().min(1).max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -288,11 +279,7 @@ export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 
 export const CreateStoryProjectSchema = z
   .object({
-    format: CreatableStoryFormatSchema,
-    // Optional: the project-wide frame contract is film-only. A cinematic
-    // (`interactive_film`) project must declare one; a text-first
-    // (`text_adventure`) project must not carry one at all.
-    frameProfile: StoryFrameProfileSchema.optional(),
+    frameProfile: StoryFrameProfileSchema,
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -301,26 +288,7 @@ export const CreateStoryProjectSchema = z
     ),
     sourceIpId: StoryUuidSchema.nullable().optional(),
   })
-  .strict()
-  .superRefine((input, context) => {
-    if (
-      input.format === 'interactive_film' &&
-      input.frameProfile === undefined
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['frameProfile'],
-        message: 'An interactive-film project requires a frame profile.',
-      });
-    }
-    if (input.format === 'text_adventure' && input.frameProfile !== undefined) {
-      context.addIssue({
-        code: 'custom',
-        path: ['frameProfile'],
-        message: 'A text-adventure project must not declare a frame profile.',
-      });
-    }
-  });
+  .strict();
 export type CreateStoryProjectInput = z.infer<typeof CreateStoryProjectSchema>;
 
 export const PatchStoryProjectSchema = z
@@ -398,23 +366,7 @@ export const PutStoryCanvasLayoutSchema = z
     nodePositions: StoryCanvasNodePositionsSchema,
     sessionId: SessionIdSchema,
   })
-  .strict()
-  .superRefine((layout, context) => {
-    // The synthetic story-world root is gone from the canvas; a layout that
-    // still positions it is stale client state, not a layout we can store.
-    if (
-      Object.prototype.hasOwnProperty.call(
-        layout.nodePositions,
-        STORY_WORLD_CANVAS_NODE_ID,
-      )
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['nodePositions', STORY_WORLD_CANVAS_NODE_ID],
-        message: 'The story-world node no longer exists on the canvas.',
-      });
-    }
-  });
+  .strict();
 export type PutStoryCanvasLayoutInput = z.infer<
   typeof PutStoryCanvasLayoutSchema
 >;
@@ -558,9 +510,9 @@ export const CreateStoryBuildSchema = z
       .optional(),
     scope: StoryBuildScopeSchema,
     // Publishability is an intent, not a shape. A multi-chapter work cannot
-    // compile to one full-scope manifest at all — chapters terminate in
-    // endings, so every chapter after the first would be an unreachable scene,
-    // which the Runtime Manifest rejects outright. Such a work therefore
+    // compile to one full-scope manifest at all — each chapter is an immutable,
+    // independently built film with its own entry and natural completion. Such
+    // a work therefore
     // publishes one manifest PER CHAPTER, and each of those is a subgraph;
     // what the release API receives is the Game Manifest listing those
     // per-chapter manifest URLs, never a composed manifest.
@@ -735,8 +687,7 @@ export interface StoryProjectWorkspaceRefDto {
 export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;
-  format: StoryFormat;
-  frameProfile: StoryFrameProfile | null;
+  frameProfile: StoryFrameProfile;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -770,7 +721,6 @@ export interface StoryDraftDto {
   projectId: string;
   /** Null only on project-wide immutable-revision conflict payloads. */
   chapterId: string | null;
-  format: CreatableStoryFormat;
   schemaVersion: typeof INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION;
   content: InteractiveStoryDraftContent;
   contentHash: string;
@@ -805,7 +755,6 @@ export interface StoryProductionCanvasDto {
 
 export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   projectId: string;
-  format: CreatableStoryFormat;
   content: InteractiveStoryDraftContent;
 }
 
@@ -873,20 +822,13 @@ export interface StoryBuildDiagnosticDto {
   severity: 'error' | 'warning';
   code: string;
   message: string;
-  entityType:
-    | 'revision'
-    | 'clip'
-    | 'reference'
-    | 'choice'
-    | 'ending'
-    | 'asset'
-    | null;
+  entityType: 'revision' | 'clip' | 'reference' | 'choice' | 'asset' | null;
   entityId: string | null;
 }
 
 export interface StoryBuildPathReportDto {
   enumeratedPathCount: number;
-  reachableEndingIds: string[];
+  reachableTerminalNodeIds: string[];
   unreachableNodeIds: string[];
   ambiguousPathCount: number;
   durationMinMs: number;

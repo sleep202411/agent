@@ -47,9 +47,7 @@ function draft(logline: string): InteractiveStoryDraftContent {
     storyBible: {
       logline,
       synopsis: "",
-      worldview: "",
       characters: [],
-      endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],

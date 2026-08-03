@@ -2,7 +2,6 @@ import type { StudioAgentCanvasPreviewPart } from "@/lib/studio-agent";
 
 import {
   characterCanvasNodeId,
-  syntheticEndingNodeId,
   type StoryCanvasNode,
   type StoryCanvasNodeData,
 } from "./story-project-canvas-model";
@@ -110,7 +109,7 @@ export function projectStoryCanvasAgentPreview({
           markCanonical(nodeId, "replace");
           break;
         }
-        const data = graphNodePreviewData(node, locale);
+        const data = graphNodePreviewData(node);
         if (data) appendGhost(nodeId, data, "story");
         break;
       }
@@ -159,35 +158,6 @@ export function projectStoryCanvasAgentPreview({
         if (characterId) markCanonical(characterCanvasNodeId(characterId), "remove");
         break;
       }
-      case "story_bible.put_ending": {
-        const intent = stringProperty(operation.payload, "intent");
-        const ending = recordProperty(operation.payload, "ending");
-        const endingId = ending ? stringProperty(ending, "id") : null;
-        if (!endingId || !ending) break;
-        const canvasNodeId = syntheticEndingNodeId(endingId);
-        if (intent === "replace" || canonicalIndex.has(canvasNodeId)) {
-          markCanonical(canvasNodeId, "replace");
-          break;
-        }
-        appendGhost(
-          canvasNodeId,
-          {
-            kind: "ending",
-            title: localizedProperty(ending, "title", locale, endingId),
-            eyebrow: "",
-            nodeId: canvasNodeId,
-            endingId,
-            summary: localizedProperty(ending, "summary", locale, ""),
-          },
-          "story"
-        );
-        break;
-      }
-      case "story_bible.remove_ending": {
-        const endingId = stringProperty(operation.payload, "endingId");
-        if (endingId) markCanonical(syntheticEndingNodeId(endingId), "remove");
-        break;
-      }
       case "story_bible.update_overview":
       case "production.replace_notes":
         // These operations have no graph-card projection. The streamed
@@ -229,38 +199,20 @@ function withPreviewMarker(
   };
 }
 
-function graphNodePreviewData(
-  node: Record<string, unknown>,
-  locale: string
-): StoryCanvasNodeData | null {
+function graphNodePreviewData(node: Record<string, unknown>): StoryCanvasNodeData | null {
   const nodeId = stringProperty(node, "nodeId");
   const kind = stringProperty(node, "kind");
-  if (!nodeId || (kind !== "clip" && kind !== "text")) return null;
+  if (!nodeId || kind !== "clip") return null;
   const exit = recordProperty(node, "exit");
   const exitKind = exit ? stringProperty(exit, "kind") : null;
 
-  if (kind === "clip") {
-    return {
-      kind,
-      title: stringProperty(node, "name") ?? stringProperty(node, "clipKey") ?? nodeId,
-      eyebrow: "",
-      nodeId,
-      clipKey: stringProperty(node, "clipKey") ?? undefined,
-      exitKind:
-        exitKind === "auto" || exitKind === "choice" || exitKind === "ending"
-          ? exitKind
-          : undefined,
-    };
-  }
-
   return {
-    kind,
-    title: localizedProperty(node, "title", locale, nodeId),
+    kind: "clip",
+    title: stringProperty(node, "name") ?? stringProperty(node, "clipKey") ?? nodeId,
     eyebrow: "",
     nodeId,
-    summary: localizedProperty(node, "body", locale, ""),
-    exitKind:
-      exitKind === "auto" || exitKind === "choice" || exitKind === "ending" ? exitKind : undefined,
+    clipKey: stringProperty(node, "clipKey") ?? undefined,
+    exitKind: exitKind === "auto" || exitKind === "choice" ? exitKind : undefined,
   };
 }
 

@@ -2,10 +2,8 @@ import { z } from "zod";
 import {
   StoryAgentCharacterSchema,
   StoryAgentClipKeySchema,
-  StoryAgentEndingSchema,
   StoryAgentLocalizedTextSchema,
   StoryAgentStableIdSchema,
-  StoryAgentTextBodyLocalizedTextSchema,
 } from "./story-agent.js";
 
 // Stage keys + progress schema live in story-agent.ts (the DTO home) to avoid a
@@ -23,45 +21,40 @@ export {
  * deterministic assembler turns the four products into StoryPatchOperations.
  *
  * The point is correctness by construction: the skeleton is validated for
- * referential integrity BEFORE any prose is written, so a dangling edge cannot
+ * referential integrity BEFORE any scene copy is written, so a dangling edge cannot
  * survive into the proposal. `validateStorySkeleton` is that gate — pure,
  * deterministic, no model involved.
  */
 
-// ── Stage 1 · 世界观架构师 ────────────────────────────────────────────────
-// The story bible: premise + cast + endings. Reuses the shared leaf schemas so
-// there is no third parallel definition of these shapes.
+// ── Stage 1 · 影视基础设定 ────────────────────────────────────────────────
+// The film foundation: premise + cast. Playback ends naturally on a terminal clip.
 
 export const StoryBibleDraftSchema = z
   .object({
     logline: z.string().max(1_000),
     synopsis: z.string().max(20_000),
-    worldview: z.string().max(20_000),
     characters: z.array(StoryAgentCharacterSchema).max(100),
-    endings: z.array(StoryAgentEndingSchema).min(1).max(100),
   })
   .strict();
 export type StoryBibleDraft = z.infer<typeof StoryBibleDraftSchema>;
 
 // ── Stage 2 · 剧情结构师 ──────────────────────────────────────────────────
-// A SMALL skeleton: every node id, its kind, a one-line beat, and its intended
-// single successor (null = the beat ends the story via an ending, wired later).
-// Prose and branching are NOT here — keeping this artifact tiny is what makes
+// A SMALL skeleton: every clip id, stable clip key, one-line beat, and allowed
+// successors. An empty successor set is the natural end of playback.
+// Scene copy and branching are NOT here — keeping this artifact tiny is what makes
 // its referential integrity checkable and repairable cheaply.
 
 export const StorySkeletonNodeSchema = z
   .object({
     id: StoryAgentStableIdSchema,
-    kind: z.enum(["clip", "text"]),
-    /** Uppercase stable key; required for clip nodes, absent for text nodes. */
-    clipKey: StoryAgentClipKeySchema.optional(),
-    /** One-line beat summary the scene writer later expands into prose. */
+    clipKey: StoryAgentClipKeySchema,
+    /** One-line beat summary the scene writer later expands into production copy. */
     beat: z.string().trim().min(1).max(500),
     /**
      * The beats this one is ALLOWED to flow into — a superset the branch stage
      * draws from. Branching may pick any subset of these as targets and may not
      * invent others, so branching cannot introduce a dangling edge. Empty =
-     * terminal (resolves to an ending during the branch stage).
+     * terminal clip.
      */
     nextIds: z.array(StoryAgentStableIdSchema).max(6),
   })
@@ -77,9 +70,8 @@ export const StorySkeletonSchema = z
 export type StorySkeleton = z.infer<typeof StorySkeletonSchema>;
 
 // ── Stage 3 · 分支编排师 ──────────────────────────────────────────────────
-// Turns skeleton beats into concrete exits. A branching beat fans into choices
-// (each targeting another skeleton node or an ending); a linear beat continues;
-// a terminal beat resolves to an ending.
+// Turns skeleton beats into concrete exits. A branching clip fans into choices,
+// a linear clip continues, and a terminal clip uses auto + null.
 
 const StoryBranchChoiceSchema = z
   .object({
@@ -92,7 +84,13 @@ const StoryBranchChoiceSchema = z
 
 export const StoryNodeBranchSchema = z.object({ nodeId: StoryAgentStableIdSchema }).and(
   z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("auto"), nextNodeId: StoryAgentStableIdSchema }).strict(),
+    z
+      .object({
+        kind: z.literal("auto"),
+        /** Null is the natural terminal of an interactive-film clip. */
+        nextNodeId: StoryAgentStableIdSchema.nullable(),
+      })
+      .strict(),
     z
       .object({
         kind: z.literal("choice"),
@@ -101,7 +99,6 @@ export const StoryNodeBranchSchema = z.object({ nodeId: StoryAgentStableIdSchema
         choices: z.array(StoryBranchChoiceSchema).min(2).max(6),
       })
       .strict(),
-    z.object({ kind: z.literal("ending"), endingId: StoryAgentStableIdSchema }).strict(),
   ])
 );
 export type StoryNodeBranch = z.infer<typeof StoryNodeBranchSchema>;
@@ -114,14 +111,13 @@ export const StoryBranchPlanSchema = z
 export type StoryBranchPlan = z.infer<typeof StoryBranchPlanSchema>;
 
 // ── Stage 4 · 场景撰写师 ──────────────────────────────────────────────────
-// Per-node prose. Fills bodies of already-wired nodes; cannot introduce ids.
+// Per-clip editorial copy. It cannot introduce ids or graph edges.
 
 export const StorySceneProseNodeSchema = z
   .object({
     nodeId: StoryAgentStableIdSchema,
-    title: StoryAgentLocalizedTextSchema.optional(),
-    /** Text-node prose, or a clip node's shot description. */
-    body: StoryAgentTextBodyLocalizedTextSchema,
+    name: z.string().trim().max(120).optional(),
+    description: z.string().trim().max(4_000),
   })
   .strict();
 
@@ -136,8 +132,6 @@ export interface StorySkeletonValidationIssue {
   code:
     | "DUPLICATE_NODE_ID"
     | "DUPLICATE_CLIP_KEY"
-    | "CLIP_KEY_REQUIRED"
-    | "CLIP_KEY_ON_TEXT"
     | "ENTRY_NOT_FOUND"
     | "DANGLING_NEXT"
     | "UNREACHABLE_NODE";
@@ -164,25 +158,13 @@ export function validateStorySkeleton(skeleton: StorySkeleton): StorySkeletonVal
     }
     ids.add(node.id);
 
-    if (node.kind === "clip") {
-      if (!node.clipKey) {
-        issues.push({
-          code: "CLIP_KEY_REQUIRED",
-          detail: `Clip node "${node.id}" needs a clipKey.`,
-        });
-      } else if (clipKeys.has(node.clipKey)) {
-        issues.push({
-          code: "DUPLICATE_CLIP_KEY",
-          detail: `Clip key "${node.clipKey}" is used more than once.`,
-        });
-      } else {
-        clipKeys.add(node.clipKey);
-      }
-    } else if (node.clipKey) {
+    if (clipKeys.has(node.clipKey)) {
       issues.push({
-        code: "CLIP_KEY_ON_TEXT",
-        detail: `Text node "${node.id}" must not carry a clipKey.`,
+        code: "DUPLICATE_CLIP_KEY",
+        detail: `Clip key "${node.clipKey}" is used more than once.`,
       });
+    } else {
+      clipKeys.add(node.clipKey);
     }
   }
 

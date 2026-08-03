@@ -4,18 +4,15 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   IconArrowLeft,
-  IconArrowRight,
   IconDeviceGamepad2,
   IconPlayerPlay,
   IconSparkles,
 } from "@tabler/icons-react";
 import type { ExperienceGameListResponse } from "@repo/shared/experience-runtime";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
-import { NARRATIVE_PLAYABLES } from "@/src/features/narrative/narrative-games";
 import { resolveGameCover } from "../_data/cover-overrides";
 
 export function GamesPageClient({
@@ -129,80 +126,6 @@ export function GamesPageClient({
               <p className="mt-3 text-sm text-muted-foreground">{t("catalogue.empty")}</p>
             </div>
           ) : null}
-
-          {NARRATIVE_PLAYABLES.map((playable) => {
-            const itemKey = `items.${playable.translationKey}`;
-            return (
-              <article
-                key={playable.id}
-                className="group overflow-hidden rounded-2xl bg-secondary/55 transition-colors hover:bg-secondary/70"
-              >
-                <div className="relative aspect-video overflow-hidden bg-black">
-                  <Image
-                    src={playable.coverSrc}
-                    alt={t(`${itemKey}.coverAlt`)}
-                    fill
-                    unoptimized
-                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="object-cover opacity-78 transition-transform duration-500 group-hover:scale-[1.03]"
-                  />
-                  <div className="absolute inset-0 bg-linear-to-b from-black/10 via-black/20 to-black/70" />
-                  <div className="absolute top-3 left-3 rounded-full bg-black/55 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">
-                    {t(`status.${playable.status}`)}
-                  </div>
-                  <div className="absolute right-3 bottom-3 left-3">
-                    <p className="text-xs font-semibold text-white/60">{t(`${itemKey}.type`)}</p>
-                    <h2 className="mt-0.5 text-lg leading-tight font-semibold text-white">
-                      {t(`${itemKey}.title`)}
-                    </h2>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <p className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
-                    {t(`${itemKey}.summary`)}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {playable.tagKeys.map((tagKey) => (
-                      <span
-                        key={tagKey}
-                        className="rounded-full bg-background/65 px-2.5 py-1 text-xs font-semibold text-muted-foreground"
-                      >
-                        {t(`tags.${tagKey}`)}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-1.5">
-                    {playable.statKeys.map((statKey) => (
-                      <div key={statKey} className="rounded-lg bg-background/55 px-2.5 py-1.5">
-                        <p className="text-xs font-semibold text-muted-foreground">
-                          {t(`stats.${statKey}`)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                    <Link
-                      href={localizePath(`/ips/${playable.sourceIpId}`, locale)}
-                      className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {t("sourceIp")}
-                      <IconArrowRight className="size-4" />
-                    </Link>
-                    <Link
-                      href={localizePath(playable.href, locale)}
-                      className={cn(
-                        "inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground",
-                        "transition-transform hover:-translate-y-0.5 active:translate-y-0"
-                      )}
-                    >
-                      <IconPlayerPlay className="size-4" />
-                      {t("start")}
-                    </Link>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
         </section>
       </main>
     </div>

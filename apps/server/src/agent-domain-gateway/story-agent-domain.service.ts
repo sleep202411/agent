@@ -52,8 +52,7 @@ interface CanonicalStoryState {
     id: string;
     workspaceId: string;
     title: string;
-    format: 'interactive_film' | 'text_adventure';
-    frameProfile: string | null;
+    frameProfile: string;
     defaultLocale: string;
     coverAssetId: string | null;
   };
@@ -367,7 +366,6 @@ async function loadCanonicalStoryState(
       id: true,
       workspaceId: true,
       title: true,
-      format: true,
       frameProfile: true,
       defaultLocale: true,
       coverAssetId: true,
@@ -386,15 +384,6 @@ async function loadCanonicalStoryState(
     },
   });
   if (!project) throw new NotFoundException('Story project not found.');
-  if (
-    project.format !== 'interactive_film' &&
-    project.format !== 'text_adventure'
-  ) {
-    throw new ConflictException({
-      code: 'STORY_FORMAT_UNSUPPORTED',
-      message: `StoryOS does not support story format ${project.format}.`,
-    });
-  }
   const chapter = requestedChapterId
     ? project.chapters.find((candidate) => candidate.id === requestedChapterId)
     : project.chapters[0];
@@ -461,7 +450,6 @@ async function loadCanonicalStoryState(
       id: project.id,
       workspaceId: project.workspaceId,
       title: project.title,
-      format: project.format,
       frameProfile: project.frameProfile,
       defaultLocale: project.defaultLocale,
       coverAssetId: project.coverAssetId,

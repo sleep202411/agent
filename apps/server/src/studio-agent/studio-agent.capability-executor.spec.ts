@@ -69,10 +69,11 @@ function preparedPatchInput() {
         payload: {
           intent: 'replace',
           node: {
-            kind: 'text',
+            kind: 'clip',
             nodeId: 'scene.opening',
-            title: { 'en-US': 'A new opening' },
-            body: { 'en-US': 'The chef arrives.' },
+            clipKey: 'OPENING',
+            name: 'A new opening',
+            description: 'The chef arrives.',
             exit: { kind: 'auto', nextNodeId: null },
           },
         },
