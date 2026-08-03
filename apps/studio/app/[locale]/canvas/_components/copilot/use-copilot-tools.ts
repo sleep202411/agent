@@ -28,6 +28,7 @@ import {
   mergeCompatibleSettings,
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
+import { SHOT_NODE_TYPE, nextShotOrder } from "@/lib/canvas-authoring/shot-node";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 
 const MAX_DIGEST_NODES = 40;
@@ -42,6 +43,9 @@ function nodeLabel(node: Node): string | undefined {
   if (typeof data.name === "string" && data.name) return data.name;
   if (typeof data.prompt === "string" && data.prompt) return data.prompt.slice(0, 80);
   if (typeof data.text === "string" && data.text) return data.text.slice(0, 80);
+  // A shot reads by its name, else by the line it carries.
+  if (typeof data.label === "string" && data.label) return data.label.slice(0, 80);
+  if (typeof data.dialogue === "string" && data.dialogue) return data.dialogue.slice(0, 80);
   return undefined;
 }
 
@@ -93,8 +97,8 @@ export function useCopilotTools() {
         case "add_node": {
           if (!graph.canEdit) throw new Error("The canvas is read-only.");
           const kind = input.kind;
-          if (kind !== "image" && kind !== "video" && kind !== "note") {
-            throw new Error('kind must be "image", "video", or "note"');
+          if (kind !== "image" && kind !== "video" && kind !== "note" && kind !== "shot") {
+            throw new Error('kind must be "image", "video", "note", or "shot"');
           }
           const prompt = typeof input.prompt === "string" ? input.prompt : "";
           const label = typeof input.label === "string" ? input.label : undefined;
@@ -114,6 +118,21 @@ export function useCopilotTools() {
 
           if (kind === "note") {
             graph.addNode({ id, type: "note", position, data: { text: prompt } });
+          } else if (kind === "shot") {
+            // Appends to the end of the storyboard. The order key comes from
+            // the LIVE document (not React Flow's store, which is a render
+            // behind), so a run of shots added across one turn keeps the
+            // sequence the copilot created them in.
+            graph.addNode({
+              id,
+              type: SHOT_NODE_TYPE,
+              position,
+              data: {
+                order: nextShotOrder(graph.getNodes()),
+                ...(label ? { label } : {}),
+                ...(prompt ? { dialogue: prompt } : {}),
+              },
+            });
           } else {
             const data: Record<string, unknown> = { prompt };
             if (label) data.name = label;
