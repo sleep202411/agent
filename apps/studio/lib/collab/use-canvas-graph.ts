@@ -835,6 +835,18 @@ export function useCanvasGraph(
     [doc]
   );
 
+  // Committed nodes plus this client's local-only ones (same precedence as
+  // `getNode`), deduped exactly like the render path so a node caught mid-
+  // promotion is never reported twice.
+  const getNodes = useCallback((): CanvasNodeShape[] => {
+    const out = doc ? readAllNodes(doc) : [];
+    const seen = new Set(out.map((node) => node.id));
+    for (const [id, node] of localOnlyNodes.current) {
+      if (!seen.has(id)) out.push(node);
+    }
+    return out;
+  }, [doc]);
+
   const getEdges = useCallback((): CanvasEdgeShape[] => (doc ? readAllEdges(doc) : []), [doc]);
 
   // they also own ephemeral overlay state (selection/measure) — their *commits*
@@ -852,6 +864,7 @@ export function useCanvasGraph(
         nodes,
         edges,
         getNode,
+        getNodes,
         getEdges,
         onNodesChange,
         onEdgesChange,
@@ -887,6 +900,7 @@ export function useCanvasGraph(
       nodes,
       edges,
       getNode,
+      getNodes,
       getEdges,
       onNodesChange,
       onEdgesChange,
@@ -926,6 +940,7 @@ export function useCanvasGraph(
     canUndo,
     canRedo,
     getNode,
+    getNodes,
     getEdges,
     onNodesChange,
     onEdgesChange,

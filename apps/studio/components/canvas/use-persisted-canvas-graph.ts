@@ -616,6 +616,7 @@ export function usePersistedCanvasGraph<
         const node = nodesRef.current.find((candidate) => candidate.id === id);
         return node ? nodeToShape(node) : null;
       },
+      getNodes: () => nodesRef.current.map(nodeToShape),
       getEdges: () => edgesRef.current.map(edgeToShape),
       onNodesChange,
       onEdgesChange,
