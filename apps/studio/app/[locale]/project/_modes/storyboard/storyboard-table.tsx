@@ -44,7 +44,7 @@ import {
 } from "./storyboard-columns";
 import { ShotPictureDrawer, type ShotPictureDrawerActions } from "./shot-picture-drawer";
 import { StoryboardRow } from "./storyboard-row";
-import type { StoryboardRowActions } from "./storyboard-types";
+import type { ShotSlotKind, StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
 
 const HIGHLIGHT_MS = 2000;
@@ -114,6 +114,9 @@ export function StoryboardTable({
   // Master-detail: the drawer follows the SELECTED SHOT, not a generation node,
   // so switching rows swaps the detail instead of opening a new surface.
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
+  // Which of the shot's pictures the drawer opened on — the cell that was
+  // clicked decides, and the drawer's own tabs can move it afterwards.
+  const [selectedSlot, setSelectedSlot] = useState<ShotSlotKind>("image");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [skipNextTime, setSkipNextTime] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -218,7 +221,10 @@ export function StoryboardTable({
       onDelete: requestDelete,
       onInsert: insertShot,
       onMoveToIndex: moveShotToIndex,
-      onSelect: setSelectedShotId,
+      onSelect: (shotId, slot) => {
+        setSelectedShotId(shotId);
+        setSelectedSlot(slot);
+      },
       onOpenOnCanvas,
     }),
     [insertShot, moveShotToIndex, onOpenOnCanvas, patchShot, requestDelete]
@@ -269,6 +275,7 @@ export function StoryboardTable({
       {selectedRow ? (
         <ShotPictureDrawer
           row={selectedRow}
+          slot={selectedSlot}
           sources={canvasSources}
           canEdit={canEdit}
           actions={drawerActions}

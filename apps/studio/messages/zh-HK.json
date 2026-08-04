@@ -1669,7 +1669,7 @@
       "copiedId": "已複製鏡號ID"
     },
     "drawer": {
-      "title": "分鏡 {index} · 畫面",
+      "title": "分鏡 {index} · {slot}",
       "close": "關閉",
       "slotFrame": "分鏡圖",
       "slotClip": "分鏡影片",
@@ -1687,7 +1687,13 @@
       "sourcePicked": "取自畫布素材",
       "noPrompt": "沒有記錄提示詞",
       "candidates": "候選",
-      "candidatesSoon": "多候選與定稿將於後續版本提供。"
+      "candidatesSoon": "多候選與定稿將於後續版本提供。",
+      "promptLabel": "提示詞",
+      "promptPlaceholder": "描述這個鏡頭——構圖、主體、光線、氛圍。",
+      "modelLabel": "模型",
+      "modelUnset": "選擇模型",
+      "settingsLabel": "模型參數",
+      "generating": "生成中…"
     },
     "delete": {
       "title": "刪除這個分鏡？",

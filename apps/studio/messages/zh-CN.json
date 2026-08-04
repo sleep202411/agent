@@ -1669,7 +1669,7 @@
       "copiedId": "已复制镜号ID"
     },
     "drawer": {
-      "title": "分镜 {index} · 画面",
+      "title": "分镜 {index} · {slot}",
       "close": "关闭",
       "slotFrame": "分镜图",
       "slotClip": "分镜视频",
@@ -1687,7 +1687,13 @@
       "sourcePicked": "取自画布素材",
       "noPrompt": "没有记录提示词",
       "candidates": "候选",
-      "candidatesSoon": "多候选与定稿将在后续版本提供。"
+      "candidatesSoon": "多候选与定稿将在后续版本提供。",
+      "promptLabel": "提示词",
+      "promptPlaceholder": "描述这个镜头——构图、主体、光线、氛围。",
+      "modelLabel": "模型",
+      "modelUnset": "选择模型",
+      "settingsLabel": "模型参数",
+      "generating": "生成中…"
     },
     "delete": {
       "title": "删除这个分镜？",

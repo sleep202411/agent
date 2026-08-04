@@ -13,13 +13,20 @@ import type { ShotRow } from "./use-storyboard";
 /** The drag affordance, handed down from the row's `useSortable`. */
 export type ShotDragHandle = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
 
+/** A shot's two picture slots: the still frame, and the shot in motion. */
+export type ShotSlotKind = "image" | "video";
+
 export interface StoryboardRowActions {
   onPatch: (shotId: string, patch: Partial<ShotNodeData>) => void;
   onDelete: (shotId: string) => void;
   onInsert: (index: number) => void;
   onMoveToIndex: (shotId: string, index: number) => void;
-  /** Open this shot in the picture drawer (master-detail selection). */
-  onSelect: (shotId: string) => void;
+  /**
+   * Open one of this shot's picture slots in the drawer. The slot comes from
+   * the cell that was clicked — you asked to work on THAT picture, so that is
+   * what the drawer opens on.
+   */
+  onSelect: (shotId: string, slot: ShotSlotKind) => void;
   onOpenOnCanvas: (nodeId: string) => void;
 }
 

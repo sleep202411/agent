@@ -33,7 +33,7 @@ function ShotFrameCell({ row, selected, actions }: StoryboardCellProps) {
       row={row}
       kind="image"
       selected={selected}
-      onOpen={() => actions.onSelect(row.id)}
+      onOpen={() => actions.onSelect(row.id, "image")}
     />
   );
 }
@@ -44,7 +44,7 @@ function ShotClipCell({ row, selected, actions }: StoryboardCellProps) {
       row={row}
       kind="video"
       selected={selected}
-      onOpen={() => actions.onSelect(row.id)}
+      onOpen={() => actions.onSelect(row.id, "video")}
     />
   );
 }

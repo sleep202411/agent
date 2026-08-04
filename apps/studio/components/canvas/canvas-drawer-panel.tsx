@@ -27,6 +27,7 @@ export function CanvasDrawerPanel({
   onClose,
   placement = "floating",
   width = CANVAS_DRAWER_WIDTH,
+  footer,
   children,
   className,
 }: {
@@ -44,6 +45,9 @@ export function CanvasDrawerPanel({
    */
   placement?: "flush" | "floating" | "inline";
   width?: number;
+  /** Pinned to the bottom, outside the body's scroll — where the panel's
+   *  committing action lives. Omitted, the panel ends with its body. */
+  footer?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -90,6 +94,16 @@ export function CanvasDrawerPanel({
 
       <div className="mx-4 h-px bg-white/[0.07]" />
       {children}
+
+      {/* The commit bar: it does not scroll with the body, so the action stays
+          reachable however long the panel's content gets. Same hairline as the
+          header, so the panel reads as head / work / act. */}
+      {footer ? (
+        <div className="shrink-0">
+          <div className="mx-4 h-px bg-white/[0.07]" />
+          <div className="px-4 pt-3 pb-4">{footer}</div>
+        </div>
+      ) : null}
     </FrostedPanel>
   );
 }

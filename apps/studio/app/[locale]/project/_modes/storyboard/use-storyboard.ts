@@ -43,6 +43,14 @@ const NEW_STRIP_OFFSET_Y = 240;
 
 export type ShotPictureStatus = "ready" | "running" | "failed" | "empty";
 
+/** What a picture source is born holding, when the caller already knows it. */
+export interface ShotPictureSeed {
+  prompt?: string;
+  modelId?: string;
+  mode?: string;
+  settings?: Record<string, unknown>;
+}
+
 export interface ShotPicture {
   edgeId: string;
   sourceNodeId: string;
@@ -323,13 +331,18 @@ export function useStoryboard() {
    * which is why the table needs no generation code of its own.
    */
   const createPictureSource = useCallback(
-    (shotId: string, modality: "image" | "video"): string | null => {
+    (shotId: string, modality: "image" | "video", seed?: ShotPictureSeed): string | null => {
       if (!canEdit) return null;
       const shot = getNode(shotId);
       if (!shot) return null;
       const id = crypto.randomUUID();
       const nodeType = modality === "image" ? "prompt" : "video";
-      const model = canvasDefaultModel(catalog, modality);
+      // The seed is what the storyboard drawer already had on screen — a card
+      // created from a filled-in form must arrive holding those values, not
+      // defaults the user then has to re-enter.
+      const model =
+        (seed?.modelId ? catalog?.models.find((m) => m.id === seed.modelId) : undefined) ??
+        canvasDefaultModel(catalog, modality);
       const ordinal = getEdges().filter((edge) => edge.target === shotId).length;
       addNode({
         id,
@@ -341,10 +354,10 @@ export function useStoryboard() {
         data: {
           modelId: model?.id,
           modelName: model?.name,
-          mode: canvasDefaultMode(model),
-          settings: defaultSettingsForModel(model),
+          mode: seed?.mode ?? canvasDefaultMode(model),
+          settings: seed?.settings ?? defaultSettingsForModel(model),
           references: {},
-          prompt: "",
+          prompt: seed?.prompt ?? "",
           name: t(modality === "image" ? "imageCardName" : "videoCardName", {
             index: nodes.filter((node) => node.type === nodeType).length + 1,
           }),

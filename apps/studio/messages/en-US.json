@@ -1669,7 +1669,7 @@
       "copiedId": "Shot ID copied"
     },
     "drawer": {
-      "title": "Shot {index} · picture",
+      "title": "Shot {index} · {slot}",
       "close": "Close",
       "slotFrame": "Frame",
       "slotClip": "Clip",
@@ -1687,7 +1687,13 @@
       "sourcePicked": "Taken from the canvas",
       "noPrompt": "No prompt recorded",
       "candidates": "Candidates",
-      "candidatesSoon": "Multiple takes and picking a winner land in a later version."
+      "candidatesSoon": "Multiple takes and picking a winner land in a later version.",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Describe this shot — framing, subject, light, mood.",
+      "modelLabel": "Model",
+      "modelUnset": "Pick a model",
+      "settingsLabel": "Parameters",
+      "generating": "Generating…"
     },
     "delete": {
       "title": "Delete this shot?",
