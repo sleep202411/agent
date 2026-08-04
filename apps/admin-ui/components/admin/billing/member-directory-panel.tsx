@@ -5,7 +5,7 @@
 // 行内预填该用户)。数据经 LegacyMysql 桥(/admin/legacy-points/users),不经 Prisma。
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSearch, IconCoins, IconCrown } from "@tabler/icons-react";
+import { IconSearch, IconCoins, IconCrown, IconEye } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   ErrorBanner,
@@ -17,6 +17,7 @@ import {
 } from "./shared";
 import { GrantPointsDialog } from "./grant-points-dialog";
 import { GrantMembershipDialog } from "./grant-membership-dialog";
+import { MemberWorkspacesDrawer } from "./member-workspaces-drawer";
 
 interface MemberSummary {
   userId: string;
@@ -55,6 +56,9 @@ export function MemberDirectoryPanel() {
 
   const [grantOpen, setGrantOpen] = useState(false);
   const [grantIdentifier, setGrantIdentifier] = useState<string | undefined>(undefined);
+  // The row whose detail drawer is open — its workspaces are what decides
+  // which pot a top-up should go to.
+  const [viewing, setViewing] = useState<MemberSummary | null>(null);
   const [membershipOpen, setMembershipOpen] = useState(false);
   const [membershipIdentifier, setMembershipIdentifier] = useState<string | undefined>(undefined);
 
@@ -190,6 +194,15 @@ export function MemberDirectoryPanel() {
                           type="button"
                           size="xs"
                           variant="outline"
+                          onClick={() => setViewing(m)}
+                        >
+                          <IconEye className="size-3.5" />
+                          查看
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
                           onClick={() => openMembership(m.phone || m.email || undefined)}
                         >
                           <IconCrown className="size-3.5" />
@@ -247,6 +260,8 @@ export function MemberDirectoryPanel() {
           </div>
         ) : null}
       </section>
+
+      <MemberWorkspacesDrawer member={viewing} onClose={() => setViewing(null)} />
 
       <GrantPointsDialog
         open={grantOpen}

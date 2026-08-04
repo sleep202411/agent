@@ -645,6 +645,8 @@ export type AdminBillingPromotionsData = {
 // Workspace row + compute_point balance for the team-wallet picker.
 export type AdminWorkspaceType = "team" | "personal";
 
+export type AdminWorkspaceMemberRole = "owner" | "admin" | "member" | "viewer";
+
 export type AdminWorkspaceRow = {
   id: string;
   name: string;
@@ -656,6 +658,9 @@ export type AdminWorkspaceRow = {
   hasWallet: boolean;
   availableBalance: string;
   heldBalance: string;
+  /** Only when the list was queried for one user (`?relatedUserId=`): what that
+   *  user is in this workspace. `"owner"` also covers owning without a member row. */
+  relatedUserRole?: AdminWorkspaceMemberRole | null;
 };
 
 export type AdminBillingWorkspacesData = {
