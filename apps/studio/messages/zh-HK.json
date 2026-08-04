@@ -1605,7 +1605,8 @@
       "movement": "運鏡",
       "duration": "時長",
       "dialogue": "對白",
-      "notes": "備註"
+      "notes": "備註",
+      "actions": "分鏡操作"
     },
     "option": {
       "size": {
@@ -1687,6 +1688,11 @@
       "noPrompt": "沒有記錄提示詞",
       "candidates": "候選",
       "candidatesSoon": "多候選與定稿將於後續版本提供。"
+    },
+    "delete": {
+      "title": "刪除這個分鏡？",
+      "description": "第 {number} 個分鏡連同它的連線會被移除。為它供圖的素材仍留在畫布上。",
+      "dontAskAgain": "不再提示"
     }
   },
   "invite": {

@@ -1605,7 +1605,8 @@
       "movement": "运镜",
       "duration": "时长",
       "dialogue": "台词",
-      "notes": "备注"
+      "notes": "备注",
+      "actions": "分镜操作"
     },
     "option": {
       "size": {
@@ -1687,6 +1688,11 @@
       "noPrompt": "没有记录提示词",
       "candidates": "候选",
       "candidatesSoon": "多候选与定稿将在后续版本提供。"
+    },
+    "delete": {
+      "title": "删除这个分镜？",
+      "description": "第 {number} 个分镜连同它的连线会被移除。给它供图的素材仍留在画布上。",
+      "dontAskAgain": "不再提示"
     }
   },
   "invite": {

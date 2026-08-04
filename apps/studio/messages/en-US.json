@@ -1596,7 +1596,7 @@
       "openInStoryboard": "Open in storyboard"
     },
     "column": {
-      "number": "#",
+      "number": "Shot number",
       "id": "ID",
       "frame": "Frame",
       "clip": "Clip",
@@ -1605,7 +1605,8 @@
       "movement": "Movement",
       "duration": "Duration",
       "dialogue": "Dialogue",
-      "notes": "Notes"
+      "notes": "Notes",
+      "actions": "Shot actions"
     },
     "option": {
       "size": {
@@ -1687,6 +1688,11 @@
       "noPrompt": "No prompt recorded",
       "candidates": "Candidates",
       "candidatesSoon": "Multiple takes and picking a winner land in a later version."
+    },
+    "delete": {
+      "title": "Delete this shot?",
+      "description": "Shot {number} and its wiring are removed. The pictures feeding it stay on the canvas.",
+      "dontAskAgain": "Don't ask again"
     }
   },
   "invite": {

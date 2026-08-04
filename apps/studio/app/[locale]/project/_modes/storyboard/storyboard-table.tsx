@@ -22,19 +22,56 @@ import { IconLayoutList, IconPlus } from "@tabler/icons-react";
 import { CANVAS_DRAWER_WIDTH } from "@/components/canvas/canvas-drawer-panel";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
+  STORYBOARD_COLUMNS,
   STORYBOARD_ESTIMATED_ROW_HEIGHT,
-  STORYBOARD_ROW_RULE,
   STORYBOARD_GRID_TEMPLATE,
-  STORYBOARD_LABELLED_COLUMNS,
   STORYBOARD_OVERSCAN,
+  STORYBOARD_ROW_RULE,
+  storyboardCellStyle,
+  storyboardHeadClass,
 } from "./storyboard-columns";
 import { ShotPictureDrawer, type ShotPictureDrawerActions } from "./shot-picture-drawer";
-import { StoryboardRow, type StoryboardRowActions } from "./storyboard-row";
+import { StoryboardRow } from "./storyboard-row";
+import type { StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
 
 const HIGHLIGHT_MS = 2000;
+
+/**
+ * "Don't ask again" for shot deletion — a per-browser preference, read at the
+ * moment of the click rather than cached, so answering in one tab is honoured
+ * in the others. Storage being unavailable (private mode, blocked) means the
+ * dialog simply keeps asking, which is the safe direction to fail in.
+ */
+const SKIP_DELETE_CONFIRM_KEY = "fizzstudio.storyboard.skipDeleteConfirm";
+
+function readSkipDeleteConfirm(): boolean {
+  try {
+    return window.localStorage.getItem(SKIP_DELETE_CONFIRM_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSkipDeleteConfirm() {
+  try {
+    window.localStorage.setItem(SKIP_DELETE_CONFIRM_KEY, "1");
+  } catch {
+    /* preference lost, the dialog keeps asking — no reason to fail the delete */
+  }
+}
 
 /**
  * The storyboard: every `shot` node of the project canvas as a row, ordered by
@@ -58,6 +95,7 @@ export function StoryboardTable({
   onOpenOnCanvas: (nodeId: string) => void;
 }) {
   const t = useTranslations("storyboard");
+  const tCommon = useTranslations("common");
   const { setShellInset } = useProjectContext();
   const {
     rows,
@@ -76,6 +114,8 @@ export function StoryboardTable({
   // Master-detail: the drawer follows the SELECTED SHOT, not a generation node,
   // so switching rows swaps the detail instead of opening a new surface.
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [skipNextTime, setSkipNextTime] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -157,16 +197,31 @@ export function StoryboardTable({
     [moveShotToIndex, rowIds]
   );
 
+  // Deleting a shot cascades its wires and this mode has no undo, so it asks
+  // first — once per browser, until the user says not to. The dialog lives
+  // here, not in the row: a virtualized row unmounts the moment it scrolls out
+  // of view, which would take its own dialog down with it.
+  const requestDelete = useCallback(
+    (shotId: string) => {
+      if (readSkipDeleteConfirm()) {
+        deleteShot(shotId);
+        return;
+      }
+      setPendingDeleteId(shotId);
+    },
+    [deleteShot]
+  );
+
   const rowActions = useMemo<StoryboardRowActions>(
     () => ({
       onPatch: patchShot,
-      onDelete: deleteShot,
+      onDelete: requestDelete,
       onInsert: insertShot,
       onMoveToIndex: moveShotToIndex,
       onSelect: setSelectedShotId,
       onOpenOnCanvas,
     }),
-    [deleteShot, insertShot, moveShotToIndex, onOpenOnCanvas, patchShot]
+    [insertShot, moveShotToIndex, onOpenOnCanvas, patchShot, requestDelete]
   );
 
   const drawerActions = useMemo<ShotPictureDrawerActions>(
@@ -181,6 +236,20 @@ export function StoryboardTable({
   );
 
   const selectedRow = rows.find((row) => row.id === selectedShotId) ?? null;
+  const pendingDeleteRow = rows.find((row) => row.id === pendingDeleteId) ?? null;
+
+  const confirmDelete = useCallback(() => {
+    if (!pendingDeleteId) return;
+    if (skipNextTime) writeSkipDeleteConfirm();
+    deleteShot(pendingDeleteId);
+    setPendingDeleteId(null);
+    setSkipNextTime(false);
+  }, [deleteShot, pendingDeleteId, skipNextTime]);
+
+  // A collaborator deleting the same shot first closes the question.
+  useEffect(() => {
+    if (pendingDeleteId && !pendingDeleteRow) setPendingDeleteId(null);
+  }, [pendingDeleteId, pendingDeleteRow]);
 
   // The drawer stands in the shell's LEFT region: tell the shell so its chrome
   // (back + project name) slides aside instead of being covered — the same
@@ -208,13 +277,10 @@ export function StoryboardTable({
       ) : null}
 
       {/* CENTER region — the board. Not full-bleed, so the drawer shrinks it. */}
-      <div className="flex min-w-0 flex-1 flex-col px-6 pt-19 pb-6">
+      <div className="flex min-w-0 flex-1 flex-col px-2 pt-16 pb-2">
         <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
           <div className="flex items-baseline gap-2.5">
-            <h1 className="flex items-center gap-2 text-sm font-medium text-white/90">
-              <IconLayoutList className="size-4 text-white/45" stroke={1.8} />
-              {t("title")}
-            </h1>
+            <h1 className="text-lg font-semibold tracking-[-0.01em] text-white">{t("title")}</h1>
             <span className="text-xs text-white/35 tabular-nums">
               {t("shotCount", { count: rows.length })}
             </span>
@@ -231,7 +297,11 @@ export function StoryboardTable({
           ) : null}
         </header>
 
-        <div className="flex min-h-0 flex-1">
+        {/* The board sits on its own surface, one tone step above the page —
+            elevation carries it, since DESIGN.md §4 rules out an outline. The
+            drawer beside it is a step above again (page 0.13 → card 0.175 →
+            popover 0.19), so the three regions read in depth order. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden rounded-2xl bg-card">
           {rows.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
               <span className="flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-white/40">
@@ -258,19 +328,44 @@ export function StoryboardTable({
                   containerClassName="min-h-0 flex-1 overflow-y-auto"
                   className="grid"
                 >
-                  <TableHeader className="sticky top-0 z-20 grid bg-background">
+                  {/* Sticky on the panel's own tone — `background` here would
+                      cut a lighter seam across the top of the surface. */}
+                  <TableHeader className="sticky top-0 z-20 grid bg-card">
                     <TableRow
-                      className={cn("grid hover:bg-transparent", STORYBOARD_ROW_RULE)}
+                      className={cn(
+                        "grid w-max min-w-full hover:bg-transparent",
+                        STORYBOARD_ROW_RULE
+                      )}
                       style={{ gridTemplateColumns: STORYBOARD_GRID_TEMPLATE }}
                     >
-                      {STORYBOARD_LABELLED_COLUMNS.map((column) => (
-                        <TableHead key={column.key} scope="col" className="flex items-center">
-                          {t(`column.${column.key}`)}
-                        </TableHead>
-                      ))}
-                      <TableHead scope="col">
-                        <span className="sr-only">{t("row.actions")}</span>
-                      </TableHead>
+                      {STORYBOARD_COLUMNS.map((column) => {
+                        const label = t(`column.${column.key}`);
+                        return (
+                          <TableHead
+                            key={column.key}
+                            scope="col"
+                            // A pinned header cell is sticky BOTH ways, so it
+                            // outranks its sticky-left siblings inside the
+                            // already-sticky header row — and it takes an
+                            // explicit fill, since the header row itself is
+                            // transparent and there is nothing to inherit.
+                            className={storyboardHeadClass(
+                              column,
+                              column.pin ? "z-20 bg-card" : undefined
+                            )}
+                            style={storyboardCellStyle(column)}
+                          >
+                            {column.header.kind === "glyph" ? (
+                              <span aria-hidden>{column.header.glyph}</span>
+                            ) : null}
+                            {column.header.kind === "label" ? (
+                              label
+                            ) : (
+                              <span className="sr-only">{label}</span>
+                            )}
+                          </TableHead>
+                        );
+                      })}
                     </TableRow>
                   </TableHeader>
 
@@ -307,6 +402,40 @@ export function StoryboardTable({
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setPendingDeleteId(null);
+          // The tick is scoped to the question that was asked — dismissing
+          // without deleting doesn't quietly save it.
+          setSkipNextTime(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("delete.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("delete.description", { number: pendingDeleteRow?.number ?? 0 })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2.5 text-xs text-white/54">
+            <input
+              type="checkbox"
+              checked={skipNextTime}
+              onChange={(event) => setSkipNextTime(event.target.checked)}
+            />
+            {t("delete.dontAskAgain")}
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmDelete}>
+              {tCommon("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
