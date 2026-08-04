@@ -1693,7 +1693,9 @@
       "modelLabel": "Model",
       "modelUnset": "Pick a model",
       "settingsLabel": "Parameters",
-      "generating": "Generating…"
+      "generating": "Generating…",
+      "modelLoading": "Loading models…",
+      "modelLoadFailed": "Couldn't load models — retry"
     },
     "delete": {
       "title": "Delete this shot?",

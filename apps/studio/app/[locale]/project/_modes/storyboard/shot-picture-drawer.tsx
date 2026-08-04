@@ -6,16 +6,17 @@ import {
   IconChevronDown,
   IconLoader2,
   IconPhoto,
+  IconRefresh,
   IconSparkles,
   IconVideo,
 } from "@tabler/icons-react";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
 import { ModelPicker } from "@/components/canvas/authoring/model-picker";
 import { ModelSettings } from "@/components/canvas/authoring/model-settings";
 import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import type { ShotSlotKind } from "./storyboard-types";
 import { useShotPictureForm } from "./use-shot-picture-form";
 import type { CanvasSource, ShotPictureSeed, ShotRow } from "./use-storyboard";
@@ -74,7 +75,7 @@ export function ShotPictureDrawer({
   onClose: () => void;
 }) {
   const t = useTranslations("storyboard");
-  const { data: catalog } = useAiCatalog();
+  const { catalog } = useProjectContext();
   const promptId = useId();
   const [pickerOpen, setPickerOpen] = useState(false);
   const form = useShotPictureForm(row, slot, actions.onGenerate);
@@ -122,6 +123,10 @@ export function ShotPictureDrawer({
     >
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pt-4 pb-5">
         <Field label={t("drawer.promptLabel")} htmlFor={promptId} dense>
+          {/* The editor ships bare — the canvas composer is what gives it a
+              surface there. In a form it has to be a control: same fill, radius
+              and type scale as the model trigger below, so the three fields
+              read as one thing. */}
           <PromptTextarea
             id={promptId}
             value={form.prompt}
@@ -130,37 +135,60 @@ export function ShotPictureDrawer({
             rows={5}
             readOnly={!canEdit}
             aria-label={t("drawer.promptLabel")}
+            className="block max-h-56 min-h-24 w-full resize-none overflow-y-auto rounded-xl bg-white/[0.06] px-3 py-2.5 text-xs leading-relaxed text-white/85 outline-none transition-colors placeholder:text-white/30 focus-within:bg-white/[0.09]"
           />
         </Field>
 
+        {/* Three states, never conflated: still loading, failed to load, and
+            loaded. An empty picker used to stand for all three, which is what
+            made "no models" impossible to tell from "the request died". */}
         <Field label={t("drawer.modelLabel")} dense>
-          {/* The picker is a floating panel: it anchors to this trigger, so the
-              relative wrapper is what it positions against. */}
-          <div className="relative">
+          {catalog.error ? (
             <button
               type="button"
-              disabled={!canEdit}
-              onClick={() => setPickerOpen((open) => !open)}
-              className="flex h-9 w-full items-center justify-between gap-2 rounded-xl bg-white/[0.06] px-3 text-xs text-white/80 transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:opacity-50"
+              onClick={catalog.retry}
+              className="flex h-9 w-full items-center justify-between gap-2 rounded-xl bg-destructive/10 px-3 text-xs text-destructive transition-colors hover:bg-destructive/15 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
             >
-              <span className="truncate">{form.model?.name ?? t("drawer.modelUnset")}</span>
-              <IconChevronDown className="size-3.5 shrink-0 text-white/40" stroke={2} />
+              <span className="truncate">{t("drawer.modelLoadFailed")}</span>
+              <IconRefresh className="size-3.5 shrink-0" stroke={1.8} />
             </button>
-            {pickerOpen ? (
-              <ModelPicker
-                catalog={catalog}
-                modality={slot}
-                selectedId={form.model?.id}
-                placement="bottom"
-                align="left"
-                onSelect={(model) => {
-                  form.selectModel(model);
-                  setPickerOpen(false);
-                }}
-                onClose={() => setPickerOpen(false)}
-              />
-            ) : null}
-          </div>
+          ) : (
+            // The picker is a floating panel: it anchors to this trigger, so
+            // the relative wrapper is what it positions against.
+            <div className="relative">
+              <button
+                type="button"
+                disabled={!canEdit || catalog.loading}
+                onClick={() => setPickerOpen((open) => !open)}
+                className="flex h-9 w-full items-center justify-between gap-2 rounded-xl bg-white/[0.06] px-3 text-xs text-white/80 transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:opacity-50"
+              >
+                <span className="truncate">
+                  {catalog.loading
+                    ? t("drawer.modelLoading")
+                    : (form.model?.name ?? t("drawer.modelUnset"))}
+                </span>
+                {catalog.loading ? (
+                  <IconLoader2 className="size-3.5 shrink-0 animate-spin text-white/40" />
+                ) : (
+                  <IconChevronDown className="size-3.5 shrink-0 text-white/40" stroke={2} />
+                )}
+              </button>
+              {pickerOpen ? (
+                <ModelPicker
+                  catalog={catalog.data}
+                  modality={slot}
+                  selectedId={form.model?.id}
+                  placement="bottom"
+                  align="left"
+                  onSelect={(model) => {
+                    form.selectModel(model);
+                    setPickerOpen(false);
+                  }}
+                  onClose={() => setPickerOpen(false)}
+                />
+              ) : null}
+            </div>
+          )}
         </Field>
 
         {/* Schema-driven: every control comes from the selected model's own

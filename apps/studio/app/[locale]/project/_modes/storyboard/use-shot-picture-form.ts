@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
 import {
   canvasDefaultMode,
@@ -53,7 +53,8 @@ export function useShotPictureForm(
   createSource: (shotId: string, modality: ShotSlotKind, seed?: ShotPictureSeed) => string | null
 ): ShotPictureForm {
   const { nodes, patchNodeData } = useCanvasGraphContext();
-  const { data: catalog } = useAiCatalog();
+  const { catalog: projectCatalog } = useProjectContext();
+  const catalog = projectCatalog.data;
   const { submit, cancel, canSubmit, disabledReason } = useGeneration();
 
   // The card feeding this slot, if the picture came from a generation at all

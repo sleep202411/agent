@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useMemo } from "react";
 import type { ProjectRole } from "@/lib/collab/projects-api";
+import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
+import type { FizzAiCatalog } from "@/lib/canvas-authoring/generation-api";
 
 interface ProjectContextValue {
   projectId: string;
@@ -25,6 +27,20 @@ interface ProjectContextValue {
    * Partial updates merge, so a mode can own one edge without touching the other.
    */
   setShellInset: (inset: ShellInset) => void;
+  /**
+   * The AI model catalog, fetched ONCE for the project and shared by every
+   * mode. Its loading and error states travel with it, so a surface that needs
+   * models can say "still loading" or "couldn't load" instead of showing an
+   * empty list and letting the two look like "there are no models".
+   */
+  catalog: ProjectCatalog;
+}
+
+export interface ProjectCatalog {
+  data: FizzAiCatalog | undefined;
+  loading: boolean;
+  error: boolean;
+  retry: () => void;
 }
 
 export interface ShellInset {
@@ -48,6 +64,20 @@ export function ProjectProvider({
   setShellInset?: (inset: ShellInset) => void;
   children: React.ReactNode;
 }) {
+  // One fetch per project. Every mode reads this instead of asking for the
+  // catalog itself — React Query would dedupe the request either way, but the
+  // point is that loading and failure have a single owner.
+  const query = useAiCatalog();
+  const catalog = useMemo<ProjectCatalog>(
+    () => ({
+      data: query.data,
+      loading: query.isPending,
+      error: query.isError,
+      retry: () => void query.refetch(),
+    }),
+    [query]
+  );
+
   const value = useMemo<ProjectContextValue>(() => {
     // Unknown role (older server / not yet loaded): default to editable so the
     // existing single-user flow isn't blocked; the server still enforces writes.
@@ -60,8 +90,9 @@ export function ProjectProvider({
       canManage,
       openShare,
       setShellInset: setShellInset ?? noopShellInset,
+      catalog,
     };
-  }, [projectId, role, openShare, setShellInset]);
+  }, [projectId, role, openShare, setShellInset, catalog]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

@@ -12,7 +12,6 @@ import { toCollabUser } from "@/lib/collab/collab-user";
 import { useCanvasDoc } from "@/lib/collab/use-canvas-doc";
 import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
 import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import { CanvasGenerationProvider } from "@/lib/canvas-authoring/use-canvas-generation";
 import { StoryboardTable } from "./storyboard/storyboard-table";
 
@@ -26,7 +25,7 @@ import { StoryboardTable } from "./storyboard/storyboard-table";
  */
 export function StoryboardEditor() {
   const t = useTranslations("storyboard");
-  const { projectId, canEdit } = useProjectContext();
+  const { projectId, canEdit, catalog } = useProjectContext();
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,7 +33,6 @@ export function StoryboardEditor() {
   const { documentId, status: documentStatus } = useCanvasDocument(projectId);
   const { doc, awareness } = useCanvasDoc(documentId, collabUser);
   const graph = useCanvasGraph(doc, awareness, canEdit);
-  const { data: catalog } = useAiCatalog();
 
   // A viewer opening a project whose canvas was never created lands here (same
   // as canvas mode does today) — say which document failed, not just "error".
@@ -58,7 +56,7 @@ export function StoryboardEditor() {
   return (
     <CanvasGraphProvider value={graph}>
       <CanvasGenerationProvider
-        catalog={catalog}
+        catalog={catalog.data}
         context={{
           projectId,
           documentId: documentId ?? undefined,

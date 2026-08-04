@@ -1693,7 +1693,9 @@
       "modelLabel": "模型",
       "modelUnset": "选择模型",
       "settingsLabel": "模型参数",
-      "generating": "生成中…"
+      "generating": "生成中…",
+      "modelLoading": "正在加载模型…",
+      "modelLoadFailed": "模型加载失败，点击重试"
     },
     "delete": {
       "title": "删除这个分镜？",

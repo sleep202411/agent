@@ -6,8 +6,8 @@ import { toast } from "sonner";
 import type { Node } from "@xyflow/react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   canvasDefaultMode,
   canvasDefaultModel,
@@ -94,7 +94,8 @@ function pictureStatus(generation: GenerationState | undefined, url: string | un
 export function useStoryboard() {
   const t = useTranslations("canvas");
   const graph = useCanvasGraphContext();
-  const { data: catalog } = useAiCatalog();
+  const { catalog: projectCatalog } = useProjectContext();
+  const catalog = projectCatalog.data;
   const workspaceId = useActiveWorkspaceId();
   const {
     nodes,
