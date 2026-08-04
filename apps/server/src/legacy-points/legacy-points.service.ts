@@ -155,6 +155,27 @@ export class LegacyPointsService {
     };
   }
 
+  /**
+   * Resolve legacy user ids to their display identity, in one round trip.
+   *
+   * Workspaces carry only an external `ownerUserId` (no user table on our side
+   * — see the Workspace model), so any surface that lists workspaces owned by
+   * other people has ids and nothing else. This turns a batch of them into
+   * names without N queries. Unknown ids are simply absent from the result.
+   */
+  async findUsersByIds(ids: string[]): Promise<LegacyUser[]> {
+    const numeric = [...new Set(ids)].filter((id) => /^\d{1,18}$/.test(id));
+    if (numeric.length === 0) return [];
+    const placeholders = numeric.map(() => '?').join(',');
+    const rows = await this.mysql.query<RowDataPacket>(
+      `SELECT id, phone, email, nick_name, score_balance, user_level
+         FROM client_user
+        WHERE id IN (${placeholders})`,
+      numeric,
+    );
+    return rows.map((row) => this.mapUser(row));
+  }
+
   /** Resolve a phone/email to a legacy user, or null if not found. */
   async findUser(identifier: string): Promise<LegacyUser | null> {
     const row = await this.mysql.queryOne<RowDataPacket>(
