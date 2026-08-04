@@ -28,6 +28,10 @@ import {
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getIpCatalogPage, getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
+import {
+  listPublishedInteractiveFilms,
+  type ExperienceGameSummary,
+} from "@/data/interactive-film-api";
 import type { Genre, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
@@ -37,9 +41,14 @@ import { toHref } from "@/lib/navigation";
 // and the loading skeleton (so they can never drift apart).
 const FEATURED_HEIGHT = 200;
 const PAGE_SIZE = 30;
+const GAMES_RAIL_SIZE = 10;
 
 function openIp(id: string) {
   router.push(toHref(`/ip/${id}`));
+}
+
+function openGame(gameId: string) {
+  router.push(toHref(`/play/${gameId}`));
 }
 
 export default function IpDiscoveryScreen() {
@@ -52,6 +61,8 @@ export default function IpDiscoveryScreen() {
 
   // Featured carousel + trending rail come from the discovery placements.
   const [discovery, setDiscovery] = useState<IpDiscovery>();
+  // Published interactive films (影游) for the home rail — failures stay quiet.
+  const [games, setGames] = useState<ExperienceGameSummary[]>([]);
   // The "All IPs" grid is its own cursor-paginated catalog (infinite scroll).
   const [gridIps, setGridIps] = useState<IpSummary[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
@@ -94,9 +105,16 @@ export default function IpDiscoveryScreen() {
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
-      const [data] = await Promise.all([getIpDiscovery(), loadGridFirstPage(selectedGenreCode)]);
+      const [data, , gameList] = await Promise.all([
+        getIpDiscovery(),
+        loadGridFirstPage(selectedGenreCode),
+        listPublishedInteractiveFilms({ page: 1, pageSize: GAMES_RAIL_SIZE }).catch(
+          () => [] as ExperienceGameSummary[]
+        ),
+      ]);
       hasDataRef.current = true;
       setDiscovery(data);
+      setGames(gameList);
       // Prefer the discovery taxonomy (full list) once it lands.
       if (data.genres.length) setGenres(data.genres);
     } catch (loadError) {
@@ -224,6 +242,25 @@ export default function IpDiscoveryScreen() {
           >
             {trending.map((ip) => (
               <TrendingCard key={ip.id} ip={ip} width={cardWidth} />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      {games.length ? (
+        <View style={styles.section}>
+          <SectionHeader
+            title={t("home.gamesTitle")}
+            trailing={t("home.seeAll")}
+            onPressTrailing={() => router.push(toHref("/games"))}
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.rail}
+          >
+            {games.map((game) => (
+              <GameRailCard key={game.gameId} game={game} width={cardWidth} />
             ))}
           </ScrollView>
         </View>
@@ -425,6 +462,35 @@ function TrendingCard({ ip, width }: { ip: IpSummary; width: number }) {
       <View style={styles.gridMeta}>
         {ip.regionLabel ? <Tag label={ip.regionLabel} /> : null}
         {type ? <Tag label={type} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Fixed-width poster for the home interactive-film (影游) rail. */
+function GameRailCard({ game, width }: { game: ExperienceGameSummary; width: number }) {
+  const t = useTranslations();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => openGame(game.gameId)}
+      style={({ pressed }) => [{ width, maxWidth: width }, pressed && styles.pressed]}
+    >
+      <PosterImage
+        uri={game.coverUrl}
+        label={game.title}
+        radius={10}
+        style={{ width, height: width * (9 / 16) }}
+      />
+      <ThemedText
+        type="smallBold"
+        numberOfLines={2}
+        style={[styles.gridTitle, { maxWidth: width }]}
+      >
+        {game.title}
+      </ThemedText>
+      <View style={styles.gridMeta}>
+        <Tag label={t("home.gamesBadge")} />
       </View>
     </Pressable>
   );

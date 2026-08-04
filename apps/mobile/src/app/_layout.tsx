@@ -53,6 +53,8 @@ export default function RootLayout() {
               <Stack.Screen name="referrals" />
               <Stack.Screen name="delete-account" />
               <Stack.Screen name="ips" options={detailHeader} />
+              <Stack.Screen name="games" options={detailHeader} />
+              <Stack.Screen name="play/[gameId]" options={detailHeader} />
               <Stack.Screen name="ip/[id]" options={detailHeader} />
               <Stack.Screen name="crew/[id]" options={detailHeader} />
               <Stack.Screen name="creator/[id]" options={detailHeader} />
