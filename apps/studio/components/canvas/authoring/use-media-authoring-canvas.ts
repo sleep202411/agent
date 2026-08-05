@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
 import {
   useReactFlow,
   type Connection,
@@ -191,7 +192,12 @@ export function useMediaAuthoringCanvas({
   const { screenToFlowPosition, fitView, getNodes, setCenter } = useReactFlow();
   const acceptedKinds = useMemo(() => new Set(uploadKinds), [uploadKinds]);
   const [addMenu, setAddMenu] = useState<CanvasAddMenuState | null>(null);
-  const [assetsOpen, setAssetsOpen] = useState(false);
+  // assetsOpen is shell-owned (project sidebar toggles it) when inside a project
+  // shell; fall back to local state for canvases outside the shell.
+  const projectCtx = useOptionalProjectContext();
+  const [localAssetsOpen, setLocalAssetsOpen] = useState(false);
+  const assetsOpen = projectCtx?.assetsOpen ?? localAssetsOpen;
+  const setAssetsOpen = projectCtx?.setAssetsOpen ?? setLocalAssetsOpen;
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

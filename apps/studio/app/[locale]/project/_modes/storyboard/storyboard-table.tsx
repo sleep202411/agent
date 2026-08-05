@@ -96,10 +96,9 @@ export function StoryboardTable({
 }) {
   const t = useTranslations("storyboard");
   const tCommon = useTranslations("common");
-  const { setShellInset } = useProjectContext();
+  const { setLeftDrawer, setAssetsOpen, assetsOpen } = useProjectContext();
   const {
     rows,
-    canvasSources,
     canEdit,
     insertShot,
     patchShot,
@@ -266,45 +265,51 @@ export function StoryboardTable({
     if (pendingDeleteId && !pendingDeleteRow) setPendingDeleteId(null);
   }, [pendingDeleteId, pendingDeleteRow]);
 
-  // The drawer stands in the shell's LEFT region: tell the shell so its chrome
-  // Report the drawer's real width (420, not DRAWER_WIDTH 320 — that
-  // constant is the canvas asset library's width, which differs from the shot
-  // drawer's). shellInset is legacy chrome-shift; the new flex shell doesn't
-  // consume it, but canvas internals still read it during the phased rollout.
+  // Register the shot drawer into the SHELL's left drawer slot (single-instance:
+  // opening it closes the asset library, and vice versa). The drawer renders in
+  // the shell's <aside>, not as a flex sibling of the table.
   useEffect(() => {
-    setShellInset({ left: selectedShotId ? 420 : 0 });
-    return () => setShellInset({ left: 0 });
-  }, [selectedShotId, setShellInset]);
+    if (!selectedRow) {
+      setLeftDrawer(null);
+      return;
+    }
+    // Mutually exclusive with asset library.
+    setAssetsOpen(false);
+    const handleClose = () => setSelectedShotId(null);
+    setLeftDrawer(
+      selectedSlot === "video" ? (
+        <ShotVideoDrawer
+          row={selectedRow}
+          canEdit={canEdit}
+          actions={drawerActions}
+          onClose={handleClose}
+        />
+      ) : (
+        <ShotPictureDrawer
+          row={selectedRow}
+          slot={selectedSlot}
+          canEdit={canEdit}
+          actions={drawerActions}
+          onClose={handleClose}
+        />
+      ),
+    );
+    return () => setLeftDrawer(null);
+  }, [selectedRow, selectedSlot, canEdit, drawerActions, setLeftDrawer, setAssetsOpen]);
+
+  // Mutual exclusion: if the asset library opens (sidebar toggle), close the
+  // shot drawer so the single left-drawer slot switches to assets.
+  useEffect(() => {
+    if (assetsOpen && selectedShotId) setSelectedShotId(null);
+  }, [assetsOpen, selectedShotId]);
+
   // A shot deleted by anyone (including a collaborator) closes its drawer.
   useEffect(() => {
     if (selectedShotId && !rows.some((row) => row.id === selectedShotId)) setSelectedShotId(null);
   }, [rows, selectedShotId]);
 
   return (
-    <div className="flex h-full">
-      {/* LEFT region — edge to edge, full height, like the canvas's asset drawer. */}
-      {selectedRow ? (
-        selectedSlot === "video" ? (
-          <ShotVideoDrawer
-            row={selectedRow}
-            sources={canvasSources}
-            canEdit={canEdit}
-            actions={drawerActions}
-            onClose={() => setSelectedShotId(null)}
-          />
-        ) : (
-          <ShotPictureDrawer
-            row={selectedRow}
-            slot={selectedSlot}
-            sources={canvasSources}
-            canEdit={canEdit}
-            actions={drawerActions}
-            onClose={() => setSelectedShotId(null)}
-          />
-        )
-      ) : null}
-
-      {/* CENTER region — the board. Not full-bleed, so the drawer shrinks it. */}
+    <div className="flex h-full flex-col">
       <div className="flex min-w-0 flex-1 flex-col px-2 pt-2 pb-2">
         {/* The board sits on its own surface, one tone step above the page —
             elevation carries it, since DESIGN.md §4 rules out an outline. The

@@ -31,7 +31,7 @@ import type { ShotPictureDrawerActions } from "./shot-picture-drawer";
 import { ShotPictureGallery } from "./shot-picture-gallery";
 import type { ShotPictureForm } from "./use-shot-picture-form";
 import { useShotPictureForm } from "./use-shot-picture-form";
-import type { CanvasSource, ShotPicture, ShotRow } from "./use-storyboard";
+import type { ShotPicture, ShotRow } from "./use-storyboard";
 
 /**
  * The working panel for a shot's VIDEO (clip) cell.
@@ -43,18 +43,15 @@ import type { CanvasSource, ShotPicture, ShotRow } from "./use-storyboard";
  */
 export function ShotVideoDrawer({
   row,
-  sources,
   canEdit,
   actions,
   onClose,
 }: {
   row: ShotRow;
-  sources: readonly CanvasSource[];
   canEdit: boolean;
   actions: ShotPictureDrawerActions;
   onClose: () => void;
 }) {
-  const t = useTranslations("storyboard");
   const form = useShotPictureForm(row, "video", actions.onGenerate);
   const [view, setView] = useState<"compose" | "gallery">("compose");
 
@@ -62,7 +59,7 @@ export function ShotVideoDrawer({
   const preferredEdgeId = row.preferredFrameEdgeId ?? slotPictures[0]?.edgeId;
 
   return (
-    <DrawerPanel placement="inline" width={420}>
+    <>
       {view === "gallery" ? (
         <VideoGalleryView
           pictures={slotPictures}
@@ -75,7 +72,6 @@ export function ShotVideoDrawer({
       ) : (
         <VideoComposeView
           row={row}
-          sources={sources}
           canEdit={canEdit}
           actions={actions}
           form={form}
@@ -83,7 +79,7 @@ export function ShotVideoDrawer({
           onOpenGallery={() => setView("gallery")}
         />
       )}
-    </DrawerPanel>
+    </>
   );
 }
 
@@ -91,7 +87,6 @@ export function ShotVideoDrawer({
 
 function VideoComposeView({
   row,
-  sources,
   canEdit,
   actions,
   form,
@@ -99,7 +94,6 @@ function VideoComposeView({
   onOpenGallery,
 }: {
   row: ShotRow;
-  sources: readonly CanvasSource[];
   canEdit: boolean;
   actions: ShotPictureDrawerActions;
   form: ShotPictureForm;

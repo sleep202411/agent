@@ -40,7 +40,7 @@ export function DrawerPanel({
       className={cn(
         "flex flex-col overflow-hidden shadow-2xl shadow-black/45",
         floating
-          ? "absolute top-3 bottom-3 z-[75] rounded-2xl bg-[oklch(0.205_0_0)]/94"
+          ? "absolute top-3 bottom-3 z-75 rounded-2xl bg-[oklch(0.205_0_0)]/94"
           : "min-h-0 shrink-0 bg-popover/95",
         placement === "flush" && "absolute top-0 left-0 z-30 h-full",
         placement === "inline" && "m-2 h-[calc(100%-1rem)] rounded-2xl",

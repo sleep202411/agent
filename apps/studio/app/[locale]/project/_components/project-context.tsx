@@ -43,6 +43,10 @@ interface ProjectContextValue {
   copilotOpen: boolean;
   /** Open/close the shell-level AI assistant. */
   setCopilotOpen: (open: boolean) => void;
+  /** Whether the project asset library is open. Shell-owned so the sidebar
+   *  toggle and canvas both control the same panel. */
+  assetsOpen: boolean;
+  setAssetsOpen: (open: boolean) => void;
   /**
    * The AI model catalog, fetched ONCE for the project and shared by every
    * mode. Its loading and error states travel with it, so a surface that needs
@@ -75,6 +79,8 @@ export function ProjectProvider({
   setLeftDrawer,
   copilotOpen,
   setCopilotOpen,
+  assetsOpen,
+  setAssetsOpen,
   children,
 }: {
   projectId: string;
@@ -84,6 +90,8 @@ export function ProjectProvider({
   setLeftDrawer: (node: React.ReactNode) => void;
   copilotOpen: boolean;
   setCopilotOpen: (open: boolean) => void;
+  assetsOpen: boolean;
+  setAssetsOpen: (open: boolean) => void;
   children: React.ReactNode;
 }) {
   // One fetch per project. Every mode reads this instead of asking for the
@@ -119,9 +127,11 @@ export function ProjectProvider({
       setLeftDrawer,
       copilotOpen,
       setCopilotOpen,
+      assetsOpen,
+      setAssetsOpen,
       catalog,
     };
-  }, [projectId, role, openShare, setShellInset, setLeftDrawer, copilotOpen, setCopilotOpen, catalog]);
+  }, [projectId, role, openShare, setShellInset, setLeftDrawer, copilotOpen, setCopilotOpen, assetsOpen, setAssetsOpen, catalog]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

@@ -1570,6 +1570,15 @@
     "viewOnly": "仅查看",
     "share": "分享",
     "aiAssistant": "AI 助手",
+    "sidebar": {
+      "assets": "资产",
+      "chapters": "章节",
+      "images": "图片",
+      "videos": "视频",
+      "search": "搜索",
+      "collapse": "收起",
+      "expand": "展开"
+    },
     "thisProject": "此项目",
     "documentOpenError": "无法打开此文档——请检查链接或你的访问权限。",
     "briefPlaceholder": "撰写说明…",

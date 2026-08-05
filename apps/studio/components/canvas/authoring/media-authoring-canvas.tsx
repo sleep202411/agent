@@ -9,7 +9,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { IconLayoutGrid, type Icon } from "@tabler/icons-react";
+import { type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import {
   AddNodeMenu,
@@ -24,7 +24,7 @@ import { DRAWER_INSET } from "@/components/ui/drawer-panel";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
 import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
 import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
-import { ASSET_LIBRARY_WIDTH, AssetLibrary } from "@/components/canvas/authoring/asset-library";
+
 import { CanvasConnectionLine } from "@/components/canvas/authoring/connection-line";
 import { GradientEdge } from "@/components/canvas/authoring/gradient-edge";
 import { ImageNode } from "@/components/canvas/authoring/image-node";
@@ -92,12 +92,6 @@ export interface MediaAuthoringCanvasProps {
   tidySelection?: boolean;
   grouping?: CanvasGroupingController;
   secondaryDrawer?: MediaAuthoringCanvasDrawer;
-  assetLibrary?: {
-    variant?: "default" | "floating";
-    description?: string;
-    /** Enables the project-scoped crew cloud-drive tab when linked. */
-    crewProjectId?: string;
-  };
   onDrawerInsetChange?: (inset: number) => void;
   backdrop?: ReactNode;
   viewportBackground?: ReactNode | false;
@@ -131,7 +125,6 @@ export function MediaAuthoringCanvas({
   tidySelection = false,
   grouping,
   secondaryDrawer,
-  assetLibrary,
   onDrawerInsetChange,
   backdrop,
   viewportBackground,
@@ -203,15 +196,10 @@ export function MediaAuthoringCanvas({
   });
   const [secondaryDrawerOpenState, setSecondaryDrawerOpen] = useState(false);
   const secondaryDrawerOpen = Boolean(secondaryDrawer) && secondaryDrawerOpenState;
-  const floatingAssetDrawer = assetLibrary?.variant === "floating";
-  const drawerInset = secondaryDrawerOpen
-    ? DRAWER_INSET
-    : assetsOpen
-      ? floatingAssetDrawer
-        ? DRAWER_INSET
-        : ASSET_LIBRARY_WIDTH
-      : 0;
-  const railVisible = Boolean(secondaryDrawer) || floatingAssetDrawer || !assetsOpen;
+  // Asset library is now shell-owned (flex push), so only secondaryDrawer
+  // contributes to the canvas's internal drawer inset.
+  const drawerInset = secondaryDrawerOpen ? DRAWER_INSET : 0;
+  const railVisible = Boolean(secondaryDrawer) || !assetsOpen;
   const fitViewPadding = useMemo<FitViewOptions["padding"]>(
     () =>
       drawerInset
@@ -372,39 +360,22 @@ export function MediaAuthoringCanvas({
           ) : null}
           {topChrome}
 
-          {railVisible ? (
+          {railVisible && secondaryDrawer ? (
             <div className="absolute top-1/2 left-4 z-[80] flex -translate-y-1/2 flex-col gap-1 rounded-2xl bg-popover/90 p-1.5 shadow-md backdrop-blur-xl">
-              {secondaryDrawer ? (
-                <button
-                  type="button"
-                  aria-pressed={secondaryDrawerOpen}
-                  onClick={() => {
-                    setAssetsOpen(false);
-                    setSecondaryDrawerOpen((open) => !open);
-                  }}
-                  aria-label={secondaryDrawer.label}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-                    secondaryDrawerOpen && "bg-white/[0.12] text-white"
-                  )}
-                >
-                  <secondaryDrawer.Icon className="size-5" stroke={1.7} />
-                </button>
-              ) : null}
               <button
                 type="button"
-                aria-pressed={assetsOpen}
-                aria-label={t("openAssets")}
+                aria-pressed={secondaryDrawerOpen}
                 onClick={() => {
-                  setSecondaryDrawerOpen(false);
-                  setAssetsOpen((open) => !open);
+                  setAssetsOpen(false);
+                  setSecondaryDrawerOpen((open) => !open);
                 }}
+                aria-label={secondaryDrawer.label}
                 className={cn(
                   "flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-                  assetsOpen && "bg-white/[0.12] text-white"
+                  secondaryDrawerOpen && "bg-white/[0.12] text-white"
                 )}
               >
-                <IconLayoutGrid className="size-5" stroke={1.7} />
+                <secondaryDrawer.Icon className="size-5" stroke={1.7} />
               </button>
             </div>
           ) : null}
@@ -436,14 +407,6 @@ export function MediaAuthoringCanvas({
               className="absolute right-4 bottom-4 z-20"
             />
           ) : null}
-
-          <AssetLibrary
-            open={assetsOpen}
-            onClose={() => setAssetsOpen(false)}
-            variant={assetLibrary?.variant}
-            description={assetLibrary?.description}
-            crewProjectId={assetLibrary?.crewProjectId}
-          />
 
           {panels}
 

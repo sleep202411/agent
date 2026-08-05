@@ -36,7 +36,7 @@ export function StoryCandidateAssetsPanel({
   );
 
   return (
-    <DrawerPanel placement="floating">
+    <>
       <DrawerPanel.Header
         title={t("title")}
         description={t("description")}
@@ -108,7 +108,7 @@ export function StoryCandidateAssetsPanel({
           </div>
         )}
       </DrawerPanel.Body>
-    </DrawerPanel>
+    </>
   );
 }
 

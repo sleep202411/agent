@@ -8,7 +8,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useTextDraft } from "@/lib/use-text-draft";
 import {
   shotOptionValues,
   useShotOptionLabel,
@@ -16,98 +15,8 @@ import {
 } from "@/lib/canvas-authoring/use-shot-labels";
 import { cn } from "@/lib/utils";
 
-/**
- * Storyboard cells read as CONTENT, not as form controls: a value is plain text
- * until you touch it, and the affordance (fill, caret, chevron) appears on
- * hover/focus. Boxed inputs in every cell turn a board into a spreadsheet —
- * and boxes are what DESIGN.md rules out in the first place.
- */
 const QUIET_CELL =
   "-mx-1.5 rounded-md px-1.5 transition-colors hover:bg-white/[0.05] focus-within:bg-white/[0.06]";
-
-export function ShotTextCell({
-  value,
-  placeholder,
-  ariaLabel,
-  readOnly,
-  onCommit,
-}: {
-  value: string;
-  placeholder: string;
-  ariaLabel: string;
-  readOnly: boolean;
-  onCommit: (next: string) => void;
-}) {
-  const draft = useTextDraft(value, onCommit);
-  if (readOnly) {
-    return (
-      <p className="text-xs/relaxed whitespace-pre-wrap text-white/75">
-        {value || <span className="text-white/25">—</span>}
-      </p>
-    );
-  }
-  return (
-    <textarea
-      value={draft.value}
-      onChange={(event) => draft.onChange(event.target.value)}
-      onBlur={draft.flush}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      rows={1}
-      className={cn(
-        QUIET_CELL,
-        "field-sizing-content block max-h-28 w-[calc(100%+0.75rem)] resize-none bg-transparent py-1 text-xs/relaxed text-white/85 outline-none placeholder:text-white/25"
-      )}
-    />
-  );
-}
-
-/** Seconds — stored as a number, shown with its unit only once it has one. */
-export function ShotDurationCell({
-  value,
-  ariaLabel,
-  readOnly,
-  onCommit,
-}: {
-  value: number | undefined;
-  ariaLabel: string;
-  readOnly: boolean;
-  onCommit: (next: number | undefined) => void;
-}) {
-  const t = useTranslations("storyboard");
-  const draft = useTextDraft(value == null ? "" : String(value), (next) => {
-    const parsed = Number.parseFloat(next.replace(",", "."));
-    onCommit(Number.isFinite(parsed) && parsed > 0 ? parsed : undefined);
-  });
-
-  if (readOnly) {
-    return (
-      <span className="text-xs/relaxed tabular-nums text-white/75">
-        {value == null ? (
-          <span className="text-white/25">—</span>
-        ) : (
-          t("cell.durationValue", { seconds: value })
-        )}
-      </span>
-    );
-  }
-  return (
-    <span className={cn(QUIET_CELL, "inline-flex items-baseline gap-0.5 py-1")}>
-      <input
-        value={draft.value}
-        onChange={(event) => draft.onChange(event.target.value)}
-        onBlur={draft.flush}
-        inputMode="decimal"
-        placeholder="—"
-        aria-label={ariaLabel}
-        className="w-7 bg-transparent text-xs/relaxed tabular-nums text-white/85 outline-none placeholder:text-white/25"
-      />
-      {draft.value ? (
-        <span className="text-[10px] text-white/35">{t("cell.durationUnit")}</span>
-      ) : null}
-    </span>
-  );
-}
 
 /** One of the standard framing vocabularies (size / angle / movement). */
 export function ShotOptionCell({

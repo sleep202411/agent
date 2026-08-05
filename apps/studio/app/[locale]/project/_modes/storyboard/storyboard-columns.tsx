@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils";
 import { ShotNumberCell } from "./shot-number-cell";
 import { ShotPictureCell } from "./shot-picture-cell";
 import { ShotIdCell, ShotMenuCell } from "./shot-meta-cells";
-import { ShotDurationCell, ShotOptionCell, ShotTextCell } from "./storyboard-cells";
+import { ShotDurationCell } from "./shot-duration-cell";
+import { ShotOptionCell } from "./shot-option-cell";
+import { ShotTextCell } from "./shot-text-cell";
 import type { StoryboardCellProps, StoryboardColumn } from "./storyboard-types";
 
 /**

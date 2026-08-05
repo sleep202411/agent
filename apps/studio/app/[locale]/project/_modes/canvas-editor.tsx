@@ -6,16 +6,15 @@ import { useProjectContext } from "@/app/[locale]/project/_components/project-co
 /**
  * Canvas mode editor — the immersive board, resolved for the active project.
  *
- * The canvas is FULL-BLEED: `fixed inset-0` so it fills the whole viewport,
- * ignoring the shell's flex body (header height, left/right push). The shell's
- * header floats above it (z-30). The board itself never shrinks — only the
- * canvas's own chrome (toolbars, add-menu, controls) shifts to dodge the
- * header and any side panels, via its internal `drawerInset` / insets.
+ * Lives inside the shell's body region (sidebar + drawer + main). The board
+ * fills its container (the main flex-1 area) — not the whole viewport — so the
+ * project sidebar stays visible to its left. Canvas-internal panels (asset
+ * library, copilot) overlay the board, not the sidebar.
  */
 export function CanvasEditor() {
   const { projectId, canEdit } = useProjectContext();
   return (
-    <div className="fixed inset-0 z-0">
+    <div className="h-full">
       <CanvasView projectId={projectId} canEdit={canEdit} />
     </div>
   );

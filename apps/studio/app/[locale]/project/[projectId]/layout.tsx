@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
-import { IconArrowLeft, IconEye, IconHistory, IconSparkles, IconUsers } from "@tabler/icons-react";
+import { IconEye, IconHistory, IconSparkles, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -14,6 +14,9 @@ import {
   CanvasConnectionProvider,
   useCanvasConnection,
 } from "@/app/[locale]/project/_components/canvas-connection-context";
+import { ProjectSidebar } from "@/app/[locale]/project/_components/project-sidebar";
+import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
 import { ConnectionSignal } from "@/app/[locale]/canvas/_components/connection-signal";
@@ -55,6 +58,7 @@ export default function ProjectLayout({
   const [shareOpen, setShareOpen] = useState(false);
   const [leftDrawer, setLeftDrawer] = useState<React.ReactNode>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [assetsOpen, setAssetsOpen] = useState(false);
   // Shell-owned panels: copilot (AI assistant) + activity history. Both are
   // workspace-level, so they live in the shell, not per-mode.
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -63,6 +67,23 @@ export default function ProjectLayout({
   // as a stable no-op so canvas/storyboard callers don't crash; removing the
   // call sites themselves is a follow-up.
   const setShellInset = useCallback(() => {}, []);
+
+  // Asset library is a project-level left drawer — register it into the shell
+  // slot when open, clear when closed. The component reads assets from the
+  // shell-level CanvasGraphProvider, so it works in every mode.
+  useEffect(() => {
+    if (assetsOpen) {
+      setLeftDrawer(
+        <AssetLibrary
+          open={assetsOpen}
+          onClose={() => setAssetsOpen(false)}
+          crewProjectId={projectId}
+        />,
+      );
+    } else {
+      setLeftDrawer(null);
+    }
+  }, [assetsOpen, projectId, setLeftDrawer, setAssetsOpen]);
 
   const dirtyRef = useRef(false);
   const committedRef = useRef("");
@@ -118,20 +139,18 @@ export default function ProjectLayout({
       setLeftDrawer={setLeftDrawer}
       copilotOpen={copilotOpen}
       setCopilotOpen={setCopilotOpen}
+      assetsOpen={assetsOpen}
+      setAssetsOpen={setAssetsOpen}
     >
       <CanvasConnectionProvider projectId={projectId} canEdit={canEdit}>
         <div className="flex h-dvh">
-          {/* LEFT BODY: header on top, drawer slot + main content below. */}
+          {/* SIDEBAR — leftmost, full height (from the very top). */}
+          <ProjectSidebar />
+
+          {/* CENTER column: header + body. */}
           <div className="flex min-w-0 flex-1 flex-col">
             {/* HEADER — fixed, full-width, never pushed by drawer/assistant. */}
             <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 px-4">
-              <Link
-                href="/projects"
-                aria-label={t("backToProjects")}
-                className="flex size-8 items-center justify-center rounded-full transition-colors hover:bg-white/[0.08]"
-              >
-                <IconArrowLeft className="size-4" />
-              </Link>
               <input
                 value={name}
                 aria-label={t("projectName")}
@@ -211,7 +230,7 @@ export default function ProjectLayout({
             {/* BODY: left drawer slot (push) + main content. */}
             <div className="flex min-h-0 flex-1">
               {leftDrawer ? (
-                <aside className="h-full shrink-0 overflow-hidden">{leftDrawer}</aside>
+                <LeftDrawerSlot>{leftDrawer}</LeftDrawerSlot>
               ) : null}
               <main className="relative min-w-0 flex-1">{children}</main>
             </div>
@@ -311,6 +330,22 @@ function HistoryOverlay({ onClose }: { onClose: () => void }) {
   const { documentId, provider } = useCanvasConnection();
   return (
     <CanvasHistory documentId={documentId} provider={provider} onClose={onClose} />
+  );
+}
+
+/**
+ * The project shell's LEFT drawer slot — a single-instance panel rendered into
+ * a fixed-width DrawerPanel. Whatever a mode registers via `setLeftDrawer`
+ * (asset library, storyboard shot drawer, …) renders inside, with uniform
+ * width and chrome. The content itself supplies its own Header/Body/Footer.
+ */
+function LeftDrawerSlot({ children }: { children: React.ReactNode }) {
+  return (
+    <aside className="h-full shrink-0">
+      <DrawerPanel placement="inline" width={320}>
+        {children}
+      </DrawerPanel>
+    </aside>
   );
 }
 

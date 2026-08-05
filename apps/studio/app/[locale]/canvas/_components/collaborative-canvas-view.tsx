@@ -94,7 +94,6 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
         uploadKinds={CREATIVE_UPLOAD_KINDS}
         addNodeActions={CREATIVE_ADD_NODE_ACTIONS}
         initialFocusNodeId={focusNodeId}
-        assetLibrary={{ crewProjectId: projectId }}
         grouping={grouping}
         onDrawerInsetChange={reportDrawerInset}
         onCanvasPointerMove={publishCursor}

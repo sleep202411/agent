@@ -30,7 +30,7 @@ import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
 import type { ShotSlotKind } from "./storyboard-types";
 import { ShotPictureGallery } from "./shot-picture-gallery";
 import { useShotPictureForm } from "./use-shot-picture-form";
-import type { CanvasSource, ShotPictureSeed, ShotRow } from "./use-storyboard";
+import type { ShotPictureSeed, ShotRow } from "./use-storyboard";
 
 /**
  * What the drawer can do to a picture. The storyboard hook already implements
@@ -75,7 +75,6 @@ export interface ShotPictureDrawerActions {
 export function ShotPictureDrawer({
   row,
   slot,
-  sources,
   canEdit,
   actions,
   onClose,
@@ -83,7 +82,6 @@ export function ShotPictureDrawer({
   row: ShotRow;
   /** Which picture cell this drawer is editing. */
   slot: ShotSlotKind;
-  sources: readonly CanvasSource[];
   canEdit: boolean;
   actions: ShotPictureDrawerActions;
   onClose: () => void;
@@ -118,9 +116,7 @@ export function ShotPictureDrawer({
   };
 
   return (
-    // The app's one drawer slot — same chrome as the canvas asset library, just
-    // laid out inline so the table gives way instead of being covered.
-    <DrawerPanel placement="inline" width={420}>
+    <>
       <DrawerPanel.Header
         title={t("drawer.title", { index: row.number, slot: slotLabel })}
         icon={
@@ -352,6 +348,6 @@ export function ShotPictureDrawer({
           </Button>
         </DrawerPanel.Footer>
       )}
-    </DrawerPanel>
+    </>
   );
 }

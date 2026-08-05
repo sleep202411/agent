@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
-import { IconLayoutGrid, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
+import { IconLayoutGrid, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
@@ -165,7 +165,7 @@ export function AssetLibrary({
 
   if (floating) {
     return (
-      <DrawerPanel>
+      <>
         <DrawerPanel.Header
           title={t("asset.title")}
           description={description}
@@ -205,28 +205,20 @@ export function AssetLibrary({
         </div>
 
         <DrawerPanel.Body>{content}</DrawerPanel.Body>
-      </DrawerPanel>
+      </>
     );
   }
 
   return (
-    <div
-      className="absolute top-0 left-0 z-30 flex h-full flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
-      style={{ width: ASSET_LIBRARY_WIDTH }}
-    >
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <span className="text-base font-semibold">{t("asset.title")}</span>
-        <button
-          type="button"
-          aria-label={t("asset.close")}
-          onClick={onClose}
-          className="flex size-7 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
-        >
-          <IconX className="size-4" stroke={1.8} />
-        </button>
-      </div>
+    <>
+      <DrawerPanel.Header
+        title={t("asset.title")}
+        icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
+        closeLabel={t("asset.close")}
+        onClose={onClose}
+      />
 
-      <div className="flex items-center gap-1.5 px-4">
+      <div className="flex shrink-0 gap-1.5 px-4 py-2">
         {tabs.map((tabItem) => (
           <button
             key={tabItem.id}
@@ -244,7 +236,7 @@ export function AssetLibrary({
         ))}
       </div>
 
-      <div className="mx-4 mt-3 flex items-center gap-2.5 rounded-full bg-white/[0.05] px-3.5 py-2">
+      <div className="mx-4 mb-3 flex h-9 shrink-0 items-center gap-2.5 rounded-full bg-white/[0.055] px-3.5">
         <IconSearch className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
         <input
           value={query}
@@ -254,7 +246,7 @@ export function AssetLibrary({
         />
       </div>
 
-      {content}
-    </div>
+      <DrawerPanel.Body>{content}</DrawerPanel.Body>
+    </>
   );
 }
