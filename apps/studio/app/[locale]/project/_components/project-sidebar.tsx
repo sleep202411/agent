@@ -12,7 +12,7 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { Link } from "@/i18n/navigation";
-import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,12 +27,17 @@ import { cn } from "@/lib/utils";
 export function ProjectSidebar() {
   const t = useTranslations("project");
   const [expanded, setExpanded] = useState(false);
-  const { assetsOpen, setAssetsOpen } = useProjectContext();
+  const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const openAssets = useProjectUIStore((s) => s.openAssets);
+  const closeAssets = useProjectUIStore((s) => s.closeAssets);
 
-  // Assets is wired to the shell-owned asset library toggle. Others are
-  // placeholders until their navigation lands.
   const items = [
-    { icon: IconAsset, label: t("sidebar.assets"), active: assetsOpen, onClick: () => setAssetsOpen(!assetsOpen) },
+    {
+      icon: IconAsset,
+      label: t("sidebar.assets"),
+      active: assetsOpen,
+      onClick: () => (assetsOpen ? closeAssets() : openAssets()),
+    },
     { icon: IconBook2, label: t("sidebar.chapters"), active: false, onClick: undefined },
     { icon: IconPhoto, label: t("sidebar.images"), active: false, onClick: undefined },
     { icon: IconVideo, label: t("sidebar.videos"), active: false, onClick: undefined },

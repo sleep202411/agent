@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { IconLayoutList } from "@tabler/icons-react";
-import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertDialog,
@@ -41,10 +41,8 @@ import {
   storyboardCellStyle,
   storyboardHeadClass,
 } from "./storyboard-columns";
-import { ShotPictureDrawer, type ShotPictureDrawerActions } from "./shot-picture-drawer";
-import { ShotVideoDrawer } from "./shot-video-drawer";
 import { StoryboardRow } from "./storyboard-row";
-import type { ShotSlotKind, StoryboardRowActions } from "./storyboard-types";
+import type { StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
 
 const HIGHLIGHT_MS = 2000;
@@ -96,7 +94,9 @@ export function StoryboardTable({
 }) {
   const t = useTranslations("storyboard");
   const tCommon = useTranslations("common");
-  const { setLeftDrawer, setAssetsOpen, assetsOpen } = useProjectContext();
+  const selectShot = useProjectUIStore((s) => s.selectShot);
+  const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
+  const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
   const {
     rows,
     canEdit,
@@ -104,19 +104,8 @@ export function StoryboardTable({
     patchShot,
     deleteShot,
     moveShotToIndex,
-    attachSource,
-    detachPicture,
-    createPictureSource,
-    uploadPictureSource,
-    setPreferredFrame,
   } = useStoryboard();
 
-  // Master-detail: the drawer follows the SELECTED SHOT, not a generation node,
-  // so switching rows swaps the detail instead of opening a new surface.
-  const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
-  // Which of the shot's pictures the drawer opened on — the cell that was
-  // clicked decides, and the drawer's own tabs can move it afterwards.
-  const [selectedSlot, setSelectedSlot] = useState<ShotSlotKind>("image");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [skipNextTime, setSkipNextTime] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -222,34 +211,13 @@ export function StoryboardTable({
       onInsert: insertShot,
       onMoveToIndex: moveShotToIndex,
       onSelect: (shotId, slot) => {
-        setSelectedShotId(shotId);
-        setSelectedSlot(slot);
+        selectShot(shotId, slot);
       },
       onOpenOnCanvas,
     }),
-    [insertShot, moveShotToIndex, onOpenOnCanvas, patchShot, requestDelete]
+    [insertShot, moveShotToIndex, onOpenOnCanvas, patchShot, requestDelete, selectShot]
   );
 
-  const drawerActions = useMemo<ShotPictureDrawerActions>(
-    () => ({
-      onGenerate: (shotId, modality) => createPictureSource(shotId, modality),
-      onUpload: uploadPictureSource,
-      onAttach: attachSource,
-      onDetach: detachPicture,
-      onSetPreferredFrame: setPreferredFrame,
-      onOpenOnCanvas,
-    }),
-    [
-      attachSource,
-      createPictureSource,
-      detachPicture,
-      onOpenOnCanvas,
-      setPreferredFrame,
-      uploadPictureSource,
-    ]
-  );
-
-  const selectedRow = rows.find((row) => row.id === selectedShotId) ?? null;
   const pendingDeleteRow = rows.find((row) => row.id === pendingDeleteId) ?? null;
 
   const confirmDelete = useCallback(() => {
@@ -265,48 +233,10 @@ export function StoryboardTable({
     if (pendingDeleteId && !pendingDeleteRow) setPendingDeleteId(null);
   }, [pendingDeleteId, pendingDeleteRow]);
 
-  // Register the shot drawer into the SHELL's left drawer slot (single-instance:
-  // opening it closes the asset library, and vice versa). The drawer renders in
-  // the shell's <aside>, not as a flex sibling of the table.
-  useEffect(() => {
-    if (!selectedRow) {
-      setLeftDrawer(null);
-      return;
-    }
-    // Mutually exclusive with asset library.
-    setAssetsOpen(false);
-    const handleClose = () => setSelectedShotId(null);
-    setLeftDrawer(
-      selectedSlot === "video" ? (
-        <ShotVideoDrawer
-          row={selectedRow}
-          canEdit={canEdit}
-          actions={drawerActions}
-          onClose={handleClose}
-        />
-      ) : (
-        <ShotPictureDrawer
-          row={selectedRow}
-          slot={selectedSlot}
-          canEdit={canEdit}
-          actions={drawerActions}
-          onClose={handleClose}
-        />
-      ),
-    );
-    return () => setLeftDrawer(null);
-  }, [selectedRow, selectedSlot, canEdit, drawerActions, setLeftDrawer, setAssetsOpen]);
-
-  // Mutual exclusion: if the asset library opens (sidebar toggle), close the
-  // shot drawer so the single left-drawer slot switches to assets.
-  useEffect(() => {
-    if (assetsOpen && selectedShotId) setSelectedShotId(null);
-  }, [assetsOpen, selectedShotId]);
-
   // A shot deleted by anyone (including a collaborator) closes its drawer.
   useEffect(() => {
-    if (selectedShotId && !rows.some((row) => row.id === selectedShotId)) setSelectedShotId(null);
-  }, [rows, selectedShotId]);
+    if (selectedShotId && !rows.some((row) => row.id === selectedShotId)) closeShotDrawer();
+  }, [rows, selectedShotId, closeShotDrawer]);
 
   return (
     <div className="flex h-full flex-col">

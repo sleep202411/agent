@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import {
   useReactFlow,
   type Connection,
@@ -192,12 +193,17 @@ export function useMediaAuthoringCanvas({
   const { screenToFlowPosition, fitView, getNodes, setCenter } = useReactFlow();
   const acceptedKinds = useMemo(() => new Set(uploadKinds), [uploadKinds]);
   const [addMenu, setAddMenu] = useState<CanvasAddMenuState | null>(null);
-  // assetsOpen is shell-owned (project sidebar toggles it) when inside a project
-  // shell; fall back to local state for canvases outside the shell.
+  // assetsOpen is shell-owned via Zustand when inside the project shell;
+  // fall back to local state for canvases outside the shell.
   const projectCtx = useOptionalProjectContext();
+  const storeAssetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const storeCloseAssets = useProjectUIStore((s) => s.closeAssets);
+  const storeOpenAssets = useProjectUIStore((s) => s.openAssets);
   const [localAssetsOpen, setLocalAssetsOpen] = useState(false);
-  const assetsOpen = projectCtx?.assetsOpen ?? localAssetsOpen;
-  const setAssetsOpen = projectCtx?.setAssetsOpen ?? setLocalAssetsOpen;
+  const assetsOpen = projectCtx ? storeAssetsOpen : localAssetsOpen;
+  const setAssetsOpen = projectCtx
+    ? (open: boolean) => (open ? storeOpenAssets() : storeCloseAssets())
+    : setLocalAssetsOpen;
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
