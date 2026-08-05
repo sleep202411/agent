@@ -69,6 +69,8 @@ export interface ShotRow {
   order: string | undefined;
   data: ShotNodeData;
   pictures: ShotPicture[];
+  /** The edge id of the frame reference marked 定稿; absent → first frame. */
+  preferredFrameEdgeId?: string;
 }
 
 export interface CanvasSource {
@@ -154,7 +156,14 @@ export function useStoryboard() {
         })
         // Frame (still) before clip (motion) — the order the slots read in.
         .sort((left, right) => (left.kind === right.kind ? 0 : left.kind === "image" ? -1 : 1));
-      return { id: node.id, number: index + 1, order: data.order, data, pictures };
+      return {
+        id: node.id,
+        number: index + 1,
+        order: data.order,
+        data,
+        pictures,
+        preferredFrameEdgeId: data.preferredFrameEdgeId,
+      };
     });
   }, [edges, nodes, readNode]);
 
@@ -270,8 +279,25 @@ export function useStoryboard() {
         edgeId,
         shotId
       );
+      // If the removed wire was the 定稿, clear the pointer so it doesn't dangle
+      // — preferredFrameReference will fall back to the first remaining frame.
+      const data = shotNodeData(getNode(shotId));
+      if (data.preferredFrameEdgeId === edgeId) {
+        patchNodeData(shotId, { preferredFrameEdgeId: undefined });
+      }
     },
-    [getEdges, patchNodeData, removeEdge, removeNode]
+    [getEdges, getNode, patchNodeData, removeEdge, removeNode]
+  );
+
+  /**
+   * Mark one frame reference as the 定稿 (the shot's cover). Clears it when the
+   * caller passes undefined (revert to "first frame wins").
+   */
+  const setPreferredFrame = useCallback(
+    (shotId: string, edgeId: string | undefined) => {
+      patchNodeData(shotId, { preferredFrameEdgeId: edgeId });
+    },
+    [patchNodeData]
   );
 
   /**
@@ -407,5 +433,6 @@ export function useStoryboard() {
     detachPicture,
     createPictureSource,
     uploadPictureSource,
+    setPreferredFrame,
   };
 }

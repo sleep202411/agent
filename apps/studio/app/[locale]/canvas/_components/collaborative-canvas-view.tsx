@@ -1,29 +1,21 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
-import { IconHistory, IconLoader2, IconSparkles, IconUsers } from "@tabler/icons-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { CreditsBadge } from "@/app/_components/credits-badge";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
 import { CanvasEmptyState } from "@/app/[locale]/canvas/_components/canvas-empty-state";
 import { MediaAuthoringCanvas } from "@/components/canvas/authoring/media-authoring-canvas";
 import type { CanvasGroupingController } from "@/components/canvas/groups/canvas-grouping";
-import { CanvasGraphProvider } from "@/lib/canvas-core/canvas-graph-context";
-import type { AuthUser } from "@/lib/auth";
-import { useCanvasDoc, type CanvasUser } from "@/lib/collab/use-canvas-doc";
-import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
-import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
-import { CanvasGenerationProvider } from "@/lib/canvas-authoring/use-canvas-generation";
+import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
-import { cn } from "@/lib/utils";
 import { CommentsLayer, CommentsProvider } from "./canvas-comments";
-import { CanvasHistory } from "./canvas-history";
-import { CollabAvatars, CollabCursors } from "./collab-presence";
-import { ConnectionSignal } from "./connection-signal";
-import { CopilotPanel } from "./copilot/copilot-panel";
+import { CollabCursors } from "./collab-presence";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
@@ -37,45 +29,22 @@ const CREATIVE_ADD_NODE_ACTIONS = [
   "shot",
 ] as const;
 
-function toCanvasUser(user: AuthUser | null, guestName: string): CanvasUser | null {
-  if (!user) return null;
-  const id = String(user.id ?? "anon");
-  return {
-    id,
-    name: user.nickName?.trim() || guestName,
-    color: cursorColor(id),
-    avatarUrl: user.avatar,
-  };
-}
-
-function cursorColor(seed: string): string {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-  return `hsl(${hash % 360} 70% 60%)`;
-}
-
 function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
   const t = useTranslations("canvas");
-  const tCopilot = useTranslations("copilot");
-  const tProject = useTranslations("project");
   const tCanvasControls = useTranslations("canvasControls");
-  const { canManage, openShare, setShellInset } = useProjectContext();
+  const { setShellInset } = useProjectContext();
   const { data: catalog } = useAiCatalog();
+  // The canvas doc connection is owned by the shell (single connection for the
+  // whole workspace). Read doc/awareness/provider from there — do NOT call
+  // useCanvasDocument/useCanvasDoc here (that would open a second connection).
+  const { documentId, documentStatus, doc, awareness, provider, connectionStatus } = useCanvasConnection();
+  const { user } = useAuth();
   // Handed over from another mode ("show me this shot on the board").
   const focusNodeId = useSearchParams().get("focus");
-  const { user } = useAuth();
-  const canvasUser = useMemo(() => toCanvasUser(user, t("guest")), [t, user]);
-  const { documentId, status: documentStatus } = useCanvasDocument(projectId);
-  const {
-    doc,
-    awareness,
-    provider,
-    status: connectionStatus,
-    rtt,
-  } = useCanvasDoc(documentId, canvasUser);
-  const graph = useCanvasGraph(doc, awareness, canEdit);
+  // The graph is owned by the shell (one per document) — read it from context.
+  // The shell's useCanvasGraph returns a full CanvasGraph (extends Store); the
+  // context is typed as the base Store, so cast to CanvasGraph for grouping etc.
+  const graph = useCanvasGraphContext() as CanvasGraph;
   const grouping = useMemo<CanvasGroupingController>(
     () => ({
       groups: graph.groups,
@@ -94,8 +63,6 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
       graph.toggleGroup,
     ]
   );
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [copilotOpen, setCopilotOpen] = useState(false);
   const lastCursorAt = useRef(0);
   const applyPreset = useApplyPreset(graph);
   const workflowPresets = useMemo(() => createWorkflowPresets(tCanvasControls), [tCanvasControls]);
@@ -114,144 +81,63 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
     awareness?.setLocalStateField("cursor", null);
   }, [awareness]);
 
+  // Stable: the canvas reports its drawer inset from an effect keyed on this
+  // callback, so an inline arrow would re-fire it on every render.
+  const reportDrawerInset = useCallback((left: number) => setShellInset({ left }), [setShellInset]);
+
   return (
-    <CanvasGraphProvider value={graph}>
-      <CommentsProvider documentId={documentId} provider={provider} currentUserId={canvasUser?.id}>
-        <CanvasGenerationProvider
-          catalog={catalog}
-          context={{
-            projectId,
-            documentId: documentId ?? undefined,
-            sourceSurface: "fizzstudio-canvas",
-          }}
-        >
-          <MediaAuthoringCanvas
-            canEdit={canEdit}
-            ready={documentStatus === "ready" && connectionStatus === "synced"}
-            scopeKey={documentId}
-            uploadKinds={CREATIVE_UPLOAD_KINDS}
-            addNodeActions={CREATIVE_ADD_NODE_ACTIONS}
-            initialFocusNodeId={focusNodeId}
-            assetLibrary={{ crewProjectId: projectId }}
-            grouping={grouping}
-            onDrawerInsetChange={(left) => setShellInset({ left })}
-            onCanvasPointerMove={publishCursor}
-            onCanvasPointerLeave={clearCursor}
-            renderViewportLayers={(nodes) => (
-              <>
-                <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
-                <CommentsLayer nodes={nodes} />
-              </>
-            )}
-            topChrome={
-              <div
-                className={cn(
-                  "absolute top-4 z-20 flex items-center gap-2 transition-[right]",
-                  copilotOpen || historyOpen ? "right-[396px]" : "right-4"
-                )}
-              >
-                <button
-                  type="button"
-                  aria-label={tCopilot("open")}
-                  onClick={() => {
-                    setHistoryOpen(false);
-                    setCopilotOpen((open) => !open);
-                  }}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
-                    copilotOpen
-                      ? "bg-accent text-white"
-                      : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
-                  )}
-                >
-                  <IconSparkles className="size-4" stroke={1.8} />
-                </button>
-                <span className="flex h-9 items-center rounded-full bg-popover/90 px-3.5 shadow-md backdrop-blur-xl">
-                  <ConnectionSignal status={connectionStatus} rtt={rtt} />
-                </span>
-                {canEdit ? (
-                  <button
-                    type="button"
-                    aria-label={t("activityLog")}
-                    onClick={() => {
-                      setCopilotOpen(false);
-                      setHistoryOpen((open) => !open);
-                    }}
-                    className={cn(
-                      "flex size-9 items-center justify-center rounded-full shadow-md backdrop-blur-xl transition-colors",
-                      historyOpen
-                        ? "bg-accent text-white"
-                        : "bg-popover/90 text-white/80 hover:bg-accent hover:text-white"
-                    )}
-                  >
-                    <IconHistory className="size-4" stroke={1.8} />
-                  </button>
-                ) : null}
-                {canManage ? (
-                  <button
-                    type="button"
-                    onClick={openShare}
-                    aria-label={tProject("share")}
-                    className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium text-white/80 shadow-md backdrop-blur-xl transition-colors hover:bg-accent hover:text-white"
-                  >
-                    <IconUsers className="size-4" stroke={1.8} />
-                    {tProject("share")}
-                  </button>
-                ) : null}
-                <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
-                <CreditsBadge className="flex h-9 items-center gap-1.5 rounded-full bg-popover/90 px-3.5 text-sm font-medium tabular-nums shadow-md backdrop-blur-xl" />
+    <CommentsProvider documentId={documentId} provider={provider} currentUserId={user?.id != null ? String(user.id) : undefined}>
+      <MediaAuthoringCanvas
+        canEdit={canEdit}
+        ready={documentStatus === "ready" && connectionStatus === "synced"}
+        scopeKey={documentId}
+        uploadKinds={CREATIVE_UPLOAD_KINDS}
+        addNodeActions={CREATIVE_ADD_NODE_ACTIONS}
+        initialFocusNodeId={focusNodeId}
+        assetLibrary={{ crewProjectId: projectId }}
+        grouping={grouping}
+        onDrawerInsetChange={reportDrawerInset}
+        onCanvasPointerMove={publishCursor}
+        onCanvasPointerLeave={clearCursor}
+        renderViewportLayers={(nodes) => (
+          <>
+            <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
+            <CommentsLayer nodes={nodes} />
+          </>
+        )}
+        panels={null}
+        loadingOverlay={
+          documentStatus === "loading" ? (
+            <div className="absolute inset-0 z-50 grid place-items-center bg-[#0a0a0a]">
+              <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
+            </div>
+          ) : null
+        }
+        renderErrorOverlay={() =>
+          documentStatus === "error" ? (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+              <p className="text-sm text-muted-foreground">{t("openError")}</p>
+            </div>
+          ) : null
+        }
+        renderEmptyState={({ openAddMenu }) =>
+          documentStatus !== "error" ? (
+            canEdit ? (
+              <CanvasEmptyState
+                presets={workflowPresets}
+                catalogReady={Boolean(catalog && catalog.models.length > 0)}
+                onAddNode={openAddMenu}
+                onApplyPreset={applyPreset}
+              />
+            ) : (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">{t("emptyReadOnly")}</p>
               </div>
-            }
-            panels={
-              <>
-                <CopilotPanel
-                  projectId={projectId}
-                  open={copilotOpen}
-                  onClose={() => setCopilotOpen(false)}
-                />
-                {historyOpen ? (
-                  <CanvasHistory
-                    documentId={documentId}
-                    provider={provider}
-                    onClose={() => setHistoryOpen(false)}
-                  />
-                ) : null}
-              </>
-            }
-            loadingOverlay={
-              documentStatus === "loading" ? (
-                <div className="absolute inset-0 z-50 grid place-items-center bg-[#0a0a0a]">
-                  <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
-                </div>
-              ) : null
-            }
-            renderErrorOverlay={() =>
-              documentStatus === "error" ? (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
-                  <p className="text-sm text-muted-foreground">{t("openError")}</p>
-                </div>
-              ) : null
-            }
-            renderEmptyState={({ openAddMenu }) =>
-              documentStatus !== "error" ? (
-                canEdit ? (
-                  <CanvasEmptyState
-                    presets={workflowPresets}
-                    catalogReady={Boolean(catalog && catalog.models.length > 0)}
-                    onAddNode={openAddMenu}
-                    onApplyPreset={applyPreset}
-                  />
-                ) : (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <p className="text-sm text-muted-foreground">{t("emptyReadOnly")}</p>
-                  </div>
-                )
-              ) : null
-            }
-          />
-        </CanvasGenerationProvider>
-      </CommentsProvider>
-    </CanvasGraphProvider>
+            )
+          ) : null
+        }
+      />
+    </CommentsProvider>
   );
 }
 

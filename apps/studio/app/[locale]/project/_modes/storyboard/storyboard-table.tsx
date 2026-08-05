@@ -19,7 +19,6 @@ import {
 } from "@dnd-kit/sortable";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { IconLayoutList, IconPlus } from "@tabler/icons-react";
-import { CANVAS_DRAWER_WIDTH } from "@/components/canvas/canvas-drawer-panel";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -109,6 +108,7 @@ export function StoryboardTable({
     detachPicture,
     createPictureSource,
     uploadPictureSource,
+    setPreferredFrame,
   } = useStoryboard();
 
   // Master-detail: the drawer follows the SELECTED SHOT, not a generation node,
@@ -236,9 +236,17 @@ export function StoryboardTable({
       onUpload: uploadPictureSource,
       onAttach: attachSource,
       onDetach: detachPicture,
+      onSetPreferredFrame: setPreferredFrame,
       onOpenOnCanvas,
     }),
-    [attachSource, createPictureSource, detachPicture, onOpenOnCanvas, uploadPictureSource]
+    [
+      attachSource,
+      createPictureSource,
+      detachPicture,
+      onOpenOnCanvas,
+      setPreferredFrame,
+      uploadPictureSource,
+    ]
   );
 
   const selectedRow = rows.find((row) => row.id === selectedShotId) ?? null;
@@ -258,10 +266,12 @@ export function StoryboardTable({
   }, [pendingDeleteId, pendingDeleteRow]);
 
   // The drawer stands in the shell's LEFT region: tell the shell so its chrome
-  // (back + project name) slides aside instead of being covered — the same
-  // contract the canvas uses for its asset drawer.
+  // Report the drawer's real width (420, not CANVAS_DRAWER_WIDTH 320 — that
+  // constant is the canvas asset library's width, which differs from the shot
+  // drawer's). shellInset is legacy chrome-shift; the new flex shell doesn't
+  // consume it, but canvas internals still read it during the phased rollout.
   useEffect(() => {
-    setShellInset({ left: selectedShotId ? CANVAS_DRAWER_WIDTH : 0 });
+    setShellInset({ left: selectedShotId ? 420 : 0 });
     return () => setShellInset({ left: 0 });
   }, [selectedShotId, setShellInset]);
   // A shot deleted by anyone (including a collaborator) closes its drawer.
@@ -284,7 +294,7 @@ export function StoryboardTable({
       ) : null}
 
       {/* CENTER region — the board. Not full-bleed, so the drawer shrinks it. */}
-      <div className="flex min-w-0 flex-1 flex-col px-2 pt-16 pb-2">
+      <div className="flex min-w-0 flex-1 flex-col px-2 pt-2 pb-2">
         <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
           <div className="flex items-baseline gap-2.5">
             <h1 className="text-lg font-semibold tracking-[-0.01em] text-white">{t("title")}</h1>

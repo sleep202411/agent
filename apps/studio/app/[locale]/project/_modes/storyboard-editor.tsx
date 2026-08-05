@@ -1,38 +1,29 @@
 "use client";
 
-import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useRouter } from "@/i18n/navigation";
-import { useAuth } from "@/app/_components/auth-provider";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
-import { CanvasGraphProvider } from "@/lib/canvas-core/canvas-graph-context";
-import { toCollabUser } from "@/lib/collab/collab-user";
-import { useCanvasDoc } from "@/lib/collab/use-canvas-doc";
-import { useCanvasDocument } from "@/lib/collab/use-canvas-document";
-import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
-import { CanvasGenerationProvider } from "@/lib/canvas-authoring/use-canvas-generation";
+import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
 import { StoryboardTable } from "./storyboard/storyboard-table";
 
 /**
  * Storyboard mode — the project's canvas document rendered as a shot table.
  *
- * It opens the SAME document as the board (`ensure(projectId, "canvas")`, hard
- * bound to CANVAS_ROOT_SCHEMA), so realtime, offline cache, version history and
- * undo all come for free and switching modes converts nothing. Presence carries
- * identity only — `cursor` is canvas-world geometry and means nothing here.
+ * Reads the SAME document as the board via the shell-owned connection + graph
+ * (`useCanvasConnection` + the shell's CanvasGraphProvider), so realtime,
+ * offline cache, version history and undo all come for free and switching modes
+ * converts nothing. Presence carries identity only — `cursor` is canvas-world
+ * geometry and means nothing here.
  */
 export function StoryboardEditor() {
   const t = useTranslations("storyboard");
-  const { projectId, canEdit, catalog } = useProjectContext();
-  const { user } = useAuth();
+  const { projectId } = useProjectContext();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const collabUser = useMemo(() => toCollabUser(user), [user]);
-  const { documentId, status: documentStatus } = useCanvasDocument(projectId);
-  const { doc, awareness } = useCanvasDoc(documentId, collabUser);
-  const graph = useCanvasGraph(doc, awareness, canEdit);
+  // The doc connection + graph are owned by the shell — read, don't re-open.
+  const { documentStatus } = useCanvasConnection();
 
   // A viewer opening a project whose canvas was never created lands here (same
   // as canvas mode does today) — say which document failed, not just "error".
@@ -54,20 +45,9 @@ export function StoryboardEditor() {
   }
 
   return (
-    <CanvasGraphProvider value={graph}>
-      <CanvasGenerationProvider
-        catalog={catalog.data}
-        context={{
-          projectId,
-          documentId: documentId ?? undefined,
-          sourceSurface: "fizzstudio-canvas",
-        }}
-      >
-        <StoryboardTable
-          focusRowId={searchParams.get("row")}
-          onOpenOnCanvas={(nodeId) => router.push(`/project/${projectId}/canvas?focus=${nodeId}`)}
-        />
-      </CanvasGenerationProvider>
-    </CanvasGraphProvider>
+    <StoryboardTable
+      focusRowId={searchParams.get("row")}
+      onOpenOnCanvas={(nodeId) => router.push(`/project/${projectId}/canvas?focus=${nodeId}`)}
+    />
   );
 }

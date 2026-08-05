@@ -25,8 +25,24 @@ interface ProjectContextValue {
    * lives on those same edges. Reporting an inset is how a mode says "a drawer
    * is standing here", so the chrome slides aside instead of being covered.
    * Partial updates merge, so a mode can own one edge without touching the other.
+   *
+   * NOTE: being phased out. The shell now owns the three regions as flex columns
+   * (header on top, left drawer slot + main content below, AI assistant on the
+   * right) — push is done by flex, not by chrome位移. Modes should register a
+   * drawer via setLeftDrawer instead. Kept temporarily to avoid breaking canvas
+   * internals that still read it.
    */
   setShellInset: (inset: ShellInset) => void;
+  /**
+   * Register a drawer into the shell's LEFT slot. Pass null to clear. The shell
+   * renders whatever node a mode registers, push-ing the main content right.
+   * Replaces the old per-mode drawer mounting (canvas overlay / storyboard flex).
+   */
+  setLeftDrawer: (node: React.ReactNode) => void;
+  /** Whether the shell-level AI assistant (right panel) is open. */
+  copilotOpen: boolean;
+  /** Open/close the shell-level AI assistant. */
+  setCopilotOpen: (open: boolean) => void;
   /**
    * The AI model catalog, fetched ONCE for the project and shared by every
    * mode. Its loading and error states travel with it, so a surface that needs
@@ -56,26 +72,36 @@ export function ProjectProvider({
   role,
   openShare,
   setShellInset,
+  setLeftDrawer,
+  copilotOpen,
+  setCopilotOpen,
   children,
 }: {
   projectId: string;
   role: ProjectRole | null;
   openShare: () => void;
   setShellInset?: (inset: ShellInset) => void;
+  setLeftDrawer: (node: React.ReactNode) => void;
+  copilotOpen: boolean;
+  setCopilotOpen: (open: boolean) => void;
   children: React.ReactNode;
 }) {
   // One fetch per project. Every mode reads this instead of asking for the
   // catalog itself — React Query would dedupe the request either way, but the
   // point is that loading and failure have a single owner.
-  const query = useAiCatalog();
+  // Destructured on purpose: useQuery returns a NEW result object every render,
+  // so depending on the query itself would make this memo — and the context
+  // value built from it — change identity on every render, which is an infinite
+  // loop the moment any consumer's effect writes state back to the shell.
+  const { data, isPending, isError, refetch } = useAiCatalog();
   const catalog = useMemo<ProjectCatalog>(
     () => ({
-      data: query.data,
-      loading: query.isPending,
-      error: query.isError,
-      retry: () => void query.refetch(),
+      data,
+      loading: isPending,
+      error: isError,
+      retry: () => void refetch(),
     }),
-    [query]
+    [data, isPending, isError, refetch]
   );
 
   const value = useMemo<ProjectContextValue>(() => {
@@ -90,9 +116,12 @@ export function ProjectProvider({
       canManage,
       openShare,
       setShellInset: setShellInset ?? noopShellInset,
+      setLeftDrawer,
+      copilotOpen,
+      setCopilotOpen,
       catalog,
     };
-  }, [projectId, role, openShare, setShellInset, catalog]);
+  }, [projectId, role, openShare, setShellInset, setLeftDrawer, copilotOpen, setCopilotOpen, catalog]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

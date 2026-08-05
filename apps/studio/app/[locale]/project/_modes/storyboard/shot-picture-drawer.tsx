@@ -4,14 +4,15 @@ import { useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
+  IconArrowLeft,
   IconChevronDown,
-  IconLayoutGrid,
   IconLoader2,
   IconPhoto,
   IconRefresh,
   IconSparkles,
   IconUpload,
   IconVideo,
+  IconWand,
 } from "@tabler/icons-react";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,10 @@ import {
 import { Field } from "@/components/ui/field";
 import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
 import { ImagineModelPicker } from "@/components/canvas/authoring/imagine-model-picker";
-import { ModelSettings } from "@/components/canvas/authoring/model-settings";
+import { QuickParamChips } from "@/components/canvas/authoring/quick-param-chips";
 import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
 import type { ShotSlotKind } from "./storyboard-types";
+import { ShotPictureGallery } from "./shot-picture-gallery";
 import { useShotPictureForm } from "./use-shot-picture-form";
 import type { CanvasSource, ShotPictureSeed, ShotRow } from "./use-storyboard";
 
@@ -47,6 +49,8 @@ export interface ShotPictureDrawerActions {
   ) => Promise<void>;
   onAttach: (shotId: string, sourceNodeId: string) => void;
   onDetach: (shotId: string, edgeId: string) => void;
+  /** Mark one frame reference as the 定稿 (cover), or clear it (undefined). */
+  onSetPreferredFrame: (shotId: string, edgeId: string | undefined) => void;
   onOpenOnCanvas: (nodeId: string) => void;
 }
 
@@ -88,18 +92,18 @@ export function ShotPictureDrawer({
   const { catalog } = useProjectContext();
   const promptId = useId();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [view, setView] = useState<"compose" | "gallery">("compose");
   const form = useShotPictureForm(row, slot, actions.onGenerate);
   const slotLabel = t(slot === "video" ? "drawer.slotClip" : "drawer.slotFrame");
 
-  // How an EMPTY slot gets filled without generating: upload a file, or wire in
-  // a picture that already lives on the canvas. Both call the actions the
-  // storyboard hook already implements — no dead controls. Once the slot has a
-  // picture, these give way to the recipe below.
-  const picture = row.pictures.find((candidate) => candidate.kind === slot);
-  const attachable = sources.filter((candidate) => candidate.kind === slot);
+  // Every picture wired into THIS slot (multiple for image — the "图册"; one for
+  // video). The preferred one is the 定稿 shown as the cover.
+  const slotPictures = row.pictures.filter((candidate) => candidate.kind === slot);
+  const preferredPicture =
+    slotPictures.find((p) => p.edgeId === row.preferredFrameEdgeId) ?? slotPictures[0];
+  const picture = preferredPicture;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
 
   const uploadFile = async (file: File | undefined) => {
     if (!file) return;
@@ -156,103 +160,107 @@ export function ShotPictureDrawer({
         ) : null
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pt-4 pb-5">
-        {canEdit && !picture ? (
-          // Fill the slot without generating — upload a file or wire in a canvas
-          // picture. Dashed tiles are the one sanctioned outline here: an upload
-          // affordance (DESIGN.md "Composer drawer").
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/15 px-4 py-7 text-center">
-              <span className="grid size-12 place-items-center rounded-xl bg-white/[0.05] text-white/50">
-                {uploadProgress !== null ? (
-                  <IconLoader2 className="size-6 animate-spin" stroke={1.6} />
-                ) : slot === "video" ? (
-                  <IconVideo className="size-6" stroke={1.6} />
+      {view === "gallery" ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-4 pb-5">
+          {/* Back to compose */}
+          <button
+            type="button"
+            onClick={() => setView("compose")}
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-white/70 transition-colors hover:text-white"
+          >
+            <IconArrowLeft className="size-3.5" stroke={1.8} />
+            {t("drawer.back")}
+          </button>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-white/90">
+              {t("drawer.galleryTitle")}
+            </span>
+            <span className="text-xs text-white/40">
+              {t("drawer.galleryCount", { count: slotPictures.length })}
+            </span>
+          </div>
+
+          <ShotPictureGallery
+            pictures={slotPictures}
+            preferredEdgeId={row.preferredFrameEdgeId ?? slotPictures[0]?.edgeId}
+            onMarkFinalized={(edgeId) => actions.onSetPreferredFrame(row.id, edgeId)}
+            onDelete={(edgeId) => actions.onDetach(row.id, edgeId)}
+          />
+        </div>
+      ) : (
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-5">
+        {/* ── 0. Current picture preview + upload/library ─────────── */}
+        {/* The slot's current render sits at the top. Two affordances overlap its
+            top-right corner: Upload (file picker) and Library (canvas sources).
+            Empty/running slots show a placeholder instead of media. */}
+        <div className="flex flex-col gap-2">
+          <div className="relative h-32 w-full overflow-hidden rounded-xl bg-white/[0.04]">
+            {picture?.url ? (
+              picture.kind === "video" ? (
+                <video src={picture.url} muted loop autoPlay playsInline className="size-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={picture.url} alt={slotLabel} className="size-full object-cover" />
+              )
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white/30">
+                {picture?.status === "running" ? (
+                  <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.4} />
                 ) : (
-                  <IconPhoto className="size-6" stroke={1.6} />
+                  <IconPhoto className="size-7" stroke={1.2} />
                 )}
-              </span>
-              <span className="text-sm font-semibold text-white/85">
-                {uploadProgress !== null
-                  ? t("drawer.uploading", { progress: uploadProgress })
-                  : t("drawer.emptySlot")}
-              </span>
-              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[0.6875rem] font-medium">
+                  {picture?.status === "running"
+                    ? t("drawer.generating")
+                    : picture?.status === "failed"
+                      ? t("drawer.emptySlot")
+                      : t("drawer.emptySlot")}
+                </span>
+              </div>
+            )}
+
+            {/* Top-right action stack: Upload + Library, only when editable. */}
+            {canEdit ? (
+              <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadProgress !== null}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white/85 transition-colors hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:opacity-60"
+                  title={t("drawer.upload")}
+                  className="inline-flex size-7 items-center justify-center rounded-lg bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:opacity-50"
                 >
-                  <IconUpload className="size-3.5" stroke={1.8} />
-                  {t("drawer.upload")}
+                  {uploadProgress !== null ? (
+                    <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
+                  ) : (
+                    <IconUpload className="size-3.5" stroke={1.8} />
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSourcePickerOpen((open) => !open)}
-                  disabled={attachable.length === 0}
-                  aria-expanded={sourcePickerOpen}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white/85 transition-colors hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none disabled:opacity-40"
+                  onClick={() => setView("gallery")}
+                  title={t("drawer.gallery")}
+                  className="inline-flex size-7 items-center justify-center rounded-lg bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/70 hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
                 >
-                  <IconLayoutGrid className="size-3.5" stroke={1.8} />
-                  {t("drawer.pick")}
+                  <IconPhoto className="size-3.5" stroke={1.8} />
                 </button>
               </div>
-            </div>
-            {sourcePickerOpen && attachable.length > 0 ? (
-              <div className="grid grid-cols-4 gap-2 rounded-xl bg-white/[0.03] p-2">
-                {attachable.map((source) => (
-                  <button
-                    key={source.nodeId}
-                    type="button"
-                    title={source.label}
-                    onClick={() => {
-                      actions.onAttach(row.id, source.nodeId);
-                      setSourcePickerOpen(false);
-                    }}
-                    className="relative aspect-square overflow-hidden rounded-lg bg-white/[0.05] transition hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-                  >
-                    {source.kind === "video" ? (
-                      <video src={source.url} muted playsInline className="size-full object-cover" />
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={source.url} alt={source.label} className="size-full object-cover" />
-                    )}
-                  </button>
-                ))}
-              </div>
             ) : null}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={slot === "video" ? "video/*" : "image/*"}
-              hidden
-              onChange={(event) => {
-                void uploadFile(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-            />
-            <div className="mt-1 h-px bg-white/[0.07]" />
           </div>
-        ) : null}
 
-        <Field label={t("drawer.promptLabel")} htmlFor={promptId} dense>
-          {/* The editor ships bare — the canvas composer is what gives it a
-              surface there. In a form it has to be a control: same fill, radius
-              and type scale as the model trigger below, so the three fields
-              read as one thing. */}
-          <PromptTextarea
-            id={promptId}
-            value={form.prompt}
-            onCommit={form.setPrompt}
-            placeholder={t("drawer.promptPlaceholder")}
-            rows={5}
-            readOnly={!canEdit}
-            aria-label={t("drawer.promptLabel")}
-            className="block max-h-56 min-h-24 w-full resize-none overflow-y-auto rounded-xl bg-white/[0.06] px-3 py-2.5 text-xs leading-relaxed text-white/85 outline-none transition-colors placeholder:text-white/30 focus-within:bg-white/[0.09] focus-within:ring-2 focus-within:ring-primary/40"
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={slot === "video" ? "video/*" : "image/*"}
+            hidden
+            onChange={(event) => {
+              void uploadFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
           />
-        </Field>
+        </div>
 
+        {/* ── 1. Model ─────────────────────────────────────────────── */}
         {/* Three states, never conflated: still loading, failed to load, and
             loaded. An empty picker used to stand for all three, which is what
             made "no models" impossible to tell from "the request died". */}
@@ -292,8 +300,6 @@ export function ShotPictureDrawer({
               <DialogContent
                 showCloseButton={false}
                 overlayClassName="bg-black/60 backdrop-blur-sm"
-                // Strip the default DialogContent chrome (padding/bg/max-width) so
-                // the picker's own 600×630 bordered surface shows through verbatim.
                 className="grid-cols-none gap-0 overflow-visible rounded-2xl border-0 bg-transparent p-0 text-foreground shadow-none sm:max-w-none w-fit"
               >
                 <DialogTitle className="sr-only">{t("drawer.selectModelTitle")}</DialogTitle>
@@ -312,12 +318,44 @@ export function ShotPictureDrawer({
           )}
         </Field>
 
-        {/* Schema-driven: every control comes from the selected model's own
-            input schema, so a new model brings its parameters with it. */}
+        {/* ── 2. Prompt + Enhancer ────────────────────────────────── */}
+        <Field label={t("drawer.promptLabel")} htmlFor={promptId} dense>
+          <div className="relative">
+            <PromptTextarea
+              id={promptId}
+              value={form.prompt}
+              onCommit={form.setPrompt}
+              placeholder={t("drawer.promptPlaceholder")}
+              rows={5}
+              readOnly={!canEdit}
+              aria-label={t("drawer.promptLabel")}
+              className="block max-h-56 min-h-24 w-full resize-none overflow-y-auto rounded-xl bg-white/[0.06] px-3 py-2.5 pr-20 text-xs leading-relaxed text-white/85 outline-none transition-colors placeholder:text-white/30 focus-within:bg-white/[0.09] focus-within:ring-2 focus-within:ring-primary/40"
+            />
+            {/* Enhancer — UI shell only (no prompt-enhancement backend yet). */}
+            <button
+              type="button"
+              disabled
+              title={t("drawer.enhancerComingSoon")}
+              className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-white/[0.08] px-2 py-1 text-[0.625rem] font-medium text-white/60 backdrop-blur-sm disabled:opacity-60"
+            >
+              <IconWand className="size-3" stroke={1.8} />
+              {t("drawer.enhancer")}
+            </button>
+          </div>
+        </Field>
+
+        {/* ── 5. Quick params ─────────────────────────────────────── */}
+        {/* Schema-driven: one chip per quick setting (aspect / duration /
+            resolution …), each opening its own popover — imagine.art style. */}
         <Field label={t("drawer.settingsLabel")} dense>
-          <ModelSettings model={form.model} settings={form.settings} onChange={form.setSettings} />
+          <QuickParamChips
+            model={form.model}
+            settings={form.settings}
+            onChange={form.setSettings}
+          />
         </Field>
       </div>
+      )}
     </CanvasDrawerPanel>
   );
 }

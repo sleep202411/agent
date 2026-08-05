@@ -36,7 +36,9 @@ export const SHOT_REFERENCE_FIELDS: readonly {
   kind: FizzAiReferenceKind;
   maxItems: number;
 }[] = [
-  { field: SHOT_FRAME_FIELD, kind: "image", maxItems: 1 },
+  // A shot's frame slot holds multiple candidate stills (upload several, pick the
+  // 定稿/preferred one). Clip stays single — one animation per shot.
+  { field: SHOT_FRAME_FIELD, kind: "image", maxItems: 24 },
   { field: SHOT_CLIP_FIELD, kind: "video", maxItems: 1 },
 ];
 
@@ -59,6 +61,13 @@ export interface ShotNodeData {
   notes?: string;
   /** Picture slots — standard wire-bound references, keyed by field. */
   references?: CardReferences;
+  /**
+   * The edge id of the frame reference marked as the 定稿 (finalized still) when
+   * a shot holds several candidates. Absent → the first frame reference is the
+   * cover (preferredFrameReference falls back). Stored as a flat key so two
+   * collaborators don't clobber each other's unrelated edits.
+   */
+  preferredFrameEdgeId?: string;
 }
 
 /** Stable option keys (never localized labels — the CRDT stays locale-free). */
@@ -120,6 +129,22 @@ export function routeShotReferenceField(
 /** A shot's bound pictures, frame before clip (the order the table renders). */
 export function shotReferences(data: ShotNodeData): CardReference[] {
   return SHOT_REFERENCE_FIELDS.flatMap((field) => data.references?.[field.field] ?? []);
+}
+
+/**
+ * The frame reference to show as the shot's cover: the one marked 定稿
+ * (`preferredFrameEdgeId`) if it still exists, otherwise the first frame ref.
+ * Callers (cell, drawer preview, canvas node) all go through here so the three
+ * surfaces stay consistent.
+ */
+export function preferredFrameReference(data: ShotNodeData): CardReference | undefined {
+  const frames = data.references?.[SHOT_FRAME_FIELD] ?? [];
+  const preferredId = data.preferredFrameEdgeId;
+  if (preferredId) {
+    const hit = frames.find((ref) => ref.edgeId === preferredId);
+    if (hit) return hit;
+  }
+  return frames[0];
 }
 
 // ── row ordering (fractional index) ─────────────────────────────────────────

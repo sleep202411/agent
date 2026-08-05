@@ -33,7 +33,12 @@ export function ShotPictureCell({
   onOpen: () => void;
 }) {
   const t = useTranslations("storyboard");
-  const picture = row.pictures.find((candidate) => candidate.kind === kind);
+  // For the image slot, prefer the 定稿 (preferredFrameEdgeId); video stays as-is.
+  const sameKind = row.pictures.filter((candidate) => candidate.kind === kind);
+  const picture =
+    kind === "image"
+      ? (sameKind.find((p) => p.edgeId === row.preferredFrameEdgeId) ?? sameKind[0])
+      : sameKind[0];
   const EmptyIcon = kind === "video" ? IconVideo : IconPhoto;
 
   return (
