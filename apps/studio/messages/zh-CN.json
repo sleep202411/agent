@@ -1691,6 +1691,7 @@
       "promptLabel": "提示词",
       "promptPlaceholder": "描述这个镜头——构图、主体、光线、氛围。",
       "modelLabel": "模型",
+      "selectModelTitle": "选择模型",
       "modelUnset": "选择模型",
       "settingsLabel": "模型参数",
       "generating": "生成中…",

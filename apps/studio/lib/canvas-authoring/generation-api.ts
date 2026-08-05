@@ -73,6 +73,8 @@ export interface FizzAiModel {
   description?: string;
   provider?: string;
   family?: string;
+  /** The company that makes the model (ByteDance / Google / …). "Providers" filter axis. */
+  vendor?: string;
   enabled: boolean;
   disabledReason?: string;
   schemaVersion: string;

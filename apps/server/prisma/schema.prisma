@@ -5981,6 +5981,7 @@ model AiCanonicalModel {
   displayName         String               @map("display_name") @db.VarChar(160)
   modality            AiJobType
   family              String               @db.VarChar(80)
+  vendor              String?              @db.VarChar(64)
   generationModes     Json                 @default("[]") @map("generation_modes") @db.JsonB
   status              AiControlPlaneStatus @default(draft)
   description         String?              @db.Text

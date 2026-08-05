@@ -1691,6 +1691,7 @@
       "promptLabel": "Prompt",
       "promptPlaceholder": "Describe this shot — framing, subject, light, mood.",
       "modelLabel": "Model",
+      "selectModelTitle": "Select model",
       "modelUnset": "Pick a model",
       "settingsLabel": "Parameters",
       "generating": "Generating…",

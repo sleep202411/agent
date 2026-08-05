@@ -83,6 +83,7 @@ function buildCanonicalPayload(
     displayName: model.displayName,
     modality: cfg.modality,
     family: model.family,
+    vendor: model.vendor,
     generationModes: model.modes as Prisma.InputJsonValue,
     status: 'active',
     description: model.description,
