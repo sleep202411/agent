@@ -11,7 +11,7 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import type { StoryCandidateAsset } from "@/lib/story-projects-api";
 import type { StoryCandidateAssetsController } from "./use-story-candidate-assets";
@@ -36,7 +36,7 @@ export function StoryCandidateAssetsPanel({
   );
 
   return (
-    <CanvasDrawerPanel
+    <DrawerPanel
       title={t("title")}
       description={t("description")}
       count={controller.items.length}
@@ -107,7 +107,7 @@ export function StoryCandidateAssetsPanel({
           </div>
         )}
       </div>
-    </CanvasDrawerPanel>
+    </DrawerPanel>
   );
 }
 

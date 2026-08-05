@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import { IconLayoutGrid, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
-import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
@@ -165,7 +165,7 @@ export function AssetLibrary({
 
   if (floating) {
     return (
-      <CanvasDrawerPanel
+      <DrawerPanel
         title={t("asset.title")}
         description={description}
         count={assets.length}
@@ -204,7 +204,7 @@ export function AssetLibrary({
         </div>
 
         {content}
-      </CanvasDrawerPanel>
+      </DrawerPanel>
     );
   }
 

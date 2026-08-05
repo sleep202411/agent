@@ -23,7 +23,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { ImagineModelPicker } from "@/components/canvas/authoring/imagine-model-picker";
 import { QuickParamChips } from "@/components/canvas/authoring/quick-param-chips";
 import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
@@ -120,7 +120,7 @@ export function ShotPictureDrawer({
   return (
     // The app's one drawer slot — same chrome as the canvas asset library, just
     // laid out inline so the table gives way instead of being covered.
-    <CanvasDrawerPanel
+    <DrawerPanel
       placement="inline"
       width={420}
       title={t("drawer.title", { index: row.number, slot: slotLabel })}
@@ -195,16 +195,16 @@ export function ShotPictureDrawer({
             top-right corner: Upload (file picker) and Library (canvas sources).
             Empty/running slots show a placeholder instead of media. */}
         <div className="flex flex-col gap-2">
-          <div className="relative h-32 w-full overflow-hidden rounded-xl bg-white/[0.04]">
+          <div className="relative w-full overflow-hidden rounded-xl bg-white/[0.04]">
             {picture?.url ? (
               picture.kind === "video" ? (
-                <video src={picture.url} muted loop autoPlay playsInline className="size-full object-cover" />
+                <video src={picture.url} muted loop autoPlay playsInline className="block w-full" />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={picture.url} alt={slotLabel} className="size-full object-cover" />
+                <img src={picture.url} alt={slotLabel} className="block w-full" />
               )
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white/30">
+              <div className="flex h-32 flex-col items-center justify-center gap-1.5 text-white/30">
                 {picture?.status === "running" ? (
                   <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.4} />
                 ) : (
@@ -356,6 +356,6 @@ export function ShotPictureDrawer({
         </Field>
       </div>
       )}
-    </CanvasDrawerPanel>
+    </DrawerPanel>
   );
 }

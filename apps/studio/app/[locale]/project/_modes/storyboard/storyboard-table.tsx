@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
-import { IconLayoutList, IconPlus } from "@tabler/icons-react";
+import { IconLayoutList } from "@tabler/icons-react";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -266,7 +266,7 @@ export function StoryboardTable({
   }, [pendingDeleteId, pendingDeleteRow]);
 
   // The drawer stands in the shell's LEFT region: tell the shell so its chrome
-  // Report the drawer's real width (420, not CANVAS_DRAWER_WIDTH 320 — that
+  // Report the drawer's real width (420, not DRAWER_WIDTH 320 — that
   // constant is the canvas asset library's width, which differs from the shot
   // drawer's). shellInset is legacy chrome-shift; the new flex shell doesn't
   // consume it, but canvas internals still read it during the phased rollout.
@@ -295,30 +295,19 @@ export function StoryboardTable({
 
       {/* CENTER region — the board. Not full-bleed, so the drawer shrinks it. */}
       <div className="flex min-w-0 flex-1 flex-col px-2 pt-2 pb-2">
-        <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
-          <div className="flex items-baseline gap-2.5">
-            <h1 className="text-lg font-semibold tracking-[-0.01em] text-white">{t("title")}</h1>
-            <span className="text-xs text-white/35 tabular-nums">
-              {t("shotCount", { count: rows.length })}
-            </span>
-          </div>
-          {canEdit ? (
-            <button
-              type="button"
-              onClick={() => insertShot(rows.length)}
-              className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.07] px-3.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.13] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-            >
-              <IconPlus className="size-3.5" stroke={2} />
-              {t("addShot")}
-            </button>
-          ) : null}
-        </header>
-
         {/* The board sits on its own surface, one tone step above the page —
             elevation carries it, since DESIGN.md §4 rules out an outline. The
             drawer beside it is a step above again (page 0.13 → card 0.175 →
             popover 0.19), so the three regions read in depth order. */}
-        <div className="flex min-h-0 flex-1 overflow-hidden rounded-2xl bg-card">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card">
+          {/* Header is part of the card — title + shot count + add-shot action. */}
+          <header className="flex shrink-0 items-center gap-3 px-4 py-3">
+            <h1 className="text-sm font-semibold text-white/88">{t("title")}</h1>
+            <span className="text-xs text-white/35 tabular-nums">
+              {t("shotCount", { count: rows.length })}
+            </span>
+          </header>
+          <div className="h-px bg-white/[0.07]" />
           {rows.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
               <span className="flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-white/40">

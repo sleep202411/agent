@@ -20,7 +20,7 @@ import {
   CanvasAuthoringControls,
   CanvasAuthoringDock,
 } from "@/components/canvas/canvas-authoring-chrome";
-import { CANVAS_DRAWER_INSET } from "@/components/canvas/canvas-drawer-panel";
+import { DRAWER_INSET } from "@/components/ui/drawer-panel";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
 import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
 import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
@@ -205,10 +205,10 @@ export function MediaAuthoringCanvas({
   const secondaryDrawerOpen = Boolean(secondaryDrawer) && secondaryDrawerOpenState;
   const floatingAssetDrawer = assetLibrary?.variant === "floating";
   const drawerInset = secondaryDrawerOpen
-    ? CANVAS_DRAWER_INSET
+    ? DRAWER_INSET
     : assetsOpen
       ? floatingAssetDrawer
-        ? CANVAS_DRAWER_INSET
+        ? DRAWER_INSET
         : ASSET_LIBRARY_WIDTH
       : 0;
   const railVisible = Boolean(secondaryDrawer) || floatingAssetDrawer || !assetsOpen;
