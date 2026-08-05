@@ -107,3 +107,6 @@ apps/server/outputs/
 
 # Local registry authentication tokens
 /.npmrc
+
+# ZCode client local state
+.zcode/
