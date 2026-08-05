@@ -120,48 +120,21 @@ export function ShotPictureDrawer({
   return (
     // The app's one drawer slot — same chrome as the canvas asset library, just
     // laid out inline so the table gives way instead of being covered.
-    <DrawerPanel
-      placement="inline"
-      width={420}
-      title={t("drawer.title", { index: row.number, slot: slotLabel })}
-      icon={
-        slot === "video" ? (
-          <IconVideo className="size-4" stroke={1.8} />
-        ) : (
-          <IconPhoto className="size-4" stroke={1.8} />
-        )
-      }
-      closeLabel={t("drawer.close")}
-      onClose={onClose}
-      footer={
-        canEdit ? (
-          // The hero action: the candy `primary-cta`, full-width. `loading`
-          // carries the busy state (spinner + aria-busy, blocks re-submit) —
-          // no hand-rolled spinner. Busy already gated activation before, so
-          // nothing regresses.
-          <Button
-            variant="primary-cta"
-            block
-            size="lg"
-            loading={form.busy}
-            disabled={!form.canSubmit}
-            title={form.disabledReason ?? undefined}
-            onClick={form.generate}
-          >
-            {form.busy ? (
-              t("drawer.generating")
-            ) : (
-              <>
-                <IconSparkles className="size-4" stroke={1.8} />
-                {t("drawer.generate")}
-              </>
-            )}
-          </Button>
-        ) : null
-      }
-    >
+    <DrawerPanel placement="inline" width={420}>
+      <DrawerPanel.Header
+        title={t("drawer.title", { index: row.number, slot: slotLabel })}
+        icon={
+          slot === "video" ? (
+            <IconVideo className="size-4" stroke={1.8} />
+          ) : (
+            <IconPhoto className="size-4" stroke={1.8} />
+          )
+        }
+        closeLabel={t("drawer.close")}
+        onClose={onClose}
+      />
       {view === "gallery" ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-4 pb-5">
+        <DrawerPanel.Body className="gap-3 px-4 pt-4 pb-5">
           {/* Back to compose */}
           <button
             type="button"
@@ -187,9 +160,9 @@ export function ShotPictureDrawer({
             onMarkFinalized={(edgeId) => actions.onSetPreferredFrame(row.id, edgeId)}
             onDelete={(edgeId) => actions.onDetach(row.id, edgeId)}
           />
-        </div>
+        </DrawerPanel.Body>
       ) : (
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-5">
+      <DrawerPanel.Body className="gap-4 px-4 pt-4 pb-5">
         {/* ── 0. Current picture preview + upload/library ─────────── */}
         {/* The slot's current render sits at the top. Two affordances overlap its
             top-right corner: Upload (file picker) and Library (canvas sources).
@@ -354,7 +327,30 @@ export function ShotPictureDrawer({
             onChange={form.setSettings}
           />
         </Field>
-      </div>
+      </DrawerPanel.Body>
+      )}
+
+      {canEdit && (
+        <DrawerPanel.Footer>
+          <Button
+            variant="primary-cta"
+            block
+            size="lg"
+            loading={form.busy}
+            disabled={!form.canSubmit}
+            title={form.disabledReason ?? undefined}
+            onClick={form.generate}
+          >
+            {form.busy ? (
+              t("drawer.generating")
+            ) : (
+              <>
+                <IconSparkles className="size-4" stroke={1.8} />
+                {t("drawer.generate")}
+              </>
+            )}
+          </Button>
+        </DrawerPanel.Footer>
       )}
     </DrawerPanel>
   );

@@ -42,6 +42,7 @@ import {
   storyboardHeadClass,
 } from "./storyboard-columns";
 import { ShotPictureDrawer, type ShotPictureDrawerActions } from "./shot-picture-drawer";
+import { ShotVideoDrawer } from "./shot-video-drawer";
 import { StoryboardRow } from "./storyboard-row";
 import type { ShotSlotKind, StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
@@ -283,14 +284,24 @@ export function StoryboardTable({
     <div className="flex h-full">
       {/* LEFT region — edge to edge, full height, like the canvas's asset drawer. */}
       {selectedRow ? (
-        <ShotPictureDrawer
-          row={selectedRow}
-          slot={selectedSlot}
-          sources={canvasSources}
-          canEdit={canEdit}
-          actions={drawerActions}
-          onClose={() => setSelectedShotId(null)}
-        />
+        selectedSlot === "video" ? (
+          <ShotVideoDrawer
+            row={selectedRow}
+            sources={canvasSources}
+            canEdit={canEdit}
+            actions={drawerActions}
+            onClose={() => setSelectedShotId(null)}
+          />
+        ) : (
+          <ShotPictureDrawer
+            row={selectedRow}
+            slot={selectedSlot}
+            sources={canvasSources}
+            canEdit={canEdit}
+            actions={drawerActions}
+            onClose={() => setSelectedShotId(null)}
+          />
+        )
       ) : null}
 
       {/* CENTER region — the board. Not full-bleed, so the drawer shrinks it. */}

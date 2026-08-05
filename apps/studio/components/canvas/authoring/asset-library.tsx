@@ -165,15 +165,16 @@ export function AssetLibrary({
 
   if (floating) {
     return (
-      <DrawerPanel
-        title={t("asset.title")}
-        description={description}
-        count={assets.length}
-        icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
-        closeLabel={t("asset.close")}
-        onClose={onClose}
-      >
-        <div className="flex gap-1 px-4 py-3" role="tablist" aria-label={t("asset.title")}>
+      <DrawerPanel>
+        <DrawerPanel.Header
+          title={t("asset.title")}
+          description={description}
+          count={assets.length}
+          icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
+          closeLabel={t("asset.close")}
+          onClose={onClose}
+        />
+        <div className="flex shrink-0 gap-1 px-4 py-3" role="tablist" aria-label={t("asset.title")}>
           {tabs.map((tabItem) => (
             <button
               key={tabItem.id}
@@ -193,7 +194,7 @@ export function AssetLibrary({
           ))}
         </div>
 
-        <div className="mx-4 mb-3 flex h-9 items-center gap-2.5 rounded-xl bg-white/[0.055] px-3">
+        <div className="mx-4 mb-3 flex h-9 shrink-0 items-center gap-2.5 rounded-xl bg-white/[0.055] px-3">
           <IconSearch className="size-3.5 shrink-0 text-white/34" stroke={1.8} />
           <input
             value={query}
@@ -203,7 +204,7 @@ export function AssetLibrary({
           />
         </div>
 
-        {content}
+        <DrawerPanel.Body>{content}</DrawerPanel.Body>
       </DrawerPanel>
     );
   }
