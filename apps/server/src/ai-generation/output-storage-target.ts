@@ -14,16 +14,12 @@ export const STORY_PRODUCTION_CANVAS_SURFACE = 'story-studio-production-canvas';
 
 /**
  * Which storage backend a new job's outputs must be written to, or `null` for
- * "the cell-default binding" (see `StorageModule`).
+ * "the cell-default binding" (see `StorageModule` — cn → OSS, else → R2).
  *
- * Interactive-film FOOTAGE is the only output class moving to R2, so the
- * predicate is deliberately two-sided: the production canvas surface AND a
- * video job. Reference images authored on that same canvas, and every other
- * surface that shares this endpoint, keep writing exactly where they write
- * today.
- *
- * This is intentionally not driven by `OUTPUT_STORAGE_PROVIDER` — that env is
- * process-wide, so pointing it at R2 would sweep ALL media there.
+ * Story production-canvas video jobs still pin `s3_compatible` explicitly so
+ * they stay on R2 even if an operator temporarily rolls the cell default back
+ * to Azure via `OUTPUT_STORAGE_PROVIDER=azure_blob`. Other job types follow
+ * the cell default (no pin).
  */
 export function resolveOutputStorageProvider(submission: {
   type: AiJobType;
