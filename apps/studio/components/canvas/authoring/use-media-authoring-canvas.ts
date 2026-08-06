@@ -435,6 +435,7 @@ export function useMediaAuthoringCanvas({
               url: uploaded.url,
               name: file.name,
               createdAt: Date.now(),
+              category: "general",
             },
           ]);
           uploadStore.succeed(id);

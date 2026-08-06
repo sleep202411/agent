@@ -24,6 +24,7 @@ import Suggestion, {
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
+import { AssetSelectDialog } from "@/components/canvas/authoring/asset-select-dialog";
 import { MentionChip, MentionMenu, type MentionItem } from "@/lib/prompt-mentions";
 import {
   PROMPT_MENTION_NODE_NAME,
@@ -50,6 +51,18 @@ type MentionMenuState = {
   suggestion: SuggestionProps<MentionItem>;
 };
 
+type AssetPickerSession = {
+  editor: Editor;
+  range: Range;
+};
+
+type AssetPickerHandle = {
+  enabled: boolean;
+  open: (session: AssetPickerSession) => void;
+  isOpen: () => boolean;
+  updateRange: (range: Range) => void;
+};
+
 type PromptMentionNodeOptions = {
   setMenu: (state: MentionMenuState | null) => void;
 };
@@ -57,6 +70,8 @@ type PromptMentionNodeOptions = {
 type PromptMentionNodeStorage = {
   mentions: readonly MentionItem[];
   placeholder: string;
+  /** Project `@` picker — null when the surface has no project inventory. */
+  assetPicker: AssetPickerHandle | null;
 };
 
 declare module "@tiptap/core" {
@@ -235,6 +250,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
     return {
       mentions: EMPTY_MENTIONS,
       placeholder: "",
+      assetPicker: null,
     };
   },
 
@@ -243,6 +259,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
       updatePromptMentionRuntime: (runtime) => () => {
         if (runtime.mentions !== undefined) this.storage.mentions = runtime.mentions;
         if (runtime.placeholder !== undefined) this.storage.placeholder = runtime.placeholder;
+        if (runtime.assetPicker !== undefined) this.storage.assetPicker = runtime.assetPicker;
         return true;
       },
     };
@@ -342,8 +359,12 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
         // Prompts commonly place a reference directly after Chinese text or
         // another mention, so the default whitespace-only prefix is invalid.
         allowedPrefixes: null,
-        allow: () => storage.mentions.length > 0,
+        // Asset-picker surfaces always allow `@` (dialog lists the inventory).
+        // Surfaces without a project still need attached mentions to arm `@`.
+        allow: () => Boolean(storage.assetPicker?.enabled) || storage.mentions.length > 0,
         items: ({ query }) => {
+          // Project inventory uses AssetSelectDialog — no inline dropdown list.
+          if (storage.assetPicker?.enabled) return [];
           const normalized = query.toLowerCase();
           return storage.mentions
             .filter(
@@ -364,17 +385,35 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
 
           return {
             onStart: (props) => {
+              const picker = storage.assetPicker;
+              if (picker?.enabled) {
+                picker.open({ editor: props.editor, range: props.range });
+                suggestion = null;
+                publish();
+                return;
+              }
               active = 0;
               suggestion = props;
               publish();
             },
             onUpdate: (props) => {
+              const picker = storage.assetPicker;
+              if (picker?.enabled) {
+                // Keep the replace-range current while `@query` is still typing
+                // before focus moves into the dialog.
+                picker.updateRange(props.range);
+                return;
+              }
               suggestion = props;
               active = Math.max(0, Math.min(active, props.items.length - 1));
               publish();
             },
             onKeyDown: ({ event, view }: SuggestionKeyDownProps) => {
               if (view.composing || event.isComposing || event.keyCode === 229) return false;
+              if (storage.assetPicker?.enabled) {
+                // Dialog owns Escape / selection; don't intercept in the editor.
+                return false;
+              }
               if (!suggestion) return false;
               if (
                 (event.key === "ArrowDown" || event.key === "ArrowUp") &&
@@ -400,6 +439,9 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
               return false;
             },
             onExit: () => {
+              // Keep the pending insert session while the asset dialog holds
+              // focus — TipTap otherwise tears the suggestion down on blur.
+              if (storage.assetPicker?.isOpen()) return;
               suggestion = null;
               publish();
             },
@@ -465,11 +507,16 @@ function syncEditorDocument(
  * IME-safe prompt editor backed by one ProseMirror layout tree. Reference chips,
  * text, selection, caret, wrapping, and scroll height now share the same DOM;
  * the persisted/Yjs/backend value remains the existing plain `@Image1` string.
+ *
+ * When `projectId` is set (project canvas / storyboard), typing `@` opens
+ * {@link AssetSelectDialog} over the unified project inventory. Without a
+ * project, `@` still uses the inline {@link MentionMenu} over `mentions`.
  */
 export function PromptTextarea({
   value,
   onCommit,
   mentions = EMPTY_MENTIONS,
+  projectId,
   className,
   placeholder,
   rows = 4,
@@ -485,6 +532,11 @@ export function PromptTextarea({
   value: string;
   onCommit: (next: string) => void;
   mentions?: readonly MentionItem[];
+  /**
+   * When set, `@` opens the project asset picker (canvas + crew inventory)
+   * instead of the inline attached-reference menu. Requires CanvasGraphProvider.
+   */
+  projectId?: string;
   className?: string;
   placeholder?: string;
   rows?: number;
@@ -502,11 +554,18 @@ export function PromptTextarea({
   const [focused, setFocused] = useState(false);
   const [composing, setComposing] = useState(false);
   const [menuState, setMenuState] = useState<MentionMenuState | null>(null);
+  const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const lastCommittedRef = useRef(value);
+  const pendingAssetInsertRef = useRef<AssetPickerSession | null>(null);
+  const assetDialogOpenRef = useRef(false);
 
   useEffect(() => {
     lastCommittedRef.current = value;
   }, [value]);
+
+  useEffect(() => {
+    assetDialogOpenRef.current = assetDialogOpen;
+  }, [assetDialogOpen]);
 
   const extensions = useMemo(
     () => [
@@ -589,6 +648,9 @@ export function PromptTextarea({
       },
       onFocus: () => setFocused(true),
       onBlur: ({ editor: instance }) => {
+        // Focus moves into AssetSelectDialog — keep the insert session alive
+        // and do not treat this as a real blur/commit cycle.
+        if (assetDialogOpenRef.current) return;
         setFocused(false);
         setMenuState(null);
         if (!instance.view.composing) {
@@ -606,15 +668,62 @@ export function PromptTextarea({
     []
   );
 
+  const closeAssetDialog = () => {
+    setAssetDialogOpen(false);
+    pendingAssetInsertRef.current = null;
+    const activeEditor = editor;
+    if (activeEditor) {
+      exitSuggestion(activeEditor.view);
+      // Restore caret after dialog focus steal so the user can keep typing.
+      requestAnimationFrame(() => activeEditor.commands.focus());
+    }
+  };
+
+  const pickAssetMention = (item: MentionItem) => {
+    const pending = pendingAssetInsertRef.current;
+    setAssetDialogOpen(false);
+    pendingAssetInsertRef.current = null;
+    if (!pending) return;
+    if (!pending.editor.view.composing) {
+      mentionInsertion(pending.editor, pending.range, item);
+    }
+    exitSuggestion(pending.editor.view);
+    requestAnimationFrame(() => pending.editor.commands.focus());
+  };
+
   useEffect(() => {
     if (!editor) return;
     editor.commands.updatePromptMentionRuntime({ mentions });
   }, [editor, mentions]);
 
   useEffect(() => {
+    if (!editor) return;
+    editor.commands.updatePromptMentionRuntime({
+      assetPicker:
+        projectId && !disabled && !readOnly
+          ? {
+              enabled: true,
+              isOpen: () => assetDialogOpenRef.current,
+              open: (session) => {
+                pendingAssetInsertRef.current = session;
+                setAssetDialogOpen(true);
+              },
+              updateRange: (range) => {
+                const pending = pendingAssetInsertRef.current;
+                if (pending) pending.range = range;
+              },
+            }
+          : null,
+    });
+  }, [disabled, editor, projectId, readOnly]);
+
+  useEffect(() => {
     if (!editor || focused || composing || editor.view.composing) return;
+    // Don't remount the doc while the asset dialog has focus — the editor
+    // still counts as "focused" for our session even though DOM focus left.
+    if (assetDialogOpen) return;
     syncEditorDocument(editor, value, mentions);
-  }, [composing, editor, focused, mentions, value]);
+  }, [assetDialogOpen, composing, editor, focused, mentions, value]);
 
   useEffect(() => {
     if (!editor) return;
@@ -641,7 +750,10 @@ export function PromptTextarea({
 
   return (
     <div
-      className={cn("nodrag nowheel relative flex h-full w-full flex-col [&_.tiptap]:h-full [&_.tiptap]:flex-1 [&_.tiptap.ProseMirror]:h-full [&_.tiptap.ProseMirror]:flex-1 [&>div]:h-full [&>div]:flex-1", className)}
+      className={cn(
+        "nodrag nowheel relative flex h-full w-full flex-col [&_.tiptap]:h-full [&_.tiptap]:flex-1 [&_.tiptap.ProseMirror]:h-full [&_.tiptap.ProseMirror]:flex-1 [&>div]:h-full [&>div]:flex-1",
+        className
+      )}
       onWheelCapture={(event) => event.stopPropagation()}
       onScrollCapture={() => {
         setMenuState((current) => (current ? { ...current } : null));
@@ -652,6 +764,14 @@ export function PromptTextarea({
         <EditorContent editor={editor} />
       </PromptEditorContext.Provider>
       {menuState && !composing ? <PromptMentionMenuPortal state={menuState} /> : null}
+      {projectId ? (
+        <AssetSelectDialog
+          open={assetDialogOpen}
+          projectId={projectId}
+          onClose={closeAssetDialog}
+          onSelect={pickAssetMention}
+        />
+      ) : null}
     </div>
   );
 }

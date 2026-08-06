@@ -1743,6 +1743,24 @@
       "title": "Delete this shot?",
       "description": "Shot {number} and its wiring are removed. The pictures feeding it stay on the canvas.",
       "dontAskAgain": "Don't ask again"
+    },
+    "assetDialog": {
+      "title": "Select Asset",
+      "description": "Pick a canvas asset to reference, or upload a new one.",
+      "close": "Close",
+      "upload": "Upload",
+      "uploading": "Uploading…",
+      "uploadFailed": "Upload failed",
+      "unsupportedType": "Only JPEG, PNG, WebP, MP4, MOV, MP3, and WAV are supported.",
+      "empty": "No assets yet — generate or upload one first.",
+      "filter": {
+        "all": "All",
+        "aiGenerated": "AI Generated",
+        "uploaded": "Uploaded",
+        "crew": "Crew Assets",
+        "character": "Character",
+        "scene": "Scene"
+      }
     }
   },
   "invite": {

@@ -16,6 +16,8 @@ import { StoryboardTable } from "./storyboard/storyboard-table";
  * offline cache, version history and undo all come for free and switching modes
  * converts nothing. Presence carries identity only — `cursor` is canvas-world
  * geometry and means nothing here.
+ *
+ * `@` in prompt cells opens AssetSelectDialog via PromptTextarea (projectId).
  */
 export function StoryboardEditor() {
   const t = useTranslations("storyboard");

@@ -7,7 +7,10 @@ import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import { IconLayoutGrid, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
-import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import {
+  projectAssetToCanvasAsset,
+  useProjectAssets,
+} from "@/lib/canvas-authoring/use-project-assets";
 import {
   getMediaAssetReadinessStatuses,
   mediaAssetReadinessKeys,
@@ -59,8 +62,10 @@ function EmptyState({
 
 /**
  * The project's persistent asset library — a slide-in drawer over the canvas.
- * Generated and uploaded image/video assets expose capability-specific readiness at
- * the MediaAsset layer; the UI only reflects that server state.
+ * Generated and uploaded tabs read the unified `useProjectAssets` inventory;
+ * the crew tab keeps folder navigation in `ProjectCrewAssetLibrary`.
+ * Image/video assets expose capability-specific readiness at the MediaAsset
+ * layer; the UI only reflects that server state.
  */
 export function AssetLibrary({
   open,
@@ -76,7 +81,9 @@ export function AssetLibrary({
   crewProjectId?: string;
 }) {
   const t = useTranslations("canvasNodes");
-  const { assets } = useCanvasGraphContext();
+  // Same inventory as AssetSelectDialog — canvas graph + (when projectId set) crew.
+  // Generated/uploaded tabs only use canvas-origin rows; crew tab stays separate.
+  const { assets: projectAssets } = useProjectAssets(crewProjectId ?? "");
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
   const tabs = useMemo(
@@ -87,17 +94,25 @@ export function AssetLibrary({
     [crewProjectId]
   );
 
+  const canvasAssetCount = useMemo(
+    () => projectAssets.filter((asset) => asset.origin !== "crew").length,
+    [projectAssets]
+  );
+
   const filteredAssets = useMemo(() => {
+    if (tab === "crew") return [];
+    const origin = tab === "generated" ? "aiGenerated" : "uploaded";
     const q = query.trim().toLowerCase();
-    return assets.filter(
-      (a) =>
-        tab !== "crew" &&
-        a.source === tab &&
-        (!q ||
-          (a.name ?? "").toLowerCase().includes(q) ||
-          (a.prompt ?? "").toLowerCase().includes(q))
-    );
-  }, [assets, tab, query]);
+    return projectAssets
+      .filter((asset) => asset.origin === origin)
+      .filter(
+        (asset) =>
+          !q ||
+          (asset.name ?? "").toLowerCase().includes(q) ||
+          (asset.prompt ?? "").toLowerCase().includes(q)
+      )
+      .map(projectAssetToCanvasAsset);
+  }, [projectAssets, tab, query]);
 
   const statusAssetIds = useMemo(
     () =>
@@ -110,8 +125,8 @@ export function AssetLibrary({
     queryKey: mediaAssetReadinessKeys.statuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
     queryFn: () => getMediaAssetReadinessStatuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
     enabled: open && statusAssetIds.length > 0,
-    refetchInterval: (query) => {
-      const data = query.state.data;
+    refetchInterval: (queryState) => {
+      const data = queryState.state.data;
       if (!data) return false;
       return Object.values(data).some(
         (status) => status.status === "pending" || status.status === "processing"
@@ -169,7 +184,7 @@ export function AssetLibrary({
         <DrawerPanel.Header
           title={t("asset.title")}
           description={description}
-          count={assets.length}
+          count={canvasAssetCount}
           icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
           closeLabel={t("asset.close")}
           onClose={onClose}

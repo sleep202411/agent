@@ -1,7 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
+import {
+  projectAssetToMentionItem,
+  useProjectAssets,
+} from "@/lib/canvas-authoring/use-project-assets";
 import type { MentionItem } from "@/lib/prompt-mentions";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +16,9 @@ import { cn } from "@/lib/utils";
  *
  * Display mode: plain text (truncated). Click/Enter to edit with the full
  * Tiptap editor — supports @mentions, IME, paste auto-binding.
+ *
+ * `@` opens the project AssetSelectDialog (canvas + crew inventory). Mentions
+ * for chip remount / paste binding come from the same inventory.
  */
 export function ShotPromptCell({
   value,
@@ -20,7 +28,6 @@ export function ShotPromptCell({
   onCommit,
   cellId,
   onNavigate,
-  mentions = EMPTY_MENTIONS,
 }: {
   value: string | undefined;
   placeholder: string;
@@ -29,9 +36,13 @@ export function ShotPromptCell({
   onCommit: (next: string | undefined) => void;
   cellId?: string;
   onNavigate?: (direction: "next" | "prev" | "down" | "up") => void;
-  /** Reference items for @mention autocomplete. */
-  mentions?: readonly MentionItem[];
 }) {
+  const { projectId } = useProjectContext();
+  const { assets } = useProjectAssets(projectId);
+  const mentions = useMemo<MentionItem[]>(
+    () => assets.map((asset) => projectAssetToMentionItem(asset, assets)),
+    [assets]
+  );
   const [isEditing, setIsEditing] = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +78,7 @@ export function ShotPromptCell({
           value={value ?? ""}
           onCommit={(next) => onCommit(next || undefined)}
           mentions={mentions}
+          projectId={projectId}
           aria-label={ariaLabel}
           rows={2}
           autoFocus
@@ -96,12 +108,12 @@ export function ShotPromptCell({
       }}
       className={cn(
         "h-full min-h-[1.75rem] w-full cursor-text px-1.5 py-1 text-xs/relaxed transition-colors hover:bg-white/[0.05] focus:bg-white/[0.06] focus:outline-none focus:ring-1 focus:ring-white/15 overflow-hidden",
-        displayText ? "text-white/85" : "flex items-center justify-center text-white/25 focus:items-start focus:justify-start",
+        displayText
+          ? "text-white/85"
+          : "flex items-center justify-center text-white/25 focus:items-start focus:justify-start"
       )}
     >
       {displayText || <span className="focus:hidden">{placeholder}</span>}
     </div>
   );
 }
-
-const EMPTY_MENTIONS: readonly MentionItem[] = [];

@@ -46,6 +46,11 @@ import {
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
+import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import {
+  projectAssetToMentionItem,
+  useProjectAssets,
+} from "@/lib/canvas-authoring/use-project-assets";
 import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
@@ -396,16 +401,23 @@ function GenerationCard({
   const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+  const projectId = useOptionalProjectContext()?.projectId;
+  // Library inventory for chip remount / paste binding of `@ImageN` tokens
+  // picked from AssetSelectDialog. Empty projectId still reads canvas assets.
+  const { assets: projectAssets } = useProjectAssets(projectId ?? "");
   // Attached references the prompt can cite with `@` — labeled per kind
   // (Image1, Video1, …) in the same scheme as the studio composer. Still-
-  // uploading items are skipped (no stable target yet).
+  // uploading items are skipped (no stable target yet). Project library
+  // mentions are appended so inventory picks survive document remount.
   const mentionItems = useMemo<MentionItem[]>(() => {
     const counts: Record<FizzAiReferenceKind, number> = { image: 0, video: 0, audio: 0 };
     const items: MentionItem[] = [];
+    const attachedIds = new Set<string>();
     for (const field of refFields) {
       for (const ref of referencesForDisplay[field.field] ?? []) {
         if (ref.uploading) continue;
         counts[ref.kind] += 1;
+        attachedIds.add(ref.id);
         items.push({
           id: ref.id,
           label: mentionLabel(ref.kind, counts[ref.kind]),
@@ -415,8 +427,12 @@ function GenerationCard({
         });
       }
     }
+    for (const asset of projectAssets) {
+      if (attachedIds.has(asset.id)) continue;
+      items.push(projectAssetToMentionItem(asset, projectAssets));
+    }
     return items;
-  }, [referencesForDisplay, refFields]);
+  }, [projectAssets, referencesForDisplay, refFields]);
 
   // Live compute-point estimate for the current model + settings + wired/uploaded
   // references — mirrors the model-settings panel and the standalone studio
@@ -508,6 +524,7 @@ function GenerationCard({
               url: uploaded.url,
               name: file.name,
               createdAt: Date.now(),
+              category: "general",
             },
           ]);
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
@@ -934,6 +951,7 @@ function GenerationCard({
                 promptAutoFocus
                 showPrompt={!model || hasSchemaProperty(model, "prompt")}
                 mentions={mentionItems}
+                projectId={projectId}
                 referenceContent={
                   refFields.length > 0 ? (
                     <ReferenceStack

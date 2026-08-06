@@ -344,6 +344,7 @@ export function useStoryboard() {
           url: uploaded.url,
           name: file.name,
           createdAt: Date.now(),
+          category: "general",
         },
       ]);
       connectNodes({ getNode, catalog, graph: { addEdge, patchNodeData } }, id, shotId);

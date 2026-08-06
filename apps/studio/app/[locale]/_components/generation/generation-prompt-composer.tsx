@@ -64,6 +64,7 @@ export function GenerationPromptComposer({
   promptRows = 4,
   showPrompt = true,
   mentions,
+  projectId,
   referenceContent,
   mode,
   modes = [],
@@ -106,6 +107,8 @@ export function GenerationPromptComposer({
   promptRows?: number;
   showPrompt?: boolean;
   mentions?: readonly MentionItem[];
+  /** When set, `@` opens the project asset picker (requires CanvasGraphProvider). */
+  projectId?: string;
   referenceContent?: ReactNode;
   mode?: string;
   modes?: string[];
@@ -320,6 +323,7 @@ export function GenerationPromptComposer({
                   value={prompt}
                   onCommit={onPromptCommit}
                   mentions={mentions}
+                  projectId={projectId}
                   placeholder={promptPlaceholder}
                   aria-label={promptAriaLabel}
                   rows={isExpanded ? Math.max(promptRows, 10) : promptRows}

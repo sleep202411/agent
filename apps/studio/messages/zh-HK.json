@@ -1743,6 +1743,24 @@
       "title": "刪除這個分鏡？",
       "description": "第 {number} 個分鏡連同它的連線會被移除。為它供圖的素材仍留在畫布上。",
       "dontAskAgain": "不再提示"
+    },
+    "assetDialog": {
+      "title": "選擇資產",
+      "description": "選擇畫布上的資產進行引用，或上傳新檔案。",
+      "close": "關閉",
+      "upload": "上傳",
+      "uploading": "上傳中…",
+      "uploadFailed": "上傳失敗",
+      "unsupportedType": "僅支援 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
+      "empty": "還沒有資產——先生成或上傳一個。",
+      "filter": {
+        "all": "全部",
+        "aiGenerated": "AI 生成",
+        "uploaded": "已上傳",
+        "crew": "劇組資產",
+        "character": "角色",
+        "scene": "場景"
+      }
     }
   },
   "invite": {

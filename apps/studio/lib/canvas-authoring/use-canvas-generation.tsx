@@ -441,6 +441,7 @@ export function CanvasGenerationProvider({
                 panorama: isPanoramaOutput(output),
                 prompt: job.prompt,
                 createdAt: Date.now(),
+                category: "general",
               };
             })
             .filter((asset): asset is CanvasAsset => asset !== null)
