@@ -36,6 +36,7 @@ import {
   STORYBOARD_COLUMNS,
   STORYBOARD_ESTIMATED_ROW_HEIGHT,
   STORYBOARD_GRID_TEMPLATE,
+  STORYBOARD_TABLE_WIDTH,
   STORYBOARD_OVERSCAN,
   STORYBOARD_ROW_RULE,
   storyboardCellStyle,
@@ -44,6 +45,7 @@ import {
 import { StoryboardRow } from "./storyboard-row";
 import type { StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
+import { useGridNavigation, type NavDirection } from "./use-grid-navigation";
 
 const HIGHLIGHT_MS = 2000;
 
@@ -145,6 +147,24 @@ export function StoryboardTable({
     // heights with the right shot instead of shifting the whole cache by one.
     getItemKey: (index) => rows[index]?.id ?? index,
   });
+
+  // Excel-style grid navigation: Tab/Enter/Esc move focus between editable cells.
+  const { pendingFocus, moveFocus, resolvePendingFocus } = useGridNavigation({
+    rowCount: rows.length,
+    scrollToIndex: (idx, opts) => virtualizer.scrollToIndex(idx, opts as { align?: "start" | "center" | "end" }),
+  });
+
+  // After virtual items render, resolve any pending focus (target row was outside the virtual window).
+  useEffect(() => {
+    resolvePendingFocus(rowIds);
+  }, [resolvePendingFocus, rowIds, pendingFocus]);
+
+  const handleNavigate = useCallback(
+    (rowIndex: number, columnKey: string, direction: NavDirection) => {
+      moveFocus(direction, rowIndex, columnKey, rowIds);
+    },
+    [moveFocus, rowIds],
+  );
 
   const sensors = useSensors(
     // A few pixels of slop, so clicking into a cell is never read as a drag.
@@ -279,10 +299,9 @@ export function StoryboardTable({
                   containerRef={scrollRef}
                   containerClassName="min-h-0 flex-1 overflow-y-auto"
                   className="grid"
+                  style={{ width: `${STORYBOARD_TABLE_WIDTH}px` }}
                 >
-                  {/* Sticky on the panel's own tone — `background` here would
-                      cut a lighter seam across the top of the surface. */}
-                  <TableHeader className="sticky top-0 z-20 grid bg-card">
+                  <TableHeader className="sticky top-0 z-20 bg-card">
                     <TableRow
                       className={cn(
                         "grid w-max min-w-full hover:bg-transparent",
@@ -343,6 +362,7 @@ export function StoryboardTable({
                             highlighted={highlightId === row.id}
                             measureRef={virtualizer.measureElement}
                             actions={rowActions}
+                            onNavigate={(dir, columnKey) => handleNavigate(item.index, columnKey, dir)}
                           />
                         );
                       })}

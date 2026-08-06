@@ -8,221 +8,112 @@ import { ShotIdCell, ShotMenuCell } from "./shot-meta-cells";
 import { ShotDurationCell } from "./shot-duration-cell";
 import { ShotOptionCell } from "./shot-option-cell";
 import { ShotTextCell } from "./shot-text-cell";
+import { ShotPromptCell } from "./shot-prompt-cell";
 import type { StoryboardCellProps, StoryboardColumn } from "./storyboard-types";
 
-/**
- * The storyboard's columns — the ONE definition the header and every row walk.
- *
- * Virtualized rows are absolutely positioned, so real table layout (`colgroup` +
- * `table-fixed`) can't align them: the browser only sizes columns from cells it
- * lays out together, and a virtual window never holds a whole column. Header and
- * rows therefore share the grid track list below.
- *
- * Because a column carries its own `Cell`, header and body cannot disagree:
- * there is no hand-written list of `<td>`s to keep in the same order as the
- * tracks. Adding, moving, resizing or pinning a column is one edit here.
- *
- * The order of this array IS the order on screen.
- */
-
 // ── cell adapters ───────────────────────────────────────────────────────────
-// Each binds one column to the shot field it edits. They are the only place
-// that knows "the 台词 column writes `dialogue`".
 
 function ShotFrameCell({ row, selected, actions }: StoryboardCellProps) {
-  return (
-    <ShotPictureCell
-      row={row}
-      kind="image"
-      selected={selected}
-      onOpen={() => actions.onSelect(row.id, "image")}
-    />
-  );
+  return <ShotPictureCell row={row} kind="image" selected={selected} onOpen={() => actions.onSelect(row.id, "image")} />;
 }
-
 function ShotClipCell({ row, selected, actions }: StoryboardCellProps) {
-  return (
-    <ShotPictureCell
-      row={row}
-      kind="video"
-      selected={selected}
-      onOpen={() => actions.onSelect(row.id, "video")}
-    />
-  );
+  return <ShotPictureCell row={row} kind="video" selected={selected} onOpen={() => actions.onSelect(row.id, "video")} />;
 }
-
 function ShotSizeCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return (
-    <ShotOptionCell
-      group="size"
-      value={row.data.shotSize}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { shotSize: next })}
-    />
-  );
+  return <ShotOptionCell group="size" value={row.data.shotSize} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { shotSize: next })} />;
 }
-
 function ShotAngleCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return (
-    <ShotOptionCell
-      group="angle"
-      value={row.data.perspective}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { perspective: next })}
-    />
-  );
+  return <ShotOptionCell group="angle" value={row.data.perspective} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { perspective: next })} />;
 }
-
 function ShotMovementCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return (
-    <ShotOptionCell
-      group="movement"
-      value={row.data.movement}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { movement: next })}
-    />
-  );
+  return <ShotOptionCell group="movement" value={row.data.movement} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { movement: next })} />;
 }
-
 function ShotDurationColumnCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return (
-    <ShotDurationCell
-      value={row.data.durationSeconds}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })}
-    />
-  );
+  return <ShotDurationCell value={row.data.durationSeconds} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })} />;
 }
-
 function ShotDialogueCell({ row, canEdit, label, actions }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return (
-    <ShotTextCell
-      value={row.data.dialogue ?? ""}
-      placeholder={t("cell.dialoguePlaceholder")}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })}
-    />
-  );
+  return <ShotTextCell value={row.data.dialogue ?? ""} placeholder={t("cell.dialoguePlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })} />;
 }
-
 function ShotNotesCell({ row, canEdit, label, actions }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return (
-    <ShotTextCell
-      value={row.data.notes ?? ""}
-      placeholder={t("cell.notesPlaceholder")}
-      ariaLabel={label}
-      readOnly={!canEdit}
-      onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })}
-    />
-  );
+  return <ShotTextCell value={row.data.notes ?? ""} placeholder={t("cell.notesPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })} />;
+}
+function ShotDescriptionCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  const t = useTranslations("storyboard");
+  return <ShotPromptCell value={row.data.description} placeholder={t("cell.descriptionPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { description: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+}
+function ShotImagePromptCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  const t = useTranslations("storyboard");
+  return <ShotPromptCell value={row.data.imagePrompt} placeholder={t("cell.imagePromptPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { imagePrompt: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+}
+function ShotVideoPromptCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  const t = useTranslations("storyboard");
+  return <ShotPromptCell value={row.data.videoPrompt} placeholder={t("cell.videoPromptPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { videoPrompt: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
 }
 
 // ── the columns ─────────────────────────────────────────────────────────────
+// Fixed px widths — no fr/minmax. The table width is the sum, set explicitly
+// so virtualized absolute body rows and the normal-flow header always match.
 
 export const STORYBOARD_COLUMNS: readonly StoryboardColumn[] = [
-  {
-    key: "number",
-    track: "6.25rem",
-    align: "center",
-    pin: "left",
-    header: { kind: "glyph", glyph: "#" },
-    Cell: ShotNumberCell,
-  },
-  { key: "frame", track: "10rem", header: { kind: "label" }, Cell: ShotFrameCell },
-  { key: "clip", track: "10rem", header: { kind: "label" }, Cell: ShotClipCell },
-  { key: "size", track: "7rem", header: { kind: "label" }, Cell: ShotSizeCell },
-  { key: "angle", track: "7rem", header: { kind: "label" }, Cell: ShotAngleCell },
-  { key: "movement", track: "7rem", header: { kind: "label" }, Cell: ShotMovementCell },
-  { key: "duration", track: "5rem", header: { kind: "label" }, Cell: ShotDurationColumnCell },
-  {
-    key: "dialogue",
-    track: "minmax(12rem, 1fr)",
-    header: { kind: "label" },
-    Cell: ShotDialogueCell,
-  },
-  { key: "notes", track: "16rem", header: { kind: "label" }, Cell: ShotNotesCell },
-  { key: "id", track: "6rem", header: { kind: "label" }, Cell: ShotIdCell },
-  { key: "actions", track: "3rem", header: { kind: "hidden" }, Cell: ShotMenuCell },
+  { key: "number",     width: 100, align: "center", pin: "left", header: { kind: "glyph", glyph: "#" }, Cell: ShotNumberCell },
+  { key: "frame",      width: 160, header: { kind: "label" }, Cell: ShotFrameCell },
+  { key: "clip",       width: 160, header: { kind: "label" }, Cell: ShotClipCell },
+  { key: "size",       width: 112, header: { kind: "label" }, Cell: ShotSizeCell, editable: true },
+  { key: "angle",      width: 112, header: { kind: "label" }, Cell: ShotAngleCell, editable: true },
+  { key: "movement",   width: 112, header: { kind: "label" }, Cell: ShotMovementCell, editable: true },
+  { key: "duration",   width: 80,  header: { kind: "label" }, Cell: ShotDurationColumnCell, editable: true },
+  { key: "dialogue",   width: 240, header: { kind: "label" }, Cell: ShotDialogueCell, editable: true },
+  { key: "notes",      width: 256, header: { kind: "label" }, Cell: ShotNotesCell, editable: true },
+  { key: "description",width: 240, header: { kind: "label" }, Cell: ShotDescriptionCell, editable: true },
+  { key: "imagePrompt",width: 240, header: { kind: "label" }, Cell: ShotImagePromptCell, editable: true },
+  { key: "videoPrompt",width: 240, header: { kind: "label" }, Cell: ShotVideoPromptCell, editable: true },
+  { key: "id",         width: 96,  header: { kind: "label" }, Cell: ShotIdCell },
+  { key: "actions",    width: 48,  header: { kind: "hidden" }, Cell: ShotMenuCell },
 ];
 
-export const STORYBOARD_GRID_TEMPLATE = STORYBOARD_COLUMNS.map((column) => column.track).join(" ");
+/** CSS grid-template-columns string — every column as a fixed px value. */
+export const STORYBOARD_GRID_TEMPLATE = STORYBOARD_COLUMNS.map((c) => `${c.width}px`).join(" ");
 
-/**
- * `left` offset for each pinned column: the sum of the tracks in front of it,
- * kept symbolic in a `calc()` so it follows the track list.
- *
- * Only a LEADING run can be pinned — pinning a column with unpinned ones before
- * it would need those to be sticky too.
- */
-const PIN_OFFSETS: Record<string, string> = (() => {
-  const offsets: Record<string, string> = {};
-  const before: string[] = [];
+/** Total table width — the sum of all column widths. Set on the <table> so
+ *  header (normal flow) and body (absolute virtualized rows) always match. */
+export const STORYBOARD_TABLE_WIDTH = STORYBOARD_COLUMNS.reduce((sum, c) => sum + c.width, 0);
+
+/** Keys of inline-editable columns (Tab stops here, others are skipped). */
+export const EDITABLE_COLUMN_KEYS = STORYBOARD_COLUMNS.filter((c) => c.editable).map((c) => c.key);
+
+/** Stable DOM id for a cell — used by grid focus navigation. */
+export function cellDomId(rowId: string, columnKey: string): string {
+  return `cell-${rowId}-${columnKey}`;
+}
+
+/** `left` offset for each pinned column (sum of widths in front of it). */
+const PIN_OFFSETS: Record<string, number> = (() => {
+  const offsets: Record<string, number> = {};
+  let acc = 0;
   for (const column of STORYBOARD_COLUMNS) {
     if (!column.pin) break;
-    offsets[column.key] = before.length > 0 ? `calc(${before.join(" + ")})` : "0px";
-    before.push(column.track);
+    offsets[column.key] = acc;
+    acc += column.width;
   }
   return offsets;
 })();
 
 const ALIGN_CLASS = { center: "justify-center", end: "justify-end" } as const;
 
-/**
- * The cell chrome a column asks for — used by the header AND the row, so the
- * two can't drift.
- *
- * A pinned cell must be OPAQUE (the columns it holds back slide underneath it)
- * and takes its fill by inheritance rather than declaring one, so hover,
- * highlight and rest can never disagree across the pin's edge. That is why the
- * row's fills are solid tones: a translucent one would be inherited as
- * translucent and the moving columns would show straight through.
- */
 export function storyboardCellClass(column: StoryboardColumn, className?: string): string {
-  return cn(
-    "relative",
-    column.align && ALIGN_CLASS[column.align],
-    column.pin && "sticky z-10 bg-inherit",
-    className
-  );
+  return cn("relative", column.align && ALIGN_CLASS[column.align], column.pin && "sticky z-10 bg-inherit", className);
 }
 
-/**
- * The header's chrome. Same geometry as the cell below it, except that a header
- * CENTRES by default — a column name is a label for the whole column, not the
- * first thing in it. A column's own `align` still wins where it says so.
- */
 export function storyboardHeadClass(column: StoryboardColumn, className?: string): string {
-  return storyboardCellClass(
-    column,
-    cn("flex items-center justify-center", column.align && ALIGN_CLASS[column.align], className)
-  );
+  return storyboardCellClass(column, cn("flex items-center justify-center", column.align && ALIGN_CLASS[column.align], className));
 }
 
 export function storyboardCellStyle(column: StoryboardColumn): { left: string } | undefined {
-  return column.pin ? { left: PIN_OFFSETS[column.key] } : undefined;
+  return column.pin ? { left: `${PIN_OFFSETS[column.key]}px` } : undefined;
 }
 
-/**
- * Row rules only — horizontal hairlines, no column lines and no box. That is
- * DESIGN.md §4's one sanctioned "border" (a separator between rows), and it is
- * enough: alignment does the vertical work. Header and body share this so the
- * two can never drift apart.
- */
 export const STORYBOARD_ROW_RULE = "border-white/[0.09]";
-
-/**
- * Height the virtualizer reserves for a row it has not measured yet — one 16:9
- * thumbnail plus padding. Real heights are measured on mount (a wrapped line of
- * dialogue makes a row taller), so this only has to be close.
- */
 export const STORYBOARD_ESTIMATED_ROW_HEIGHT = 100;
-
-/** Rows kept mounted beyond the viewport, so scrolling doesn't flash blanks. */
 export const STORYBOARD_OVERSCAN = 8;

@@ -1616,6 +1616,9 @@
       "duration": "时长",
       "dialogue": "台词",
       "notes": "备注",
+      "description": "画面描述",
+      "imagePrompt": "图片提示词",
+      "videoPrompt": "视频提示词",
       "actions": "分镜操作"
     },
     "option": {
@@ -1653,7 +1656,10 @@
       "durationUnit": "秒",
       "durationPlaceholder": "0",
       "dialoguePlaceholder": "台词或旁白…",
-      "notesPlaceholder": "备注…"
+      "notesPlaceholder": "备注…",
+      "descriptionPlaceholder": "描述画面——构图、光影、氛围…",
+      "imagePromptPlaceholder": "图片生成提示词…",
+      "videoPromptPlaceholder": "视频生成提示词…"
     },
     "frame": {
       "add": "添加画面",

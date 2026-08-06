@@ -25,12 +25,16 @@ export function ShotOptionCell({
   ariaLabel,
   readOnly,
   onCommit,
+  cellId,
+  onNavigate,
 }: {
   group: ShotOptionGroup;
   value: string | undefined;
   ariaLabel: string;
   readOnly: boolean;
   onCommit: (next: string | undefined) => void;
+  cellId?: string;
+  onNavigate?: (direction: "next" | "prev" | "down" | "up") => void;
 }) {
   const t = useTranslations("storyboard");
   const optionLabel = useShotOptionLabel();
@@ -47,12 +51,23 @@ export function ShotOptionCell({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        id={cellId}
         aria-label={ariaLabel}
         className={cn(
           QUIET_CELL,
           "group/opt flex w-[calc(100%+0.75rem)] items-center gap-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/35",
           "data-[state=open]:bg-white/[0.06]"
         )}
+        onKeyDown={(e) => {
+          if (!onNavigate) return;
+          if (e.key === "Tab") {
+            e.preventDefault();
+            onNavigate(e.shiftKey ? "prev" : "next");
+          } else if (e.key === "Enter") {
+            // Let Radix open the dropdown — but for grid nav when already open,
+            // the item's onSelect handles it. When closed, Enter opens.
+          }
+        }}
       >
         <span
           className={cn(
@@ -68,12 +83,12 @@ export function ShotOptionCell({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40">
-        <DropdownMenuItem onSelect={() => onCommit(undefined)}>
+        <DropdownMenuItem onSelect={() => { onCommit(undefined); onNavigate?.("next"); }}>
           <IconCheck className={cn("size-3.5", value ? "opacity-0" : "opacity-100")} stroke={2} />
           <span className="text-white/50">{t("cell.unset")}</span>
         </DropdownMenuItem>
         {shotOptionValues(group).map((option) => (
-          <DropdownMenuItem key={option} onSelect={() => onCommit(option)}>
+          <DropdownMenuItem key={option} onSelect={() => { onCommit(option); onNavigate?.("next"); }}>
             <IconCheck
               className={cn("size-3.5", value === option ? "opacity-100" : "opacity-0")}
               stroke={2}

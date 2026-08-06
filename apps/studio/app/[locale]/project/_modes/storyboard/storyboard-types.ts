@@ -47,6 +47,10 @@ export interface StoryboardCellProps {
   label: string;
   handle: ShotDragHandle;
   actions: StoryboardRowActions;
+  /** Stable DOM id for this cell — used for grid focus navigation. */
+  cellId?: string;
+  /** Move focus to a neighbouring cell (Excel-style grid navigation). */
+  onNavigate?: (direction: "next" | "prev" | "down" | "up") => void;
 }
 
 /**
@@ -59,8 +63,8 @@ export interface StoryboardCellProps {
  */
 export interface StoryboardColumn {
   key: string;
-  /** CSS grid track (the header and every row share one track list). */
-  track: string;
+  /** Fixed pixel width — header and body share this value. */
+  width: number;
   align?: "center" | "end";
   /** Sticks to the leading edge while the board scrolls sideways. */
   pin?: "left";
@@ -73,4 +77,6 @@ export interface StoryboardColumn {
    */
   header: { kind: "label" } | { kind: "glyph"; glyph: string } | { kind: "hidden" };
   Cell: ComponentType<StoryboardCellProps>;
+  /** Whether this column's cells are inline-editable (Tab stops here). */
+  editable?: boolean;
 }

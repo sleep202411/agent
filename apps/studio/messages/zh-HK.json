@@ -1616,6 +1616,9 @@
       "duration": "時長",
       "dialogue": "對白",
       "notes": "備註",
+      "description": "畫面描述",
+      "imagePrompt": "圖片提示詞",
+      "videoPrompt": "影片提示詞",
       "actions": "分鏡操作"
     },
     "option": {
@@ -1653,7 +1656,10 @@
       "durationUnit": "秒",
       "durationPlaceholder": "0",
       "dialoguePlaceholder": "對白或旁白…",
-      "notesPlaceholder": "備註…"
+      "notesPlaceholder": "備註…",
+      "descriptionPlaceholder": "描述畫面——構圖、光影、氛圍…",
+      "imagePromptPlaceholder": "圖片生成提示詞…",
+      "videoPromptPlaceholder": "影片生成提示詞…"
     },
     "frame": {
       "add": "新增畫面",

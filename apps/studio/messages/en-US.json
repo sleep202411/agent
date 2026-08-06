@@ -1616,6 +1616,9 @@
       "duration": "Duration",
       "dialogue": "Dialogue",
       "notes": "Notes",
+      "description": "Description",
+      "imagePrompt": "Image Prompt",
+      "videoPrompt": "Video Prompt",
       "actions": "Shot actions"
     },
     "option": {
@@ -1653,7 +1656,10 @@
       "durationUnit": "s",
       "durationPlaceholder": "0",
       "dialoguePlaceholder": "Dialogue or voice-over…",
-      "notesPlaceholder": "Notes…"
+      "notesPlaceholder": "Notes…",
+      "descriptionPlaceholder": "Describe the scene — composition, lighting, mood…",
+      "imagePromptPlaceholder": "Image generation prompt…",
+      "videoPromptPlaceholder": "Video generation prompt…"
     },
     "frame": {
       "add": "Add a picture",

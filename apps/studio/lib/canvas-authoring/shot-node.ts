@@ -59,6 +59,12 @@ export interface ShotNodeData {
   durationSeconds?: number;
   dialogue?: string;
   notes?: string;
+  /** 画面描述：构图/光影/氛围。支持 @引用。 */
+  description?: string;
+  /** 图片提示词：给 AI 生图的 prompt。支持 @引用。 */
+  imagePrompt?: string;
+  /** 视频提示词：给 AI 生视频的 prompt。支持 @引用。 */
+  videoPrompt?: string;
   /** Picture slots — standard wire-bound references, keyed by field. */
   references?: CardReferences;
   /**

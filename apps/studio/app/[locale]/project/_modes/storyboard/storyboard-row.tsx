@@ -9,10 +9,12 @@ import {
   STORYBOARD_COLUMNS,
   STORYBOARD_GRID_TEMPLATE,
   STORYBOARD_ROW_RULE,
+  cellDomId,
   storyboardCellClass,
   storyboardCellStyle,
 } from "./storyboard-columns";
-import type { StoryboardRowActions } from "./storyboard-types";
+import type { StoryboardCellProps, StoryboardRowActions } from "./storyboard-types";
+import type { NavDirection } from "./use-grid-navigation";
 import type { ShotRow } from "./use-storyboard";
 
 /**
@@ -41,9 +43,9 @@ export const StoryboardRow = memo(function StoryboardRow({
   highlighted,
   measureRef,
   actions,
+  onNavigate,
 }: {
   row: ShotRow;
-  /** Position in the board (0-based), for the virtualizer and reordering. */
   index: number;
   rowCount: number;
   canEdit: boolean;
@@ -52,6 +54,10 @@ export const StoryboardRow = memo(function StoryboardRow({
   highlighted: boolean;
   measureRef: (node: HTMLElement | null) => void;
   actions: StoryboardRowActions;
+  /** Grid navigation callback — passed down to each editable cell. */
+  /** Grid navigation — called with the direction AND the column key so the table
+   *  knows which cell is navigating. */
+  onNavigate?: (direction: NavDirection, columnKey: string) => void;
 }) {
   const t = useTranslations("storyboard");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -94,24 +100,33 @@ export const StoryboardRow = memo(function StoryboardRow({
         highlighted && "bg-[oklch(0.232_0_0)] hover:bg-[oklch(0.232_0_0)]"
       )}
     >
-      {STORYBOARD_COLUMNS.map((column) => (
-        <TableCell
-          key={column.key}
-          className={storyboardCellClass(column)}
-          style={storyboardCellStyle(column)}
-        >
-          <column.Cell
-            row={row}
-            index={index}
-            rowCount={rowCount}
-            canEdit={canEdit}
-            selected={selected}
-            label={t(`column.${column.key}`)}
-            handle={{ attributes, listeners }}
-            actions={actions}
-          />
-        </TableCell>
-      ))}
+      {STORYBOARD_COLUMNS.map((column) => {
+        const cellProps: StoryboardCellProps = {
+          row,
+          index,
+          rowCount,
+          canEdit,
+          selected,
+          label: t(`column.${column.key}`),
+          handle: { attributes, listeners },
+          actions,
+        };
+        if (column.editable) {
+          cellProps.cellId = cellDomId(row.id, column.key);
+          cellProps.onNavigate = onNavigate
+            ? (direction: NavDirection) => onNavigate(direction, column.key)
+            : undefined;
+        }
+        return (
+          <TableCell
+            key={column.key}
+            className={storyboardCellClass(column)}
+            style={storyboardCellStyle(column)}
+          >
+            <column.Cell {...cellProps} />
+          </TableCell>
+        );
+      })}
     </TableRow>
   );
 });
