@@ -151,9 +151,12 @@ function resolveResolution(input: Record<string, unknown>): '768P' | '2K' {
 }
 
 /**
- * t2va: concrete ratio required (not adaptive).
- * i2va: adaptive (omit or force adaptive).
- * r2va: optional; default adaptive — we omit when auto.
+ * Official ratio enum: adaptive | 21:9 | 16:9 | 4:3 | 1:1 | 3:4 | 9:16.
+ * Studio may still send legacy Seedance "auto" — treat as adaptive.
+ *
+ * t2va: concrete ratio required (not adaptive) — default 16:9 if missing.
+ * i2va: always adaptive.
+ * r2va: optional; default adaptive.
  */
 function resolveRatio(
   input: Record<string, unknown>,
@@ -162,6 +165,7 @@ function resolveRatio(
   const raw = String(input.aspectRatio ?? input.ratio ?? '')
     .trim()
     .toLowerCase();
+  const isAdaptive = !raw || raw === 'adaptive' || raw === 'auto';
 
   if (mode.hasFrame) {
     // Docs: ratio always adaptive for image-to-video; other values ignored.
@@ -170,22 +174,18 @@ function resolveRatio(
 
   const concrete = normalizeConcreteRatio(raw);
   if (mode.hasReference) {
-    if (!raw || raw === 'auto' || raw === 'adaptive') return 'adaptive';
+    if (isAdaptive) return 'adaptive';
     if (concrete) return concrete;
     throw minimaxError(
       'VALIDATION_ERROR',
       `Invalid MiniMax-H3 ratio for reference-to-video: ${raw}`,
-      'Choose a supported aspect ratio, or leave it adaptive.',
+      'Choose a supported aspect ratio, or adaptive.',
     );
   }
 
-  // Text-to-video: ratio required and cannot be adaptive. Studio often keeps
-  // Seedance-style "auto" after a model switch — coerce to the catalog default
-  // rather than failing a valid t2v prompt.
+  // Text-to-video: ratio required and cannot be adaptive.
   if (!concrete) {
-    if (!raw || raw === 'auto' || raw === 'adaptive') {
-      return '16:9';
-    }
+    if (isAdaptive) return '16:9';
     throw minimaxError(
       'VALIDATION_ERROR',
       `MiniMax-H3 text-to-video requires a concrete ratio (got ${raw || 'empty'})`,

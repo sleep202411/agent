@@ -18,7 +18,7 @@ describe('mapMiniMaxVideoProviderRequest', () => {
     });
   });
 
-  it('defaults text-to-video auto/empty ratio to 16:9', () => {
+  it('defaults text-to-video adaptive/auto/empty ratio to 16:9', () => {
     const empty = mapMiniMaxVideoProviderRequest({
       prompt: 'ocean waves',
       duration: 6,
@@ -26,6 +26,15 @@ describe('mapMiniMaxVideoProviderRequest', () => {
     });
     expect(empty.ratio).toBe('16:9');
 
+    const adaptive = mapMiniMaxVideoProviderRequest({
+      prompt: 'ocean waves',
+      duration: 6,
+      resolution: '768P',
+      aspectRatio: 'adaptive',
+    });
+    expect(adaptive.ratio).toBe('16:9');
+
+    // Legacy Seedance UI value — accepted only as alias, not shown for MiniMax.
     const auto = mapMiniMaxVideoProviderRequest({
       prompt: 'ocean waves',
       duration: 6,
@@ -33,6 +42,18 @@ describe('mapMiniMaxVideoProviderRequest', () => {
       aspectRatio: 'auto',
     });
     expect(auto.ratio).toBe('16:9');
+  });
+
+  it('maps official 2K resolution and adaptive for reference-to-video', () => {
+    const body = mapMiniMaxVideoProviderRequest({
+      prompt: 'walk',
+      duration: 5,
+      resolution: '2K',
+      aspectRatio: 'adaptive',
+      referenceImages: ['https://cdn.example.com/ref.png'],
+    });
+    expect(body.resolution).toBe('2K');
+    expect(body.ratio).toBe('adaptive');
   });
 
   it('maps first-frame image-to-video as adaptive ratio', () => {

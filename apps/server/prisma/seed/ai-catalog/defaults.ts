@@ -1221,16 +1221,19 @@ export const SEEDANCE_2_0_SD_PARAMETER_POLICY = {
 
 /**
  * MiniMax-H3 video — V2 content[] API.
- * Provider wire resolution is 768P | 2K; studio labels keep 720p/1080p and the
- * request mapper aliases them (720p→768P, 1080p→2K).
+ * User-facing enums match the official OpenAPI wire values (not Seedance
+ * aliases): resolution 768P|2K; ratio adaptive|21:9|… (no "auto").
  * Official list (paygo): 768P $0.08/s · 2K $0.13/s. Designed points ≈1.5–1.9×
- * (1 pt = $0.01): 720p 12 / 1080p 25 → ~33% / ~48% gross on output-only jobs.
+ * (1 pt = $0.01): 768P 12 / 2K 25 → ~33% / ~48% gross on output-only jobs.
+ *
+ * Ratio rules (mapper enforces): t2v requires a concrete ratio (default 16:9);
+ * i2v forces adaptive; r2v defaults adaptive when adaptive is selected.
  */
 export const MINIMAX_H3_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'minimax-h3',
-  defaultResolution: '1080p',
-  resolutionOptions: ['720p', '1080p'],
+  defaultResolution: '2K',
+  resolutionOptions: ['768P', '2K'],
   defaultDurationSeconds: '5',
   durationOptions: [
     '4',
@@ -1246,8 +1249,17 @@ export const MINIMAX_H3_PARAMETER_POLICY = {
     '14',
     '15',
   ],
+  // Official enum includes adaptive; default concrete for t2v (required).
   defaultAspectRatio: '16:9',
-  supportedAspectRatios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', 'auto'],
+  supportedAspectRatios: [
+    '16:9',
+    '9:16',
+    '1:1',
+    '4:3',
+    '3:4',
+    '21:9',
+    'adaptive',
+  ],
   generateAudio: { enabled: false, default: false },
   startFrame: { enabled: true },
   endFrame: { enabled: true },
@@ -1263,14 +1275,14 @@ export const MINIMAX_H3_PARAMETER_POLICY = {
 
 export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'minimax-h3-points-v1-2026-08-07',
+  version: 'minimax-h3-points-v2-2026-08-07',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
-  defaultResolution: '1080p',
-  // 720p≈768P list $0.08/s → 12 pts; 1080p≈2K list $0.13/s → 25 pts.
-  pointsPerSecond: { '720p': 12, '1080p': 25 },
+  defaultResolution: '2K',
+  // Keys match official resolution enum (and UI).
+  pointsPerSecond: { '768P': 12, '2K': 25 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
