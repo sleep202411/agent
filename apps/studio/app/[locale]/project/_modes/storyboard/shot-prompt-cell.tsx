@@ -2,23 +2,21 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
-import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
 import {
   projectAssetToMentionItem,
   useProjectAssets,
 } from "@/lib/canvas-authoring/use-project-assets";
 import type { MentionItem } from "@/lib/prompt-mentions";
 import { cn } from "@/lib/utils";
+import { StoryboardPromptTextarea } from "./storyboard-prompt-textarea";
 
 /**
  * A rich-text prompt cell (description / imagePrompt / videoPrompt) with
- * Excel-like behavior and inline @reference tags via PromptTextarea.
+ * Excel-like behavior and inline @reference tags via StoryboardPromptTextarea
+ * (storyboard-only — does not share canvas composer `@` behavior).
  *
- * Display mode: plain text (truncated). Click/Enter to edit with the full
- * Tiptap editor — supports @mentions, IME, paste auto-binding.
- *
- * `@` opens the project AssetSelectDialog (canvas + crew inventory). Mentions
- * for chip remount / paste binding come from the same inventory.
+ * Display mode: plain text (truncated). Click/Enter to edit.
+ * `@` opens AssetSelectDialog over project inventory.
  */
 export function ShotPromptCell({
   value,
@@ -74,7 +72,7 @@ export function ShotPromptCell({
           }
         }}
       >
-        <PromptTextarea
+        <StoryboardPromptTextarea
           value={value ?? ""}
           onCommit={(next) => onCommit(next || undefined)}
           mentions={mentions}
