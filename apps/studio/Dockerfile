@@ -9,10 +9,11 @@ FROM node:22-alpine AS base
 # verified against; the runner stage still ships only the standalone output,
 # so the final image size is unaffected.
 FROM base AS builder
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY . .
 RUN rm -f apps/studio/.env.local apps/studio/.env.development.local apps/studio/.env.production.local
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 # Java backend URLs are baked into the Next.js rewrite table at BUILD time
 # (next.config.ts rewrites → routes-manifest). A runtime-only env is IGNORED by

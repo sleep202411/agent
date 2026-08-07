@@ -2,7 +2,8 @@ FROM node:22-alpine AS base
 
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
-RUN npm install -g turbo@^2
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune agent --docker
@@ -14,9 +15,10 @@ RUN turbo prune agent --docker
 # (moving tsx/mastra to deps, or shipping pre-bundled JS for the worker) this
 # keeps package.json honest about what's a build-time tool vs what ships to prod.
 FROM base AS deps
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 # ─── Stage 3: Build ──────────────────────────────────────
 # Produces apps/agent/.mastra/output (hono-based server bundle that
@@ -46,8 +48,9 @@ ENV MASTRA_HOST=0.0.0.0
 # Re-install deps (keeps mastra CLI + tsx available at runtime). NODE_ENV is
 # already production here, so explicitly include dev deps; otherwise npm omits
 # `mastra` and `tsx`, and `npx` tries to download them at container start.
+ARG NPM_REGISTRY=https://registry.npmjs.org
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts --include=dev
+RUN npm ci --ignore-scripts --include=dev --registry="$NPM_REGISTRY"
 
 # API server consumes .mastra/output; worker imports from src/ and resolves
 # `@repo/shared` to its built dist/. Ship all three.
