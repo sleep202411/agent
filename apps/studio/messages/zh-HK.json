@@ -1068,7 +1068,8 @@
       "portrait43": "直向 4:3",
       "portrait169": "直向 16:9",
       "landscape43": "橫向 4:3",
-      "landscape169": "橫向 16:9"
+      "landscape169": "橫向 16:9",
+      "auto": "自動"
     },
     "stepper": {
       "decrease": "減少",

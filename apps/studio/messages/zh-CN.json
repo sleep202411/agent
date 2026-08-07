@@ -1068,7 +1068,8 @@
       "portrait43": "竖版 4:3",
       "portrait169": "竖版 16:9",
       "landscape43": "横版 4:3",
-      "landscape169": "横版 16:9"
+      "landscape169": "横版 16:9",
+      "auto": "自动"
     },
     "stepper": {
       "decrease": "减少",

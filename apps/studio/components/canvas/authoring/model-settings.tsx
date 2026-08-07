@@ -68,6 +68,15 @@ const SIZE_PRESETS: Record<string, { labelKey: string; w: number; h: number }> =
   landscape_16_9: { labelKey: "landscape169", w: 16, h: 9 },
 };
 
+/**
+ * Layer split (do not collapse these):
+ *   UI label  → "Auto" / 「自动」 (product language, i18n `sizePresets.auto`)
+ *   settings  → provider-native token from catalog enum (`auto` | `adaptive`)
+ *   wire      → MiniMax OpenAPI wants `adaptive`; Seedance wants `auto`
+ *               (server request mapper owns the final provider mapping)
+ */
+const AUTO_RATIO_TOKENS = new Set(["auto", "adaptive"]);
+
 /** Resolve a size token to its display label + aspect. Preset tokens carry a
  *  translation key (`labelKey`); ratio tokens ("16:9", "3x4") are parsed
  *  directly into a verbatim `label`; unknown tokens are shown verbatim as a
@@ -75,6 +84,11 @@ const SIZE_PRESETS: Record<string, { labelKey: string; w: number; h: number }> =
 export function sizeTokenInfo(
   token: string
 ): { labelKey: string; w: number; h: number } | { label: string; w: number; h: number } {
+  const normalized = token.trim().toLowerCase();
+  if (AUTO_RATIO_TOKENS.has(normalized)) {
+    // Square glyph = "no fixed proportion" (auto/adaptive).
+    return { labelKey: "auto", w: 1, h: 1 };
+  }
   const preset = SIZE_PRESETS[token];
   if (preset) return preset;
   const m = token.match(/(\d+)\s*[:x]\s*(\d+)/);

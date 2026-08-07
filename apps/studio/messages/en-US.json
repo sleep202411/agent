@@ -1068,7 +1068,8 @@
       "portrait43": "Portrait 4:3",
       "portrait169": "Portrait 16:9",
       "landscape43": "Landscape 4:3",
-      "landscape169": "Landscape 16:9"
+      "landscape169": "Landscape 16:9",
+      "auto": "Auto"
     },
     "stepper": {
       "decrease": "Decrease",

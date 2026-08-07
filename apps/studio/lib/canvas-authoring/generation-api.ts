@@ -942,6 +942,18 @@ export function defaultSettingsForModel(model: FizzAiModel | undefined): ModelSe
  * Wan's `"720P"`, or `aspect: "auto"`) from carrying over and making the request
  * unroutable for the new model.
  */
+/**
+ * Map Seedance-style `auto` ↔ MiniMax-style `adaptive` when the new model only
+ * accepts the other token. Wire values stay provider-native; UI labels both as Auto.
+ */
+function coerceAspectRatioEnumValue(value: string, enumValues: string[]): string | undefined {
+  if (enumValues.includes(value)) return value;
+  const lower = value.toLowerCase();
+  if (lower === "auto" && enumValues.includes("adaptive")) return "adaptive";
+  if (lower === "adaptive" && enumValues.includes("auto")) return "auto";
+  return undefined;
+}
+
 export function mergeCompatibleSettings(
   model: FizzAiModel | undefined,
   prev: ModelSettings
@@ -951,7 +963,22 @@ export function mergeCompatibleSettings(
     const value = prev[field.name];
     if (value === undefined || Array.isArray(value)) continue;
     if (field.enum && field.enum.length > 0) {
-      if (field.enum.map(String).includes(String(value))) next[field.name] = value;
+      const enumStrings = field.enum.map(String);
+      const raw = String(value);
+      if (enumStrings.includes(raw)) {
+        next[field.name] = value;
+        continue;
+      }
+      // Aspect-ratio fields: auto ↔ adaptive across providers.
+      if (
+        field.name === "aspectRatio" ||
+        field.name === "aspect_ratio" ||
+        field.name === "imageSize" ||
+        field.name === "size"
+      ) {
+        const coerced = coerceAspectRatioEnumValue(raw, enumStrings);
+        if (coerced !== undefined) next[field.name] = coerced;
+      }
     } else {
       next[field.name] = value;
     }
