@@ -4,13 +4,11 @@
  * One clean entry per canonical model — NO policy boilerplate here (that lives
  * in `defaults.ts` and is merged by `seed-catalog.ts`). The `providers` array
  * lists ONLY provider entries that map to a reconciled `AiProviderAccount`
- * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`,
- * `agnes-ai`); each entry
- * seeds an `AiProviderEndpoint` + a runtime-valid
+ * (active: `fal-ai`, `aliyun-bailian`, `byteplus-modelark`, `agnes-ai`,
+ * `minimax`). Each entry seeds an `AiProviderEndpoint` + a runtime-valid
  * `AiProviderModelBinding`. A model whose only upstream providers have no
- * reconciled account (e.g. midjourney, raw minimax) carries `providers: []`
- * and is seeded as canonical-only (no binding — valid, just can't generate
- * yet).
+ * reconciled account carries `providers: []` and is seeded as
+ * canonical-only (no binding — valid, just can't generate yet).
  *
  * Every entry below is a reviewed product-facing ContainerModel. Provider
  * endpoints stay implementation details; user-visible controls and pricing are
@@ -69,17 +67,14 @@ import {
 
 /**
  * Provider keys allowed on seed bindings.
- * Active generation: see `AI_PROVIDER_KEYS`. Deprecated (no new gen routing):
- * microsoft-foundry, replicate — kept only so historical seed types compile.
+ * Must match active generation providers (`AI_PROVIDER_KEYS` in @repo/shared).
  */
 export type ProviderKey =
   | 'fal-ai'
   | 'byteplus-modelark'
   | 'aliyun-bailian'
   | 'agnes-ai'
-  | 'minimax'
-  | 'microsoft-foundry'
-  | 'replicate';
+  | 'minimax';
 
 /**
  * A provider that backs a canonical model and HAS a reconciled account.

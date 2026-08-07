@@ -1,4 +1,5 @@
-export const AI_LEGACY_FOUNDRY_SCHEMA_DIALECT = "https://fizzdragon.com/schemas/foundry/model/v1";
+/** Canonical product schema dialect for AI model contracts. */
+export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
 
 export type AiJsonPrimitive = string | number | boolean | null;
 export type AiJsonValue = AiJsonPrimitive | AiJsonValue[] | { [key: string]: AiJsonValue };
@@ -547,7 +548,7 @@ export interface AiDocumentationLink {
 }
 
 export interface AiModelSchemaContract {
-  schemaDialect: typeof AI_LEGACY_FOUNDRY_SCHEMA_DIALECT;
+  schemaDialect: typeof AI_MODEL_PROTOCOL_DIALECT | string;
   schemaVersion: string;
   documentation: AiDocumentationLink[];
   capability_matrix: AiCapabilityMatrix;

@@ -453,14 +453,15 @@ const GPT_IMAGE_2_ESTIMATOR: AiPreflightEstimator = {
   ],
 };
 
+/** Local UI fixture only — not an active catalog / provider model id. */
 export const MOCK_AI_MODEL: AiModel = {
-  id: "foundry/gpt-image-2",
+  id: "preview/image-compose",
   type: "image",
   name: "GPT Image 2",
   description: "High-fidelity image generation and reference-guided editing.",
   enabled: true,
-  schemaDialect: "https://fizzdragon.com/schemas/foundry/model/v1",
-  schemaVersion: "2026-05-16",
+  schemaDialect: "https://fizzdragon.com/schemas/ai/model/v1",
+  schemaVersion: "preview-2026-05-16",
   documentation: GPT_IMAGE_2_DOCS,
   capability_matrix: GPT_IMAGE_2_MATRIX,
   availability: {
