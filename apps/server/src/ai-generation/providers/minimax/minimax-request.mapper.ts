@@ -179,8 +179,13 @@ function resolveRatio(
     );
   }
 
-  // Text-to-video: ratio required, cannot be adaptive.
+  // Text-to-video: ratio required and cannot be adaptive. Studio often keeps
+  // Seedance-style "auto" after a model switch — coerce to the catalog default
+  // rather than failing a valid t2v prompt.
   if (!concrete) {
+    if (!raw || raw === 'auto' || raw === 'adaptive') {
+      return '16:9';
+    }
     throw minimaxError(
       'VALIDATION_ERROR',
       `MiniMax-H3 text-to-video requires a concrete ratio (got ${raw || 'empty'})`,

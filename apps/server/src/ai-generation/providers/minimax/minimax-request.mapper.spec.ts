@@ -18,14 +18,21 @@ describe('mapMiniMaxVideoProviderRequest', () => {
     });
   });
 
-  it('rejects text-to-video without ratio', () => {
-    expect(() =>
-      mapMiniMaxVideoProviderRequest({
-        prompt: 'ocean waves',
-        duration: 6,
-        resolution: '768P',
-      }),
-    ).toThrow(MiniMaxProviderError);
+  it('defaults text-to-video auto/empty ratio to 16:9', () => {
+    const empty = mapMiniMaxVideoProviderRequest({
+      prompt: 'ocean waves',
+      duration: 6,
+      resolution: '768P',
+    });
+    expect(empty.ratio).toBe('16:9');
+
+    const auto = mapMiniMaxVideoProviderRequest({
+      prompt: 'ocean waves',
+      duration: 6,
+      resolution: '768P',
+      aspectRatio: 'auto',
+    });
+    expect(auto.ratio).toBe('16:9');
   });
 
   it('maps first-frame image-to-video as adaptive ratio', () => {
