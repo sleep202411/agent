@@ -119,6 +119,7 @@ export const AI_PROVIDER_KEYS = [
   "microsoft-foundry",
   "replicate",
   "agnes-ai",
+  "minimax",
 ] as const;
 export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 
@@ -130,6 +131,7 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "microsoft-foundry": "Azure Foundry",
   replicate: "Replicate",
   "agnes-ai": "Agnes AI",
+  minimax: "MiniMax",
 };
 
 export interface AiBillingPolicy {

@@ -49,6 +49,10 @@ import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import { AgnesClient } from './providers/agnes/agnes-client';
 import { AgnesConfigService } from './providers/agnes/agnes-config.service';
 import { AgnesProviderAdapter } from './providers/agnes/agnes-provider.adapter';
+import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
+import { MiniMaxClient } from './providers/minimax/minimax-client';
+import { MiniMaxConfigService } from './providers/minimax/minimax-config.service';
+import { MiniMaxProviderAdapter } from './providers/minimax/minimax-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
@@ -124,6 +128,12 @@ import { AiGenerationWorkerService } from './worker.service';
     AgnesClient,
     AgnesProviderAdapter,
 
+    // Provider: MiniMax (H3 video)
+    MiniMaxConfigService,
+    MiniMaxCatalogService,
+    MiniMaxClient,
+    MiniMaxProviderAdapter,
+
     // v2: bind the character job-cancellation port to the generation service.
     // Characters resolves it lazily via ModuleRef (strict:false) to avoid a
     // module-import cycle — see CharacterGrantService.
@@ -152,6 +162,7 @@ export class AiGenerationModule implements OnModuleInit {
     private readonly replicate: ReplicateProviderAdapter,
     private readonly bytePlus: BytePlusProviderAdapter,
     private readonly agnes: AgnesProviderAdapter,
+    private readonly minimax: MiniMaxProviderAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -161,5 +172,6 @@ export class AiGenerationModule implements OnModuleInit {
     this.registry.register(this.replicate);
     this.registry.register(this.bytePlus);
     this.registry.register(this.agnes);
+    this.registry.register(this.minimax);
   }
 }

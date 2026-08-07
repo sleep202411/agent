@@ -127,6 +127,10 @@ secrets:
       env: DASHSCOPE_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
+    # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
+    # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
+    - kv: minimax-api-key
+      env: MINIMAX_API_KEY
     # ModelArk ASSETS plane (character likeness / liveness) — separate AK/SK
     # from the inference Bearer key; worker pods run the sync queues so these
     # live in the shared mapping. UNCOMMENT ONLY AFTER the KV secrets exist —
@@ -457,6 +461,8 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
+    MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
     # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
     # subscription; its expiry is not queryable via API, so it's declared here and

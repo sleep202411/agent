@@ -71,6 +71,7 @@ export type FoundryCatalogSource =
   | 'bailian-config'
   | 'replicate-config'
   | 'agnes-config'
+  | 'minimax-config'
   | 'seed-fallback';
 
 export type AiJobStatus =

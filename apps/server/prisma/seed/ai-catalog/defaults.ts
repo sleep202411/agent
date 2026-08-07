@@ -1219,6 +1219,69 @@ export const SEEDANCE_2_0_SD_PARAMETER_POLICY = {
   resolutionOptions: ['480p', '720p'],
 } as const;
 
+/**
+ * MiniMax-H3 video — V2 content[] API.
+ * Provider wire resolution is 768P | 2K; studio labels keep 720p/1080p and the
+ * request mapper aliases them (720p→768P, 1080p→2K).
+ * Official list (paygo): 768P $0.08/s · 2K $0.13/s. Designed points ≈1.5–1.9×
+ * (1 pt = $0.01): 720p 12 / 1080p 25 → ~33% / ~48% gross on output-only jobs.
+ */
+export const MINIMAX_H3_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'minimax-h3',
+  defaultResolution: '1080p',
+  resolutionOptions: ['720p', '1080p'],
+  defaultDurationSeconds: '5',
+  durationOptions: [
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '10',
+    '11',
+    '12',
+    '13',
+    '14',
+    '15',
+  ],
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', 'auto'],
+  generateAudio: { enabled: false, default: false },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceInputs: {
+    enabled: true,
+    images: { min: 0, max: 9 },
+    videos: { min: 0, max: 3 },
+    audios: { min: 0, max: 3 },
+    maxTotalFiles: 12,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'minimax-h3-points-v1-2026-08-07',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1080p',
+  // 720p≈768P list $0.08/s → 12 pts; 1080p≈2K list $0.13/s → 25 pts.
+  pointsPerSecond: { '720p': 12, '1080p': 25 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
   version: 'quick-video-points-v1-2026-06-18',
