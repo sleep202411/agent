@@ -21,9 +21,8 @@
  *      `AiCanonicalModel.billingPolicy.productPricing`; provider request cost
  *      is recorded later per job only when the provider reports usage/cost.
  *
- * Deprecated generation providers (microsoft-foundry, replicate) are not
- * registered here. Bindings that still point at them will log a warning and
- * be skipped until re-bound to an active provider.
+ * Bindings whose provider has no registered adapter are skipped (warn) until
+ * re-bound to an active provider in AI_PROVIDER_KEYS.
  *
  * INVARIANT (keeps submit/routing working): the emitted
  * `AiModelDefinition.id === AiCanonicalModel.slug`. Routing resolves a

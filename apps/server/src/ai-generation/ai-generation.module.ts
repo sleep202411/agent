@@ -83,10 +83,6 @@ import { AiGenerationWorkerService } from './worker.service';
     ProviderRegistry,
     ProviderCapacityRuntimeService,
 
-    // Deprecated generation providers (Foundry, Replicate) are intentionally
-    // NOT registered. Package code may remain for history/agent cover tooling;
-    // they must not appear in ProviderRegistry or the runtime catalog.
-
     // Provider: fal.ai
     FalConfigService,
     FalCatalogService,

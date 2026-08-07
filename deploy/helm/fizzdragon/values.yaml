@@ -90,12 +90,10 @@ sharedEnv:
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
   ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  # Agent LLM (StoryOS / personas). Blob container name is historical.
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
-  AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
   AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
   AZURE_BLOB_CONTAINER: foundry-outputs
-  FOUNDRY_MODEL_ALLOWLIST: gpt-image-2
-  FOUNDRY_EXECUTION_ENABLED: "true"
   STORYOS_ROUTER_PROVIDER: anthropic
   STORYOS_ROUTER_MODEL: claude-sonnet-4-5
   STORYOS_PERSONA_PROVIDER: deepseek
@@ -117,8 +115,10 @@ secrets:
       env: DEEPSEEK_API_KEY
     - kv: anthropic-api-key
       env: ANTHROPIC_API_KEY
+    # Agent chat models (not AI Job generation).
     - kv: azure-openai-api-key
       env: AZURE_OPENAI_API_KEY
+    # Agent project-cover Flux calls only — AI Job gen does not use Replicate.
     - kv: image-cover-key
       env: REPLICATE_API_TOKEN
     - kv: fal-api-key

@@ -104,8 +104,9 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
  * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Known values today: 'microsoft-foundry', 'fal-ai',
- * 'aliyun-bailian'. Planned: 'replicate', 'stability-self-hosted'.
+ * Active generation adapters: fal-ai, byteplus-modelark, aliyun-bailian,
+ * agnes-ai, minimax. Older job rows may still store removed vendor strings
+ * as free-form provider column values (read-only history).
  */
 export type AiProvider = string;
 export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
