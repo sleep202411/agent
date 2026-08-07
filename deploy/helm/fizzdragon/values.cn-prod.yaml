@@ -110,13 +110,10 @@ sharedEnv:
   STORYOS_ROUTER_MODEL: null
   STORYOS_PERSONA_PROVIDER: deepseek
   STORYOS_PERSONA_MODEL: null
-  # Azure-only entries from base values — removed on CN.
+  # Azure-only agent LLM entries from base values — removed on CN.
   AZURE_OPENAI_BASE_URL: null
-  AZURE_FOUNDRY_PROJECT_ENDPOINT: null
   AZURE_OPENAI_API_VERSION: null
   AZURE_BLOB_CONTAINER: null
-  FOUNDRY_MODEL_ALLOWLIST: null
-  FOUNDRY_EXECUTION_ENABLED: null
 
 # Same projected Secret names as .com so templates stay identical; contents
 # come from kubectl, not Key Vault. The `kv:` fields are unused when

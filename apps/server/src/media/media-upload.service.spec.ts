@@ -146,6 +146,10 @@ function serviceFixture() {
   const storageRegistry = {
     forProvider: jest.fn().mockReturnValue(r2Storage),
   };
+  const mediaDurations = {
+    probeObjectDuration: jest.fn().mockResolvedValue(8.5),
+    ensureDurations: jest.fn().mockResolvedValue(new Map()),
+  };
   const service = new MediaUploadService(
     prisma as never,
     storage as never,
@@ -159,6 +163,7 @@ function serviceFixture() {
     {} as never,
     workspacePermissions as never,
     uploadedImages as never,
+    mediaDurations as never,
     storageRegistry as never,
   );
   return {

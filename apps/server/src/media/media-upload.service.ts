@@ -90,6 +90,7 @@ import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
 } from './uploaded-image-probe.service';
+import { MediaAssetDurationService } from './media-asset-duration.service';
 import { MediaAssetReadinessService } from './media-asset-readiness.service';
 
 /**
@@ -346,6 +347,7 @@ export class MediaUploadService {
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
+    private readonly mediaDurations: MediaAssetDurationService,
     private readonly storageRegistry: StorageProviderRegistry,
   ) {}
 
@@ -620,7 +622,7 @@ export class MediaUploadService {
       };
     }
 
-    const truth = policy.verifiedImageFinalKeySegment
+    let truth = policy.verifiedImageFinalKeySegment
       ? await this.finalizeVerifiedImage(
           userId,
           storageKey,
@@ -639,6 +641,25 @@ export class MediaUploadService {
       input.kind === 'crew_asset_file'
         ? mediaKindFromContentType(truth.contentType)
         : policy.assetKind;
+
+    // Video/audio: measure duration from stored bytes before the ledger write.
+    // Client duration is never authority — generation validation reads this.
+    if (
+      confirmedAssetKind === MediaAssetKind.video ||
+      confirmedAssetKind === MediaAssetKind.audio
+    ) {
+      const durationSeconds = await this.mediaDurations.probeObjectDuration({
+        kind: confirmedAssetKind,
+        storageProvider: truth.storageProvider,
+        bucket: truth.bucket,
+        region: truth.region,
+        objectKey: truth.objectKey,
+        externalUrl: null,
+        contentType: truth.contentType,
+        sizeBytes: truth.sizeBytes,
+      });
+      truth = { ...truth, durationSeconds };
+    }
 
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
@@ -697,6 +718,7 @@ export class MediaUploadService {
             sizeBytes: truth.sizeBytes,
             width: truth.width,
             height: truth.height,
+            durationSeconds: truth.durationSeconds,
             checksumSha256: truth.checksumSha256,
             // Direct-to-storage uploads are private until a save links them to
             // a public feature row; the read-side resolves URLs from identity
@@ -819,6 +841,7 @@ export class MediaUploadService {
       sizeBytes: head.sizeBytes == null ? null : BigInt(head.sizeBytes),
       width: null,
       height: null,
+      durationSeconds: null,
       checksumSha256: null,
     };
   }
@@ -922,6 +945,7 @@ export class MediaUploadService {
       sizeBytes: technical.sizeBytes,
       width: technical.width,
       height: technical.height,
+      durationSeconds: null,
       checksumSha256: technical.checksumSha256,
     };
   }
@@ -1123,6 +1147,8 @@ interface ConfirmedUploadTruth {
   sizeBytes: bigint | null;
   width: number | null;
   height: number | null;
+  /** Server-measured duration for video/audio; null for images. */
+  durationSeconds: number | null;
   checksumSha256: string | null;
 }
 

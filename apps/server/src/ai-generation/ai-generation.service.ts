@@ -236,9 +236,14 @@ export class AiGenerationService {
       });
     }
 
+    // Fill durationSeconds from MediaAsset when client only sent assetId —
+    // catalog media rules need exact seconds and must not depend on FE-only
+    // probes. Still dual-checked by the same pure kernel after normalize.
+    const mediaEnrichedInput =
+      await this.validator.enrichInputMediaFromAssets(input);
     const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
-      input,
+      mediaEnrichedInput,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
@@ -762,7 +767,7 @@ export class AiGenerationService {
     if (!job) {
       throw new NotFoundException({
         code: 'JOB_NOT_FOUND',
-        msg: 'Foundry job not found.',
+        msg: 'AI generation job not found.',
       });
     }
     if (job.userId === user.userId) return job;
@@ -789,7 +794,7 @@ export class AiGenerationService {
 
     throw new NotFoundException({
       code: 'JOB_NOT_FOUND',
-      msg: 'Foundry job not found.',
+      msg: 'AI generation job not found.',
     });
   }
 

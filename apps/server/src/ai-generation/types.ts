@@ -57,12 +57,13 @@ export type {
 
 export type AiJobType = 'image' | 'video';
 
-export type FoundryModelCapability =
+/** Runtime capability bucket used by catalog adapters (incl. unsupported). */
+export type AiRuntimeModelCapability =
   | 'image_generation'
   | 'video_generation'
   | 'unsupported';
 
-export type FoundryCatalogSource =
+export type AiCatalogSource =
   | 'foundry-project'
   | 'openai-models'
   | 'env-override'
@@ -71,6 +72,7 @@ export type FoundryCatalogSource =
   | 'bailian-config'
   | 'replicate-config'
   | 'agnes-config'
+  | 'minimax-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
@@ -102,8 +104,9 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
  * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Known values today: 'microsoft-foundry', 'fal-ai',
- * 'aliyun-bailian'. Planned: 'replicate', 'stability-self-hosted'.
+ * Active generation adapters: fal-ai, byteplus-modelark, aliyun-bailian,
+ * agnes-ai, minimax. Older job rows may still store removed vendor strings
+ * as free-form provider column values (read-only history).
  */
 export type AiProvider = string;
 export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
@@ -197,26 +200,7 @@ export type AiInputSchema = AiObjectSchema;
 export type AiOutputSchema = AiObjectSchema;
 export type AiJsonSchemaProperty = AiJsonSchema;
 
-export type FoundryAvailability = AiAvailability;
-export type FoundryCapabilityMatrix = AiCapabilityMatrix;
-export type FoundryCostEstimate = AiCostEstimate;
-export type FoundryDocumentationLink = AiDocumentationLink;
-export type FoundryConditionExpression = AiConditionExpression;
-export type FoundryFieldConstraint = AiFieldConstraint;
-export type FoundryFieldUi = AiFieldUi;
-export type FoundryInputControl = AiInputControl;
-export type FoundryInputSchema = AiInputSchema;
-export type FoundryOutputSchema = AiOutputSchema;
-export type FoundryJsonSchemaProperty = AiJsonSchemaProperty;
-export type FoundryObservabilityContract = AiObservabilityContract;
-export type FoundryObjectSchema = AiObjectSchema;
-export type FoundryOutputUi = AiOutputUi;
-export type FoundryPreflightEstimator = AiPreflightEstimator;
-export type FoundryProviderBinding = AiProviderBinding;
-export type FoundrySchemaRule = AiSchemaRule;
-export type FoundryUiSchema = AiUiSchema;
-
-export interface FoundryDeploymentRecord {
+export interface AiDeploymentRecord {
   id: string;
   deployment: string;
   modelName: string;
@@ -224,7 +208,7 @@ export interface FoundryDeploymentRecord {
   publisher?: string;
   displayName?: string;
   description?: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   raw?: unknown;
 }
 
@@ -272,10 +256,10 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   modelName: string;
   modelVersion?: string;
   publisher?: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  capability: Exclude<FoundryModelCapability, 'unsupported'>;
+  capability: Exclude<AiRuntimeModelCapability, 'unsupported'>;
   type: AiJobType;
   name: string;
   description: string;
@@ -283,12 +267,12 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   disabledReason?: string;
   schemaDialect: string;
   schemaVersion: string;
-  documentation: FoundryDocumentationLink[];
-  capability_matrix: FoundryCapabilityMatrix;
-  availability: FoundryAvailability;
-  cost_estimate: FoundryCostEstimate;
-  preflight_estimator?: FoundryPreflightEstimator;
-  observability: FoundryObservabilityContract;
+  documentation: AiDocumentationLink[];
+  capability_matrix: AiCapabilityMatrix;
+  availability: AiAvailability;
+  cost_estimate: AiCostEstimate;
+  preflight_estimator?: AiPreflightEstimator;
+  observability: AiObservabilityContract;
   capabilities: {
     textToImage?: boolean;
     imageToImage?: boolean;
@@ -305,15 +289,13 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
     perUserQueued: number;
   };
   entitlement: AiModelEntitlement;
-  input_schema: FoundryInputSchema;
-  output_schema: FoundryOutputSchema;
-  provider_output_schema?: FoundryOutputSchema;
-  stream_event_schema?: FoundryOutputSchema;
-  provider_binding: FoundryProviderBinding;
+  input_schema: AiInputSchema;
+  output_schema: AiOutputSchema;
+  provider_output_schema?: AiOutputSchema;
+  stream_event_schema?: AiOutputSchema;
+  provider_binding: AiProviderBinding;
   ops?: AiModelOpsMetadata;
 }
-
-export type FoundryModelDefinition = AiModelDefinition;
 
 export interface AiJobOutput {
   id: string;

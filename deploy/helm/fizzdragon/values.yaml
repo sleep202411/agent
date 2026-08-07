@@ -90,12 +90,10 @@ sharedEnv:
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
   ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  # Agent LLM (StoryOS / personas). Blob container name is historical.
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
-  AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
   AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
   AZURE_BLOB_CONTAINER: foundry-outputs
-  FOUNDRY_MODEL_ALLOWLIST: gpt-image-2
-  FOUNDRY_EXECUTION_ENABLED: "true"
   STORYOS_ROUTER_PROVIDER: anthropic
   STORYOS_ROUTER_MODEL: claude-sonnet-4-5
   STORYOS_PERSONA_PROVIDER: deepseek
@@ -117,8 +115,10 @@ secrets:
       env: DEEPSEEK_API_KEY
     - kv: anthropic-api-key
       env: ANTHROPIC_API_KEY
+    # Agent chat models (not AI Job generation).
     - kv: azure-openai-api-key
       env: AZURE_OPENAI_API_KEY
+    # Agent project-cover Flux calls only — AI Job gen does not use Replicate.
     - kv: image-cover-key
       env: REPLICATE_API_TOKEN
     - kv: fal-api-key
@@ -127,6 +127,10 @@ secrets:
       env: DASHSCOPE_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
+    # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
+    # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
+    - kv: minimax-api-key
+      env: MINIMAX_API_KEY
     # ModelArk ASSETS plane (character likeness / liveness) — separate AK/SK
     # from the inference Bearer key; worker pods run the sync queues so these
     # live in the shared mapping. UNCOMMENT ONLY AFTER the KV secrets exist —
@@ -322,7 +326,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
+    tag: 2e1482aa5af38fa6b268b0fb0143ff1be3697389
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -348,7 +352,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 588e4b02bf6f101b5dc34c741ca060efb9705c03
+    tag: 6f0ecaefd34e5567b6f79326e837e94ce04a08f2
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -374,7 +378,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 4e9aaf02663832258cb8fdb2ac766ffaaeb6f0c8
+    tag: 7ec45b3b697bc35e875d081043f7358639795833
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -422,7 +426,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 1249a6c5b2e5e476fdf88c1007ce0a1ebd54c38b
+    tag: 7ce288f33f2ba16a7c1bb97394d983af2dadcbc0
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -457,6 +461,8 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
+    MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
     # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
     # subscription; its expiry is not queryable via API, so it's declared here and

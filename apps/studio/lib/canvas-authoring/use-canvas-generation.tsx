@@ -35,19 +35,24 @@ import {
   estimateModelSellPoints,
   filterFizzAiInput,
   generationIdempotencyKey,
+  generationInputHasBlockingIssues,
   generationStateFromJob,
   generationStatusFromRaw,
   getFizzAiJob,
   isTerminalGenerationStatus,
+  mediaSnapshotsForMode,
   promptRequired,
   normalizeFizzAiError,
   referenceFieldsForMode,
   submitFizzAiJob,
+  validateModelGenerationInput,
   type FizzAiCatalog,
   type FizzAiJobView,
   type FizzAiSourceSurface,
   type GenerationState,
+  type ValidationIssue,
 } from "./generation-api";
+import { probeMediaDurationSeconds } from "./probe-media-duration";
 
 /** Reconcile cadence while a card is running — slower when realtime is healthy. */
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
@@ -69,6 +74,8 @@ type GenNodeData = {
       edgeId?: string;
       sourceNodeId?: string;
       uploading?: boolean;
+      durationSeconds?: number | null;
+      bytes?: number | null;
     }[]
   >;
   generation?: GenerationState;
@@ -149,6 +156,9 @@ type GenerationContextValue = {
   cancel: (nodeId: string) => void;
   canSubmit: boolean;
   disabledReason: string | null;
+  /** Catalog-driven preflight issues for a node (cleared on successful submit path). */
+  preflightIssues: (nodeId: string) => ValidationIssue[];
+  clearPreflightIssues: (nodeId: string) => void;
 };
 
 type RechargePromptState = {
@@ -167,6 +177,8 @@ export function useGeneration(): GenerationContextValue {
       cancel: () => {},
       canSubmit: false,
       disabledReason: null,
+      preflightIssues: () => [],
+      clearPreflightIssues: () => {},
     }
   );
 }
@@ -288,6 +300,7 @@ export function CanvasGenerationProvider({
   const queryClient = useQueryClient();
   const { data: wallet } = useComputeWalletBalance();
   const [rechargePrompt, setRechargePrompt] = useState<RechargePromptState | null>(null);
+  const [preflightByNode, setPreflightByNode] = useState<Record<string, ValidationIssue[]>>({});
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const params = new URLSearchParams(window.location.search);
@@ -693,16 +706,67 @@ export function CanvasGenerationProvider({
 
       // Only the ACTIVE mode's reference fields are submitted — leftover slots
       // from a prior mode must not ride along or Seedance rejects the combo.
-      const referenceInput = buildReferenceInputForMode(
-        model,
-        data.mode ?? defaultMode(model),
-        data.references
-      );
-      const referenceBindings = buildPromptReferenceBindingsForMode(
-        model,
-        data.mode ?? defaultMode(model),
-        data.references
-      );
+      const mode = data.mode ?? defaultMode(model);
+
+      // Backfill missing video/audio durations (wired refs without metadata).
+      // Persist onto the card so re-submit and server payload stay consistent.
+      let references = data.references;
+      const durationPatches: Array<{
+        field: string;
+        id: string;
+        durationSeconds: number;
+      }> = [];
+      for (const field of referenceFieldsForMode(model, mode)) {
+        if (field.kind !== "video" && field.kind !== "audio") continue;
+        for (const row of references?.[field.field] ?? []) {
+          if (typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)) {
+            continue;
+          }
+          if (!row.url || row.uploading) continue;
+          const probed = await probeMediaDurationSeconds(row.url, field.kind);
+          if (probed != null) {
+            durationPatches.push({
+              field: field.field,
+              id: row.id,
+              durationSeconds: probed,
+            });
+          }
+        }
+      }
+      if (durationPatches.length > 0) {
+        // Merge by ref id only — never replace the whole references map with a
+        // snapshot taken before probe await (user/collaborator may have edited).
+        patchNodeData(nodeId, (node) => {
+          const live = (node.data as GenNodeData).references ?? {};
+          const next: NonNullable<GenNodeData["references"]> = { ...live };
+          for (const patch of durationPatches) {
+            const list = next[patch.field];
+            if (!list?.length) continue;
+            next[patch.field] = list.map((row) =>
+              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+            );
+          }
+          return { references: next };
+        });
+        const latest = getNode(nodeId);
+        references =
+          latest && (latest.data as GenNodeData).references
+            ? (latest.data as GenNodeData).references
+            : references;
+        // Also fold patches into the local submit snapshot when live read fails.
+        if (references) {
+          const merged: NonNullable<GenNodeData["references"]> = { ...references };
+          for (const patch of durationPatches) {
+            merged[patch.field] = (merged[patch.field] ?? []).map((row) =>
+              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+            );
+          }
+          references = merged;
+        }
+      }
+
+      const referenceInput = buildReferenceInputForMode(model, mode, references);
+      const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -711,6 +775,21 @@ export function CanvasGenerationProvider({
           prompt: data.prompt,
         })
       );
+
+      // Catalog-driven preflight (same kernel as server). No model-specific ifs.
+      const media = mediaSnapshotsForMode(model, mode, references);
+      const preflight = validateModelGenerationInput(model, input, media);
+      if (generationInputHasBlockingIssues(preflight)) {
+        // Primary surface is ValidationAlertDialog on the card (not toast).
+        setPreflightByNode((prev) => ({ ...prev, [nodeId]: preflight }));
+        return;
+      }
+      setPreflightByNode((prev) => {
+        if (!(nodeId in prev)) return prev;
+        const next = { ...prev };
+        delete next[nodeId];
+        return next;
+      });
 
       patch(nodeId, {
         ...(data.generation ?? { status: "submitting" }),
@@ -793,14 +872,29 @@ export function CanvasGenerationProvider({
     [getNode, patch]
   );
 
+  const preflightIssues = useCallback(
+    (nodeId: string) => preflightByNode[nodeId] ?? [],
+    [preflightByNode]
+  );
+  const clearPreflightIssues = useCallback((nodeId: string) => {
+    setPreflightByNode((prev) => {
+      if (!(nodeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+  }, []);
+
   const value = useMemo<GenerationContextValue>(
     () => ({
       submit: (id) => void submit(id),
       cancel: (id) => void cancel(id),
       canSubmit: canGenerate,
       disabledReason,
+      preflightIssues,
+      clearPreflightIssues,
     }),
-    [submit, cancel, canGenerate, disabledReason]
+    [submit, cancel, canGenerate, disabledReason, preflightIssues, clearPreflightIssues]
   );
 
   return (

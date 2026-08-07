@@ -24,10 +24,6 @@ import { ProviderAccountReconciler } from './provider-account-reconciler.service
 import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiPromptCompilerService } from './prompt-compiler.service';
-import { FoundryProviderAdapter } from './providers/foundry/foundry-provider.adapter';
-import { FoundryCatalogService } from './providers/foundry/catalog.service';
-import { FoundrySchemaFactory } from './providers/foundry/schema.factory';
-import { FoundrySchemaRegistry } from './providers/foundry/schema.registry';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { FalClient } from './providers/fal/fal-client';
 import { FalConfigService } from './providers/fal/fal-config.service';
@@ -36,10 +32,6 @@ import { BailianCatalogService } from './providers/bailian/bailian-catalog.servi
 import { BailianClient } from './providers/bailian/bailian-client';
 import { BailianConfigService } from './providers/bailian/bailian-config.service';
 import { BailianProviderAdapter } from './providers/bailian/bailian-provider.adapter';
-import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
-import { ReplicateClient } from './providers/replicate/replicate-client';
-import { ReplicateConfigService } from './providers/replicate/replicate-config.service';
-import { ReplicateProviderAdapter } from './providers/replicate/replicate-provider.adapter';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import { BytePlusClient } from './providers/byteplus/byteplus-client';
 import { BytePlusConfigService } from './providers/byteplus/byteplus-config.service';
@@ -49,6 +41,10 @@ import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import { AgnesClient } from './providers/agnes/agnes-client';
 import { AgnesConfigService } from './providers/agnes/agnes-config.service';
 import { AgnesProviderAdapter } from './providers/agnes/agnes-provider.adapter';
+import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
+import { MiniMaxClient } from './providers/minimax/minimax-client';
+import { MiniMaxConfigService } from './providers/minimax/minimax-config.service';
+import { MiniMaxProviderAdapter } from './providers/minimax/minimax-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
@@ -87,12 +83,6 @@ import { AiGenerationWorkerService } from './worker.service';
     ProviderRegistry,
     ProviderCapacityRuntimeService,
 
-    // Provider: Foundry (Azure)
-    FoundryCatalogService,
-    FoundrySchemaFactory,
-    FoundrySchemaRegistry,
-    FoundryProviderAdapter,
-
     // Provider: fal.ai
     FalConfigService,
     FalCatalogService,
@@ -104,12 +94,6 @@ import { AiGenerationWorkerService } from './worker.service';
     BailianCatalogService,
     BailianClient,
     BailianProviderAdapter,
-
-    // Provider: Replicate
-    ReplicateConfigService,
-    ReplicateCatalogService,
-    ReplicateClient,
-    ReplicateProviderAdapter,
 
     // Provider: BytePlus ModelArk
     BytePlusConfigService,
@@ -123,6 +107,12 @@ import { AiGenerationWorkerService } from './worker.service';
     AgnesCatalogService,
     AgnesClient,
     AgnesProviderAdapter,
+
+    // Provider: MiniMax (H3 video)
+    MiniMaxConfigService,
+    MiniMaxCatalogService,
+    MiniMaxClient,
+    MiniMaxProviderAdapter,
 
     // v2: bind the character job-cancellation port to the generation service.
     // Characters resolves it lazily via ModuleRef (strict:false) to avoid a
@@ -146,20 +136,18 @@ export class AiGenerationModule implements OnModuleInit {
    */
   constructor(
     private readonly registry: ProviderRegistry,
-    private readonly foundry: FoundryProviderAdapter,
     private readonly fal: FalProviderAdapter,
     private readonly bailian: BailianProviderAdapter,
-    private readonly replicate: ReplicateProviderAdapter,
     private readonly bytePlus: BytePlusProviderAdapter,
     private readonly agnes: AgnesProviderAdapter,
+    private readonly minimax: MiniMaxProviderAdapter,
   ) {}
 
   onModuleInit(): void {
-    this.registry.register(this.foundry);
     this.registry.register(this.fal);
     this.registry.register(this.bailian);
-    this.registry.register(this.replicate);
     this.registry.register(this.bytePlus);
     this.registry.register(this.agnes);
+    this.registry.register(this.minimax);
   }
 }

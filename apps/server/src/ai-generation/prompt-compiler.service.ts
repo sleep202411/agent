@@ -90,6 +90,14 @@ export class AiPromptCompilerService {
           ...(reference.characterId
             ? { characterId: reference.characterId }
             : {}),
+          ...(typeof reference.durationSeconds === 'number' &&
+          Number.isFinite(reference.durationSeconds)
+            ? { durationSeconds: reference.durationSeconds }
+            : {}),
+          ...(typeof reference.bytes === 'number' &&
+          Number.isFinite(reference.bytes)
+            ? { bytes: reference.bytes }
+            : {}),
         }));
     }
 

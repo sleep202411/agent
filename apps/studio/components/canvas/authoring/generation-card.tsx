@@ -64,6 +64,8 @@ import {
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
+import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
+import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -178,6 +180,7 @@ function uploadedReferenceGraph({
   target,
   targetNodeId,
   url,
+  durationSeconds,
 }: {
   edgeId: string;
   fileName: string;
@@ -188,6 +191,7 @@ function uploadedReferenceGraph({
   target: CanvasNodeShape | null;
   targetNodeId: string;
   url: string;
+  durationSeconds?: number;
 }): { edge: CanvasEdgeShape; node: CanvasNodeShape } {
   return {
     node: {
@@ -198,6 +202,7 @@ function uploadedReferenceGraph({
         src: url,
         mediaAssetId,
         label: fileName,
+        ...(durationSeconds != null ? { durationSeconds } : {}),
       },
     },
     edge: {
@@ -331,7 +336,10 @@ function GenerationCard({
     cancel,
     canSubmit: generationCanSubmit,
     disabledReason: generationDisabledReason,
+    preflightIssues,
+    clearPreflightIssues,
   } = useGeneration();
+  const validationIssues = preflightIssues(id);
   const spawnComposedOp = useSpawnComposedOperation();
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
@@ -477,8 +485,13 @@ function GenerationCard({
           { id: refId, url: objectUrl, name: file.name, kind, uploading: true },
         ],
       }));
-      uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] })
-        .then((uploaded) => {
+      Promise.all([
+        uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] }),
+        kind === "video" || kind === "audio"
+          ? probeMediaDurationSeconds(file, kind)
+          : Promise.resolve(null as number | null),
+      ])
+        .then(([uploaded, durationSeconds]) => {
           URL.revokeObjectURL(objectUrl);
           const target = getNode(id);
           if (!target) {
@@ -497,6 +510,7 @@ function GenerationCard({
             target,
             targetNodeId: id,
             url: uploaded.url,
+            durationSeconds: durationSeconds ?? undefined,
           });
           addNodesAndEdges([node], [edge]);
           addAssets([
@@ -511,6 +525,7 @@ function GenerationCard({
               category: "general",
             },
           ]);
+          clearPreflightIssues(id);
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
           // Removing the reference later removes this edge and binding together.
           patchNodeData(id, (node) => {
@@ -528,6 +543,8 @@ function GenerationCard({
                     name: file.name,
                     kind,
                     assetId: uploaded.mediaAssetId,
+                    ...(durationSeconds != null ? { durationSeconds } : {}),
+                    bytes: file.size,
                   },
                 ],
               },
@@ -556,6 +573,7 @@ function GenerationCard({
     const removed = (refs[field] ?? []).find((reference) => reference.id === refId);
     if (!removed) return;
 
+    clearPreflightIssues(id);
     URL.revokeObjectURL(removed.url);
     if (removed.edgeId) {
       removeEdgeById({ getEdges: graph.getEdges, graph }, removed.edgeId, id);
@@ -567,7 +585,8 @@ function GenerationCard({
     });
   };
 
-  const onSelectModel = (selected: FizzAiModel) =>
+  const onSelectModel = (selected: FizzAiModel) => {
+    clearPreflightIssues(id);
     patchNodeData(id, {
       modelId: selected.id,
       modelName: selected.name,
@@ -577,6 +596,7 @@ function GenerationCard({
       // otherwise make the request unroutable for the new model.
       settings: mergeCompatibleSettings(selected, settings),
     });
+  };
 
   // Default to the first usable model when none is picked yet, so a card is
   // generation-ready without forcing a manual selection. Only the editor writes
@@ -920,6 +940,15 @@ function GenerationCard({
                 transformOrigin: "top center",
               }}
             >
+              <ValidationAlertDialog
+                open={validationIssues.length > 0}
+                onOpenChange={(open) => {
+                  if (!open) clearPreflightIssues(id);
+                }}
+                title={t("validationBlockedTitle")}
+                issues={validationIssues}
+                formatIssue={t}
+              />
               <GenerationPromptComposer
                 ariaLabel={t("generate")}
                 modality={modality}
@@ -947,7 +976,10 @@ function GenerationCard({
                 }
                 mode={mode}
                 modes={modes}
-                onSelectMode={(nextMode) => patchNodeData(id, { mode: nextMode })}
+                onSelectMode={(nextMode) => {
+                  clearPreflightIssues(id);
+                  patchNodeData(id, { mode: nextMode });
+                }}
                 modePickerEnabled={!data.locked && !data.modelLocked}
                 settings={settings}
                 onSettingsChange={(next) => patchNodeData(id, { settings: next })}

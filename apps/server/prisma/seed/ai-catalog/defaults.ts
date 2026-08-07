@@ -1219,6 +1219,81 @@ export const SEEDANCE_2_0_SD_PARAMETER_POLICY = {
   resolutionOptions: ['480p', '720p'],
 } as const;
 
+/**
+ * MiniMax-H3 video — V2 content[] API.
+ * User-facing enums match the official OpenAPI wire values (not Seedance
+ * aliases): resolution 768P|2K; ratio adaptive|21:9|… (no "auto").
+ * Official list (paygo): 768P $0.08/s · 2K $0.13/s. Designed points ≈1.5–1.9×
+ * (1 pt = $0.01): 768P 12 / 2K 25 → ~33% / ~48% gross on output-only jobs.
+ *
+ * Ratio rules (mapper enforces): t2v requires a concrete ratio (default 16:9);
+ * i2v forces adaptive; r2v defaults adaptive when adaptive is selected.
+ */
+export const MINIMAX_H3_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'minimax-h3',
+  defaultResolution: '2K',
+  resolutionOptions: ['768P', '2K'],
+  defaultDurationSeconds: '5',
+  durationOptions: [
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '10',
+    '11',
+    '12',
+    '13',
+    '14',
+    '15',
+  ],
+  // Official enum includes adaptive; default concrete for t2v (required).
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: [
+    '16:9',
+    '9:16',
+    '1:1',
+    '4:3',
+    '3:4',
+    '21:9',
+    'adaptive',
+  ],
+  generateAudio: { enabled: false, default: false },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceInputs: {
+    enabled: true,
+    images: { min: 0, max: 9 },
+    videos: { min: 0, max: 3 },
+    audios: { min: 0, max: 3 },
+    maxTotalFiles: 12,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'minimax-h3-points-v2-2026-08-07',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  // Keys match official resolution enum (and UI).
+  pointsPerSecond: { '768P': 12, '2K': 25 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
   version: 'quick-video-points-v1-2026-06-18',

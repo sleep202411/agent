@@ -21,12 +21,8 @@
  *      `AiCanonicalModel.billingPolicy.productPricing`; provider request cost
  *      is recorded later per job only when the provider reports usage/cost.
  *
- * Provider adapters whose definitions are NOT PG-binding-driven (Azure
- * Foundry self-emits hardcoded schemas) are never used to source the
- * catalog. Foundry stays a generation PROVIDER: if a real
- * `AiProviderModelBinding` with `provider='microsoft-foundry'` is ever
- * created it would route through here exactly like fal/bailian. Today
- * none exists, so Foundry contributes zero catalog entries.
+ * Bindings whose provider has no registered adapter are skipped (warn) until
+ * re-bound to an active provider in AI_PROVIDER_KEYS.
  *
  * INVARIANT (keeps submit/routing working): the emitted
  * `AiModelDefinition.id === AiCanonicalModel.slug`. Routing resolves a
@@ -36,12 +32,13 @@
  * services already do.
  */
 import { Injectable, Logger } from '@nestjs/common';
+import { withAttachedUiOptions } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
-import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
+import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -68,16 +65,16 @@ export class AiCanonicalCatalogService {
     private readonly prisma: PrismaService,
     private readonly fal: FalCatalogService,
     private readonly bailian: BailianCatalogService,
-    private readonly replicate: ReplicateCatalogService,
     private readonly bytePlus: BytePlusCatalogService,
     private readonly agnes: AgnesCatalogService,
+    private readonly minimax: MiniMaxCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
       'byteplus-modelark': this.bytePlus,
       'aliyun-bailian': this.bailian,
-      replicate: this.replicate,
       'agnes-ai': this.agnes,
+      minimax: this.minimax,
     };
   }
 
@@ -150,8 +147,9 @@ export class AiCanonicalCatalogService {
         // `vendor` lives on the canonical row, but provider mappers build the
         // AiModelDefinition without ever reading the canonical — so graft it on
         // here (same seam as withCanonicalUiPolicy) or it never reaches the wire.
+        // Graft canonical vendor + UI policy + x-ui.options onto the provider definition.
         const withCanonicalFields: AiModelDefinition = {
-          ...withCanonicalUiPolicy(model, canonical.uiPolicy),
+          ...finalizeCatalogModel(model, canonical.uiPolicy),
           ...(canonical.vendor ? { vendor: canonical.vendor } : {}),
         };
         models.push({
@@ -170,6 +168,17 @@ export class AiCanonicalCatalogService {
       })
       .map((item) => item.model);
   }
+}
+
+/**
+ * Product catalog boundary: merge canonical UI policy + ensure every
+ * user-visible enum carries `x-ui.options` (label/value first-class).
+ */
+function finalizeCatalogModel(
+  model: AiModelDefinition,
+  canonicalUiPolicy: unknown,
+): AiModelDefinition {
+  return withAttachedUiOptions(withCanonicalUiPolicy(model, canonicalUiPolicy));
 }
 
 function withCanonicalUiPolicy(

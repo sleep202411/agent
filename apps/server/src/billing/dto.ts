@@ -355,6 +355,13 @@ export type GetAdminWorkspaceWalletCreditQueryInput = z.infer<
 // name (case-insensitive contains), or ownerUserId (exact).
 export const ListAdminWorkspacesQuerySchema = z.object({
   query: z.string().trim().max(120).optional(),
+  /**
+   * Every workspace this user BELONGS to — owned or joined. Unlike `query`
+   * (which matches ownerUserId only), this follows the membership table, which
+   * is what "show me this person's workspaces" actually means. Each row then
+   * carries the user's own role in it.
+   */
+  relatedUserId: z.string().trim().max(64).optional(),
   type: z.enum(['team', 'personal', 'all']).default('team'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });

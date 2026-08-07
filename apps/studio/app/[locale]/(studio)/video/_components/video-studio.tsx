@@ -147,6 +147,8 @@ export function VideoStudio() {
         canSubmit={gen.canSubmit}
         submitting={gen.submitting}
         error={gen.error}
+        validationIssues={gen.validationIssues}
+        onDismissValidation={gen.clearValidation}
         onSubmit={() => void gen.submit()}
       />
 

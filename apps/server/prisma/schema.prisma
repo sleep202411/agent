@@ -6107,8 +6107,9 @@ model AiJob {
   /// refunds, and audit; it intentionally does not expose upstream userLevel.
   entitlementSnapshot   Json?                 @map("entitlement_snapshot")
   type                  AiJobType
-  /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
-  /// free-form String so new providers don't need migrations.
+  /// Adapter identifier (e.g. 'fal-ai', 'byteplus-modelark'). Free-form
+  /// String so new providers don't need migrations; old rows may hold
+  /// removed vendor strings as read-only history.
   provider              String
   modelId               String                @map("model_id")
   deployment            String

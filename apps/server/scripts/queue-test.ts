@@ -7,22 +7,19 @@
  * knobs that make the queue visually testable:
  *
  *   AI_WORKER_IMAGE_CONCURRENCY=1     # one slot, so 4 jobs queue
- *   FOUNDRY_DEBUG_DELAY_MS=10000      # 10 s stub generations, no Azure
  *
- * Run from apps/server:
+ * Run from apps/server with a real active image model id (catalog slug):
  *
- *   AI_WORKER_IMAGE_CONCURRENCY=1 \
- *   FOUNDRY_DEBUG_DELAY_MS=10000 \
- *   npm run start
+ *   AI_WORKER_IMAGE_CONCURRENCY=1 npm run start
  *
  *   # in another shell:
- *   npx tsx scripts/queue-test.ts 4
+ *   AI_TEST_MODEL=seedream-4-5 npx tsx scripts/queue-test.ts 4
  *
  * Watch the table count down each slot and verify the UI updates
  * (in-queue → generating → completed) in lock-step.
  */
 const BASE = process.env.AI_TEST_BASE ?? 'http://localhost:4399';
-const MODEL_ID = process.env.AI_TEST_MODEL ?? 'foundry/gpt-image-2';
+const MODEL_ID = process.env.AI_TEST_MODEL ?? 'seedream-4-5';
 const COUNT = Math.max(1, Number(process.argv[2] ?? 4));
 const TICK_MS = 1000;
 

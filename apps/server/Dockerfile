@@ -2,16 +2,18 @@ FROM node:22-alpine AS base
 
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
-RUN npm install -g turbo@^2
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune server --docker
 
 # ─── Stage 2: Install dependencies ───────────────────────
 FROM base AS deps
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 # ─── Stage 3: Build ──────────────────────────────────────
 FROM base AS builder
@@ -38,8 +40,9 @@ RUN apk add --no-cache ffmpeg && \
     adduser --system --uid 1001 nestjs
 
 # Re-install production-only deps in workspace layout
+ARG NPM_REGISTRY=https://registry.npmjs.org
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts --omit=dev
+RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 
 # Copy @repo/shared's built dist — the node_modules workspace symlink
 # points at /app/packages/shared, which was pruned to json-only, so

@@ -16,6 +16,8 @@ import {
   HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING,
   KLING_MOTION_PARAMETER_POLICY,
   KLING_MOTION_PRODUCT_PRICING,
+  MINIMAX_H3_PARAMETER_POLICY,
+  MINIMAX_H3_PRODUCT_PRICING,
   QUICK_VIDEO_PARAMETER_POLICY,
   QUICK_VIDEO_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
@@ -106,6 +108,33 @@ const bytePlusSeedanceMiniProvider: ProviderEntry = {
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
   priority: 50,
+};
+
+/** MiniMax-H3 — single V2 endpoint serves t2v / i2v / flf2v / r2v via content[]. */
+const miniMaxH3Provider: ProviderEntry = {
+  provider: 'minimax',
+  endpointId: 'MiniMax-H3',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  priority: 50,
+  catalogSnapshot: {
+    docs: [
+      {
+        title: 'MiniMax H3 Video Generation',
+        url: 'https://platform.minimax.io/docs/guides/video-generation',
+      },
+      {
+        title: 'Create Video Generation Task (V2)',
+        url: 'https://platform.minimax.io/docs/api-reference/video-generation-v2-create',
+      },
+    ],
+    model: 'MiniMax-H3',
+    api: {
+      create: 'POST /v2/video_generation',
+      query: 'GET /v2/query/video_generation/{task_id}',
+    },
+    pricing: { source: 'provider_usage', unit: 'second' },
+  },
 };
 
 export const VIDEO_MODELS: VideoModelSeed[] = [
@@ -463,5 +492,23 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/kling-video/v1/standard/image-to-video'],
+  },
+  {
+    slug: 'minimax-h3',
+    displayName: 'MiniMax H3',
+    family: 'minimax',
+    description:
+      'MiniMax-H3 multimodal video — text / first-last frame / reference media. Async create + poll; 720p (768P) or 1080p (2K), 4–15s.',
+    modes: SEEDANCE_MODES,
+    tier: 'vip',
+    // Preflight hold = 15s × 1080p @ 25/s.
+    cost: 375,
+    parameterPolicy: MINIMAX_H3_PARAMETER_POLICY,
+    productPricing: MINIMAX_H3_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 15,
+    recommended: true,
+    providers: [miniMaxH3Provider],
+    providerAliases: ['minimax/MiniMax-H3', 'MiniMax-H3', 'minimax-h3'],
   },
 ];

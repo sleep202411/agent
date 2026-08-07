@@ -51,6 +51,22 @@ export const SearchMembersQuerySchema = z.object({
 });
 export type SearchMembersQuery = z.infer<typeof SearchMembersQuerySchema>;
 
+/** Batch identity lookup: `?ids=2259,2260`. Capped so one call stays cheap. */
+export const LegacyUsersByIdsQuerySchema = z.object({
+  ids: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) =>
+      value
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )
+    .refine((ids) => ids.length <= 50, { message: 'At most 50 ids per call.' }),
+});
+export type LegacyUsersByIdsQuery = z.infer<typeof LegacyUsersByIdsQuerySchema>;
+
 export const ListLegacyLedgerQuerySchema = z.object({
   /** Fuzzy phone/email/nickname/id match on the OWNING user (LIKE %q%). Empty = all users. */
   query: z.string().trim().max(255).optional(),

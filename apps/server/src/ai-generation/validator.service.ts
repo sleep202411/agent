@@ -1,4 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  firstBlockingValidationMessage,
+  hasBlockingValidationIssues,
+  validateGenerationInput,
+  type MediaRefSnapshot,
+  type ValidationIssue,
+} from '@repo/shared';
+import { MediaAssetDurationService } from '../media/media-asset-duration.service';
 import type {
   AiConditionExpression,
   AiFieldConstraint,
@@ -10,13 +18,106 @@ import type {
 
 @Injectable()
 export class AiGenerationValidatorService {
+  constructor(private readonly mediaDurations: MediaAssetDurationService) {}
+
+  /**
+   * Server-trusted media metadata on reference objects.
+   *
+   * For every assetId: load (and if needed probe+persist) MediaAsset duration,
+   * then **overwrite** any client-supplied durationSeconds. Client claims are
+   * never authority when a durable asset is present.
+   */
+  async enrichInputMediaFromAssets(
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const assetIds = new Set<string>();
+    for (const value of Object.values(input)) {
+      for (const item of this.asItemList(value)) {
+        if (!this.isRecord(item)) continue;
+        const assetId = item.assetId;
+        if (typeof assetId !== 'string' || !assetId.trim()) continue;
+        assetIds.add(assetId.trim());
+      }
+    }
+    if (assetIds.size === 0) return input;
+
+    const durationById = await this.mediaDurations.ensureDurations([
+      ...assetIds,
+    ]);
+    if (durationById.size === 0) return input;
+
+    const next: Record<string, unknown> = { ...input };
+    for (const [key, value] of Object.entries(input)) {
+      if (Array.isArray(value)) {
+        next[key] = value.map((item) =>
+          this.withTrustedAssetDuration(item, durationById),
+        );
+      } else if (this.isRecord(value)) {
+        next[key] = this.withTrustedAssetDuration(value, durationById);
+      }
+    }
+    return next;
+  }
+
   normalizeInput(
     schema: AiInputSchema,
     input: Record<string, unknown>,
   ): Record<string, unknown> {
     const normalized = this.normalizeObject(schema, input);
     this.applyRules(schema['x-rules'] ?? [], normalized);
+    // Catalog-driven media aggregate rules (duration sums, total files, …).
+    // Same pure kernel as studio — no per-model branches on either side.
+    this.assertCatalogMediaRules(schema, normalized);
     return normalized;
+  }
+
+  /**
+   * Evaluate catalog `x-ui` media constraints against the normalized input.
+   * Throws the first blocking issue as VALIDATION_ERROR (400).
+   */
+  assertCatalogMediaRules(
+    schema: AiInputSchema,
+    input: Record<string, unknown>,
+    media?: readonly MediaRefSnapshot[],
+  ): ValidationIssue[] {
+    // Catalog schemas are a superset of the validation surface; cast keeps the
+    // pure kernel decoupled from full object-schema nesting.
+    const issues = validateGenerationInput({
+      inputSchema: schema as Parameters<
+        typeof validateGenerationInput
+      >[0]['inputSchema'],
+      input,
+      media,
+    });
+    if (hasBlockingValidationIssues(issues)) {
+      throw this.validationError(
+        firstBlockingValidationMessage(issues) ??
+          'Generation input failed catalog validation.',
+        issues,
+      );
+    }
+    return issues;
+  }
+
+  /**
+   * When assetId resolves to a measured duration, always overwrite the client
+   * value (never trust the client for duration truth).
+   */
+  private withTrustedAssetDuration(
+    item: unknown,
+    durationById: Map<string, number>,
+  ): unknown {
+    if (!this.isRecord(item)) return item;
+    const assetId = typeof item.assetId === 'string' ? item.assetId.trim() : '';
+    if (!assetId) return item;
+    const duration = durationById.get(assetId);
+    if (duration == null) return item;
+    return { ...item, durationSeconds: duration };
+  }
+
+  private asItemList(value: unknown): unknown[] {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
   }
 
   private normalizeObject(
@@ -389,10 +490,14 @@ export class AiGenerationValidatorService {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
-  private validationError(message: string): BadRequestException {
+  private validationError(
+    message: string,
+    issues?: readonly ValidationIssue[],
+  ): BadRequestException {
     return new BadRequestException({
       code: 'VALIDATION_ERROR',
       msg: message,
+      ...(issues?.length ? { issues } : {}),
     });
   }
 }

@@ -21,7 +21,6 @@ import {
 import type { Response } from 'express';
 import type Redis from 'ioredis';
 import { Public } from '../../auth';
-import { CURRENT_CELL } from '../../common/region/current-cell';
 import { PrismaService } from '../db/db.module';
 import { REDIS } from '../redis/redis.module';
 import { OutputStorageService } from '../storage/storage.types';
@@ -58,9 +57,11 @@ export class HealthController {
     // Realtime readiness validates the self-hosted WS plane — the only transport
     // now that Web PubSub is decommissioned (P5). When enabled it needs its
     // token-signing secret; when disabled (local dev) realtime simply isn't
-    // gated. Foundry is com-cell infrastructure; gating the cn cell on it would
-    // 503 a healthy pod, so it stays cell-scoped.
-    const azureCell = CURRENT_CELL !== 'cn';
+    // gated.
+    //
+    // Microsoft Foundry / AZURE_OPENAI_* is intentionally NOT a readiness
+    // gate: generation no longer registers that provider. Requiring its
+    // secrets would 503 healthy cells after ops rotates them away.
     const selfHostedRealtime =
       (process.env.REALTIME_TRANSPORT ?? '').trim().toLowerCase() ===
       'self-hosted';
@@ -71,16 +72,6 @@ export class HealthController {
         detail: selfHostedRealtime
           ? 'REALTIME_WS_SECRET required for the self-hosted realtime WS plane'
           : 'realtime disabled (REALTIME_TRANSPORT != self-hosted)',
-      },
-      {
-        name: 'foundry_provider',
-        ok: azureCell
-          ? Boolean(process.env.AZURE_OPENAI_API_KEY) &&
-            Boolean(process.env.AZURE_OPENAI_BASE_URL)
-          : true,
-        detail: azureCell
-          ? 'AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL required'
-          : 'foundry is not a cn-cell provider',
       },
       {
         name: 'output_storage',

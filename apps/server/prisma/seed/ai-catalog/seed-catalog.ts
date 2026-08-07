@@ -252,17 +252,22 @@ async function seedModalityCatalog(
     },
   });
 
-  const accountCache = new Map<string, { id: string; provider: string }>();
+  const accountCache = new Map<
+    string,
+    { id: string; provider: string; status: string }
+  >();
   const resolveAccount = async (
     provider: string,
-  ): Promise<{ id: string; provider: string }> => {
+  ): Promise<{ id: string; provider: string; status: string }> => {
     const cached = accountCache.get(provider);
     if (cached) return cached;
+    // Never re-activate ops-disabled accounts. Draft → active only inside
+    // bindProviderEntry when binding a seed entry.
     const account = await prisma.aiProviderAccount.upsert({
       where: { provider },
       create: { provider, status: 'active' },
-      update: { status: 'active', archivedAt: null },
-      select: { id: true, provider: true },
+      update: {},
+      select: { id: true, provider: true, status: true },
     });
     accountCache.set(provider, account);
     return account;
@@ -323,24 +328,101 @@ export async function seedAiVideoCatalog(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Activate the account, then upsert the endpoint and binding for one provider
- * entry. Account promotion is required: the reconciler leaves accounts `draft`,
- * but the runtime only reads bindings whose account is `active`.
+ * Surgical upsert of a single video canonical + its provider bindings.
+ * - Does NOT prune any rows
+ * - Does NOT touch other slugs / modalities
+ * Safe for production "add one model" when used deliberately.
+ */
+export async function seedSingleVideoModel(
+  prisma: PrismaClient,
+  slug: string,
+): Promise<{
+  slug: string;
+  status: string;
+  providers: string[];
+  createdCanonical: boolean;
+}> {
+  const model = VIDEO_MODELS.find((entry) => entry.slug === slug);
+  if (!model) {
+    throw new Error(
+      `Unknown video model slug "${slug}". Not present in VIDEO_MODELS.`,
+    );
+  }
+
+  const seededAt = new Date().toISOString();
+  const existing = await prisma.aiCanonicalModel.findUnique({
+    where: { slug: model.slug },
+    select: { id: true },
+  });
+
+  const canonicalPayload = buildCanonicalPayload(model, seededAt, VIDEO_CONFIG);
+  const canonical = await prisma.aiCanonicalModel.upsert({
+    where: { slug: model.slug },
+    create: canonicalPayload,
+    update: canonicalPayload,
+    select: { id: true, slug: true, status: true },
+  });
+
+  const providers: string[] = [];
+  for (const entry of model.providers) {
+    // Never force a disabled/draft account back to active — ops may have
+    // deliberately deactivated the provider. Create only if missing; leave
+    // existing status untouched. bindProviderEntry will no-op-activate only
+    // when the account is draft (never active if ops set disabled).
+    const account = await prisma.aiProviderAccount.upsert({
+      where: { provider: entry.provider },
+      create: { provider: entry.provider, status: 'active' },
+      update: {},
+      select: { id: true, provider: true, status: true },
+    });
+    await bindProviderEntry({
+      prisma,
+      model,
+      canonicalModelId: canonical.id,
+      account,
+      entry,
+      modality: VIDEO_CONFIG.modality,
+    });
+    providers.push(`${entry.provider}:${entry.endpointId}`);
+  }
+
+  return {
+    slug: canonical.slug,
+    status: canonical.status,
+    providers,
+    createdCanonical: !existing,
+  };
+}
+
+/**
+ * Upsert endpoint + binding for one provider entry.
+ * Only promotes **draft** accounts to active (reconciler default). Never
+ * re-activates an ops-disabled / archived account.
  */
 async function bindProviderEntry(args: {
   prisma: PrismaClient;
   model: ImageModelSeed;
   canonicalModelId: string;
-  account: { id: string; provider: string };
+  account: { id: string; provider: string; status?: string };
   entry: ProviderEntry;
   modality: AiJobType;
 }): Promise<void> {
   const { prisma, model, canonicalModelId, account, entry, modality } = args;
 
-  await prisma.aiProviderAccount.update({
-    where: { provider: account.provider },
-    data: { status: 'active' },
-  });
+  const current =
+    account.status ??
+    (
+      await prisma.aiProviderAccount.findUnique({
+        where: { provider: account.provider },
+        select: { status: true },
+      })
+    )?.status;
+  if (current === 'draft') {
+    await prisma.aiProviderAccount.update({
+      where: { provider: account.provider },
+      data: { status: 'active' },
+    });
+  }
 
   const endpointPayload = buildEndpointPayload({
     providerAccountId: account.id,

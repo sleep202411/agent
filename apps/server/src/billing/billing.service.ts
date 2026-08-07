@@ -1729,6 +1729,24 @@ export class BillingService {
       where.OR = or;
     }
 
+    // "This person's workspaces" = owned OR joined. Owning without a member row
+    // is possible on older data, so both arms are needed.
+    const relatedUserId = input.relatedUserId?.trim();
+    if (relatedUserId) {
+      where.AND = [
+        {
+          OR: [
+            { ownerUserId: relatedUserId },
+            {
+              members: {
+                some: { userId: relatedUserId, removedAt: null },
+              },
+            },
+          ],
+        },
+      ];
+    }
+
     const workspaces = await this.prisma.workspace.findMany({
       where,
       orderBy: [{ createdAt: 'desc' }],
@@ -1741,6 +1759,17 @@ export class BillingService {
         ownerUserId: true,
         createdAt: true,
         _count: { select: { members: true } },
+        // Only that user's own membership row, so each workspace can say what
+        // they are in it (owner / admin / member).
+        ...(relatedUserId
+          ? {
+              members: {
+                where: { userId: relatedUserId, removedAt: null },
+                select: { role: true, status: true },
+                take: 1,
+              },
+            }
+          : {}),
       },
     });
 
@@ -1762,6 +1791,8 @@ export class BillingService {
     return {
       items: workspaces.map((workspace) => {
         const account = balanceByWorkspace.get(workspace.id);
+        const membership =
+          'members' in workspace ? workspace.members?.[0] : undefined;
         return {
           id: workspace.id,
           name: workspace.name,
@@ -1773,6 +1804,15 @@ export class BillingService {
           hasWallet: Boolean(account),
           availableBalance: account ? account.availableBalance.toString() : '0',
           heldBalance: account ? account.heldBalance.toString() : '0',
+          // Present only when the caller asked about a specific user.
+          ...(relatedUserId
+            ? {
+                relatedUserRole:
+                  workspace.ownerUserId === relatedUserId
+                    ? 'owner'
+                    : (membership?.role ?? null),
+              }
+            : {}),
         };
       }),
     };

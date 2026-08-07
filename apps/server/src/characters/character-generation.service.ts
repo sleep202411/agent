@@ -147,6 +147,8 @@ const CHARACTER_MEDIA_INCLUDE = {
           status: true,
           moderationStatus: true,
           deletedAt: true,
+          durationSeconds: true,
+          sizeBytes: true,
         },
       },
       // Provider mirror rows (real_person readiness, §3.2 step 2). The
@@ -694,6 +696,16 @@ export class CharacterGenerationService {
           message: `Reference media of character "${character.name}" is not ready.`,
         });
       }
+      const durationSeconds =
+        item.mediaAsset.durationSeconds != null &&
+        Number.isFinite(item.mediaAsset.durationSeconds) &&
+        item.mediaAsset.durationSeconds > 0
+          ? item.mediaAsset.durationSeconds
+          : undefined;
+      const bytes =
+        item.mediaAsset.sizeBytes != null
+          ? Number(item.mediaAsset.sizeBytes)
+          : undefined;
       return {
         refId: `${refId}::${index + 1}`,
         groupRefId: refId,
@@ -702,6 +714,8 @@ export class CharacterGenerationService {
         assetId: item.mediaAssetId,
         label: character.name,
         characterId: character.id,
+        ...(durationSeconds != null ? { durationSeconds } : {}),
+        ...(bytes != null && Number.isFinite(bytes) ? { bytes } : {}),
       };
     });
   }
@@ -774,6 +788,10 @@ export class CharacterGenerationService {
           assetId: member.assetId,
           groupRefId: member.groupRefId,
           characterId: member.characterId,
+          ...(member.durationSeconds != null
+            ? { durationSeconds: member.durationSeconds }
+            : {}),
+          ...(member.bytes != null ? { bytes: member.bytes } : {}),
         }));
       next[field] = [...kept, ...appended];
     }
