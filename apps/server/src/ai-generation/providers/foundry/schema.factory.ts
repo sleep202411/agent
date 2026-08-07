@@ -1,21 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { AI_MODEL_PROTOCOL_DIALECT } from '../../types';
 import type {
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryCostEstimate,
-  FoundryDeploymentRecord,
-  FoundryDocumentationLink,
-  FoundryInputSchema,
+  AiAvailability,
+  AiCapabilityMatrix,
+  AiCostEstimate,
+  AiDeploymentRecord,
+  AiDocumentationLink,
+  AiInputSchema,
   AiGenerationMode,
   AiJobType,
   AiModelFamily,
-  FoundryModelCapability,
-  FoundryModelDefinition,
-  FoundryObservabilityContract,
-  FoundryObjectSchema,
-  FoundryOutputSchema,
-  FoundryPreflightEstimator,
+  AiRuntimeModelCapability,
+  AiModelDefinition,
+  AiObservabilityContract,
+  AiObjectSchema,
+  AiOutputSchema,
+  AiPreflightEstimator,
 } from '../../types';
 
 export const FOUNDRY_SCHEMA_VERSION = '2026-05-16';
@@ -26,7 +26,7 @@ const OPENAI_PRICING_URL = 'https://platform.openai.com/pricing';
 const OPENAI_IMAGE_CALCULATOR_URL =
   'https://platform.openai.com/tokenizer?view=image';
 
-const GPT_IMAGE_2_PREFLIGHT_ESTIMATOR: FoundryPreflightEstimator = {
+const GPT_IMAGE_2_PREFLIGHT_ESTIMATOR: AiPreflightEstimator = {
   kind: 'token_heuristic',
   label: 'Estimated credits',
   labelKey: 'foundry.schema.preflight.estimatedCredits',
@@ -61,7 +61,7 @@ const GPT_IMAGE_2_PREFLIGHT_ESTIMATOR: FoundryPreflightEstimator = {
   ],
 };
 
-const GPT_IMAGE_2_DOCUMENTATION: FoundryDocumentationLink[] = [
+const GPT_IMAGE_2_DOCUMENTATION: AiDocumentationLink[] = [
   {
     title: 'GPT Image 2 model',
     url: 'https://developers.openai.com/api/docs/models/gpt-image-2',
@@ -99,7 +99,7 @@ const GPT_IMAGE_2_DOCUMENTATION: FoundryDocumentationLink[] = [
   },
 ];
 
-const GPT_IMAGE_2_CAPABILITY_MATRIX: FoundryCapabilityMatrix = {
+const GPT_IMAGE_2_CAPABILITY_MATRIX: AiCapabilityMatrix = {
   source: 'official',
   inputModalities: ['text', 'image'],
   outputModalities: ['image'],
@@ -250,10 +250,10 @@ function displayName(value: string): string {
     .join(' ');
 }
 
-function capabilityOverride(record: FoundryDeploymentRecord) {
+function capabilityOverride(record: AiDeploymentRecord) {
   const raw = process.env.FOUNDRY_MODEL_CAPABILITIES_JSON?.trim();
   if (!raw) return null;
-  const parsed = JSON.parse(raw) as Record<string, FoundryModelCapability>;
+  const parsed = JSON.parse(raw) as Record<string, AiRuntimeModelCapability>;
   return parsed[record.deployment] ?? parsed[record.modelName] ?? null;
 }
 
@@ -286,7 +286,7 @@ function gptImage2PromptField() {
   } as const;
 }
 
-function mediaReferenceSchema(title: string): FoundryObjectSchema {
+function mediaReferenceSchema(title: string): AiObjectSchema {
   return {
     type: 'object',
     title,
@@ -319,7 +319,7 @@ function mediaReferenceSchema(title: string): FoundryObjectSchema {
   };
 }
 
-function imageInputSchema(record: FoundryDeploymentRecord): FoundryInputSchema {
+function imageInputSchema(record: AiDeploymentRecord): AiInputSchema {
   if (isGptImage2Model(record)) return gptImage2InputSchema();
 
   return {
@@ -445,7 +445,7 @@ function imageInputSchema(record: FoundryDeploymentRecord): FoundryInputSchema {
   };
 }
 
-function gptImage2InputSchema(): FoundryInputSchema {
+function gptImage2InputSchema(): AiInputSchema {
   return {
     type: 'object',
     required: ['prompt'],
@@ -751,7 +751,7 @@ function gptImage2InputSchema(): FoundryInputSchema {
   };
 }
 
-function videoInputSchema(): FoundryInputSchema {
+function videoInputSchema(): AiInputSchema {
   return {
     type: 'object',
     required: ['prompt'],
@@ -891,7 +891,7 @@ function videoInputSchema(): FoundryInputSchema {
   };
 }
 
-function outputSchema(type: AiJobType): FoundryOutputSchema {
+function outputSchema(type: AiJobType): AiOutputSchema {
   const key = type === 'image' ? 'images' : 'videos';
   return {
     type: 'object',
@@ -989,7 +989,7 @@ function outputSchema(type: AiJobType): FoundryOutputSchema {
   };
 }
 
-function gptImageProviderOutputSchema(): FoundryOutputSchema {
+function gptImageProviderOutputSchema(): AiOutputSchema {
   return {
     type: 'object',
     title: 'OpenAI Images response',
@@ -1081,7 +1081,7 @@ function gptImageProviderOutputSchema(): FoundryOutputSchema {
   };
 }
 
-function gptImageStreamEventSchema(): FoundryOutputSchema {
+function gptImageStreamEventSchema(): AiOutputSchema {
   return {
     type: 'object',
     title: 'OpenAI image streaming event',
@@ -1113,9 +1113,9 @@ function gptImageStreamEventSchema(): FoundryOutputSchema {
 }
 
 function providerOutputSchema(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryOutputSchema | undefined {
+): AiOutputSchema | undefined {
   if (type === 'image' && isGptImage2Model(record)) {
     return gptImageProviderOutputSchema();
   }
@@ -1123,9 +1123,9 @@ function providerOutputSchema(
 }
 
 function streamEventSchema(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryOutputSchema | undefined {
+): AiOutputSchema | undefined {
   if (type === 'image' && isGptImage2Model(record)) {
     return gptImageStreamEventSchema();
   }
@@ -1133,9 +1133,9 @@ function streamEventSchema(
 }
 
 function entitlement(
-  _record: FoundryDeploymentRecord,
+  _record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryModelDefinition['entitlement'] {
+): AiModelDefinition['entitlement'] {
   // Product-plan gate lives with the model definition so frontend lock
   // badges, backend submit checks, and tooltip text all read from one
   // source. Override via env (e.g. `FOUNDRY_IMAGE_MIN_PLAN=pro`) per
@@ -1147,15 +1147,14 @@ function entitlement(
   const value = raw || defaultPlan;
   if (value === 'none' || value === 'free') return { requiredPlan: null };
   return {
-    requiredPlan:
-      value as FoundryModelDefinition['entitlement']['requiredPlan'],
+    requiredPlan: value as AiModelDefinition['entitlement']['requiredPlan'],
   };
 }
 
 function providerBinding(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryModelDefinition['provider_binding'] {
+): AiModelDefinition['provider_binding'] {
   if (type === 'image') {
     return {
       provider: 'openai-compatible-images',
@@ -1183,9 +1182,9 @@ function providerBinding(
 }
 
 function capabilityMatrix(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryCapabilityMatrix {
+): AiCapabilityMatrix {
   if (type === 'image' && isGptImage2Model(record)) {
     return GPT_IMAGE_2_CAPABILITY_MATRIX;
   }
@@ -1250,7 +1249,7 @@ function capabilityMatrix(
   };
 }
 
-function availability(): FoundryAvailability {
+function availability(): AiAvailability {
   const currentRegion = currentSiteRegion();
   const configured = executionConfigured();
   const enabled = executionEnabled();
@@ -1288,9 +1287,9 @@ function availability(): FoundryAvailability {
 }
 
 function costEstimate(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryCostEstimate {
+): AiCostEstimate {
   if (type === 'image' && isGptImage2Model(record)) {
     return {
       billingMode: 'token',
@@ -1329,16 +1328,16 @@ function costEstimate(
 }
 
 function preflightEstimator(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryPreflightEstimator | undefined {
+): AiPreflightEstimator | undefined {
   if (type === 'image' && isGptImage2Model(record)) {
     return GPT_IMAGE_2_PREFLIGHT_ESTIMATOR;
   }
   return undefined;
 }
 
-function observability(): FoundryObservabilityContract {
+function observability(): AiObservabilityContract {
   return {
     requestId: {
       jobField: 'id',
@@ -1398,15 +1397,13 @@ function modelFamily(type: AiJobType): AiModelFamily {
   return type === 'video' ? 'video' : 'image';
 }
 
-function aiGenerationModes(
-  matrix: FoundryCapabilityMatrix,
-): AiGenerationMode[] {
+function aiGenerationModes(matrix: AiCapabilityMatrix): AiGenerationMode[] {
   return matrix.generationModes as AiGenerationMode[];
 }
 
 @Injectable()
 export class FoundrySchemaFactory {
-  buildModel(record: FoundryDeploymentRecord): FoundryModelDefinition | null {
+  buildModel(record: AiDeploymentRecord): AiModelDefinition | null {
     const capability = this.inferCapability(record);
     if (capability === 'unsupported') return null;
 
@@ -1501,8 +1498,8 @@ export class FoundrySchemaFactory {
   }
 
   private inferCapability(
-    record: FoundryDeploymentRecord,
-  ): FoundryModelCapability {
+    record: AiDeploymentRecord,
+  ): AiRuntimeModelCapability {
     const override = capabilityOverride(record);
     if (override) return override;
 
@@ -1527,7 +1524,7 @@ export class FoundrySchemaFactory {
   }
 }
 
-function isGptImage2Model(record: FoundryDeploymentRecord): boolean {
+function isGptImage2Model(record: AiDeploymentRecord): boolean {
   return [record.deployment, record.modelName].some(
     (value) => value && GPT_IMAGE_2_MODELS.has(value.trim().toLowerCase()),
   );
@@ -1542,9 +1539,9 @@ function currentSiteRegion(): string {
 }
 
 function modelDocumentation(
-  record: FoundryDeploymentRecord,
+  record: AiDeploymentRecord,
   type: AiJobType,
-): FoundryDocumentationLink[] {
+): AiDocumentationLink[] {
   if (type === 'image' && isGptImage2Model(record)) {
     return GPT_IMAGE_2_DOCUMENTATION;
   }

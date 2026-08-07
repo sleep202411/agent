@@ -12,7 +12,7 @@ import type {
   AiQueueName,
   AiQueuePolicy,
   AiRequiredPlan,
-  FoundryCatalogSource,
+  AiCatalogSource,
 } from '../../types';
 
 export const GPT_IMAGE_2_SCHEMA_VERSION = '2026-06-07';
@@ -106,7 +106,7 @@ export function createGptImage2RuntimeConfig(
 export function toGptImage2ModelDefinition(args: {
   config: GptImage2RuntimeConfig;
   modelId: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   ops: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;

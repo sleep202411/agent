@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { FoundryCatalogService } from './catalog.service';
 import { FoundrySchemaFactory } from './schema.factory';
-import type { FoundryModelDefinition } from '../../types';
+import type { AiModelDefinition } from '../../types';
 
 /**
  * Azure's `/v1/models` endpoint lists every model the *resource* knows
@@ -29,17 +29,17 @@ export class FoundrySchemaRegistry {
     private readonly schemaFactory: FoundrySchemaFactory,
   ) {}
 
-  async listModels(): Promise<FoundryModelDefinition[]> {
+  async listModels(): Promise<AiModelDefinition[]> {
     const deployments = await this.catalog.listDeployments();
     const built = deployments
       .map((deployment) => this.schemaFactory.buildModel(deployment))
-      .filter((model): model is FoundryModelDefinition => Boolean(model));
+      .filter((model): model is AiModelDefinition => Boolean(model));
 
     // Dedupe by deployment name. Multiple catalog sources (env override,
     // foundry-project deployments, openai-models listing) can each
     // surface the same deployment under different record ids; the user
     // should never see the same model twice in the picker.
-    const byDeployment = new Map<string, FoundryModelDefinition>();
+    const byDeployment = new Map<string, AiModelDefinition>();
     for (const model of built) {
       if (!byDeployment.has(model.deployment)) {
         byDeployment.set(model.deployment, model);
@@ -63,7 +63,7 @@ export class FoundrySchemaRegistry {
     return [];
   }
 
-  async getModel(modelId: string): Promise<FoundryModelDefinition | null> {
+  async getModel(modelId: string): Promise<AiModelDefinition | null> {
     const models = await this.listModels();
     return (
       models.find(
@@ -75,7 +75,7 @@ export class FoundrySchemaRegistry {
     );
   }
 
-  private sortModels(models: FoundryModelDefinition[]) {
+  private sortModels(models: AiModelDefinition[]) {
     return [...models].sort((a, b) => {
       if (a.type !== b.type) return a.type === 'image' ? -1 : 1;
       return a.name.localeCompare(b.name);

@@ -1,15 +1,15 @@
 import type {
-  FoundryConditionExpression,
-  FoundryJsonSchemaProperty,
-  FoundryModelDefinition,
-  FoundryProviderBinding,
+  AiConditionExpression,
+  AiJsonSchemaProperty,
+  AiModelDefinition,
+  AiProviderBinding,
 } from '../../types';
 
 export interface FoundryMappedProviderRequest {
   provider: string;
   endpoint: string;
   apiVersion?: string;
-  requestContentType: FoundryProviderBinding['requestContentType'];
+  requestContentType: AiProviderBinding['requestContentType'];
   body: Record<string, unknown>;
   /**
    * Parameter names whose values are URL strings the adapter must
@@ -29,7 +29,7 @@ const FILE_REF_TRANSFORMS = new Set<string>([
 ]);
 
 export function mapFoundryProviderRequest(
-  model: FoundryModelDefinition,
+  model: AiModelDefinition,
   normalizedInput: Record<string, unknown>,
   options: { userId?: string } = {},
 ): FoundryMappedProviderRequest {
@@ -101,7 +101,7 @@ export function mapFoundryProviderRequest(
 }
 
 function selectEndpoint(
-  binding: FoundryProviderBinding,
+  binding: AiProviderBinding,
   input: Record<string, unknown>,
 ): string {
   const selector = binding.operationSelector;
@@ -112,7 +112,7 @@ function selectEndpoint(
 }
 
 function transformProviderValue(
-  field: FoundryJsonSchemaProperty,
+  field: AiJsonSchemaProperty,
   value: unknown,
 ): unknown {
   const transform = field['x-provider']?.transform ?? 'identity';
@@ -166,7 +166,7 @@ function setPath(
 }
 
 function matchesCondition(
-  condition: FoundryConditionExpression,
+  condition: AiConditionExpression,
   input: Record<string, unknown>,
 ): boolean {
   if ('all' in condition && condition.all) {

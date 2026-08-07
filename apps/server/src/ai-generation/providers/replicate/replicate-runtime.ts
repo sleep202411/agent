@@ -12,7 +12,7 @@ import type {
   AiQueueName,
   AiQueuePolicy,
   AiRequiredPlan,
-  FoundryCatalogSource,
+  AiCatalogSource,
 } from '../../types';
 
 export const REPLICATE_IMAGE_SCHEMA_VERSION = '2026-06-08';
@@ -110,7 +110,7 @@ export function createReplicateImageRuntimeConfig(
 export function toReplicateImageModelDefinition(args: {
   config: ReplicateImageRuntimeConfig;
   modelId: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   ops: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;

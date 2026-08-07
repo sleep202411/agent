@@ -1,12 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type {
-  FoundryCatalogSource,
-  FoundryDeploymentRecord,
-} from '../../types';
+import type { AiCatalogSource, AiDeploymentRecord } from '../../types';
 
 interface CatalogCache {
   expiresAt: number;
-  records: FoundryDeploymentRecord[];
+  records: AiDeploymentRecord[];
 }
 
 const DEFAULT_CACHE_MS = 5 * 60 * 1000;
@@ -48,7 +45,7 @@ export class FoundryCatalogService {
   private readonly logger = new Logger(FoundryCatalogService.name);
   private cache: CatalogCache | null = null;
 
-  async listDeployments(): Promise<FoundryDeploymentRecord[]> {
+  async listDeployments(): Promise<AiDeploymentRecord[]> {
     const now = Date.now();
     if (this.cache && this.cache.expiresAt > now) return this.cache.records;
 
@@ -68,14 +65,14 @@ export class FoundryCatalogService {
     );
   }
 
-  private async discoverDeployments(): Promise<FoundryDeploymentRecord[]> {
+  private async discoverDeployments(): Promise<AiDeploymentRecord[]> {
     const sources = [
       () => this.fromEnvOverrides(),
       () => this.fromFoundryProject(),
       () => this.fromOpenAIModels(),
     ];
 
-    const merged = new Map<string, FoundryDeploymentRecord>();
+    const merged = new Map<string, AiDeploymentRecord>();
     for (const source of sources) {
       try {
         for (const record of await source()) {
@@ -95,7 +92,7 @@ export class FoundryCatalogService {
     );
   }
 
-  private fromEnvOverrides(): FoundryDeploymentRecord[] {
+  private fromEnvOverrides(): AiDeploymentRecord[] {
     const raw = process.env.FOUNDRY_DEPLOYMENTS_JSON?.trim();
     if (!raw) return [];
 
@@ -103,10 +100,10 @@ export class FoundryCatalogService {
     const items = Array.isArray(parsed) ? parsed : arrayFromPayload(parsed);
     return items
       .map((item) => this.normalizeDeployment(item, 'env-override'))
-      .filter((item): item is FoundryDeploymentRecord => Boolean(item));
+      .filter((item): item is AiDeploymentRecord => Boolean(item));
   }
 
-  private async fromFoundryProject(): Promise<FoundryDeploymentRecord[]> {
+  private async fromFoundryProject(): Promise<AiDeploymentRecord[]> {
     const endpoint = process.env.AZURE_FOUNDRY_PROJECT_ENDPOINT?.trim();
     if (!endpoint) return [];
 
@@ -127,10 +124,10 @@ export class FoundryCatalogService {
     const payload = (await response.json()) as unknown;
     return arrayFromPayload(payload)
       .map((item) => this.normalizeDeployment(item, 'foundry-project'))
-      .filter((item): item is FoundryDeploymentRecord => Boolean(item));
+      .filter((item): item is AiDeploymentRecord => Boolean(item));
   }
 
-  private async fromOpenAIModels(): Promise<FoundryDeploymentRecord[]> {
+  private async fromOpenAIModels(): Promise<AiDeploymentRecord[]> {
     const baseUrl = process.env.AZURE_OPENAI_BASE_URL?.trim();
     if (!baseUrl) return [];
 
@@ -144,10 +141,10 @@ export class FoundryCatalogService {
     const payload = (await response.json()) as unknown;
     return arrayFromPayload(payload)
       .map((item) => this.normalizeOpenAIModel(item))
-      .filter((item): item is FoundryDeploymentRecord => Boolean(item));
+      .filter((item): item is AiDeploymentRecord => Boolean(item));
   }
 
-  private normalizeOpenAIModel(raw: unknown): FoundryDeploymentRecord | null {
+  private normalizeOpenAIModel(raw: unknown): AiDeploymentRecord | null {
     const source = asRecord(raw);
     const id = pickString(source, ['id', 'model', 'name']);
     if (!id) return null;
@@ -163,8 +160,8 @@ export class FoundryCatalogService {
 
   private normalizeDeployment(
     raw: unknown,
-    sourceName: FoundryCatalogSource,
-  ): FoundryDeploymentRecord | null {
+    sourceName: AiCatalogSource,
+  ): AiDeploymentRecord | null {
     const source = asRecord(raw);
     const properties = asRecord(source.properties);
     const model = asRecord(properties.model ?? source.model);

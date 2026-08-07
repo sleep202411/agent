@@ -21,12 +21,9 @@
  *      `AiCanonicalModel.billingPolicy.productPricing`; provider request cost
  *      is recorded later per job only when the provider reports usage/cost.
  *
- * Provider adapters whose definitions are NOT PG-binding-driven (Azure
- * Foundry self-emits hardcoded schemas) are never used to source the
- * catalog. Foundry stays a generation PROVIDER: if a real
- * `AiProviderModelBinding` with `provider='microsoft-foundry'` is ever
- * created it would route through here exactly like fal/bailian. Today
- * none exists, so Foundry contributes zero catalog entries.
+ * Deprecated generation providers (microsoft-foundry, replicate) are not
+ * registered here. Bindings that still point at them will log a warning and
+ * be skipped until re-bound to an active provider.
  *
  * INVARIANT (keeps submit/routing working): the emitted
  * `AiModelDefinition.id === AiCanonicalModel.slug`. Routing resolves a
@@ -36,10 +33,10 @@
  * services already do.
  */
 import { Injectable, Logger } from '@nestjs/common';
+import { withAttachedUiOptions } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
-import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
@@ -69,7 +66,6 @@ export class AiCanonicalCatalogService {
     private readonly prisma: PrismaService,
     private readonly fal: FalCatalogService,
     private readonly bailian: BailianCatalogService,
-    private readonly replicate: ReplicateCatalogService,
     private readonly bytePlus: BytePlusCatalogService,
     private readonly agnes: AgnesCatalogService,
     private readonly minimax: MiniMaxCatalogService,
@@ -78,7 +74,6 @@ export class AiCanonicalCatalogService {
       'fal-ai': this.fal,
       'byteplus-modelark': this.bytePlus,
       'aliyun-bailian': this.bailian,
-      replicate: this.replicate,
       'agnes-ai': this.agnes,
       minimax: this.minimax,
     };
@@ -151,7 +146,7 @@ export class AiCanonicalCatalogService {
       const model = candidates.find((item) => item.enabled) ?? candidates[0];
       if (model) {
         models.push({
-          model: withCanonicalUiPolicy(model, canonical.uiPolicy),
+          model: finalizeCatalogModel(model, canonical.uiPolicy),
           sortOrder: uiSortOrder(canonical.uiPolicy),
           slug: canonical.slug,
         });
@@ -166,6 +161,17 @@ export class AiCanonicalCatalogService {
       })
       .map((item) => item.model);
   }
+}
+
+/**
+ * Product catalog boundary: merge canonical UI policy + ensure every
+ * user-visible enum carries `x-ui.options` (label/value first-class).
+ */
+function finalizeCatalogModel(
+  model: AiModelDefinition,
+  canonicalUiPolicy: unknown,
+): AiModelDefinition {
+  return withAttachedUiOptions(withCanonicalUiPolicy(model, canonicalUiPolicy));
 }
 
 function withCanonicalUiPolicy(

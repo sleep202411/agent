@@ -9,7 +9,7 @@ import type {
   AiQueueName,
   AiQueuePolicy,
   AiRequiredPlan,
-  FoundryCatalogSource,
+  AiCatalogSource,
 } from '../../types';
 
 export const MINIMAX_SCHEMA_VERSION = '2026-08-07-h3';
@@ -105,7 +105,7 @@ export function createMiniMaxRuntimeConfig(
 export function toMiniMaxModelDefinition(args: {
   config: MiniMaxRuntimeConfig;
   modelId: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   ops?: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;
@@ -298,24 +298,46 @@ function videoInputSchemaFor(
     }
   }
 
+  const resolutionEnum =
+    resolutionOptions.length > 0 ? resolutionOptions : ['768P', '2K'];
+  const aspectEnum =
+    aspectOptions.length > 0
+      ? aspectOptions
+      : ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'];
+
   properties.resolution = {
     type: 'string',
     title: 'Resolution',
     default: stringFromPolicy(parameterPolicy, 'defaultResolution') ?? '2K',
-    // Official MiniMax-H3 enum — not Seedance 720p/1080p aliases.
-    enum: resolutionOptions.length > 0 ? resolutionOptions : ['768P', '2K'],
-    'x-ui': { control: 'segmented', group: 'settings', order: 30 },
+    // Official MiniMax-H3 wire enum (768P | 2K).
+    enum: resolutionEnum,
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 30,
+      // Explicit label/value — studio prefers options over bare enum.
+      options: resolutionEnum.map((value) => ({
+        value,
+        label: value,
+      })),
+    },
   };
   properties.aspectRatio = {
     type: 'string',
     title: 'Aspect ratio',
     default: stringFromPolicy(parameterPolicy, 'defaultAspectRatio') ?? '16:9',
-    // Official ratio enum uses `adaptive` (not Seedance `auto`).
-    enum:
-      aspectOptions.length > 0
-        ? aspectOptions
-        : ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'],
-    'x-ui': { control: 'segmented', group: 'settings', order: 40 },
+    // Official wire enum uses `adaptive` (OpenAPI). Product UI shows "Auto".
+    enum: aspectEnum,
+    'x-ui': {
+      control: 'segmented',
+      group: 'settings',
+      order: 40,
+      options: aspectEnum.map((value) =>
+        value === 'adaptive' || value === 'auto'
+          ? { value, label: 'Auto', labelKey: 'sizePresets.auto' }
+          : { value, label: value },
+      ),
+    },
   };
   if (durationOptions.length > 0) {
     properties.duration = {

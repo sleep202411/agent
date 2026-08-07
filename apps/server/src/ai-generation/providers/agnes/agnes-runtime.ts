@@ -12,7 +12,7 @@ import type {
   AiQueueName,
   AiQueuePolicy,
   AiRequiredPlan,
-  FoundryCatalogSource,
+  AiCatalogSource,
 } from '../../types';
 
 export const AGNES_SCHEMA_VERSION = '2026-06-18.2';
@@ -110,7 +110,7 @@ export function createAgnesRuntimeConfig(
 export function toAgnesModelDefinition(args: {
   config: AgnesRuntimeConfig;
   modelId: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   ops: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;
