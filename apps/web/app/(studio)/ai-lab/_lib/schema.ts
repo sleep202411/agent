@@ -1,19 +1,19 @@
 import type {
-  FoundryCondition,
-  FoundryConditionExpression,
-  FoundryFieldUi,
-  FoundryJsonPrimitive,
-  FoundryJsonSchema,
-  FoundryUiGroup,
-  FoundryUiOption,
-  FoundryUiSchema,
+  AiCondition,
+  AiConditionExpression,
+  AiFieldUi,
+  AiJsonPrimitive,
+  AiJsonSchema,
+  AiUiGroup,
+  AiUiOption,
+  AiUiSchema,
 } from "@repo/shared";
 import type { AiLabField, AiLabSchema } from "./types";
 
 export interface AiFieldDescriptor {
   name: string;
   field: AiLabField;
-  ui: FoundryFieldUi;
+  ui: AiFieldUi;
   required: boolean;
   enabled: boolean;
   disabledReason?: string;
@@ -96,7 +96,7 @@ export function fieldDescriptors(
 export function groupFields(schema: AiLabSchema, fields: AiFieldDescriptor[]): AiFieldGroup[] {
   const uiSchema = schemaUi(schema);
   const configuredGroups = uiSchema?.groups ?? [];
-  const byId = new Map<string, FoundryUiGroup>();
+  const byId = new Map<string, AiUiGroup>();
   for (const group of configuredGroups) byId.set(group.id, group);
 
   const fieldGroupIds = [...new Set(fields.map((field) => field.groupId))];
@@ -132,7 +132,7 @@ export function secondaryFields(fields: AiFieldDescriptor[]): AiFieldDescriptor[
   return fields.filter((field) => field.ui.importance !== "primary" || field.name === "prompt");
 }
 
-export function readOptions(field: AiLabField): FoundryUiOption[] {
+export function readOptions(field: AiLabField): AiUiOption[] {
   const uiOptions = fieldUi(field).options;
   if (Array.isArray(uiOptions) && uiOptions.length > 0) return uiOptions;
   if ("enum" in field && Array.isArray(field.enum)) {
@@ -231,7 +231,7 @@ export function pruneInput(
 }
 
 export function optionLocked(
-  option: FoundryUiOption,
+  option: AiUiOption,
   currentPlanRank: number,
   planRank: (plan: string | null | undefined) => number
 ): boolean {
@@ -239,26 +239,26 @@ export function optionLocked(
 }
 
 export function evaluateOptional(
-  expression: FoundryConditionExpression | undefined,
+  expression: AiConditionExpression | undefined,
   values: Record<string, unknown>,
   fallback: boolean
 ): boolean {
   return expression ? evaluateCondition(expression, values) : fallback;
 }
 
-function schemaUi(schema: AiLabSchema): FoundryUiSchema | undefined {
+function schemaUi(schema: AiLabSchema): AiUiSchema | undefined {
   const ui = schema["x-ui"];
   if (!ui || typeof ui !== "object") return undefined;
   return "groups" in ui && Array.isArray(ui.groups) ? ui : undefined;
 }
 
-function fieldUi(field: AiLabField): FoundryFieldUi {
+function fieldUi(field: AiLabField): AiFieldUi {
   const ui = field["x-ui"];
   if (!ui || typeof ui !== "object" || "groups" in ui) return {};
   return ui;
 }
 
-function defaultForField(field: FoundryJsonSchema): unknown {
+function defaultForField(field: AiJsonSchema): unknown {
   if ("default" in field && field.default !== undefined) return field.default;
   if ("const" in field && field.const !== undefined) return field.const;
   if ("enum" in field && Array.isArray(field.enum) && field.enum.length > 0) {
@@ -328,7 +328,7 @@ function validateField(
   if (
     "enum" in field &&
     Array.isArray(field.enum) &&
-    !field.enum.includes(value as FoundryJsonPrimitive)
+    !field.enum.includes(value as AiJsonPrimitive)
   ) {
     issues.push({
       field: name,
@@ -348,7 +348,7 @@ function isValidUrl(value: string): boolean {
 }
 
 function evaluateCondition(
-  expression: FoundryConditionExpression,
+  expression: AiConditionExpression,
   values: Record<string, unknown>
 ): boolean {
   if ("all" in expression && Array.isArray(expression.all)) {
@@ -360,13 +360,10 @@ function evaluateCondition(
   if ("not" in expression && expression.not) {
     return !evaluateCondition(expression.not, values);
   }
-  return evaluateSimpleCondition(expression as FoundryCondition, values);
+  return evaluateSimpleCondition(expression as AiCondition, values);
 }
 
-function evaluateSimpleCondition(
-  condition: FoundryCondition,
-  values: Record<string, unknown>
-): boolean {
+function evaluateSimpleCondition(condition: AiCondition, values: Record<string, unknown>): boolean {
   const value = values[condition.field];
   switch (condition.operator) {
     case "equals":
@@ -374,13 +371,10 @@ function evaluateSimpleCondition(
     case "notEquals":
       return value !== condition.value;
     case "in":
-      return (
-        Array.isArray(condition.values) && condition.values.includes(value as FoundryJsonPrimitive)
-      );
+      return Array.isArray(condition.values) && condition.values.includes(value as AiJsonPrimitive);
     case "notIn":
       return (
-        !Array.isArray(condition.values) ||
-        !condition.values.includes(value as FoundryJsonPrimitive)
+        !Array.isArray(condition.values) || !condition.values.includes(value as AiJsonPrimitive)
       );
     case "exists":
       return !isEmptyValue(value);
