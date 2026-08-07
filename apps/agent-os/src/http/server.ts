@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { MemorySaver } from "@langchain/langgraph";
+import type { DomainPort } from "@repo/agent-tools";
 import { createLiteLlmChatModel, isLiveModelConfigured } from "@repo/model-router";
 
-import { InMemoryStoryDomain } from "../runtime/in-memory-domain.js";
+import { createWorkerDomainPort } from "../runtime/http-domain-port.js";
 import { LangGraphRunService } from "../runtime/langgraph-run-service.js";
 
 /**
@@ -10,28 +11,23 @@ import { LangGraphRunService } from "../runtime/langgraph-run-service.js";
  * Nest agent-os-gateway authenticates and proxies here.
  *
  * Phase 1: free, no rate limit. Caller must still pass actorId + projectId.
+ * Character tools use Nest Domain when AGENT_OS_DOMAIN_URL is set.
  */
 
 const service = new LangGraphRunService();
 const checkpointer = new MemorySaver();
-/** Per-project in-memory domain until Nest DomainPort is the source of truth. */
-const domainsByProject = new Map<string, InMemoryStoryDomain>();
+/** Per-project domain ports (HTTP+local composite or pure in-memory). */
+const domainsByProject = new Map<string, DomainPort>();
 /** runId → projectId for approval resume domain lookup. */
 const runProject = new Map<string, string>();
 
-const DEFAULT_SCRIPT = [
-  "林黛玉自贾母处来。贾宝玉笑道：妹妹来了。王熙凤协理宁国府。薛宝钗稳重端庄。",
-].join("");
-
-function domainForProject(projectId: string, scriptText?: string): InMemoryStoryDomain {
-  let domain = domainsByProject.get(projectId);
-  if (!domain) {
-    domain = new InMemoryStoryDomain();
-    domain.setScript(scriptText?.trim() || DEFAULT_SCRIPT, 100);
-    domainsByProject.set(projectId, domain);
-  } else if (scriptText?.trim()) {
-    domain.setScript(scriptText.trim(), 100);
+function domainForProject(projectId: string, scriptText?: string): DomainPort {
+  const existing = domainsByProject.get(projectId);
+  if (existing && !scriptText?.trim()) {
+    return existing;
   }
+  const domain = createWorkerDomainPort(scriptText);
+  domainsByProject.set(projectId, domain);
   return domain;
 }
 
@@ -189,7 +185,6 @@ export function createAgentOsHttpServer() {
           status: snapshot.status,
           assistantText: snapshot.assistantText,
           events: snapshot.journal.all(),
-          characters: [...domain.characters.values()],
         });
         return;
       }

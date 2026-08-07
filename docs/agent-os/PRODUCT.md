@@ -66,6 +66,14 @@ Acceptance:
   - UI can replay steps (sequence journal)
 ```
 
+### Domain write path (current)
+
+| Layer                                                | Behavior                                                                               |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Worker tools `characters.*`                          | Prefer Nest HTTP Domain when `AGENT_OS_DOMAIN_URL` + `AGENT_OS_INTERNAL_TOKEN` are set |
+| Nest `POST /agent-os/internal/tools/:toolId/execute` | Real `story_bible.put_character` via patch executor + draft CAS                        |
+| Offline / unit tests                                 | `InMemoryStoryDomain` (no DB)                                                          |
+
 ## Golden use case B — Project Canvas (guide Phase 1)
 
 ```text

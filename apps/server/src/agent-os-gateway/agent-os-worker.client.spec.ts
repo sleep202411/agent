@@ -21,6 +21,7 @@ describe('AgentOsWorkerClient', () => {
     const client = new AgentOsWorkerClient({
       value: {
         workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
         billing: 'free',
         rateLimit: 'disabled',
       },
@@ -47,6 +48,7 @@ describe('AgentOsWorkerClient', () => {
     const client = new AgentOsWorkerClient({
       value: {
         workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
         billing: 'free',
         rateLimit: 'disabled',
       },

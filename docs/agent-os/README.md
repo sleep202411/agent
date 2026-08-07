@@ -54,12 +54,20 @@ permission, then proxies to the Agent OS worker (`AGENT_OS_WORKER_URL`, default
 Local product path:
 
 ```bash
-# terminal 1 — worker (LangGraph + Qwen)
+# shared secret (min 16 chars) — worker domain calls + Nest internal routes
+export AGENT_OS_INTERNAL_TOKEN=dev-only-change-me-16+
+
+# terminal 1 — worker (LangGraph + Qwen); character tools → Nest when DOMAIN_URL set
+export AGENT_OS_DOMAIN_URL=http://127.0.0.1:4399
 npm run dev -w agent-os
 
-# terminal 2 — Nest with Agent OS gateway
-AGENT_OS_ENABLED=true AGENT_OS_WORKER_URL=http://127.0.0.1:4301 npm run start:dev -w server
-# POST /agent-os/runs  (via /aurora rewrite if configured)
+# terminal 2 — Nest Agent OS gateway + real domain
+AGENT_OS_ENABLED=true \
+AGENT_OS_WORKER_URL=http://127.0.0.1:4301 \
+AGENT_OS_INTERNAL_TOKEN=dev-only-change-me-16+ \
+npm run start:dev -w server
+# POST /agent-os/runs
+# POST /agent-os/internal/tools/characters.upsert/execute  (worker only)
 ```
 
 ## Phase 1 scenes
