@@ -4,6 +4,14 @@
  * Client-reported durations are never authority. On confirm (and when
  * enrichment finds a null duration) we stream the stored object, run ffprobe
  * on the bytes, persist `durationSeconds`, and return that value.
+ *
+ * High-traffic design:
+ * - DB hit is O(1) when duration already stored (steady-state generate path).
+ * - Probe work is bounded per process (concurrency + wait queue) so a traffic
+ *   spike cannot unbounded-spawn downloads/ffprobe and OOM the pod.
+ * - Same assetId is single-flighted (one probe shared by concurrent waiters).
+ * - When the wait queue is full we shed load with 503 backpressure rather than
+ *   melting the node; already-probed assets and pure text jobs are unaffected.
  */
 import {
   Injectable,
@@ -18,17 +26,30 @@ import { unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 
 const SIGNED_READ_TTL_SECONDS = 10 * 60;
-const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
-const FFPROBE_TIMEOUT_MS = 60 * 1000;
+/** Cap download time so hung storage cannot pin probe slots forever. */
+const DOWNLOAD_TIMEOUT_MS = 90 * 1000;
+const FFPROBE_TIMEOUT_MS = 30 * 1000;
 const FFPROBE_MAX_OUTPUT_BYTES = 256 * 1024;
-const MAX_PROBE_BYTES = 512 * 1024 * 1024;
+/** Hard ceiling on spool size — protects disk under concurrent probes. */
+const MAX_PROBE_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Simultaneous download+ffprobe operations per Node process.
+ * Override with MEDIA_DURATION_PROBE_MAX_CONCURRENT (1–32).
+ */
+const DEFAULT_MAX_CONCURRENT = 4;
+/**
+ * Waiters allowed behind the concurrency cap. Beyond this we 503.
+ * Override with MEDIA_DURATION_PROBE_MAX_QUEUE (0–256).
+ */
+const DEFAULT_MAX_QUEUE = 48;
 
 const DURATION_KINDS = new Set<MediaAssetKind>([
   MediaAssetKind.video,
@@ -51,16 +72,46 @@ export interface DurationProbeAsset {
 @Injectable()
 export class MediaAssetDurationService {
   private readonly logger = new Logger(MediaAssetDurationService.name);
+  private readonly maxConcurrent = clampInt(
+    process.env.MEDIA_DURATION_PROBE_MAX_CONCURRENT,
+    DEFAULT_MAX_CONCURRENT,
+    1,
+    32,
+  );
+  private readonly maxQueue = clampInt(
+    process.env.MEDIA_DURATION_PROBE_MAX_QUEUE,
+    DEFAULT_MAX_QUEUE,
+    0,
+    256,
+  );
+
+  private activeProbes = 0;
+  private readonly waiters: Array<{
+    resolve: () => void;
+    reject: (err: Error) => void;
+  }> = [];
+  /** assetId → in-flight ensure promise (single-flight). */
+  private readonly inflightByAssetId = new Map<
+    string,
+    Promise<number | null>
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageAccess: MediaStorageAccessService,
-  ) {}
+  ) {
+    this.logger.log(
+      `duration probe pool maxConcurrent=${this.maxConcurrent} maxQueue=${this.maxQueue}`,
+    );
+  }
 
   /**
    * Resolve duration for many assets: use stored value when present, otherwise
    * probe storage, persist, and return. Assets that are not video/audio are
    * skipped. Returns a map of assetId → durationSeconds for those resolved.
+   *
+   * Missing durations are probed with concurrency limits + single-flight so
+   * parallel submits for the same asset share one download.
    */
   async ensureDurations(
     assetIds: readonly string[],
@@ -87,6 +138,7 @@ export class MediaAssetDurationService {
       },
     });
 
+    const pending: Array<DurationProbeAsset & { id: string }> = [];
     for (const row of rows) {
       if (!DURATION_KINDS.has(row.kind)) continue;
       if (
@@ -97,16 +149,28 @@ export class MediaAssetDurationService {
         out.set(row.id, row.durationSeconds);
         continue;
       }
-      try {
-        const seconds = await this.probeAndPersist(row);
-        if (seconds != null) out.set(row.id, seconds);
-      } catch (err) {
-        this.logger.warn(
-          `duration probe failed asset=${row.id}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
+      pending.push(row);
+    }
+
+    if (pending.length === 0) return out;
+
+    const results = await Promise.all(
+      pending.map(async (row) => {
+        try {
+          const seconds = await this.ensureOne(row);
+          return { id: row.id, seconds };
+        } catch (err) {
+          this.logger.warn(
+            `duration probe failed asset=${row.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          return { id: row.id, seconds: null as number | null };
+        }
+      }),
+    );
+    for (const { id, seconds } of results) {
+      if (seconds != null) out.set(id, seconds);
     }
     return out;
   }
@@ -114,6 +178,7 @@ export class MediaAssetDurationService {
   /**
    * Probe an object that is about to become a MediaAsset (confirm path).
    * Does not write DB — caller persists the returned seconds.
+   * Shares the process probe pool so upload storms cannot fork-bomb ffprobe.
    */
   async probeObjectDuration(
     asset: Omit<DurationProbeAsset, 'id' | 'durationSeconds'>,
@@ -124,7 +189,35 @@ export class MediaAssetDurationService {
         message: 'Duration probe only applies to video and audio assets.',
       });
     }
-    return this.probeFromStorage(asset);
+    return this.withProbeSlot(() => this.probeFromStorage(asset));
+  }
+
+  private ensureOne(
+    row: DurationProbeAsset & { id: string },
+  ): Promise<number | null> {
+    const existing = this.inflightByAssetId.get(row.id);
+    if (existing) return existing;
+
+    const work = this.withProbeSlot(async () => {
+      // Re-read under the slot: another worker may have persisted duration.
+      const fresh = await this.prisma.mediaAsset.findFirst({
+        where: { id: row.id, deletedAt: null },
+        select: { durationSeconds: true },
+      });
+      if (
+        fresh?.durationSeconds != null &&
+        Number.isFinite(fresh.durationSeconds) &&
+        fresh.durationSeconds > 0
+      ) {
+        return fresh.durationSeconds;
+      }
+      return this.probeAndPersist(row);
+    }).finally(() => {
+      this.inflightByAssetId.delete(row.id);
+    });
+
+    this.inflightByAssetId.set(row.id, work);
+    return work;
   }
 
   private async probeAndPersist(
@@ -136,6 +229,44 @@ export class MediaAssetDurationService {
       data: { durationSeconds: seconds },
     });
     return seconds;
+  }
+
+  private async withProbeSlot<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquireProbeSlot();
+    try {
+      return await fn();
+    } finally {
+      this.releaseProbeSlot();
+    }
+  }
+
+  private acquireProbeSlot(): Promise<void> {
+    if (this.activeProbes < this.maxConcurrent) {
+      this.activeProbes += 1;
+      return Promise.resolve();
+    }
+    if (this.waiters.length >= this.maxQueue) {
+      return Promise.reject(
+        new ServiceUnavailableException({
+          code: 'MEDIA_DURATION_PROBE_BACKPRESSURE',
+          message:
+            'Media duration inspection is temporarily at capacity. Retry shortly.',
+        }),
+      );
+    }
+    return new Promise<void>((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+    });
+  }
+
+  private releaseProbeSlot(): void {
+    const next = this.waiters.shift();
+    if (next) {
+      // Transfer the slot to the next waiter without decrementing active.
+      next.resolve();
+      return;
+    }
+    this.activeProbes = Math.max(0, this.activeProbes - 1);
   }
 
   private async probeFromStorage(
@@ -193,10 +324,38 @@ export class MediaAssetDurationService {
           message: `Failed to download media for duration probe (HTTP ${response.status}).`,
         });
       }
-      const nodeStream = Readable.fromWeb(
+      // Enforce size while streaming so a wrong Content-Length cannot fill disk.
+      let written = 0;
+      const body = Readable.fromWeb(
         response.body as unknown as NodeReadableStream,
       );
-      await pipeline(nodeStream, createWriteStream(destPath));
+      const limiter = new Transform({
+        transform(chunk, _enc, cb) {
+          written += chunk.length;
+          if (written > MAX_PROBE_BYTES) {
+            cb(
+              new UnprocessableEntityException({
+                code: 'MEDIA_DURATION_PROBE_TOO_LARGE',
+                message: 'Media is too large to inspect for duration.',
+              }),
+            );
+            return;
+          }
+          cb(null, chunk);
+        },
+      });
+      await pipeline(body, limiter, createWriteStream(destPath));
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        (err.name === 'AbortError' || err.message.includes('aborted'))
+      ) {
+        throw new ServiceUnavailableException({
+          code: 'MEDIA_DURATION_DOWNLOAD_TIMEOUT',
+          message: 'Timed out downloading media for duration probe.',
+        });
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -283,4 +442,16 @@ function extensionFor(
   if (ct.includes('mpeg') || ct.includes('mp3')) return '.mp3';
   if (ct.includes('wav')) return '.wav';
   return kind === MediaAssetKind.audio ? '.bin' : '.mp4';
+}
+
+function clampInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (raw == null || raw.trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
 }
