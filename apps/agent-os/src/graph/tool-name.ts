@@ -7,6 +7,7 @@ export function fromLangChainToolName(name: string): string {
   // Prefer longest known registry ids first when we reverse-map.
   const candidates = [
     "script.readSection",
+    "script.store",
     "characters.upsert",
     "characters.list",
     "canvas.applyPatch",

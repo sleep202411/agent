@@ -18,7 +18,7 @@ import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
 import { ConnectionSignal } from "@/app/[locale]/canvas/_components/connection-signal";
-import { CopilotPanel } from "@/app/[locale]/canvas/_components/copilot/copilot-panel";
+import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { CanvasHistory } from "@/app/[locale]/canvas/_components/canvas-history";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
@@ -97,7 +97,12 @@ export default function ProjectLayout({
   };
 
   return (
-    <ProjectProvider projectId={projectId} role={role} openShare={openShare} setShellInset={setShellInset}>
+    <ProjectProvider
+      projectId={projectId}
+      role={role}
+      openShare={openShare}
+      setShellInset={setShellInset}
+    >
       <CanvasConnectionProvider projectId={projectId} canEdit={canEdit}>
         <div className="flex h-dvh">
           <ProjectSidebar />
@@ -133,7 +138,9 @@ export default function ProjectLayout({
                       href={`/project/${projectId}/${slug}`}
                       className={cn(
                         "flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors",
-                        active ? "bg-white text-black" : "text-white/70 hover:bg-white/[0.08] hover:text-white",
+                        active
+                          ? "bg-white text-black"
+                          : "text-white/70 hover:bg-white/[0.08] hover:text-white"
                       )}
                     >
                       <Icon className="size-3.5" stroke={1.8} />
@@ -171,8 +178,8 @@ export default function ProjectLayout({
           </div>
 
           {copilotOpen ? (
-            <aside className="h-full w-[380px] shrink-0 border-l border-white/[0.06] bg-popover/95 backdrop-blur-xl">
-              <CopilotPanel projectId={projectId} open={copilotOpen} onClose={closeCopilot} />
+            <aside className="h-full w-[400px] shrink-0 border-l border-white/[0.06] bg-popover/95 backdrop-blur-xl">
+              <AgentOsPanel projectId={projectId} onClose={closeCopilot} />
             </aside>
           ) : null}
         </div>
@@ -193,7 +200,7 @@ export default function ProjectLayout({
 }
 
 function HeaderActions({ canEdit }: { canEdit: boolean }) {
-  const tCopilot = useTranslations("copilot");
+  const tAgentOs = useTranslations("agentOs");
   const tCanvas = useTranslations("canvas");
   const { connectionStatus, rtt, awareness, doc } = useCanvasConnection();
   const copilotOpen = useProjectUIStore((s) => s.copilotOpen);
@@ -207,14 +214,16 @@ function HeaderActions({ canEdit }: { canEdit: boolean }) {
     <>
       <button
         type="button"
-        aria-label={tCopilot("open")}
+        aria-label={tAgentOs("open")}
         onClick={() => {
           closeHistory();
           toggleCopilot();
         }}
         className={cn(
           "flex size-8 items-center justify-center rounded-full transition-colors",
-          copilotOpen ? "bg-white text-black" : "text-white/70 hover:bg-white/[0.08] hover:text-white",
+          copilotOpen
+            ? "bg-white text-black"
+            : "text-white/70 hover:bg-white/[0.08] hover:text-white"
         )}
       >
         <IconSparkles className="size-4" stroke={1.8} />
@@ -232,7 +241,9 @@ function HeaderActions({ canEdit }: { canEdit: boolean }) {
           }}
           className={cn(
             "flex size-8 items-center justify-center rounded-full transition-colors",
-            historyOpen ? "bg-white text-black" : "text-white/70 hover:bg-white/[0.08] hover:text-white",
+            historyOpen
+              ? "bg-white text-black"
+              : "text-white/70 hover:bg-white/[0.08] hover:text-white"
           )}
         >
           <IconHistory className="size-4" stroke={1.8} />
@@ -260,22 +271,23 @@ function LeftDrawerSlot({ canEdit, projectId }: { canEdit: boolean; projectId: s
   const sbRouter = useRouter();
   const onOpenOnCanvas = useCallback(
     (nodeId: string) => sbRouter.push(`/project/${projectId}/canvas?focus=${nodeId}`),
-    [sbRouter, projectId],
+    [sbRouter, projectId]
   );
   const drawerActions = useMemo<ShotPictureDrawerActions>(
     () => ({
-      onGenerate: (shotId: string, modality: "image" | "video") => sb.createPictureSource(shotId, modality),
+      onGenerate: (shotId: string, modality: "image" | "video") =>
+        sb.createPictureSource(shotId, modality),
       onUpload: sb.uploadPictureSource,
       onAttach: sb.attachSource,
       onDetach: sb.detachPicture,
       onSetPreferredFrame: sb.setPreferredFrame,
       onOpenOnCanvas,
     }),
-    [sb, onOpenOnCanvas],
+    [sb, onOpenOnCanvas]
   );
   const selectedRow = useMemo(
     () => sb.rows.find((r) => r.id === selectedShotId) ?? null,
-    [sb.rows, selectedShotId],
+    [sb.rows, selectedShotId]
   );
 
   let content: React.ReactNode = null;
@@ -284,9 +296,20 @@ function LeftDrawerSlot({ canEdit, projectId }: { canEdit: boolean; projectId: s
   } else if (selectedShotId && selectedRow) {
     content =
       selectedSlot === "video" ? (
-        <ShotVideoDrawer row={selectedRow} canEdit={canEdit} actions={drawerActions} onClose={closeShotDrawer} />
+        <ShotVideoDrawer
+          row={selectedRow}
+          canEdit={canEdit}
+          actions={drawerActions}
+          onClose={closeShotDrawer}
+        />
       ) : (
-        <ShotPictureDrawer row={selectedRow} slot={selectedSlot} canEdit={canEdit} actions={drawerActions} onClose={closeShotDrawer} />
+        <ShotPictureDrawer
+          row={selectedRow}
+          slot={selectedSlot}
+          canEdit={canEdit}
+          actions={drawerActions}
+          onClose={closeShotDrawer}
+        />
       );
   }
 

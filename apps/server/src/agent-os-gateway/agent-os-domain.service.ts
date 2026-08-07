@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProjectMemberRole } from '@prisma/client';
 import {
   STORY_PATCH_SCHEMA_VERSION,
   STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION,
@@ -15,7 +15,6 @@ import { canonicalJsonHash } from '../story-studio/canonical-json';
 import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
-  type InteractiveStoryDraftContent,
 } from '../story-studio/interactive-film.schema';
 import {
   executeStoryPatch,
@@ -23,7 +22,12 @@ import {
 } from '../story-studio/story-agent-patch.executor';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { StoryProjectWriteGuardService } from '../story-studio/story-project-write-guard.service';
-import { CharactersUpsertInputSchema } from './agent-os-domain.dto';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import {
+  CharactersUpsertInputSchema,
+  ScriptReadSectionInputSchema,
+  ScriptStoreInputSchema,
+} from './agent-os-domain.dto';
 
 export type AgentOsDomainResult =
   | { ok: true; data: unknown }
@@ -35,16 +39,24 @@ export type AgentOsDomainResult =
       details?: Record<string, unknown>;
     };
 
+type StoredCharacter = {
+  id: string;
+  name: Record<string, string>;
+  summary: string;
+};
+
 /**
- * Product Domain for Agent OS tools — writes real Story draft characters.
- * Independent of Mastra / agent-platform workers; reuses story patch executor.
+ * Product Domain for Agent OS tools.
+ * - Platform (studio) projects → agent_os_project_states
+ * - Story Studio projects → story draft storyBible (CAS)
  */
 @Injectable()
 export class AgentOsDomainService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissions: StoryPermissionService,
+    private readonly storyPermissions: StoryPermissionService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly workspacePermissions: WorkspacePermissionService,
   ) {}
 
   async execute(input: {
@@ -55,16 +67,39 @@ export class AgentOsDomainService {
     arguments: unknown;
   }): Promise<AgentOsDomainResult> {
     try {
+      const kind = await this.resolveProjectKind(input.projectId);
       switch (input.toolId) {
         case 'characters.list':
           return {
             ok: true,
-            data: await this.listCharacters(input.actorId, input.projectId),
+            data:
+              kind === 'platform'
+                ? await this.listPlatformCharacters(
+                    input.actorId,
+                    input.projectId,
+                  )
+                : await this.listStoryCharacters(
+                    input.actorId,
+                    input.projectId,
+                  ),
           };
         case 'characters.upsert':
           return {
             ok: true,
-            data: await this.upsertCharacters(input),
+            data:
+              kind === 'platform'
+                ? await this.upsertPlatformCharacters(input)
+                : await this.upsertStoryCharacters(input),
+          };
+        case 'script.readSection':
+          return {
+            ok: true,
+            data: await this.readScriptSection(input),
+          };
+        case 'script.store':
+          return {
+            ok: true,
+            data: await this.storeScript(input),
           };
         default:
           return {
@@ -98,13 +133,266 @@ export class AgentOsDomainService {
     }
   }
 
-  private async listCharacters(actorId: string, projectId: string) {
-    await this.permissions.requireProject(actorId, projectId, 'story.read');
-    const state = await this.loadProjectDraft(projectId);
+  private async resolveProjectKind(
+    projectId: string,
+  ): Promise<'platform' | 'story'> {
+    const platform = await this.prisma.platformProject.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (platform) return 'platform';
+    const story = await this.prisma.storyProject.findFirst({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (story) return 'story';
+    throw new NotFoundException({
+      code: 'PROJECT_NOT_FOUND',
+      message: 'Project not found for Agent OS domain.',
+    });
+  }
+
+  private async requirePlatformEdit(actorId: string, projectId: string) {
+    await this.workspacePermissions.requireProjectRole(
+      actorId,
+      projectId,
+      ProjectMemberRole.editor,
+    );
+  }
+
+  private async requirePlatformRead(actorId: string, projectId: string) {
+    await this.workspacePermissions.requireProjectRole(
+      actorId,
+      projectId,
+      ProjectMemberRole.viewer,
+    );
+  }
+
+  private async listPlatformCharacters(actorId: string, projectId: string) {
+    await this.requirePlatformRead(actorId, projectId);
+    const state = await this.ensurePlatformState(projectId);
+    const characters = parseCharacters(state.characters);
+    return {
+      revision: state.revision,
+      surface: 'platform',
+      characters: characters.map((c) => ({
+        id: c.id,
+        name: primaryName(c.name),
+        summary: c.summary,
+      })),
+    };
+  }
+
+  private async upsertPlatformCharacters(input: {
+    actorId: string;
+    projectId: string;
+    idempotencyKey: string;
+    arguments: unknown;
+  }) {
+    const args = CharactersUpsertInputSchema.parse(input.arguments);
+    await this.requirePlatformEdit(input.actorId, input.projectId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.platformProject.findFirst({
+        where: { id: input.projectId, deletedAt: null },
+        select: { id: true, workspaceId: true },
+      });
+      if (!project) {
+        throw new NotFoundException({
+          code: 'PROJECT_NOT_FOUND',
+          message: 'Platform project not found.',
+        });
+      }
+      let state = await tx.agentOsProjectState.findUnique({
+        where: { projectId: input.projectId },
+      });
+      if (!state) {
+        state = await tx.agentOsProjectState.create({
+          data: {
+            projectId: project.id,
+            workspaceId: project.workspaceId,
+            revision: 0,
+            characters: [],
+            scriptSections: [],
+          },
+        });
+      }
+      if (state.revision !== args.baseRevision) {
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          message: `Expected revision ${args.baseRevision}, current is ${state.revision}`,
+          expected: args.baseRevision,
+          actual: state.revision,
+        });
+      }
+
+      const next = new Map(
+        parseCharacters(state.characters).map((c) => [c.id, c] as const),
+      );
+      const written: Array<{ id: string; name: string }> = [];
+      for (const character of args.characters) {
+        const intent = character.intent ?? 'create';
+        if (intent === 'create' && next.has(character.id)) {
+          throw new UnprocessableEntityException({
+            code: 'CHARACTER_EXISTS',
+            message: `Character ${character.id} already exists`,
+          });
+        }
+        next.set(character.id, {
+          id: character.id,
+          name: character.name,
+          summary: character.summary,
+        });
+        written.push({
+          id: character.id,
+          name: primaryName(character.name),
+        });
+      }
+
+      const updated = await tx.agentOsProjectState.updateMany({
+        where: {
+          projectId: input.projectId,
+          revision: state.revision,
+        },
+        data: {
+          characters: [...next.values()] as unknown as Prisma.InputJsonValue,
+          revision: { increment: 1 },
+          updatedByUserId: input.actorId,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException({
+          code: 'PROJECT_CAS_LOST',
+          message: 'Agent OS project state changed concurrently.',
+        });
+      }
+
+      return {
+        projectRevision: state.revision + 1,
+        surface: 'platform',
+        written,
+        idempotencyKey: input.idempotencyKey,
+      };
+    });
+  }
+
+  private async storeScript(input: {
+    actorId: string;
+    projectId: string;
+    arguments: unknown;
+  }) {
+    const args = ScriptStoreInputSchema.parse(input.arguments);
+    const kind = await this.resolveProjectKind(input.projectId);
+    if (kind === 'story') {
+      await this.storyPermissions.requireProject(
+        input.actorId,
+        input.projectId,
+        'story.edit',
+      );
+      // Story surface: keep sections on platform state keyed by story project id is wrong.
+      // Store on AgentOsProjectState only for platform; for story use platform table with story id as key?
+      // Simpler: only platform projects store script in AgentOsProjectState.
+      throw new UnprocessableEntityException({
+        code: 'SCRIPT_STORE_STORY_UNSUPPORTED',
+        message:
+          'script.store for Story Studio projects should use attachments; use platform projects or pass script via run scriptText for now.',
+      });
+    }
+    await this.requirePlatformEdit(input.actorId, input.projectId);
+    const sections = splitScript(args.text, args.sectionSize ?? 2000);
+    const project = await this.prisma.platformProject.findFirstOrThrow({
+      where: { id: input.projectId, deletedAt: null },
+      select: { id: true, workspaceId: true },
+    });
+    await this.prisma.agentOsProjectState.upsert({
+      where: { projectId: project.id },
+      create: {
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        revision: 0,
+        characters: [],
+        scriptSections: sections,
+        updatedByUserId: input.actorId,
+      },
+      update: {
+        scriptSections: sections,
+        updatedByUserId: input.actorId,
+      },
+    });
+    return { sectionCount: sections.length, surface: 'platform' };
+  }
+
+  private async readScriptSection(input: {
+    actorId: string;
+    projectId: string;
+    arguments: unknown;
+  }) {
+    const args = ScriptReadSectionInputSchema.parse(input.arguments);
+    const kind = await this.resolveProjectKind(input.projectId);
+    if (kind === 'platform') {
+      await this.requirePlatformRead(input.actorId, input.projectId);
+      const state = await this.ensurePlatformState(input.projectId);
+      const sections = parseStringArray(state.scriptSections);
+      if (args.sectionIndex >= sections.length) {
+        throw new UnprocessableEntityException({
+          code: 'SECTION_OUT_OF_RANGE',
+          message: `sectionIndex ${args.sectionIndex} >= ${sections.length}`,
+        });
+      }
+      const text = sections[args.sectionIndex]!.slice(0, args.maxChars ?? 8000);
+      return {
+        attachmentId: args.attachmentId,
+        sectionIndex: args.sectionIndex,
+        totalSections: sections.length,
+        text,
+        contentHash: createHash('sha256').update(text).digest('hex'),
+      };
+    }
+    throw new UnprocessableEntityException({
+      code: 'SCRIPT_READ_STORY_USE_ATTACHMENT',
+      message:
+        'Story Studio script reading should use uploaded attachments; platform projects use stored script sections.',
+    });
+  }
+
+  private async ensurePlatformState(projectId: string) {
+    const project = await this.prisma.platformProject.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true, workspaceId: true },
+    });
+    if (!project) {
+      throw new NotFoundException({
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Platform project not found.',
+      });
+    }
+    const existing = await this.prisma.agentOsProjectState.findUnique({
+      where: { projectId },
+    });
+    if (existing) return existing;
+    return this.prisma.agentOsProjectState.create({
+      data: {
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        revision: 0,
+        characters: [],
+        scriptSections: [],
+      },
+    });
+  }
+
+  private async listStoryCharacters(actorId: string, projectId: string) {
+    await this.storyPermissions.requireProject(
+      actorId,
+      projectId,
+      'story.read',
+    );
+    const state = await this.loadStoryDraft(projectId);
     return {
       revision: state.revision,
       contentHash: state.contentHash,
       chapterId: state.chapterId,
+      surface: 'story',
       characters: state.content.storyBible.characters.map((character) => ({
         id: character.id,
         name: primaryName(character.name),
@@ -113,14 +401,14 @@ export class AgentOsDomainService {
     };
   }
 
-  private async upsertCharacters(input: {
+  private async upsertStoryCharacters(input: {
     actorId: string;
     projectId: string;
     idempotencyKey: string;
     arguments: unknown;
   }) {
     const args = CharactersUpsertInputSchema.parse(input.arguments);
-    await this.permissions.requireProject(
+    await this.storyPermissions.requireProject(
       input.actorId,
       input.projectId,
       'story.edit',
@@ -131,7 +419,7 @@ export class AgentOsDomainService {
         tx,
         input.projectId,
       );
-      const state = await this.loadProjectDraftInTx(tx, input.projectId);
+      const state = await this.loadStoryDraftInTx(tx, input.projectId);
       if (state.revision !== args.baseRevision) {
         throw new ConflictException({
           code: 'PROJECT_VERSION_CONFLICT',
@@ -181,7 +469,6 @@ export class AgentOsDomainService {
         });
       }
 
-      // Merge chapter-scoped graph back into full project draft (characters are global bible).
       const merged = InteractiveStoryDraftContentSchema.parse({
         ...state.globalContent,
         storyBible: patched.draft.storyBible,
@@ -214,6 +501,7 @@ export class AgentOsDomainService {
         contentHash: nextHash,
         schemaVersion: STORY_PATCH_SCHEMA_VERSION,
         draftSchemaVersion: STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION,
+        surface: 'story',
         written: args.characters.map((character) => ({
           id: character.id,
           name: primaryName(character.name),
@@ -223,13 +511,13 @@ export class AgentOsDomainService {
     });
   }
 
-  private async loadProjectDraft(projectId: string) {
+  private async loadStoryDraft(projectId: string) {
     return this.prisma.$transaction((tx) =>
-      this.loadProjectDraftInTx(tx, projectId),
+      this.loadStoryDraftInTx(tx, projectId),
     );
   }
 
-  private async loadProjectDraftInTx(
+  private async loadStoryDraftInTx(
     tx: Prisma.TransactionClient,
     projectId: string,
   ) {
@@ -306,12 +594,35 @@ function primaryName(name: Record<string, string>): string {
   );
 }
 
+function parseCharacters(value: Prisma.JsonValue): StoredCharacter[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is StoredCharacter =>
+      !!item &&
+      typeof item === 'object' &&
+      !Array.isArray(item) &&
+      typeof (item as StoredCharacter).id === 'string',
+  );
+}
+
+function parseStringArray(value: Prisma.JsonValue): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 function jsonStringArray(value: Prisma.JsonValue): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
 }
 
-/** Deterministic id helper for future receipt rows. */
+function splitScript(text: string, sectionSize: number): string[] {
+  const sections: string[] = [];
+  for (let i = 0; i < text.length; i += sectionSize) {
+    sections.push(text.slice(i, i + sectionSize));
+  }
+  return sections.length > 0 ? sections : [''];
+}
+
 export function agentOsDomainRequestHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }

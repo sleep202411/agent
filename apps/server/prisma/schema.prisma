@@ -970,6 +970,7 @@ model PlatformProject {
   productionCrew   Crew?                    @relation("CrewProductionProject")
   studioCrew       Crew?                    @relation("CrewStudioProject")
   crewTaskCanvas   CrewTask?                @relation("CrewTaskCanvasProject")
+  agentOsState     AgentOsProjectState?
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -978,6 +979,45 @@ model PlatformProject {
   @@index([createdById, createdAt(sort: Desc)], map: "platform_projects_creator_idx")
   @@index([projectType, status, updatedAt(sort: Desc)], map: "platform_projects_type_recent_idx")
   @@map("platform_projects")
+}
+
+/// Agent OS durable project state for Platform (studio) projects.
+/// Characters and script sections are product facts; LangGraph checkpoints
+/// stay separate.
+model AgentOsProjectState {
+  projectId       String   @id @map("project_id") @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  revision        Int      @default(0)
+  characters      Json     @default("[]") @db.JsonB
+  scriptSections  Json     @default("[]") @map("script_sections") @db.JsonB
+  updatedByUserId String?  @map("updated_by_user_id") @db.VarChar(64)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "agent_os_project_states_workspace_recent_idx")
+  @@map("agent_os_project_states")
+}
+
+/// Agent OS run event journal (reconnect / audit). Sequence is per-run monotonic.
+model AgentOsRun {
+  id               String   @id @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  actorId          String   @map("actor_id") @db.VarChar(64)
+  modelProfileId   String   @map("model_profile_id") @db.VarChar(64)
+  status           String   @db.VarChar(32)
+  lastSequence     Int      @default(0) @map("last_sequence")
+  events           Json     @default("[]") @db.JsonB
+  pendingApproval  Json?    @map("pending_approval") @db.JsonB
+  assistantText    String?  @map("assistant_text") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([projectId, createdAt(sort: Desc)], map: "agent_os_runs_project_recent_idx")
+  @@index([actorId, createdAt(sort: Desc)], map: "agent_os_runs_actor_recent_idx")
+  @@map("agent_os_runs")
 }
 
 model PlatformDocument {

@@ -10,11 +10,13 @@ You MUST use tools to read project data and to write changes. Never claim you wr
 to the database unless a write tool succeeded.
 
 When the user asks to extract characters from a script:
-1. Call script_read_section for relevant sections (start at sectionIndex 0).
-2. Infer a structured cast list.
-3. Call characters_upsert with baseRevision from characters_list when possible
-   (or 0 if the project is empty).
-4. Summarize what was written with character ids.
+1. If they pasted full script text, call script_store first.
+2. Call script_read_section for relevant sections (start at sectionIndex 0;
+   attachmentId may be any uuid placeholder when using stored script).
+3. Call characters_list to learn baseRevision.
+4. Infer a structured cast list.
+5. Call characters_upsert with that baseRevision (intent create or replace).
+6. Summarize what was written with character ids.
 
 Prefer small, correct writes over dumping the entire script into one response.
 Do not invent project permissions. Tools enforce scope.`;

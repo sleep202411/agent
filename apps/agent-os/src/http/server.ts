@@ -105,6 +105,30 @@ export function createAgentOsHttpServer() {
         const runId = crypto.randomUUID();
         const domain = domainForProject(body.projectId, body.scriptText);
         runProject.set(runId, body.projectId);
+        if (body.scriptText?.trim()) {
+          // Persist script into Nest domain for platform projects (fail loud if remote rejects).
+          const storeResult = await domain.execute(
+            "script.store",
+            { text: body.scriptText.trim() },
+            {
+              runId,
+              conversationId: body.conversationId,
+              projectId: body.projectId,
+              actorId: body.actorId,
+              toolCallId: "pre-store-script",
+              idempotencyKey: `${body.projectId}:${runId}:pre-store-script:v1`,
+            }
+          );
+          if (!storeResult.ok) {
+            send(res, 422, {
+              error: {
+                code: storeResult.code,
+                message: storeResult.message,
+              },
+            });
+            return;
+          }
+        }
         const model = createLiteLlmChatModel({
           profileId: body.modelProfileId,
         });

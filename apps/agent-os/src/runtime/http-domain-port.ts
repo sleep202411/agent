@@ -23,7 +23,9 @@ export class HttpDomainPort implements DomainPort {
     input: unknown,
     context: ToolExecutionContext
   ): Promise<ToolExecuteResult> {
-    const remote = this.options.remoteToolIds ?? new Set(["characters.list", "characters.upsert"]);
+    const remote =
+      this.options.remoteToolIds ??
+      new Set(["characters.list", "characters.upsert", "script.readSection", "script.store"]);
     if (!remote.has(toolId)) {
       if (!this.options.local) {
         return {

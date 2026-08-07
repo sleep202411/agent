@@ -31,6 +31,21 @@ export const CharactersUpsertInputSchema = z
   })
   .strict();
 
+export const ScriptReadSectionInputSchema = z
+  .object({
+    attachmentId: z.string().uuid(),
+    sectionIndex: z.number().int().nonnegative().max(10_000),
+    maxChars: z.number().int().positive().max(50_000).optional(),
+  })
+  .strict();
+
+export const ScriptStoreInputSchema = z
+  .object({
+    text: z.string().min(1).max(200_000),
+    sectionSize: z.number().int().positive().max(50_000).optional(),
+  })
+  .strict();
+
 export const AgentOsDomainExecuteBodySchema = z
   .object({
     actorId: z.string().trim().min(1).max(128),

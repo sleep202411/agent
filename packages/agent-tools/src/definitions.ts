@@ -138,6 +138,25 @@ export const CanvasApplyPatchOutputSchema = z
  */
 export const AGENT_OS_TOOLS = [
   {
+    id: "script.store",
+    description:
+      "Store full script text into project Agent OS state as bounded sections (platform projects).",
+    kind: "command",
+    risk: "reversible",
+    inputSchema: z
+      .object({
+        text: z.string().min(1).max(200_000),
+        sectionSize: z.number().int().positive().max(50_000).optional(),
+      })
+      .strict(),
+    outputSchema: z
+      .object({
+        sectionCount: z.number().int().nonnegative(),
+        surface: z.string().optional(),
+      })
+      .strict(),
+  },
+  {
     id: "script.readSection",
     description:
       "Read one bounded section of an uploaded script/attachment. Prefer multiple calls over loading the entire script.",

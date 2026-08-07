@@ -35,6 +35,20 @@ export type ApprovalInterruptValue = {
  * Sensitive commands use LangGraph `interrupt()` for product approval (HITL).
  */
 export function buildLangChainTools(runtime: ToolRuntimeContext) {
+  const storeScript = tool(
+    async (raw, config) => {
+      return executeBound("script.store", raw, runtime, toolCallIdFromConfig(config));
+    },
+    {
+      name: toLangChainToolName("script.store"),
+      description: getTool("script.store").description,
+      schema: z.object({
+        text: z.string().min(1).max(200_000),
+        sectionSize: z.number().int().positive().max(50_000).optional(),
+      }),
+    }
+  );
+
   const readSection = tool(
     async (raw, config) => {
       return executeBound("script.readSection", raw, runtime, toolCallIdFromConfig(config));
@@ -96,7 +110,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext) {
     }
   );
 
-  return [readSection, listCharacters, upsertCharacters, canvasRead];
+  return [storeScript, readSection, listCharacters, upsertCharacters, canvasRead];
 }
 
 function toolCallIdFromConfig(config: unknown): string | undefined {

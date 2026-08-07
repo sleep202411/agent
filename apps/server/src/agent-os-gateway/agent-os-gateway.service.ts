@@ -1,22 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ProjectMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import { StoryPermissionService } from '../story-studio/story-permission.service';
 import type { AuthUser } from '../auth';
-import {
-  AgentOsWorkerClient,
-  type AgentOsWorkerRunResponse,
-} from './agent-os-worker.client';
+import { PrismaService } from '../infra/db/db.module';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
   AgentOsApprovalBody,
   AgentOsStartRunBody,
 } from './agent-os-gateway.dto';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
+import {
+  AgentOsWorkerClient,
+  type AgentOsWorkerRunResponse,
+} from './agent-os-worker.client';
 
 @Injectable()
 export class AgentOsGatewayService {
   constructor(
     private readonly worker: AgentOsWorkerClient,
-    private readonly permissions: StoryPermissionService,
+    private readonly storyPermissions: StoryPermissionService,
+    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly prisma: PrismaService,
     private readonly config: AgentOsGatewayConfigService,
   ) {}
 
@@ -37,12 +42,7 @@ export class AgentOsGatewayService {
     user: AuthUser,
     body: AgentOsStartRunBody,
   ): Promise<AgentOsWorkerRunResponse> {
-    // Phase 1 free / no rate limit — still require project write access.
-    await this.permissions.requireProject(
-      user.userId,
-      body.projectId,
-      'story.edit',
-    );
+    await this.requireProjectWrite(user.userId, body.projectId);
 
     const conversationId = body.conversationId ?? randomUUID();
     return this.worker.startRun({
@@ -60,11 +60,7 @@ export class AgentOsGatewayService {
     runId: string,
     body: AgentOsApprovalBody,
   ): Promise<AgentOsWorkerRunResponse> {
-    await this.permissions.requireProject(
-      user.userId,
-      body.projectId,
-      'story.edit',
-    );
+    await this.requireProjectWrite(user.userId, body.projectId);
 
     return this.worker.resolveApproval({
       runId,
@@ -82,7 +78,54 @@ export class AgentOsGatewayService {
     projectId: string,
     after = 0,
   ) {
-    await this.permissions.requireProject(user.userId, projectId, 'story.read');
+    await this.requireProjectRead(user.userId, projectId);
     return this.worker.listEvents(runId, after);
+  }
+
+  private async requireProjectWrite(userId: string, projectId: string) {
+    const platform = await this.prisma.platformProject.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (platform) {
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        projectId,
+        ProjectMemberRole.editor,
+      );
+      return;
+    }
+    const story = await this.prisma.storyProject.findFirst({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (story) {
+      await this.storyPermissions.requireProject(
+        userId,
+        projectId,
+        'story.edit',
+      );
+      return;
+    }
+    throw new NotFoundException({
+      code: 'PROJECT_NOT_FOUND',
+      message: 'Project not found.',
+    });
+  }
+
+  private async requireProjectRead(userId: string, projectId: string) {
+    const platform = await this.prisma.platformProject.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (platform) {
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        projectId,
+        ProjectMemberRole.viewer,
+      );
+      return;
+    }
+    await this.storyPermissions.requireProject(userId, projectId, 'story.read');
   }
 }
