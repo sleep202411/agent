@@ -24,24 +24,25 @@ echo "=== disk free before prune: $(df -h / | awk 'NR==2{print $4}') ==="
 docker image prune -f >/dev/null 2>&1 || true
 echo "=== disk free after prune:  $(df -h / | awk 'NR==2{print $4}') ==="
 # IMPORTANT: do NOT write a root .npmrc here. A root .npmrc makes
-# `turbo prune --docker` (used by apps/server/Dockerfile) drop package-lock.json
-# from out/json/, so `npm ci` fails with EUSAGE. registry.npmjs.org is reachable
-# from cn-hangzhou ECS (npm's built-in fetch-retries cover transient blips); if a
-# mirror is ever required, set it per-Dockerfile (npm ci --registry=...), never
-# via a context-root .npmrc.
+# `turbo prune --docker` drop package-lock.json from out/json/, so `npm ci`
+# fails with EUSAGE. Hangzhou ECS often cannot reach registry.npmjs.org
+# (ECONNRESET); pass NPM_REGISTRY=npmmirror as a Dockerfile build-arg instead.
 
 echo "$(cat /root/.acr_token)" | docker login "$REG" -u "$(cat /root/.acr_user)" --password-stdin \
   || { echo "FATAL: ACR login"; exit 1; }
 rm -f /root/.acr_user /root/.acr_token
 export DOCKER_BUILDKIT=1
 
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+
 set -a; source apps/web/.env.production.cn; set +a
 SERVER_URL=http://fizzdragon-server:3001
 RESULT=""
 build() { # name dockerfile [extra build-args...]
   local name=$1 df=$2; shift 2
-  echo "=== [$(date +%T)] BUILD $name ==="
-  if docker build -f "$df" -t "$REG/$NS/fizzdragon-$name:$TAG" "$@" . ; then
+  echo "=== [$(date +%T)] BUILD $name (npm=$NPM_REGISTRY) ==="
+  if docker build -f "$df" -t "$REG/$NS/fizzdragon-$name:$TAG" \
+      --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" . ; then
     echo "=== [$(date +%T)] PUSH $name ==="
     docker push "$REG/$NS/fizzdragon-$name:$TAG" && RESULT="$RESULT $name:OK" || RESULT="$RESULT $name:PUSHFAIL"
   else RESULT="$RESULT $name:BUILDFAIL"; fi

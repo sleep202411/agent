@@ -23,13 +23,19 @@ echo "$(cat /root/.acr_token)" | docker login "$REG" -u "$(cat /root/.acr_user)"
 rm -f /root/.acr_user /root/.acr_token
 export DOCKER_BUILDKIT=1
 
+# Hangzhou ECS cannot reliably reach registry.npmjs.org (ECONNRESET). Use the
+# npmmirror via Dockerfile NPM_REGISTRY build-arg — never a context-root .npmrc
+# (breaks turbo prune lockfile emission).
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+
 set -a; source apps/web/.env.production.cn; set +a
 SERVER_URL=http://fizzdragon-server:3001
 RESULT=""
 build() {
   local name=$1 df=$2; shift 2
-  echo "=== [$(date +%T)] BUILD $name ==="
-  if docker build -f "$df" -t "$REG/$NS/fizzdragon-$name:$TAG" "$@" . ; then
+  echo "=== [$(date +%T)] BUILD $name (npm=$NPM_REGISTRY) ==="
+  if docker build -f "$df" -t "$REG/$NS/fizzdragon-$name:$TAG" \
+      --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" . ; then
     echo "=== [$(date +%T)] PUSH $name ==="
     docker push "$REG/$NS/fizzdragon-$name:$TAG" && RESULT="$RESULT $name:OK" || RESULT="$RESULT $name:PUSHFAIL"
   else RESULT="$RESULT $name:BUILDFAIL"; fi

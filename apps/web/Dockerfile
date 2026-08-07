@@ -2,16 +2,21 @@ FROM node:22-alpine AS base
 
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
-RUN npm install -g turbo@^2
+# Optional mirror for CN ECS (npmjs.org often ECONNRESET from Hangzhou).
+# .com ACR builds leave the default. Never bake a root .npmrc — it breaks
+# `turbo prune --docker` lockfile emission.
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune web --docker
 
 # ─── Stage 2: Install dependencies ───────────────────────
 FROM base AS deps
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 # ─── Stage 3: Build ──────────────────────────────────────
 FROM base AS builder
