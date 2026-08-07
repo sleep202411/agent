@@ -41,7 +41,7 @@ interface Partner {
 }
 
 type Highlight = Pick<Partner, "slug" | "ext"> & {
-  key: "nvidia" | "microsoft" | "alibaba" | "sgtech" | "accenture";
+  key: "nvidia" | "microsoft" | "alibaba" | "sgtech" | "accenture" | "auba";
   /** Extra display scale for wordmarks that still look small in the badge. */
   scale?: number;
 };
@@ -52,6 +52,7 @@ const HIGHLIGHTS: Highlight[] = [
   { key: "alibaba", slug: "alibaba", ext: "svg" },
   { key: "sgtech", slug: "sgtech", ext: "png" },
   { key: "accenture", slug: "accenture", ext: "png", scale: 1.65 },
+  { key: "auba", slug: "auba", ext: "svg", scale: 1.35 },
 ];
 
 /**
@@ -70,6 +71,7 @@ const PARTNERS: Partner[] = [
   { slug: "cyberport", name: "Cyberport", ext: "png" },
   { slug: "sgtech", name: "SGTech", ext: "png" },
   { slug: "accenture", name: "Accenture", ext: "png" },
+  { slug: "auba", name: "AUBA for Global", ext: "svg" },
   { slug: "block71", name: "BLOCK71 (NUS Enterprise)", ext: "png" },
   { slug: "ipos-international", name: "IPOS International", ext: "png" },
   { slug: "acm", name: "ACM (Association for Computing Machinery)", ext: "png" },
@@ -163,12 +165,14 @@ export function PartnersMarquee() {
         <p className="mx-auto mt-5 max-w-2xl text-balance text-base text-muted-foreground sm:text-lg">
           {t("partners.subtitle")}
         </p>
+      </div>
 
-        <div className="mx-auto mt-12 grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {HIGHLIGHTS.map((item) => (
-            <HighlightCard key={item.key} item={item} />
-          ))}
-        </div>
+      {/* Wider than the heading column so 6 cards keep the same track
+          width as the original 5-up `max-w-6xl` grid (≈13.8rem each). */}
+      <div className="mx-auto mt-12 grid max-w-[87rem] gap-3 px-6 sm:grid-cols-2 lg:grid-cols-6">
+        {HIGHLIGHTS.map((item) => (
+          <HighlightCard key={item.key} item={item} />
+        ))}
       </div>
 
       <div
