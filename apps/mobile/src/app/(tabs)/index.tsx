@@ -33,6 +33,7 @@ import {
   type ExperienceGameSummary,
 } from "@/data/interactive-film-api";
 import type { Genre, IpSummary } from "@/data/types";
+import { navigateToPlay } from "@/features/experience-player";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -47,8 +48,8 @@ function openIp(id: string) {
   router.push(toHref(`/ip/${id}`));
 }
 
-function openGame(gameId: string) {
-  router.push(toHref(`/play/${gameId}`));
+function openGame(game: ExperienceGameSummary) {
+  navigateToPlay(router, game);
 }
 
 export default function IpDiscoveryScreen() {
@@ -473,7 +474,7 @@ function GameRailCard({ game, width }: { game: ExperienceGameSummary; width: num
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => openGame(game.gameId)}
+      onPress={() => openGame(game)}
       style={({ pressed }) => [{ width, maxWidth: width }, pressed && styles.pressed]}
     >
       <PosterImage

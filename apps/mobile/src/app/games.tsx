@@ -11,9 +11,9 @@ import {
   listPublishedInteractiveFilms,
   type ExperienceGameSummary,
 } from "@/data/interactive-film-api";
+import { navigateToPlay } from "@/features/experience-player";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { toHref } from "@/lib/navigation";
 
 export default function GamesScreen() {
   const t = useTranslations();
@@ -128,7 +128,7 @@ export default function GamesScreen() {
           renderItem={({ item }) => (
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push(toHref(`/play/${item.gameId}`))}
+              onPress={() => navigateToPlay(router, item)}
               style={({ pressed }) => [
                 styles.card,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },

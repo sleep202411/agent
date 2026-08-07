@@ -221,7 +221,7 @@ module.exports = ({ config }) => {
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
     version: "2.0.5",
-    orientation: "portrait",
+    orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: getScheme(appRegion, appVariant),
     userInterfaceStyle: "dark",
@@ -273,6 +273,12 @@ module.exports = ({ config }) => {
       "expo-localization",
       "expo-secure-store",
       "expo-sharing",
+      [
+        "expo-screen-orientation",
+        {
+          initialOrientation: "PORTRAIT_UP",
+        },
+      ],
       "expo-video",
       "expo-web-browser",
       [

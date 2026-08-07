@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
+import { lockAppPortrait } from "@/hooks/use-screen-orientation";
 import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
@@ -33,6 +34,9 @@ export default function RootLayout() {
   useEffect(() => {
     void initLocale();
     void checkForUpdate();
+    void lockAppPortrait().catch((error: unknown) => {
+      console.warn("[orientation] initial portrait lock failed", error);
+    });
   }, []);
 
   return (
@@ -42,7 +46,7 @@ export default function RootLayout() {
         <AuthProvider>
           <AnimatedSplashOverlay />
           <MobileAppFrame>
-            <Stack screenOptions={{ headerShown: false }}>
+            <Stack screenOptions={{ headerShown: false, orientation: "portrait" }}>
               <Stack.Screen name="(tabs)" />
               {/* Login / register / reset — a full-page route the gate pushes
                   (or replaces) onto the stack; always skippable. */}
@@ -54,7 +58,10 @@ export default function RootLayout() {
               <Stack.Screen name="delete-account" />
               <Stack.Screen name="ips" options={detailHeader} />
               <Stack.Screen name="games" options={detailHeader} />
-              <Stack.Screen name="play/[gameId]" options={detailHeader} />
+              <Stack.Screen
+                name="play/[gameId]"
+                options={{ ...detailHeader, orientation: "landscape" }}
+              />
               <Stack.Screen name="ip/[id]" options={detailHeader} />
               <Stack.Screen name="crew/[id]" options={detailHeader} />
               <Stack.Screen name="creator/[id]" options={detailHeader} />
