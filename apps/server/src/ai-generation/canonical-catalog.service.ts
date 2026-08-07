@@ -42,6 +42,7 @@ import { BailianCatalogService } from './providers/bailian/bailian-catalog.servi
 import { ReplicateCatalogService } from './providers/replicate/replicate-catalog.service';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
+import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -71,6 +72,7 @@ export class AiCanonicalCatalogService {
     private readonly replicate: ReplicateCatalogService,
     private readonly bytePlus: BytePlusCatalogService,
     private readonly agnes: AgnesCatalogService,
+    private readonly minimax: MiniMaxCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
@@ -78,6 +80,7 @@ export class AiCanonicalCatalogService {
       'aliyun-bailian': this.bailian,
       replicate: this.replicate,
       'agnes-ai': this.agnes,
+      minimax: this.minimax,
     };
   }
 
