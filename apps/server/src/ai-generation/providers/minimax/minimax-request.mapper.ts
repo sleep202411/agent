@@ -151,8 +151,12 @@ function resolveResolution(input: Record<string, unknown>): '768P' | '2K' {
 }
 
 /**
- * Official ratio enum: adaptive | 21:9 | 16:9 | 4:3 | 1:1 | 3:4 | 9:16.
- * Studio may still send legacy Seedance "auto" — treat as adaptive.
+ * Wire ratio for MiniMax-H3 (OpenAPI enum only — never send product "Auto").
+ *   adaptive | 21:9 | 16:9 | 4:3 | 1:1 | 3:4 | 9:16
+ *
+ * Studio product UI labels both Seedance `auto` and MiniMax `adaptive` as
+ * "Auto"; this mapper is the place that turns product/settings values into
+ * the official wire token.
  *
  * t2va: concrete ratio required (not adaptive) — default 16:9 if missing.
  * i2va: always adaptive.
