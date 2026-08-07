@@ -1,7 +1,19 @@
 "use client";
 
-import { estimateProductModelPoints, type AiProductPricingPolicy } from "@repo/shared";
+import {
+  estimateProductModelPoints,
+  firstBlockingValidationMessage,
+  hasBlockingValidationIssues,
+  validateGenerationInput,
+  withAttachedUiOptions,
+  type AiObjectSchema,
+  type AiProductPricingPolicy,
+  type MediaRefSnapshot,
+  type ValidationIssue,
+} from "@repo/shared";
 import { api } from "@/lib/api";
+
+export type { MediaRefSnapshot, ValidationIssue };
 
 export type FizzAiJobType = "image" | "video";
 export type FizzAiGenerationMode =
@@ -44,6 +56,15 @@ type FizzAiSchemaProperty = {
     order?: number;
     unit?: string;
     importance?: string;
+    /**
+     * Explicit option list (preferred). `value` is stored/submitted; `label` /
+     * `labelKey` is display-only. When absent, UI falls back to bare `enum`.
+     */
+    options?: Array<{
+      value: string | number | boolean;
+      label?: string;
+      labelKey?: string;
+    }>;
     /** Upload constraint metadata (reference upload fields). */
     accept?: string;
     mediaKind?: FizzAiReferenceKind;
@@ -287,6 +308,7 @@ export interface GenerationState {
     accessUrl?: string;
     width?: number;
     height?: number;
+    durationSeconds?: number;
   }[];
   errorCode?: string;
   error?: string;
@@ -325,6 +347,7 @@ export function generationStateFromJob(job: {
     accessUrl?: string;
     width?: number;
     height?: number;
+    durationSeconds?: number;
   }>;
   error?: { code?: string; userMessage?: string; message?: string };
 }): GenerationState {
@@ -342,6 +365,7 @@ export function generationStateFromJob(job: {
       accessUrl: output.accessUrl,
       width: output.width,
       height: output.height,
+      durationSeconds: output.durationSeconds,
     })),
     errorCode: job.error?.code,
     error: safeGenerationErrorMessage(rawError),
@@ -744,10 +768,82 @@ export type ReferenceRowLike = {
   id: string;
   url: string;
   assetId?: string;
+  /** Exact media duration when known (video/audio). Required by catalog duration rules. */
+  durationSeconds?: number | null;
+  bytes?: number | null;
+  kind?: FizzAiReferenceKind;
+  uploading?: boolean;
 };
 
-function referenceEntry(row: ReferenceRowLike): string | Record<string, string> {
-  return row.assetId ? { url: row.url, assetId: row.assetId, refId: row.id } : row.url;
+function referenceEntry(row: ReferenceRowLike): string | Record<string, string | number> {
+  const duration =
+    typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)
+      ? row.durationSeconds
+      : undefined;
+  const bytes = typeof row.bytes === "number" && Number.isFinite(row.bytes) ? row.bytes : undefined;
+  // Prefer object form whenever we have metadata the server kernel needs.
+  if (row.assetId || duration != null || bytes != null) {
+    return {
+      url: row.url,
+      ...(row.assetId ? { assetId: row.assetId, refId: row.id } : {}),
+      ...(duration != null ? { durationSeconds: duration } : {}),
+      ...(bytes != null ? { bytes } : {}),
+    };
+  }
+  return row.url;
+}
+
+/**
+ * Catalog-driven preflight (same pure kernel as the server). Call before submit;
+ * surface blocking issues with Alert — never add model-specific ifs here.
+ */
+export function validateModelGenerationInput(
+  model: FizzAiModel,
+  input: Record<string, unknown>,
+  media?: readonly MediaRefSnapshot[]
+): ValidationIssue[] {
+  return validateGenerationInput({
+    inputSchema: model.input_schema ?? {},
+    input,
+    media,
+  });
+}
+
+export function generationInputHasBlockingIssues(issues: readonly ValidationIssue[]): boolean {
+  return hasBlockingValidationIssues(issues);
+}
+
+export function firstGenerationValidationMessage(
+  issues: readonly ValidationIssue[]
+): string | undefined {
+  return firstBlockingValidationMessage(issues);
+}
+
+/** Build MediaRefSnapshot[] from canvas reference rows for the active mode. */
+export function mediaSnapshotsForMode(
+  model: FizzAiModel,
+  mode: string | undefined,
+  references: Record<string, ReferenceRowLike[] | undefined> | undefined
+): MediaRefSnapshot[] {
+  const snapshots: MediaRefSnapshot[] = [];
+  for (const field of referenceFieldsForMode(model, mode)) {
+    for (const row of references?.[field.field] ?? []) {
+      if (!/^https?:/i.test(row.url) && !row.url.startsWith("blob:")) continue;
+      if (row.uploading) continue;
+      snapshots.push({
+        field: field.field,
+        kind: row.kind ?? field.kind,
+        url: row.url,
+        assetId: row.assetId,
+        durationSeconds:
+          typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)
+            ? row.durationSeconds
+            : null,
+        bytes: typeof row.bytes === "number" && Number.isFinite(row.bytes) ? row.bytes : null,
+      });
+    }
+  }
+  return snapshots;
 }
 
 export type PromptReferenceRowLike = ReferenceRowLike & {
@@ -853,6 +949,15 @@ export type SchemaControl =
   | "image_upload"
   | (string & {});
 
+/** One selectable option: value is settings/wire; label is UI-only. */
+export interface SchemaFieldOption {
+  value: string | number | boolean;
+  /** Plain display string when no i18n key. */
+  label?: string;
+  /** i18n key under canvasControls (e.g. sizePresets.auto). */
+  labelKey?: string;
+}
+
 export interface SchemaFieldDescriptor {
   name: string;
   control: SchemaControl;
@@ -860,6 +965,8 @@ export interface SchemaFieldDescriptor {
   order: number;
   type: string;
   enum: (string | number)[] | null;
+  /** Prefer over bare enum for labels (protocol x-ui.options). */
+  options: SchemaFieldOption[] | null;
   default: string | number | boolean | undefined;
   min?: number;
   max?: number;
@@ -896,18 +1003,46 @@ export function schemaFields(model: FizzAiModel | undefined): SchemaFieldDescrip
     // The main prompt (composer-owned) + reference/upload fields are NOT panel
     // settings. Other text fields (e.g. negativePrompt) ARE rendered here.
     if (name === "prompt" || control === "image_upload" || group === "references") continue;
+    const enumValues = Array.isArray(prop.enum)
+      ? prop.enum.filter(
+          (value): value is string | number =>
+            typeof value === "string" || typeof value === "number"
+        )
+      : null;
+    const rawOptions = Array.isArray(ui.options) ? ui.options : null;
+    const options: SchemaFieldOption[] | null = rawOptions
+      ? rawOptions
+          .filter(
+            (opt) =>
+              opt &&
+              (typeof opt.value === "string" ||
+                typeof opt.value === "number" ||
+                typeof opt.value === "boolean")
+          )
+          .map((opt) => ({
+            value: opt.value,
+            label: typeof opt.label === "string" ? opt.label : undefined,
+            labelKey: typeof opt.labelKey === "string" ? opt.labelKey : undefined,
+          }))
+      : null;
+
     fields.push({
       name,
       control,
       group,
       order: typeof ui.order === "number" ? ui.order : 999,
       type: prop.type ?? "string",
-      enum: Array.isArray(prop.enum)
-        ? prop.enum.filter(
-            (value): value is string | number =>
-              typeof value === "string" || typeof value === "number"
-          )
-        : null,
+      // Prefer option values as the enum source when catalog shipped options.
+      enum:
+        options && options.length > 0
+          ? options
+              .map((opt) => opt.value)
+              .filter(
+                (value): value is string | number =>
+                  typeof value === "string" || typeof value === "number"
+              )
+          : enumValues,
+      options,
       default: prop.default as string | number | boolean | undefined,
       min: typeof prop.minimum === "number" ? prop.minimum : undefined,
       max: typeof prop.maximum === "number" ? prop.maximum : undefined,
@@ -1060,9 +1195,18 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
   const response = await api.get<FizzAiCatalog>("/aurora/ai/models", {
     timeout: 15_000,
   });
+  const models = Array.isArray(response.models) ? response.models : [];
+  // Catalog boundary should already attach options; client re-applies so older
+  // caches / non-canonical catalog paths still get label/value-first enums.
   return {
     ...response,
-    models: Array.isArray(response.models) ? response.models : [],
+    models: models.map((model) => {
+      if (!model.input_schema) return model;
+      return withAttachedUiOptions({
+        ...model,
+        input_schema: model.input_schema as AiObjectSchema,
+      }) as FizzAiModel;
+    }),
   };
 }
 

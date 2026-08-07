@@ -29,6 +29,12 @@ export type CardReference = {
   /** Present when the reference came from a wired source node (vs an upload). */
   edgeId?: string;
   sourceNodeId?: string;
+  /**
+   * Exact duration in seconds when known (video/audio). Catalog duration rules
+   * require this; missing values hard-fail preflight validation.
+   */
+  durationSeconds?: number | null;
+  bytes?: number | null;
   /** Transient: an uploaded reference still streaming to storage (local blob
    *  preview, NOT yet persisted to the doc). Shown with a spinner, no remove. */
   uploading?: boolean;

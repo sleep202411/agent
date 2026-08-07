@@ -75,6 +75,21 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   return undefined;
 }
 
+/** Known media duration (seconds) on a source node, when the catalog needs it. */
+export function sourceMediaDurationSeconds(getNode: GetNode, nodeId: string): number | undefined {
+  const node = getNode(nodeId);
+  if (!node) return undefined;
+  if (node.type === "prompt" || node.type === "video") {
+    const seconds = (node.data as GenerationNodeData).generation?.outputs?.[0]?.durationSeconds;
+    return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
+  }
+  if (node.type === "videoAsset" || node.type === "audioAsset") {
+    const seconds = (node.data as { durationSeconds?: number | null }).durationSeconds;
+    return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
+  }
+  return undefined;
+}
+
 /** Route a source kind to a reference field on a target generation card. */
 function routeForCard(ctx: WiringCtx, cardId: string, kind: string) {
   const node = ctx.getNode(cardId);
@@ -95,6 +110,7 @@ export function bindEdgeReference(
   const kind = sourceOutputKind(ctx.getNode, source);
   const url = sourceMediaUrl(ctx.getNode, source);
   const assetId = sourceMediaAssetId(ctx.getNode, source);
+  const durationSeconds = sourceMediaDurationSeconds(ctx.getNode, source);
   const routed = kind ? routeForCard(ctx, target, kind) : undefined;
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
@@ -106,6 +122,7 @@ export function bindEdgeReference(
     url,
     kind,
     ...(assetId ? { assetId } : {}),
+    ...(durationSeconds != null ? { durationSeconds } : {}),
   };
   ctx.graph.patchNodeData(target, (node) => {
     const refs = (node.data as GenerationNodeData).references ?? {};

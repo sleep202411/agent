@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconAdjustments,
@@ -17,6 +17,7 @@ import {
   type FizzAiModel,
   type FizzAiReferenceFieldConstraints,
   type ModelSettings as ModelSettingsBag,
+  type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
 import { useModeLabel } from "@/lib/canvas-authoring/use-labels";
 import { ModelPicker } from "@/components/canvas/authoring/model-picker";
@@ -26,6 +27,7 @@ import {
 } from "@/components/canvas/authoring/model-settings";
 import { ComposerQuickSettings } from "@/components/canvas/authoring/composer-quick-settings";
 import { ModeMenu } from "@/components/canvas/authoring/mode-menu";
+import { ValidationAlertDialog } from "@/components/canvas/authoring/validation-alert-dialog";
 import { ReferenceFan } from "./reference-fan";
 import type { ReferenceUpload } from "./use-reference-uploads";
 import {
@@ -65,6 +67,8 @@ export function StudioComposer({
   canSubmit,
   submitting,
   error,
+  validationIssues,
+  onDismissValidation,
   onSubmit,
   docked = true,
 }: {
@@ -87,6 +91,10 @@ export function StudioComposer({
   canSubmit: boolean;
   submitting: boolean;
   error?: string | null;
+  /** Catalog-driven preflight issues (Alert Dialog). */
+  validationIssues?: ValidationIssue[];
+  /** Clear parent validation / error state when the dialog closes. */
+  onDismissValidation?: () => void;
   onSubmit: () => void;
   /** Bottom-docked (feed pages) vs in-flow (e.g. the home hero). */
   docked?: boolean;
@@ -95,6 +103,7 @@ export function StudioComposer({
   const tc = useTranslations("common");
   const ml = useModeLabel();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [mentionActive, setMentionActive] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -108,6 +117,12 @@ export function StudioComposer({
   // Generation is public to browse but gated to run: prompt sign-in on submit
   // when signed out, then resume the submit on success.
   const gatedSubmit = () => requireAuth(onSubmit);
+
+  const validationOpen = Boolean(validationIssues && validationIssues.length > 0);
+  // Plain submit errors (e.g. insufficient credits) also use Alert Dialog.
+  useEffect(() => {
+    if (error) setErrorDialogOpen(true);
+  }, [error]);
 
   const showReferences = referenceFields.length > 0;
   const showSettingsButton = useMemo(() => hasRenderableModelSettings(model, true), [model]);
@@ -274,7 +289,24 @@ export function StudioComposer({
         )}
       </div>
 
-      {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+      <ValidationAlertDialog
+        open={validationOpen}
+        onOpenChange={(open) => {
+          if (!open) onDismissValidation?.();
+        }}
+        title={t("validationBlockedTitle")}
+        issues={validationIssues}
+        formatIssue={t}
+      />
+      <ValidationAlertDialog
+        open={!validationOpen && errorDialogOpen && Boolean(error)}
+        onOpenChange={(open) => {
+          setErrorDialogOpen(open);
+          if (!open) onDismissValidation?.();
+        }}
+        title={t("validationBlockedTitle")}
+        message={error}
+      />
 
       {/* Controls row */}
       <div className="mt-3 flex items-center gap-1.5">

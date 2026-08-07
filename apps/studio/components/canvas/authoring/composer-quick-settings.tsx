@@ -91,7 +91,19 @@ export function ComposerQuickSettings({
     if (isSizeField(field)) {
       const token = String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "");
       const info = sizeTokenInfo(token);
-      const label = "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
+      const fromOptions = field.options?.find((o) => String(o.value) === token);
+      let label: string;
+      if (fromOptions?.labelKey) {
+        try {
+          label = t(fromOptions.labelKey as "sizePresets.auto");
+        } catch {
+          label = fromOptions.label ?? token;
+        }
+      } else if (fromOptions?.label) {
+        label = fromOptions.label;
+      } else {
+        label = "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
+      }
       return (
         <span className="flex items-center gap-1.5">
           <AspectGlyph w={info.w} h={info.h} />

@@ -106,6 +106,7 @@ const COUNT_FIELD: SchemaFieldDescriptor = {
   order: 999,
   type: "integer",
   enum: [1, 2, 3, 4],
+  options: null,
   default: 1,
 };
 

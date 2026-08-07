@@ -110,6 +110,29 @@ export function AspectGlyph({ w, h }: { w: number; h: number }) {
   );
 }
 
+function resolveOptionLabel(
+  token: string,
+  field: SchemaFieldDescriptor,
+  t: ReturnType<typeof useTranslations<"canvasControls">>
+): { label: string; w: number; h: number } {
+  const fromOptions = field.options?.find((opt) => String(opt.value) === token);
+  if (fromOptions?.labelKey) {
+    const info = sizeTokenInfo(token);
+    return {
+      label: t(fromOptions.labelKey as "sizePresets.auto"),
+      w: info.w,
+      h: info.h,
+    };
+  }
+  if (fromOptions?.label) {
+    const info = sizeTokenInfo(token);
+    return { label: fromOptions.label, w: info.w, h: info.h };
+  }
+  const info = sizeTokenInfo(token);
+  const label = "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
+  return { label, w: info.w, h: info.h };
+}
+
 export function SizeGrid({
   field,
   value,
@@ -122,9 +145,8 @@ export function SizeGrid({
   const t = useTranslations("canvasControls");
   const items = (field.enum ?? []).map((raw) => {
     const token = String(raw);
-    const info = sizeTokenInfo(token);
-    const label = "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
-    return { token, label, w: info.w, h: info.h };
+    const { label, w, h } = resolveOptionLabel(token, field, t);
+    return { token, label, w, h };
   });
   // Long labels (preset names like "Landscape 16:9") need wider cells than the
   // short ratio tokens ("16:9"), so drop to 3 columns when any label is long.
@@ -158,16 +180,19 @@ export function SizeGrid({
 
 function Segmented({
   options,
+  labels,
   value,
   onChange,
 }: {
   options: (string | number)[];
+  /** Parallel display labels; falls back to String(opt) when missing. */
+  labels?: string[];
   value: string | number | undefined;
   onChange: (v: string | number) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {options.map((opt) => (
+      {options.map((opt, i) => (
         <button
           key={String(opt)}
           type="button"
@@ -179,7 +204,7 @@ function Segmented({
               : "bg-white/[0.05] text-muted-foreground hover:text-foreground"
           )}
         >
-          {opt}
+          {labels?.[i] ?? String(opt)}
         </button>
       ))}
     </div>
@@ -220,6 +245,20 @@ export function Field({
         field.enum && (
           <Segmented
             options={field.enum}
+            labels={field.enum.map((opt) => {
+              const token = String(opt);
+              const fromOptions = field.options?.find((o) => String(o.value) === token);
+              if (fromOptions?.labelKey) {
+                try {
+                  return t(fromOptions.labelKey as "sizePresets.auto");
+                } catch {
+                  return fromOptions.label ?? token;
+                }
+              }
+              if (fromOptions?.label) return fromOptions.label;
+              const info = sizeTokenInfo(token);
+              return "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
+            })}
             value={typeof value === "boolean" ? undefined : value}
             onChange={(v) => set(v)}
           />
