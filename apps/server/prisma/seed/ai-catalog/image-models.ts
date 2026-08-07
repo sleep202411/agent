@@ -67,14 +67,19 @@ import {
   type RequiredPlan,
 } from './defaults';
 
-/** The reconciled provider-account keys (see `AI_PROVIDER_KEYS`). */
+/**
+ * Provider keys allowed on seed bindings.
+ * Active generation: see `AI_PROVIDER_KEYS`. Deprecated (no new gen routing):
+ * microsoft-foundry, replicate — kept only so historical seed types compile.
+ */
 export type ProviderKey =
   | 'fal-ai'
   | 'byteplus-modelark'
   | 'aliyun-bailian'
+  | 'agnes-ai'
+  | 'minimax'
   | 'microsoft-foundry'
-  | 'replicate'
-  | 'agnes-ai';
+  | 'replicate';
 
 /**
  * A provider that backs a canonical model and HAS a reconciled account.

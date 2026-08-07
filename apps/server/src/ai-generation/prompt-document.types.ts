@@ -40,6 +40,9 @@ export interface AiSubmitReferenceBinding {
   weight?: number;
   characterId?: string;
   groupRefId?: string;
+  /** Measured media duration when known (video/audio). */
+  durationSeconds?: number;
+  bytes?: number;
 }
 
 export interface AiPromptReferenceBinding {
@@ -56,6 +59,8 @@ export interface AiPromptReferenceBinding {
   groupRefId?: string;
   /** Set on members of an expanded character group — the StudioCharacter id. */
   characterId?: string;
+  durationSeconds?: number;
+  bytes?: number;
 }
 
 export interface AiPromptStyleBinding {
