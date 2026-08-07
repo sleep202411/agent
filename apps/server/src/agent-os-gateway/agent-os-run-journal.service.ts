@@ -1,0 +1,130 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../infra/db/db.module';
+
+export type AgentOsJournalEvent = {
+  id: string;
+  protocolVersion: string;
+  sessionId: string;
+  runId: string;
+  conversationId: string;
+  sequence: number;
+  timestamp: string;
+  type: string;
+  data: Record<string, unknown>;
+};
+
+/**
+ * Durable product-facing event journal for Agent OS runs.
+ * PostgreSQL is authoritative for reconnect; Ably (later) only accelerates.
+ */
+@Injectable()
+export class AgentOsRunJournalService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async upsertSnapshot(input: {
+    runId: string;
+    projectId: string;
+    conversationId: string;
+    actorId: string;
+    modelProfileId: string;
+    status: string;
+    events: AgentOsJournalEvent[];
+    pendingApproval?: unknown;
+    assistantText?: string | null;
+  }): Promise<void> {
+    const lastSequence =
+      input.events.length === 0
+        ? 0
+        : Math.max(...input.events.map((event) => event.sequence));
+
+    await this.prisma.agentOsRun.upsert({
+      where: { id: input.runId },
+      create: {
+        id: input.runId,
+        projectId: input.projectId,
+        conversationId: input.conversationId,
+        actorId: input.actorId,
+        modelProfileId: input.modelProfileId,
+        status: input.status,
+        lastSequence,
+        events: input.events as unknown as Prisma.InputJsonValue,
+        pendingApproval:
+          (input.pendingApproval as Prisma.InputJsonValue | undefined) ??
+          Prisma.JsonNull,
+        assistantText: input.assistantText ?? null,
+      },
+      update: {
+        status: input.status,
+        lastSequence,
+        events: input.events as unknown as Prisma.InputJsonValue,
+        pendingApproval:
+          input.pendingApproval === undefined
+            ? undefined
+            : ((input.pendingApproval as Prisma.InputJsonValue | null) ??
+              Prisma.JsonNull),
+        assistantText: input.assistantText ?? null,
+      },
+    });
+  }
+
+  async getEventsAfter(
+    runId: string,
+    afterSequence: number,
+  ): Promise<{
+    runId: string;
+    status: string;
+    events: AgentOsJournalEvent[];
+    pendingApproval: unknown;
+    assistantText: string | null;
+  } | null> {
+    const row = await this.prisma.agentOsRun.findUnique({
+      where: { id: runId },
+    });
+    if (!row) return null;
+    const all = parseEvents(row.events);
+    return {
+      runId: row.id,
+      status: row.status,
+      events: all.filter((event) => event.sequence > afterSequence),
+      pendingApproval: row.pendingApproval,
+      assistantText: row.assistantText,
+    };
+  }
+}
+
+function parseEvents(value: Prisma.JsonValue): AgentOsJournalEvent[] {
+  if (!Array.isArray(value)) return [];
+  const out: AgentOsJournalEvent[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.sequence !== 'number' || typeof row.type !== 'string') {
+      continue;
+    }
+    out.push({
+      id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
+      protocolVersion:
+        typeof row.protocolVersion === 'string'
+          ? row.protocolVersion
+          : 'fizz.agent.v1',
+      sessionId: typeof row.sessionId === 'string' ? row.sessionId : '',
+      runId: typeof row.runId === 'string' ? row.runId : '',
+      conversationId:
+        typeof row.conversationId === 'string' ? row.conversationId : '',
+      sequence: row.sequence,
+      timestamp:
+        typeof row.timestamp === 'string'
+          ? row.timestamp
+          : new Date().toISOString(),
+      type: row.type,
+      data:
+        row.data !== null &&
+        typeof row.data === 'object' &&
+        !Array.isArray(row.data)
+          ? (row.data as Record<string, unknown>)
+          : {},
+    });
+  }
+  return out;
+}

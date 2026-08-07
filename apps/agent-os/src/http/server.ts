@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { MemorySaver } from "@langchain/langgraph";
 import type { DomainPort } from "@repo/agent-tools";
 import { createLiteLlmChatModel, isLiveModelConfigured } from "@repo/model-router";
 
+import { getAgentOsCheckpointer } from "../runtime/checkpointer.js";
 import { createWorkerDomainPort } from "../runtime/http-domain-port.js";
 import { LangGraphRunService } from "../runtime/langgraph-run-service.js";
 
@@ -12,10 +12,10 @@ import { LangGraphRunService } from "../runtime/langgraph-run-service.js";
  *
  * Phase 1: free, no rate limit. Caller must still pass actorId + projectId.
  * Character tools use Nest Domain when AGENT_OS_DOMAIN_URL is set.
+ * Checkpoints use Postgres when DATABASE_URL / AGENT_OS_CHECKPOINT_DATABASE_URL set.
  */
 
 const service = new LangGraphRunService();
-const checkpointer = new MemorySaver();
 /** Per-project domain ports (HTTP+local composite or pure in-memory). */
 const domainsByProject = new Map<string, DomainPort>();
 /** runId → projectId for approval resume domain lookup. */
@@ -63,6 +63,11 @@ export function createAgentOsHttpServer() {
           product: "FizzDragon Agent Platform",
           codename: "Agent OS",
           liveModel: isLiveModelConfigured(),
+          checkpoint:
+            Boolean(process.env.AGENT_OS_CHECKPOINT_DATABASE_URL?.trim()) ||
+            Boolean(process.env.DATABASE_URL?.trim())
+              ? "postgres"
+              : "memory",
           billing: "free",
           rateLimit: "disabled",
         });
@@ -106,7 +111,6 @@ export function createAgentOsHttpServer() {
         const domain = domainForProject(body.projectId, body.scriptText);
         runProject.set(runId, body.projectId);
         if (body.scriptText?.trim()) {
-          // Persist script into Nest domain for platform projects (fail loud if remote rejects).
           const storeResult = await domain.execute(
             "script.store",
             { text: body.scriptText.trim() },
@@ -129,6 +133,7 @@ export function createAgentOsHttpServer() {
             return;
           }
         }
+        const checkpointer = await getAgentOsCheckpointer();
         const model = createLiteLlmChatModel({
           profileId: body.modelProfileId,
         });
@@ -189,6 +194,7 @@ export function createAgentOsHttpServer() {
         }
         const projectId = runProject.get(runId) ?? body.projectId;
         const domain = domainForProject(projectId);
+        const checkpointer = await getAgentOsCheckpointer();
         const model = createLiteLlmChatModel({
           profileId: body.modelProfileId,
         });
@@ -251,6 +257,11 @@ export function listenAgentOsHttp(port = Number(process.env.AGENT_OS_PORT ?? "43
         port,
         billing: "free",
         rateLimit: "disabled",
+        checkpoint:
+          Boolean(process.env.AGENT_OS_CHECKPOINT_DATABASE_URL?.trim()) ||
+          Boolean(process.env.DATABASE_URL?.trim())
+            ? "postgres"
+            : "memory",
       })}\n`
     );
   });

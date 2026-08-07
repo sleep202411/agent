@@ -1,4 +1,5 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
@@ -24,7 +25,7 @@ Do not invent project permissions. Tools enforce scope.`;
 export function createAgentOsGraph(input: {
   model: BaseChatModel;
   runtime: ToolRuntimeContext;
-  checkpointer?: MemorySaver;
+  checkpointer?: BaseCheckpointSaver;
 }) {
   const tools = buildLangChainTools(input.runtime);
   return createReactAgent({

@@ -14,6 +14,7 @@ import {
   AgentOsWorkerClient,
   type AgentOsWorkerRunResponse,
 } from './agent-os-worker.client';
+import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 
 @Injectable()
 export class AgentOsGatewayService {
@@ -23,6 +24,7 @@ export class AgentOsGatewayService {
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly prisma: PrismaService,
     private readonly config: AgentOsGatewayConfigService,
+    private readonly journal: AgentOsRunJournalService,
   ) {}
 
   async health() {
@@ -79,7 +81,23 @@ export class AgentOsGatewayService {
     after = 0,
   ) {
     await this.requireProjectRead(user.userId, projectId);
-    return this.worker.listEvents(runId, after);
+    // Prefer durable journal (reconnect-safe); fall back to worker memory.
+    const durable = await this.journal.getEventsAfter(runId, after);
+    if (durable) {
+      return {
+        runId: durable.runId,
+        status: durable.status,
+        events: durable.events,
+        pendingApproval: durable.pendingApproval,
+        assistantText: durable.assistantText,
+        source: 'postgres',
+      };
+    }
+    const live = (await this.worker.listEvents(runId, after)) as Record<
+      string,
+      unknown
+    >;
+    return { ...live, source: 'worker' as const };
   }
 
   private async requireProjectWrite(userId: string, projectId: string) {

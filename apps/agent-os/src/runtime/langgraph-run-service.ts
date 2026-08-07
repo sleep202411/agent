@@ -1,6 +1,7 @@
 import { HumanMessage } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { Command, MemorySaver, isInterrupted } from "@langchain/langgraph";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
+import { Command, isInterrupted } from "@langchain/langgraph";
 import type { AgentMode, PermissionMode } from "@repo/agent-policy";
 import type { AgentRunStatus } from "@repo/agent-protocol";
 import type { DomainPort } from "@repo/agent-tools";
@@ -8,6 +9,7 @@ import type { DomainPort } from "@repo/agent-tools";
 import { createAgentOsGraph } from "../graph/create-agent-graph.js";
 import type { ApprovalInterruptValue } from "../graph/build-langchain-tools.js";
 import { EventJournal } from "./event-journal.js";
+import { reportJournalToNest } from "./journal-reporter.js";
 
 export interface StartLangGraphRunInput {
   runId: string;
@@ -22,8 +24,8 @@ export interface StartLangGraphRunInput {
   permissionMode?: PermissionMode;
   model: BaseChatModel;
   domain: DomainPort;
-  /** Shared checkpointer so resume works across requests. */
-  checkpointer: MemorySaver;
+  /** Shared checkpointer so resume works across requests / restarts. */
+  checkpointer: BaseCheckpointSaver;
 }
 
 export interface LangGraphRunSnapshot {
@@ -32,6 +34,10 @@ export interface LangGraphRunSnapshot {
   journal: EventJournal;
   pendingApproval?: ApprovalInterruptValue & { approvalId: string };
   assistantText?: string;
+  projectId?: string;
+  actorId?: string;
+  modelProfileId?: string;
+  conversationId?: string;
 }
 
 function extractInterrupts(result: unknown): ApprovalInterruptValue[] {
@@ -51,7 +57,7 @@ function extractInterrupts(result: unknown): ApprovalInterruptValue[] {
 
 /**
  * Product run service on top of LangGraph createReactAgent.
- * Emits fizz.agent.v1 events for UI step timelines.
+ * Emits fizz.agent.v1 events for UI step timelines and reports them to Nest.
  */
 export class LangGraphRunService {
   private readonly snapshots = new Map<string, LangGraphRunSnapshot>();
@@ -116,10 +122,11 @@ export class LangGraphRunService {
       runId: input.runId,
       sessionId: input.sessionId,
       conversationId: input.conversationId,
+      projectId: input.projectId,
+      actorId: input.actorId,
+      modelProfileId: input.modelProfileId,
       journal,
       result,
-      graph,
-      config,
     });
   }
 
@@ -131,7 +138,7 @@ export class LangGraphRunService {
     modelProfileId: string;
     model: BaseChatModel;
     domain: DomainPort;
-    checkpointer: MemorySaver;
+    checkpointer: BaseCheckpointSaver;
     mode?: AgentMode;
     permissionMode?: PermissionMode;
     projectId: string;
@@ -178,8 +185,13 @@ export class LangGraphRunService {
         ...existing,
         status: "cancelled",
         pendingApproval: undefined,
+        projectId: input.projectId,
+        actorId: input.actorId,
+        modelProfileId: input.modelProfileId,
+        conversationId: input.conversationId,
       };
       this.snapshots.set(input.runId, cancelled);
+      await this.persist(cancelled);
       return cancelled;
     }
 
@@ -204,22 +216,24 @@ export class LangGraphRunService {
       runId: input.runId,
       sessionId: input.sessionId,
       conversationId: input.conversationId,
+      projectId: input.projectId,
+      actorId: input.actorId,
+      modelProfileId: input.modelProfileId,
       journal: existing.journal,
       result,
-      graph,
-      config,
     });
   }
 
-  private materialize(input: {
+  private async materialize(input: {
     runId: string;
     sessionId: string;
     conversationId: string;
+    projectId: string;
+    actorId: string;
+    modelProfileId: string;
     journal: EventJournal;
     result: unknown;
-    graph: unknown;
-    config: { configurable: { thread_id: string } };
-  }): LangGraphRunSnapshot {
+  }): Promise<LangGraphRunSnapshot> {
     const interrupts = extractInterrupts(input.result);
     if (isInterrupted(input.result) || interrupts.length > 0) {
       const approval = interrupts[0]!;
@@ -266,8 +280,13 @@ export class LangGraphRunService {
         status: "waiting_for_approval",
         journal: input.journal,
         pendingApproval: { ...approval, approvalId },
+        projectId: input.projectId,
+        actorId: input.actorId,
+        modelProfileId: input.modelProfileId,
+        conversationId: input.conversationId,
       };
       this.snapshots.set(input.runId, snapshot);
+      await this.persist(snapshot);
       return snapshot;
     }
 
@@ -304,8 +323,35 @@ export class LangGraphRunService {
       status: "completed",
       journal: input.journal,
       assistantText,
+      projectId: input.projectId,
+      actorId: input.actorId,
+      modelProfileId: input.modelProfileId,
+      conversationId: input.conversationId,
     };
     this.snapshots.set(input.runId, snapshot);
+    await this.persist(snapshot);
     return snapshot;
+  }
+
+  private async persist(snapshot: LangGraphRunSnapshot): Promise<void> {
+    if (
+      !snapshot.projectId ||
+      !snapshot.actorId ||
+      !snapshot.modelProfileId ||
+      !snapshot.conversationId
+    ) {
+      return;
+    }
+    await reportJournalToNest({
+      runId: snapshot.runId,
+      projectId: snapshot.projectId,
+      conversationId: snapshot.conversationId,
+      actorId: snapshot.actorId,
+      modelProfileId: snapshot.modelProfileId,
+      status: snapshot.status,
+      events: snapshot.journal.all(),
+      pendingApproval: snapshot.pendingApproval ?? null,
+      assistantText: snapshot.assistantText ?? null,
+    });
   }
 }
