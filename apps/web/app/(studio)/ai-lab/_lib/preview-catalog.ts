@@ -1,4 +1,4 @@
-import { AI_MODEL_PROTOCOL_DIALECT, AI_LEGACY_FOUNDRY_SCHEMA_DIALECT } from "@repo/shared";
+import { AI_MODEL_PROTOCOL_DIALECT } from "@repo/shared";
 import type { AiLabCatalog, AiLabModel } from "./types";
 
 const imageModel: AiLabModel = {
@@ -17,7 +17,7 @@ const imageModel: AiLabModel = {
   name: "Dragon Image Preview",
   description: "Local development schema preview for the new AI job surface.",
   enabled: true,
-  schemaDialect: AI_LEGACY_FOUNDRY_SCHEMA_DIALECT,
+  schemaDialect: AI_MODEL_PROTOCOL_DIALECT,
   schemaVersion: "preview-2026-05-27",
   documentation: [],
   capability_matrix: {

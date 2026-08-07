@@ -1,5 +1,4 @@
 import type {
-  AI_LEGACY_FOUNDRY_SCHEMA_DIALECT,
   AiAvailability,
   AiCapabilityMatrix,
   AiConditionExpression,
@@ -22,13 +21,10 @@ import type {
   AiUiOption,
   AiUiSchema,
 } from "./ai-schema.js";
+import { AI_MODEL_PROTOCOL_DIALECT, estimateAiPreflightCost } from "./ai-schema.js";
 import type { AiProductPricingPolicy } from "./billing.js";
 
-export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
-
-/** @deprecated Historical wire dialect URL; prefer AI_MODEL_PROTOCOL_DIALECT for new models. */
-export { AI_LEGACY_FOUNDRY_SCHEMA_DIALECT } from "./ai-schema.js";
-export { estimateAiPreflightCost } from "./ai-schema.js";
+export { AI_MODEL_PROTOCOL_DIALECT, estimateAiPreflightCost };
 
 // Re-export schema contract types (canonical names live in ai-schema).
 export type {
@@ -57,16 +53,14 @@ export type {
 export type AiInputSchema = AiObjectSchema;
 export type AiOutputSchema = AiObjectSchema;
 
-export type AiModelSchemaDialect =
-  | typeof AI_MODEL_PROTOCOL_DIALECT
-  | typeof AI_LEGACY_FOUNDRY_SCHEMA_DIALECT
-  | string;
+export type AiModelSchemaDialect = typeof AI_MODEL_PROTOCOL_DIALECT | string;
 
 export type AiModelProviderId =
-  | "microsoft-foundry"
   | "fal-ai"
   | "byteplus-modelark"
-  | "replicate"
+  | "aliyun-bailian"
+  | "agnes-ai"
+  | "minimax"
   | "dashscope"
   | "self-hosted"
   | string;
@@ -94,19 +88,15 @@ export type AiPricingUnit =
   | "provider_usage";
 
 /**
- * Canonical list of providers we onboard. Provider accounts are reconciled from
- * THIS list on boot (one draft account per key). A key may exist before its
- * server adapter does — that account is a draft placeholder: visible/editable in
- * admin, but generation through it fails the ProviderRegistry guard until the
- * adapter ships and the account is activated.
- */
-/**
- * Active generation providers. ProviderAccountReconciler upserts a draft
- * account for each key on boot so admin can activate bindings.
+ * Active AI Job generation providers. ProviderAccountReconciler upserts a
+ * draft account for each key on boot so admin can activate bindings. A key may
+ * exist before its server adapter does — that account is a draft placeholder
+ * until the adapter ships and the account is activated.
  *
- * Deprecated generation vendors (Foundry, Replicate) are NOT listed here —
- * they must not receive new draft accounts or generation routing. Labels for
- * historical rows remain in AI_PROVIDER_LABELS / AI_DEPRECATED_PROVIDER_KEYS.
+ * Historical DB rows may still store removed vendor strings (e.g. former
+ * Foundry/Replicate gen adapters); those are free-form `provider` columns, not
+ * onboarded keys. Agent project-cover may still use REPLICATE_API_TOKEN outside
+ * this list.
  */
 export const AI_PROVIDER_KEYS = [
   "fal-ai",
@@ -116,20 +106,13 @@ export const AI_PROVIDER_KEYS = [
   "minimax",
 ] as const;
 
-/** Product-deprecated generation providers (code may remain for non-gen tools). */
-export const AI_DEPRECATED_PROVIDER_KEYS = ["microsoft-foundry", "replicate"] as const;
-
-export type AiProviderKey =
-  | (typeof AI_PROVIDER_KEYS)[number]
-  | (typeof AI_DEPRECATED_PROVIDER_KEYS)[number];
+export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 
 /** Human-readable labels for the provider keys (admin UI). */
 export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "fal-ai": "Fal",
   "byteplus-modelark": "BytePlus ModelArk",
   "aliyun-bailian": "百炼",
-  "microsoft-foundry": "Azure Foundry (deprecated)",
-  replicate: "Replicate (deprecated)",
   "agnes-ai": "Agnes AI",
   minimax: "MiniMax",
 };

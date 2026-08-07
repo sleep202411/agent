@@ -335,7 +335,7 @@ IN_PROGRESS
 | Worker concurrency | `IMAGE_WORKER_CONCURRENCY` / `VIDEO_WORKER_CONCURRENCY` 在 `worker.service.ts`                                |
 | Per-user running   | `model.queue.perUserRunning`，submit 时强校验                                                                 |
 | Per-user queued    | `model.queue.perUserQueued`，submit 时强校验                                                                  |
-| Tier 门槛          | `FOUNDRY_IMAGE_MIN_TIER` / `FOUNDRY_VIDEO_MIN_TIER`，AuthGuard 注入的 sa-token user level 验证                |
+| Tier / plan 门槛   | `AiGenerationAuthzService` + model `entitlement_policy.requiredPlan`（entitlements 模块）                     |
 | Backoff            | `PROVIDER_429/5XX/TIMEOUT` 指数退避（worker 内置 5 档：2/6/14/30/60s）；validation/content filter 立即 FAILED |
 | Fairness           | FIFO 为默认；未来会员优先级用 BullMQ priority                                                                 |
 
@@ -343,21 +343,25 @@ IN_PROGRESS
 
 ### Provider 适配
 
-每个 provider 是 `ai-generation/providers/<name>/` 下的一组文件。今天只有 `foundry`。**通用层从不直接引用 Azure / fal / Replicate 的 SDK 或类型**——所有 provider 细节经 adapter 隔离。
+每个 provider 是 `ai-generation/providers/<name>/` 下的一组文件，经
+`ProviderAdapter` 注册进 `AiGenerationModule` / `ProviderRegistry`。
+**通用层从不直接引用上游 SDK 或类型**——所有 provider 细节经 adapter 隔离。
 
-Foundry 当前实现：
+当前 **已注册** 的 AI Job 生成 provider：`fal-ai`、`byteplus-modelark`、
+`aliyun-bailian`、`agnes-ai`、`minimax`。
 
-- **同步 HTTP**：`/openai/v1/images/generations` 一次 fetch 等回 base64，超时 240s，由 worker 持有 fetch 生命周期。
-- **请求构造**：`mapFoundryRequest` 是唯一把 domain `normalizedInput` 翻成 Azure body 的地方；Controller 不知道 Azure 字段名，前端更不拼 provider payload。
-- **catalog 发现**：`FoundryCatalogService` 同时尝试 env override / Foundry project deployments API / OpenAI compat `/models`，按 `FOUNDRY_MODEL_ALLOWLIST` 过滤。
-- **模型 schema**：`FoundrySchemaFactory` 生成 gpt-image-2 等模型的 input_schema + UI hints；schema 注释提示哪些选项实际可用（如 quality=auto 在 Azure preview 池死路，默认改成 `low`）。
-- **错误分类**：worker 把 HTTP status 翻成统一 `AiJobError.code`（`PROVIDER_429/5XX/TIMEOUT/...`），决定是否重试。
+- **请求构造**：各 adapter 的 request mapper 是唯一把 domain
+  `normalizedInput` 翻成上游 body 的地方；Controller / 前端不拼 provider payload。
+- **catalog / bindings**：产品 catalog 来自 Prisma `Ai*` 表 + seed；
+  运行时绑定由 `AiProviderModelBinding` 驱动。
+- **错误分类**：worker 把 HTTP status 翻成统一 `AiJobError.code`
+  （`PROVIDER_429/5XX/TIMEOUT/...`），决定是否重试。
+- **异步 provider**：走 `providerJobId` + 后台 poll 或 webhook；
+  webhook 入口有 `AiProviderEvent` + `(provider, providerEventId)` unique 防重。
 
-未来 provider（fal.ai / Replicate）：
-
-- 异步 provider 走 `providerJobId` + 后台 poll 或 webhook 模式。
-- webhook 入口已经有 `AiProviderEvent` 表 + `(provider, providerEventId)` unique 防重。
-- adapter 接口稳定后，加一家 provider = 一个目录 + 一行 module register。
+加一家 provider = 一个目录 + module 注册 + `AI_PROVIDER_KEYS` 入列。
+Agent 项目封面若仍调用 Replicate，用 **agent** 进程的 `REPLICATE_API_TOKEN`，
+与 server AI Job 生成路由无关。
 
 ### 输出持久化
 
@@ -421,10 +425,10 @@ Foundry 当前实现：
 | 状态字段不可写脏                       | ✅ Prisma enum：AiJobType / AiJobStatus / AiJobStage / AiAttemptStatus / AiProviderEventType / AiOutboxEventType |
 | 软删 schema 强保证                     | ✅ Repository 读路径默认 `deletedAt: null`；admin 才显式 `includeDeleted`                                        |
 | 乐观锁                                 | ✅ `version` 字段 + `repository.update(id, patch, expectedVersion)` 抛 `OptimisticLockError`                     |
-| Provider 抽象                          | ✅ `providers/foundry/` 隔离；通用层接 fal/Replicate 零代码改动                                                  |
+| Provider 抽象                          | ✅ `ProviderAdapter` + fal / byteplus / bailian / agnes / minimax                                                |
 | 完整 provider 出入参留底               | ✅ `ai_attempts.providerRequest/Response/Headers/Logs` 字段就位                                                  |
 | Webhook 防重                           | ✅ `ai_provider_events.(provider, providerEventId) unique`                                                       |
-| Tier 门槛                              | ✅ `AiGenerationAuthzService` + `FOUNDRY_*_MIN_TIER` env                                                         |
+| Tier / plan 门槛                       | ✅ `AiGenerationAuthzService` + model `entitlement_policy.requiredPlan`                                          |
 | Worker 写 attempts 行                  | ⚠️ 表已建，worker 还未在每次 provider 调用后落 attempt 行（attempt 字段聚合在 ai_jobs.attempt）                  |
 | 计费 ledger 幂等                       | □ 待做：`ai_cost_ledger` 独立表（schema TODO 已标注）                                                            |
 | 产品上下文（project/workspace/region） | □ 待做：等剧组 / 项目模块 ID 定型再加（schema TODO）                                                             |
