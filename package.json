@@ -30,6 +30,7 @@
   "workspaces": [
     "apps/admin-ui",
     "apps/agent",
+    "apps/agent-os",
     "apps/mobile",
     "apps/server",
     "apps/studio",
