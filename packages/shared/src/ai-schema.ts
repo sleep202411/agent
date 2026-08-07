@@ -1,16 +1,13 @@
-export const FOUNDRY_SCHEMA_DIALECT = "https://fizzdragon.com/schemas/foundry/model/v1";
+export const AI_LEGACY_FOUNDRY_SCHEMA_DIALECT = "https://fizzdragon.com/schemas/foundry/model/v1";
 
-export type FoundryJsonPrimitive = string | number | boolean | null;
-export type FoundryJsonValue =
-  | FoundryJsonPrimitive
-  | FoundryJsonValue[]
-  | { [key: string]: FoundryJsonValue };
+export type AiJsonPrimitive = string | number | boolean | null;
+export type AiJsonValue = AiJsonPrimitive | AiJsonValue[] | { [key: string]: AiJsonValue };
 
-export type FoundrySchemaType = "string" | "integer" | "number" | "boolean" | "array" | "object";
+export type AiSchemaType = "string" | "integer" | "number" | "boolean" | "array" | "object";
 
-export type FoundryMediaKind = "text" | "image" | "video" | "audio" | "document" | "file";
+export type AiMediaKind = "text" | "image" | "video" | "audio" | "document" | "file";
 
-export type FoundryInputControl =
+export type AiInputControl =
   | "text"
   | "textarea"
   | "select"
@@ -27,7 +24,7 @@ export type FoundryInputControl =
   | "color"
   | "hidden";
 
-export type FoundryOutputControl =
+export type AiOutputControl =
   | "image_gallery"
   | "video_player"
   | "audio_player"
@@ -36,9 +33,9 @@ export type FoundryOutputControl =
   | "metadata"
   | "text";
 
-export type FoundrySchemaImportance = "primary" | "secondary" | "advanced" | "hidden";
+export type AiSchemaImportance = "primary" | "secondary" | "advanced" | "hidden";
 
-export interface FoundryCondition {
+export interface AiCondition {
   field: string;
   operator:
     | "equals"
@@ -51,19 +48,19 @@ export interface FoundryCondition {
     | "gte"
     | "lt"
     | "lte";
-  value?: FoundryJsonValue;
-  values?: FoundryJsonValue[];
+  value?: AiJsonValue;
+  values?: AiJsonValue[];
 }
 
-export interface FoundryConditionGroup {
-  all?: FoundryConditionExpression[];
-  any?: FoundryConditionExpression[];
-  not?: FoundryConditionExpression;
+export interface AiConditionGroup {
+  all?: AiConditionExpression[];
+  any?: AiConditionExpression[];
+  not?: AiConditionExpression;
 }
 
-export type FoundryConditionExpression = FoundryCondition | FoundryConditionGroup;
+export type AiConditionExpression = AiCondition | AiConditionGroup;
 
-export interface FoundryUiOption {
+export interface AiUiOption {
   value: string | number | boolean;
   label: string;
   labelKey?: string;
@@ -82,41 +79,41 @@ export interface FoundryUiOption {
   requiredPlan?: string | null;
 }
 
-export interface FoundryFieldUi {
-  control?: FoundryInputControl;
+export interface AiFieldUi {
+  control?: AiInputControl;
   order?: number;
   group?: string;
-  importance?: FoundrySchemaImportance;
+  importance?: AiSchemaImportance;
   label?: string;
   placeholder?: string;
   hint?: string;
   rows?: number;
   unit?: string;
   accept?: string;
-  options?: FoundryUiOption[];
+  options?: AiUiOption[];
   /**
    * Structural visibility. When false, renderers should not mount the field at
    * all; this is allowed to change layout and should also hide validation UI.
    */
-  visibleWhen?: FoundryConditionExpression;
+  visibleWhen?: AiConditionExpression;
   /**
    * Presentation visibility. When false, renderers may keep the field mounted
    * and keep its value, but visually collapse or hide the control.
    */
-  showWhen?: FoundryConditionExpression;
+  showWhen?: AiConditionExpression;
   /**
    * Interaction availability. When false, renderers should keep the field
    * visible but disabled/read-only, usually with disabledReason as helper text.
    */
-  enabledWhen?: FoundryConditionExpression;
+  enabledWhen?: AiConditionExpression;
   disabledReason?: string;
   labelKey?: string;
   placeholderKey?: string;
   hintKey?: string;
 }
 
-export interface FoundryOutputUi {
-  control?: FoundryOutputControl;
+export interface AiOutputUi {
+  control?: AiOutputControl;
   order?: number;
   group?: string;
   label?: string;
@@ -125,7 +122,7 @@ export interface FoundryOutputUi {
   emptyStateKey?: string;
 }
 
-export interface FoundryUiGroup {
+export interface AiUiGroup {
   id: string;
   title: string;
   titleKey?: string;
@@ -136,11 +133,11 @@ export interface FoundryUiGroup {
   defaultCollapsed?: boolean;
 }
 
-export interface FoundryUiSchema {
-  groups: FoundryUiGroup[];
+export interface AiUiSchema {
+  groups: AiUiGroup[];
 }
 
-export interface FoundryProviderFieldBinding {
+export interface AiProviderFieldBinding {
   parameter?: string;
   path?: string;
   transform?:
@@ -153,12 +150,12 @@ export interface FoundryProviderFieldBinding {
     | "uriArrayToFiles"
     | "secondsToDuration"
     | "secondsToInteger";
-  omitWhen?: FoundryConditionExpression;
+  omitWhen?: AiConditionExpression;
   omitIfDefault?: boolean;
   omitIfEmpty?: boolean;
 }
 
-export interface FoundryDimensionConstraint {
+export interface AiDimensionConstraint {
   kind: "dimension2d";
   allowAuto?: boolean;
   multipleOf?: number;
@@ -168,48 +165,48 @@ export interface FoundryDimensionConstraint {
   maxAspectRatio?: number;
 }
 
-export interface FoundryMediaConstraint {
+export interface AiMediaConstraint {
   kind: "media";
-  mediaKind: FoundryMediaKind;
+  mediaKind: AiMediaKind;
   accept?: string[];
   maxBytes?: number;
 }
 
-export type FoundryFieldConstraint = FoundryDimensionConstraint | FoundryMediaConstraint;
+export type AiFieldConstraint = AiDimensionConstraint | AiMediaConstraint;
 
-export interface FoundrySchemaRule {
+export interface AiSchemaRule {
   id: string;
-  when: FoundryConditionExpression;
+  when: AiConditionExpression;
   effect: "require" | "forbid" | "clear" | "setDefault";
   fields: string[];
-  value?: FoundryJsonValue;
+  value?: AiJsonValue;
   message: string;
 }
 
-export interface FoundrySchemaBase {
+export interface AiSchemaBase {
   title?: string;
   titleKey?: string;
   description?: string;
   descriptionKey?: string;
-  default?: FoundryJsonValue;
-  examples?: FoundryJsonValue[];
-  enum?: FoundryJsonPrimitive[];
-  const?: FoundryJsonPrimitive;
+  default?: AiJsonValue;
+  examples?: AiJsonValue[];
+  enum?: AiJsonPrimitive[];
+  const?: AiJsonPrimitive;
   format?: string;
-  "x-ui"?: FoundryFieldUi | FoundryUiSchema;
-  "x-output"?: FoundryOutputUi;
-  "x-provider"?: FoundryProviderFieldBinding;
-  "x-constraints"?: FoundryFieldConstraint[];
+  "x-ui"?: AiFieldUi | AiUiSchema;
+  "x-output"?: AiOutputUi;
+  "x-provider"?: AiProviderFieldBinding;
+  "x-constraints"?: AiFieldConstraint[];
 }
 
-export interface FoundryStringSchema extends FoundrySchemaBase {
+export interface AiStringSchema extends AiSchemaBase {
   type: "string";
   minLength?: number;
   maxLength?: number;
   pattern?: string;
 }
 
-export interface FoundryNumberSchema extends FoundrySchemaBase {
+export interface AiNumberSchema extends AiSchemaBase {
   type: "number" | "integer";
   minimum?: number;
   maximum?: number;
@@ -218,35 +215,35 @@ export interface FoundryNumberSchema extends FoundrySchemaBase {
   multipleOf?: number;
 }
 
-export interface FoundryBooleanSchema extends FoundrySchemaBase {
+export interface AiBooleanSchema extends AiSchemaBase {
   type: "boolean";
 }
 
-export interface FoundryArraySchema extends FoundrySchemaBase {
+export interface AiArraySchema extends AiSchemaBase {
   type: "array";
-  items: FoundryJsonSchema;
+  items: AiJsonSchema;
   minItems?: number;
   maxItems?: number;
   uniqueItems?: boolean;
 }
 
-export interface FoundryObjectSchema extends FoundrySchemaBase {
+export interface AiObjectSchema extends AiSchemaBase {
   type: "object";
-  properties: Record<string, FoundryJsonSchema>;
+  properties: Record<string, AiJsonSchema>;
   required?: string[];
   additionalProperties?: boolean;
-  "x-ui"?: FoundryFieldUi | FoundryUiSchema;
-  "x-rules"?: FoundrySchemaRule[];
+  "x-ui"?: AiFieldUi | AiUiSchema;
+  "x-rules"?: AiSchemaRule[];
 }
 
-export type FoundryJsonSchema =
-  | FoundryStringSchema
-  | FoundryNumberSchema
-  | FoundryBooleanSchema
-  | FoundryArraySchema
-  | FoundryObjectSchema;
+export type AiJsonSchema =
+  | AiStringSchema
+  | AiNumberSchema
+  | AiBooleanSchema
+  | AiArraySchema
+  | AiObjectSchema;
 
-export interface FoundryProviderBinding {
+export interface AiProviderBinding {
   provider: string;
   endpoint: string;
   apiVersion?: string;
@@ -261,8 +258,8 @@ export interface FoundryProviderBinding {
   passthroughUserId?: boolean;
 }
 
-export type FoundryCapabilitySource = "official" | "provider" | "internal" | "inferred";
-export type FoundryGenerationMode =
+export type AiCapabilitySource = "official" | "provider" | "internal" | "inferred";
+export type AiGenerationMode =
   | "text_to_image"
   | "image_to_image"
   | "inpainting"
@@ -283,37 +280,37 @@ export type FoundryGenerationMode =
   | "multimodal_to_image"
   | "multimodal_to_video";
 
-export interface FoundryCapabilityMatrix {
-  source: FoundryCapabilitySource;
-  inputModalities: FoundryMediaKind[];
-  outputModalities: FoundryMediaKind[];
-  generationModes: FoundryGenerationMode[];
+export interface AiCapabilityMatrix {
+  source: AiCapabilitySource;
+  inputModalities: AiMediaKind[];
+  outputModalities: AiMediaKind[];
+  generationModes: AiGenerationMode[];
   supportedParameters: string[];
   unsupportedParameters: string[];
   features: Record<string, boolean>;
   limits: Record<string, number | string | boolean>;
 }
 
-export type FoundryRegionCode = "global" | "cn" | string;
-export type FoundryAvailabilityStatus =
+export type AiRegionCode = "global" | "cn" | string;
+export type AiAvailabilityStatus =
   | "available"
   | "unavailable"
   | "requires_configuration"
   | "unknown";
 
-export interface FoundryRegionAvailability {
-  region: FoundryRegionCode;
-  status: FoundryAvailabilityStatus;
+export interface AiRegionAvailability {
+  region: AiRegionCode;
+  status: AiAvailabilityStatus;
   reason?: string;
   endpointEnvVars?: string[];
 }
 
-export interface FoundryAvailability {
-  currentRegion: FoundryRegionCode;
-  regions: FoundryRegionAvailability[];
+export interface AiAvailability {
+  currentRegion: AiRegionCode;
+  regions: AiRegionAvailability[];
 }
 
-export type FoundryCostMeter =
+export type AiCostMeter =
   | "text_input_tokens"
   | "image_input_tokens"
   | "cached_input_tokens"
@@ -322,18 +319,18 @@ export type FoundryCostMeter =
   | "request"
   | "credit";
 
-export interface FoundryCostMeterDefinition {
-  meter: FoundryCostMeter;
+export interface AiCostMeterDefinition {
+  meter: AiCostMeter;
   unit: "token" | "second" | "request" | "credit";
   pricePerMillionUsd?: number;
   pricePerUnitUsd?: number;
   usagePath?: string;
 }
 
-export interface FoundryCostEstimate {
+export interface AiCostEstimate {
   billingMode: "token" | "duration" | "request" | "credit" | "unknown";
   currency: "USD" | "CNY" | "CREDITS" | string;
-  meters: FoundryCostMeterDefinition[];
+  meters: AiCostMeterDefinition[];
   pricingUrl?: string;
   calculatorUrl?: string;
   /**
@@ -349,13 +346,13 @@ export interface FoundryCostEstimate {
     | "unknown";
 }
 
-export type FoundryPreflightEstimateConfidence = "low" | "medium" | "high";
-export type FoundryPreflightEstimateRounding = "ceil" | "round" | "floor";
+export type AiPreflightEstimateConfidence = "low" | "medium" | "high";
+export type AiPreflightEstimateRounding = "ceil" | "round" | "floor";
 
-export interface FoundryPreflightEstimate {
+export interface AiPreflightEstimate {
   currency: string;
   displayAmount: number;
-  confidence: FoundryPreflightEstimateConfidence;
+  confidence: AiPreflightEstimateConfidence;
   estimatedCost?: number;
   estimatedTokens?: {
     input: number;
@@ -366,11 +363,11 @@ export interface FoundryPreflightEstimate {
   notes?: string[];
 }
 
-export interface FoundryTokenHeuristicEstimator {
+export interface AiTokenHeuristicEstimator {
   kind: "token_heuristic";
   label?: string;
   labelKey?: string;
-  confidence: FoundryPreflightEstimateConfidence;
+  confidence: AiPreflightEstimateConfidence;
   currency: "USD" | "CNY" | "CREDITS" | string;
   promptField: string;
   sizeField?: string;
@@ -390,11 +387,11 @@ export interface FoundryTokenHeuristicEstimator {
   inputCostPerMillion?: number;
   outputCostPerMillion?: number;
   minimumAmount?: number;
-  rounding?: FoundryPreflightEstimateRounding;
+  rounding?: AiPreflightEstimateRounding;
   notes?: string[];
 }
 
-export type FoundryPreflightEstimator = FoundryTokenHeuristicEstimator;
+export type AiPreflightEstimator = AiTokenHeuristicEstimator;
 
 function numberFromInput(value: unknown, fallback: number): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -431,19 +428,16 @@ function parseMegapixels(size: string): number {
   return (width * height) / 1_000_000;
 }
 
-function roundEstimate(
-  value: number,
-  rounding: FoundryPreflightEstimateRounding | undefined
-): number {
+function roundEstimate(value: number, rounding: AiPreflightEstimateRounding | undefined): number {
   if (rounding === "floor") return Math.floor(value);
   if (rounding === "round") return Math.round(value);
   return Math.ceil(value);
 }
 
-export function estimateFoundryPreflightCost(
-  estimator: FoundryPreflightEstimator | undefined,
+export function estimateAiPreflightCost(
+  estimator: AiPreflightEstimator | undefined,
   input: Record<string, unknown>
-): FoundryPreflightEstimate | null {
+): AiPreflightEstimate | null {
   if (!estimator) return null;
 
   const prompt = textFromInput(input[estimator.promptField]);
@@ -512,7 +506,7 @@ export function estimateFoundryPreflightCost(
   };
 }
 
-export interface FoundryObservabilityContract {
+export interface AiObservabilityContract {
   requestId: {
     jobField: string;
     inboundHeader?: string;
@@ -531,9 +525,9 @@ export interface FoundryObservabilityContract {
   }[];
 }
 
-export type FoundryDocumentationSource = "official" | "provider" | "internal";
+export type AiDocumentationSource = "official" | "provider" | "internal";
 
-export type FoundryDocumentationScope =
+export type AiDocumentationScope =
   | "model"
   | "input_schema"
   | "output_schema"
@@ -543,27 +537,27 @@ export type FoundryDocumentationScope =
   | "safety"
   | "changelog";
 
-export interface FoundryDocumentationLink {
+export interface AiDocumentationLink {
   title: string;
   url: string;
-  source: FoundryDocumentationSource;
-  scope: FoundryDocumentationScope;
+  source: AiDocumentationSource;
+  scope: AiDocumentationScope;
   provider?: string;
   retrievedAt?: string;
 }
 
-export interface FoundryModelSchemaContract {
-  schemaDialect: typeof FOUNDRY_SCHEMA_DIALECT;
+export interface AiModelSchemaContract {
+  schemaDialect: typeof AI_LEGACY_FOUNDRY_SCHEMA_DIALECT;
   schemaVersion: string;
-  documentation: FoundryDocumentationLink[];
-  capability_matrix: FoundryCapabilityMatrix;
-  availability: FoundryAvailability;
-  cost_estimate: FoundryCostEstimate;
-  preflight_estimator?: FoundryPreflightEstimator;
-  observability: FoundryObservabilityContract;
-  input_schema: FoundryObjectSchema;
-  output_schema: FoundryObjectSchema;
-  provider_output_schema?: FoundryObjectSchema;
-  stream_event_schema?: FoundryObjectSchema;
-  provider_binding?: FoundryProviderBinding;
+  documentation: AiDocumentationLink[];
+  capability_matrix: AiCapabilityMatrix;
+  availability: AiAvailability;
+  cost_estimate: AiCostEstimate;
+  preflight_estimator?: AiPreflightEstimator;
+  observability: AiObservabilityContract;
+  input_schema: AiObjectSchema;
+  output_schema: AiObjectSchema;
+  provider_output_schema?: AiObjectSchema;
+  stream_event_schema?: AiObjectSchema;
+  provider_binding?: AiProviderBinding;
 }

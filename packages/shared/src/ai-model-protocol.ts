@@ -1,56 +1,65 @@
 import type {
-  FOUNDRY_SCHEMA_DIALECT,
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryConditionExpression,
-  FoundryCostEstimate,
-  FoundryDocumentationLink,
-  FoundryFieldConstraint,
-  FoundryFieldUi,
-  FoundryInputControl,
-  FoundryJsonPrimitive,
-  FoundryJsonSchema,
-  FoundryJsonValue,
-  FoundryObjectSchema,
-  FoundryObservabilityContract,
-  FoundryOutputControl,
-  FoundryOutputUi,
-  FoundryPreflightEstimator,
-  FoundryProviderBinding,
-  FoundrySchemaRule,
-  FoundryUiOption,
-  FoundryUiSchema,
-} from "./foundry-schema.js";
+  AI_LEGACY_FOUNDRY_SCHEMA_DIALECT,
+  AiAvailability,
+  AiCapabilityMatrix,
+  AiConditionExpression,
+  AiCostEstimate,
+  AiDocumentationLink,
+  AiFieldConstraint,
+  AiFieldUi,
+  AiGenerationMode,
+  AiInputControl,
+  AiJsonPrimitive,
+  AiJsonSchema,
+  AiJsonValue,
+  AiObjectSchema,
+  AiObservabilityContract,
+  AiOutputControl,
+  AiOutputUi,
+  AiPreflightEstimator,
+  AiProviderBinding,
+  AiSchemaRule,
+  AiUiOption,
+  AiUiSchema,
+} from "./ai-schema.js";
 import type { AiProductPricingPolicy } from "./billing.js";
 
 export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
 
-export type AiJsonPrimitive = FoundryJsonPrimitive;
-export type AiJsonValue = FoundryJsonValue;
-export type AiJsonSchema = FoundryJsonSchema;
-export type AiObjectSchema = FoundryObjectSchema;
-export type AiInputSchema = FoundryObjectSchema;
-export type AiOutputSchema = FoundryObjectSchema;
-export type AiInputControl = FoundryInputControl;
-export type AiOutputControl = FoundryOutputControl;
-export type AiFieldUi = FoundryFieldUi;
-export type AiOutputUi = FoundryOutputUi;
-export type AiUiOption = FoundryUiOption;
-export type AiUiSchema = FoundryUiSchema;
-export type AiConditionExpression = FoundryConditionExpression;
-export type AiFieldConstraint = FoundryFieldConstraint;
-export type AiSchemaRule = FoundrySchemaRule;
-export type AiCapabilityMatrix = FoundryCapabilityMatrix;
-export type AiAvailability = FoundryAvailability;
-export type AiCostEstimate = FoundryCostEstimate;
-export type AiPreflightEstimator = FoundryPreflightEstimator;
-export type AiObservabilityContract = FoundryObservabilityContract;
-export type AiDocumentationLink = FoundryDocumentationLink;
-export type AiProviderBinding = FoundryProviderBinding;
+/** @deprecated Historical wire dialect URL; prefer AI_MODEL_PROTOCOL_DIALECT for new models. */
+export { AI_LEGACY_FOUNDRY_SCHEMA_DIALECT } from "./ai-schema.js";
+export { estimateAiPreflightCost } from "./ai-schema.js";
+
+// Re-export schema contract types (canonical names live in ai-schema).
+export type {
+  AiJsonPrimitive,
+  AiJsonValue,
+  AiJsonSchema,
+  AiObjectSchema,
+  AiInputControl,
+  AiOutputControl,
+  AiFieldUi,
+  AiOutputUi,
+  AiUiOption,
+  AiUiSchema,
+  AiConditionExpression,
+  AiFieldConstraint,
+  AiSchemaRule,
+  AiCapabilityMatrix,
+  AiAvailability,
+  AiCostEstimate,
+  AiPreflightEstimator,
+  AiObservabilityContract,
+  AiDocumentationLink,
+  AiProviderBinding,
+  AiGenerationMode,
+} from "./ai-schema.js";
+export type AiInputSchema = AiObjectSchema;
+export type AiOutputSchema = AiObjectSchema;
 
 export type AiModelSchemaDialect =
   | typeof AI_MODEL_PROTOCOL_DIALECT
-  | typeof FOUNDRY_SCHEMA_DIALECT
+  | typeof AI_LEGACY_FOUNDRY_SCHEMA_DIALECT
   | string;
 
 export type AiModelProviderId =
@@ -63,27 +72,6 @@ export type AiModelProviderId =
   | string;
 
 export type AiModelFamily = "image" | "video" | "audio" | "text" | "multimodal";
-
-export type AiGenerationMode =
-  | "text_to_image"
-  | "image_to_image"
-  | "inpainting"
-  | "outpainting"
-  | "upscale"
-  | "remove_background"
-  | "relight"
-  | "multi_angle"
-  | "reference_image_generation"
-  | "text_to_video"
-  | "image_to_video"
-  | "first_last_frame_to_video"
-  | "video_to_video"
-  | "text_to_audio"
-  | "audio_to_audio"
-  | "text_to_text"
-  | "multimodal_to_text"
-  | "multimodal_to_image"
-  | "multimodal_to_video";
 
 /** Coarse capability used for catalog grouping alongside concrete generation modes. */
 export type AiModelCapability =
@@ -112,24 +100,36 @@ export type AiPricingUnit =
  * admin, but generation through it fails the ProviderRegistry guard until the
  * adapter ships and the account is activated.
  */
+/**
+ * Active generation providers. ProviderAccountReconciler upserts a draft
+ * account for each key on boot so admin can activate bindings.
+ *
+ * Deprecated generation vendors (Foundry, Replicate) are NOT listed here —
+ * they must not receive new draft accounts or generation routing. Labels for
+ * historical rows remain in AI_PROVIDER_LABELS / AI_DEPRECATED_PROVIDER_KEYS.
+ */
 export const AI_PROVIDER_KEYS = [
   "fal-ai",
   "byteplus-modelark",
   "aliyun-bailian",
-  "microsoft-foundry",
-  "replicate",
   "agnes-ai",
   "minimax",
 ] as const;
-export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
+
+/** Product-deprecated generation providers (code may remain for non-gen tools). */
+export const AI_DEPRECATED_PROVIDER_KEYS = ["microsoft-foundry", "replicate"] as const;
+
+export type AiProviderKey =
+  | (typeof AI_PROVIDER_KEYS)[number]
+  | (typeof AI_DEPRECATED_PROVIDER_KEYS)[number];
 
 /** Human-readable labels for the provider keys (admin UI). */
 export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "fal-ai": "Fal",
   "byteplus-modelark": "BytePlus ModelArk",
   "aliyun-bailian": "百炼",
-  "microsoft-foundry": "Azure Foundry",
-  replicate: "Replicate",
+  "microsoft-foundry": "Azure Foundry (deprecated)",
+  replicate: "Replicate (deprecated)",
   "agnes-ai": "Agnes AI",
   minimax: "MiniMax",
 };
