@@ -252,6 +252,8 @@ export class AgentOsCanvasShotsService {
     draftRevision: number;
     layoutRevision: number;
     appliedOperationIds: string[];
+    /** Canvas nodes this patch created or changed, for "show me" links. */
+    nodeIds: string[];
   }> {
     const user: AuthUser = { userId: input.actorId };
     const ensured = await this.documents.ensurePrimaryDocument(
@@ -290,6 +292,7 @@ export class AgentOsCanvasShotsService {
         message: `Expected draftRevision ${input.baseDraftRevision} / layoutRevision ${input.baseLayoutRevision}, current is ${row.version} / ${row.currentSequence}`,
         expected: {
           draftRevision: input.baseDraftRevision,
+          nodeIds: [],
           layoutRevision: input.baseLayoutRevision,
         },
         actual: {
@@ -312,9 +315,12 @@ export class AgentOsCanvasShotsService {
       await this.hydrateDoc(doc, row.id, row.crdtState, row.snapshotSequence);
       const before = Y.encodeStateVector(doc);
       const appliedOperationIds: string[] = [];
+      const touchedNodeIds: string[] = [];
 
       for (const op of input.operations) {
-        this.applyOneOp(doc, op.kind, op.payload);
+        const nodeId = this.applyOneOp(doc, op.kind, op.payload);
+        if (nodeId && !touchedNodeIds.includes(nodeId))
+          touchedNodeIds.push(nodeId);
         appliedOperationIds.push(op.operationId);
       }
 
@@ -324,6 +330,7 @@ export class AgentOsCanvasShotsService {
           draftRevision: row.version,
           layoutRevision: row.currentSequence,
           appliedOperationIds,
+          nodeIds: touchedNodeIds,
         };
       }
 
@@ -352,6 +359,7 @@ export class AgentOsCanvasShotsService {
           refreshed?.currentSequence ??
           row.currentSequence + 1,
         appliedOperationIds,
+        nodeIds: touchedNodeIds,
       };
     } finally {
       doc.destroy();
@@ -602,11 +610,17 @@ export class AgentOsCanvasShotsService {
     }
   }
 
+  /**
+   * Apply one patch operation and report the node it touched.
+   *
+   * The node id is what lets the UI offer "show me this on the canvas" — a
+   * write the user cannot find is barely a write at all.
+   */
   private applyOneOp(
     doc: Y.Doc,
     kind: string,
     payload: Record<string, unknown>,
-  ): void {
+  ): string | null {
     switch (kind) {
       case 'node.patchData': {
         const nodeId = stringField(payload, 'nodeId');
@@ -634,7 +648,7 @@ export class AgentOsCanvasShotsService {
             (dataY as Y.Map<unknown>).delete(k);
           else (dataY as Y.Map<unknown>).set(k, v);
         }
-        return;
+        return nodeId;
       }
       case 'node.move': {
         const nodeId = stringField(payload, 'nodeId');
@@ -654,7 +668,7 @@ export class AgentOsCanvasShotsService {
         }
         (pos as Y.Map<number>).set('x', x);
         (pos as Y.Map<number>).set('y', y);
-        return;
+        return nodeId;
       }
       case 'shot.upsert': {
         const id = stringField(payload, 'id');
@@ -673,7 +687,7 @@ export class AgentOsCanvasShotsService {
             notes,
           },
         ]);
-        return;
+        return resolveShotNodeId(nodes, id) ?? `${AGENT_SHOT_ID_PREFIX}${id}`;
       }
       case 'node.delete': {
         const nodeId = stringField(payload, 'nodeId');
@@ -698,7 +712,7 @@ export class AgentOsCanvasShotsService {
           }
         });
         for (const edgeId of drop) edges.delete(edgeId);
-        return;
+        return null;
       }
       case 'edge.connect': {
         const edgeId = stringField(payload, 'edgeId');
@@ -726,7 +740,7 @@ export class AgentOsCanvasShotsService {
         if (typeof payload.targetHandle === 'string') {
           yEdge.set('targetHandle', payload.targetHandle);
         }
-        return;
+        return null;
       }
       case 'edge.remove': {
         const edgeId = stringField(payload, 'edgeId');
@@ -738,7 +752,7 @@ export class AgentOsCanvasShotsService {
           });
         }
         edges.delete(edgeId);
-        return;
+        return null;
       }
       default:
         throw new UnprocessableEntityException({

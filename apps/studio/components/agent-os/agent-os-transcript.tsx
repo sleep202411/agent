@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ApprovalPayload, type ApprovalPayloadLabels } from "./approval-payload";
 import { SmoothStreamMarkdown } from "./smooth-stream-markdown";
+import { WrittenNodes, writtenNodesFromResult } from "./written-nodes";
 import type { AgentOsChatMessage } from "./use-agent-os-run";
 
 /** Clock label for timeline debug — local wall time next to every row. */
@@ -84,6 +85,7 @@ function MessageMetaClock({
  * Same chat shell as Canvas Copilot; data comes from AgentOsChatMessage[], not AI SDK UIMessage.
  */
 export function AgentOsTranscript({
+  projectId,
   messages,
   status,
   error,
@@ -101,6 +103,8 @@ export function AgentOsTranscript({
   pendingApprovalActive: boolean;
   onApprove: (decision: "approve" | "reject") => void;
   empty: ReactNode;
+  /** Needed to link a written node to its place on the canvas. */
+  projectId: string;
   labels: {
     transcript: string;
     scrollToLatest: string;
@@ -113,6 +117,7 @@ export function AgentOsTranscript({
     reject: string;
     scriptAttached: (chars: number) => string;
     plan: string;
+    showOnCanvas: string;
     payload: ApprovalPayloadLabels;
   };
 }) {
@@ -190,6 +195,7 @@ export function AgentOsTranscript({
                       busy={busy}
                       isStreaming={streamingThis}
                       showApprovalActions={message.role === "approval" && pendingApprovalActive}
+                      projectId={projectId}
                       onApprove={onApprove}
                       labels={labels}
                     />
@@ -235,6 +241,7 @@ export function AgentOsTranscript({
 }
 
 function AgentOsMessageRow({
+  projectId,
   message,
   busy,
   isStreaming = false,
@@ -247,6 +254,7 @@ function AgentOsMessageRow({
   /** Live token stream — show caret, not a separate Working row under the bubble. */
   isStreaming?: boolean;
   showApprovalActions: boolean;
+  projectId: string;
   onApprove: (decision: "approve" | "reject") => void;
   labels: {
     user: string;
@@ -257,6 +265,7 @@ function AgentOsMessageRow({
     reject: string;
     scriptAttached: (chars: number) => string;
     plan: string;
+    showOnCanvas: string;
     payload: ApprovalPayloadLabels;
   };
 }) {
@@ -382,6 +391,10 @@ function AgentOsMessageRow({
     const phase = String(message.meta?.phase ?? "");
     const isPlan = message.meta?.kind === "plan";
     const done = phase === "completed" || phase === "failed";
+    const written =
+      phase === "completed"
+        ? writtenNodesFromResult(String(message.meta?.toolId ?? ""), message.meta?.result)
+        : [];
     return (
       <Marker className="px-1">
         <MarkerIcon>
@@ -409,6 +422,10 @@ function AgentOsMessageRow({
             {!isPlan && phase ? ` · ${phase}` : ""}
           </span>
           <MessageMetaClock message={message} />
+          {/* Where the write landed. Ids in prose are not findable. */}
+          {written.length > 0 && projectId ? (
+            <WrittenNodes projectId={projectId} nodes={written} label={labels.showOnCanvas} />
+          ) : null}
         </MarkerContent>
       </Marker>
     );

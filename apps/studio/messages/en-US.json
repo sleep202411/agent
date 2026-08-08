@@ -2892,6 +2892,7 @@
     "approvalShowDetails": "Show full request",
     "approvalHideDetails": "Hide full request",
     "approvalUntitled": "Untitled",
-    "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check."
+    "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
+    "showOnCanvas": "Show on canvas"
   }
 }

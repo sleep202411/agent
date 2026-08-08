@@ -253,7 +253,9 @@ export class AgentOsDomainService {
     return {
       revision: result.revision,
       surface: 'platform' as const,
-      written: result.written.map(({ id, title }) => ({ id, title })),
+      // nodeId travels with the result so the UI can offer "show me on the
+      // canvas" — a write the user cannot find is barely a write.
+      written: result.written,
       canvasDocumentId: result.documentId,
       idempotencyKey: input.idempotencyKey,
       ...(isStale(args.baseRevision, result.previousRevision)

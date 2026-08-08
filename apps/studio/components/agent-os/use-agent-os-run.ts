@@ -224,6 +224,9 @@ export function rebuildRunTimelineFromEvents(
         toolCallId: event.data.toolCallId,
         phase,
         message: event.data.message,
+        // The tool's own result — it carries the canvas nodes a write touched,
+        // which is what lets the transcript link to them.
+        result: event.data.result,
         eventSequence: event.sequence,
       },
     };

@@ -2892,6 +2892,7 @@
     "approvalShowDetails": "查看完整請求",
     "approvalHideDetails": "收起完整請求",
     "approvalUntitled": "未命名",
-    "pollLost": "與伺服器失去聯繫，已停止追蹤今次對話。它可能仍在執行——重新傳送或重新開啟面板即可查看。"
+    "pollLost": "與伺服器失去聯繫，已停止追蹤今次對話。它可能仍在執行——重新傳送或重新開啟面板即可查看。",
+    "showOnCanvas": "在畫布中查看"
   }
 }

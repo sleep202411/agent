@@ -193,6 +193,8 @@ export const CanvasApplyPatchOutputSchema = z
     draftRevision: z.number().int().nonnegative(),
     layoutRevision: z.number().int().nonnegative(),
     appliedOperationIds: z.array(z.uuid()),
+    /** Canvas nodes this patch created or changed — the UI links to them. */
+    nodeIds: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -310,7 +312,16 @@ export const AGENT_OS_TOOLS = [
     outputSchema: z
       .object({
         revision: z.number().int().nonnegative(),
-        written: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
+        written: z.array(
+          z
+            .object({
+              id: z.string(),
+              title: z.string(),
+              /** Canvas node the shot lives on — the UI links to it. */
+              nodeId: z.string().optional(),
+            })
+            .strict()
+        ),
         surface: z.string().optional(),
         /** Set when the baseRevision you sent was behind: the write still applied. */
         staleBaseRevision: z.boolean().optional(),

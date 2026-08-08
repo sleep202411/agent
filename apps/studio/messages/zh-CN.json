@@ -2892,6 +2892,7 @@
     "approvalShowDetails": "查看完整请求",
     "approvalHideDetails": "收起完整请求",
     "approvalUntitled": "未命名",
-    "pollLost": "与服务器失去联系，已停止跟踪本轮。它可能仍在运行——重新发送或重新打开面板可查看。"
+    "pollLost": "与服务器失去联系，已停止跟踪本轮。它可能仍在运行——重新发送或重新打开面板可查看。",
+    "showOnCanvas": "在画布中查看"
   }
 }

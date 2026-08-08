@@ -341,6 +341,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
       </header>
 
       <AgentOsTranscript
+        projectId={projectId}
         messages={state.messages}
         status={state.status}
         error={state.error}
@@ -359,6 +360,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           reject: t("reject"),
           scriptAttached: (chars) => t("scriptAttached", { chars }),
           plan: t("event.PlanCreated"),
+          showOnCanvas: t("showOnCanvas"),
           payload: {
             creates: (count) => t("approvalCreates", { count }),
             updates: (count) => t("approvalUpdates", { count }),
