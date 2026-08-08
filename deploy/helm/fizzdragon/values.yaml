@@ -312,6 +312,40 @@ studioAgentDeliverySecrets:
   mapping:
     - kv: ably-api-key
       env: ABLY_API_KEY
+# Agent OS worker credentials — its OWN projection, deliberately not
+# fizzdragon-server-secrets. CSI is fail-closed, so one bad entry breaks a whole
+# projected Secret; keeping these apart means an unprovisioned Agent OS cannot
+# take billing, auth and the legacy-MySQL bridge down with it.
+agentOsSecrets:
+  projectedName: fizzdragon-agent-os-secrets
+  mapping:
+    # The gateway<->worker boundary, checked in BOTH directions. The worker
+    # refuses to boot without it, and the server rejects the .env.example value.
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+    # Bailian's key. The vault entry names the vendor; the variable names the
+    # protocol, because the endpoint is OpenAI-compatible and need not be Bailian.
+    - kv: bailian-api-key
+      env: AGENT_OS_OPENAI_API_KEY
+    # Live event delivery. Optional at runtime — the UI falls back to the Nest
+    # poll — but a missing vault entry breaks this WHOLE projection, taking the
+    # internal token with it and stopping the worker from booting.
+    - kv: ably-api-key
+      env: ABLY_API_KEY
+    # Durable LangGraph checkpoints. Create the vault entry first, then
+    # uncomment: the saver runs CREATE SCHEMA / CREATE TABLE on first use, so
+    # that role needs DDL on schema `agent_os`. No migrator Job owns it.
+    # - kv: agent-os-checkpoint-database-url
+    #   env: AGENT_OS_CHECKPOINT_DATABASE_URL
+# The same vault entry projected a second time, for the Nest pod. Separate group
+# for the same fail-closed reason: the server must not lose its own secrets
+# because an Agent OS entry is missing.
+agentOsServerSecrets:
+  projectedName: fizzdragon-agent-os-server-secrets
+  mapping:
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
 # exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
@@ -701,6 +735,59 @@ agentPlatform:
       value: worker
       effect: NoSchedule
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# agent-os — the Agent OS worker (LangGraph interactive runtime, apps/agent-os).
+# A plain long-lived HTTP service on ClusterIP; the Nest server pod is its only
+# caller. Every /v1 route checks x-agent-os-internal-token; /health is open so
+# the kubelet can probe it.
+# ---------------------------------------------------------------------------
+agentOs:
+  enabled: true
+  # MUST remain 1, and the template refuses anything else. Run snapshots, the
+  # live event journal and pending approvals live in the worker PROCESS, so a
+  # second replica answers /events and /cancel for runs it never started — and
+  # the gateway silently falls back to the Postgres journal, so the symptom is
+  # "chat feels laggy", not an error anyone would report.
+  replicaCount: 1
+  image:
+    repository: fizzdragon-agent-os
+    tag: 0000000000000000000000000000000000000000
+  containerPort: 4301
+  # Covers the preStop drain only — the process installs no SIGTERM handler, so
+  # a longer window buys nothing.
+  terminationGracePeriodSeconds: 30
+  model:
+    # Bailian's workspace domain. The key is a Key Vault value, never here.
+    baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+  checkpoint:
+    schema: agent_os
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  networkPolicy:
+    enabled: true
+    dns:
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+      podSelector:
+        k8s-app: kube-dns
+      port: 53
+    # The "except" list of the external rule. Without these the 0.0.0.0/0 rule
+    # is an in-cluster allow-all.
+    clusterCidrs:
+      - 10.0.0.0/16
+      - 10.244.0.0/16
+    httpsPort: 443
+    databasePort: 5432
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+
+
 # agent — Mastra API. Internal. Storage in PG schema `mastra` (no PVC).
 # ---------------------------------------------------------------------------
 agent:

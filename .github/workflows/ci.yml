@@ -45,6 +45,7 @@ jobs:
         run: |
           bash deploy/helm/fizzdragon/tests/studio-agent-runtime-render.sh
           bash deploy/helm/fizzdragon/tests/agent-platform-render.sh
+          bash deploy/helm/fizzdragon/tests/agent-os-render.sh
 
       - name: Lint
         run: npx turbo run lint

@@ -281,6 +281,21 @@ temporal:
 temporalDatabaseSecrets:
   mapping: null
 
+# Agent OS is not on CN yet: the image is not built for the CN registry, the
+# out-of-band Secret does not exist, and deploy-cn-services.sh has no arm for
+# it. Off explicitly rather than by omission — inheriting .com's defaults would
+# schedule it onto `pool: worker`, which CN's single untainted node does not
+# have, and leave the pod Pending forever with a green chart.
+#
+# To turn it on: build+push the image, create fizzdragon-agent-os-secrets and
+# fizzdragon-agent-os-server-secrets with kubectl (BAILIAN key is the Beijing
+# one — see ALIBABA_BASE_URL above), then set enabled plus:
+#   agentOs: { enabled: true, image: { tag: set-at-deploy },
+#              model: { baseUrl: <beijing workspace endpoint> },
+#              nodeSelector: null, tolerations: null }
+agentOs:
+  enabled: false
+
 studioAgentRuntime:
   image:
     tag: set-at-deploy
