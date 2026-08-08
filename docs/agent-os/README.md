@@ -47,7 +47,7 @@ docs/agent-os/                 # this charter
 ```
 
 Gateway lives under `apps/server/src/agent-os-gateway` (feature flag
-`AGENT_OS_ENABLED=true`). It authenticates the user, checks story project
+the internal token). It authenticates the user, checks story project
 permission, then proxies to the Agent OS worker (`AGENT_OS_WORKER_URL`, default
 `http://127.0.0.1:4301`). No coupling to Mastra / legacy agent modules.
 
@@ -62,7 +62,6 @@ export AGENT_OS_DOMAIN_URL=http://127.0.0.1:4399
 npm run dev -w agent-os
 
 # terminal 2 — Nest Agent OS gateway + real domain
-AGENT_OS_ENABLED=true \
 AGENT_OS_WORKER_URL=http://127.0.0.1:4301 \
 AGENT_OS_INTERNAL_TOKEN=dev-only-change-me-16+ \
 npm run start:dev -w server

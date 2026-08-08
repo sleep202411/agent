@@ -95,11 +95,37 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   const lastCharacterCountRef = useRef(0);
   const domainBaselineReady = useRef(false);
 
+  /**
+   * Availability is a live fact, not a one-time reading.
+   *
+   * This panel stays mounted for the whole session, so a single check on mount
+   * meant a worker that was down at open stayed "offline" forever — and one
+   * that died later still looked fine. Re-check on an interval, and again the
+   * moment the tab is looked at, so recovery shows up without a reload.
+   */
   useEffect(() => {
-    void agentOsApi
-      .health()
-      .then((h) => setWorkerOk(Boolean(h.ok && (h.worker?.ok ?? true))))
-      .catch(() => setWorkerOk(false));
+    let cancelled = false;
+    const check = () => {
+      void agentOsApi
+        .health()
+        .then((h) => {
+          if (!cancelled) setWorkerOk(Boolean(h.ok && (h.worker?.ok ?? true)));
+        })
+        .catch(() => {
+          if (!cancelled) setWorkerOk(false);
+        });
+    };
+    check();
+    const timer = window.setInterval(check, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // Baseline the character count so a pure-chat turn does not toast, and load
@@ -197,8 +223,11 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   const turnBusy =
     busy || uploading || state.status === "running" || state.status === "waiting_for_approval";
 
+  // Known-offline is the one state where sending cannot work. `null` is "not
+  // checked yet" — do not lock the composer on an unanswered probe.
   const canSend =
     !turnBusy &&
+    workerOk !== false &&
     modelProfileId.trim().length > 0 &&
     (draft.trim().length > 0 || pendingFiles.some((f) => f.status === "ready"));
 

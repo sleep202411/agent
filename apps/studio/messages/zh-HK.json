@@ -2882,7 +2882,7 @@
     "artifactsEmpty": "尚未寫入角色或分鏡。在對話中提出任務並批准寫入。",
     "artifactsLoadFailed": "無法載入項目產物",
     "workerOnline": "Worker 在線",
-    "workerOffline": "Worker 離線 — 請啟動 agent-os（:4301）並開啟 AGENT_OS_ENABLED",
+    "workerOffline": "目前無法使用——正在自動重試",
     "shotsSynced": "分鏡已同步 · 新增 {created} · 更新 {updated}",
     "charactersWritten": "已寫入項目 {count} 個角色",
     "approvalCreates": "新增 {count} 項",

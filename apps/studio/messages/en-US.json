@@ -2882,7 +2882,7 @@
     "artifactsEmpty": "No characters or shots written yet. Chat and approve writes.",
     "artifactsLoadFailed": "Could not load project artifacts",
     "workerOnline": "Worker online",
-    "workerOffline": "Worker offline — start agent-os on :4301 and enable AGENT_OS_ENABLED",
+    "workerOffline": "Unavailable right now — retrying automatically",
     "shotsSynced": "Storyboard updated · {created} new · {updated} updated",
     "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}",
     "approvalCreates": "Creates {count}",

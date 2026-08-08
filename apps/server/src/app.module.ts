@@ -5,10 +5,7 @@ import { AgentUsersModule } from './agent-users';
 import { AgentPlatformGatewayModule } from './agent-platform-gateway';
 import { AgentDomainGatewayModule } from './agent-domain-gateway';
 import { loadAgentPlatformFeatureEnabled } from './agent-platform-feature';
-import {
-  AgentOsGatewayModule,
-  loadAgentOsFeatureEnabled,
-} from './agent-os-gateway';
+import { AgentOsGatewayModule } from './agent-os-gateway';
 import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
@@ -51,10 +48,6 @@ const agentPlatformModules = loadAgentPlatformFeatureEnabled()
   ? [AgentDomainGatewayModule, AgentPlatformGatewayModule]
   : [];
 
-const agentOsModules = loadAgentOsFeatureEnabled()
-  ? [AgentOsGatewayModule]
-  : [];
-
 @Module({
   imports: [
     // Infra modules first — global, others can inject PrismaService / REDIS.
@@ -72,7 +65,7 @@ const agentOsModules = loadAgentOsFeatureEnabled()
     AdminAuthModule,
     AgentUsersModule,
     ...agentPlatformModules,
-    ...agentOsModules,
+    AgentOsGatewayModule,
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,
