@@ -1,4 +1,5 @@
 import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
+import { ORDER_LAST, orderBetween } from "@repo/shared";
 import type { FizzAiReferenceKind } from "./generation-api";
 
 /**
@@ -156,67 +157,14 @@ export function preferredFrameReference(data: ShotNodeData): CardReference | und
 // ── row ordering (fractional index) ─────────────────────────────────────────
 
 /**
- * Order keys are base-62 fractions over this ASCII-ascending alphabet, so plain
- * string comparison IS the sort. A key never ends in the smallest digit, which
- * is what guarantees a midpoint always exists between two neighbours — inserting
- * or reordering a row writes ONE key and renumbers nothing.
- */
-const ORDER_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const ORDER_BASE = ORDER_DIGITS.length;
-/** Sorts after every real key, so an order-less shot lands at the end. */
-const ORDER_LAST = "\uffff";
-
-function midpoint(lower: string, upper: string | null): string {
-  if (upper !== null && lower >= upper) throw new Error(`shot order out of range: ${lower}`);
-  if (lower.endsWith(ORDER_DIGITS[0]) || upper?.endsWith(ORDER_DIGITS[0])) {
-    throw new Error("shot order has a trailing zero");
-  }
-  if (upper !== null) {
-    // Copy the shared prefix verbatim and recurse on the remainder (`lower` is
-    // padded with zeros as we go; `upper` can't run out first, being larger).
-    let shared = 0;
-    while ((lower[shared] ?? ORDER_DIGITS[0]) === upper[shared]) shared += 1;
-    if (shared > 0) {
-      return upper.slice(0, shared) + midpoint(lower.slice(shared), upper.slice(shared));
-    }
-  }
-  const lowerDigit = lower ? ORDER_DIGITS.indexOf(lower[0]) : 0;
-  const upperDigit = upper !== null ? ORDER_DIGITS.indexOf(upper[0]) : ORDER_BASE;
-  if (upperDigit - lowerDigit > 1) {
-    return ORDER_DIGITS[Math.round(0.5 * (lowerDigit + upperDigit))];
-  }
-  // Consecutive first digits: borrow a digit and split the level below.
-  if (upper !== null && upper.length > 1) return upper.slice(0, 1);
-  return ORDER_DIGITS[lowerDigit] + midpoint(lower.slice(1), null);
-}
-
-function isOrderKey(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    !value.endsWith(ORDER_DIGITS[0]) &&
-    [...value].every((char) => ORDER_DIGITS.includes(char))
-  );
-}
-
-/**
  * A key strictly between two neighbours (null = start / end of the list).
- * Degenerate input (equal or inverted neighbours, a foreign key from an older
- * client) appends after `lower` instead of throwing — a storyboard must never
- * lose a row to a bad sort key.
+ *
+ * The algorithm lives in `@repo/shared` because the server mints keys too, when
+ * an agent authors a shot. One implementation is the whole point: a key either
+ * side mints must be a key the other side accepts — two implementations once
+ * drifted, and rows landed in positions nobody asked for.
  */
-export function shotOrderBetween(
-  lower: string | null | undefined,
-  upper: string | null | undefined
-): string {
-  const before = isOrderKey(lower) ? lower : null;
-  const after = isOrderKey(upper) ? upper : null;
-  try {
-    return midpoint(before ?? "", after);
-  } catch {
-    return midpoint(before ?? "", null);
-  }
-}
+export { orderBetween as shotOrderBetween };
 
 // ── row projection ──────────────────────────────────────────────────────────
 
@@ -246,5 +194,5 @@ export function sortedShots<T extends ShotNodeLike>(nodes: readonly T[]): T[] {
 /** The order key for a shot appended after the current last one. */
 export function nextShotOrder(nodes: readonly ShotNodeLike[]): string {
   const shots = sortedShots(nodes);
-  return shotOrderBetween(shotNodeData(shots.at(-1)).order, null);
+  return orderBetween(shotNodeData(shots.at(-1)).order, null);
 }

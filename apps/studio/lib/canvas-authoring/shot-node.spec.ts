@@ -82,13 +82,37 @@ describe("shot picture slots", () => {
     expect(routeShotReferenceField({}, "audio")).toBeUndefined();
   });
 
-  it("refuses a full slot but lets the bound wire re-bind its own output", () => {
+  it("keeps taking stills while the frame slot has room for more candidates", () => {
     const references = { [SHOT_FRAME_FIELD]: [frame] };
+    expect(routeShotReferenceField(references, "image")).toEqual({ field: SHOT_FRAME_FIELD });
+  });
+
+  it("refuses a full slot but lets the bound wire re-bind its own output", () => {
+    const references = {
+      [SHOT_FRAME_FIELD]: Array.from({ length: 24 }, (_, index) => ({
+        id: `e${index}`,
+        edgeId: `e${index}`,
+        url: `https://x/${index}.png`,
+        kind: "image" as const,
+      })),
+    };
     expect(routeShotReferenceField(references, "image")).toBeUndefined();
-    expect(routeShotReferenceField(references, "image", "e1")).toEqual({
+    expect(routeShotReferenceField(references, "image", "e0")).toEqual({
       field: SHOT_FRAME_FIELD,
     });
-    // A different wire still can't take an occupied slot.
-    expect(routeShotReferenceField(references, "image", "e2")).toBeUndefined();
+    // A different wire still can't take a full slot.
+    expect(routeShotReferenceField(references, "image", "unbound")).toBeUndefined();
+  });
+
+  it("refuses a second clip — one animation per shot", () => {
+    const references = {
+      [SHOT_CLIP_FIELD]: [
+        { id: "e9", edgeId: "e9", url: "https://x/a.mp4", kind: "video" as const },
+      ],
+    };
+    expect(routeShotReferenceField(references, "video")).toBeUndefined();
+    expect(routeShotReferenceField(references, "video", "e9")).toEqual({
+      field: SHOT_CLIP_FIELD,
+    });
   });
 });

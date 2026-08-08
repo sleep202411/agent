@@ -31,6 +31,7 @@ export * from "./studio-agent.js";
 export * from "./studio-agent-transport.js";
 export * from "./studio-agent-api.js";
 export * from "./agent-os-transport.js";
+export * from "./fractional-index.js";
 export * from "./story-authoring-pipeline.js";
 export * from "./copilot-documents.js";
 export * from "./media-asset-readiness.js";

@@ -9,6 +9,7 @@ import {
   PlatformDocumentStatus,
   PlatformDocumentType,
 } from '@prisma/client';
+import { orderAfter } from '@repo/shared';
 import * as Y from 'yjs';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -719,11 +720,6 @@ function toShotNodeId(shotId: string): string {
   return shotId.startsWith('agent-os:shot:')
     ? shotId
     : `agent-os:shot:${shotId}`;
-}
-
-function orderAfter(lower: string | undefined): string {
-  if (!lower) return 'a0';
-  return `${lower}V`;
 }
 
 function stringField(payload: Record<string, unknown>, key: string): string {
