@@ -27,7 +27,7 @@ Execution agent (Claude Code–class for creators): user message → multi-step
 
 ## Do not
 
-- Import from `apps/agent`, `apps/agent-platform`, or `apps/studio-agent-runtime`.
+- Import from the legacy `apps/agent` application.
 - Add Mastra, or treat Ably / LangGraph checkpoint as project truth.
 - Run multi-hour generation inside the interactive graph (Temporal owns that later).
 - Soft-fail required configuration.

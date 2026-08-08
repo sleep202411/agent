@@ -153,18 +153,9 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
      labels; `dense` for compact dialogs); use `RequiredMark` directly only
      in non-Field contexts (e.g. a fieldset legend).
 
-   - ~~**Terminal failure surface**~~ (signed off 2026-07-27, RETIRED
-     2026-07-31): the pinned red-rimmed alert card for a dead StoryOS turn
-     was withdrawn by owner decision — errors are part of the message flow,
-     not a blocking banner. A failed turn now renders as a quiet in-flow
-     timeline row (`components/studio-agent/studio-agent-turn-failure.tsx`,
-     `StudioAgentTurnFailureRow`): `destructive`-token TEXT only, retry as
-     a white-alpha pill, error code and diagnostic id behind a "Details"
-     disclosure. The closed-panel echo is a compact dismissible frosted
-     notice with a destructive glyph. Neither uses brand red, a red wash,
-     or a red rim — failure tone is carried by `destructive` per rule 2,
-     and quiet ≠ hidden: every failed turn stays discoverable in the
-     timeline with its retry affordance.
+   - **Agent failure details**: keep status metadata out of the main composer
+     rhythm. FizzAgent exposes it through the compact header details action;
+     its dialog uses `destructive`-token text only, with no red wash or rim.
 
    In all of these, red still never tints a passive surface. Generated
    imagery is the only other saturated content by default.

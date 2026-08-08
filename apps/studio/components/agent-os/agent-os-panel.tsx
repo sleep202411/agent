@@ -8,10 +8,10 @@ import { toast } from "sonner";
 import { agentOsSurfaceFromStudioMode } from "@repo/shared";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
 import {
-  StudioAgentModelMenu,
-  StudioAgentPermissionMenu,
-  StudioAgentSurface,
-} from "@/components/studio-agent";
+  FizzAgentModelMenu,
+  FizzAgentPermissionMenu,
+  FizzAgentSurface,
+} from "@/components/fizz-agent";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,8 +102,6 @@ export function AgentOsPanel({
   const [invocableSkills, setInvocableSkills] = useState<AgentOsSkillMeta[]>([]);
   /** Project admin defaults — pinned chips; persisted via Nest. */
   const [projectDefaultSkillIds, setProjectDefaultSkillIds] = useState<string[]>([]);
-  /** True after project skills catalog/defaults load (or fail). */
-  const [skillsHydrated, setSkillsHydrated] = useState(false);
   /** Per-turn selection (user toggles). */
   const [turnSkillIds, setTurnSkillIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,7 +150,6 @@ export function AgentOsPanel({
   useEffect(() => {
     let cancelled = false;
     domainBaselineReady.current = false;
-    setSkillsHydrated(false);
     void Promise.all([
       agentOsApi.listCharacters(projectId),
       agentOsApi.getProjectSkills(projectId),
@@ -175,14 +172,12 @@ export function AgentOsPanel({
         setTurnSkillIds((prev) =>
           prev.filter((id) => skillCatalog.invocable.some((s) => s.id === id))
         );
-        setSkillsHydrated(true);
       })
       .catch(() => {
         if (!cancelled) {
           domainBaselineReady.current = true;
-          // Leave skillsHydrated false so the skills row stays hidden
-          // and Nest loads durable defaults from DB.
-          setSkillsHydrated(false);
+          // Nest still loads durable defaults from DB when this optional
+          // catalog request is unavailable.
         }
       });
     return () => {
@@ -377,7 +372,7 @@ export function AgentOsPanel({
     workerOk === false ? t("workerOffline") : workerOk === true ? t("workerOnline") : t("subtitle");
 
   return (
-    <StudioAgentSurface
+    <FizzAgentSurface
       open={open}
       title={t("title")}
       subtitle={workerStatus}
@@ -479,7 +474,7 @@ export function AgentOsPanel({
             }
             beforeSend={
               <div className="flex min-w-0 shrink items-center gap-1">
-                <StudioAgentPermissionMenu
+                <FizzAgentPermissionMenu
                   value={permissionMode}
                   disabled={turnBusy}
                   labels={{ menu: t("permissionMode") }}
@@ -490,7 +485,7 @@ export function AgentOsPanel({
                   }))}
                   onValueChange={setPermissionMode}
                 />
-                <StudioAgentModelMenu
+                <FizzAgentModelMenu
                   value={modelProfileId}
                   disabled={turnBusy}
                   label={t("modelProfile")}
@@ -629,6 +624,6 @@ export function AgentOsPanel({
           </div>
         }
       />
-    </StudioAgentSurface>
+    </FizzAgentSurface>
   );
 }

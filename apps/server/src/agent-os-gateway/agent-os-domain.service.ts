@@ -531,7 +531,7 @@ export class AgentOsDomainService {
         message: `sectionIndex ${args.sectionIndex} >= ${attachment.sections.length}`,
       });
     }
-    const text = attachment.sections[args.sectionIndex]!.slice(
+    const text = attachment.sections[args.sectionIndex].slice(
       0,
       args.maxChars ?? 8000,
     );
@@ -604,10 +604,7 @@ export class AgentOsDomainService {
     );
 
     return this.prisma.$transaction(async (tx) => {
-      await this.writeGuard.acquireStudioAgentMutationFence(
-        tx,
-        input.projectId,
-      );
+      await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
       const state = await this.loadStoryDraftInTx(tx, input.projectId);
       if (state.revision !== args.baseRevision) {
         throw new ConflictException({
@@ -826,11 +823,6 @@ function toShotSummary(row: AgentOsCanvasShotRow) {
   if (row.durationSeconds !== null)
     summary.durationSeconds = row.durationSeconds;
   return summary;
-}
-
-function parseStringArray(value: Prisma.JsonValue): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
 }
 
 function jsonStringArray(value: Prisma.JsonValue): string[] {
