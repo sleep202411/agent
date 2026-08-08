@@ -7,6 +7,12 @@ const modelProfileIdSchema = z
   .max(64)
   .regex(/^[a-z][a-z0-9_-]*$/);
 
+/** Codex-style autonomy: ask = approve every write; smart = sensitive only; full = auto. */
+export const AgentOsPermissionModeSchema = z.enum(['ask', 'smart', 'full']);
+
+/** Studio surface pack — trusted mode, not inferred from chat text. */
+export const AgentOsSurfaceSchema = z.enum(['storyboard', 'canvas', 'brief']);
+
 export const AgentOsStartRunBodySchema = z
   .object({
     projectId: z.string().uuid(),
@@ -14,8 +20,29 @@ export const AgentOsStartRunBodySchema = z
     message: z.string().trim().min(1).max(100_000),
     /** Required — never defaulted server-side (fail loud on missing profile). */
     modelProfileId: modelProfileIdSchema,
-    /** Optional inline script text for Phase 1 demos (before attachment pipeline). */
-    scriptText: z.string().trim().min(1).max(200_000).optional(),
+    /**
+     * Uploaded Agent OS attachments (file upload API) referenced by this turn.
+     * Prefer this over free-text paste — product path is file upload.
+     */
+    attachmentIds: z.array(z.string().uuid()).max(20).optional(),
+    /** Permission / autonomy mode (Codex-style). Defaults to smart if omitted. */
+    permissionMode: AgentOsPermissionModeSchema.optional(),
+    /**
+     * Product surface (Studio mode). Mounts system surface skills on the worker.
+     */
+    surface: AgentOsSurfaceSchema.optional(),
+    /**
+     * Per-turn skill ids from the composer (future UI). Mounted when registered
+     * in the skill runtime — same path as system skills.
+     */
+    skillIds: z.array(z.string().trim().min(1).max(128)).max(16).optional(),
+    /**
+     * Project default skill ids (admin). Mounted when registered.
+     */
+    projectDefaultSkillIds: z
+      .array(z.string().trim().min(1).max(128))
+      .max(16)
+      .optional(),
   })
   .strict();
 
@@ -28,6 +55,7 @@ export const AgentOsApprovalBodySchema = z
     projectId: z.string().uuid(),
     /** Required — must match the profile used for the run resume. */
     modelProfileId: modelProfileIdSchema,
+    permissionMode: AgentOsPermissionModeSchema.optional(),
   })
   .strict();
 

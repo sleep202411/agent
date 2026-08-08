@@ -21,12 +21,10 @@ const domainsByProject = new Map<string, DomainPort>();
 /** runId → projectId for approval resume domain lookup. */
 const runProject = new Map<string, string>();
 
-function domainForProject(projectId: string, scriptText?: string): DomainPort {
+function domainForProject(projectId: string): DomainPort {
   const existing = domainsByProject.get(projectId);
-  if (existing && !scriptText?.trim()) {
-    return existing;
-  }
-  const domain = createWorkerDomainPort(scriptText);
+  if (existing) return existing;
+  const domain = createWorkerDomainPort();
   domainsByProject.set(projectId, domain);
   return domain;
 }
@@ -58,6 +56,7 @@ export function createAgentOsHttpServer() {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       if (req.method === "GET" && url.pathname === "/health") {
+        const { listSkills } = await import("@repo/agent-skills");
         send(res, 200, {
           ok: true,
           product: "FizzDragon Agent Platform",
@@ -68,6 +67,12 @@ export function createAgentOsHttpServer() {
             Boolean(process.env.DATABASE_URL?.trim())
               ? "postgres"
               : "memory",
+          skills: listSkills().map((s) => ({
+            id: s.id,
+            source: s.source,
+            alwaysOn: s.alwaysOn,
+            surfaces: s.surfaces,
+          })),
           billing: "free",
           rateLimit: "disabled",
         });
@@ -90,7 +95,13 @@ export function createAgentOsHttpServer() {
           actorId?: string;
           message?: string;
           modelProfileId?: string;
-          scriptText?: string;
+          attachmentIds?: string[];
+          permissionMode?: "ask" | "smart" | "full";
+          surface?: "storyboard" | "canvas" | "brief";
+          /** Per-turn skill ids (composer). Mounted when registered in skill runtime. */
+          skillIds?: string[];
+          /** Project default skill ids (admin). Mounted when registered. */
+          projectDefaultSkillIds?: string[];
         };
         if (
           !body.projectId ||
@@ -108,43 +119,49 @@ export function createAgentOsHttpServer() {
           return;
         }
         const runId = crypto.randomUUID();
-        const domain = domainForProject(body.projectId, body.scriptText);
+        const domain = domainForProject(body.projectId);
         runProject.set(runId, body.projectId);
-        if (body.scriptText?.trim()) {
-          const storeResult = await domain.execute(
-            "script.store",
-            { text: body.scriptText.trim() },
-            {
-              runId,
-              conversationId: body.conversationId,
-              projectId: body.projectId,
-              actorId: body.actorId,
-              toolCallId: "pre-store-script",
-              idempotencyKey: `${body.projectId}:${runId}:pre-store-script:v1`,
-            }
-          );
-          if (!storeResult.ok) {
-            send(res, 422, {
-              error: {
-                code: storeResult.code,
-                message: storeResult.message,
-              },
-            });
-            return;
-          }
-        }
         const checkpointer = await getAgentOsCheckpointer();
         const model = createLiteLlmChatModel({
           profileId: body.modelProfileId,
         });
-        const snapshot = await service.start({
+        const attachmentIds = (body.attachmentIds ?? []).filter(
+          (id) => typeof id === "string" && id.length > 0
+        );
+        const message =
+          attachmentIds.length > 0
+            ? `${body.message}\n\n[Context: The user attached file(s) with attachmentId(s): ${attachmentIds.join(", ")}. Call script_read_section with those attachmentId values (sectionIndex starts at 0). Do not invent ids. Do not claim writes succeeded until upsert tools return ok.]`
+            : body.message;
+        // Async stream: return immediately; client polls /events for MessageDelta.
+        const permissionMode =
+          body.permissionMode === "ask" ||
+          body.permissionMode === "smart" ||
+          body.permissionMode === "full"
+            ? body.permissionMode
+            : "smart";
+        const surface =
+          body.surface === "canvas" || body.surface === "brief" || body.surface === "storyboard"
+            ? body.surface
+            : "storyboard";
+        const turnSkillIds = (body.skillIds ?? []).filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0
+        );
+        const projectDefaultSkillIds = (body.projectDefaultSkillIds ?? []).filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0
+        );
+        const snapshot = service.beginStart({
           runId,
           projectId: body.projectId,
           conversationId: body.conversationId,
           actorId: body.actorId,
           sessionId: `agent-os:v1:conversation:${body.conversationId}`,
-          message: body.message,
+          message,
           modelProfileId: body.modelProfileId,
+          permissionMode,
+          surface,
+          turnSkillIds: turnSkillIds.length > 0 ? turnSkillIds : undefined,
+          projectDefaultSkillIds:
+            projectDefaultSkillIds.length > 0 ? projectDefaultSkillIds : undefined,
           model,
           domain,
           checkpointer,
@@ -153,6 +170,7 @@ export function createAgentOsHttpServer() {
           runId: snapshot.runId,
           status: snapshot.status,
           pendingApproval: snapshot.pendingApproval,
+          assistantText: snapshot.assistantText ?? "",
           events: snapshot.journal.all(),
         });
         return;
@@ -167,6 +185,7 @@ export function createAgentOsHttpServer() {
           actorId?: string;
           conversationId?: string;
           modelProfileId?: string;
+          permissionMode?: "ask" | "smart" | "full";
         };
         if (
           !body.decision ||
@@ -198,7 +217,13 @@ export function createAgentOsHttpServer() {
         const model = createLiteLlmChatModel({
           profileId: body.modelProfileId,
         });
-        const snapshot = await service.resumeApproval({
+        const permissionMode =
+          body.permissionMode === "ask" ||
+          body.permissionMode === "smart" ||
+          body.permissionMode === "full"
+            ? body.permissionMode
+            : undefined;
+        const snapshot = service.beginResumeApproval({
           runId,
           decision: body.decision,
           projectId: body.projectId,
@@ -206,6 +231,7 @@ export function createAgentOsHttpServer() {
           conversationId: body.conversationId,
           sessionId: `agent-os:v1:conversation:${body.conversationId}`,
           modelProfileId: body.modelProfileId,
+          permissionMode,
           model,
           domain,
           checkpointer,
@@ -213,7 +239,8 @@ export function createAgentOsHttpServer() {
         send(res, 200, {
           runId: snapshot.runId,
           status: snapshot.status,
-          assistantText: snapshot.assistantText,
+          pendingApproval: snapshot.pendingApproval,
+          assistantText: snapshot.assistantText ?? "",
           events: snapshot.journal.all(),
         });
         return;
@@ -230,7 +257,33 @@ export function createAgentOsHttpServer() {
         send(res, 200, {
           runId: snapshot.runId,
           status: snapshot.status,
+          pendingApproval: snapshot.pendingApproval,
+          assistantText: snapshot.assistantText,
           events: snapshot.journal.listFrom(after),
+        });
+        return;
+      }
+
+      const cancelMatch = url.pathname.match(/^\/v1\/agent-os\/runs\/([^/]+)\/cancel$/);
+      if (req.method === "POST" && cancelMatch) {
+        const runId = cancelMatch[1]!;
+        const body = (await readJson(req)) as { reason?: string };
+        const snapshot = service.cancel(
+          runId,
+          typeof body.reason === "string" && body.reason.trim()
+            ? body.reason.trim()
+            : "Stopped by user"
+        );
+        if (!snapshot) {
+          send(res, 404, { error: { code: "RUN_NOT_FOUND", message: "Unknown runId" } });
+          return;
+        }
+        send(res, 200, {
+          runId: snapshot.runId,
+          status: snapshot.status,
+          pendingApproval: snapshot.pendingApproval,
+          assistantText: snapshot.assistantText ?? "",
+          events: snapshot.journal.all(),
         });
         return;
       }

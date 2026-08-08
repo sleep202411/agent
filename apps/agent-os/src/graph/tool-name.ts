@@ -10,6 +10,9 @@ export function fromLangChainToolName(name: string): string {
     "script.store",
     "characters.upsert",
     "characters.list",
+    "storyboard.deleteShots",
+    "storyboard.listShots",
+    "storyboard.upsertShots",
     "canvas.applyPatch",
     "canvas.read",
   ];

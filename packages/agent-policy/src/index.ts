@@ -77,18 +77,12 @@ export function requiresApproval(input: {
         reason: "Sensitive operations require approval in smart mode.",
       };
     }
+    // read + reversible auto-run
     return { required: false };
   }
 
-  // permissionMode === "full": auto-run reversible + sensitive; critical already handled.
-  if (risk === "sensitive" && mode !== "AUTOPILOT") {
-    return {
-      required: true,
-      actions: ["approve", "edit_and_approve", "reject"],
-      reason: "Sensitive operations outside AUTOPILOT still require approval.",
-    };
-  }
-
+  // permissionMode === "full" (Codex "full access"):
+  // Auto-run reversible + sensitive. Critical already forced above.
   return { required: false };
 }
 

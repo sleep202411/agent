@@ -4,6 +4,8 @@ import { AgentOsIdSchema, AgentOsIsoTimestampSchema, AgentOsNonEmptyIdSchema } f
 import { FizzAgentProtocolVersionSchema } from "./protocol.js";
 export const AgentEventTypeSchema = z.enum([
   "RunStarted",
+  /** Durable user turn text for transcript restore after panel close / reload. */
+  "UserMessage",
   "MessageStarted",
   "MessageDelta",
   "MessageCompleted",
@@ -56,6 +58,13 @@ export const RunStartedDataSchema = z
     status: z.literal("running"),
     workspaceType: z.string().min(1),
     modelProfileId: z.string().min(1),
+  })
+  .strict();
+
+export const UserMessageDataSchema = z
+  .object({
+    messageId: AgentOsNonEmptyIdSchema,
+    text: z.string().min(1).max(20_000),
   })
   .strict();
 

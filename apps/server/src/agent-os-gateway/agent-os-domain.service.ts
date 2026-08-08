@@ -24,9 +24,16 @@ import { StoryPermissionService } from '../story-studio/story-permission.service
 import { StoryProjectWriteGuardService } from '../story-studio/story-project-write-guard.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import {
+  contentHash,
+  AgentOsAttachmentService,
+} from './agent-os-attachment.service';
+import { AgentOsCanvasShotsService } from './agent-os-canvas-shots.service';
+import {
   CharactersUpsertInputSchema,
   ScriptReadSectionInputSchema,
   ScriptStoreInputSchema,
+  ShotsDeleteInputSchema,
+  ShotsUpsertInputSchema,
 } from './agent-os-domain.dto';
 
 export type AgentOsDomainResult =
@@ -45,6 +52,13 @@ type StoredCharacter = {
   summary: string;
 };
 
+type StoredShot = {
+  id: string;
+  title: string;
+  prompt: string;
+  notes: string;
+};
+
 /**
  * Product Domain for Agent OS tools.
  * - Platform (studio) projects → agent_os_project_states
@@ -57,6 +71,8 @@ export class AgentOsDomainService {
     private readonly storyPermissions: StoryPermissionService,
     private readonly writeGuard: StoryProjectWriteGuardService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly attachments: AgentOsAttachmentService,
+    private readonly canvasShots: AgentOsCanvasShotsService,
   ) {}
 
   async execute(input: {
@@ -100,6 +116,31 @@ export class AgentOsDomainService {
           return {
             ok: true,
             data: await this.storeScript(input),
+          };
+        case 'storyboard.listShots':
+          return {
+            ok: true,
+            data: await this.listShots(input.actorId, input.projectId),
+          };
+        case 'storyboard.upsertShots':
+          return {
+            ok: true,
+            data: await this.upsertShots(input),
+          };
+        case 'storyboard.deleteShots':
+          return {
+            ok: true,
+            data: await this.deleteShots(input),
+          };
+        case 'canvas.read':
+          return {
+            ok: true,
+            data: await this.readCanvas(input.actorId, input.projectId),
+          };
+        case 'canvas.applyPatch':
+          return {
+            ok: true,
+            data: await this.applyCanvasPatch(input),
           };
         default:
           return {
@@ -168,6 +209,272 @@ export class AgentOsDomainService {
     );
   }
 
+  private async listShots(actorId: string, projectId: string) {
+    const kind = await this.resolveProjectKind(projectId);
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'STORYBOARD_PLATFORM_ONLY',
+        message: 'storyboard.* tools are for studio Platform projects.',
+      });
+    }
+    await this.requirePlatformRead(actorId, projectId);
+    const state = await this.ensurePlatformState(projectId);
+    return {
+      revision: state.revision,
+      surface: 'platform',
+      shots: parseShots(state.shots),
+    };
+  }
+
+  private async upsertShots(input: {
+    actorId: string;
+    projectId: string;
+    idempotencyKey: string;
+    arguments: unknown;
+  }) {
+    const args = ShotsUpsertInputSchema.parse(input.arguments);
+    const kind = await this.resolveProjectKind(input.projectId);
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'STORYBOARD_PLATFORM_ONLY',
+        message: 'storyboard.* tools are for studio Platform projects.',
+      });
+    }
+    await this.requirePlatformEdit(input.actorId, input.projectId);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.platformProject.findFirst({
+        where: { id: input.projectId, deletedAt: null },
+        select: { id: true, workspaceId: true },
+      });
+      if (!project) {
+        throw new NotFoundException({
+          code: 'PROJECT_NOT_FOUND',
+          message: 'Platform project not found.',
+        });
+      }
+      let state = await tx.agentOsProjectState.findUnique({
+        where: { projectId: input.projectId },
+      });
+      if (!state) {
+        state = await tx.agentOsProjectState.create({
+          data: {
+            projectId: project.id,
+            workspaceId: project.workspaceId,
+            revision: 0,
+            characters: [],
+            scriptSections: [],
+            shots: [],
+          },
+        });
+      }
+      if (state.revision !== args.baseRevision) {
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          message: `Expected revision ${args.baseRevision}, current is ${state.revision}`,
+          expected: args.baseRevision,
+          actual: state.revision,
+        });
+      }
+
+      const next = new Map(
+        parseShots(state.shots).map((s) => [s.id, s] as const),
+      );
+      const written: Array<{ id: string; title: string }> = [];
+      for (const shot of args.shots) {
+        const intent = shot.intent ?? 'create';
+        if (intent === 'create' && next.has(shot.id)) {
+          throw new UnprocessableEntityException({
+            code: 'SHOT_EXISTS',
+            message: `Shot ${shot.id} already exists`,
+          });
+        }
+        next.set(shot.id, {
+          id: shot.id,
+          title: shot.title,
+          prompt: shot.prompt,
+          notes: shot.notes ?? '',
+        });
+        written.push({ id: shot.id, title: shot.title });
+      }
+
+      const updated = await tx.agentOsProjectState.updateMany({
+        where: { projectId: input.projectId, revision: state.revision },
+        data: {
+          shots: [...next.values()] as unknown as Prisma.InputJsonValue,
+          revision: { increment: 1 },
+          updatedByUserId: input.actorId,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException({
+          code: 'PROJECT_CAS_LOST',
+          message: 'Agent OS project state changed concurrently.',
+        });
+      }
+
+      return {
+        projectRevision: state.revision + 1,
+        surface: 'platform' as const,
+        written,
+        shots: args.shots.map((s) => ({
+          id: s.id,
+          title: s.title,
+          prompt: s.prompt,
+          notes: s.notes,
+        })),
+        idempotencyKey: input.idempotencyKey,
+      };
+    });
+
+    // Outside CAS transaction: product canvas is the live CRDT (WS fan-out).
+    const canvas = await this.canvasShots.applyShots({
+      actorId: input.actorId,
+      projectId: input.projectId,
+      shots: result.shots,
+      idempotencyKey: input.idempotencyKey,
+    });
+
+    return {
+      projectRevision: result.projectRevision,
+      surface: result.surface,
+      written: result.written,
+      canvasDocumentId: canvas?.documentId ?? null,
+      canvasSequence: canvas?.sequence ?? null,
+      canvasNodes: canvas?.written ?? [],
+      idempotencyKey: result.idempotencyKey,
+    };
+  }
+
+  private async deleteShots(input: {
+    actorId: string;
+    projectId: string;
+    idempotencyKey: string;
+    arguments: unknown;
+  }) {
+    const args = ShotsDeleteInputSchema.parse(input.arguments);
+    const kind = await this.resolveProjectKind(input.projectId);
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'STORYBOARD_PLATFORM_ONLY',
+        message: 'storyboard.* tools are for studio Platform projects.',
+      });
+    }
+    await this.requirePlatformEdit(input.actorId, input.projectId);
+
+    const uniqueIds = [
+      ...new Set(args.shotIds.map((id) => id.trim()).filter(Boolean)),
+    ];
+    if (uniqueIds.length === 0) {
+      throw new UnprocessableEntityException({
+        code: 'SHOT_IDS_REQUIRED',
+        message: 'shotIds must contain at least one id.',
+      });
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.platformProject.findFirst({
+        where: { id: input.projectId, deletedAt: null },
+        select: { id: true, workspaceId: true },
+      });
+      if (!project) {
+        throw new NotFoundException({
+          code: 'PROJECT_NOT_FOUND',
+          message: 'Platform project not found.',
+        });
+      }
+      let state = await tx.agentOsProjectState.findUnique({
+        where: { projectId: input.projectId },
+      });
+      if (!state) {
+        state = await tx.agentOsProjectState.create({
+          data: {
+            projectId: project.id,
+            workspaceId: project.workspaceId,
+            revision: 0,
+            characters: [],
+            scriptSections: [],
+            shots: [],
+          },
+        });
+      }
+      if (state.revision !== args.baseRevision) {
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          message: `Expected revision ${args.baseRevision}, current is ${state.revision}`,
+          expected: args.baseRevision,
+          actual: state.revision,
+        });
+      }
+
+      const current = parseShots(state.shots);
+      const byId = new Map(current.map((s) => [s.id, s] as const));
+      const deleted: Array<{ id: string; title: string }> = [];
+      const missing: string[] = [];
+      for (const id of uniqueIds) {
+        const row = byId.get(id);
+        if (!row) {
+          missing.push(id);
+          continue;
+        }
+        deleted.push({ id: row.id, title: row.title });
+        byId.delete(id);
+      }
+      if (missing.length > 0) {
+        throw new UnprocessableEntityException({
+          code: 'SHOT_NOT_FOUND',
+          message: `Unknown shot id(s): ${missing.join(', ')}. Call storyboard.listShots first.`,
+          missing,
+        });
+      }
+      if (deleted.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'SHOT_DELETE_EMPTY',
+          message: 'No shots to delete.',
+        });
+      }
+
+      const updated = await tx.agentOsProjectState.updateMany({
+        where: { projectId: input.projectId, revision: state.revision },
+        data: {
+          shots: [...byId.values()] as unknown as Prisma.InputJsonValue,
+          revision: { increment: 1 },
+          updatedByUserId: input.actorId,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException({
+          code: 'PROJECT_CAS_LOST',
+          message: 'Agent OS project state changed concurrently.',
+        });
+      }
+
+      return {
+        projectRevision: state.revision + 1,
+        surface: 'platform' as const,
+        deleted,
+        idempotencyKey: input.idempotencyKey,
+      };
+    });
+
+    const canvas = await this.canvasShots.deleteShots({
+      actorId: input.actorId,
+      projectId: input.projectId,
+      shotIds: result.deleted.map((s) => s.id),
+      idempotencyKey: input.idempotencyKey,
+    });
+
+    return {
+      projectRevision: result.projectRevision,
+      surface: result.surface,
+      deleted: result.deleted,
+      canvasDocumentId: canvas?.documentId ?? null,
+      canvasSequence: canvas?.sequence ?? null,
+      canvasRemovedNodes: canvas?.removed ?? [],
+      idempotencyKey: result.idempotencyKey,
+    };
+  }
+
   private async listPlatformCharacters(actorId: string, projectId: string) {
     await this.requirePlatformRead(actorId, projectId);
     const state = await this.ensurePlatformState(projectId);
@@ -214,6 +521,7 @@ export class AgentOsDomainService {
             revision: 0,
             characters: [],
             scriptSections: [],
+            shots: [],
           },
         });
       }
@@ -276,6 +584,74 @@ export class AgentOsDomainService {
     });
   }
 
+  private async readCanvas(actorId: string, projectId: string) {
+    const kind = await this.resolveProjectKind(projectId);
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_PLATFORM_ONLY',
+        message: 'canvas.read is for studio Platform projects.',
+      });
+    }
+    await this.requirePlatformRead(actorId, projectId);
+    return this.canvasShots.readCanvasSummary({ actorId, projectId });
+  }
+
+  private async applyCanvasPatch(input: {
+    actorId: string;
+    projectId: string;
+    idempotencyKey: string;
+    arguments: unknown;
+  }) {
+    const kind = await this.resolveProjectKind(input.projectId);
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_PLATFORM_ONLY',
+        message: 'canvas.applyPatch is for studio Platform projects.',
+      });
+    }
+    await this.requirePlatformEdit(input.actorId, input.projectId);
+    const raw = input.arguments as {
+      baseDraftRevision?: number;
+      baseLayoutRevision?: number;
+      operations?: Array<{
+        operationId?: string;
+        kind: string;
+        payload: Record<string, unknown>;
+      }>;
+    };
+    if (
+      typeof raw?.baseDraftRevision !== 'number' ||
+      typeof raw?.baseLayoutRevision !== 'number' ||
+      !Array.isArray(raw.operations) ||
+      raw.operations.length === 0
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_CANVAS_PATCH',
+        message:
+          'baseDraftRevision, baseLayoutRevision, and operations[] are required.',
+      });
+    }
+    // Models invent invalid UUIDs; mint real ones before canvas CRDT apply.
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const operations = raw.operations.map((op) => ({
+      kind: op.kind,
+      payload: op.payload ?? {},
+      operationId:
+        typeof op.operationId === 'string' && uuidRe.test(op.operationId.trim())
+          ? op.operationId.trim()
+          : randomUUID(),
+    }));
+    return this.canvasShots.applyPatch({
+      actorId: input.actorId,
+      projectId: input.projectId,
+      baseDraftRevision: raw.baseDraftRevision,
+      baseLayoutRevision: raw.baseLayoutRevision,
+      operations,
+      idempotencyKey: input.idempotencyKey,
+    });
+  }
+
   private async storeScript(input: {
     actorId: string;
     projectId: string;
@@ -283,43 +659,29 @@ export class AgentOsDomainService {
   }) {
     const args = ScriptStoreInputSchema.parse(input.arguments);
     const kind = await this.resolveProjectKind(input.projectId);
-    if (kind === 'story') {
-      await this.storyPermissions.requireProject(
-        input.actorId,
-        input.projectId,
-        'story.edit',
-      );
-      // Story surface: keep sections on platform state keyed by story project id is wrong.
-      // Store on AgentOsProjectState only for platform; for story use platform table with story id as key?
-      // Simpler: only platform projects store script in AgentOsProjectState.
+    if (kind !== 'platform') {
       throw new UnprocessableEntityException({
-        code: 'SCRIPT_STORE_STORY_UNSUPPORTED',
+        code: 'SCRIPT_STORE_PLATFORM_ONLY',
         message:
-          'script.store for Story Studio projects should use attachments; use platform projects or pass script via run scriptText for now.',
+          'script.store is for platform projects; upload a file as an attachment.',
       });
     }
-    await this.requirePlatformEdit(input.actorId, input.projectId);
-    const sections = splitScript(args.text, args.sectionSize ?? 2000);
-    const project = await this.prisma.platformProject.findFirstOrThrow({
-      where: { id: input.projectId, deletedAt: null },
-      select: { id: true, workspaceId: true },
-    });
-    await this.prisma.agentOsProjectState.upsert({
-      where: { projectId: project.id },
-      create: {
-        projectId: project.id,
-        workspaceId: project.workspaceId,
-        revision: 0,
-        characters: [],
-        scriptSections: sections,
-        updatedByUserId: input.actorId,
+    // Domain tool: materialize an attachment so readSection uses attachmentId only.
+    const uploaded = await this.attachments.upload(
+      input.actorId,
+      input.projectId,
+      {
+        originalname: `agent-script-${Date.now()}.txt`,
+        mimetype: 'text/plain',
+        size: Buffer.byteLength(args.text, 'utf8'),
+        buffer: Buffer.from(args.text, 'utf8'),
       },
-      update: {
-        scriptSections: sections,
-        updatedByUserId: input.actorId,
-      },
-    });
-    return { sectionCount: sections.length, surface: 'platform' };
+    );
+    return {
+      sectionCount: uploaded.sectionCount,
+      surface: 'platform',
+      attachmentId: uploaded.id,
+    };
   }
 
   private async readScriptSection(input: {
@@ -329,30 +691,34 @@ export class AgentOsDomainService {
   }) {
     const args = ScriptReadSectionInputSchema.parse(input.arguments);
     const kind = await this.resolveProjectKind(input.projectId);
-    if (kind === 'platform') {
-      await this.requirePlatformRead(input.actorId, input.projectId);
-      const state = await this.ensurePlatformState(input.projectId);
-      const sections = parseStringArray(state.scriptSections);
-      if (args.sectionIndex >= sections.length) {
-        throw new UnprocessableEntityException({
-          code: 'SECTION_OUT_OF_RANGE',
-          message: `sectionIndex ${args.sectionIndex} >= ${sections.length}`,
-        });
-      }
-      const text = sections[args.sectionIndex]!.slice(0, args.maxChars ?? 8000);
-      return {
-        attachmentId: args.attachmentId,
-        sectionIndex: args.sectionIndex,
-        totalSections: sections.length,
-        text,
-        contentHash: createHash('sha256').update(text).digest('hex'),
-      };
+    if (kind !== 'platform') {
+      throw new UnprocessableEntityException({
+        code: 'SCRIPT_READ_PLATFORM_ONLY',
+        message: 'script.readSection is for platform project attachments.',
+      });
     }
-    throw new UnprocessableEntityException({
-      code: 'SCRIPT_READ_STORY_USE_ATTACHMENT',
-      message:
-        'Story Studio script reading should use uploaded attachments; platform projects use stored script sections.',
-    });
+    await this.requirePlatformRead(input.actorId, input.projectId);
+    const attachment = await this.attachments.getForTool(
+      input.projectId,
+      args.attachmentId,
+    );
+    if (args.sectionIndex >= attachment.sections.length) {
+      throw new UnprocessableEntityException({
+        code: 'SECTION_OUT_OF_RANGE',
+        message: `sectionIndex ${args.sectionIndex} >= ${attachment.sections.length}`,
+      });
+    }
+    const text = attachment.sections[args.sectionIndex]!.slice(
+      0,
+      args.maxChars ?? 8000,
+    );
+    return {
+      attachmentId: attachment.id,
+      sectionIndex: args.sectionIndex,
+      totalSections: attachment.sections.length,
+      text,
+      contentHash: contentHash(text),
+    };
   }
 
   private async ensurePlatformState(projectId: string) {
@@ -377,6 +743,7 @@ export class AgentOsDomainService {
         revision: 0,
         characters: [],
         scriptSections: [],
+        shots: [],
       },
     });
   }
@@ -605,6 +972,23 @@ function parseCharacters(value: Prisma.JsonValue): StoredCharacter[] {
   );
 }
 
+function parseShots(value: Prisma.JsonValue): StoredShot[] {
+  if (!Array.isArray(value)) return [];
+  const out: StoredShot[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== 'string' || typeof row.title !== 'string') continue;
+    out.push({
+      id: row.id,
+      title: row.title,
+      prompt: typeof row.prompt === 'string' ? row.prompt : '',
+      notes: typeof row.notes === 'string' ? row.notes : '',
+    });
+  }
+  return out;
+}
+
 function parseStringArray(value: Prisma.JsonValue): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
@@ -613,14 +997,6 @@ function parseStringArray(value: Prisma.JsonValue): string[] {
 function jsonStringArray(value: Prisma.JsonValue): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
-}
-
-function splitScript(text: string, sectionSize: number): string[] {
-  const sections: string[] = [];
-  for (let i = 0; i < text.length; i += sectionSize) {
-    sections.push(text.slice(i, i + sectionSize));
-  }
-  return sections.length > 0 ? sections : [''];
 }
 
 export function agentOsDomainRequestHash(value: unknown): string {

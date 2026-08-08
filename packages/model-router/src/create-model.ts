@@ -17,6 +17,8 @@ export function createLiteLlmChatModel(input: {
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
     apiKey: config.apiKey,
+    /** Token stream for Agent OS MessageDelta / UI progressive render. */
+    streaming: true,
     configuration: {
       baseURL: config.baseUrl,
     },

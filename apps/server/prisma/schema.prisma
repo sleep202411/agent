@@ -970,7 +970,8 @@ model PlatformProject {
   productionCrew   Crew?                    @relation("CrewProductionProject")
   studioCrew       Crew?                    @relation("CrewStudioProject")
   crewTaskCanvas   CrewTask?                @relation("CrewTaskCanvasProject")
-  agentOsState     AgentOsProjectState?
+  agentOsState        AgentOsProjectState?
+  agentOsAttachments  AgentOsAttachment[]
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -990,6 +991,10 @@ model AgentOsProjectState {
   revision        Int      @default(0)
   characters      Json     @default("[]") @db.JsonB
   scriptSections  Json     @default("[]") @map("script_sections") @db.JsonB
+  /// Agent-authored storyboard shot drafts (id, title, prompt, notes).
+  shots           Json     @default("[]") @db.JsonB
+  /// Project default skill ids (admin). Mounted every turn when registered.
+  defaultSkillIds Json     @default("[]") @map("default_skill_ids") @db.JsonB
   updatedByUserId String?  @map("updated_by_user_id") @db.VarChar(64)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -998,6 +1003,31 @@ model AgentOsProjectState {
 
   @@index([workspaceId, updatedAt(sort: Desc)], map: "agent_os_project_states_workspace_recent_idx")
   @@map("agent_os_project_states")
+}
+
+/// User-uploaded files for Agent OS (scripts, notes, refs). Tools read by attachmentId.
+model AgentOsAttachment {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  uploadedByUserId String   @map("uploaded_by_user_id") @db.VarChar(64)
+  filename         String   @db.VarChar(512)
+  mimeType         String   @map("mime_type") @db.VarChar(128)
+  sizeBytes        Int      @map("size_bytes")
+  /// ready | failed
+  status           String   @db.VarChar(32)
+  /// Extracted UTF-8 text for model tools (scripts / plain docs).
+  textContent      String?  @map("text_content") @db.Text
+  /// Bounded sections for script.readSection (JSON string array).
+  sections         Json     @default("[]") @db.JsonB
+  errorMessage     String?  @map("error_message") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt(sort: Desc)], map: "agent_os_attachments_project_recent_idx")
+  @@map("agent_os_attachments")
 }
 
 /// Agent OS run event journal (reconnect / audit). Sequence is per-run monotonic.
@@ -1017,6 +1047,7 @@ model AgentOsRun {
 
   @@index([projectId, createdAt(sort: Desc)], map: "agent_os_runs_project_recent_idx")
   @@index([actorId, createdAt(sort: Desc)], map: "agent_os_runs_actor_recent_idx")
+  @@index([projectId, conversationId, createdAt], map: "agent_os_runs_project_conversation_idx")
   @@map("agent_os_runs")
 }
 

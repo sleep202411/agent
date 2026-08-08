@@ -11,7 +11,11 @@ export interface AgentOsWorkerRunRequest {
   actorId: string;
   message: string;
   modelProfileId: string;
-  scriptText?: string;
+  attachmentIds?: string[];
+  permissionMode?: 'ask' | 'smart' | 'full';
+  surface?: 'storyboard' | 'canvas' | 'brief';
+  skillIds?: string[];
+  projectDefaultSkillIds?: string[];
 }
 
 export interface AgentOsWorkerRunResponse {
@@ -59,6 +63,7 @@ export class AgentOsWorkerClient {
     actorId: string;
     conversationId: string;
     modelProfileId: string;
+    permissionMode?: 'ask' | 'smart' | 'full';
   }): Promise<AgentOsWorkerRunResponse> {
     return this.postJson(`/v1/agent-os/runs/${input.runId}/approvals`, {
       decision: input.decision,
@@ -66,6 +71,7 @@ export class AgentOsWorkerClient {
       actorId: input.actorId,
       conversationId: input.conversationId,
       modelProfileId: input.modelProfileId,
+      permissionMode: input.permissionMode,
     });
   }
 
@@ -79,6 +85,15 @@ export class AgentOsWorkerClient {
       signal: AbortSignal.timeout(15_000),
     });
     return res.json();
+  }
+
+  async cancelRun(
+    runId: string,
+    reason?: string,
+  ): Promise<AgentOsWorkerRunResponse> {
+    return this.postJson(`/v1/agent-os/runs/${runId}/cancel`, {
+      reason: reason ?? 'Stopped by user',
+    });
   }
 
   private async postJson(

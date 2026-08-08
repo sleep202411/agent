@@ -22,8 +22,11 @@
     "@langchain/openai": "^1.2.5",
     "@repo/agent-policy": "*",
     "@repo/agent-protocol": "*",
+    "@repo/agent-skills": "*",
     "@repo/agent-tools": "*",
     "@repo/model-router": "*",
+    "@repo/shared": "*",
+    "ably": "^2.26.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

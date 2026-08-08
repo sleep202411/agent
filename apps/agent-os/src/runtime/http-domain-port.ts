@@ -23,9 +23,22 @@ export class HttpDomainPort implements DomainPort {
     input: unknown,
     context: ToolExecutionContext
   ): Promise<ToolExecuteResult> {
+    // All tools Nest domain implements must be listed here. A missing id falls
+    // through to in-memory domain (revision 0 / empty shots) while list* tools
+    // hit Postgres — classic "list says rev 5, write fails expected 5 actual 0".
     const remote =
       this.options.remoteToolIds ??
-      new Set(["characters.list", "characters.upsert", "script.readSection", "script.store"]);
+      new Set([
+        "characters.list",
+        "characters.upsert",
+        "script.readSection",
+        "script.store",
+        "storyboard.listShots",
+        "storyboard.upsertShots",
+        "storyboard.deleteShots",
+        "canvas.read",
+        "canvas.applyPatch",
+      ]);
     if (!remote.has(toolId)) {
       if (!this.options.local) {
         return {
@@ -87,18 +100,15 @@ export class HttpDomainPort implements DomainPort {
  * Prefer Nest domain when AGENT_OS_DOMAIN_URL + AGENT_OS_INTERNAL_TOKEN are set;
  * otherwise in-memory (unit tests / offline demos).
  */
-export function createWorkerDomainPort(scriptText?: string): DomainPort {
+export function createWorkerDomainPort(_scriptText?: string): DomainPort {
   const domainUrl = process.env.AGENT_OS_DOMAIN_URL?.trim();
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
   const local = new InMemoryStoryDomain();
-  if (scriptText?.trim()) {
-    local.setScript(scriptText.trim(), 100);
-  } else {
-    local.setScript(
-      "林黛玉自贾母处来。贾宝玉笑道：妹妹来了。王熙凤协理宁国府。薛宝钗稳重端庄。",
-      100
-    );
-  }
+  // Unit / offline demos: seed a default script under a fixed attachment id.
+  local.setScript(
+    "林黛玉自贾母处来。贾宝玉笑道：妹妹来了。王熙凤协理宁国府。薛宝钗稳重端庄。",
+    100
+  );
 
   if (domainUrl && token && token.length >= 16) {
     return new HttpDomainPort({

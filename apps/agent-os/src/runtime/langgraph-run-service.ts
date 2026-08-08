@@ -4,10 +4,13 @@ import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { Command, isInterrupted } from "@langchain/langgraph";
 import type { AgentMode, PermissionMode } from "@repo/agent-policy";
 import type { AgentRunStatus } from "@repo/agent-protocol";
+import { resolveSkillMounts } from "@repo/agent-skills";
 import type { DomainPort } from "@repo/agent-tools";
+import type { AgentOsSurface } from "@repo/shared";
 
 import { createAgentOsGraph } from "../graph/create-agent-graph.js";
 import type { ApprovalInterruptValue } from "../graph/build-langchain-tools.js";
+import { agentOsAbly } from "./ably-publisher.js";
 import { EventJournal } from "./event-journal.js";
 import { reportJournalToNest } from "./journal-reporter.js";
 
@@ -20,11 +23,16 @@ export interface StartLangGraphRunInput {
   message: string;
   /** Required product model profile — never defaulted here. */
   modelProfileId: string;
+  /** Trusted product surface — system surface skill mount. */
+  surface: AgentOsSurface;
+  /** Project default skill ids (admin). Mounted when registered. */
+  projectDefaultSkillIds?: readonly string[];
+  /** Per-turn skill ids (composer). Mounted when registered. */
+  turnSkillIds?: readonly string[];
   mode?: AgentMode;
   permissionMode?: PermissionMode;
   model: BaseChatModel;
   domain: DomainPort;
-  /** Shared checkpointer so resume works across requests / restarts. */
   checkpointer: BaseCheckpointSaver;
 }
 
@@ -38,6 +46,12 @@ export interface LangGraphRunSnapshot {
   actorId?: string;
   modelProfileId?: string;
   conversationId?: string;
+  permissionMode?: PermissionMode;
+  mode?: AgentMode;
+  surface?: AgentOsSurface;
+  projectDefaultSkillIds?: readonly string[];
+  turnSkillIds?: readonly string[];
+  errorMessage?: string;
 }
 
 function extractInterrupts(result: unknown): ApprovalInterruptValue[] {
@@ -55,26 +69,170 @@ function extractInterrupts(result: unknown): ApprovalInterruptValue[] {
     });
 }
 
+function chunkText(chunk: unknown): string {
+  if (!chunk || typeof chunk !== "object") return "";
+  const content = (chunk as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          return String((part as { text?: unknown }).text ?? "");
+        }
+        return "";
+      })
+      .join("");
+  }
+  return "";
+}
+
+function assistantFromMessages(messages: unknown): string {
+  if (!Array.isArray(messages) || messages.length === 0) return "";
+  const last = messages.at(-1) as { content?: unknown };
+  if (typeof last?.content === "string") return last.content;
+  if (Array.isArray(last?.content)) return JSON.stringify(last.content);
+  return "";
+}
+
 /**
  * Product run service on top of LangGraph createReactAgent.
- * Emits fizz.agent.v1 events for UI step timelines and reports them to Nest.
+ * Streams tokens as fizz.agent.v1 MessageDelta for progressive chat UI.
  */
+const TERMINAL_STATUSES = new Set<AgentRunStatus>(["completed", "failed", "cancelled"]);
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: string }).name;
+  if (name === "AbortError") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /abort/i.test(message);
+}
+
+/**
+ * Carry product context (surface / skills / permission) when rewriting a
+ * snapshot. Losing `surface` on HITL pause caused resume to default to
+ * storyboard while the user was still on canvas — tools + prompt mismatch.
+ */
+function carryRunContext(
+  prev: LangGraphRunSnapshot | undefined,
+  input: {
+    projectId?: string;
+    actorId?: string;
+    modelProfileId?: string;
+    conversationId?: string;
+    surface?: AgentOsSurface;
+    mode?: AgentMode;
+    permissionMode?: PermissionMode;
+    projectDefaultSkillIds?: readonly string[];
+    turnSkillIds?: readonly string[];
+  }
+): Pick<
+  LangGraphRunSnapshot,
+  | "projectId"
+  | "actorId"
+  | "modelProfileId"
+  | "conversationId"
+  | "surface"
+  | "mode"
+  | "permissionMode"
+  | "projectDefaultSkillIds"
+  | "turnSkillIds"
+> {
+  return {
+    projectId: input.projectId ?? prev?.projectId,
+    actorId: input.actorId ?? prev?.actorId,
+    modelProfileId: input.modelProfileId ?? prev?.modelProfileId,
+    conversationId: input.conversationId ?? prev?.conversationId,
+    surface: input.surface ?? prev?.surface,
+    mode: input.mode ?? prev?.mode,
+    permissionMode: input.permissionMode ?? prev?.permissionMode,
+    projectDefaultSkillIds: input.projectDefaultSkillIds ?? prev?.projectDefaultSkillIds,
+    turnSkillIds: input.turnSkillIds ?? prev?.turnSkillIds,
+  };
+}
+
+function surfaceFromJournal(journal: EventJournal): AgentOsSurface | undefined {
+  for (const event of journal.all()) {
+    if (event.type !== "RunStarted") continue;
+    const surface = event.data.surface;
+    if (surface === "storyboard" || surface === "canvas" || surface === "brief") {
+      return surface;
+    }
+  }
+  return undefined;
+}
+
 export class LangGraphRunService {
   private readonly snapshots = new Map<string, LangGraphRunSnapshot>();
+  private readonly inflight = new Map<string, Promise<void>>();
+  /** Per-run abort — Stop aborts the LangGraph stream + model calls. */
+  private readonly aborts = new Map<string, AbortController>();
 
   getSnapshot(runId: string): LangGraphRunSnapshot | undefined {
     return this.snapshots.get(runId);
   }
 
-  async start(input: StartLangGraphRunInput): Promise<LangGraphRunSnapshot> {
-    const journal = new EventJournal();
-    const mode = input.mode ?? "ASSIST";
-    const permissionMode = input.permissionMode ?? "smart";
+  /**
+   * Cancel an in-flight run (user Stop). Abort signal stops stream/model work;
+   * snapshot flips to cancelled so polls see a terminal status.
+   */
+  cancel(runId: string, reason = "Stopped by user"): LangGraphRunSnapshot | undefined {
+    const existing = this.snapshots.get(runId);
+    if (!existing) return undefined;
 
+    this.aborts.get(runId)?.abort();
+
+    if (TERMINAL_STATUSES.has(existing.status)) {
+      return existing;
+    }
+
+    const sessionId = existing.conversationId
+      ? `agent-os:v1:conversation:${existing.conversationId}`
+      : `agent-os:v1:run:${runId}`;
+
+    existing.journal.append({
+      sessionId,
+      runId,
+      conversationId: existing.conversationId ?? runId,
+      type: "RunCancelled",
+      data: {
+        status: "cancelled",
+        error: {
+          code: "RUN_CANCELLED",
+          message: reason,
+          retryable: false,
+        },
+      },
+    });
+
+    const cancelled: LangGraphRunSnapshot = {
+      ...existing,
+      status: "cancelled",
+      pendingApproval: undefined,
+      errorMessage: reason,
+    };
+    this.snapshots.set(runId, cancelled);
+    void this.persist(cancelled);
+    this.publishSnapshot(cancelled);
+    return cancelled;
+  }
+
+  /**
+   * HTTP path: return immediately with status=running; stream continues in background.
+   * Clients poll GET /events (or Nest journal) for MessageDelta until terminal status.
+   */
+  beginStart(input: StartLangGraphRunInput): LangGraphRunSnapshot {
     if (!input.modelProfileId.trim()) {
       throw new Error("modelProfileId is required");
     }
-
+    const journal = this.createJournal(input.conversationId);
+    const messageId = `msg:${input.runId}`;
+    const mountPreview = resolveSkillMounts({
+      surface: input.surface,
+      projectDefaultSkillIds: input.projectDefaultSkillIds,
+      turnSkillIds: input.turnSkillIds,
+    });
     journal.append({
       sessionId: input.sessionId,
       runId: input.runId,
@@ -84,8 +242,28 @@ export class LangGraphRunService {
         status: "running",
         workspaceType: "project_canvas",
         modelProfileId: input.modelProfileId,
+        surface: input.surface,
+        skillIds: mountPreview.skills.map((s) => s.id),
+        toolIds: [...mountPreview.toolIds],
+        skippedSkillIds: [...mountPreview.skippedSkillIds],
       },
     });
+    // Durable user turn text — required to rebuild the transcript after
+    // panel close / page reload (client state is not the source of truth).
+    const userText = input.message.trim();
+    if (userText) {
+      journal.append({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        conversationId: input.conversationId,
+        type: "UserMessage",
+        data: {
+          messageId: `user:${input.runId}`,
+          // Cap for journal size; full text already lives in the model turn.
+          text: userText.length > 20_000 ? `${userText.slice(0, 19_999)}…` : userText,
+        },
+      });
+    }
     journal.append({
       sessionId: input.sessionId,
       runId: input.runId,
@@ -93,44 +271,100 @@ export class LangGraphRunService {
       type: "PlanCreated",
       data: {
         steps: [
-          "Understand request",
-          "Use tools to read project/script",
+          "Understand request under mounted skills",
+          "Use tools allowed by skill mount",
           "Propose writes with approval when needed",
           "Summarize results",
         ],
       },
     });
-
-    const graph = createAgentOsGraph({
-      model: input.model,
-      checkpointer: input.checkpointer,
-      runtime: {
-        runId: input.runId,
-        conversationId: input.conversationId,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        mode,
-        permissionMode,
-        domain: input.domain,
-      },
+    journal.append({
+      sessionId: input.sessionId,
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "MessageStarted",
+      data: { messageId },
     });
 
-    const config = { configurable: { thread_id: input.runId } };
-    const result = await graph.invoke({ messages: [new HumanMessage(input.message)] }, config);
-
-    return this.materialize({
+    const snapshot: LangGraphRunSnapshot = {
       runId: input.runId,
-      sessionId: input.sessionId,
-      conversationId: input.conversationId,
+      status: "running",
+      journal,
       projectId: input.projectId,
       actorId: input.actorId,
       modelProfileId: input.modelProfileId,
+      conversationId: input.conversationId,
+      permissionMode: input.permissionMode ?? "smart",
+      mode: input.mode ?? "ASSIST",
+      surface: input.surface,
+      projectDefaultSkillIds: input.projectDefaultSkillIds,
+      turnSkillIds: input.turnSkillIds,
+      assistantText: "",
+    };
+    this.snapshots.set(input.runId, snapshot);
+    void this.persist(snapshot);
+    this.publishSnapshot(snapshot);
+
+    const abort = new AbortController();
+    this.aborts.set(input.runId, abort);
+
+    const work = this.runGraphTurn({
+      input: {
+        ...input,
+        permissionMode: snapshot.permissionMode,
+        mode: snapshot.mode,
+        surface: snapshot.surface ?? input.surface,
+      },
       journal,
-      result,
+      messageId,
+      resume: null,
+      signal: abort.signal,
+    }).catch(async (error) => {
+      if (this.snapshots.get(input.runId)?.status === "cancelled" || isAbortError(error)) {
+        if (this.snapshots.get(input.runId)?.status !== "cancelled") {
+          this.cancel(input.runId, "Stopped by user");
+        }
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      journal.append({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        conversationId: input.conversationId,
+        type: "RunFailed",
+        data: {
+          status: "failed",
+          error: { code: "RUN_FAILED", message, retryable: true },
+        },
+      });
+      const prev = this.snapshots.get(input.runId);
+      const failed: LangGraphRunSnapshot = {
+        runId: input.runId,
+        status: "failed",
+        journal,
+        ...carryRunContext(prev, input),
+        errorMessage: message,
+      };
+      this.snapshots.set(input.runId, failed);
+      await this.persist(failed);
+      this.publishSnapshot(failed);
     });
+    this.inflight.set(input.runId, work);
+    void work.finally(() => {
+      this.inflight.delete(input.runId);
+      this.aborts.delete(input.runId);
+    });
+    return snapshot;
   }
 
-  async resumeApproval(input: {
+  /** Await full turn (tests / scripts). */
+  async start(input: StartLangGraphRunInput): Promise<LangGraphRunSnapshot> {
+    const begun = this.beginStart(input);
+    await this.inflight.get(input.runId);
+    return this.snapshots.get(input.runId) ?? begun;
+  }
+
+  beginResumeApproval(input: {
     runId: string;
     sessionId: string;
     conversationId: string;
@@ -143,7 +377,7 @@ export class LangGraphRunService {
     permissionMode?: PermissionMode;
     projectId: string;
     actorId: string;
-  }): Promise<LangGraphRunSnapshot> {
+  }): LangGraphRunSnapshot {
     if (!input.modelProfileId.trim()) {
       throw new Error("modelProfileId is required");
     }
@@ -154,6 +388,10 @@ export class LangGraphRunService {
     if (existing.status !== "waiting_for_approval" || !existing.pendingApproval) {
       throw new Error(`Run ${input.runId} is not waiting for approval`);
     }
+
+    // Prefer explicit client mode; else keep the mode from run start.
+    if (input.permissionMode) existing.permissionMode = input.permissionMode;
+    if (input.mode) existing.mode = input.mode;
 
     existing.journal.append({
       sessionId: input.sessionId,
@@ -167,6 +405,23 @@ export class LangGraphRunService {
     });
 
     if (input.decision === "reject") {
+      // Close the proposed tool lifecycle so clients stop showing a spinner
+      // on phase=proposed (reject short-circuits graph resume — no ToolFailed
+      // would otherwise be emitted from the interrupt path).
+      const rejectedTool = existing.pendingApproval;
+      existing.journal.append({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        conversationId: input.conversationId,
+        type: "ToolFailed",
+        data: {
+          toolCallId: rejectedTool.toolCallId,
+          toolId: rejectedTool.toolId,
+          code: "APPROVAL_REJECTED",
+          message: "User rejected the proposed write.",
+          retryable: false,
+        },
+      });
       existing.journal.append({
         sessionId: input.sessionId,
         runId: input.runId,
@@ -191,54 +446,299 @@ export class LangGraphRunService {
         conversationId: input.conversationId,
       };
       this.snapshots.set(input.runId, cancelled);
-      await this.persist(cancelled);
+      void this.persist(cancelled);
+      this.publishSnapshot(cancelled);
       return cancelled;
     }
+
+    existing.status = "running";
+    existing.pendingApproval = undefined;
+    this.snapshots.set(input.runId, existing);
+    void this.persist(existing);
+    this.publishSnapshot(existing);
+
+    const messageId = `msg:${input.runId}:resume`;
+    existing.journal.append({
+      sessionId: input.sessionId,
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "MessageStarted",
+      data: { messageId },
+    });
+
+    const abort = new AbortController();
+    this.aborts.set(input.runId, abort);
+
+    const resumeSurface = existing.surface ?? surfaceFromJournal(existing.journal) ?? "storyboard";
+    // Keep snapshot surface in sync if it was dropped on an older pause path.
+    existing.surface = resumeSurface;
+
+    const work = this.runGraphTurn({
+      input: {
+        runId: input.runId,
+        conversationId: input.conversationId,
+        projectId: input.projectId,
+        actorId: input.actorId,
+        sessionId: input.sessionId,
+        message: "",
+        modelProfileId: input.modelProfileId,
+        model: input.model,
+        domain: input.domain,
+        checkpointer: input.checkpointer,
+        mode: existing.mode ?? "ASSIST",
+        permissionMode: existing.permissionMode ?? "smart",
+        surface: resumeSurface,
+        projectDefaultSkillIds: existing.projectDefaultSkillIds,
+        turnSkillIds: existing.turnSkillIds,
+      },
+      journal: existing.journal,
+      messageId,
+      resume: "approve",
+      signal: abort.signal,
+    }).catch(async (error) => {
+      if (this.snapshots.get(input.runId)?.status === "cancelled" || isAbortError(error)) {
+        if (this.snapshots.get(input.runId)?.status !== "cancelled") {
+          this.cancel(input.runId, "Stopped by user");
+        }
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      existing.journal.append({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        conversationId: input.conversationId,
+        type: "RunFailed",
+        data: {
+          status: "failed",
+          error: { code: "RUN_FAILED", message, retryable: true },
+        },
+      });
+      const failed: LangGraphRunSnapshot = {
+        ...existing,
+        status: "failed",
+        errorMessage: message,
+      };
+      this.snapshots.set(input.runId, failed);
+      await this.persist(failed);
+      this.publishSnapshot(failed);
+    });
+    this.inflight.set(input.runId, work);
+    void work.finally(() => {
+      this.inflight.delete(input.runId);
+      this.aborts.delete(input.runId);
+    });
+    return existing;
+  }
+
+  async resumeApproval(input: {
+    runId: string;
+    sessionId: string;
+    conversationId: string;
+    decision: "approve" | "reject";
+    modelProfileId: string;
+    model: BaseChatModel;
+    domain: DomainPort;
+    checkpointer: BaseCheckpointSaver;
+    mode?: AgentMode;
+    permissionMode?: PermissionMode;
+    projectId: string;
+    actorId: string;
+  }): Promise<LangGraphRunSnapshot> {
+    const begun = this.beginResumeApproval(input);
+    await this.inflight.get(input.runId);
+    return this.snapshots.get(input.runId) ?? begun;
+  }
+
+  private async runGraphTurn(args: {
+    input: StartLangGraphRunInput;
+    journal: EventJournal;
+    messageId: string;
+    resume: "approve" | null;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const { input, journal, messageId, resume, signal } = args;
+    const mode = input.mode ?? "ASSIST";
+    const permissionMode = input.permissionMode ?? "smart";
+    let streamed = "";
+    let lastPersistAt = 0;
+    let deltaCount = 0;
+
+    if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+      return;
+    }
+
+    const surface = input.surface;
+    journal.append({
+      sessionId: input.sessionId,
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "StepStarted",
+      data: {
+        step: "permission",
+        permissionMode,
+        agentMode: mode,
+        surface,
+      },
+    });
 
     const graph = createAgentOsGraph({
       model: input.model,
       checkpointer: input.checkpointer,
+      surface,
+      projectDefaultSkillIds: input.projectDefaultSkillIds,
+      turnSkillIds: input.turnSkillIds,
       runtime: {
         runId: input.runId,
         conversationId: input.conversationId,
         projectId: input.projectId,
         actorId: input.actorId,
-        mode: input.mode ?? "ASSIST",
-        permissionMode: input.permissionMode ?? "smart",
+        mode,
+        permissionMode,
         domain: input.domain,
+        surface,
+        onToolEvent: (event) => {
+          journal.append({
+            sessionId: input.sessionId,
+            runId: input.runId,
+            conversationId: input.conversationId,
+            type: event.type,
+            data: {
+              toolCallId: event.toolCallId,
+              toolId: event.toolId,
+              ...(event.data ?? {}),
+            },
+          });
+          // Keep live pollers / Ably subscribers current during long tool turns.
+          const live = this.snapshots.get(input.runId);
+          if (live && live.status === "running") {
+            void this.persist(live);
+          }
+        },
       },
     });
 
-    const config = { configurable: { thread_id: input.runId } };
-    const result = await graph.invoke(new Command({ resume: "approve" }), config);
+    const threadConfig = {
+      configurable: { thread_id: input.conversationId },
+      signal,
+    };
+    const payload =
+      resume === "approve"
+        ? new Command({ resume: "approve" })
+        : { messages: [new HumanMessage(input.message)] };
 
-    return this.materialize({
-      runId: input.runId,
-      sessionId: input.sessionId,
-      conversationId: input.conversationId,
-      projectId: input.projectId,
-      actorId: input.actorId,
-      modelProfileId: input.modelProfileId,
-      journal: existing.journal,
-      result,
-    });
-  }
+    let finalResult: unknown;
+    let usedStream = false;
 
-  private async materialize(input: {
-    runId: string;
-    sessionId: string;
-    conversationId: string;
-    projectId: string;
-    actorId: string;
-    modelProfileId: string;
-    journal: EventJournal;
-    result: unknown;
-  }): Promise<LangGraphRunSnapshot> {
-    const interrupts = extractInterrupts(input.result);
-    if (isInterrupted(input.result) || interrupts.length > 0) {
+    try {
+      const eventStream = graph.streamEvents(payload, {
+        ...threadConfig,
+        version: "v2",
+      });
+      usedStream = true;
+      for await (const event of eventStream) {
+        if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+          return;
+        }
+        if (event.event !== "on_chat_model_stream") continue;
+        const piece = chunkText(event.data?.chunk);
+        if (!piece) continue;
+        streamed += piece;
+        journal.append({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          conversationId: input.conversationId,
+          type: "MessageDelta",
+          data: { messageId, delta: piece },
+        });
+        const live = this.snapshots.get(input.runId);
+        if (live && live.status !== "cancelled") {
+          live.assistantText = streamed;
+          live.status = "running";
+          this.snapshots.set(input.runId, live);
+        }
+        deltaCount += 1;
+        const now = Date.now();
+        // Keep Nest journal reasonably fresh as fallback; live polls hit worker.
+        if (deltaCount >= 4 || now - lastPersistAt > 200) {
+          deltaCount = 0;
+          lastPersistAt = now;
+          const snap = this.snapshots.get(input.runId);
+          if (snap && snap.status !== "cancelled") void this.persist(snap);
+        }
+      }
+      if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+        return;
+      }
+      finalResult = await graph.getState(threadConfig).then((state) => ({
+        messages: state.values?.messages,
+        tasks: state.tasks,
+      }));
+    } catch (error) {
+      if (
+        signal.aborted ||
+        isAbortError(error) ||
+        this.snapshots.get(input.runId)?.status === "cancelled"
+      ) {
+        if (this.snapshots.get(input.runId)?.status !== "cancelled") {
+          this.cancel(input.runId, "Stopped by user");
+        }
+        return;
+      }
+      usedStream = false;
+    }
+
+    if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+      return;
+    }
+
+    if (!usedStream) {
+      finalResult = await graph.invoke(payload, threadConfig);
+    }
+
+    if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+      return;
+    }
+
+    if (!streamed.trim()) {
+      const messages =
+        (finalResult as { messages?: unknown })?.messages ??
+        (finalResult as { values?: { messages?: unknown } })?.values?.messages;
+      streamed = assistantFromMessages(messages);
+    }
+
+    let interrupts = extractInterrupts(finalResult);
+    if (interrupts.length === 0) {
+      interrupts = interruptsFromState(finalResult);
+    }
+    if (interrupts.length === 0 && isInterrupted(finalResult)) {
+      // invoke-style interrupt object without extractable value — still pause
+      interrupts = extractInterrupts(finalResult);
+    }
+
+    // Re-read graph state for HITL after stream (authoritative for createReactAgent)
+    try {
+      const state = await graph.getState(threadConfig);
+      const fromState = interruptsFromState(state);
+      if (fromState.length > 0) interrupts = fromState;
+      if (!streamed.trim()) {
+        streamed = assistantFromMessages(state.values?.messages) || streamed;
+      }
+      if (isInterrupted(state) && interrupts.length === 0) {
+        // last resort: try __interrupt__ on state
+        interrupts = extractInterrupts(state);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (signal.aborted || this.snapshots.get(input.runId)?.status === "cancelled") {
+      return;
+    }
+
+    if (interrupts.length > 0) {
       const approval = interrupts[0]!;
       const approvalId = crypto.randomUUID();
-      input.journal.append({
+      journal.append({
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
@@ -253,7 +753,7 @@ export class LangGraphRunService {
           risk: "sensitive",
         },
       });
-      input.journal.append({
+      journal.append({
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
@@ -267,50 +767,42 @@ export class LangGraphRunService {
           actions: ["approve", "edit_and_approve", "reject"],
         },
       });
-      input.journal.append({
+      journal.append({
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
         type: "RunPaused",
-        data: { status: "waiting_for_approval" },
+        data: {
+          status: "waiting_for_approval",
+          surface: input.surface,
+        },
       });
-
+      const prev = this.snapshots.get(input.runId);
       const snapshot: LangGraphRunSnapshot = {
         runId: input.runId,
         status: "waiting_for_approval",
-        journal: input.journal,
+        journal,
         pendingApproval: { ...approval, approvalId },
-        projectId: input.projectId,
-        actorId: input.actorId,
-        modelProfileId: input.modelProfileId,
-        conversationId: input.conversationId,
+        ...carryRunContext(prev, input),
+        assistantText: streamed,
       };
       this.snapshots.set(input.runId, snapshot);
       await this.persist(snapshot);
-      return snapshot;
+      this.publishSnapshot(snapshot);
+      return;
     }
 
-    const messages = (input.result as { messages?: Array<{ content?: unknown }> }).messages;
-    const last = messages?.at(-1);
-    const assistantText =
-      typeof last?.content === "string"
-        ? last.content
-        : Array.isArray(last?.content)
-          ? JSON.stringify(last.content)
-          : undefined;
-
-    if (assistantText) {
-      const messageId = crypto.randomUUID();
-      input.journal.append({
+    if (streamed.trim()) {
+      journal.append({
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
         type: "MessageCompleted",
-        data: { messageId, text: assistantText },
+        data: { messageId, text: streamed },
       });
     }
 
-    input.journal.append({
+    journal.append({
       sessionId: input.sessionId,
       runId: input.runId,
       conversationId: input.conversationId,
@@ -318,19 +810,47 @@ export class LangGraphRunService {
       data: { status: "completed" },
     });
 
+    const prev = this.snapshots.get(input.runId);
     const snapshot: LangGraphRunSnapshot = {
       runId: input.runId,
       status: "completed",
-      journal: input.journal,
-      assistantText,
-      projectId: input.projectId,
-      actorId: input.actorId,
-      modelProfileId: input.modelProfileId,
-      conversationId: input.conversationId,
+      journal,
+      ...carryRunContext(prev, input),
+      assistantText: streamed,
     };
     this.snapshots.set(input.runId, snapshot);
     await this.persist(snapshot);
-    return snapshot;
+    this.publishSnapshot(snapshot);
+  }
+
+  private createJournal(conversationId: string): EventJournal {
+    return new EventJournal((event) => {
+      agentOsAbly.publishEvent(event);
+      // Status transitions also emit a compact snapshot so the UI can leave
+      // "running" without waiting for the next poll.
+      if (
+        event.type === "RunCompleted" ||
+        event.type === "RunFailed" ||
+        event.type === "RunCancelled" ||
+        event.type === "RunPaused" ||
+        event.type === "ApprovalRequired"
+      ) {
+        const live = this.snapshots.get(event.runId);
+        if (live) this.publishSnapshot(live);
+      }
+    });
+  }
+
+  private publishSnapshot(snapshot: LangGraphRunSnapshot): void {
+    if (!snapshot.conversationId) return;
+    agentOsAbly.publishSnapshot({
+      runId: snapshot.runId,
+      conversationId: snapshot.conversationId,
+      status: snapshot.status,
+      lastSequence: snapshot.journal.lastSequence,
+      assistantText: snapshot.assistantText ?? null,
+      pendingApproval: snapshot.pendingApproval ?? null,
+    });
   }
 
   private async persist(snapshot: LangGraphRunSnapshot): Promise<void> {
@@ -354,4 +874,27 @@ export class LangGraphRunService {
       assistantText: snapshot.assistantText ?? null,
     });
   }
+}
+
+function interruptsFromState(state: unknown): ApprovalInterruptValue[] {
+  if (!state || typeof state !== "object") return [];
+  const tasks = (state as { tasks?: unknown[] }).tasks;
+  if (!Array.isArray(tasks)) return [];
+  const out: ApprovalInterruptValue[] = [];
+  for (const task of tasks) {
+    if (!task || typeof task !== "object") continue;
+    const interrupts = (task as { interrupts?: Array<{ value?: unknown }> }).interrupts;
+    if (!Array.isArray(interrupts)) continue;
+    for (const item of interrupts) {
+      const value = item?.value;
+      if (
+        value &&
+        typeof value === "object" &&
+        (value as ApprovalInterruptValue).kind === "tool_approval"
+      ) {
+        out.push(value as ApprovalInterruptValue);
+      }
+    }
+  }
+  return out;
 }

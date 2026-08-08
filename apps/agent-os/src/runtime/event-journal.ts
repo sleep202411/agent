@@ -18,12 +18,14 @@ export interface AppendEventInput {
 }
 
 /**
- * In-process sequence journal. Gateway will persist this to PostgreSQL;
- * the interface stays the same.
+ * In-process sequence journal. Gateway persists to PostgreSQL;
+ * optional onAppend fans out to Ably for low-latency UI.
  */
 export class EventJournal {
   private sequence = 0;
   private readonly events: AgentEventEnvelope[] = [];
+
+  constructor(private readonly onAppend?: (event: AgentEventEnvelope) => void) {}
 
   get lastSequence(): number {
     return this.sequence;
@@ -57,6 +59,11 @@ export class EventJournal {
     });
 
     this.events.push(envelope);
+    try {
+      this.onAppend?.(envelope);
+    } catch {
+      /* publisher must never break the turn */
+    }
     return envelope;
   }
 }

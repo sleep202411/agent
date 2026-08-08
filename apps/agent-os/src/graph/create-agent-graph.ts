@@ -2,37 +2,33 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { resolveSkillMounts, type SkillMountContext } from "@repo/agent-skills";
+import type { AgentOsSurface } from "@repo/shared";
 
 import { buildLangChainTools, type ToolRuntimeContext } from "./build-langchain-tools.js";
-
-const SYSTEM_PROMPT = `You are FizzDragon Agent OS — an execution agent for creators.
-
-You MUST use tools to read project data and to write changes. Never claim you wrote
-to the database unless a write tool succeeded.
-
-When the user asks to extract characters from a script:
-1. If they pasted full script text, call script_store first.
-2. Call script_read_section for relevant sections (start at sectionIndex 0;
-   attachmentId may be any uuid placeholder when using stored script).
-3. Call characters_list to learn baseRevision.
-4. Infer a structured cast list.
-5. Call characters_upsert with that baseRevision (intent create or replace).
-6. Summarize what was written with character ids.
-
-Prefer small, correct writes over dumping the entire script into one response.
-Do not invent project permissions. Tools enforce scope.`;
 
 export function createAgentOsGraph(input: {
   model: BaseChatModel;
   runtime: ToolRuntimeContext;
+  surface: AgentOsSurface;
+  /** Project default skill ids (admin). Same runtime path as future catalog skills. */
+  projectDefaultSkillIds?: readonly string[];
+  /** Per-turn skill ids from composer. Same runtime path as future catalog skills. */
+  turnSkillIds?: readonly string[];
   checkpointer?: BaseCheckpointSaver;
 }) {
-  const tools = buildLangChainTools(input.runtime);
+  const mountContext: SkillMountContext = {
+    surface: input.surface,
+    projectDefaultSkillIds: input.projectDefaultSkillIds,
+    turnSkillIds: input.turnSkillIds,
+  };
+  const mount = resolveSkillMounts(mountContext);
+  const tools = buildLangChainTools(input.runtime, mount.toolIds);
   return createReactAgent({
     llm: input.model,
     tools,
     checkpointSaver: input.checkpointer ?? new MemorySaver(),
-    prompt: SYSTEM_PROMPT,
+    prompt: mount.instructions,
   });
 }
 

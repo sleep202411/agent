@@ -17,6 +17,9 @@ import { StoryboardEditor } from "./storyboard-editor";
  *
  * Only modes with a REAL editor are registered — the switcher never shows a
  * faked or unbuilt tab.
+ *
+ * Characters are product assets (StudioCharacter library), not a Studio mode.
+ * Agent OS may still write character drafts via tools on storyboard/brief.
  */
 export interface StudioMode {
   /** Server document type this mode's editor opens (matches the DocumentType enum). */

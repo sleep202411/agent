@@ -16,7 +16,7 @@ export type AgentOsJournalEvent = {
 
 /**
  * Durable product-facing event journal for Agent OS runs.
- * PostgreSQL is authoritative for reconnect; Ably (later) only accelerates.
+ * PostgreSQL is authoritative for reconnect; Ably accelerates live UI.
  */
 @Injectable()
 export class AgentOsRunJournalService {
@@ -89,6 +89,73 @@ export class AgentOsRunJournalService {
       events: all.filter((event) => event.sequence > afterSequence),
       pendingApproval: row.pendingApproval,
       assistantText: row.assistantText,
+    };
+  }
+
+  /**
+   * Load one conversation's runs (oldest → newest) for transcript restore.
+   * When conversationId is omitted, uses the actor's most recent conversation
+   * on the project.
+   */
+  async getConversationHistory(input: {
+    projectId: string;
+    actorId: string;
+    conversationId?: string;
+    limit?: number;
+  }): Promise<{
+    conversationId: string | null;
+    runs: Array<{
+      runId: string;
+      status: string;
+      modelProfileId: string;
+      events: AgentOsJournalEvent[];
+      pendingApproval: unknown;
+      assistantText: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }> {
+    const limit = Math.min(Math.max(input.limit ?? 40, 1), 80);
+    let conversationId = input.conversationId?.trim() || null;
+
+    if (!conversationId) {
+      const latest = await this.prisma.agentOsRun.findFirst({
+        where: {
+          projectId: input.projectId,
+          actorId: input.actorId,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { conversationId: true },
+      });
+      conversationId = latest?.conversationId ?? null;
+    }
+
+    if (!conversationId) {
+      return { conversationId: null, runs: [] };
+    }
+
+    const rows = await this.prisma.agentOsRun.findMany({
+      where: {
+        projectId: input.projectId,
+        actorId: input.actorId,
+        conversationId,
+      },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    });
+
+    return {
+      conversationId,
+      runs: rows.map((row) => ({
+        runId: row.id,
+        status: row.status,
+        modelProfileId: row.modelProfileId,
+        events: parseEvents(row.events),
+        pendingApproval: row.pendingApproval,
+        assistantText: row.assistantText,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
     };
   }
 }

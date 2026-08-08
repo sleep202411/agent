@@ -621,6 +621,21 @@ export class DocumentsGateway
     set.add(sock);
   }
 
+  /**
+   * Fan-out a durable op that was written outside the WS hot path
+   * (e.g. Agent OS storyboard → canvas). Peers apply `document_operation`.
+   */
+  async publishDocumentOperation(
+    documentId: string,
+    operation: unknown,
+  ): Promise<void> {
+    await this.publish(documentId, {
+      event: 'document_operation',
+      originSocketId: 'agent-os',
+      data: operation,
+    });
+  }
+
   private async publish(
     documentId: string,
     event: Exclude<RedisDocumentEvent, { event: 'revoke' }>,

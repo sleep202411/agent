@@ -50,6 +50,11 @@ export default function ProjectLayout({
 
   const copilotOpen = useProjectUIStore((s) => s.copilotOpen);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
+  /** Stay mounted after first open so close/reopen does not drop React state. */
+  const [agentOsMounted, setAgentOsMounted] = useState(false);
+  useEffect(() => {
+    if (copilotOpen) setAgentOsMounted(true);
+  }, [copilotOpen]);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const closeHistory = useProjectUIStore((s) => s.closeHistory);
 
@@ -177,11 +182,19 @@ export default function ProjectLayout({
             </div>
           </div>
 
-          {copilotOpen ? (
-            <aside className="h-full w-[400px] shrink-0 border-l border-white/[0.06] bg-popover/95 backdrop-blur-xl">
+          {/* Keep the panel mounted after first open so in-session state is not
+              wiped on close. Durable history is also restored from the server. */}
+          {(copilotOpen || agentOsMounted) && (
+            <aside
+              className={cn(
+                "h-full w-[480px] shrink-0 border-l border-white/[0.06] bg-popover/95 backdrop-blur-xl",
+                !copilotOpen && "hidden"
+              )}
+              aria-hidden={!copilotOpen}
+            >
               <AgentOsPanel projectId={projectId} onClose={closeCopilot} />
             </aside>
-          ) : null}
+          )}
         </div>
 
         {historyOpen ? <HistoryOverlay onClose={closeHistory} /> : null}

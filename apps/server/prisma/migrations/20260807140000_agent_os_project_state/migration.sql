@@ -6,6 +6,7 @@ CREATE TABLE "agent_os_project_states" (
     "revision" INTEGER NOT NULL DEFAULT 0,
     "characters" JSONB NOT NULL DEFAULT '[]',
     "script_sections" JSONB NOT NULL DEFAULT '[]',
+    "shots" JSONB NOT NULL DEFAULT '[]',
     "updated_by_user_id" VARCHAR(64),
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
