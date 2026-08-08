@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { compareByOrder, orderAfter } from "@repo/shared";
+import { compareByOrder, orderAfter, type ShotsUpsertInput } from "@repo/shared";
 import type { DomainPort, ToolExecuteResult, ToolExecutionContext } from "@repo/agent-tools";
 
 export interface InMemoryCharacter {
@@ -242,29 +242,11 @@ export class InMemoryStoryDomain implements DomainPort {
   }
 
   private upsertShots(input: unknown): ToolExecuteResult {
-    const body = input as {
-      baseRevision: number;
-      shots: Array<{
-        id: string;
-        title: string;
-        prompt: string;
-        notes?: string;
-        intent?: "create" | "replace";
-      }>;
-    };
+    const body = input as ShotsUpsertInput;
 
-    if (body.baseRevision !== this.revision) {
-      return {
-        ok: false,
-        code: "PROJECT_VERSION_CONFLICT",
-        message: `Expected revision ${body.baseRevision}, current is ${this.revision}`,
-        retryable: false,
-        details: {
-          expected: body.baseRevision,
-          actual: this.revision,
-        },
-      };
-    }
+    // baseRevision is advisory here too. The real domain writes into a CRDT and
+    // never rejects on a stale anchor, so a memory domain that DID reject would
+    // make the golden tests pin behaviour production does not have.
 
     const written: Array<{ id: string; title: string }> = [];
     for (const shot of body.shots) {
@@ -278,22 +260,24 @@ export class InMemoryStoryDomain implements DomainPort {
         };
       }
       const existing = this.shots.get(shot.id);
-      this.shots.set(shot.id, {
+      // Patch semantics: only the fields this write named change.
+      const row = {
         id: shot.id,
-        title: shot.title,
-        prompt: shot.prompt,
-        notes: shot.notes ?? "",
+        title: shot.title ?? existing?.title ?? "",
+        prompt: shot.prompt ?? existing?.prompt ?? "",
+        notes: shot.notes ?? existing?.notes ?? "",
         order:
           existing?.order ??
           orderAfter([...this.shots.values()].sort(compareByOrder).at(-1)?.order ?? null),
-      });
-      written.push({ id: shot.id, title: shot.title });
+      };
+      this.shots.set(shot.id, row);
+      written.push({ id: row.id, title: row.title });
     }
     this.revision += 1;
     return {
       ok: true,
       data: {
-        projectRevision: this.revision,
+        revision: this.revision,
         surface: "memory",
         written,
       },
@@ -343,7 +327,7 @@ export class InMemoryStoryDomain implements DomainPort {
     return {
       ok: true,
       data: {
-        projectRevision: this.revision,
+        revision: this.revision,
         surface: "memory",
         deleted,
       },

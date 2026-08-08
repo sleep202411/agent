@@ -55,13 +55,6 @@ type StoredCharacter = {
   summary: string;
 };
 
-type StoredShot = {
-  id: string;
-  title: string;
-  prompt: string;
-  notes: string;
-};
-
 /**
  * Product Domain for Agent OS tools.
  * - Platform (studio) projects → agent_os_project_states
@@ -247,107 +240,25 @@ export class AgentOsDomainService {
     }
     await this.requirePlatformEdit(input.actorId, input.projectId);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.platformProject.findFirst({
-        where: { id: input.projectId, deletedAt: null },
-        select: { id: true, workspaceId: true },
-      });
-      if (!project) {
-        throw new NotFoundException({
-          code: 'PROJECT_NOT_FOUND',
-          message: 'Platform project not found.',
-        });
-      }
-      let state = await tx.agentOsProjectState.findUnique({
-        where: { projectId: input.projectId },
-      });
-      if (!state) {
-        state = await tx.agentOsProjectState.create({
-          data: {
-            projectId: project.id,
-            workspaceId: project.workspaceId,
-            revision: 0,
-            characters: [],
-            scriptSections: [],
-            shots: [],
-          },
-        });
-      }
-      if (state.revision !== args.baseRevision) {
-        throw new ConflictException({
-          code: 'PROJECT_VERSION_CONFLICT',
-          message: `Expected revision ${args.baseRevision}, current is ${state.revision}`,
-          expected: args.baseRevision,
-          actual: state.revision,
-        });
-      }
-
-      const next = new Map(
-        parseShots(state.shots).map((s) => [s.id, s] as const),
-      );
-      const written: Array<{ id: string; title: string }> = [];
-      for (const shot of args.shots) {
-        const intent = shot.intent ?? 'create';
-        if (intent === 'create' && next.has(shot.id)) {
-          throw new UnprocessableEntityException({
-            code: 'SHOT_EXISTS',
-            message: `Shot ${shot.id} already exists`,
-          });
-        }
-        next.set(shot.id, {
-          id: shot.id,
-          title: shot.title,
-          prompt: shot.prompt,
-          notes: shot.notes ?? '',
-        });
-        written.push({ id: shot.id, title: shot.title });
-      }
-
-      const updated = await tx.agentOsProjectState.updateMany({
-        where: { projectId: input.projectId, revision: state.revision },
-        data: {
-          shots: [...next.values()] as unknown as Prisma.InputJsonValue,
-          revision: { increment: 1 },
-          updatedByUserId: input.actorId,
-        },
-      });
-      if (updated.count !== 1) {
-        throw new ConflictException({
-          code: 'PROJECT_CAS_LOST',
-          message: 'Agent OS project state changed concurrently.',
-        });
-      }
-
-      return {
-        projectRevision: state.revision + 1,
-        surface: 'platform' as const,
-        written,
-        shots: args.shots.map((s) => ({
-          id: s.id,
-          title: s.title,
-          prompt: s.prompt,
-          notes: s.notes,
-        })),
-        idempotencyKey: input.idempotencyKey,
-      };
-    });
-
-    // Outside CAS transaction: product canvas is the live CRDT (WS fan-out).
-    const canvas = await this.canvasShots.applyShots({
+    // One store, one write. Existence checks happen inside the same hydrate
+    // that performs the mutation, so a shot can never be reported as written
+    // to a board that did not receive it.
+    const result = await this.canvasShots.applyShots({
       actorId: input.actorId,
       projectId: input.projectId,
-      shots: result.shots,
+      shots: args.shots,
       idempotencyKey: input.idempotencyKey,
     });
 
     return {
-      projectRevision: result.projectRevision,
-      surface: result.surface,
-      written: result.written,
-      canvasDocumentId: canvas?.documentId ?? null,
-      canvasSequence: canvas?.sequence ?? null,
-      canvasNodes: canvas?.written ?? [],
-      idempotencyKey: result.idempotencyKey,
+      revision: result.revision,
+      surface: 'platform' as const,
+      written: result.written.map(({ id, title }) => ({ id, title })),
+      canvasDocumentId: result.documentId,
+      idempotencyKey: input.idempotencyKey,
+      ...(isStale(args.baseRevision, result.previousRevision)
+        ? { staleBaseRevision: true }
+        : {}),
     };
   }
 
@@ -367,116 +278,22 @@ export class AgentOsDomainService {
     }
     await this.requirePlatformEdit(input.actorId, input.projectId);
 
-    const uniqueIds = [
-      ...new Set(args.shotIds.map((id) => id.trim()).filter(Boolean)),
-    ];
-    if (uniqueIds.length === 0) {
-      throw new UnprocessableEntityException({
-        code: 'SHOT_IDS_REQUIRED',
-        message: 'shotIds must contain at least one id.',
-      });
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.platformProject.findFirst({
-        where: { id: input.projectId, deletedAt: null },
-        select: { id: true, workspaceId: true },
-      });
-      if (!project) {
-        throw new NotFoundException({
-          code: 'PROJECT_NOT_FOUND',
-          message: 'Platform project not found.',
-        });
-      }
-      let state = await tx.agentOsProjectState.findUnique({
-        where: { projectId: input.projectId },
-      });
-      if (!state) {
-        state = await tx.agentOsProjectState.create({
-          data: {
-            projectId: project.id,
-            workspaceId: project.workspaceId,
-            revision: 0,
-            characters: [],
-            scriptSections: [],
-            shots: [],
-          },
-        });
-      }
-      if (state.revision !== args.baseRevision) {
-        throw new ConflictException({
-          code: 'PROJECT_VERSION_CONFLICT',
-          message: `Expected revision ${args.baseRevision}, current is ${state.revision}`,
-          expected: args.baseRevision,
-          actual: state.revision,
-        });
-      }
-
-      const current = parseShots(state.shots);
-      const byId = new Map(current.map((s) => [s.id, s] as const));
-      const deleted: Array<{ id: string; title: string }> = [];
-      const missing: string[] = [];
-      for (const id of uniqueIds) {
-        const row = byId.get(id);
-        if (!row) {
-          missing.push(id);
-          continue;
-        }
-        deleted.push({ id: row.id, title: row.title });
-        byId.delete(id);
-      }
-      if (missing.length > 0) {
-        throw new UnprocessableEntityException({
-          code: 'SHOT_NOT_FOUND',
-          message: `Unknown shot id(s): ${missing.join(', ')}. Call storyboard.listShots first.`,
-          missing,
-        });
-      }
-      if (deleted.length === 0) {
-        throw new UnprocessableEntityException({
-          code: 'SHOT_DELETE_EMPTY',
-          message: 'No shots to delete.',
-        });
-      }
-
-      const updated = await tx.agentOsProjectState.updateMany({
-        where: { projectId: input.projectId, revision: state.revision },
-        data: {
-          shots: [...byId.values()] as unknown as Prisma.InputJsonValue,
-          revision: { increment: 1 },
-          updatedByUserId: input.actorId,
-        },
-      });
-      if (updated.count !== 1) {
-        throw new ConflictException({
-          code: 'PROJECT_CAS_LOST',
-          message: 'Agent OS project state changed concurrently.',
-        });
-      }
-
-      return {
-        projectRevision: state.revision + 1,
-        surface: 'platform' as const,
-        deleted,
-        idempotencyKey: input.idempotencyKey,
-      };
-    });
-
-    const canvas = await this.canvasShots.deleteShots({
+    const result = await this.canvasShots.deleteShots({
       actorId: input.actorId,
       projectId: input.projectId,
-      shotIds: result.deleted.map((s) => s.id),
+      shotIds: [...new Set(args.shotIds)],
       idempotencyKey: input.idempotencyKey,
     });
 
     return {
-      projectRevision: result.projectRevision,
-      surface: result.surface,
+      revision: result.revision,
+      surface: 'platform' as const,
       deleted: result.deleted,
-      canvasDocumentId: canvas?.documentId ?? null,
-      canvasSequence: canvas?.sequence ?? null,
-      canvasRemovedNodes: canvas?.removed ?? [],
-      idempotencyKey: result.idempotencyKey,
+      canvasDocumentId: result.documentId,
+      idempotencyKey: input.idempotencyKey,
+      ...(isStale(args.baseRevision, result.previousRevision)
+        ? { staleBaseRevision: true }
+        : {}),
     };
   }
 
@@ -982,6 +799,15 @@ function parseCharacters(value: Prisma.JsonValue): StoredCharacter[] {
  * are omitted rather than sent as "": absent reads as "not set", and a 200-shot
  * board would otherwise spend most of its tokens on empty strings.
  */
+/**
+ * Whether the caller's baseRevision was behind when the write landed. Reported,
+ * never enforced: shot writes merge as CRDT updates, so rejecting on a stale
+ * anchor would fail an agent write for an unrelated human keystroke.
+ */
+function isStale(baseRevision: number | undefined, actual: number): boolean {
+  return baseRevision !== undefined && baseRevision !== actual;
+}
+
 function toShotSummary(row: AgentOsCanvasShotRow) {
   const summary: Record<string, unknown> = {
     id: row.id,
@@ -1000,23 +826,6 @@ function toShotSummary(row: AgentOsCanvasShotRow) {
   if (row.durationSeconds !== null)
     summary.durationSeconds = row.durationSeconds;
   return summary;
-}
-
-function parseShots(value: Prisma.JsonValue): StoredShot[] {
-  if (!Array.isArray(value)) return [];
-  const out: StoredShot[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    const row = item as Record<string, unknown>;
-    if (typeof row.id !== 'string' || typeof row.title !== 'string') continue;
-    out.push({
-      id: row.id,
-      title: row.title,
-      prompt: typeof row.prompt === 'string' ? row.prompt : '',
-      notes: typeof row.notes === 'string' ? row.notes : '',
-    });
-  }
-  return out;
 }
 
 function parseStringArray(value: Prisma.JsonValue): string[] {

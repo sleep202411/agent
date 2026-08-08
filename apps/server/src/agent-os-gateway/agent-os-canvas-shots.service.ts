@@ -9,7 +9,13 @@ import {
   PlatformDocumentStatus,
   PlatformDocumentType,
 } from '@prisma/client';
-import { compareByOrder, orderAfter } from '@repo/shared';
+import {
+  AGENT_SHOT_ID_PREFIX,
+  compareByOrder,
+  nextShotPosition,
+  orderBetween,
+  type ShotWrite,
+} from '@repo/shared';
 import * as Y from 'yjs';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -356,6 +362,11 @@ export class AgentOsCanvasShotsService {
    * Remove product shot nodes (and edges) for Agent OS shot ids.
    * Node id convention: `agent-os:shot:<shotId>`.
    */
+  /**
+   * storyboard.deleteShots — removal in the same one-hydrate shape as the
+   * write. Unknown ids fail the whole call before anything is removed, so the
+   * model never gets a partial success it has to reason about.
+   */
   async deleteShots(input: {
     actorId: string;
     projectId: string;
@@ -363,29 +374,17 @@ export class AgentOsCanvasShotsService {
     idempotencyKey: string;
   }): Promise<{
     documentId: string;
-    sequence: number;
-    removed: Array<{ id: string; nodeId: string }>;
-  } | null> {
-    if (input.shotIds.length === 0) return null;
-
+    revision: number;
+    previousRevision: number;
+    deleted: Array<{ id: string; title: string }>;
+  }> {
     const user: AuthUser = { userId: input.actorId };
-    let documentId: string;
-    try {
-      const ensured = await this.documents.ensurePrimaryDocument(
-        user,
-        input.projectId,
-        PlatformDocumentType.canvas,
-      );
-      documentId = ensured.document.id as string;
-    } catch (error) {
-      this.logger.warn(
-        `ensurePrimaryDocument canvas failed projectId=${input.projectId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return null;
-    }
-
+    const ensured = await this.documents.ensurePrimaryDocument(
+      user,
+      input.projectId,
+      PlatformDocumentType.canvas,
+    );
+    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
         id: documentId,
@@ -399,29 +398,55 @@ export class AgentOsCanvasShotsService {
         currentSequence: true,
       },
     });
-    if (!row) return null;
+    if (!row) {
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_DOCUMENT_MISSING',
+        message: 'Project canvas document is unavailable.',
+      });
+    }
 
-    const schema = rootSchemaFor(PlatformDocumentType.canvas);
-    const doc = new Y.Doc({ gc: true });
+    const doc = this.newCanvasDoc();
     try {
-      if (schema) {
-        for (const [name, kind] of Object.entries(schema)) {
-          if (kind === 'map') doc.getMap(name);
-          else if (kind === 'array') doc.getArray(name);
-          else if (kind === 'text') doc.getText(name);
+      await this.hydrateDoc(doc, row.id, row.crdtState, row.snapshotSequence);
+      const nodes = doc.getMap<Y.Map<unknown>>('nodes');
+
+      const targets: Array<{ id: string; nodeId: string; title: string }> = [];
+      const missing: string[] = [];
+      for (const shotId of input.shotIds) {
+        const nodeId = resolveShotNodeId(nodes, shotId);
+        if (!nodeId) {
+          missing.push(shotId);
+          continue;
         }
+        const data = nodes.get(nodeId)?.get('data');
+        const label = data instanceof Y.Map ? data.get('label') : null;
+        targets.push({
+          id: shotId,
+          nodeId,
+          title: typeof label === 'string' ? label : '',
+        });
+      }
+      if (missing.length > 0) {
+        throw new UnprocessableEntityException({
+          code: 'SHOT_NOT_FOUND',
+          message: `Unknown shot id(s): ${missing.join(', ')}. Call storyboard.listShots first.`,
+          missing,
+        });
       }
 
-      await this.hydrateDoc(doc, row.id, row.crdtState, row.snapshotSequence);
-
       const before = Y.encodeStateVector(doc);
-      const removed = this.removeShotNodes(doc, input.shotIds);
+      this.removeShotNodes(
+        doc,
+        targets.map((target) => target.nodeId),
+      );
       const update = Y.encodeStateAsUpdate(doc, before);
+      const deleted = targets.map(({ id, title }) => ({ id, title }));
       if (update.byteLength === 0) {
         return {
           documentId: row.id,
-          sequence: row.currentSequence,
-          removed,
+          revision: row.currentSequence,
+          previousRevision: row.currentSequence,
+          deleted,
         };
       }
 
@@ -442,44 +467,39 @@ export class AgentOsCanvasShotsService {
 
       return {
         documentId: row.id,
-        sequence: operation.sequence as number,
-        removed,
+        revision: operation.sequence as number,
+        previousRevision: row.currentSequence,
+        deleted,
       };
     } finally {
       doc.destroy();
     }
   }
 
+  /**
+   * storyboard.upsertShots — the single write. Addressing, existence checks,
+   * row placement and the field patch all happen inside ONE hydrate of the
+   * document that is then appended as one operation, so a shot can never
+   * "exist" anywhere the board did not actually receive it.
+   */
   async applyShots(input: {
     actorId: string;
     projectId: string;
-    shots: AgentOsCanvasShot[];
+    shots: ShotWrite[];
     idempotencyKey: string;
   }): Promise<{
     documentId: string;
-    sequence: number;
+    revision: number;
+    previousRevision: number;
     written: Array<{ id: string; title: string; nodeId: string }>;
-  } | null> {
-    if (input.shots.length === 0) return null;
-
+  }> {
     const user: AuthUser = { userId: input.actorId };
-    let documentId: string;
-    try {
-      const ensured = await this.documents.ensurePrimaryDocument(
-        user,
-        input.projectId,
-        PlatformDocumentType.canvas,
-      );
-      documentId = ensured.document.id as string;
-    } catch (error) {
-      this.logger.warn(
-        `ensurePrimaryDocument canvas failed projectId=${input.projectId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return null;
-    }
-
+    const ensured = await this.documents.ensurePrimaryDocument(
+      user,
+      input.projectId,
+      PlatformDocumentType.canvas,
+    );
+    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
         id: documentId,
@@ -493,19 +513,15 @@ export class AgentOsCanvasShotsService {
         currentSequence: true,
       },
     });
-    if (!row) return null;
+    if (!row) {
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_DOCUMENT_MISSING',
+        message: 'Project canvas document is unavailable.',
+      });
+    }
 
-    const schema = rootSchemaFor(PlatformDocumentType.canvas);
-    const doc = new Y.Doc({ gc: true });
+    const doc = this.newCanvasDoc();
     try {
-      if (schema) {
-        for (const [name, kind] of Object.entries(schema)) {
-          if (kind === 'map') doc.getMap(name);
-          else if (kind === 'array') doc.getArray(name);
-          else if (kind === 'text') doc.getText(name);
-        }
-      }
-
       await this.hydrateDoc(doc, row.id, row.crdtState, row.snapshotSequence);
 
       const before = Y.encodeStateVector(doc);
@@ -514,7 +530,8 @@ export class AgentOsCanvasShotsService {
       if (update.byteLength === 0) {
         return {
           documentId: row.id,
-          sequence: row.currentSequence,
+          revision: row.currentSequence,
+          previousRevision: row.currentSequence,
           written,
         };
       }
@@ -533,12 +550,27 @@ export class AgentOsCanvasShotsService {
 
       return {
         documentId: row.id,
-        sequence: operation.sequence as number,
+        revision: operation.sequence as number,
+        previousRevision: row.currentSequence,
         written,
       };
     } finally {
       doc.destroy();
     }
+  }
+
+  /** A Y.Doc with the canvas roots declared, ready to hydrate. */
+  private newCanvasDoc(): Y.Doc {
+    const schema = rootSchemaFor(PlatformDocumentType.canvas);
+    const doc = new Y.Doc({ gc: true });
+    if (schema) {
+      for (const [name, kind] of Object.entries(schema)) {
+        if (kind === 'map') doc.getMap(name);
+        else if (kind === 'array') doc.getArray(name);
+        else if (kind === 'text') doc.getText(name);
+      }
+    }
+    return doc;
   }
 
   private async hydrateDoc(
@@ -630,7 +662,17 @@ export class AgentOsCanvasShotsService {
         const prompt = stringField(payload, 'prompt');
         const notes =
           typeof payload.notes === 'string' ? payload.notes : undefined;
-        this.writeShotNodes(doc, [{ id, title, prompt, notes }]);
+        // Same write path as storyboard.upsertShots — one shot writer.
+        const nodes = doc.getMap<Y.Map<unknown>>('nodes');
+        this.writeShotNodes(doc, [
+          {
+            id,
+            intent: resolveShotNodeId(nodes, id) ? 'replace' : 'create',
+            title,
+            prompt,
+            notes,
+          },
+        ]);
         return;
       }
       case 'node.delete': {
@@ -707,16 +749,12 @@ export class AgentOsCanvasShotsService {
     }
   }
 
-  private removeShotNodes(
-    doc: Y.Doc,
-    shotIds: string[],
-  ): Array<{ id: string; nodeId: string }> {
+  /** Drop shot nodes by RESOLVED node id, cascading their wires. */
+  private removeShotNodes(doc: Y.Doc, nodeIds: string[]): void {
     const nodes = doc.getMap<Y.Map<unknown>>('nodes');
     const edges = doc.getMap<Y.Map<unknown>>('edges');
-    const removed: Array<{ id: string; nodeId: string }> = [];
 
-    for (const shotId of shotIds) {
-      const nodeId = toShotNodeId(shotId);
+    for (const nodeId of nodeIds) {
       if (!nodes.has(nodeId)) continue;
       nodes.delete(nodeId);
       const drop: string[] = [];
@@ -727,93 +765,197 @@ export class AgentOsCanvasShotsService {
         }
       });
       for (const edgeId of drop) edges.delete(edgeId);
-      removed.push({ id: shotId, nodeId });
     }
-
-    return removed;
   }
 
+  /**
+   * Apply a batch of shot writes to the hydrated doc.
+   *
+   * Two rules carry the weight. Addressing: a shot is found by its node id
+   * (a human's row) or by its agent id (`agent-os:shot:<id>`), so the agent can
+   * touch anything on the board. Patching: only the fields the write NAMES are
+   * set, because the row belongs to whoever is editing it — blanket-setting
+   * five keys is how an agent used to wipe a human's 画面描述.
+   */
   private writeShotNodes(
     doc: Y.Doc,
-    shots: AgentOsCanvasShot[],
+    shots: ShotWrite[],
   ): Array<{ id: string; title: string; nodeId: string }> {
     const nodes = doc.getMap<Y.Map<unknown>>('nodes');
-    const existingShotOrders: string[] = [];
-    let maxX = 0;
-    let stripY = 0;
-    let hasShot = false;
-
-    nodes.forEach((yNode) => {
-      if (!(yNode instanceof Y.Map)) return;
-      if (yNode.get('type') !== SHOT_NODE_TYPE) return;
-      hasShot = true;
-      const data = yNode.get('data');
-      if (data instanceof Y.Map) {
-        const order = data.get('order');
-        if (typeof order === 'string') existingShotOrders.push(order);
-      }
-      const pos = yNode.get('position');
-      if (pos instanceof Y.Map) {
-        const x = Number(pos.get('x') ?? 0);
-        const y = Number(pos.get('y') ?? 0);
-        if (x >= maxX) {
-          maxX = x;
-          stripY = y;
-        }
-      }
-    });
-
-    existingShotOrders.sort();
-    let orderCursor =
-      existingShotOrders.length > 0
-        ? existingShotOrders[existingShotOrders.length - 1]
-        : undefined;
-    let nextX = hasShot ? maxX + SHOT_NODE_WIDTH + SHOT_STRIP_GAP : 0;
-    const nextY = hasShot ? stripY : 0;
     const written: Array<{ id: string; title: string; nodeId: string }> = [];
 
     for (const shot of shots) {
-      const nodeId = toShotNodeId(shot.id);
-      const patch = {
-        label: shot.title,
-        imagePrompt: shot.prompt,
-        description: shot.prompt,
-        notes: shot.notes ?? '',
-        agentOsShotId: shot.id,
-      };
+      const existingNodeId = resolveShotNodeId(nodes, shot.id);
 
+      if (shot.intent === 'create' && existingNodeId) {
+        throw new UnprocessableEntityException({
+          code: 'SHOT_EXISTS',
+          message: `Shot ${shot.id} already exists. Use intent "replace" to update it.`,
+        });
+      }
+      if (shot.intent === 'replace' && !existingNodeId) {
+        throw new UnprocessableEntityException({
+          code: 'SHOT_NOT_FOUND',
+          message: `Unknown shot id ${shot.id}. Call storyboard.listShots first.`,
+        });
+      }
+
+      const nodeId = existingNodeId ?? `${AGENT_SHOT_ID_PREFIX}${shot.id}`;
       let yNode = nodes.get(nodeId);
+
       if (!(yNode instanceof Y.Map)) {
         yNode = new Y.Map<unknown>();
         nodes.set(nodeId, yNode);
         yNode.set('id', nodeId);
         yNode.set('type', SHOT_NODE_TYPE);
-        const pos = new Y.Map<number>();
-        pos.set('x', nextX);
-        pos.set('y', nextY);
-        yNode.set('position', pos);
-        nextX += SHOT_NODE_WIDTH + SHOT_STRIP_GAP;
-        const order = orderAfter(orderCursor);
-        orderCursor = order;
-        const data = new Y.Map<unknown>();
-        data.set('order', order);
-        for (const [k, v] of Object.entries(patch)) data.set(k, v);
-        yNode.set('data', data);
-      } else {
-        let dataY = yNode.get('data');
-        if (!(dataY instanceof Y.Map)) {
-          dataY = new Y.Map<unknown>();
-          yNode.set('data', dataY);
-        }
-        for (const [k, v] of Object.entries(patch)) {
-          (dataY as Y.Map<unknown>).set(k, v);
-        }
+        const { x, y } = nextShotPosition(readNodeGeometry(nodes));
+        const position = new Y.Map<number>();
+        position.set('x', x);
+        position.set('y', y);
+        yNode.set('position', position);
+        yNode.set('data', new Y.Map<unknown>());
       }
-      written.push({ id: shot.id, title: shot.title, nodeId });
+
+      let data = yNode.get('data');
+      if (!(data instanceof Y.Map)) {
+        data = new Y.Map<unknown>();
+        yNode.set('data', data);
+      }
+      const shotData = data as Y.Map<unknown>;
+
+      // Order: place on create, or on replace only when `after` was given.
+      const placing = shot.after !== undefined;
+      if (!existingNodeId || placing) {
+        shotData.set('order', placeShotOrder(nodes, nodeId, shot.after));
+      }
+      // Provenance for rows this agent created; never stamped on a human row.
+      if (!existingNodeId) shotData.set('agentOsShotId', shot.id);
+
+      for (const [key, value] of shotWritePatch(shot)) shotData.set(key, value);
+
+      const title =
+        typeof shotData.get('label') === 'string'
+          ? (shotData.get('label') as string)
+          : '';
+      written.push({ id: shot.id, title, nodeId });
     }
 
     return written;
   }
+}
+
+/** Geometry of every placed node, in the shape the shared placer expects. */
+function readNodeGeometry(
+  nodes: Y.Map<Y.Map<unknown>>,
+): Array<{ type: string; position: { x: number; y: number } | null }> {
+  const out: Array<{
+    type: string;
+    position: { x: number; y: number } | null;
+  }> = [];
+  nodes.forEach((yNode) => {
+    if (!(yNode instanceof Y.Map)) return;
+    const position = yNode.get('position');
+    out.push({
+      type: String(yNode.get('type') ?? ''),
+      position:
+        position instanceof Y.Map
+          ? {
+              x: Number(position.get('x') ?? 0),
+              y: Number(position.get('y') ?? 0),
+            }
+          : null,
+    });
+  });
+  return out;
+}
+
+/**
+ * The node a write addresses: a raw node id (a row the user created) or an
+ * agent id that resolves to the prefixed node. Returns null when the board has
+ * no such shot, which is what separates create from replace.
+ */
+function resolveShotNodeId(
+  nodes: Y.Map<Y.Map<unknown>>,
+  shotId: string,
+): string | null {
+  for (const candidate of [shotId, `${AGENT_SHOT_ID_PREFIX}${shotId}`]) {
+    const node = nodes.get(candidate);
+    if (node instanceof Y.Map && node.get('type') === SHOT_NODE_TYPE) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/** Shot rows currently on the board, in order, excluding one node id. */
+function boardOrder(
+  nodes: Y.Map<Y.Map<unknown>>,
+  excludeNodeId: string,
+): Array<{ id: string; order: string | null }> {
+  const rows: Array<{ id: string; order: string | null }> = [];
+  nodes.forEach((yNode, id) => {
+    if (id === excludeNodeId) return;
+    if (!(yNode instanceof Y.Map) || yNode.get('type') !== SHOT_NODE_TYPE)
+      return;
+    const data = yNode.get('data');
+    const order = data instanceof Y.Map ? data.get('order') : null;
+    rows.push({ id, order: typeof order === 'string' ? order : null });
+  });
+  return rows.sort(compareByOrder);
+}
+
+/**
+ * The order key for a shot placed after `after` — `null` meaning the top of the
+ * board and `undefined` meaning append. Both neighbours come from the same
+ * hydrated doc, so a batch that creates several rows walks forward correctly.
+ */
+function placeShotOrder(
+  nodes: Y.Map<Y.Map<unknown>>,
+  nodeId: string,
+  after: string | null | undefined,
+): string {
+  const rows = boardOrder(nodes, nodeId);
+  if (after === null) {
+    return orderBetween(null, rows[0]?.order ?? null);
+  }
+  if (after === undefined) {
+    return orderBetween(rows[rows.length - 1]?.order ?? null, null);
+  }
+  const anchor = resolveShotNodeId(nodes, after);
+  const index = anchor ? rows.findIndex((row) => row.id === anchor) : -1;
+  if (index === -1) {
+    // Unknown anchor: append rather than fail — placement is not the point of
+    // the call, and a lost row would be worse than a row in the wrong place.
+    return orderBetween(rows[rows.length - 1]?.order ?? null, null);
+  }
+  return orderBetween(rows[index].order, rows[index + 1]?.order ?? null);
+}
+
+/**
+ * Field mapping for one write — ONLY the keys the caller supplied.
+ *
+ * `prompt` is 图片提示词 and lands on imagePrompt alone. It used to be written
+ * to `description` as well, which silently overwrote the human's 画面描述 on
+ * every agent touch; the two are different columns owned by different authors.
+ */
+function shotWritePatch(shot: ShotWrite): Array<[string, unknown]> {
+  const patch: Array<[string, unknown]> = [];
+  if (shot.title !== undefined) patch.push(['label', shot.title]);
+  if (shot.prompt !== undefined) patch.push(['imagePrompt', shot.prompt]);
+  if (shot.description !== undefined)
+    patch.push(['description', shot.description]);
+  if (shot.notes !== undefined) patch.push(['notes', shot.notes]);
+  if (shot.dialogue !== undefined) patch.push(['dialogue', shot.dialogue]);
+  if (shot.videoPrompt !== undefined)
+    patch.push(['videoPrompt', shot.videoPrompt]);
+  if (shot.shotSize !== undefined) patch.push(['shotSize', shot.shotSize]);
+  if (shot.perspective !== undefined)
+    patch.push(['perspective', shot.perspective]);
+  if (shot.movement !== undefined) patch.push(['movement', shot.movement]);
+  if (shot.durationSeconds !== undefined) {
+    patch.push(['durationSeconds', shot.durationSeconds]);
+  }
+  return patch;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -865,12 +1007,6 @@ export function readShotRows(
   }
 
   return rows.sort(compareByOrder);
-}
-
-function toShotNodeId(shotId: string): string {
-  return shotId.startsWith('agent-os:shot:')
-    ? shotId
-    : `agent-os:shot:${shotId}`;
 }
 
 function stringField(payload: Record<string, unknown>, key: string): string {

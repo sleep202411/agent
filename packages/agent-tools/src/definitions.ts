@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  SHOT_ID_PATTERN,
+  SHOT_LIMITS,
+  SHOT_MOVEMENT_OPTIONS,
+  SHOT_PERSPECTIVE_OPTIONS,
+  SHOT_SIZE_OPTIONS,
+  type ShotWrite,
+} from "@repo/shared";
 
 import type { ToolDefinition } from "./types.js";
 
@@ -84,6 +92,47 @@ export const CharactersListOutputSchema = z
         })
         .strict()
     ),
+  })
+  .strict();
+
+const shotId = z.string().trim().min(1).max(SHOT_LIMITS.idMax).regex(SHOT_ID_PATTERN);
+
+const ShotWriteSchema = z
+  .object({
+    id: shotId,
+    intent: z.enum(["create", "replace"]).default("create"),
+    after: shotId.nullish(),
+    title: z.string().trim().min(1).max(SHOT_LIMITS.titleMax).optional(),
+    prompt: z.string().trim().max(SHOT_LIMITS.promptMax).optional(),
+    description: z.string().trim().max(SHOT_LIMITS.descriptionMax).optional(),
+    notes: z.string().trim().max(SHOT_LIMITS.notesMax).optional(),
+    dialogue: z.string().trim().max(SHOT_LIMITS.dialogueMax).optional(),
+    videoPrompt: z.string().trim().max(SHOT_LIMITS.videoPromptMax).optional(),
+    shotSize: z.enum(SHOT_SIZE_OPTIONS).optional(),
+    perspective: z.enum(SHOT_PERSPECTIVE_OPTIONS).optional(),
+    movement: z.enum(SHOT_MOVEMENT_OPTIONS).optional(),
+    durationSeconds: z.number().nonnegative().max(SHOT_LIMITS.durationSecondsMax).optional(),
+  })
+  .strict()
+  .refine((shot) => shot.intent !== "create" || Boolean(shot.title), {
+    message: "title is required when creating a shot",
+    path: ["title"],
+  });
+
+/** Compile-time guard: this schema must keep producing the shared shape. */
+type _ShotWriteMatchesShared = z.infer<typeof ShotWriteSchema> extends ShotWrite ? true : never;
+
+export const ShotsUpsertInputSchema = z
+  .object({
+    baseRevision: z.number().int().nonnegative().optional(),
+    shots: z.array(ShotWriteSchema).min(1).max(SHOT_LIMITS.batchMax),
+  })
+  .strict();
+
+export const ShotsDeleteInputSchema = z
+  .object({
+    baseRevision: z.number().int().nonnegative().optional(),
+    shotIds: z.array(shotId).min(1).max(SHOT_LIMITS.batchMax),
   })
   .strict();
 
@@ -242,75 +291,48 @@ export const AGENT_OS_TOOLS = [
   {
     id: "storyboard.upsertShots",
     description:
-      "Write storyboard shots to project canvas + Agent OS state. Call ONLY when the user explicitly asked " +
-      "to add/create/update/storyboard shots — never for bare poetic phrases or candidate titles alone. " +
-      "Requires baseRevision from storyboard.listShots. " +
-      "Per-shot intent: 'create' (default) = NEW id only (existing id → SHOT_EXISTS); " +
-      "'replace' = update an existing id. " +
-      "To ADD one shot, pass ONLY the new shot with intent create — do NOT resubmit the full board. " +
-      "To rewrite many shots at once, pass only those rows with intent replace (or create for brand-new ids). " +
+      "Write shots to the project's storyboard. Call ONLY when the user explicitly asked " +
+      "to add/create/update shots — never for bare poetic phrases or candidate titles alone. " +
+      "A write PATCHES the fields you name and leaves the rest alone, so send only what you " +
+      "are changing; do NOT resubmit the whole board. " +
+      "Per-shot intent: 'create' (default) = a NEW id only (existing id → SHOT_EXISTS); " +
+      "'replace' = update a shot that exists, including one the user authored. " +
+      "Use `after` to place a row (the id it should follow, or null for the top); omit it to " +
+      "append on create or leave the row where it is on replace. " +
+      "shotSize / perspective / movement take the stable option key (e.g. 'closeUp', 'lowAngle' " +
+      "→ 'low', 'dolly'), never a localized label. " +
+      "`prompt` is the image-generation prompt; `description` is the human-facing 画面描述 — " +
+      "do not put the same text in both. " +
       "To REMOVE shots, use storyboard.deleteShots — not upsert. Storyboard surface only.",
     kind: "command",
     risk: "sensitive",
-    inputSchema: z
-      .object({
-        baseRevision: z.number().int().nonnegative(),
-        shots: z
-          .array(
-            z
-              .object({
-                id: z
-                  .string()
-                  .trim()
-                  .min(1)
-                  .max(120)
-                  .regex(/^[A-Za-z][A-Za-z0-9._:-]*$/),
-                title: z.string().trim().min(1).max(200),
-                prompt: z.string().trim().min(1).max(8_000),
-                notes: z.string().trim().max(4_000).optional(),
-                intent: z.enum(["create", "replace"]).optional(),
-              })
-              .strict()
-          )
-          .min(1)
-          .max(200),
-      })
-      .strict(),
+    inputSchema: ShotsUpsertInputSchema,
     outputSchema: z
       .object({
-        projectRevision: z.number().int().nonnegative(),
+        revision: z.number().int().nonnegative(),
         written: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
         surface: z.string().optional(),
+        /** Set when the baseRevision you sent was behind: the write still applied. */
+        staleBaseRevision: z.boolean().optional(),
       })
       .strict(),
   },
   {
     id: "storyboard.deleteShots",
     description:
-      "Delete storyboard shots by stable id from project canvas + Agent OS state. Requires baseRevision from storyboard.listShots. Prefer this over replace-with-remaining-list when the user asks to remove specific shots. Only available on the storyboard surface.",
+      "Delete shots from the project's storyboard by id, including shots the user authored. " +
+      "Prefer this over replace-with-remaining-list when the user asks to remove specific shots. " +
+      "Deleting removes the row and its wires; call storyboard.listShots first if unsure of an id. " +
+      "Only available on the storyboard surface.",
     kind: "command",
     risk: "sensitive",
-    inputSchema: z
-      .object({
-        baseRevision: z.number().int().nonnegative(),
-        shotIds: z
-          .array(
-            z
-              .string()
-              .trim()
-              .min(1)
-              .max(120)
-              .regex(/^[A-Za-z][A-Za-z0-9._:-]*$/)
-          )
-          .min(1)
-          .max(200),
-      })
-      .strict(),
+    inputSchema: ShotsDeleteInputSchema,
     outputSchema: z
       .object({
-        projectRevision: z.number().int().nonnegative(),
+        revision: z.number().int().nonnegative(),
         deleted: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
         surface: z.string().optional(),
+        staleBaseRevision: z.boolean().optional(),
       })
       .strict(),
   },

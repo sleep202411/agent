@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import {
+  SHOT_ID_PATTERN,
+  SHOT_LIMITS,
+  SHOT_MOVEMENT_OPTIONS,
+  SHOT_PERSPECTIVE_OPTIONS,
+  SHOT_SIZE_OPTIONS,
+  type ShotWrite,
+} from '@repo/shared';
 
 const stableKey = z
   .string()
@@ -47,30 +55,64 @@ export const ScriptStoreInputSchema = z
   })
   .strict();
 
+/**
+ * Shot ids accept a leading digit: rows a human created in the storyboard table
+ * are raw UUIDs, and the agent must be able to address them.
+ */
+const shotId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(SHOT_LIMITS.idMax)
+  .regex(SHOT_ID_PATTERN);
+
+/**
+ * Built from @repo/shared primitives rather than importing the tool package's
+ * schema object: the two tiers run different physical zod installs, so only the
+ * values and the `ShotWrite` type cross the boundary. The guard below keeps the
+ * shapes from drifting apart anyway.
+ */
+const ShotWriteSchema = z
+  .object({
+    id: shotId,
+    intent: z.enum(['create', 'replace']).default('create'),
+    after: shotId.nullish(),
+    title: z.string().trim().min(1).max(SHOT_LIMITS.titleMax).optional(),
+    prompt: z.string().trim().max(SHOT_LIMITS.promptMax).optional(),
+    description: z.string().trim().max(SHOT_LIMITS.descriptionMax).optional(),
+    notes: z.string().trim().max(SHOT_LIMITS.notesMax).optional(),
+    dialogue: z.string().trim().max(SHOT_LIMITS.dialogueMax).optional(),
+    videoPrompt: z.string().trim().max(SHOT_LIMITS.videoPromptMax).optional(),
+    shotSize: z.enum(SHOT_SIZE_OPTIONS).optional(),
+    perspective: z.enum(SHOT_PERSPECTIVE_OPTIONS).optional(),
+    movement: z.enum(SHOT_MOVEMENT_OPTIONS).optional(),
+    durationSeconds: z
+      .number()
+      .nonnegative()
+      .max(SHOT_LIMITS.durationSecondsMax)
+      .optional(),
+  })
+  .strict()
+  .refine((shot) => shot.intent !== 'create' || Boolean(shot.title), {
+    message: 'title is required when creating a shot',
+    path: ['title'],
+  });
+
+type _ShotWriteMatchesShared =
+  z.infer<typeof ShotWriteSchema> extends ShotWrite ? true : never;
+
 export const ShotsUpsertInputSchema = z
   .object({
-    baseRevision: z.number().int().nonnegative(),
-    shots: z
-      .array(
-        z
-          .object({
-            id: stableKey,
-            title: z.string().trim().min(1).max(200),
-            prompt: z.string().trim().min(1).max(8_000),
-            notes: z.string().trim().max(4_000).optional(),
-            intent: z.enum(['create', 'replace']).default('create'),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(200),
+    /** Advisory only — reported back as stale, never a rejection. */
+    baseRevision: z.number().int().nonnegative().optional(),
+    shots: z.array(ShotWriteSchema).min(1).max(SHOT_LIMITS.batchMax),
   })
   .strict();
 
 export const ShotsDeleteInputSchema = z
   .object({
-    baseRevision: z.number().int().nonnegative(),
-    shotIds: z.array(stableKey).min(1).max(200),
+    baseRevision: z.number().int().nonnegative().optional(),
+    shotIds: z.array(shotId).min(1).max(SHOT_LIMITS.batchMax),
   })
   .strict();
 
