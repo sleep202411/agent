@@ -1076,9 +1076,36 @@ export function useAgentOsRun(projectId: string) {
       pollAborts.current.set(runId, ac);
       const started = Date.now();
       const maxMs = 10 * 60_000;
+      /**
+       * Give up on CONSECUTIVE failures, never on elapsed time.
+       *
+       * Measuring from the poll's start meant any turn longer than 15s died on
+       * its first transient error — and it died by throwing out of a
+       * fire-and-forget call, so nothing was shown: the transcript simply froze
+       * on "Working…" with the composer locked. This loop is the ONLY transport
+       * when Ably is not live, which is the case the design exists for (Front
+       * Door does not pass SSE), so it has to survive a blip and has to speak up
+       * when it truly cannot.
+       */
+      let consecutiveFailures = 0;
+      const maxConsecutiveFailures = 8;
+
+      const giveUp = (code: string, message: string) => {
+        pollAborts.current.delete(runId);
+        // Through the buffer, not a bare setState: a later rebuild would wipe
+        // anything that lives outside it, and this is the only thing telling
+        // the user their turn stopped.
+        applyToRunBuffer({
+          runId,
+          status: "failed",
+          error: { code, message },
+          allowResumeFromWaiting: true,
+        });
+      };
 
       while (!ac.signal.aborted && Date.now() - started < maxMs) {
         const after = lastSequenceByRun.current.get(runId) ?? 0;
+        let justFailed = false;
         try {
           const page = await agentOsApi.listEvents(runId, projectId, after, ac.signal);
           applyToRunBuffer({
@@ -1090,16 +1117,34 @@ export function useAgentOsRun(projectId: string) {
             assistantText: page.assistantText,
             allowResumeFromWaiting: true,
           });
+          consecutiveFailures = 0;
           if (TERMINAL.has(page.status)) {
             pollAborts.current.delete(runId);
             return page;
           }
         } catch (error) {
           if (ac.signal.aborted) return;
-          if (Date.now() - started > 15_000) throw error;
+          consecutiveFailures += 1;
+          justFailed = true;
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            giveUp("AGENT_OS_POLL_LOST", error instanceof Error ? error.message : String(error));
+            return;
+          }
         }
-        const intervalMs = ablyConnected.current || ablyLive.current.isLive ? 1_500 : 120;
+        const base = ablyConnected.current || ablyLive.current.isLive ? 1_500 : 120;
+        // Back off while failing so a struggling gateway is not hammered at 8/s.
+        const intervalMs = justFailed ? Math.min(base * 2 ** consecutiveFailures, 5_000) : base;
         await new Promise((r) => setTimeout(r, intervalMs));
+      }
+
+      if (!ac.signal.aborted) {
+        // The window closed with the run still open. Saying so is honest and
+        // unlocks the composer; leaving it spinning is neither.
+        giveUp(
+          "AGENT_OS_POLL_TIMEOUT",
+          "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check."
+        );
+        return;
       }
       pollAborts.current.delete(runId);
     },

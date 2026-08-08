@@ -15,6 +15,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { cn } from "@/lib/utils";
+import { ApprovalPayload, type ApprovalPayloadLabels } from "./approval-payload";
 import { SmoothStreamMarkdown } from "./smooth-stream-markdown";
 import type { AgentOsChatMessage } from "./use-agent-os-run";
 
@@ -112,6 +113,7 @@ export function AgentOsTranscript({
     reject: string;
     scriptAttached: (chars: number) => string;
     plan: string;
+    payload: ApprovalPayloadLabels;
   };
 }) {
   /**
@@ -142,7 +144,14 @@ export function AgentOsTranscript({
   // - autoScroll + defaultScrollPosition="end" → follow the bottom
   // - only the *latest* row is a scrollAnchor (streaming / Working tail)
   // - spacer collapsed so we don't reintroduce a blank half-panel
-  const tailId = showWorkingOnTimeline ? "timeline-working" : (last?.id ?? null);
+  // The failure banner belongs at the BOTTOM: this panel follows the tail, so a
+  // banner above the thread is off-screen the moment the conversation is longer
+  // than the viewport — which is exactly when a turn dies unexplained.
+  const tailId = error
+    ? "timeline-error"
+    : showWorkingOnTimeline
+      ? "timeline-working"
+      : (last?.id ?? null);
 
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -153,15 +162,6 @@ export function AgentOsTranscript({
             className="gap-3 px-3 py-3"
             spacerClassName="!max-h-0"
           >
-            {error ? (
-              <MessageScrollerItem messageId="timeline-error">
-                <div className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                  <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
-                  <span>{error}</span>
-                </div>
-              </MessageScrollerItem>
-            ) : null}
-
             {isEmpty ? (
               <MessageScrollerItem
                 messageId="timeline-empty"
@@ -214,6 +214,18 @@ export function AgentOsTranscript({
                 </Marker>
               </MessageScrollerItem>
             ) : null}
+
+            {error ? (
+              <MessageScrollerItem key="timeline-error" messageId="timeline-error" scrollAnchor>
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200"
+                >
+                  <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
+                  <span>{error}</span>
+                </div>
+              </MessageScrollerItem>
+            ) : null}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton direction="end" label={labels.scrollToLatest} />
@@ -245,6 +257,7 @@ function AgentOsMessageRow({
     reject: string;
     scriptAttached: (chars: number) => string;
     plan: string;
+    payload: ApprovalPayloadLabels;
   };
 }) {
   if (message.role === "user") {
@@ -332,6 +345,12 @@ function AgentOsMessageRow({
             <p className="mt-1 font-mono text-[10px] text-white/40">
               {String(message.meta?.toolId ?? "")}
             </p>
+            {/* What the write actually does — the whole point of the gate. */}
+            <ApprovalPayload
+              toolId={String(message.meta?.toolId ?? "")}
+              args={message.meta?.arguments}
+              labels={labels.payload}
+            />
             {showApprovalActions ? (
               <div className="mt-2.5 flex gap-2">
                 <Button

@@ -2884,6 +2884,14 @@
     "workerOnline": "Worker 在线",
     "workerOffline": "Worker 离线 — 请启动 agent-os（:4301）并开启 AGENT_OS_ENABLED",
     "shotsSynced": "分镜已同步 · 新增 {created} · 更新 {updated}",
-    "charactersWritten": "已写入项目 {count} 个角色"
+    "charactersWritten": "已写入项目 {count} 个角色",
+    "approvalCreates": "新建 {count} 条",
+    "approvalUpdates": "修改 {count} 条",
+    "approvalDeletes": "删除 {count} 条",
+    "approvalAndMore": "还有 {count} 条",
+    "approvalShowDetails": "查看完整请求",
+    "approvalHideDetails": "收起完整请求",
+    "approvalUntitled": "未命名",
+    "pollLost": "与服务器失去联系，已停止跟踪本轮。它可能仍在运行——重新发送或重新打开面板可查看。"
   }
 }

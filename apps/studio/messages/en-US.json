@@ -2884,6 +2884,14 @@
     "workerOnline": "Worker online",
     "workerOffline": "Worker offline — start agent-os on :4301 and enable AGENT_OS_ENABLED",
     "shotsSynced": "Storyboard updated · {created} new · {updated} updated",
-    "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}"
+    "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}",
+    "approvalCreates": "Creates {count}",
+    "approvalUpdates": "Updates {count}",
+    "approvalDeletes": "Deletes {count}",
+    "approvalAndMore": "+{count} more",
+    "approvalShowDetails": "Show full request",
+    "approvalHideDetails": "Hide full request",
+    "approvalUntitled": "Untitled",
+    "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check."
   }
 }

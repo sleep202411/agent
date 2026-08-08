@@ -2884,6 +2884,14 @@
     "workerOnline": "Worker 在線",
     "workerOffline": "Worker 離線 — 請啟動 agent-os（:4301）並開啟 AGENT_OS_ENABLED",
     "shotsSynced": "分鏡已同步 · 新增 {created} · 更新 {updated}",
-    "charactersWritten": "已寫入項目 {count} 個角色"
+    "charactersWritten": "已寫入項目 {count} 個角色",
+    "approvalCreates": "新增 {count} 項",
+    "approvalUpdates": "修改 {count} 項",
+    "approvalDeletes": "刪除 {count} 項",
+    "approvalAndMore": "尚有 {count} 項",
+    "approvalShowDetails": "查看完整請求",
+    "approvalHideDetails": "收起完整請求",
+    "approvalUntitled": "未命名",
+    "pollLost": "與伺服器失去聯繫，已停止追蹤今次對話。它可能仍在執行——重新傳送或重新開啟面板即可查看。"
   }
 }

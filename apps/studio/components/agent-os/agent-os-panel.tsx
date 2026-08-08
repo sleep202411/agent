@@ -359,6 +359,15 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           reject: t("reject"),
           scriptAttached: (chars) => t("scriptAttached", { chars }),
           plan: t("event.PlanCreated"),
+          payload: {
+            creates: (count) => t("approvalCreates", { count }),
+            updates: (count) => t("approvalUpdates", { count }),
+            deletes: (count) => t("approvalDeletes", { count }),
+            andMore: (count) => t("approvalAndMore", { count }),
+            showDetails: t("approvalShowDetails"),
+            hideDetails: t("approvalHideDetails"),
+            untitled: t("approvalUntitled"),
+          },
         }}
         empty={
           <div className="w-full space-y-3 px-1 pt-1">
