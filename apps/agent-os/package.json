@@ -12,7 +12,8 @@
     "smoke:qwen": "tsx --env-file=.env scripts/smoke-qwen.mts",
     "live:golden": "tsx --env-file=.env scripts/live-golden-qwen.mts",
     "test": "vitest run",
-    "lint": "echo \"agent-os lint: pending eslint wiring\""
+    "lint": "echo \"agent-os lint: pending eslint wiring\"",
+    "probe:models": "tsx --env-file=.env scripts/probe-models.mts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.5",
