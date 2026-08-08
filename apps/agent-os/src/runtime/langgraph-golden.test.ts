@@ -358,6 +358,58 @@ describe("LangGraph golden path: script → characters", () => {
     });
     expect(rehydrated).toBe(false);
   });
+  it("fails loudly when a turn proposes two writes at once", async () => {
+    const domain = new InMemoryStoryDomain();
+    domain.setScript("角色甲。");
+
+    // What a provider that ignores parallel_tool_calls:false would send. Both
+    // calls interrupt, and answering one used to re-run the tools node — the
+    // approved write executing twice while the other hit a stale revision.
+    const model = fakeModel()
+      .respondWithTools([
+        {
+          name: "characters_upsert",
+          id: "tc-1",
+          args: {
+            baseRevision: 0,
+            characters: [{ id: "role-a", name: { "zh-CN": "甲" }, summary: "x", intent: "create" }],
+          },
+        },
+        {
+          name: "storyboard_upsertShots",
+          id: "tc-2",
+          args: {
+            baseRevision: 0,
+            shots: [{ id: "shot-a", title: "开场", intent: "create" }],
+          },
+        },
+      ])
+      .respond(new AIMessage("done"));
+
+    const service = new LangGraphRunService();
+    const runId = crypto.randomUUID();
+    const conversationId = crypto.randomUUID();
+
+    const result = await service.start({
+      runId,
+      conversationId,
+      projectId: PROJECT,
+      actorId: "user-1",
+      sessionId: `agent-os:v1:conversation:${conversationId}`,
+      message: "提取角色并拆分镜",
+      modelProfileId: "qwen-plus",
+      surface: "storyboard",
+      model,
+      domain,
+      checkpointer: new MemorySaver(),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toMatch(/one write at a time/);
+    // The invariant that matters: nothing was written behind the user's back.
+    expect(domain.characters.size).toBe(0);
+    expect(domain.shots.size).toBe(0);
+  });
 });
 
 describe("LangGraph cancel", () => {

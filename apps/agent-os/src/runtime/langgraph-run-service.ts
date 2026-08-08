@@ -772,6 +772,22 @@ export class LangGraphRunService {
     }
 
     if (interrupts.length > 0) {
+      // Resuming an approval re-runs the WHOLE tools node, so every other tool
+      // call in the same assistant message executes again — the approved write
+      // lands twice and the next one hits a stale revision. The model is bound
+      // with parallel_tool_calls disabled to make this unreachable; if a
+      // provider ignores that, fail the turn rather than double-write behind
+      // the user's back.
+      const pendingCallCount = toolCallCountOfLastAssistantMessage(finalResult);
+      if (pendingCallCount > 1) {
+        throw new Error(
+          `Turn proposed ${pendingCallCount} tool calls in one message while one needs approval; ` +
+            `Agent OS approves one write at a time.`
+        );
+      }
+    }
+
+    if (interrupts.length > 0) {
       const approval = interrupts[0]!;
       const approvalId = crypto.randomUUID();
       journal.append({
@@ -910,6 +926,21 @@ export class LangGraphRunService {
       assistantText: snapshot.assistantText ?? null,
     });
   }
+}
+
+/**
+ * How many tool calls the assistant asked for in the message currently awaiting
+ * approval. More than one means resuming would re-execute the siblings.
+ */
+function toolCallCountOfLastAssistantMessage(result: unknown): number {
+  if (!result || typeof result !== "object") return 0;
+  const messages = (result as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const calls = (messages[index] as { tool_calls?: unknown })?.tool_calls;
+    if (Array.isArray(calls) && calls.length > 0) return calls.length;
+  }
+  return 0;
 }
 
 function interruptsFromState(state: unknown): ApprovalInterruptValue[] {
