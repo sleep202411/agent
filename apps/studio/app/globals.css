@@ -71,6 +71,11 @@
      Was 0.178 (a lighter, out-of-spec ladder) which made studio pages read lighter
      than the home. This is the darkest tier; surfaces (card/popover/secondary) lift above it. */
   --background: oklch(0.17 0 0); /* #0F0F0F — zero-chroma page background */
+  /* Authoring canvases share one fixed, screen-space dot field. These values
+     are consumed by CanvasBackdrop; React Flow never transforms this layer. */
+  --canvas-background: oklch(0.18 0 0);
+  --canvas-dot-color: rgb(255 255 255 / 0.13);
+  --canvas-dot-spacing: 20px;
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.215 0 0);
   --card-foreground: oklch(0.985 0 0);

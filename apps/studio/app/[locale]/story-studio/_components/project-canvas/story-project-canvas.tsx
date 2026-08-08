@@ -63,6 +63,7 @@ import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
+import { CanvasBackdrop } from "@/components/canvas/canvas-backdrop";
 import {
   CANVAS_DELETE_KEY_CODES,
   CANVAS_NODE_DRAG_HANDLE_CLASS,
@@ -87,7 +88,6 @@ import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { StudioAgentCanvasPreviewPart } from "@/lib/studio-agent";
 import { cn } from "@/lib/utils";
-import { StoryStudioCanvasBackdrop } from "./story-studio-canvas-backdrop";
 import {
   addStoryCandidateAsset,
   canvasLayoutRevisionConflict,
@@ -3084,7 +3084,7 @@ function StoryProjectCanvasInner({
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
   return (
-    <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
+    <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
       <StoryCanvasAssistantLayer
         projectId={projectId}
         chapterId={workbenchProjection.chapter.id}
@@ -3198,7 +3198,7 @@ function StoryProjectCanvasInner({
             openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
           }}
         >
-          <StoryStudioCanvasBackdrop />
+          <CanvasBackdrop />
           <MediaHoverPreviewProvider>
             <StoryCanvasChoiceContext.Provider value={choiceContext}>
               <StoryCanvasFocusContext.Provider value={focusedNodeId}>

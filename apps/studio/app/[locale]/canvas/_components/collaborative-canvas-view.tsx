@@ -29,7 +29,7 @@ const CREATIVE_ADD_NODE_ACTIONS = [
   "shot",
 ] as const;
 
-function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
+function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
   const t = useTranslations("canvas");
   const tCanvasControls = useTranslations("canvasControls");
   const { setShellInset } = useProjectContext();
@@ -37,7 +37,8 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
   // The canvas doc connection is owned by the shell (single connection for the
   // whole workspace). Read doc/awareness/provider from there — do NOT call
   // useCanvasDocument/useCanvasDoc here (that would open a second connection).
-  const { documentId, documentStatus, doc, awareness, provider, connectionStatus } = useCanvasConnection();
+  const { documentId, documentStatus, doc, awareness, provider, connectionStatus } =
+    useCanvasConnection();
   const { user } = useAuth();
   // Handed over from another mode ("show me this shot on the board").
   const focusNodeId = useSearchParams().get("focus");
@@ -86,7 +87,11 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
   const reportDrawerInset = useCallback((left: number) => setShellInset({ left }), [setShellInset]);
 
   return (
-    <CommentsProvider documentId={documentId} provider={provider} currentUserId={user?.id != null ? String(user.id) : undefined}>
+    <CommentsProvider
+      documentId={documentId}
+      provider={provider}
+      currentUserId={user?.id != null ? String(user.id) : undefined}
+    >
       <MediaAuthoringCanvas
         canEdit={canEdit}
         ready={documentStatus === "ready" && connectionStatus === "synced"}
@@ -107,7 +112,7 @@ function CollaborativeCanvasInner({ projectId, canEdit }: { projectId: string; c
         panels={null}
         loadingOverlay={
           documentStatus === "loading" ? (
-            <div className="absolute inset-0 z-50 grid place-items-center bg-[#0a0a0a]">
+            <div className="absolute inset-0 z-50 grid place-items-center">
               <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
             </div>
           ) : null
@@ -149,7 +154,7 @@ export function CollaborativeCanvasView({
 }) {
   return (
     <ReactFlowProvider>
-      <CollaborativeCanvasInner projectId={projectId} canEdit={canEdit} />
+      <CollaborativeCanvasInner key={projectId} canEdit={canEdit} />
     </ReactFlowProvider>
   );
 }

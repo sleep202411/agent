@@ -34,27 +34,28 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
 2. **Monochrome surfaces, zero chroma.** Every surface token is pure
    neutral (OKLCH chroma `0`). The approved scale:
 
-   | Token        | Value                                    | Role                                 |
-   | ------------ | ---------------------------------------- | ------------------------------------ |
-   | `background` | `oklch(0.17 0 0)`                        | page (the darkest tier)              |
-   | `card`       | `oklch(0.215 0 0)`                       | panels, cards                        |
-   | `popover`    | `oklch(0.235 0 0)`                       | overlays, menus, tooltips            |
-   | `muted`      | `oklch(0.25 0 0)`                        | quiet fills                          |
-   | `secondary`  | `oklch(0.26 0 0)`                        | secondary buttons                    |
-   | `accent`     | `oklch(0.27 0 0)`                        | hover fills                          |
-   | `primary`    | `oklch(0.5914 0.225 26.83)` (`#E52227`)  | primary actions — brand red (rule 3) |
-   | `border`     | `white / 8%`                             | hairlines (see rule 4)               |
-   | `input`      | `white / 12%`                            | filled control surfaces              |
+   | Token        | Value                                   | Role                                 |
+   | ------------ | --------------------------------------- | ------------------------------------ |
+   | `background` | `oklch(0.17 0 0)`                       | page (the darkest tier)              |
+   | `card`       | `oklch(0.215 0 0)`                      | panels, cards                        |
+   | `popover`    | `oklch(0.235 0 0)`                      | overlays, menus, tooltips            |
+   | `muted`      | `oklch(0.25 0 0)`                       | quiet fills                          |
+   | `secondary`  | `oklch(0.26 0 0)`                       | secondary buttons                    |
+   | `accent`     | `oklch(0.27 0 0)`                       | hover fills                          |
+   | `primary`    | `oklch(0.5914 0.225 26.83)` (`#E52227`) | primary actions — brand red (rule 3) |
+   | `border`     | `white / 8%`                            | hairlines (see rule 4)               |
+   | `input`      | `white / 12%`                           | filled control surfaces              |
 
    These mirror `app/globals.css :root`, which is **authoritative** — if this
    table and the code ever differ, the code wins. (`primary` is the brand red
    per rule 3, not the white it carried before that reversal.)
 
-   **Canvas elevation tiers.** The canvas surface is darker than the page
-   (`oklch(0.105)`), so floating panels need extra lightness to read — on
-   near-black, drop shadows are invisible (nothing is darker), so separation
-   is carried by the tone step alone. Layering on the canvas:
-   canvas `0.105` → card `0.215` → floating composer `oklch(0.22)` →
+   **Canvas elevation tiers.** Every authoring canvas uses the shared fixed
+   screen-space dot field (`CanvasBackdrop`) over `oklch(0.18)`, one quiet tone
+   step above the page. Its 20px dot spacing does not pan or scale with React
+   Flow content. Floating panels then lift through tone, blur, and shadow.
+   Layering on the canvas:
+   canvas `0.18` → card `0.215` → floating composer `oklch(0.22)` →
    panels opened over the composer (model picker / settings) `oklch(0.24)`.
    All zero-chroma; no borders.
 
@@ -209,15 +210,15 @@ machine data only. Abstracted from the imagine.art reference (display carries
 negative tracking, labels are wide caps, data is mono) and disciplined to the
 sizes this app actually uses.
 
-| Role        | Size / line-height | Weight | Tracking            | Use                                                     |
-| ----------- | ------------------ | ------ | ------------------- | ------------------------------------------------------- |
-| **Display** | 52 / 56            | 700    | −0.02em             | hero tagline only — one per view                        |
-| **Heading** | 32 / 40            | 600    | −0.01em             | page & major-section titles ("What's new")              |
-| **Title**   | 20 / 28            | 600    | 0                   | card titles, dialog titles                              |
-| **Body**    | 16 / 24            | 400    | 0                   | default running text                                    |
-| **Small**   | 13 / 20            | 400    | 0                   | secondary / meta text, on `muted-foreground`            |
-| **Label**   | 12 / 16            | 600    | 0.09em · UPPERCASE  | eyebrows, section labels, chips                         |
-| **Mono**    | 13                 | 400    | 0                   | data only — model ids, credit cost, dimensions, tokens  |
+| Role        | Size / line-height | Weight | Tracking           | Use                                                    |
+| ----------- | ------------------ | ------ | ------------------ | ------------------------------------------------------ |
+| **Display** | 52 / 56            | 700    | −0.02em            | hero tagline only — one per view                       |
+| **Heading** | 32 / 40            | 600    | −0.01em            | page & major-section titles ("What's new")             |
+| **Title**   | 20 / 28            | 600    | 0                  | card titles, dialog titles                             |
+| **Body**    | 16 / 24            | 400    | 0                  | default running text                                   |
+| **Small**   | 13 / 20            | 400    | 0                  | secondary / meta text, on `muted-foreground`           |
+| **Label**   | 12 / 16            | 600    | 0.09em · UPPERCASE | eyebrows, section labels, chips                        |
+| **Mono**    | 13                 | 400    | 0                  | data only — model ids, credit cost, dimensions, tokens |
 
 - Negative tracking tightens Display/Heading; Labels earn the wide caps.
 - **Mono is reserved for machine data** (`seedance-2.0`, `24 credits`,
@@ -232,12 +233,12 @@ larger surfaces; the full-round pill is reserved for segmented-control
 
 | Step          | Value                    | Use                                                          |
 | ------------- | ------------------------ | ------------------------------------------------------------ |
-| **panel**     | 24px                     | large frosted panels — composer, hero media card            |
+| **panel**     | 24px                     | large frosted panels — composer, hero media card             |
 | **rail**      | 18px                     | the floating 56px icon-rail pill                             |
-| **card**      | 16px                     | cards, media thumbnails, promo tiles                        |
+| **card**      | 16px                     | cards, media thumbnails, promo tiles                         |
 | **control**   | 14px (`rounded-xl`)      | **all** buttons, inputs, selects, chips, pills, icon buttons |
 | **small**     | 8–10px (`rounded-md/lg`) | dense control sizes (`xs`/`sm`), tiny chips                  |
-| **segmented** | full-round               | segmented-control **containers** only (studio tabs)         |
+| **segmented** | full-round               | segmented-control **containers** only (studio tabs)          |
 
 **Buttons share the one 14px control radius** (decided 2026-08-04). The
 full-round pill for the primary CTA was tried and retired: a hero action earns
