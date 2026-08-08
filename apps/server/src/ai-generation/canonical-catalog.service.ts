@@ -144,8 +144,16 @@ export class AiCanonicalCatalogService {
 
       const model = candidates.find((item) => item.enabled) ?? candidates[0];
       if (model) {
+        // `vendor` lives on the canonical row, but provider mappers build the
+        // AiModelDefinition without ever reading the canonical — so graft it on
+        // here (same seam as withCanonicalUiPolicy) or it never reaches the wire.
+        // Graft canonical vendor + UI policy + x-ui.options onto the provider definition.
+        const withCanonicalFields: AiModelDefinition = {
+          ...finalizeCatalogModel(model, canonical.uiPolicy),
+          ...(canonical.vendor ? { vendor: canonical.vendor } : {}),
+        };
         models.push({
-          model: finalizeCatalogModel(model, canonical.uiPolicy),
+          model: withCanonicalFields,
           sortOrder: uiSortOrder(canonical.uiPolicy),
           slug: canonical.slug,
         });

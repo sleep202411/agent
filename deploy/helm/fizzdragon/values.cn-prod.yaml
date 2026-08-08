@@ -103,8 +103,15 @@ sharedEnv:
   # fizzdragon-ai-outputs (oss.fizzspace.cn, *.fizzspace.cn wildcard cert).
   # Distinct from the read CDN above (media.fizzspace.cn, public unsigned GET).
   OSS_PUBLIC_BASE_URL: https://oss.fizzspace.cn
-  # CN DashScope endpoint (not the -intl one). Matches prod-cn .env.
-  ALIBABA_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # Bailian, Beijing region — a different account, key and catalogue from .com's
+  # Singapore workspace, so this is not a mirror of values.yaml. Reaching the
+  # international endpoint from inside China would cross the border on every
+  # turn and put user scripts on foreign infrastructure.
+  #
+  # Workspace-scoped domain, which Alibaba recommends over shared dashscope.
+  # Verified from this repo: 175 models, and all five shipped Agent OS profiles
+  # complete the propose → approve → write path here.
+  ALIBABA_BASE_URL: https://llm-crovnhlv7n5y9hfm.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
   # Mirrors prod-cn .env: deepseek providers, model names from code defaults.
   STORYOS_ROUTER_PROVIDER: deepseek
   STORYOS_ROUTER_MODEL: null
@@ -273,6 +280,21 @@ temporal:
 # created out-of-band with kubectl, same trust model as the other CN Secrets.
 temporalDatabaseSecrets:
   mapping: null
+
+# Agent OS is not on CN yet: the image is not built for the CN registry, the
+# out-of-band Secret does not exist, and deploy-cn-services.sh has no arm for
+# it. Off explicitly rather than by omission — inheriting .com's defaults would
+# schedule it onto `pool: worker`, which CN's single untainted node does not
+# have, and leave the pod Pending forever with a green chart.
+#
+# To turn it on: build+push the image, create fizzdragon-agent-os-secrets and
+# fizzdragon-agent-os-server-secrets with kubectl (BAILIAN key is the Beijing
+# one — see ALIBABA_BASE_URL above), then set enabled plus:
+#   agentOs: { enabled: true, image: { tag: set-at-deploy },
+#              model: { baseUrl: <beijing workspace endpoint> },
+#              nodeSelector: null, tolerations: null }
+agentOs:
+  enabled: false
 
 studioAgentRuntime:
   image:

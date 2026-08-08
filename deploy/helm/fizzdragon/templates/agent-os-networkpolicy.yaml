@@ -1,0 +1,92 @@
+{{- if .Values.agentOs.enabled -}}
+{{- $agentOs := .Values.agentOs -}}
+{{- $policy := $agentOs.networkPolicy -}}
+{{/*
+  Guards, not defaults. Every one of these renders perfectly well when wrong and
+  fails only in the cluster — a policy without DNS lets the pod start and turns
+  every tool call into a retryable-looking DOMAIN_UNAVAILABLE, and an empty
+  clusterCidrs turns the subtraction rule below into an in-cluster allow-all.
+*/}}
+{{- if not $policy.enabled -}}
+{{- fail "agentOs.networkPolicy.enabled must be true" -}}
+{{- end -}}
+{{- if empty $policy.dns.namespaceSelector -}}
+{{- fail "agentOs.networkPolicy.dns.namespaceSelector must explicitly identify the cluster DNS namespace" -}}
+{{- end -}}
+{{- if empty $policy.dns.podSelector -}}
+{{- fail "agentOs.networkPolicy.dns.podSelector must explicitly identify the cluster DNS pods" -}}
+{{- end -}}
+{{- if empty $policy.clusterCidrs -}}
+{{- fail "agentOs.networkPolicy.clusterCidrs must list this cluster's own Service and pod CIDRs; the external egress rule is a subtraction and is an allow-all without them" -}}
+{{- end -}}
+{{- range $cidr := $policy.clusterCidrs -}}
+{{- if ne (len (splitList "/" $cidr)) 2 -}}
+{{- fail (printf "agentOs.networkPolicy.clusterCidrs entry %q is not a CIDR" $cidr) -}}
+{{- end -}}
+{{- end -}}
+{{- $ctx := merge (dict "component" "agent-os") . -}}
+{{- $egressCtx := merge (dict "component" "agent-os-egress") . -}}
+{{- $serverCtx := merge (dict "component" "server") . -}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fizzdragon.componentName" $egressCtx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $egressCtx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS first, always. Without it nothing else in this policy resolves, and
+    # the failure surfaces as flaky tools rather than as a network error.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $policy.dns.podSelector | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: {{ $policy.dns.port }}
+        - protocol: TCP
+          port: {{ $policy.dns.port }}
+    # The Nest domain: every tool execution and the durable journal. In-cluster,
+    # so it is pod-selected rather than an address.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "fizzdragon.componentSelector" $serverCtx | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.server.containerPort }}
+    {{- /*
+      The model endpoint and Ably are anycast estates with no contracted
+      addresses — enumerating their IPs is stale the day someone rotates a load
+      balancer, and it fails CLOSED (a turn dies on whichever address DNS
+      happened to return). Subtraction instead: leave the cluster on these
+      ports, never laterally, never to node metadata.
+    */}}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range $cidr := $policy.clusterCidrs }}
+              - {{ $cidr | quote }}
+              {{- end }}
+              - "169.254.0.0/16"
+      ports:
+        - protocol: TCP
+          port: {{ $policy.httpsPort }}
+        {{- if $policy.databasePort }}
+        # Only used once a checkpoint database URL is mapped; without it the
+        # first run hangs inside PostgresSaver.setup() with no error.
+        - protocol: TCP
+          port: {{ $policy.databasePort }}
+        {{- end }}
+{{- end }}

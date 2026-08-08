@@ -89,7 +89,10 @@ sharedEnv:
   JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
-  ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  # Bailian's workspace-scoped domain, which Alibaba recommends over the shared
+  # dashscope-intl gateway for latency and stability. Same key, same catalogue —
+  # verified: both serve the identical 156 models.
+  ALIBABA_BASE_URL: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
   # Agent LLM (StoryOS / personas). Blob container name is historical.
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
   AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
@@ -123,8 +126,10 @@ secrets:
       env: REPLICATE_API_TOKEN
     - kv: fal-api-key
       env: FAL_API_KEY
-    - kv: dashscope-api-key
-      env: DASHSCOPE_API_KEY
+    # Bailian (Model Studio) — one key serves Qwen, DeepSeek, GLM and Kimi in the
+    # workspace. Named for the product, not for the SDK that used to read it.
+    - kv: bailian-api-key
+      env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
     # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
@@ -307,6 +312,40 @@ studioAgentDeliverySecrets:
   mapping:
     - kv: ably-api-key
       env: ABLY_API_KEY
+# Agent OS worker credentials — its OWN projection, deliberately not
+# fizzdragon-server-secrets. CSI is fail-closed, so one bad entry breaks a whole
+# projected Secret; keeping these apart means an unprovisioned Agent OS cannot
+# take billing, auth and the legacy-MySQL bridge down with it.
+agentOsSecrets:
+  projectedName: fizzdragon-agent-os-secrets
+  mapping:
+    # The gateway<->worker boundary, checked in BOTH directions. The worker
+    # refuses to boot without it, and the server rejects the .env.example value.
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+    # Bailian's key. The vault entry names the vendor; the variable names the
+    # protocol, because the endpoint is OpenAI-compatible and need not be Bailian.
+    - kv: bailian-api-key
+      env: AGENT_OS_OPENAI_API_KEY
+    # Live event delivery. Optional at runtime — the UI falls back to the Nest
+    # poll — but a missing vault entry breaks this WHOLE projection, taking the
+    # internal token with it and stopping the worker from booting.
+    - kv: ably-api-key
+      env: ABLY_API_KEY
+    # Durable LangGraph checkpoints. Create the vault entry first, then
+    # uncomment: the saver runs CREATE SCHEMA / CREATE TABLE on first use, so
+    # that role needs DDL on schema `agent_os`. No migrator Job owns it.
+    # - kv: agent-os-checkpoint-database-url
+    #   env: AGENT_OS_CHECKPOINT_DATABASE_URL
+# The same vault entry projected a second time, for the Nest pod. Separate group
+# for the same fail-closed reason: the server must not lose its own secrets
+# because an Agent OS entry is missing.
+agentOsServerSecrets:
+  projectedName: fizzdragon-agent-os-server-secrets
+  mapping:
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
 # exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
@@ -447,9 +486,9 @@ server:
     # Cloudflare R2 over the S3-compatible API. `auto` is R2's only region and
     # path-style is required; the bucket is APAC-placed to sit beside the cluster.
     # Credentials (S3_ACCESS_KEY_ID / S3_ACCESS_KEY_SECRET) come from the
-    # fizzdragon-r2 secret above. Only jobs that pin s3_compatible write here —
-    # OUTPUT_STORAGE_PROVIDER stays unset so every other surface keeps its cell
-    # default of azure_blob.
+    # fizzdragon-r2 secret above. Cell default for com/global is s3_compatible
+    # (R2); set OUTPUT_STORAGE_PROVIDER=azure_blob only to roll NEW writes back.
+    # Existing MediaAsset rows keep reading from whatever provider they store.
     S3_ENDPOINT: https://c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com
     S3_BUCKET: fizzdragon-media
     S3_REGION: auto
@@ -696,6 +735,59 @@ agentPlatform:
       value: worker
       effect: NoSchedule
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# agent-os — the Agent OS worker (LangGraph interactive runtime, apps/agent-os).
+# A plain long-lived HTTP service on ClusterIP; the Nest server pod is its only
+# caller. Every /v1 route checks x-agent-os-internal-token; /health is open so
+# the kubelet can probe it.
+# ---------------------------------------------------------------------------
+agentOs:
+  enabled: true
+  # MUST remain 1, and the template refuses anything else. Run snapshots, the
+  # live event journal and pending approvals live in the worker PROCESS, so a
+  # second replica answers /events and /cancel for runs it never started — and
+  # the gateway silently falls back to the Postgres journal, so the symptom is
+  # "chat feels laggy", not an error anyone would report.
+  replicaCount: 1
+  image:
+    repository: fizzdragon-agent-os
+    tag: 0000000000000000000000000000000000000000
+  containerPort: 4301
+  # Covers the preStop drain only — the process installs no SIGTERM handler, so
+  # a longer window buys nothing.
+  terminationGracePeriodSeconds: 30
+  model:
+    # Bailian's workspace domain. The key is a Key Vault value, never here.
+    baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+  checkpoint:
+    schema: agent_os
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  networkPolicy:
+    enabled: true
+    dns:
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+      podSelector:
+        k8s-app: kube-dns
+      port: 53
+    # The "except" list of the external rule. Without these the 0.0.0.0/0 rule
+    # is an in-cluster allow-all.
+    clusterCidrs:
+      - 10.0.0.0/16
+      - 10.244.0.0/16
+    httpsPort: 443
+    databasePort: 5432
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+
+
 # agent — Mastra API. Internal. Storage in PG schema `mastra` (no PVC).
 # ---------------------------------------------------------------------------
 agent:
@@ -927,6 +1019,10 @@ studioAgentRuntime:
       cidrs:
         - 47.236.0.0/16
         - 47.245.0.0/16
+        # The workspace domain resolves outside the two ranges above — an
+        # Agent OS turn would fail on whichever address DNS happened to return.
+        #   dig +short llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com
+        - 8.219.0.0/16
     # The managed Postgres endpoint the Temporal server may reach. A /24 floor
     # is enforced — this is one endpoint, not a range.
     #

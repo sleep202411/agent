@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { IconFileText, IconLayoutGrid, IconClock } from "@tabler/icons-react";
+import { IconFileText, IconClock } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,12 @@ export type ProjectTab = "script" | "storyboard" | "timeline";
 // the entity-events stream. Tabs without an asset never show a dot
 // (Timeline currently has no dedicated entity-event channel — its
 // content is a derived view over storyboard + audio).
-type TabAsset = "script" | "storyboard";
+type TabAsset = "script";
 
+// Storyboard is RETIRED here: shot tables moved to FizzStudio's storyboard
+// mode, which projects the project canvas instead of the Java shot tables. The
+// entry point is gone; `?tab=storyboard` still renders the old view for anyone
+// holding a link, and goes with the rest of art-studio when it is decommissioned.
 const tabs: {
   key: ProjectTab;
   labelKey: string;
@@ -23,12 +27,6 @@ const tabs: {
   asset?: TabAsset;
 }[] = [
   { key: "script", labelKey: "script", icon: <IconFileText className="size-4" />, asset: "script" },
-  {
-    key: "storyboard",
-    labelKey: "storyboard",
-    icon: <IconLayoutGrid className="size-4" />,
-    asset: "storyboard",
-  },
   { key: "timeline", labelKey: "timeline", icon: <IconClock className="size-4" /> },
 ];
 
@@ -47,13 +45,8 @@ export function ProjectTabs({ activeTab, onTabChange }: ProjectTabsProps) {
     const inst = selectCurrentInstance(s);
     return inst.scriptVersion > inst.scriptSeenVersion;
   });
-  const storyboardUnseen = useAppSelector((s) => {
-    const inst = selectCurrentInstance(s);
-    return inst.storyboardVersion > inst.storyboardSeenVersion;
-  });
   const unseen: Record<TabAsset, boolean> = {
     script: scriptUnseen,
-    storyboard: storyboardUnseen,
   };
 
   // If the user is already on a tab when its asset bumps, auto-mark as

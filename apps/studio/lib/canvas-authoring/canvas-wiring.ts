@@ -15,8 +15,13 @@
  */
 import type { Edge } from "@xyflow/react";
 import { routeReferenceField } from "@/lib/canvas-authoring/reference-routing";
+import {
+  SHOT_NODE_TYPE,
+  routeShotReferenceField,
+  type ShotNodeData,
+} from "@/lib/canvas-authoring/shot-node";
 import type { FizzAiModel, FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
-import type { CardReference } from "@/components/canvas/authoring/reference-stack";
+import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
 
@@ -75,28 +80,51 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   return undefined;
 }
 
-/** Known media duration (seconds) on a source node, when the catalog needs it. */
-export function sourceMediaDurationSeconds(getNode: GetNode, nodeId: string): number | undefined {
-  const node = getNode(nodeId);
-  if (!node) return undefined;
-  if (node.type === "prompt" || node.type === "video") {
-    const seconds = (node.data as GenerationNodeData).generation?.outputs?.[0]?.durationSeconds;
-    return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
+function withoutEdgeReference(
+  references: CardReferences | undefined,
+  edgeId: string
+): CardReferences | undefined {
+  if (!references) return references;
+  const next: CardReferences = {};
+  for (const [field, list] of Object.entries(references)) {
+    next[field] = (list ?? []).filter((reference) => reference.edgeId !== edgeId);
   }
-  if (node.type === "videoAsset" || node.type === "audioAsset") {
-    const seconds = (node.data as { durationSeconds?: number | null }).durationSeconds;
-    return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
-  }
-  return undefined;
+  return next;
 }
 
-/** Route a source kind to a reference field on a target generation card. */
-function routeForCard(ctx: WiringCtx, cardId: string, kind: string) {
-  const node = ctx.getNode(cardId);
-  if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
-  const data = node.data as GenerationNodeData;
-  const model = ctx.catalog?.models.find((m) => m.id === data.modelId);
-  return routeReferenceField(model, data.mode, data.references, kind);
+/**
+ * Which reference field an incoming `kind` binds to on a target — the single
+ * routing brain for every node type that takes pictures: a generation card
+ * (fields declared by its model + mode) or a shot (fixed frame / clip slots).
+ * Anything else (a note, an image) takes nothing.
+ *
+ * `excludeEdgeId` is the wire being (re)bound: its own current reference must
+ * not count against a full slot, or a source that regenerates would be turned
+ * away from the slot it already owns.
+ */
+export function routeTargetReferenceField(
+  target: { type?: string | null; data?: unknown } | null | undefined,
+  catalog: { models: FizzAiModel[] } | undefined,
+  kind: string,
+  excludeEdgeId?: string
+): { mode?: string; field: string } | undefined {
+  if (!target) return undefined;
+  if (target.type === SHOT_NODE_TYPE) {
+    const data = target.data as ShotNodeData;
+    return routeShotReferenceField(data.references, kind, excludeEdgeId);
+  }
+  if (target.type !== "prompt" && target.type !== "video") return undefined;
+  const data = target.data as GenerationNodeData;
+  const model = catalog?.models.find((m) => m.id === data.modelId);
+  const references = excludeEdgeId
+    ? withoutEdgeReference(data.references, excludeEdgeId)
+    : data.references;
+  return routeReferenceField(model, data.mode, references, kind);
+}
+
+/** Route a source kind to a reference field on a wiring context's target. */
+function routeForCard(ctx: WiringCtx, cardId: string, kind: string, excludeEdgeId?: string) {
+  return routeTargetReferenceField(ctx.getNode(cardId), ctx.catalog, kind, excludeEdgeId);
 }
 
 /** Bind source → target as a reference. The single source of truth for this
@@ -110,8 +138,8 @@ export function bindEdgeReference(
   const kind = sourceOutputKind(ctx.getNode, source);
   const url = sourceMediaUrl(ctx.getNode, source);
   const assetId = sourceMediaAssetId(ctx.getNode, source);
-  const durationSeconds = sourceMediaDurationSeconds(ctx.getNode, source);
-  const routed = kind ? routeForCard(ctx, target, kind) : undefined;
+  // Re-binding THIS wire: its own current reference doesn't occupy the slot.
+  const routed = kind ? routeForCard(ctx, target, kind, edgeId) : undefined;
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
   if (!kind || !url || url.startsWith("blob:") || !routed) return;
@@ -122,10 +150,9 @@ export function bindEdgeReference(
     url,
     kind,
     ...(assetId ? { assetId } : {}),
-    ...(durationSeconds != null ? { durationSeconds } : {}),
   };
   ctx.graph.patchNodeData(target, (node) => {
-    const refs = (node.data as GenerationNodeData).references ?? {};
+    const refs = (node.data as { references?: CardReferences }).references ?? {};
     const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
     const patch: Record<string, unknown> = {
       references: { ...refs, [routed.field]: [...list, reference] },
@@ -155,7 +182,7 @@ export function connectNodes(
   const routed = routeForCard(ctx, targetId, kind);
   if (!routed) {
     throw new Error(
-      "The target can't accept this connection — it must be a generation card whose model accepts this input, with a free reference slot."
+      "The target can't accept this connection — it must be a shot, or a generation card whose model accepts this input, with a free reference slot."
     );
   }
 
@@ -193,7 +220,7 @@ export function stripEdgeRef(
   edgeId: string
 ): void {
   patchNodeData(targetId, (node) => {
-    const refs = (node.data as GenerationNodeData).references ?? {};
+    const refs = (node.data as { references?: CardReferences }).references ?? {};
     const next: Record<string, CardReference[]> = {};
     for (const [field, list] of Object.entries(refs)) {
       next[field] = list.filter((r) => r.edgeId !== edgeId);

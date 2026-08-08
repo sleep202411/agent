@@ -11,7 +11,7 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import type { StoryCandidateAsset } from "@/lib/story-projects-api";
 import type { StoryCandidateAssetsController } from "./use-story-candidate-assets";
@@ -36,15 +36,16 @@ export function StoryCandidateAssetsPanel({
   );
 
   return (
-    <CanvasDrawerPanel
-      title={t("title")}
-      description={t("description")}
-      count={controller.items.length}
-      icon={<IconBookmark className="size-4" stroke={1.8} />}
-      closeLabel={t("close")}
-      onClose={onClose}
-    >
-      <div className="flex gap-1 px-4 py-3" role="tablist" aria-label={t("filterLabel")}>
+    <>
+      <DrawerPanel.Header
+        title={t("title")}
+        description={t("description")}
+        count={controller.items.length}
+        icon={<IconBookmark className="size-4" stroke={1.8} />}
+        closeLabel={t("close")}
+        onClose={onClose}
+      />
+      <div className="flex shrink-0 gap-1 px-4 py-3" role="tablist" aria-label={t("filterLabel")}>
         {(["all", "image", "video", "audio"] as const).map((value) => (
           <button
             key={value}
@@ -64,7 +65,7 @@ export function StoryCandidateAssetsPanel({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      <DrawerPanel.Body className="px-4 pb-4">
         {controller.loading ? (
           <div className="grid h-40 place-items-center">
             <IconLoader2 className="size-5 animate-spin text-white/38" stroke={1.7} />
@@ -106,8 +107,8 @@ export function StoryCandidateAssetsPanel({
             ))}
           </div>
         )}
-      </div>
-    </CanvasDrawerPanel>
+      </DrawerPanel.Body>
+    </>
   );
 }
 

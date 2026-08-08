@@ -817,7 +817,7 @@ export function toAiModelDefinition(
           reason: config.disabledReason,
           endpointEnvVars: [
             'BAILIAN_ENABLED',
-            'DASHSCOPE_API_KEY',
+            'BAILIAN_API_KEY',
             'BAILIAN_REGION',
             'BAILIAN_WORKSPACE_ID',
           ],

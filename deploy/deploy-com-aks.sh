@@ -45,6 +45,9 @@ svc_spec() {
     # needs a new revision. The tag is also the Temporal build ID, so bumping it
     # is what moves pinned workflow histories onto the new worker.
     studio-agent-runtime) echo "fizzdragon-studio-agent-runtime:apps/studio-agent-runtime/Dockerfile:.studioAgentRuntime.image" ;;
+    # Agent OS worker (LangGraph runtime). Not in `all`: built explicitly when
+    # the worker needs a new revision, same posture as the two above.
+    agent-os) echo "fizzdragon-agent-os:apps/agent-os/Dockerfile:.agentOs" ;;
     # Atomic three-image release. All targets share the same immutable tag;
     # Helm rejects a mixed API/Worker/migrator revision.
     agent-platform) echo "__agent_platform_bundle__" ;;
@@ -54,7 +57,7 @@ svc_spec() {
 
 # --- args -----------------------------------------------------------------
 if [ "$#" -eq 0 ]; then
-  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime agent-platform)" >&2
+  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime agent-platform agent-os)" >&2
   exit 2
 fi
 if [ "$1" = "all" ]; then

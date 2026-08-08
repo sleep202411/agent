@@ -9,6 +9,11 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 
+import {
+  DEFAULT_FREE_BENEFITS,
+  type MembershipBenefits,
+} from '../../src/entitlements/membership-benefits';
+
 type MembershipPlanSeed = {
   planKey: string;
   productType: BillingProductType;
@@ -26,6 +31,14 @@ type MembershipPlanSeed = {
   limits: Prisma.InputJsonValue;
   marketing: Prisma.InputJsonValue;
   metadata: Prisma.InputJsonValue;
+  /**
+   * Validated benefits for the plan row. Optional: omitted plans start from
+   * DEFAULT_FREE_BENEFITS — mirroring BillingService.createMembershipPlan
+   * (apps/server/src/billing/billing.service.ts) — and are then tuned via the
+   * dedicated admin benefits endpoint. The seed deliberately does not invent
+   * per-tier benefit numbers; product policy is set in admin.
+   */
+  benefits?: MembershipBenefits;
 };
 
 type MembershipPriceSeed = {
@@ -291,10 +304,16 @@ const defaultUsdPrices = [
 export async function seedMembershipPlans(prisma: PrismaClient) {
   const plans = [...individualPlans, ...teamPlans, ...communityPlans];
   for (const plan of plans) {
+    // Same defaulting rule as BillingService.createMembershipPlan: an un-tuned
+    // plan row starts from DEFAULT_FREE_BENEFITS until admin sets real policy.
+    // benefits is supplied on `create` only — re-runs never clobber a value an
+    // admin later tuned via PUT membership-plans/:planId/benefits.
+    const benefits = (plan.benefits ?? DEFAULT_FREE_BENEFITS) as Prisma.InputJsonValue;
     await prisma.billingMembershipPlan.upsert({
       where: { planKey: plan.planKey },
       create: {
         ...plan,
+        benefits,
         billingIntervalDefault: BillingPriceInterval.month,
       },
       update: {

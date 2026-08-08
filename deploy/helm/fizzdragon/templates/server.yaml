@@ -168,6 +168,10 @@ spec:
                    whole block belongs to the process that runs main.js. The
                    db-migrate initContainer only shells out to prisma and must not
                    carry it — a copy there satisfies no reader and hides the gap. */}}
+            {{- /* Derived from the rendered Service, never a literal — the
+                   gateway's default is 127.0.0.1:4301, which in a pod is itself. */}}
+            - name: AGENT_OS_WORKER_URL
+              value: {{ printf "http://%s:%v" (include "fizzdragon.componentName" (merge (dict "component" "agent-os") .)) .Values.agentOs.containerPort | quote }}
             - name: AGENT_PLATFORM_ENABLED
               value: {{ $agentPlatform.enabled | quote }}
             {{- if $agentPlatform.enabled }}
@@ -249,10 +253,18 @@ spec:
                 name: {{ . }}
                 optional: true
             {{- end }}
+            {{- /* The gateway<->worker token, checked in both directions.
+                   Unconditional: the module loads regardless, and the config
+                   service throws in its constructor without it. */}}
+            - secretRef:
+                name: {{ .Values.agentOsServerSecrets.projectedName }}
           {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
+              readOnly: true
+            - name: agent-os-server-secrets
+              mountPath: /mnt/agent-os-server-secrets
               readOnly: true
             {{- if .Values.serverSecrets.mapping }}
             - name: server-kv-secrets
@@ -306,6 +318,12 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-kv
+        - name: agent-os-server-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-agent-os-server-kv
         {{- if .Values.serverSecrets.mapping }}
         - name: server-kv-secrets
           csi:

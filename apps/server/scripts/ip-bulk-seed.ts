@@ -143,13 +143,10 @@ async function classify(opts: { limit?: number; force: boolean }) {
 }
 
 async function classifyChunk(rows: Row[]): Promise<Map<number, string>> {
-  const key = process.env.DASHSCOPE_API_KEY?.trim();
+  const key = process.env.BAILIAN_API_KEY?.trim();
   const out = new Map<number, string>();
   if (!key) {
-    console.warn(
-      '  DASHSCOPE_API_KEY unset — defaulting all to',
-      DEFAULT_GENRE,
-    );
+    console.warn('  BAILIAN_API_KEY unset — defaulting all to', DEFAULT_GENRE);
     return out;
   }
   const items = rows.map((r) => ({
