@@ -7,7 +7,6 @@ import { IconPaperclip, IconPlus, IconSparkles, IconX } from "@tabler/icons-reac
 import { toast } from "sonner";
 import { agentOsSurfaceFromStudioMode } from "@repo/shared";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
-import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
   agentOsApi,
   type AgentOsAttachmentSummary,
@@ -15,7 +14,6 @@ import {
   type AgentOsSkillMeta,
 } from "@/lib/agent-os/api-client";
 import { emitAgentOsDomainChanged } from "@/lib/agent-os/domain-events";
-import { applyAgentOsShotsToCanvas } from "@/lib/agent-os/sync-shots-to-canvas";
 import { cn } from "@/lib/utils";
 import { AgentOsTranscript } from "./agent-os-transcript";
 import { useAgentOsRun } from "./use-agent-os-run";
@@ -65,7 +63,6 @@ function writeLs(key: string, value: string) {
  */
 export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const t = useTranslations("agentOs");
-  const graph = useCanvasGraphContext();
   const routeParams = useParams();
   const studioMode = typeof routeParams.mode === "string" ? routeParams.mode : "storyboard";
   const surface = agentOsSurfaceFromStudioMode(studioMode);
@@ -95,7 +92,6 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
   /** Domain revision last observed — pure chat must not re-apply unchanged shots. */
-  const lastShotsRevisionRef = useRef<number | null>(null);
   const lastCharacterCountRef = useRef(0);
   const domainBaselineReady = useRef(false);
 
@@ -106,21 +102,19 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
       .catch(() => setWorkerOk(false));
   }, []);
 
-  // Seed domain baseline so the first "你好" does not re-import historical shots.
-  // Also load project default skills + invocable catalog for the composer.
+  // Baseline the character count so a pure-chat turn does not toast, and load
+  // project default skills + the invocable catalog for the composer.
   useEffect(() => {
     let cancelled = false;
     domainBaselineReady.current = false;
     setSkillsHydrated(false);
     void Promise.all([
-      agentOsApi.listShots(projectId),
       agentOsApi.listCharacters(projectId),
       agentOsApi.getProjectSkills(projectId),
       agentOsApi.listSkills(surface),
     ])
-      .then(([shotsPage, charactersPage, projectSkills, skillCatalog]) => {
+      .then(([charactersPage, projectSkills, skillCatalog]) => {
         if (cancelled) return;
-        lastShotsRevisionRef.current = shotsPage.revision;
         lastCharacterCountRef.current = charactersPage.characters.length;
         domainBaselineReady.current = true;
         setProjectDefaultSkillIds(projectSkills.defaultSkillIds);
@@ -153,33 +147,16 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   }, [modelProfileId]);
 
   /**
-   * Catch-up only: product shots are written server-side into canvas Yjs and
-   * fan out over the documents WS. If domain revision moved but the client
-   * missed the op (offline/WS gap), re-apply from listShots without toasting
-   * no-ops. Characters still toast on count increase.
+   * Characters have no product surface yet, so a count bump is the only signal
+   * the panel can give. Shots need nothing here: the server writes them into
+   * the canvas document and the documents WS fans the operation out, and
+   * reconnect catch-up is that layer's job — a second, client-side reconciler
+   * would be re-deriving a CRDT it does not own.
    */
   const syncProductSurfaces = useCallback(async () => {
-    if (!graph.canEdit || !domainBaselineReady.current) return;
+    if (!domainBaselineReady.current) return;
     try {
-      const [shotsPage, charactersPage] = await Promise.all([
-        agentOsApi.listShots(projectId),
-        agentOsApi.listCharacters(projectId),
-      ]);
-
-      const shotsChanged =
-        lastShotsRevisionRef.current === null ||
-        shotsPage.revision !== lastShotsRevisionRef.current;
-      if (shotsChanged) {
-        const shotResult = applyAgentOsShotsToCanvas({
-          graph,
-          shots: shotsPage.shots,
-        });
-        lastShotsRevisionRef.current = shotsPage.revision;
-        if (shotResult.created > 0 || shotResult.updated > 0) {
-          emitAgentOsDomainChanged({ projectId, kind: "shots" });
-        }
-      }
-
+      const charactersPage = await agentOsApi.listCharacters(projectId);
       const characterCount = charactersPage.characters.length;
       const newCharacters = Math.max(0, characterCount - lastCharacterCountRef.current);
       lastCharacterCountRef.current = characterCount;
@@ -187,9 +164,9 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         emitAgentOsDomainChanged({ projectId, kind: "characters" });
       }
     } catch {
-      /* canvas may still be connecting; durable state remains in Agent OS tables */
+      /* durable state stays in Agent OS tables; nothing to reconcile here */
     }
-  }, [graph, projectId, t]);
+  }, [projectId]);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
