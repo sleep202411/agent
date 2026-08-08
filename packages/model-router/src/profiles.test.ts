@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { MODEL_PROFILE_ID_MAX_LENGTH, isModelProfileId } from "@repo/shared";
 import { loadModelProfiles, resolveProfile } from "./profiles.js";
 
 /**
@@ -63,5 +64,22 @@ describe("model profiles", () => {
 
   it("names the available models when asked for one that does not exist", () => {
     expect(() => resolveProfile("not-a-model", {})).toThrow(/Available:/);
+  });
+  // The bug this pins: shipped ids contained `.` (qwen3.7-plus, glm-5.2) while
+  // the Nest gateway and the protocol package each carried their own narrower
+  // copy of the pattern. Every run died at the gateway with a raw ZodError and
+  // the models were never reached. Adding a profile the wire cannot carry must
+  // fail here, not in production.
+  it("ships only ids the wire can actually carry", () => {
+    for (const profile of loadModelProfiles({})) {
+      expect(isModelProfileId(profile.id)).toBe(true);
+      expect(profile.id.length).toBeLessThanOrEqual(MODEL_PROFILE_ID_MAX_LENGTH);
+    }
+  });
+
+  it("accepts a dot in an id — the shipped defaults depend on it", () => {
+    expect(isModelProfileId("qwen3.7-plus")).toBe(true);
+    expect(isModelProfileId("Qwen-Plus")).toBe(false);
+    expect(isModelProfileId("3-leading-digit")).toBe(false);
   });
 });

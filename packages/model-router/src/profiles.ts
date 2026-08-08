@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MODEL_PROFILE_ID_MAX_LENGTH, MODEL_PROFILE_ID_PATTERN } from "@repo/shared";
 
 /**
  * The models a user can pick, and what they are called.
@@ -18,8 +19,8 @@ export const ModelProfileIdSchema = z
   .string()
   .trim()
   .min(1)
-  .max(64)
-  .regex(/^[a-z][a-z0-9_.-]*$/);
+  .max(MODEL_PROFILE_ID_MAX_LENGTH)
+  .regex(MODEL_PROFILE_ID_PATTERN);
 
 export type ModelProfileId = z.infer<typeof ModelProfileIdSchema>;
 

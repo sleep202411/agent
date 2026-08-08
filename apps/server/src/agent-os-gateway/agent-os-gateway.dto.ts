@@ -1,11 +1,18 @@
 import { z } from 'zod';
+import {
+  MODEL_PROFILE_ID_MAX_LENGTH,
+  MODEL_PROFILE_ID_PATTERN,
+} from '@repo/shared';
 
+// Shape only. Whether the id exists is the worker's call — it owns the profile
+// list and names the alternatives on a miss. This guard must never be narrower
+// than that list, which is why the pattern is imported rather than retyped.
 const modelProfileIdSchema = z
   .string()
   .trim()
   .min(1)
-  .max(64)
-  .regex(/^[a-z][a-z0-9_-]*$/);
+  .max(MODEL_PROFILE_ID_MAX_LENGTH)
+  .regex(MODEL_PROFILE_ID_PATTERN);
 
 /** Codex-style autonomy: ask = approve every write; smart = sensitive only; full = auto. */
 export const AgentOsPermissionModeSchema = z.enum(['ask', 'smart', 'full']);

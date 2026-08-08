@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { AgentOsIdSchema, AgentOsIsoTimestampSchema, AgentOsNonEmptyIdSchema } from "./ids.js";
 import { AgentWorkspaceRefSchema } from "./workspace.js";
+import { MODEL_PROFILE_ID_MAX_LENGTH, MODEL_PROFILE_ID_PATTERN } from "@repo/shared";
 
 export const AgentRunStatusSchema = z.enum([
   "queued",
@@ -38,8 +39,8 @@ export const AgentModelPreferenceSchema = z
       .string()
       .trim()
       .min(1)
-      .max(64)
-      .regex(/^[a-z][a-z0-9_-]*$/),
+      .max(MODEL_PROFILE_ID_MAX_LENGTH)
+      .regex(MODEL_PROFILE_ID_PATTERN),
   })
   .strict();
 export type AgentModelPreference = z.infer<typeof AgentModelPreferenceSchema>;
