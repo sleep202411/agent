@@ -9,7 +9,7 @@ import {
   PlatformDocumentStatus,
   PlatformDocumentType,
 } from '@prisma/client';
-import { orderAfter } from '@repo/shared';
+import { compareByOrder, orderAfter } from '@repo/shared';
 import * as Y from 'yjs';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -26,6 +26,29 @@ export type AgentOsCanvasShot = {
   title: string;
   prompt: string;
   notes?: string;
+};
+
+/**
+ * A shot as it exists on the board — every field the canvas node carries, not
+ * the four the agent used to keep in its own store. `agentAuthored` is
+ * provenance only: human rows are addressable exactly like agent ones.
+ */
+export type AgentOsCanvasShotRow = {
+  /** The id the agent addresses: its own shot id, or the node id for human rows. */
+  id: string;
+  nodeId: string;
+  order: string | null;
+  agentAuthored: boolean;
+  title: string;
+  prompt: string;
+  notes: string;
+  description: string;
+  shotSize: string;
+  perspective: string;
+  movement: string;
+  dialogue: string;
+  videoPrompt: string;
+  durationSeconds: number | null;
 };
 
 /**
@@ -125,6 +148,83 @@ export class AgentOsCanvasShotsService {
     } finally {
       doc.destroy();
     }
+  }
+
+  /**
+   * storyboard.listShots — the board as the agent sees it.
+   *
+   * Reads the canvas document, which is the single store: the storyboard table
+   * and the canvas board are two renderings of it, so this returns EVERY shot,
+   * including the ones a human authored. Row order is the shared comparator, so
+   * the shot the model calls "3" is the row the user sees numbered 3.
+   *
+   * Cheap by default: when the materialised snapshot is exactly current, parse
+   * plain JSON and never construct a Y.Doc. Otherwise hydrate and render the
+   * same shape, so the mapping below has one input format.
+   */
+  async listShots(input: { actorId: string; projectId: string }): Promise<{
+    documentId: string;
+    revision: number;
+    shots: AgentOsCanvasShotRow[];
+  }> {
+    const user: AuthUser = { userId: input.actorId };
+    const ensured = await this.documents.ensurePrimaryDocument(
+      user,
+      input.projectId,
+      PlatformDocumentType.canvas,
+    );
+    const documentId = ensured.document.id as string;
+    const row = await this.prisma.platformDocument.findFirst({
+      where: {
+        id: documentId,
+        status: PlatformDocumentStatus.active,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        crdtState: true,
+        snapshotSequence: true,
+        currentSequence: true,
+        contentSnapshot: true,
+      },
+    });
+    if (!row) {
+      return { documentId, revision: 0, shots: [] };
+    }
+
+    // The compactor debounces (1.5s) and hard-caps (15s), so the snapshot is
+    // only trustworthy when it covers every op written so far.
+    const snapshotIsCurrent =
+      row.snapshotSequence === row.currentSequence &&
+      row.contentSnapshot !== null &&
+      typeof row.contentSnapshot === 'object';
+
+    let content: Record<string, unknown>;
+    if (snapshotIsCurrent) {
+      content = row.contentSnapshot as Record<string, unknown>;
+    } else {
+      const schema = rootSchemaFor(PlatformDocumentType.canvas);
+      const doc = new Y.Doc({ gc: true });
+      try {
+        if (schema) {
+          for (const [name, kind] of Object.entries(schema)) {
+            if (kind === 'map') doc.getMap(name);
+            else if (kind === 'array') doc.getArray(name);
+            else if (kind === 'text') doc.getText(name);
+          }
+        }
+        await this.hydrateDoc(doc, row.id, row.crdtState, row.snapshotSequence);
+        content = doc.toJSON() as Record<string, unknown>;
+      } finally {
+        doc.destroy();
+      }
+    }
+
+    return {
+      documentId: row.id,
+      revision: row.currentSequence,
+      shots: readShotRows(content),
+    };
   }
 
   /**
@@ -714,6 +814,57 @@ export class AgentOsCanvasShotsService {
 
     return written;
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readString(data: Record<string, unknown>, key: string): string {
+  const value = data[key];
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Shot nodes of a canvas document (`Y.Doc.toJSON()` shape), in board order.
+ * Sorting goes through the shared comparator so the row numbers the model is
+ * told match the row numbers the storyboard table renders.
+ */
+export function readShotRows(
+  content: Record<string, unknown>,
+): AgentOsCanvasShotRow[] {
+  const nodes = asRecord(content.nodes);
+  const rows: AgentOsCanvasShotRow[] = [];
+
+  for (const [nodeId, rawNode] of Object.entries(nodes)) {
+    const node = asRecord(rawNode);
+    if (node.type !== SHOT_NODE_TYPE) continue;
+    const data = asRecord(node.data);
+    const agentOsShotId = readString(data, 'agentOsShotId');
+    const order = readString(data, 'order');
+    const duration = data.durationSeconds;
+
+    rows.push({
+      id: agentOsShotId || nodeId,
+      nodeId,
+      order: order || null,
+      agentAuthored: Boolean(agentOsShotId),
+      title: readString(data, 'label'),
+      prompt: readString(data, 'imagePrompt'),
+      notes: readString(data, 'notes'),
+      description: readString(data, 'description'),
+      shotSize: readString(data, 'shotSize'),
+      perspective: readString(data, 'perspective'),
+      movement: readString(data, 'movement'),
+      dialogue: readString(data, 'dialogue'),
+      videoPrompt: readString(data, 'videoPrompt'),
+      durationSeconds: typeof duration === 'number' ? duration : null,
+    });
+  }
+
+  return rows.sort(compareByOrder);
 }
 
 function toShotNodeId(shotId: string): string {

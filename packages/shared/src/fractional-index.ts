@@ -82,3 +82,21 @@ export function orderBetween(
 export function orderAfter(last: string | null | undefined): string {
   return orderBetween(last, null);
 }
+
+/**
+ * The row order of an ordered list: by key, then by id so equal (or absent)
+ * keys still land in a stable, agreed position.
+ *
+ * Shared for the same reason the mint is: the browser renders row numbers from
+ * this order and the server reports them to the model. Two comparators means
+ * the agent's "shot 3" and the user's "shot 3" can be different rows.
+ */
+export function compareByOrder(
+  left: { id: string; order?: string | null },
+  right: { id: string; order?: string | null }
+): number {
+  const leftKey = left.order || ORDER_LAST;
+  const rightKey = right.order || ORDER_LAST;
+  if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}

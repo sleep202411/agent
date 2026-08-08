@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { compareByOrder, orderAfter } from "@repo/shared";
 import type { DomainPort, ToolExecuteResult, ToolExecutionContext } from "@repo/agent-tools";
 
 export interface InMemoryCharacter {
@@ -13,6 +14,8 @@ export interface InMemoryShot {
   title: string;
   prompt: string;
   notes: string;
+  /** Fractional index — mirrors the canvas node's own row order. */
+  order: string;
 }
 
 /**
@@ -223,8 +226,13 @@ export class InMemoryStoryDomain implements DomainPort {
       data: {
         revision: this.revision,
         surface: "memory",
-        shots: [...this.shots.values()].map((s) => ({
+        shots: [...this.shots.values()].sort(compareByOrder).map((s) => ({
           id: s.id,
+          order: s.order,
+          // Memory domain has no human authoring path; the real domain reports
+          // both, and the field must exist either way or the golden tests pin a
+          // shape production does not produce.
+          authoredBy: "agent" as const,
           title: s.title,
           prompt: s.prompt,
           notes: s.notes,
@@ -269,11 +277,15 @@ export class InMemoryStoryDomain implements DomainPort {
           retryable: false,
         };
       }
+      const existing = this.shots.get(shot.id);
       this.shots.set(shot.id, {
         id: shot.id,
         title: shot.title,
         prompt: shot.prompt,
         notes: shot.notes ?? "",
+        order:
+          existing?.order ??
+          orderAfter([...this.shots.values()].sort(compareByOrder).at(-1)?.order ?? null),
       });
       written.push({ id: shot.id, title: shot.title });
     }

@@ -1,5 +1,5 @@
 import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
-import { ORDER_LAST, orderBetween } from "@repo/shared";
+import { compareByOrder, orderBetween } from "@repo/shared";
 import type { FizzAiReferenceKind } from "./generation-api";
 
 /**
@@ -183,12 +183,12 @@ export type ShotNodeLike = {
 export function sortedShots<T extends ShotNodeLike>(nodes: readonly T[]): T[] {
   return nodes
     .filter((node) => node.type === SHOT_NODE_TYPE)
-    .sort((left, right) => {
-      const leftKey = shotNodeData(left).order || ORDER_LAST;
-      const rightKey = shotNodeData(right).order || ORDER_LAST;
-      if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
-      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-    });
+    .sort((left, right) =>
+      compareByOrder(
+        { id: left.id, order: shotNodeData(left).order },
+        { id: right.id, order: shotNodeData(right).order }
+      )
+    );
 }
 
 /** The order key for a shot appended after the current last one. */

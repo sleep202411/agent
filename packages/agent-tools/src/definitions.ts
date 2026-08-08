@@ -202,7 +202,10 @@ export const AGENT_OS_TOOLS = [
   {
     id: "storyboard.listShots",
     description:
-      "List Agent OS storyboard shot drafts (title, prompt, notes). Use before writes or when the user asks to show/list shots — not for bare chat/poetry.",
+      "List every shot on the project's storyboard, in board order — including shots the user " +
+      "authored by hand, which are addressable exactly like your own. Fields the user left blank " +
+      "are omitted. Use before writes (for baseRevision) or when the user asks to show/list " +
+      "shots — not for bare chat/poetry.",
     kind: "query",
     risk: "read",
     inputSchema: z.object({}).strict(),
@@ -214,9 +217,22 @@ export const AGENT_OS_TOOLS = [
           z
             .object({
               id: z.string(),
+              /** Fractional index — the board's row order. Absent only on malformed rows. */
+              order: z.string().optional(),
+              authoredBy: z.enum(["agent", "human"]),
               title: z.string(),
-              prompt: z.string(),
+              /** 图片提示词 — the prompt fed to image generation. */
+              prompt: z.string().optional(),
               notes: z.string().optional(),
+              /** 画面描述 — the human-readable framing/light/mood note. */
+              description: z.string().optional(),
+              shotSize: z.string().optional(),
+              perspective: z.string().optional(),
+              movement: z.string().optional(),
+              dialogue: z.string().optional(),
+              /** 视频提示词 — the prompt fed to video generation. */
+              videoPrompt: z.string().optional(),
+              durationSeconds: z.number().optional(),
             })
             .strict()
         ),

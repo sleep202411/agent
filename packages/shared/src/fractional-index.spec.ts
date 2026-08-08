@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isOrderKey, orderAfter, orderBetween, ORDER_DIGITS } from "./fractional-index.js";
+import {
+  compareByOrder,
+  isOrderKey,
+  orderAfter,
+  orderBetween,
+  ORDER_DIGITS,
+} from "./fractional-index.js";
 
 /**
  * The load-bearing invariant: a key this module mints must be a key this module
@@ -88,5 +94,24 @@ describe("fractional index", () => {
     expect(isOrderKey(null)).toBe(false);
     expect(isOrderKey(42)).toBe(false);
     expect(isOrderKey("V")).toBe(true);
+  });
+});
+
+describe("row order", () => {
+  const row = (id: string, order?: string) => ({ id, order });
+
+  it("sorts by key and parks key-less rows at the end", () => {
+    const rows = [row("c", "c"), row("late"), row("a", "a"), row("b", "b")];
+    expect([...rows].sort(compareByOrder).map((r) => r.id)).toEqual(["a", "b", "c", "late"]);
+  });
+
+  it("breaks ties on id so both tiers agree on the same row number", () => {
+    const rows = [row("z"), row("y"), row("ordered", "V")];
+    expect([...rows].sort(compareByOrder).map((r) => r.id)).toEqual(["ordered", "y", "z"]);
+  });
+
+  it("treats an empty key as absent rather than as the smallest key", () => {
+    const rows = [row("blank", ""), row("keyed", "V")];
+    expect([...rows].sort(compareByOrder).map((r) => r.id)).toEqual(["keyed", "blank"]);
   });
 });

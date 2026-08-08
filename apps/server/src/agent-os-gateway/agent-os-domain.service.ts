@@ -27,7 +27,10 @@ import {
   contentHash,
   AgentOsAttachmentService,
 } from './agent-os-attachment.service';
-import { AgentOsCanvasShotsService } from './agent-os-canvas-shots.service';
+import {
+  AgentOsCanvasShotsService,
+  type AgentOsCanvasShotRow,
+} from './agent-os-canvas-shots.service';
 import {
   CharactersUpsertInputSchema,
   ScriptReadSectionInputSchema,
@@ -218,11 +221,13 @@ export class AgentOsDomainService {
       });
     }
     await this.requirePlatformRead(actorId, projectId);
-    const state = await this.ensurePlatformState(projectId);
+    // The canvas document is the store: this returns the whole board, including
+    // shots the user authored by hand, and `revision` anchors to that document.
+    const board = await this.canvasShots.listShots({ actorId, projectId });
     return {
-      revision: state.revision,
+      revision: board.revision,
       surface: 'platform',
-      shots: parseShots(state.shots),
+      shots: board.shots.map(toShotSummary),
     };
   }
 
@@ -970,6 +975,31 @@ function parseCharacters(value: Prisma.JsonValue): StoredCharacter[] {
       !Array.isArray(item) &&
       typeof (item as StoredCharacter).id === 'string',
   );
+}
+
+/**
+ * Board row → the shape storyboard.listShots promises the model. Blank fields
+ * are omitted rather than sent as "": absent reads as "not set", and a 200-shot
+ * board would otherwise spend most of its tokens on empty strings.
+ */
+function toShotSummary(row: AgentOsCanvasShotRow) {
+  const summary: Record<string, unknown> = {
+    id: row.id,
+    authoredBy: row.agentAuthored ? 'agent' : 'human',
+    title: row.title,
+  };
+  if (row.order) summary.order = row.order;
+  if (row.prompt) summary.prompt = row.prompt;
+  if (row.notes) summary.notes = row.notes;
+  if (row.description) summary.description = row.description;
+  if (row.shotSize) summary.shotSize = row.shotSize;
+  if (row.perspective) summary.perspective = row.perspective;
+  if (row.movement) summary.movement = row.movement;
+  if (row.dialogue) summary.dialogue = row.dialogue;
+  if (row.videoPrompt) summary.videoPrompt = row.videoPrompt;
+  if (row.durationSeconds !== null)
+    summary.durationSeconds = row.durationSeconds;
+  return summary;
 }
 
 function parseShots(value: Prisma.JsonValue): StoredShot[] {
