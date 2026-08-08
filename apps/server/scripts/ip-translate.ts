@@ -78,7 +78,7 @@ async function translate(
 ): Promise<Fields> {
   const key = (
     process.env.ALIBABA_API_KEY ||
-    process.env.DASHSCOPE_API_KEY ||
+    process.env.BAILIAN_API_KEY ||
     ''
   ).trim();
   if (!key) throw new Error('ALIBABA_API_KEY unset');

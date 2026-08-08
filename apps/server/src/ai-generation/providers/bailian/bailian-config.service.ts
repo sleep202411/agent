@@ -54,15 +54,14 @@ export class BailianConfigService {
         process.env.BAILIAN_DISABLE_DATA_INSPECTION,
         true,
       ),
-      apiKey:
-        process.env.DASHSCOPE_API_KEY?.trim() ||
-        process.env.BAILIAN_API_KEY?.trim() ||
-        null,
+      // One name for the provider's credential. DASHSCOPE_API_KEY still exists
+      // in this repo, but only where a third-party library demands it (Mastra's
+      // alibaba-cn provider) — it is not ours to read here.
+      apiKey: process.env.BAILIAN_API_KEY?.trim() || null,
       region,
       workspaceId,
       apiBaseUrl:
         process.env.BAILIAN_API_BASE_URL?.replace(/\/+$/, '') ||
-        process.env.DASHSCOPE_API_BASE_URL?.replace(/\/+$/, '') ||
         defaultApiBaseUrl(region, workspaceId),
       requestTimeoutMs: numberEnv(
         process.env.BAILIAN_REQUEST_TIMEOUT_MS,

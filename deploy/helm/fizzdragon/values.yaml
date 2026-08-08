@@ -89,7 +89,10 @@ sharedEnv:
   JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
-  ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  # Bailian's workspace-scoped domain, which Alibaba recommends over the shared
+  # dashscope-intl gateway for latency and stability. Same key, same catalogue —
+  # verified: both serve the identical 156 models.
+  ALIBABA_BASE_URL: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
   # Agent LLM (StoryOS / personas). Blob container name is historical.
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
   AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
@@ -123,8 +126,10 @@ secrets:
       env: REPLICATE_API_TOKEN
     - kv: fal-api-key
       env: FAL_API_KEY
-    - kv: dashscope-api-key
-      env: DASHSCOPE_API_KEY
+    # Bailian (Model Studio) — one key serves Qwen, DeepSeek, GLM and Kimi in the
+    # workspace. Named for the product, not for the SDK that used to read it.
+    - kv: bailian-api-key
+      env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
     # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
@@ -927,6 +932,10 @@ studioAgentRuntime:
       cidrs:
         - 47.236.0.0/16
         - 47.245.0.0/16
+        # The workspace domain resolves outside the two ranges above — an
+        # Agent OS turn would fail on whichever address DNS happened to return.
+        #   dig +short llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com
+        - 8.219.0.0/16
     # The managed Postgres endpoint the Temporal server may reach. A /24 floor
     # is enforced — this is one endpoint, not a range.
     #

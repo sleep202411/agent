@@ -73,7 +73,7 @@ export class BailianClient {
     if (!config.apiKey) {
       throw bailianError(
         'PROVIDER_NOT_CONFIGURED',
-        'DASHSCOPE_API_KEY / BAILIAN_API_KEY unset',
+        'BAILIAN_API_KEY unset',
         'This model is temporarily unavailable.',
       );
     }
