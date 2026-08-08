@@ -1190,7 +1190,6 @@ export function useAgentOsRun(projectId: string) {
       permissionMode?: "ask" | "smart" | "full";
       surface?: "storyboard" | "canvas" | "brief";
       skillIds?: string[];
-      projectDefaultSkillIds?: string[];
     }) => {
       const text = input.message.trim();
       const attachmentIds = input.attachmentIds ?? [];
@@ -1228,7 +1227,6 @@ export function useAgentOsRun(projectId: string) {
           permissionMode: input.permissionMode,
           surface: input.surface,
           skillIds: input.skillIds,
-          projectDefaultSkillIds: input.projectDefaultSkillIds,
         });
 
         // Bind optimistic user to this run *before* merging events.

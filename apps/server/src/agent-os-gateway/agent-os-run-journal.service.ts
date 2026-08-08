@@ -68,6 +68,45 @@ export class AgentOsRunJournalService {
     });
   }
 
+  /**
+   * Who a run belongs to. Callers authorize against THIS, not against a
+   * projectId the client sent beside the runId — the two are unrelated ids, so
+   * checking the one the caller chose proves nothing about the one they act on.
+   */
+  async getRunOwnership(runId: string): Promise<{
+    projectId: string;
+    actorId: string;
+    conversationId: string;
+  } | null> {
+    return this.prisma.agentOsRun.findUnique({
+      where: { id: runId },
+      select: { projectId: true, actorId: true, conversationId: true },
+    });
+  }
+
+  /**
+   * Whether a conversation is already claimed by someone other than this
+   * (project, actor). A conversation with no runs yet is unclaimed: the client
+   * mints its realtime token before the first turn exists.
+   */
+  async conversationConflictsWith(input: {
+    conversationId: string;
+    projectId: string;
+    actorId: string;
+  }): Promise<boolean> {
+    const foreign = await this.prisma.agentOsRun.findFirst({
+      where: {
+        conversationId: input.conversationId,
+        OR: [
+          { projectId: { not: input.projectId } },
+          { actorId: { not: input.actorId } },
+        ],
+      },
+      select: { id: true },
+    });
+    return foreign !== null;
+  }
+
   async getEventsAfter(
     runId: string,
     afterSequence: number,

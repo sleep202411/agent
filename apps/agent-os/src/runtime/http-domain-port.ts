@@ -51,7 +51,7 @@ export class HttpDomainPort implements DomainPort {
       return this.options.local.execute(toolId, input, context);
     }
 
-    const url = `${this.options.baseUrl.replace(/\/$/, "")}/agent-os/internal/tools/${encodeURIComponent(toolId)}/execute`;
+    const url = `${this.options.baseUrl.replace(/\/$/, "")}/internal/agent-os/tools/${encodeURIComponent(toolId)}/execute`;
     let res: Response;
     try {
       res = await fetch(url, {

@@ -19,7 +19,7 @@ export async function reportJournalToNest(input: {
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
   if (!baseUrl || !token) return;
 
-  const url = `${baseUrl.replace(/\/$/, "")}/agent-os/internal/runs/${encodeURIComponent(input.runId)}/journal`;
+  const url = `${baseUrl.replace(/\/$/, "")}/internal/agent-os/runs/${encodeURIComponent(input.runId)}/journal`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -79,7 +79,7 @@ export async function fetchJournalFromNest(runId: string): Promise<{
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
   if (!baseUrl || !token) return null;
 
-  const url = `${baseUrl.replace(/\/$/, "")}/agent-os/internal/runs/${encodeURIComponent(runId)}/journal`;
+  const url = `${baseUrl.replace(/\/$/, "")}/internal/agent-os/runs/${encodeURIComponent(runId)}/journal`;
   try {
     const res = await fetch(url, {
       headers: { "x-agent-os-internal-token": token },

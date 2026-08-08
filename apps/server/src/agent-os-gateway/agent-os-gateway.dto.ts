@@ -39,10 +39,6 @@ export const AgentOsStartRunBodySchema = z
     /**
      * Project default skill ids (admin). Mounted when registered.
      */
-    projectDefaultSkillIds: z
-      .array(z.string().trim().min(1).max(128))
-      .max(16)
-      .optional(),
   })
   .strict();
 

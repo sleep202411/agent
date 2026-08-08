@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -16,7 +17,13 @@ import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
  * Internal Domain execution for Agent OS workers.
  * Not end-user facing — protected by shared internal token (Phase 1).
  */
-@Controller('agent-os/internal')
+/*
+ * Deliberately NOT under the `agent-os` prefix: Studio proxies `/aurora/:path*`
+ * straight through to this service from the public internet, so anything under
+ * that prefix is internet-reachable. These routes act as a caller-supplied
+ * actorId — they must not be, token or no token.
+ */
+@Controller('internal/agent-os')
 export class AgentOsDomainController {
   constructor(
     private readonly domain: AgentOsDomainService,
@@ -30,8 +37,15 @@ export class AgentOsDomainController {
     @Headers('x-agent-os-internal-token') token: string | undefined,
     @Body() body: unknown,
   ) {
-    const expected = this.config.value.internalToken;
-    if (!expected || token !== expected) {
+    // Constant-time: a `!==` on a shared secret leaks it a byte at a time to
+    // anyone who can measure the response, and this one authorises acting as
+    // ANY user on ANY project.
+    const expected = Buffer.from(this.config.value.internalToken);
+    const presented = Buffer.from(token?.trim() ?? '');
+    if (
+      presented.length !== expected.length ||
+      !timingSafeEqual(presented, expected)
+    ) {
       throw new UnauthorizedException({
         code: 'AGENT_OS_INTERNAL_UNAUTHORIZED',
         message: 'Invalid or missing X-Agent-Os-Internal-Token.',

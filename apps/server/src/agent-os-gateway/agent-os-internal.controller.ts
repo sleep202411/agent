@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -31,7 +32,13 @@ const journalBodySchema = z
 /**
  * Worker-facing internal routes (journal + future control).
  */
-@Controller('agent-os/internal')
+/*
+ * Deliberately NOT under the `agent-os` prefix: Studio proxies `/aurora/:path*`
+ * straight through to this service from the public internet, so anything under
+ * that prefix is internet-reachable. These routes act as a caller-supplied
+ * actorId — they must not be, token or no token.
+ */
+@Controller('internal/agent-os')
 export class AgentOsInternalController {
   constructor(
     private readonly config: AgentOsGatewayConfigService,
@@ -89,8 +96,18 @@ export class AgentOsInternalController {
     return { ok: true, ...row };
   }
 
+  /**
+   * Constant-time, because a `!==` on a shared secret leaks it one byte at a
+   * time to anyone who can measure the response — and this secret authorises
+   * acting as ANY user on ANY project.
+   */
   private assertToken(token: string | undefined): void {
-    if (!token || token !== this.config.value.internalToken) {
+    const expected = Buffer.from(this.config.value.internalToken);
+    const presented = Buffer.from(token?.trim() ?? '');
+    const ok =
+      presented.length === expected.length &&
+      timingSafeEqual(presented, expected);
+    if (!ok) {
       throw new UnauthorizedException({
         code: 'AGENT_OS_INTERNAL_UNAUTHORIZED',
         message: 'Invalid or missing X-Agent-Os-Internal-Token.',

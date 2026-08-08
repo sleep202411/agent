@@ -15,6 +15,12 @@ const configSchema = z.object({
 
 export type AgentOsGatewayConfig = z.infer<typeof configSchema>;
 
+/** Values documented in .env.example — never real secrets. */
+const PLACEHOLDER_TOKENS = new Set([
+  'dev-only-change-me-16+',
+  'change-me-to-a-real-secret',
+]);
+
 @Injectable()
 export class AgentOsGatewayConfigService {
   readonly value: AgentOsGatewayConfig;
@@ -26,6 +32,15 @@ export class AgentOsGatewayConfigService {
     if (!internalToken || internalToken.length < 16) {
       throw new Error(
         'AGENT_OS_INTERNAL_TOKEN is required (min 16 chars) when Agent OS gateway loads.',
+      );
+    }
+    // The value shipped in .env.example is long enough to pass the length check,
+    // so a copied template would otherwise boot with a publicly known secret
+    // that authorises acting as any user on any project.
+    if (PLACEHOLDER_TOKENS.has(internalToken)) {
+      throw new Error(
+        'AGENT_OS_INTERNAL_TOKEN is still the example value from .env.example. ' +
+          'Generate a real secret — this token authorises writes as any user.',
       );
     }
     this.value = configSchema.parse({

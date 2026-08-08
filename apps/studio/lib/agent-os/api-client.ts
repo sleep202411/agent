@@ -83,7 +83,6 @@ export interface AgentOsStartRunInput {
   /** Per-turn skill ids (composer). Mounted when registered in skill runtime. */
   skillIds?: string[];
   /** Project default skill ids (admin). Mounted when registered. */
-  projectDefaultSkillIds?: string[];
 }
 
 export interface AgentOsApprovalInput {
@@ -114,7 +113,6 @@ export class AgentOsApiClient {
         permissionMode: input.permissionMode,
         surface: input.surface,
         skillIds: input.skillIds,
-        projectDefaultSkillIds: input.projectDefaultSkillIds,
       },
       timeout: 10 * 60_000,
       signal,

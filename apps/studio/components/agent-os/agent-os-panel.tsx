@@ -134,7 +134,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
       .catch(() => {
         if (!cancelled) {
           domainBaselineReady.current = true;
-          // Leave skillsHydrated false so startRun omits projectDefaultSkillIds
+          // Leave skillsHydrated false so the skills row stays hidden
           // and Nest loads durable defaults from DB.
           setSkillsHydrated(false);
         }
@@ -299,7 +299,6 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         skillIds: turnSkillIds,
         // After hydrate, send composer state (includes optimistic pin).
         // Before hydrate / on load failure, omit so Nest reads durable DB defaults.
-        projectDefaultSkillIds: skillsHydrated ? projectDefaultSkillIds : undefined,
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("sendFailed"));
