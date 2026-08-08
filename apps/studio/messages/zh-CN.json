@@ -2070,17 +2070,23 @@
       "addNode": "添加故事节点",
       "loading": "正在打开故事画布…",
       "assistant": {
-        "action": "StoryOS"
+        "action": "FizzAgent"
       },
       "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS 助手",
-        "close": "关闭 StoryOS",
+        "title": "FizzAgent",
+        "surface": "FizzAgent 助手",
+        "close": "关闭 FizzAgent",
         "newConversation": "新建对话",
+        "newConversationDialog": {
+          "title": "开始新对话？",
+          "description": "这会清空当前会话内容，且无法恢复；已写入项目的内容不会受到影响。",
+          "cancel": "保留当前对话",
+          "confirm": "清空并新建"
+        },
         "retry": "重试",
         "dismissError": "关闭",
         "timeline": {
-          "log": "StoryOS 对话",
+          "log": "FizzAgent 对话",
           "empty": "描述你想完善的故事、抉择或玩家体验。",
           "loading": "正在载入对话……",
           "scrollToLatest": "滚动到最新进展",
@@ -2097,7 +2103,7 @@
           },
           "roles": {
             "user": "你",
-            "assistant": "StoryOS"
+            "assistant": "FizzAgent"
           }
         },
         "attachmentAnalysis": {
@@ -2136,14 +2142,14 @@
           "cancelled": "已取消"
         },
         "turnFailure": {
-          "region": "StoryOS 本轮失败",
+          "region": "FizzAgent 本轮失败",
           "title": {
-            "inputRejected": "StoryOS 发出的请求被本故事拒绝",
+            "inputRejected": "FizzAgent 发出的请求被本故事拒绝",
             "notRecorded": "改动已执行，但未能记录",
             "failed": "本轮失败"
           },
           "explanation": {
-            "inputRejected": "StoryOS 构造了无效的工具调用，因此没有任何改动生效。重新发送请求可让它再试一次。",
+            "inputRejected": "FizzAgent 构造了无效的工具调用，因此没有任何改动生效。重新发送请求可让它再试一次。",
             "notRecorded": "该操作已到达你的故事，但服务端未能记录结果，因此你的故事没有任何改动。服务端已将这次故障标记为重发也无法解决，请编辑这条请求，换一种方式描述你要的改动。",
             "failed": "本轮在完成前中止，因此它承诺的改动均未生效。"
           },
@@ -2154,7 +2160,7 @@
           "dismiss": "关闭",
           "retry": "重新发送该请求",
           "reword": "编辑这条请求",
-          "openSurface": "打开 StoryOS"
+          "openSurface": "打开 FizzAgent"
         },
         "stall": {
           "region": "本轮无响应",
@@ -2166,8 +2172,8 @@
           "group": "委派任务"
         },
         "composer": {
-          "input": "向 StoryOS 发送消息",
-          "placeholder": "让 StoryOS 分析、规划或修改这个故事……",
+          "input": "向 FizzAgent 发送消息",
+          "placeholder": "让 FizzAgent 分析、规划或修改这个故事……",
           "stop": "停止当前任务",
           "stopping": "正在停止当前运行…",
           "cancelReason": "创作者已取消当前任务。",
@@ -2190,7 +2196,7 @@
           "delivery": {
             "send": {
               "label": "发送",
-              "description": "开始一轮新的 StoryOS 对话。"
+              "description": "开始一轮新的 FizzAgent 对话。"
             },
             "steer": {
               "label": "立即调整",
@@ -2207,7 +2213,7 @@
           }
         },
         "permission": {
-          "menu": "StoryOS 操作权限",
+          "menu": "FizzAgent 操作权限",
           "options": {
             "ask": {
               "label": "每次询问",
@@ -2224,7 +2230,7 @@
           }
         },
         "toolApproval": {
-          "title": "StoryOS 请求运行 {toolName}。",
+          "title": "FizzAgent 请求运行 {toolName}。",
           "approve": "允许",
           "deny": "拒绝",
           "showInput": "查看运行参数",
@@ -2239,11 +2245,11 @@
       },
       "firstOpen": {
         "title": "让每个选择，改写故事",
-        "description": "把你想创作的故事告诉 StoryOS，或选择一种导演 Skill，由它起草第一版。",
+        "description": "把你想创作的故事告诉 FizzAgent，或选择一种导演 Skill，由它起草第一版。",
         "start": "描述你自己的故事",
         "skillsTitle": "或从一种导演 Skill 开始",
-        "connecting": "正在连接 StoryOS……",
-        "unavailable": "StoryOS 暂时不可用，目前无法起草任何内容。画布依然可以手动搭建。",
+        "connecting": "正在连接 FizzAgent……",
+        "unavailable": "FizzAgent 暂时不可用，目前无法起草任何内容。画布依然可以手动搭建。",
         "retry": "重试",
         "skills": {
           "halftoneCollage": {
@@ -2800,11 +2806,11 @@
     "loadingMedia": "正在加载影片"
   },
   "agentOs": {
-    "title": "Agent OS",
+    "title": "FizzAgent",
     "subtitle": "对话式执行智能体 — 工具会真正写入项目",
-    "close": "关闭 Agent OS",
-    "open": "打开 Agent OS",
-    "emptyHint": "像 Codex 一样聊天：上传剧本文件、提出任务、批准写入、继续追问。",
+    "close": "关闭 FizzAgent",
+    "open": "打开 FizzAgent",
+    "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
     "modelProfile": "模型",
     "permissionMode": "权限模式",
     "permAsk": "每次询问",
@@ -2823,7 +2829,7 @@
     "attachmentFailed": "无法处理 {name}",
     "attachmentFailedGeneric": "上传失败",
     "message": "消息",
-    "composerPlaceholder": "给 Agent OS 发消息… 需要时附加剧本文件",
+    "composerPlaceholder": "给 FizzAgent 发消息… 需要时附加剧本文件",
     "skillsLabel": "技能",
     "skillProjectDefault": "项目默认：{name}",
     "skillDefaultBadge": "默认",
@@ -2835,11 +2841,34 @@
     "stop": "停止",
     "stopped": "已停止接收本轮输出",
     "newChat": "新对话",
+    "newConversationDialog": {
+      "title": "开始新对话？",
+      "description": "这会清空当前会话内容，且无法恢复；已写入项目的内容不会受到影响。",
+      "cancel": "保留当前对话",
+      "confirm": "清空并新建"
+    },
+    "runDetails": {
+      "open": "运行详情",
+      "title": "运行详情",
+      "description": "当前 FizzAgent 会话的诊断信息。",
+      "status": "运行状态",
+      "conversationId": "会话 ID",
+      "notAvailable": "暂无",
+      "close": "知道了",
+      "statusValue": {
+        "idle": "空闲",
+        "running": "运行中",
+        "waiting_for_approval": "等待审批",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      }
+    },
     "thinking": "处理中…",
-    "transcriptLabel": "Agent OS 对话",
+    "transcriptLabel": "FizzAgent 对话",
     "scrollToLatest": "滚到最新",
     "roleUser": "你",
-    "roleAssistant": "Agent OS",
+    "roleAssistant": "FizzAgent",
     "roleSystem": "系统",
     "roleTool": "工具",
     "suggestCharacters": "根据剧本提取角色并写入",
@@ -2855,7 +2884,6 @@
     "sendFailed": "发送失败",
     "approvalFailed": "审批失败",
     "approvalNotReady": "审批信息还在准备中，请稍后再点",
-    "status": "{status}",
     "event": {
       "RunStarted": "开始运行",
       "PlanCreated": "计划",

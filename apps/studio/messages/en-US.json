@@ -2070,17 +2070,23 @@
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
       "assistant": {
-        "action": "StoryOS"
+        "action": "FizzAgent"
       },
       "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS assistant",
-        "close": "Close StoryOS",
+        "title": "FizzAgent",
+        "surface": "FizzAgent assistant",
+        "close": "Close FizzAgent",
         "newConversation": "New conversation",
+        "newConversationDialog": {
+          "title": "Start a new conversation?",
+          "description": "This clears the current conversation and cannot be undone. Project content already written is not affected.",
+          "cancel": "Keep conversation",
+          "confirm": "Clear and start new"
+        },
         "retry": "Try again",
         "dismissError": "Dismiss",
         "timeline": {
-          "log": "StoryOS conversation",
+          "log": "FizzAgent conversation",
           "empty": "Describe the story, decision, or player experience you want to develop.",
           "loading": "Loading this conversation…",
           "scrollToLatest": "Scroll to the latest update",
@@ -2097,7 +2103,7 @@
           },
           "roles": {
             "user": "You",
-            "assistant": "StoryOS"
+            "assistant": "FizzAgent"
           }
         },
         "attachmentAnalysis": {
@@ -2136,14 +2142,14 @@
           "cancelled": "Cancelled"
         },
         "turnFailure": {
-          "region": "StoryOS turn failed",
+          "region": "FizzAgent turn failed",
           "title": {
-            "inputRejected": "StoryOS sent a request this story rejected",
+            "inputRejected": "FizzAgent sent a request this story rejected",
             "notRecorded": "The change ran but could not be recorded",
             "failed": "This turn failed"
           },
           "explanation": {
-            "inputRejected": "StoryOS built an invalid tool call, so nothing was applied. Sending the request again gives it another attempt.",
+            "inputRejected": "FizzAgent built an invalid tool call, so nothing was applied. Sending the request again gives it another attempt.",
             "notRecorded": "The action reached your story but the server could not record its result, so nothing in your story changed. The server marked this failure as one that repeating will not fix — edit the request and describe the change a different way.",
             "failed": "The turn stopped before it finished, so nothing it promised was applied."
           },
@@ -2154,7 +2160,7 @@
           "dismiss": "Dismiss",
           "retry": "Send this request again",
           "reword": "Edit this request",
-          "openSurface": "Open StoryOS"
+          "openSurface": "Open FizzAgent"
         },
         "stall": {
           "region": "Turn not responding",
@@ -2166,8 +2172,8 @@
           "group": "Delegated tasks"
         },
         "composer": {
-          "input": "Message StoryOS",
-          "placeholder": "Ask StoryOS to analyze, plan, or change this story…",
+          "input": "Message FizzAgent",
+          "placeholder": "Ask FizzAgent to analyze, plan, or change this story…",
           "stop": "Stop the current run",
           "stopping": "Stopping the current run…",
           "cancelReason": "Cancelled by the creator.",
@@ -2190,7 +2196,7 @@
           "delivery": {
             "send": {
               "label": "Send",
-              "description": "Start a new StoryOS turn."
+              "description": "Start a new FizzAgent turn."
             },
             "steer": {
               "label": "Steer now",
@@ -2207,7 +2213,7 @@
           }
         },
         "permission": {
-          "menu": "StoryOS action permissions",
+          "menu": "FizzAgent action permissions",
           "options": {
             "ask": {
               "label": "Ask for approval",
@@ -2224,7 +2230,7 @@
           }
         },
         "toolApproval": {
-          "title": "StoryOS wants to run {toolName}.",
+          "title": "FizzAgent wants to run {toolName}.",
           "approve": "Approve",
           "deny": "Deny",
           "showInput": "Show what it will run with",
@@ -2239,11 +2245,11 @@
       },
       "firstOpen": {
         "title": "Every choice rewrites the story",
-        "description": "Tell StoryOS what you want to build, or start from a directing skill that shapes the first draft.",
+        "description": "Tell FizzAgent what you want to build, or start from a directing skill that shapes the first draft.",
         "start": "Describe your own story",
         "skillsTitle": "Or start from a directing skill",
-        "connecting": "Connecting to StoryOS…",
-        "unavailable": "StoryOS is unavailable, so it can’t draft anything yet. The canvas is still yours to build by hand.",
+        "connecting": "Connecting to FizzAgent…",
+        "unavailable": "FizzAgent is unavailable, so it can’t draft anything yet. The canvas is still yours to build by hand.",
         "retry": "Try again",
         "skills": {
           "halftoneCollage": {
@@ -2800,11 +2806,11 @@
     "loadingMedia": "Loading footage"
   },
   "agentOs": {
-    "title": "Agent OS",
+    "title": "FizzAgent",
     "subtitle": "Chat with an execution agent — tools write to your project",
-    "close": "Close Agent OS",
-    "open": "Open Agent OS",
-    "emptyHint": "Chat like Codex: attach a script file, ask for work, approve writes, keep going.",
+    "close": "Close FizzAgent",
+    "open": "Open FizzAgent",
+    "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
     "modelProfile": "Model",
     "permissionMode": "Permission mode",
     "permAsk": "Ask every time",
@@ -2823,7 +2829,7 @@
     "attachmentFailed": "Could not process {name}",
     "attachmentFailedGeneric": "Upload failed",
     "message": "Message",
-    "composerPlaceholder": "Message Agent OS… attach a script file if needed",
+    "composerPlaceholder": "Message FizzAgent… attach a script file if needed",
     "skillsLabel": "Skills",
     "skillProjectDefault": "Project default: {name}",
     "skillDefaultBadge": "default",
@@ -2835,11 +2841,34 @@
     "stop": "Stop",
     "stopped": "Stopped listening to this turn",
     "newChat": "New chat",
+    "newConversationDialog": {
+      "title": "Start a new conversation?",
+      "description": "This clears the current conversation and cannot be undone. Project content already written is not affected.",
+      "cancel": "Keep conversation",
+      "confirm": "Clear and start new"
+    },
+    "runDetails": {
+      "open": "Run details",
+      "title": "Run details",
+      "description": "Diagnostic information for this FizzAgent conversation.",
+      "status": "Run status",
+      "conversationId": "Conversation ID",
+      "notAvailable": "Not available",
+      "close": "Done",
+      "statusValue": {
+        "idle": "Idle",
+        "running": "Running",
+        "waiting_for_approval": "Waiting for approval",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      }
+    },
     "thinking": "Working…",
-    "transcriptLabel": "Agent OS conversation",
+    "transcriptLabel": "FizzAgent conversation",
     "scrollToLatest": "Scroll to latest",
     "roleUser": "You",
-    "roleAssistant": "Agent OS",
+    "roleAssistant": "FizzAgent",
     "roleSystem": "System",
     "roleTool": "Tool",
     "suggestCharacters": "Extract characters from this script",
@@ -2855,7 +2884,6 @@
     "sendFailed": "Could not send message",
     "approvalFailed": "Approval failed",
     "approvalNotReady": "Approval is still preparing — wait a moment and try again",
-    "status": "{status}",
     "event": {
       "RunStarted": "Run started",
       "PlanCreated": "Plan",

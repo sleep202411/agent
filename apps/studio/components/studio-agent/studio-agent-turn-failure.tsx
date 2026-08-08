@@ -189,7 +189,7 @@ export interface StudioAgentTurnFailureNoticeLabels {
   /** Accessible name for the notice. */
   region: string;
   title: Record<StudioAgentTurnFailureKind, string>;
-  /** The deep-link into StoryOS, e.g. "Open StoryOS". */
+  /** The deep-link into FizzAgent, e.g. "Open FizzAgent". */
   open: string;
   /** Accessible name for the dismiss control. */
   dismiss: string;

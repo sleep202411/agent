@@ -1336,7 +1336,7 @@ export function useAgentOsRun(projectId: string) {
         return response;
       } catch (error) {
         pendingUserRef.current = null;
-        const message = error instanceof Error ? error.message : "Agent OS run failed";
+        const message = error instanceof Error ? error.message : "FizzAgent run failed";
         setState((prev) => ({
           ...prev,
           status: "failed",

@@ -185,15 +185,7 @@ export default function ProjectLayout({
           {/* Keep the panel mounted after first open so in-session state is not
               wiped on close. Durable history is also restored from the server. */}
           {(copilotOpen || agentOsMounted) && (
-            <aside
-              className={cn(
-                "h-full w-[480px] shrink-0 border-l border-white/[0.06] bg-popover/95 backdrop-blur-xl",
-                !copilotOpen && "hidden"
-              )}
-              aria-hidden={!copilotOpen}
-            >
-              <AgentOsPanel projectId={projectId} onClose={closeCopilot} />
-            </aside>
+            <AgentOsPanel projectId={projectId} open={copilotOpen} onClose={closeCopilot} />
           )}
         </div>
 

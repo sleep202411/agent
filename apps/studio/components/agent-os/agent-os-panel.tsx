@@ -3,10 +3,26 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { IconPaperclip, IconPlus, IconSparkles, IconX } from "@tabler/icons-react";
+import { IconAlertCircle, IconPaperclip, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { agentOsSurfaceFromStudioMode } from "@repo/shared";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
+import {
+  StudioAgentModelMenu,
+  StudioAgentPermissionMenu,
+  StudioAgentSurface,
+} from "@/components/studio-agent";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   agentOsApi,
   type AgentOsAttachmentSummary,
@@ -55,7 +71,15 @@ function writeLs(key: string, value: string) {
 /**
  * Agent OS side panel — chat + attachments + Codex-style permission/model near send.
  */
-export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+export function AgentOsPanel({
+  projectId,
+  open,
+  onClose,
+}: {
+  projectId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
   const t = useTranslations("agentOs");
   const routeParams = useParams();
   const studioMode = typeof routeParams.mode === "string" ? routeParams.mode : "storyboard";
@@ -349,43 +373,213 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     }
   };
 
-  const selectClassName =
-    "h-8 max-w-[7.25rem] shrink-0 rounded-xl border-0 bg-white/[0.08] px-2 text-[11px] text-white/80 outline-none focus:bg-white/[0.12] disabled:opacity-50";
+  const workerStatus =
+    workerOk === false ? t("workerOffline") : workerOk === true ? t("workerOnline") : t("subtitle");
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
-        <IconSparkles className="size-4 shrink-0 text-white/70" stroke={1.8} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-white/90">{t("title")}</h2>
-          <p className="truncate text-[10px] text-white/40">
-            {workerOk === false
-              ? t("workerOffline")
-              : workerOk === true
-                ? t("workerOnline")
-                : t("subtitle")}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={newChat}
-          disabled={busy}
-          title={t("newChat")}
-          aria-label={t("newChat")}
-          className="flex size-8 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
-        >
-          <IconPlus className="size-4" stroke={1.8} />
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t("close")}
-          className="flex size-8 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white"
-        >
-          <IconX className="size-4" stroke={1.8} />
-        </button>
-      </header>
+    <StudioAgentSurface
+      open={open}
+      title={t("title")}
+      subtitle={workerStatus}
+      labels={{
+        surface: t("transcriptLabel"),
+        close: t("close"),
+        newConversation: t("newChat"),
+        newConversationDialog: {
+          title: t("newConversationDialog.title"),
+          description: t("newConversationDialog.description"),
+          cancel: t("newConversationDialog.cancel"),
+          confirm: t("newConversationDialog.confirm"),
+        },
+      }}
+      onNewConversation={newChat}
+      busy={busy}
+      headerActions={
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("runDetails.open")}
+              title={t("runDetails.open")}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+            >
+              <IconAlertCircle aria-hidden="true" className="size-4" />
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="liquid-rim bg-[oklch(0.18_0_0_/_0.98)] ring-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.68)] backdrop-blur-[36px]">
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <IconAlertCircle aria-hidden="true" />
+              </AlertDialogMedia>
+              <AlertDialogTitle>{t("runDetails.title")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("runDetails.description")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <dl className="grid gap-2 rounded-xl bg-white/[0.035] p-3 text-xs">
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-white/42">{t("runDetails.status")}</dt>
+                <dd className="text-right font-medium text-white/82">
+                  {t(`runDetails.statusValue.${state.status}`)}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="shrink-0 text-white/42">{t("runDetails.conversationId")}</dt>
+                <dd className="min-w-0 break-all text-right font-mono text-[11px] text-white/68">
+                  {state.conversationId ?? t("runDetails.notAvailable")}
+                </dd>
+              </div>
+            </dl>
+            <AlertDialogFooter>
+              <AlertDialogAction variant="secondary">{t("runDetails.close")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      }
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      composer={
+        <div className="space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            className="hidden"
+            onChange={(event) => void onPickFiles(event.target.files)}
+          />
 
+          <CopilotComposer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => void onSend()}
+            onStop={() => {
+              stop(t("stopped"));
+              setBusy(false);
+            }}
+            busy={turnBusy}
+            sendDisabled={!canSend && !turnBusy}
+            canSendWithoutText={pendingFiles.some((file) => file.status === "ready")}
+            placeholder={t("composerPlaceholder")}
+            inputLabel={t("message")}
+            sendLabel={t("send")}
+            stopLabel={t("stop")}
+            autoFocus
+            appearance="fizz-agent"
+            leadingAction={
+              <button
+                type="button"
+                disabled={turnBusy}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={t("attachFile")}
+                title={t("attachFile")}
+                className="grid size-8 shrink-0 place-items-center rounded-full text-white/48 transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
+              >
+                <IconPaperclip aria-hidden="true" className="size-4" stroke={1.8} />
+              </button>
+            }
+            beforeSend={
+              <div className="flex min-w-0 shrink items-center gap-1">
+                <StudioAgentPermissionMenu
+                  value={permissionMode}
+                  disabled={turnBusy}
+                  labels={{ menu: t("permissionMode") }}
+                  options={PERMISSION_MODES.map((mode) => ({
+                    value: mode.id,
+                    label: t(mode.labelKey),
+                    description: t(`permHint_${mode.id}`),
+                  }))}
+                  onValueChange={setPermissionMode}
+                />
+                <StudioAgentModelMenu
+                  value={modelProfileId}
+                  disabled={turnBusy}
+                  label={t("modelProfile")}
+                  options={models.map((profile) => ({
+                    value: profile.id,
+                    label: profile.label,
+                    hint: profile.hint,
+                  }))}
+                  onValueChange={setModelProfileId}
+                />
+              </div>
+            }
+            attachmentBar={
+              invocableSkills.length > 0 || pendingFiles.length > 0 || uploading ? (
+                <div className="grid gap-1.5">
+                  {invocableSkills.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
+                      {invocableSkills.map((skill) => {
+                        const isDefault = projectDefaultSkillIds.includes(skill.id);
+                        const isTurn = turnSkillIds.includes(skill.id);
+                        const active = isDefault || isTurn;
+                        const titleParts = [
+                          skill.description,
+                          isDefault
+                            ? t("skillProjectDefault", { name: skill.name })
+                            : t("skillToggleTurn"),
+                          isDefault ? t("skillUnpinDefault") : t("skillPinDefault"),
+                        ];
+                        return (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            disabled={turnBusy}
+                            title={titleParts.join(" · ")}
+                            aria-pressed={active}
+                            onClick={(event) => onSkillChipClick(skill.id, event)}
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] transition-colors",
+                              active
+                                ? "bg-white/15 text-white/90"
+                                : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75"
+                            )}
+                          >
+                            {skill.name}
+                            {isDefault ? (
+                              <span className="text-white/45">
+                                {" · "}
+                                {t("skillDefaultBadge")}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {pendingFiles.length > 0 || uploading ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {uploading ? (
+                        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
+                          {t("uploading")}
+                        </span>
+                      ) : null}
+                      {pendingFiles.map((file) => (
+                        <span
+                          key={file.id}
+                          className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
+                        >
+                          <span className="truncate">{file.filename}</span>
+                          <button
+                            type="button"
+                            onClick={() => removePending(file.id)}
+                            className="shrink-0 text-white/40 transition-colors hover:text-white/80"
+                            aria-label={t("removeAttachment")}
+                          >
+                            <IconX aria-hidden="true" className="size-3" stroke={2} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null
+            }
+          />
+        </div>
+      }
+    >
       <AgentOsTranscript
         projectId={projectId}
         messages={state.messages}
@@ -418,9 +612,9 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           },
         }}
         empty={
-          <div className="w-full space-y-3 px-1 pt-1">
-            <p className="text-xs leading-relaxed text-white/45">{t("emptyHint")}</p>
-            <div className="flex flex-wrap gap-1.5">
+          <div className="w-full max-w-80 space-y-3">
+            <p className="text-xs/relaxed text-white/40">{t("emptyHint")}</p>
+            <div className="flex flex-wrap justify-center gap-1.5">
               {SUGGESTIONS.map((key) => (
                 <button
                   key={key}
@@ -435,152 +629,6 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           </div>
         }
       />
-
-      <footer className="shrink-0 space-y-2 border-t border-white/[0.06] px-3 py-2.5">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          className="hidden"
-          onChange={(e) => void onPickFiles(e.target.files)}
-        />
-
-        {invocableSkills.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5 px-0.5">
-            <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
-            {invocableSkills.map((skill) => {
-              const isDefault = projectDefaultSkillIds.includes(skill.id);
-              const isTurn = turnSkillIds.includes(skill.id);
-              const active = isDefault || isTurn;
-              const titleParts = [
-                skill.description,
-                isDefault ? t("skillProjectDefault", { name: skill.name }) : t("skillToggleTurn"),
-                isDefault ? t("skillUnpinDefault") : t("skillPinDefault"),
-              ];
-              return (
-                <button
-                  key={skill.id}
-                  type="button"
-                  disabled={turnBusy}
-                  title={titleParts.join(" · ")}
-                  aria-pressed={active}
-                  onClick={(e) => onSkillChipClick(skill.id, e)}
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] transition",
-                    active
-                      ? "bg-white/15 text-white/90"
-                      : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75",
-                    isDefault && "ring-1 ring-white/20"
-                  )}
-                >
-                  {skill.name}
-                  {isDefault ? (
-                    <span className="text-white/45">
-                      {" · "}
-                      {t("skillDefaultBadge")}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <CopilotComposer
-          value={draft}
-          onChange={setDraft}
-          onSubmit={() => void onSend()}
-          onStop={() => {
-            stop(t("stopped"));
-            setBusy(false);
-          }}
-          busy={turnBusy}
-          sendDisabled={!canSend && !turnBusy}
-          canSendWithoutText={pendingFiles.some((f) => f.status === "ready")}
-          placeholder={t("composerPlaceholder")}
-          inputLabel={t("message")}
-          sendLabel={t("send")}
-          stopLabel={t("stop")}
-          autoFocus
-          className="bg-white/[0.04]"
-          leadingAction={
-            <button
-              type="button"
-              disabled={turnBusy}
-              onClick={() => fileInputRef.current?.click()}
-              aria-label={t("attachFile")}
-              title={t("attachFile")}
-              className="grid size-10 shrink-0 place-items-center rounded-2xl text-white/55 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
-            >
-              <IconPaperclip className="size-4" stroke={1.8} />
-            </button>
-          }
-          beforeSend={
-            <div className="flex shrink-0 items-center gap-1">
-              <select
-                value={permissionMode}
-                onChange={(e) => setPermissionMode(e.target.value as AgentOsPermissionMode)}
-                disabled={turnBusy}
-                aria-label={t("permissionMode")}
-                title={t(`permHint_${permissionMode}`)}
-                className={selectClassName}
-              >
-                {PERMISSION_MODES.map((mode) => (
-                  <option key={mode.id} value={mode.id} className="bg-neutral-900">
-                    {t(mode.labelKey)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={modelProfileId}
-                onChange={(e) => setModelProfileId(e.target.value)}
-                disabled={turnBusy}
-                aria-label={t("modelProfile")}
-                className={selectClassName}
-              >
-                {models.map((profile) => (
-                  <option key={profile.id} value={profile.id} className="bg-neutral-900">
-                    {profile.hint ? `${profile.label} · ${profile.hint}` : profile.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          }
-          attachmentBar={
-            pendingFiles.length > 0 || uploading ? (
-              <div className="flex flex-wrap gap-1.5">
-                {uploading ? (
-                  <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
-                    {t("uploading")}
-                  </span>
-                ) : null}
-                {pendingFiles.map((file) => (
-                  <span
-                    key={file.id}
-                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
-                  >
-                    <span className="truncate">{file.filename}</span>
-                    <button
-                      type="button"
-                      onClick={() => removePending(file.id)}
-                      className="shrink-0 text-white/40 hover:text-white/80"
-                      aria-label={t("removeAttachment")}
-                    >
-                      <IconX className="size-3" stroke={2} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null
-          }
-        />
-
-        <p className="px-0.5 text-[10px] tabular-nums text-white/30">
-          {t("status", { status: state.status })}
-          {state.conversationId ? ` · ${state.conversationId.slice(0, 8)}` : ""}
-        </p>
-      </footer>
-    </div>
+    </StudioAgentSurface>
   );
 }

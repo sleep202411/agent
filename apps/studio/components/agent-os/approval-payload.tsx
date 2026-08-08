@@ -144,7 +144,7 @@ function RowList({
         className={
           tone === "danger"
             ? "text-[11px] font-medium text-red-200"
-            : "text-[11px] font-medium text-amber-100/70"
+            : "text-[11px] font-medium text-white/62"
         }
       >
         {heading}

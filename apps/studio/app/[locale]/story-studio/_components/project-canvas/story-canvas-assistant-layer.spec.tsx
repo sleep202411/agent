@@ -383,7 +383,7 @@ describe("StoryCanvasAssistantLayer first open", () => {
 
     const notice = container.querySelector('[role="alert"]');
     expect(notice).not.toBeNull();
-    expect(notice?.textContent).toContain("StoryOS is unavailable");
+    expect(notice?.textContent).toContain("FizzAgent is unavailable");
     // The reason, not just a generic apology.
     expect(notice?.textContent).toContain("Studio Agent is unreachable.");
 
@@ -540,7 +540,7 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     // The invariant: a terminal failed turn never leaves the composer disabled
     // or stuck in running mode — the creator can type and send right away.
     const composer = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Message StoryOS"]'
+      'textarea[aria-label="Message FizzAgent"]'
     );
     expect(composer).not.toBeNull();
     expect(composer?.disabled).toBe(false);
@@ -554,7 +554,7 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     await renderLayer(root, true);
     const rejected = failureNotice(container);
     expect(rejected?.getAttribute("data-failure-kind")).toBe("inputRejected");
-    expect(rejected?.textContent).toContain("StoryOS sent a request this story rejected");
+    expect(rejected?.textContent).toContain("FizzAgent sent a request this story rejected");
 
     offline(threadWithFailedTurn(NOT_RECORDED));
     await renderLayer(root, true);
@@ -562,7 +562,7 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     expect(unrecorded?.getAttribute("data-failure-kind")).toBe("notRecorded");
     expect(unrecorded?.textContent).toContain("The change ran but could not be recorded");
     expect(unrecorded?.textContent).toContain(NOT_RECORDED.message);
-    expect(unrecorded?.textContent).not.toContain("StoryOS sent a request this story rejected");
+    expect(unrecorded?.textContent).not.toContain("FizzAgent sent a request this story rejected");
   });
 
   it("clears the failure once a later turn succeeds", async () => {
@@ -634,7 +634,7 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     // No second in-flow row can exist out here: the panel is closed.
     expect(failureNotice(container)).toBeNull();
     const open = [...notice!.querySelectorAll("button")].find(
-      (node) => node.textContent === "Open StoryOS"
+      (node) => node.textContent === "Open FizzAgent"
     );
     expect(open).toBeDefined();
     await act(async () => open?.click());
@@ -666,6 +666,12 @@ describe("StoryCanvasAssistantLayer terminal turn failure", () => {
     await renderLayer(root, true);
     expect(closedFailureNotice(container)).toBeNull();
     expect(failureNotice(container)).not.toBeNull();
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        })
+    );
 
     // Closing the panel afterwards must not resurrect an echo of a row the
     // creator already read.

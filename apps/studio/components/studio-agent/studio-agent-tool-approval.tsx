@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import type { StudioAgentToolApprovalView } from "@/lib/studio-agent";
 
 export interface StudioAgentToolApprovalLabels {
-  /** Sentence naming what is being asked, e.g. "StoryOS wants to run {tool}." */
+  /** Sentence naming what is being asked, e.g. "FizzAgent wants to run {tool}." */
   title: (toolName: string) => string;
   approve: string;
   deny: string;

@@ -6,7 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StudioAgentSurface } from "./studio-agent-surface";
 
-const labels = { surface: "Agent surface", close: "Close", newConversation: "New conversation" };
+const labels = {
+  surface: "Agent surface",
+  close: "Close",
+  newConversation: "New conversation",
+  newConversationDialog: {
+    title: "Start a new conversation?",
+    description: "This clears the current conversation.",
+    cancel: "Keep conversation",
+    confirm: "Clear and start new",
+  },
+};
 
 describe("StudioAgentSurface", () => {
   let container: HTMLDivElement;
@@ -100,6 +110,13 @@ describe("StudioAgentSurface", () => {
     expect(button).not.toBeNull();
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onNewConversation).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain(labels.newConversationDialog.description);
+
+    const confirm = document.querySelector<HTMLButtonElement>('[data-slot="alert-dialog-action"]');
+    await act(async () => {
+      confirm?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onNewConversation).toHaveBeenCalledTimes(1);
 

@@ -169,6 +169,12 @@ export function StoryCanvasAssistantPanel({
         surface: t("surface"),
         close: t("close"),
         newConversation: t("newConversation"),
+        newConversationDialog: {
+          title: t("newConversationDialog.title"),
+          description: t("newConversationDialog.description"),
+          cancel: t("newConversationDialog.cancel"),
+          confirm: t("newConversationDialog.confirm"),
+        },
       }}
       onNewConversation={session.thread ? () => void session.startNewConversation() : undefined}
       busy={session.status === "loading" || session.submitting || session.isRunning}

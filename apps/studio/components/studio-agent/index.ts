@@ -3,6 +3,7 @@ export * from "./studio-agent-attachment-analysis";
 export * from "./studio-agent-child-runs";
 export * from "./studio-agent-composer";
 export * from "./studio-agent-markdown";
+export * from "./studio-agent-model-menu";
 export * from "./studio-agent-node-links";
 export * from "./studio-agent-permission-menu";
 export * from "./studio-agent-surface";
