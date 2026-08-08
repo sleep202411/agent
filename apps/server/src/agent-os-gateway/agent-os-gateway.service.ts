@@ -142,7 +142,6 @@ export class AgentOsGatewayService {
         revision: 0,
         characters: [],
         scriptSections: [],
-        shots: [],
         defaultSkillIds: unique as unknown as Prisma.InputJsonValue,
         updatedByUserId: user.userId,
       },

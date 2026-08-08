@@ -343,7 +343,6 @@ export class AgentOsDomainService {
             revision: 0,
             characters: [],
             scriptSections: [],
-            shots: [],
           },
         });
       }
@@ -565,7 +564,6 @@ export class AgentOsDomainService {
         revision: 0,
         characters: [],
         scriptSections: [],
-        shots: [],
       },
     });
   }
