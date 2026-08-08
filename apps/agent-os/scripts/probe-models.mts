@@ -16,7 +16,11 @@
  * Uses the in-memory domain, so nothing touches the database.
  */
 import { MemorySaver } from "@langchain/langgraph";
-import { createLiteLlmChatModel, readLiteLlmConfigFromEnv } from "@repo/model-router";
+import {
+  createLiteLlmChatModel,
+  loadModelProfiles,
+  readLiteLlmConfigFromEnv,
+} from "@repo/model-router";
 
 import { InMemoryStoryDomain } from "../src/runtime/in-memory-domain.js";
 import { LangGraphRunService } from "../src/runtime/langgraph-run-service.js";
@@ -65,7 +69,7 @@ async function probe(model: string): Promise<Verdict> {
     // modelKwargs (parallel_tool_calls) travel with it.
     const base = readLiteLlmConfigFromEnv();
     const chat = createLiteLlmChatModel({
-      profileId: "qwen-plus",
+      profileId: loadModelProfiles()[0]!.id,
       config: base,
     });
     chat.model = model;
@@ -89,7 +93,7 @@ async function probe(model: string): Promise<Verdict> {
         "再调用 characters_upsert 把角色写入项目（baseRevision 用 0，intent=create）。",
         "角色 id 用拼音小写加连字符，如 lin-daiyu。",
       ].join(""),
-      modelProfileId: "qwen-plus",
+      modelProfileId: loadModelProfiles()[0]!.id,
       surface: "brief",
       model: chat,
       domain,
@@ -111,7 +115,7 @@ async function probe(model: string): Promise<Verdict> {
       sessionId,
       conversationId,
       decision: "approve",
-      modelProfileId: "qwen-plus",
+      modelProfileId: loadModelProfiles()[0]!.id,
       model: chat,
       domain,
       checkpointer,
