@@ -11,6 +11,7 @@ import { listTools } from "@repo/agent-tools";
 import { isLiveModelConfigured } from "@repo/model-router";
 
 import { listenAgentOsHttp } from "./http/server.js";
+import { resolveWorkerDomainMode } from "./runtime/http-domain-port.js";
 
 export function agentOsIdentity(): {
   product: string;
@@ -37,7 +38,11 @@ export function agentOsIdentity(): {
 }
 
 function main(): void {
-  const identity = agentOsIdentity();
+  // Fail here rather than per-request: a worker that cannot reach the platform
+  // must not accept runs it would silently write to a throwaway store, and the
+  // internal token is the only thing guarding its privileged writes.
+  const domainMode = resolveWorkerDomainMode();
+  const identity = { ...agentOsIdentity(), domainMode };
   process.stdout.write(`${JSON.stringify({ level: "info", msg: "agent-os.boot", ...identity })}\n`);
   listenAgentOsHttp();
 }

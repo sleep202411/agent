@@ -1,9 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { DomainPort } from "@repo/agent-tools";
 import { createLiteLlmChatModel, isLiveModelConfigured } from "@repo/model-router";
 
 import { getAgentOsCheckpointer } from "../runtime/checkpointer.js";
-import { createWorkerDomainPort } from "../runtime/http-domain-port.js";
+import { createWorkerDomainPort, resolveWorkerDomainMode } from "../runtime/http-domain-port.js";
 import { LangGraphRunService } from "../runtime/langgraph-run-service.js";
 
 /**
@@ -29,10 +30,51 @@ function domainForProject(projectId: string): DomainPort {
   return domain;
 }
 
+/**
+ * The gateway↔worker trust boundary, enforced INBOUND.
+ *
+ * This process holds the internal token that lets it write to Nest as any
+ * actor, and it takes actorId/projectId from the request body — so anything
+ * that can reach this port can impersonate any user on any project. The token
+ * was only ever checked in the outbound direction; without this, network
+ * reachability alone is full escalation.
+ */
+const INTERNAL_TOKEN_HEADER = "x-agent-os-internal-token";
+
+function requiredInternalToken(): string {
+  const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
+  if (!token || token.length < 16) {
+    throw new Error(
+      "AGENT_OS_INTERNAL_TOKEN must be set (16+ chars): it is the only thing " +
+        "standing between this worker's privileged domain writes and its network."
+    );
+  }
+  return token;
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  const expected = Buffer.from(requiredInternalToken());
+  const header = req.headers[INTERNAL_TOKEN_HEADER];
+  const presented = Buffer.from((Array.isArray(header) ? header[0] : header)?.trim() ?? "");
+  // Length must match before timingSafeEqual, and comparing lengths first is
+  // not the leak — the token length is not the secret.
+  if (presented.length !== expected.length) return false;
+  return timingSafeEqual(presented, expected);
+}
+
+/** Requests larger than this are refused before being buffered into memory. */
+const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let bytes = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.byteLength;
+    if (bytes > MAX_REQUEST_BYTES) {
+      throw new Error("Request body too large");
+    }
+    chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return {};
@@ -48,6 +90,15 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
+/** Never let a health probe throw; report the misconfiguration instead. */
+function safeDomainMode(): string {
+  try {
+    return resolveWorkerDomainMode();
+  } catch {
+    return "unconfigured";
+  }
+}
+
 const MODEL_ENV_HINT =
   "Set AGENT_OS_OPENAI_BASE_URL + AGENT_OS_OPENAI_API_KEY (or LITELLM_*) for live runs.";
 
@@ -55,6 +106,19 @@ export function createAgentOsHttpServer() {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
+
+      // /health is the only unauthenticated route — the kubelet probes it and
+      // it reveals no run data. Every /v1 route acts on someone's project.
+      if (url.pathname !== "/health" && !isAuthorized(req)) {
+        send(res, 401, {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Missing or invalid X-Agent-Os-Internal-Token.",
+          },
+        });
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/health") {
         const { listSkills } = await import("@repo/agent-skills");
         send(res, 200, {
@@ -62,6 +126,9 @@ export function createAgentOsHttpServer() {
           product: "FizzDragon Agent Platform",
           codename: "Agent OS",
           liveModel: isLiveModelConfigured(),
+          // Which store tools actually write to. Without this, a deploy that
+          // silently fell back to memory looks identical to a healthy one.
+          domain: safeDomainMode(),
           checkpoint:
             Boolean(process.env.AGENT_OS_CHECKPOINT_DATABASE_URL?.trim()) ||
             Boolean(process.env.DATABASE_URL?.trim())
@@ -326,12 +393,22 @@ export function createAgentOsHttpServer() {
 
 export function listenAgentOsHttp(port = Number(process.env.AGENT_OS_PORT ?? "4301")): void {
   const server = createAgentOsHttpServer();
-  server.listen(port, () => {
+  /**
+   * Loopback by default: on a developer host there is no reason for this port
+   * to be reachable from the network. A deployment that puts the gateway in a
+   * different pod must set 0.0.0.0 explicitly and rely on the internal token
+   * plus a network policy — making that a deliberate choice rather than the
+   * default is the point.
+   */
+  const host = process.env.AGENT_OS_BIND_ADDRESS?.trim() || "127.0.0.1";
+  server.listen(port, host, () => {
     process.stdout.write(
       `${JSON.stringify({
         level: "info",
         msg: "agent-os.http.listen",
         port,
+        host,
+        domain: safeDomainMode(),
         billing: "free",
         rateLimit: "disabled",
         checkpoint:

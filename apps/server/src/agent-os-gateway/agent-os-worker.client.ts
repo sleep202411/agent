@@ -75,6 +75,15 @@ export class AgentOsWorkerClient {
     });
   }
 
+  /**
+   * The shared secret the worker checks on every /v1 route. It is the only
+   * boundary between that process's privileged domain writes and its network,
+   * so it travels in both directions, not just worker→Nest.
+   */
+  private internalHeaders(): Record<string, string> {
+    return { 'x-agent-os-internal-token': this.config.value.internalToken };
+  }
+
   async listEvents(runId: string, after = 0): Promise<unknown> {
     const url = new URL(
       `${this.config.value.workerBaseUrl}/v1/agent-os/runs/${runId}/events`,
@@ -82,6 +91,7 @@ export class AgentOsWorkerClient {
     url.searchParams.set('after', String(after));
     const res = await fetch(url, {
       method: 'GET',
+      headers: this.internalHeaders(),
       signal: AbortSignal.timeout(15_000),
     });
     return res.json();
@@ -104,7 +114,10 @@ export class AgentOsWorkerClient {
     try {
       res = await fetch(`${this.config.value.workerBaseUrl}${path}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...this.internalHeaders(),
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(10 * 60_000),
       });
