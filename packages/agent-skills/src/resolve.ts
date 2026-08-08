@@ -13,6 +13,13 @@ import type { AgentSkillDefinition, SkillMountContext, SkillMountResult } from "
  * once skills are registered.
  */
 export function resolveSkillMounts(context: SkillMountContext): SkillMountResult {
+  // The surface decides which tools mount at all, so a missing one is a caller
+  // bug worth naming — not a TypeError from deep inside the resolver.
+  if (typeof context.surface !== "string" || !context.surface.trim()) {
+    throw new Error(
+      "resolveSkillMounts requires a surface: it selects the tools this turn may call."
+    );
+  }
   const surface = context.surface.trim();
   const selected: AgentSkillDefinition[] = [];
   const seen = new Set<string>();
