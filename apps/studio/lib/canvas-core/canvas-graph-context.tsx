@@ -15,6 +15,12 @@ export interface CanvasGraphStore {
   nodes: Node[];
   edges: Edge[];
   getNode: (id: string) => CanvasNodeShape | null;
+  /**
+   * Every node, read straight from the store. Unlike `nodes` (render-derived,
+   * a commit behind) this reflects a write immediately — use it whenever a
+   * decision depends on edits made earlier in the same turn.
+   */
+  getNodes: () => CanvasNodeShape[];
   getEdges: () => CanvasEdgeShape[];
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;

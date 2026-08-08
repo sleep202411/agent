@@ -447,9 +447,9 @@ server:
     # Cloudflare R2 over the S3-compatible API. `auto` is R2's only region and
     # path-style is required; the bucket is APAC-placed to sit beside the cluster.
     # Credentials (S3_ACCESS_KEY_ID / S3_ACCESS_KEY_SECRET) come from the
-    # fizzdragon-r2 secret above. Only jobs that pin s3_compatible write here —
-    # OUTPUT_STORAGE_PROVIDER stays unset so every other surface keeps its cell
-    # default of azure_blob.
+    # fizzdragon-r2 secret above. Cell default for com/global is s3_compatible
+    # (R2); set OUTPUT_STORAGE_PROVIDER=azure_blob only to roll NEW writes back.
+    # Existing MediaAsset rows keep reading from whatever provider they store.
     S3_ENDPOINT: https://c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com
     S3_BUCKET: fizzdragon-media
     S3_REGION: auto

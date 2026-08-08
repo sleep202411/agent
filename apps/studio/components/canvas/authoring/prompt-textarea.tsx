@@ -479,6 +479,8 @@ export function PromptTextarea({
   id,
   "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
+  onKeyDown,
+  onBlur,
 }: {
   value: string;
   onCommit: (next: string) => void;
@@ -492,6 +494,10 @@ export function PromptTextarea({
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  /** Capture keydown at the editor DOM level (for grid Tab/Enter/Esc nav). */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  /** Fired when the editor loses focus. */
+  onBlur?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -541,7 +547,7 @@ export function PromptTextarea({
 
   const editorClassName = cn(
     className,
-    "cursor-text whitespace-pre-wrap break-words scroll-pb-2",
+    "h-full cursor-text whitespace-pre-wrap break-words scroll-pb-2 overflow-y-auto",
     "[&>p]:m-0",
     "[&_.is-editor-empty:first-child]:before:pointer-events-none",
     "[&_.is-editor-empty:first-child]:before:float-left",
@@ -589,6 +595,7 @@ export function PromptTextarea({
           syncEditorDocument(instance, editorPrompt(instance), mentions);
         }
         exitSuggestion(instance.view);
+        onBlur?.();
       },
       onUpdate: ({ editor: instance, transaction }) => {
         if (transaction.docChanged && !instance.view.composing) {
@@ -634,11 +641,15 @@ export function PromptTextarea({
 
   return (
     <div
-      className="nodrag nowheel relative"
+      className={cn(
+        "nodrag nowheel relative flex h-full w-full flex-col [&_.tiptap]:h-full [&_.tiptap]:flex-1 [&_.tiptap.ProseMirror]:h-full [&_.tiptap.ProseMirror]:flex-1 [&>div]:h-full [&>div]:flex-1",
+        className
+      )}
       onWheelCapture={(event) => event.stopPropagation()}
       onScrollCapture={() => {
         setMenuState((current) => (current ? { ...current } : null));
       }}
+      onKeyDownCapture={onKeyDown}
     >
       <PromptEditorContext.Provider value={editorContext}>
         <EditorContent editor={editor} />

@@ -522,6 +522,7 @@ function GenerationCard({
               url: uploaded.url,
               name: file.name,
               createdAt: Date.now(),
+              category: "general",
             },
           ]);
           clearPreflightIssues(id);

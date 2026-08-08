@@ -27,7 +27,7 @@ export function resolveCanvasTidyTargets<NodeType extends Node, EdgeType extends
  * roughly twice a clip card — must supply its own estimate, or every unmeasured
  * tall card overlaps the one beneath it.
  */
-export type CanvasNodeHeightEstimate = (node: Node) => number;
+export type CanvasNodeHeightEstimate = (node: Node) => number | undefined;
 
 const DEFAULT_UNMEASURED_HEIGHT = 200;
 const ROW_GAP = 48;

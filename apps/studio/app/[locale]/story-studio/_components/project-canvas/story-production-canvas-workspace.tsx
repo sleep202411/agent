@@ -366,10 +366,6 @@ function StoryProductionCanvasCatalogBoundary({
         tidySelection
         grouping={grouping}
         secondaryDrawer={secondaryDrawer}
-        assetLibrary={{
-          variant: "floating",
-          description: tp("assets.description"),
-        }}
         onDrawerInsetChange={onDrawerInsetChange}
         backdrop={<StoryStudioCanvasBackdrop />}
         viewportBackground={false}

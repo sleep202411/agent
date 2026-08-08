@@ -19,6 +19,8 @@ export function CopilotComposer({
   inlineTokens,
   attachmentBar,
   leadingAction,
+  /** Sits immediately left of the send/stop button (e.g. model / permission selects). */
+  beforeSend,
   autoFocus = false,
   className,
 }: {
@@ -37,8 +39,10 @@ export function CopilotComposer({
   inlineTokens?: ReactNode;
   /** Rendered above the input row (attachment chips, errors). */
   attachmentBar?: ReactNode;
-  /** Rendered before the input (e.g. an attach button). */
+  /** Bottom toolbar, leading side (e.g. attach). Stacked layout only. */
   leadingAction?: ReactNode;
+  /** Bottom toolbar, immediately left of send/stop (mode / model). */
+  beforeSend?: ReactNode;
   autoFocus?: boolean;
   className?: string;
 }) {
@@ -73,7 +77,12 @@ export function CopilotComposer({
   }, [inlineTokens, tokenIndent, value]);
 
   const canSend = (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
-  const enhanced = Boolean(inlineTokens);
+  /**
+   * Stacked layout (prompt on top, toolbar bottom) when there are toolbar
+   * affordances — attach / mode / model / inline chips. A bare composer
+   * (canvas copilot with only send) stays a compact single row.
+   */
+  const stacked = Boolean(inlineTokens || leadingAction || beforeSend);
 
   const textarea = (className?: string, style?: React.CSSProperties) => (
     <textarea
@@ -92,7 +101,7 @@ export function CopilotComposer({
       placeholder={placeholder}
       style={style}
       className={cn(
-        "min-h-10 resize-none bg-transparent py-2 text-sm leading-5 text-white/88 outline-none placeholder:text-white/28",
+        "min-h-10 w-full resize-none bg-transparent py-2 text-sm leading-5 text-white/88 outline-none placeholder:text-white/28",
         className
       )}
     />
@@ -121,6 +130,15 @@ export function CopilotComposer({
     </button>
   );
 
+  const toolbar = (
+    <div className="flex min-h-10 items-center gap-1.5">
+      {leadingAction}
+      <div className="min-w-0 flex-1" />
+      {beforeSend}
+      {action}
+    </div>
+  );
+
   return (
     <form
       className={cn("rounded-[20px] bg-white/[0.06] p-2.5", className)}
@@ -134,31 +152,27 @@ export function CopilotComposer({
         {inputLabel}
       </label>
       {attachmentBar ? <div className="px-2 pb-1.5">{attachmentBar}</div> : null}
-      {enhanced ? (
-        <>
+      {stacked ? (
+        <div className="flex flex-col gap-0.5">
           <div className="relative min-w-0 px-2">
-            <span
-              ref={tokensRef}
-              className="absolute top-[9px] left-2 z-10 inline-flex max-w-[70%]"
-            >
-              {inlineTokens}
-            </span>
-            {textarea("w-full px-0", tokenIndent ? { textIndent: `${tokenIndent}px` } : undefined)}
-          </div>
-          <div
-            className={cn(
-              "mt-0.5 flex min-h-10 items-center",
-              leadingAction ? "justify-between" : "justify-end"
+            {inlineTokens ? (
+              <span
+                ref={tokensRef}
+                className="absolute top-[9px] left-2 z-10 inline-flex max-w-[70%]"
+              >
+                {inlineTokens}
+              </span>
+            ) : null}
+            {textarea(
+              inlineTokens ? "px-0" : undefined,
+              tokenIndent ? { textIndent: `${tokenIndent}px` } : undefined
             )}
-          >
-            {leadingAction}
-            {action}
           </div>
-        </>
+          {toolbar}
+        </div>
       ) : (
-        <div className="flex items-end gap-2">
-          {leadingAction}
-          {textarea("flex-1 px-2")}
+        <div className="flex items-end gap-1.5">
+          {textarea("min-w-0 flex-1 px-2")}
           {action}
         </div>
       )}

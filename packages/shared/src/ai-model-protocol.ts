@@ -191,6 +191,12 @@ export interface AiModelDefinition {
   publisher?: string;
   source: string;
   family: AiModelFamily;
+  /**
+   * The company that makes the model (ByteDance / Google / Black Forest Labs /
+   * Alibaba / OpenAI / …). User-facing "provider" axis for filtering. Distinct
+   * from `provider` (the routing channel: fal-ai / byteplus-modelark / …).
+   */
+  vendor?: string;
   generationModes: AiGenerationMode[];
   capability?: AiModelCapability;
   type: "image" | "video";

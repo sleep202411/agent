@@ -44,11 +44,29 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 
-# Copy @repo/shared's built dist — the node_modules workspace symlink
-# points at /app/packages/shared, which was pruned to json-only, so
-# without this the server crashes at startup with
-# `Cannot find module '@repo/shared/dist/entity-events.js'`.
+# Copy every workspace package's built dist — the node_modules symlinks point
+# at /app/packages/*, which turbo pruned to json-only, so without these the
+# server crashes at startup with `Cannot find module '@repo/…'`. The imports are
+# static and evaluated at module load, so a missing one crashes the whole API
+# tier even when the feature it belongs to is disabled by flag.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
+
+# A workspace dependency added later without a COPY line above would otherwise
+# only surface as MODULE_NOT_FOUND when the container boots in production —
+# which is exactly how @repo/agent-skills got missed. Fail the image build.
+RUN node -e "\
+const {readFileSync,existsSync}=require('node:fs');\
+const pkg=JSON.parse(readFileSync('apps/server/package.json','utf8'));\
+const missing=Object.keys(pkg.dependencies||{})\
+  .filter((name)=>name.startsWith('@repo/'))\
+  .map((name)=>'packages/'+name.slice('@repo/'.length))\
+  .filter((dir)=>!existsSync(dir+'/dist/index.js'));\
+if(missing.length){\
+  console.error('Missing built dist for workspace deps: '+missing.join(', '));\
+  process.exit(1);\
+}\
+console.log('workspace dist check: ok');"
 
 # Copy Prisma's generated client. `npm ci --ignore-scripts` above skipped
 # the @prisma/client postinstall (which is what materializes .prisma/client/),

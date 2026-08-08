@@ -31,6 +31,7 @@ function canvasAsset(node: ProjectCrewAssetNode): CanvasAsset | null {
     height: media.height ?? undefined,
     name: node.name,
     createdAt: 0,
+    category: "general",
   };
 }
 

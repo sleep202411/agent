@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useMemo } from "react";
 import type { ProjectRole } from "@/lib/collab/projects-api";
+import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
+import type { FizzAiCatalog } from "@/lib/canvas-authoring/generation-api";
 
 interface ProjectContextValue {
   projectId: string;
@@ -15,29 +17,66 @@ interface ProjectContextValue {
   /** Opens the project share/members dialog (owned by the project shell), so any
    *  mode's own toolbar can host the Share button without owning the dialog. */
   openShare: () => void;
-  /** Lets full-screen mode panels reserve horizontal space in the shell chrome. */
-  setCanvasChromeInset: (inset: number) => void;
+  /**
+   * Legacy: a no-op now. The shell uses flex push, so no chrome位移 is needed.
+   * Kept as a stable no-op so canvas internals that still read it don't crash.
+   */
+  setShellInset: (inset: ShellInset) => void;
+  /**
+   * The AI model catalog, fetched ONCE for the project and shared by every
+   * mode. Its loading and error states travel with it, so a surface that needs
+   * models can say "still loading" or "couldn't load" instead of showing an
+   * empty list and letting the two look like "there are no models".
+   */
+  catalog: ProjectCatalog;
+}
+
+export interface ProjectCatalog {
+  data: FizzAiCatalog | undefined;
+  loading: boolean;
+  error: boolean;
+  retry: () => void;
+}
+
+export interface ShellInset {
+  left?: number;
+  right?: number;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
 
-/** Provides the project identity + the caller's role to every mode editor. */
+/** Provides the project identity + the caller's role to every mode editor.
+ *
+ *  UI state (drawer open/close, shot selection, copilot) lives in
+ *  `useProjectUIStore` (Zustand), not here. This context is for data that
+ *  needs async resolution (role) or React Query (catalog) — things that
+ *  don't belong in a Zustand store.
+ */
 export function ProjectProvider({
   projectId,
   role,
   openShare,
-  setCanvasChromeInset,
+  setShellInset,
   children,
 }: {
   projectId: string;
   role: ProjectRole | null;
   openShare: () => void;
-  setCanvasChromeInset?: (inset: number) => void;
+  setShellInset?: (inset: ShellInset) => void;
   children: React.ReactNode;
 }) {
+  const { data, isPending, isError, refetch } = useAiCatalog();
+  const catalog = useMemo<ProjectCatalog>(
+    () => ({
+      data,
+      loading: isPending,
+      error: isError,
+      retry: () => void refetch(),
+    }),
+    [data, isPending, isError, refetch]
+  );
+
   const value = useMemo<ProjectContextValue>(() => {
-    // Unknown role (older server / not yet loaded): default to editable so the
-    // existing single-user flow isn't blocked; the server still enforces writes.
     const canEdit = role == null ? true : role !== "viewer";
     const canManage = role === "owner" || role === "admin";
     return {
@@ -46,14 +85,15 @@ export function ProjectProvider({
       canEdit,
       canManage,
       openShare,
-      setCanvasChromeInset: setCanvasChromeInset ?? noopCanvasChromeInset,
+      setShellInset: setShellInset ?? noopShellInset,
+      catalog,
     };
-  }, [projectId, role, openShare, setCanvasChromeInset]);
+  }, [projectId, role, openShare, setShellInset, catalog]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
 
-function noopCanvasChromeInset(_inset: number) {
+function noopShellInset(_inset: ShellInset) {
   void _inset;
 }
 
@@ -63,4 +103,8 @@ export function useProjectContext(): ProjectContextValue {
     throw new Error("useProjectContext must be used within a ProjectProvider");
   }
   return value;
+}
+
+export function useOptionalProjectContext(): ProjectContextValue | null {
+  return useContext(ProjectContext);
 }

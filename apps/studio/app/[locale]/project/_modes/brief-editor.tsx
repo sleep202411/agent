@@ -93,7 +93,7 @@ export function BriefEditor() {
 
   return (
     <div className="relative h-full">
-      <div className="mx-auto h-full w-full max-w-3xl px-6 pt-20 pb-10">
+      <div className="mx-auto h-full w-full max-w-3xl px-6 pt-6 pb-10">
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}

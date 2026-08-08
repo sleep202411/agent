@@ -142,6 +142,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'quick-video-1-0',
     displayName: 'Agnes Video 2.0',
     family: 'quick-video',
+    vendor: 'Agnes AI',
     description:
       'Agnes AI lightweight text-to-video and multi-image-to-video model for draft motion clips and local generation tests.',
     modes: [T2V, MM2V],
@@ -183,6 +184,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0',
     displayName: 'Seedance 2.0',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 video — text/image/first-last-frame and omni reference, with native synced audio.',
     modes: SEEDANCE_MODES,
@@ -209,6 +211,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0-fast',
     displayName: 'Seedance 2.0 Fast',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 Fast — same modes at a lower cost / faster turnaround (720p).',
     modes: SEEDANCE_MODES,
@@ -230,6 +233,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0-mini',
     displayName: 'Seedance 2.0 Mini',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 Mini — cost-effective budget tier (~50% cheaper) for high-volume video generation; 480p/720p.',
     modes: SEEDANCE_MODES,
@@ -251,6 +255,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'wan-2-7',
     displayName: 'Wan 2.7',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba Tongyi Wanxiang 2.7 video — text-to-video and image-to-video (with first/last-frame control), on Alibaba Model Studio. Native 720P/1080P, 2–15s.',
     // One canonical, three upstream model ids. wan2.7-t2v serves text_to_video;
@@ -320,6 +325,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'happyhorse-1-0',
     displayName: 'HappyHorse 1.0',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba HappyHorse 1.0 video — top-ranked text-to-video / image-to-video / omni-reference with native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
     // One canonical, three upstream model ids: happyhorse-1.0-t2v (text),
@@ -392,6 +398,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'happyhorse-1-1',
     displayName: 'HappyHorse 1.1',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba HappyHorse 1.1 video — upgrade of 1.0 with stronger motion, higher consistency and multi-image reference, native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
     // Same shape as happyhorse-1-0: one canonical, three upstream ids
@@ -462,6 +469,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'kling-motion',
     displayName: 'Kling Motion',
     family: 'kling',
+    vendor: 'Kuaishou',
     description:
       'Kling v1 image-to-video with the motion brush — paint a region and draw a path, and that region follows the trajectory. The only Kling tier with trajectory control. Reached via the studio Motion action.',
     modes: [I2V],

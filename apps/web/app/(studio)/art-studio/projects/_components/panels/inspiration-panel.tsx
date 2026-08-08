@@ -6,7 +6,6 @@ import {
   IconCircleDashed,
   IconMovie,
   IconPencil,
-  IconPhoto,
   IconSparkles,
   IconTimeline,
   IconUser,
@@ -78,14 +77,8 @@ const steps: InspirationStep[] = [
     action: { type: "panel", panel: "scenes" },
     check: (s) => s.sceneCount > 0,
   },
-  {
-    key: "storyboard",
-    icon: IconPhoto,
-    titleKey: "stepStoryboard",
-    descKey: "stepStoryboardDesc",
-    action: { type: "tab", tab: "storyboard", ai: true },
-    check: (s) => s.shotCount > 0 && s.shotsWithImage > 0,
-  },
+  // The storyboard step is gone with its tab — shot tables live in FizzStudio's
+  // storyboard mode now (see project-tabs.tsx).
   {
     key: "timeline",
     icon: IconTimeline,

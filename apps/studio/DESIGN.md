@@ -8,10 +8,13 @@ monochrome, borderless "AI studio" interface in the imagine.art genre.
 Read `../../DESIGN.md` first for shared brand rules. Where this file is
 stricter than the shared rules, this file wins inside `apps/studio`.
 
-The home / app-shell visual language — frosted panels, the rim-light edge,
-mask-icon glyphs, sliding indicators, the Mono/Red accent presets, and full
-component anatomy — is specced in `app/[locale]/_pollo/DESIGN.md`; the rules
-below are the binding constraints it must honor.
+This is the only design doc in this app and the single source of truth for
+every studio design RULE. The home / app-shell IMPLEMENTATION detail — how the
+frosted primitives, rim-light, mask-icon glyphs, sliding indicator, and composer
+are built — is the "Home & app-shell (implementation)" section at the end.
+Exact design-token VALUES live in `app/globals.css` `:root`, which is
+authoritative: the tables below map tokens to roles, and where a value is shown,
+`globals.css` wins if the two ever differ.
 
 ## Non-negotiables
 
@@ -26,28 +29,32 @@ below are the binding constraints it must honor.
    - **Accent preset** (Mono / Red) is the one sanctioned user choice (signed
      off 2026-06-19): it swaps ONLY the primary-CTA accent (white ↔ brand red),
      never surfaces, and is NOT light/dark switching — still dark-only, still no
-     `next-themes`. See `app/[locale]/_pollo/DESIGN.md` §2.
+     `next-themes`. Preset data lives in `_pollo/theme.ts` (`THEMES`).
 
 2. **Monochrome surfaces, zero chroma.** Every surface token is pure
    neutral (OKLCH chroma `0`). The approved scale:
 
-   | Token        | Value              | Role                      |
-   | ------------ | ------------------ | ------------------------- |
-   | `background` | `oklch(0.13 0 0)`  | page                      |
-   | `card`       | `oklch(0.175 0 0)` | panels, cards             |
-   | `popover`    | `oklch(0.19 0 0)`  | overlays, menus, tooltips |
-   | `muted`      | `oklch(0.22 0 0)`  | quiet fills               |
-   | `secondary`  | `oklch(0.24 0 0)`  | secondary buttons         |
-   | `accent`     | `oklch(0.25 0 0)`  | hover fills               |
-   | `primary`    | `oklch(0.922 0 0)` | primary actions (white)   |
-   | `border`     | `white / 8%`       | hairlines (see rule 4)    |
-   | `input`      | `white / 12%`      | filled control surfaces   |
+   | Token        | Value                                    | Role                                 |
+   | ------------ | ---------------------------------------- | ------------------------------------ |
+   | `background` | `oklch(0.17 0 0)`                        | page (the darkest tier)              |
+   | `card`       | `oklch(0.215 0 0)`                       | panels, cards                        |
+   | `popover`    | `oklch(0.235 0 0)`                       | overlays, menus, tooltips            |
+   | `muted`      | `oklch(0.25 0 0)`                        | quiet fills                          |
+   | `secondary`  | `oklch(0.26 0 0)`                        | secondary buttons                    |
+   | `accent`     | `oklch(0.27 0 0)`                        | hover fills                          |
+   | `primary`    | `oklch(0.5914 0.225 26.83)` (`#E52227`)  | primary actions — brand red (rule 3) |
+   | `border`     | `white / 8%`                             | hairlines (see rule 4)               |
+   | `input`      | `white / 12%`                            | filled control surfaces              |
+
+   These mirror `app/globals.css :root`, which is **authoritative** — if this
+   table and the code ever differ, the code wins. (`primary` is the brand red
+   per rule 3, not the white it carried before that reversal.)
 
    **Canvas elevation tiers.** The canvas surface is darker than the page
    (`oklch(0.105)`), so floating panels need extra lightness to read — on
    near-black, drop shadows are invisible (nothing is darker), so separation
    is carried by the tone step alone. Layering on the canvas:
-   canvas `0.105` → card `0.175` → floating composer `oklch(0.22)` →
+   canvas `0.105` → card `0.215` → floating composer `oklch(0.22)` →
    panels opened over the composer (model picker / settings) `oklch(0.24)`.
    All zero-chroma; no borders.
 
@@ -82,15 +89,40 @@ below are the binding constraints it must honor.
      hardcoded in `app/_components/subscription-dialog.tsx`, are NOT tokens,
      and must not leak into general chrome.
 
-3. **Brand red is not a token.** The FizzDragon red `#E52227`
-   (`oklch(0.5914 0.225 26.83)`) must never enter the global token set or
-   tint neutral surfaces — a red-washed UI has been explicitly rejected.
-   Red is reserved for rare, deliberate, case-by-case accents (e.g. a hero
-   CTA), applied locally and only with an explicit decision. Three
-   _systematic_ sanctioned uses exist:
-   - **Red accent preset** (signed off 2026-06-19): brand red fills every
-     primary ACTION BUTTON (Generate / Start for Free / Try Now / Send /
-     Blank-Canvas +). The Mono preset keeps CTAs white (`primary`).
+3. **Brand red IS `primary`** (decided 2026-08-04, reversing "red is not a
+   token"). The FizzDragon red `#E52227` (`oklch(0.5914 0.225 26.83)`) is
+   the value of `--primary`, with `--primary-foreground` white. It is the
+   ONE chromatic token in the set; the brand's colour belongs on the thing
+   you are meant to press.
+
+   What the old rule was really protecting still stands, and is now the
+   whole of it: **red never tints a SURFACE.** Every background token stays
+   zero-chroma (rule 2). Red fills actions, never panels, rows, or fields.
+   A red-washed UI remains rejected.
+
+   Practical consequences, so this doesn't drift back:
+   - `Button` `default` and `primary-cta` both fill with `bg-primary` and
+     darken on hover (`color-mix … black 14%`), and now share the one 14px
+     control radius (the full-round hero pill was retired 2026-08-04 — see
+     "Radius & shape"). `primary-cta` is now the
+     **"candy" hero treatment** — the imagine.art Generate button in brand red:
+     a radial red fill, a soft red glow, a constant dark-red bevel lip, a top
+     gloss and a slow diagonal sheen, with a real downward displacement on press
+     (shape and height never change). It is the ONE most-important action on a
+     view; `default` is every other primary action. The whole look is
+     `.cta-candy` in `globals.css`, derived from `--primary`. Its glow is the
+     one sanctioned red glow — it emphasizes the single hero press target, not
+     the red depth-shadow on passive cards that the option-card note below still
+     rejects.
+     Neither hardcodes the hex any more — restyle the brand by editing the token.
+   - `destructive` stays its own token. A solid red fill = the primary
+     action; destructive is a translucent red TINT with red text. Do not
+     give destructive a solid fill, or the two become indistinguishable.
+   - Neutral/secondary actions (Cancel, Close, Back) use `ghost`,
+     `secondary`, or `quiet` — not `default`. With a red primary, reaching
+     for `default` on an incidental action shouts.
+
+   Other systematic red uses, unchanged:
    - **Option-card selected state** (signed off 2026-07-20; full red fill
      was tried and rejected the same day as too heavy): in option/radio
      **card** groups (story create dialog format + frame cards first), the
@@ -133,9 +165,8 @@ below are the binding constraints it must honor.
      and quiet ≠ hidden: every failed turn stays discoverable in the
      timeline with its retry affordance.
 
-   In all three uses red still never joins the neutral token set and never
-   tints a passive surface. Generated imagery is the only saturated content
-   by default.
+   In all of these, red still never tints a passive surface. Generated
+   imagery is the only other saturated content by default.
 
 4. **No borders. Anywhere.** shadcn's default border-everywhere look has
    been explicitly rejected, including hairlines on chrome and floating
@@ -170,6 +201,55 @@ below are the binding constraints it must honor.
    disabled). Don't sprinkle `cursor-pointer` per element — the global rule
    covers it.
 
+## Type scale
+
+One neutral grotesque (`--font-sans`) carries the whole app; hierarchy comes
+from **size, weight and tracking, never a second family**. `--font-mono` is for
+machine data only. Abstracted from the imagine.art reference (display carries
+negative tracking, labels are wide caps, data is mono) and disciplined to the
+sizes this app actually uses.
+
+| Role        | Size / line-height | Weight | Tracking            | Use                                                     |
+| ----------- | ------------------ | ------ | ------------------- | ------------------------------------------------------- |
+| **Display** | 52 / 56            | 700    | −0.02em             | hero tagline only — one per view                        |
+| **Heading** | 32 / 40            | 600    | −0.01em             | page & major-section titles ("What's new")              |
+| **Title**   | 20 / 28            | 600    | 0                   | card titles, dialog titles                              |
+| **Body**    | 16 / 24            | 400    | 0                   | default running text                                    |
+| **Small**   | 13 / 20            | 400    | 0                   | secondary / meta text, on `muted-foreground`            |
+| **Label**   | 12 / 16            | 600    | 0.09em · UPPERCASE  | eyebrows, section labels, chips                         |
+| **Mono**    | 13                 | 400    | 0                   | data only — model ids, credit cost, dimensions, tokens  |
+
+- Negative tracking tightens Display/Heading; Labels earn the wide caps.
+- **Mono is reserved for machine data** (`seedance-2.0`, `24 credits`,
+  `1080p · 5s`) — never body copy.
+- One Display per view, max. If two things want to be the biggest, one is wrong.
+
+## Radius & shape
+
+One control radius for everything you press or type into; larger radii for
+larger surfaces; the full-round pill is reserved for segmented-control
+**containers**, not buttons.
+
+| Step          | Value                    | Use                                                          |
+| ------------- | ------------------------ | ------------------------------------------------------------ |
+| **panel**     | 24px                     | large frosted panels — composer, hero media card            |
+| **rail**      | 18px                     | the floating 56px icon-rail pill                             |
+| **card**      | 16px                     | cards, media thumbnails, promo tiles                        |
+| **control**   | 14px (`rounded-xl`)      | **all** buttons, inputs, selects, chips, pills, icon buttons |
+| **small**     | 8–10px (`rounded-md/lg`) | dense control sizes (`xs`/`sm`), tiny chips                  |
+| **segmented** | full-round               | segmented-control **containers** only (studio tabs)         |
+
+**Buttons share the one 14px control radius** (decided 2026-08-04). The
+full-round pill for the primary CTA was tried and retired: a hero action earns
+emphasis from its fill (brand red), size and placement — not a different
+silhouette from every other button. `primary-cta` keeps its name and its
+brand-red focus ring and now carries the **candy hero treatment** (rule 3) at
+that same 14px (`button.tsx` + `.cta-candy` in `globals.css`) — the difference
+from `default` is treatment + intent, not shape or radius.
+Full-round survives only on the tab segmented group (a container convention, not
+a button) and genuinely circular affordances (avatars). This matches the
+imagine.art reference, whose buttons hold a single ~12–14px radius throughout.
+
 ## Component system
 
 - **shadcn/ui**, style `radix-mira`, icon library **Tabler**
@@ -178,6 +258,8 @@ below are the binding constraints it must honor.
   editing them at the source (that is the point of shadcn), not by
   wrapping or overriding at call sites. The de-bordering of
   `card` / `input` / `textarea` / `select` / `tabs` is the precedent.
+  Per-component usage docs, where they exist, sit beside the source
+  (e.g. `components/ui/button.md` — props, variants, sizes, examples).
 - Approved registry add-ons for the premium-AI feel (install via
   `npx shadcn add`): Magic UI, Aceternity UI, Origin UI, Kibo UI,
   react-bits, Motion Primitives, Vercel AI Elements. Anything pulled in
@@ -215,7 +297,7 @@ below are the binding constraints it must honor.
   header's left edge, since the rail has no logo) + footer around the content.
 - **Fill the shell.** The main content column FILLS its width — no page-level
   centered max-width. Only a focused text input (composer, chat) gets a centered
-  cap (~1200px); galleries / grids / cards fill. (See `_pollo/DESIGN.md` §1.3, §4.)
+  cap (~1200px); galleries / grids / cards fill. (Home build: see the last section.)
 - Genre conventions to follow as surfaces are built (2026 AI-studio
   research): prompt bar as the hero element with parameters in popovers /
   inline chips; create-and-browse on one surface (masonry feed of past
@@ -223,6 +305,75 @@ below are the binding constraints it must honor.
   first-class control; schema-driven parameter forms (fal pattern);
   credit cost surfaced next to Generate before clicking; in-feed
   placeholder cards with progress for async jobs.
+
+## Home & app-shell (implementation)
+
+Implementation notes for the home (`app/[locale]/page.tsx`) and the shared
+`_pollo/` system (`theme.ts`, `glyphs.tsx`, `composer.tsx`, `agent-studio.tsx`,
+`project-studio.tsx`) — the imagine.art-genre surfaces, reverse-engineered from
+pollo.ai and disciplined to the rules above. (This absorbs the former
+`_pollo/DESIGN.md`, now deleted; these are notes, not new rules.)
+
+- **Frosted primitives** back the header pills, cards, and panels app-wide:
+  `components/ui/frosted-panel.tsx` (`FrostedPanel` — translucent fill +
+  `backdrop-blur` + `backdrop-saturate-150`; composer `blur(60)`, rail
+  `blur(30)`) and `components/ui/glass-rim.tsx` (`GlassRim` / `GLASS_CONIC` —
+  the masked rim-light of rule 4: conic white hairline on panels/rail, radial
+  corner-glow on the active tab, linear ring on the active rail item).
+- **Mask-icon glyphs** (`glyphs.tsx` `G`): icons are a `mask-image` over a
+  solid/gradient fill so they recolor by state (idle `white/65`, active =
+  gradient); glyph set from pollo's `i-cus--pol-*`. Chrome may use Tabler
+  outline icons (`stroke 1.7–1.8`).
+- **Motion** (functional only): the active selection is ONE sliding element —
+  rail `translateY(index·40px)`; tabs measured from the active button
+  (`translateX` + `width`); both `.3s cubic-bezier(0,0,0.2,1)`. Tab bodies
+  crossfade in via `@keyframes polloFade` (opacity + 3px rise, 300ms).
+- **Composer**: a separate rail block (absolute, right-anchored, expands LEFT on
+  hover so it never reflows) + a `FrostedPanel` — upload tiles + prompt over a
+  toolbar (lead `+`, mode/model pills, grouped params with the duration glyph,
+  settings) + the primary **Generate** (`primary-cta`, credit cost, optional
+  discount badge).
+- **Surfaces**: studio tabs = `Agent` / `Creative Studio` / `Project Studio`
+  (pill group, sliding radial ring, gradient active label; Marketing/Commerce
+  kept `hidden` until backable). Agent = frosted chat input + intent chips.
+  Project = a Blank-Canvas tile + preset cards → `/<locale>/canvas`. Cards =
+  thumbnail + label; badges `New` = accent pill, `% OFF` = accent text.
+- **Accent preset** data (Mono/Red, rule 1) is in `_pollo/theme.ts` (`THEMES`);
+  its surface values must mirror `globals.css :root` — never re-declare tokens.
+
+## Composer drawer
+
+The generation composer in the editor / canvas (the shot-frame editor, the
+video / image composer) is a floating drawer, reverse-engineered from
+imagine.art's video composer and disciplined to the rules above. Anatomy, top
+to bottom:
+
+- **Shell.** A `fixed` panel anchored beside the 56px rail (`left = rail + gap`),
+  `top`/`bottom` inset so it floats; width responsive (~300px min,
+  `max(20vw, 300px)` on wide screens); it opens/closes by animating its offset
+  (300ms). It is a `FrostedPanel` (blur + saturate) carrying a `GlassRim` edge —
+  **not** a 1px border (rule 4). Radius is asymmetric: 16px top, 24px bottom, so
+  it reads as tucked under the top chrome. Layout is a flex column: a fixed
+  header, a scrolling body, and a pinned footer.
+- **Header = a mode dropdown**, not a fancy wheel. A row: glyph + the current
+  mode + a modality tag (e.g. `Video`) + a chevron; clicking opens a real
+  popover menu (`bg-popover` + shadow, de-ringed — rule 4) whose selected item
+  carries a **brand-red check**. (imagine.art's animated "mode wheel" was
+  evaluated and dropped — too much motion for the payoff; everything that looks
+  interactive must actually be, so the header is a working menu, not a dead
+  label.)
+- **Body (scrolls).** Upload dropzones keep a **dashed** outline — a functional
+  affordance, the one sanctioned outline here (rule 4). The **Prompt** is a
+  border-transparent + translucent-fill field (rule 4); on focus the fill lifts
+  and a **red rim-light** appears (imagine's active-purple, in our red). Inline
+  `Elements` / `Enhancer` chips sit in the field; an active `Enhancer` reads
+  brand-red. Parameters are neutral chips (`16:9 / 5s / 1080p`) with
+  `tabular-nums` and a leading glyph.
+- **Footer.** A full-width `primary-cta` (the candy Generate) pinned to the
+  drawer's foot; credit cost / discount badge ride alongside it when present.
+
+Built from the `components/ui/` primitives (`FrostedPanel`, `GlassRim`, the
+`primary-cta` Button); the mode menu, chips, and prompt are all real controls.
 
 ## Working agreements
 

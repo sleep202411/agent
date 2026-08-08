@@ -52,6 +52,13 @@ export interface CanvasGroup {
 }
 
 /**
+ * Semantic category for a canvas asset — drives Character / Scene filters in
+ * the asset library and `@`-mention picker. Absent on old data → treat as
+ * `general`.
+ */
+export type AssetCategory = "general" | "character" | "scene";
+
+/**
  * A durable media inventory entry owned by a canvas document.
  *
  * `mediaAssetId` is the cross-product media identity. Canvas-local `id`
@@ -70,4 +77,6 @@ export interface CanvasAsset {
   prompt?: string;
   panorama?: boolean;
   createdAt: number;
+  /** Semantic category. Absent on old data — readers treat undefined as "general". */
+  category?: AssetCategory;
 }

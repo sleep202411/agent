@@ -56,6 +56,7 @@
     "@nestjs/websockets": "^11.1.19",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@repo/agent-skills": "*",
     "@repo/shared": "*",
     "@temporalio/client": "1.21.0",
     "@temporalio/envconfig": "1.21.1",
