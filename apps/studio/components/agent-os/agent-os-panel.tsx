@@ -179,6 +179,21 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     void syncProductSurfaces();
   }, [state.runId, state.status, syncProductSurfaces]);
 
+  /**
+   * Failures the client itself diagnoses get a translated sentence; anything
+   * from the server keeps its own message rather than being flattened into a
+   * generic one.
+   */
+  const runErrorText = state.errorCode
+    ? state.errorCode === "AGENT_OS_POLL_LOST"
+      ? t("pollLost")
+      : state.errorCode === "AGENT_OS_POLL_TIMEOUT"
+        ? t("pollTimeout")
+        : state.errorCode === "AGENT_OS_RUN_ORPHANED"
+          ? t("runOrphaned")
+          : (state.error ?? null)
+    : state.error;
+
   const turnBusy =
     busy || uploading || state.status === "running" || state.status === "waiting_for_approval";
 
@@ -344,7 +359,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         projectId={projectId}
         messages={state.messages}
         status={state.status}
-        error={state.error}
+        error={runErrorText}
         busy={busy}
         pendingApprovalActive={Boolean(state.pendingApproval)}
         onApprove={(decision) => void onApprove(decision)}

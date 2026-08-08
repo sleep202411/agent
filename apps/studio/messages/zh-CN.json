@@ -2893,6 +2893,8 @@
     "approvalHideDetails": "收起完整请求",
     "approvalUntitled": "未命名",
     "pollLost": "与服务器失去联系，已停止跟踪本轮。它可能仍在运行——重新发送或重新打开面板可查看。",
-    "showOnCanvas": "在画布中查看"
+    "showOnCanvas": "在画布中查看",
+    "pollTimeout": "已停止跟踪本轮（超过 10 分钟）。它可能仍在运行——重新打开面板可查看。",
+    "runOrphaned": "本轮在完成前被中断——agent 进程重启了。重新发送消息即可重试。"
   }
 }

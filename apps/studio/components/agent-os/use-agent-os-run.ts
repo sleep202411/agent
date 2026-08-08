@@ -34,6 +34,8 @@ export interface AgentOsSessionState {
   pendingApproval: AgentOsPendingApproval | null;
   assistantText: string | null;
   error: string | null;
+  /** Machine code for the failure, so the UI can translate it. */
+  errorCode: string | null;
 }
 
 const initial: AgentOsSessionState = {
@@ -45,6 +47,7 @@ const initial: AgentOsSessionState = {
   pendingApproval: null,
   assistantText: null,
   error: null,
+  errorCode: null,
 };
 
 const TERMINAL = new Set(["completed", "failed", "cancelled", "waiting_for_approval"]);
@@ -592,6 +595,7 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
   events: AgentOsEvent[];
   assistantText: string | null;
   error: string | null;
+  errorCode: string | null;
 } {
   const ordered = [...buffers].sort((a, b) => a.order - b.order);
   const messages: AgentOsChatMessage[] = [];
@@ -808,6 +812,7 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
     events: lastEvents,
     assistantText,
     error: sessionStatus === "failed" ? (last?.error?.message ?? null) : null,
+    errorCode: sessionStatus === "failed" ? (last?.error?.code ?? null) : null,
   };
 }
 
@@ -942,6 +947,7 @@ export function useAgentOsRun(projectId: string) {
       events: rebuilt.events,
       pendingApproval: rebuilt.pendingApproval,
       assistantText: rebuilt.assistantText,
+      errorCode: rebuilt.errorCode,
       error: rebuilt.error,
     });
   }, []);
@@ -1092,6 +1098,21 @@ export function useAgentOsRun(projectId: string) {
        */
       let consecutiveFailures = 0;
       const maxConsecutiveFailures = 8;
+      /**
+       * A run the worker does not have is not running.
+       *
+       * The gateway asks the worker first and only falls back to the durable
+       * journal when the worker does not report the run as open — so
+       * `source: "postgres"` while the row still says "running" means the
+       * process that owned this turn is gone (a restart, a crash, a deploy).
+       * The journal will say "running" forever, so without this the panel
+       * spins on reopen until the poll window closes ten minutes later.
+       *
+       * Requires a few observations because the worker client does not check
+       * res.ok — one transient error also lands on the journal.
+       */
+      let orphanObservations = 0;
+      const orphanThreshold = 3;
 
       const giveUp = (code: string, message: string) => {
         pollAborts.current.delete(runId);
@@ -1125,6 +1146,15 @@ export function useAgentOsRun(projectId: string) {
             pollAborts.current.delete(runId);
             return page;
           }
+          if (page.status === "running" && page.source === "postgres") {
+            orphanObservations += 1;
+            if (orphanObservations >= orphanThreshold) {
+              giveUp("AGENT_OS_RUN_ORPHANED", "");
+              return;
+            }
+          } else {
+            orphanObservations = 0;
+          }
         } catch (error) {
           if (ac.signal.aborted) return;
           consecutiveFailures += 1;
@@ -1143,10 +1173,7 @@ export function useAgentOsRun(projectId: string) {
       if (!ac.signal.aborted) {
         // The window closed with the run still open. Saying so is honest and
         // unlocks the composer; leaving it spinning is neither.
-        giveUp(
-          "AGENT_OS_POLL_TIMEOUT",
-          "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check."
-        );
+        giveUp("AGENT_OS_POLL_TIMEOUT", "");
         return;
       }
       pollAborts.current.delete(runId);

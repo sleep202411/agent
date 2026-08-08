@@ -2893,6 +2893,8 @@
     "approvalHideDetails": "Hide full request",
     "approvalUntitled": "Untitled",
     "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
-    "showOnCanvas": "Show on canvas"
+    "showOnCanvas": "Show on canvas",
+    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check.",
+    "runOrphaned": "This turn was interrupted before it finished — the agent process restarted. Send your message again to retry."
   }
 }
