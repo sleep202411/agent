@@ -190,7 +190,7 @@ describe("LangGraph golden path: script → characters", () => {
           },
         },
       ])
-      .respond(new AIMessage("should not reach"));
+      .respond(new AIMessage("好的，我不写入。"));
 
     const service = new LangGraphRunService();
     const checkpointer = new MemorySaver();
@@ -212,7 +212,7 @@ describe("LangGraph golden path: script → characters", () => {
 
     expect(paused.status).toBe("waiting_for_approval");
 
-    const cancelled = await service.resumeApproval({
+    const rejected = await service.resumeApproval({
       runId,
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       conversationId: CONVERSATION,
@@ -225,17 +225,43 @@ describe("LangGraph golden path: script → characters", () => {
       actorId: "user-1",
     });
 
-    expect(cancelled.status).toBe("cancelled");
+    // A rejection ANSWERS the pending tool call rather than abandoning it, so
+    // the turn finishes normally and the model gets to acknowledge it. The
+    // invariant that matters is unchanged: nothing was written.
+    expect(rejected.status).toBe("completed");
     expect(domain.characters.size).toBe(0);
-    const types = cancelled.journal.all().map((e) => e.type);
+    const types = rejected.journal.all().map((e) => e.type);
     expect(types).toContain("ApprovalResolved");
     expect(types).toContain("ToolFailed");
-    expect(types).toContain("RunCancelled");
-    const failed = cancelled.journal.all().find((e) => e.type === "ToolFailed");
+    const failed = rejected.journal.all().find((e) => e.type === "ToolFailed");
     expect(failed?.data).toMatchObject({
       code: "APPROVAL_REJECTED",
       toolId: "characters.upsert",
     });
+
+    // THE REGRESSION THIS FILE USED TO MISS: the durable thread must be clean
+    // afterwards. A rejected tool call that never received a result stays in
+    // the checkpoint forever, and every later turn replays a phantom pending
+    // write to the model — which can then re-propose or claim it happened.
+    const state = await checkpointer.get({
+      configurable: { thread_id: CONVERSATION },
+    });
+    const messages = (state?.channel_values?.messages ?? []) as Array<{
+      constructor: { name: string };
+      tool_call_id?: string;
+      tool_calls?: Array<{ id?: string }>;
+    }>;
+    const proposedCallIds = messages
+      .flatMap((message) => message.tool_calls ?? [])
+      .map((call) => call.id)
+      .filter(Boolean);
+    const answeredCallIds = new Set(
+      messages.map((message) => message.tool_call_id).filter(Boolean)
+    );
+    expect(proposedCallIds.length).toBeGreaterThan(0);
+    for (const callId of proposedCallIds) {
+      expect(answeredCallIds.has(callId)).toBe(true);
+    }
   });
 });
 

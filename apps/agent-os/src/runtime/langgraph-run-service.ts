@@ -54,6 +54,13 @@ export interface LangGraphRunSnapshot {
   errorMessage?: string;
 }
 
+/**
+ * How a pending approval is answered. Both values RESUME the graph — a reject
+ * is an answer, not an abandonment, and the tool turns it into an
+ * APPROVAL_REJECTED result the model can close the turn on.
+ */
+type ApprovalDecision = "approve" | "reject";
+
 function extractInterrupts(result: unknown): ApprovalInterruptValue[] {
   if (!result || typeof result !== "object") return [];
   const interrupts = (result as { __interrupt__?: Array<{ value: unknown }> }).__interrupt__;
@@ -404,53 +411,6 @@ export class LangGraphRunService {
       },
     });
 
-    if (input.decision === "reject") {
-      // Close the proposed tool lifecycle so clients stop showing a spinner
-      // on phase=proposed (reject short-circuits graph resume — no ToolFailed
-      // would otherwise be emitted from the interrupt path).
-      const rejectedTool = existing.pendingApproval;
-      existing.journal.append({
-        sessionId: input.sessionId,
-        runId: input.runId,
-        conversationId: input.conversationId,
-        type: "ToolFailed",
-        data: {
-          toolCallId: rejectedTool.toolCallId,
-          toolId: rejectedTool.toolId,
-          code: "APPROVAL_REJECTED",
-          message: "User rejected the proposed write.",
-          retryable: false,
-        },
-      });
-      existing.journal.append({
-        sessionId: input.sessionId,
-        runId: input.runId,
-        conversationId: input.conversationId,
-        type: "RunCancelled",
-        data: {
-          status: "cancelled",
-          error: {
-            code: "APPROVAL_REJECTED",
-            message: "User rejected the proposed write.",
-            retryable: false,
-          },
-        },
-      });
-      const cancelled: LangGraphRunSnapshot = {
-        ...existing,
-        status: "cancelled",
-        pendingApproval: undefined,
-        projectId: input.projectId,
-        actorId: input.actorId,
-        modelProfileId: input.modelProfileId,
-        conversationId: input.conversationId,
-      };
-      this.snapshots.set(input.runId, cancelled);
-      void this.persist(cancelled);
-      this.publishSnapshot(cancelled);
-      return cancelled;
-    }
-
     existing.status = "running";
     existing.pendingApproval = undefined;
     this.snapshots.set(input.runId, existing);
@@ -493,7 +453,7 @@ export class LangGraphRunService {
       },
       journal: existing.journal,
       messageId,
-      resume: "approve",
+      resume: input.decision,
       signal: abort.signal,
     }).catch(async (error) => {
       if (this.snapshots.get(input.runId)?.status === "cancelled" || isAbortError(error)) {
@@ -553,7 +513,7 @@ export class LangGraphRunService {
     input: StartLangGraphRunInput;
     journal: EventJournal;
     messageId: string;
-    resume: "approve" | null;
+    resume: ApprovalDecision | null;
     signal: AbortSignal;
   }): Promise<void> {
     const { input, journal, messageId, resume, signal } = args;
@@ -621,10 +581,13 @@ export class LangGraphRunService {
       configurable: { thread_id: input.conversationId },
       signal,
     };
-    const payload =
-      resume === "approve"
-        ? new Command({ resume: "approve" })
-        : { messages: [new HumanMessage(input.message)] };
+    // Resuming answers the pending interrupt — including a rejection, which the
+    // tool turns into an APPROVAL_REJECTED ToolMessage. Short-circuiting a
+    // reject instead would leave the tool call unanswered in the durable
+    // thread, and every later turn would replay that phantom to the model.
+    const payload = resume
+      ? new Command({ resume })
+      : { messages: [new HumanMessage(input.message)] };
 
     let finalResult: unknown;
     let usedStream = false;
