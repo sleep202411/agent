@@ -84,6 +84,21 @@ export class AgentOsWorkerClient {
     return { 'x-agent-os-internal-token': this.config.value.internalToken };
   }
 
+  /** Model profiles the worker can drive — the picker's source of truth. */
+  async listModels(): Promise<unknown> {
+    const res = await fetch(
+      `${this.config.value.workerBaseUrl}/v1/agent-os/models`,
+      { headers: this.internalHeaders(), signal: AbortSignal.timeout(10_000) },
+    );
+    if (!res.ok) {
+      throw new ServiceUnavailableException({
+        code: 'AGENT_OS_WORKER_UNAVAILABLE',
+        message: 'Could not reach the Agent OS worker.',
+      });
+    }
+    return res.json();
+  }
+
   async listEvents(runId: string, after = 0): Promise<unknown> {
     const url = new URL(
       `${this.config.value.workerBaseUrl}/v1/agent-os/runs/${runId}/events`,

@@ -10,7 +10,7 @@ export function createLiteLlmChatModel(input: {
   const profile = resolveProfile(input.profileId);
   const config = input.config ?? readLiteLlmConfigFromEnv();
   // Profile table is authoritative. Do not silently remap to AGENT_OS_DEFAULT_MODEL.
-  const model = profile.litellmModel;
+  const model = profile.model;
 
   return new ChatOpenAI({
     model,

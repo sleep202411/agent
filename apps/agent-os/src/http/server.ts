@@ -1,7 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { DomainPort } from "@repo/agent-tools";
-import { createLiteLlmChatModel, isLiveModelConfigured } from "@repo/model-router";
+import {
+  createLiteLlmChatModel,
+  isLiveModelConfigured,
+  loadModelProfiles,
+  type ModelProfile,
+} from "@repo/model-router";
 
 import { getAgentOsCheckpointer } from "../runtime/checkpointer.js";
 import { createWorkerDomainPort, resolveWorkerDomainMode } from "../runtime/http-domain-port.js";
@@ -239,6 +244,19 @@ export function createAgentOsHttpServer() {
           pendingApproval: snapshot.pendingApproval,
           assistantText: snapshot.assistantText ?? "",
           events: snapshot.journal.all(),
+        });
+        return;
+      }
+
+      // Which models this worker can drive. It owns the answer because it owns
+      // the model client — the gateway just relays it to the picker.
+      if (req.method === "GET" && url.pathname === "/v1/agent-os/models") {
+        send(res, 200, {
+          models: loadModelProfiles().map((profile: ModelProfile) => ({
+            id: profile.id,
+            label: profile.label,
+            ...(profile.hint ? { hint: profile.hint } : {}),
+          })),
         });
         return;
       }

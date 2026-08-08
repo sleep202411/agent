@@ -97,6 +97,12 @@ export class AgentOsGatewayService {
     });
   }
 
+  /** Relay of the worker's model list — no auth beyond the session guard: it
+   *  names models, not projects. */
+  async listModels() {
+    return this.worker.listModels();
+  }
+
   listSkills(surface?: string) {
     const all = listSkills().map(toSkillPublicMeta);
     const invocable = listInvocableSkills(surface);

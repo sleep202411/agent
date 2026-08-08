@@ -41,6 +41,11 @@ export class AgentOsGatewayController {
     return ok(await this.gateway.health());
   }
 
+  @Get('models')
+  async listModels() {
+    return ok(await this.gateway.listModels());
+  }
+
   @Get('skills')
   async listSkills(@Query('surface') surface?: string) {
     return ok(this.gateway.listSkills(surface?.trim() || undefined));

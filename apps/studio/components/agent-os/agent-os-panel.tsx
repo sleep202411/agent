@@ -18,12 +18,6 @@ import { cn } from "@/lib/utils";
 import { AgentOsTranscript } from "./agent-os-transcript";
 import { useAgentOsRun } from "./use-agent-os-run";
 
-const MODEL_PROFILES = [
-  { id: "qwen-plus", labelKey: "profileQwenPlus" as const },
-  { id: "qwen-max", labelKey: "profileQwenMax" as const },
-  { id: "qwen-turbo", labelKey: "profileQwenTurbo" as const },
-];
-
 const PERMISSION_MODES: Array<{
   id: AgentOsPermissionMode;
   labelKey: "permAsk" | "permSmart" | "permFull";
@@ -72,7 +66,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   const [uploading, setUploading] = useState(false);
   const [modelProfileId, setModelProfileId] = useState(() => {
     const saved = readLs(LS_MODEL);
-    return MODEL_PROFILES.some((p) => p.id === saved) ? saved! : "qwen-plus";
+    return saved ?? "";
   });
   const [permissionMode, setPermissionMode] = useState<AgentOsPermissionMode>(() => {
     const saved = readLs(LS_PERM);
@@ -92,6 +86,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
   /** Domain revision last observed — pure chat must not re-apply unchanged shots. */
+  const [models, setModels] = useState<Array<{ id: string; label: string; hint?: string }>>([]);
   const lastCharacterCountRef = useRef(0);
   const domainBaselineReady = useRef(false);
 
@@ -138,13 +133,20 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
       agentOsApi.listCharacters(projectId),
       agentOsApi.getProjectSkills(projectId),
       agentOsApi.listSkills(surface),
+      agentOsApi.listModels(),
     ])
-      .then(([charactersPage, projectSkills, skillCatalog]) => {
+      .then(([charactersPage, projectSkills, skillCatalog, modelCatalog]) => {
         if (cancelled) return;
         lastCharacterCountRef.current = charactersPage.characters.length;
         domainBaselineReady.current = true;
         setProjectDefaultSkillIds(projectSkills.defaultSkillIds);
         setInvocableSkills(skillCatalog.invocable);
+        setModels(modelCatalog.models);
+        // Keep the remembered pick only if the deployment still offers it —
+        // a model can be retired between sessions.
+        setModelProfileId((prev) =>
+          modelCatalog.models.some((m) => m.id === prev) ? prev : (modelCatalog.models[0]?.id ?? "")
+        );
         // Drop turn picks that no longer apply to this surface.
         setTurnSkillIds((prev) =>
           prev.filter((id) => skillCatalog.invocable.some((s) => s.id === id))
@@ -537,9 +539,9 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
                 aria-label={t("modelProfile")}
                 className={selectClassName}
               >
-                {MODEL_PROFILES.map((profile) => (
+                {models.map((profile) => (
                   <option key={profile.id} value={profile.id} className="bg-neutral-900">
-                    {t(profile.labelKey)}
+                    {profile.hint ? `${profile.label} · ${profile.hint}` : profile.label}
                   </option>
                 ))}
               </select>

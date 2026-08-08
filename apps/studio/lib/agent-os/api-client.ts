@@ -298,6 +298,13 @@ export class AgentOsApiClient {
     return api.get("/aurora/agent-os/health", { signal });
   }
 
+  /** Models the worker can drive. The picker has no list of its own. */
+  listModels(signal?: AbortSignal): Promise<{
+    models: Array<{ id: string; label: string; hint?: string }>;
+  }> {
+    return api.get("/aurora/agent-os/models", { signal });
+  }
+
   listSkills(
     surface?: string,
     signal?: AbortSignal
