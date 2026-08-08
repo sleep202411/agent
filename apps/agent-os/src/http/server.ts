@@ -223,6 +223,30 @@ export function createAgentOsHttpServer() {
           body.permissionMode === "full"
             ? body.permissionMode
             : undefined;
+        // A worker restart loses the in-memory run but not the LangGraph thread
+        // checkpoint, so a pending approval is still answerable. Rebuild it
+        // before resuming rather than telling the user "Unknown run".
+        const known = await service.rehydrateFromCheckpoint({
+          runId,
+          conversationId: body.conversationId,
+          projectId: body.projectId,
+          actorId: body.actorId,
+          sessionId: `agent-os:v1:conversation:${body.conversationId}`,
+          modelProfileId: body.modelProfileId,
+          model,
+          domain,
+          checkpointer,
+          permissionMode,
+        });
+        if (!known) {
+          send(res, 409, {
+            error: {
+              code: "APPROVAL_NOT_PENDING",
+              message: "This run has no approval waiting. It may already have been answered.",
+            },
+          });
+          return;
+        }
         const snapshot = service.beginResumeApproval({
           runId,
           decision: body.decision,

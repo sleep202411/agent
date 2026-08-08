@@ -12,7 +12,7 @@ import { createAgentOsGraph } from "../graph/create-agent-graph.js";
 import type { ApprovalInterruptValue } from "../graph/build-langchain-tools.js";
 import { agentOsAbly } from "./ably-publisher.js";
 import { EventJournal } from "./event-journal.js";
-import { reportJournalToNest } from "./journal-reporter.js";
+import { fetchJournalFromNest, reportJournalToNest } from "./journal-reporter.js";
 
 export interface StartLangGraphRunInput {
   runId: string;
@@ -369,6 +369,79 @@ export class LangGraphRunService {
     const begun = this.beginStart(input);
     await this.inflight.get(input.runId);
     return this.snapshots.get(input.runId) ?? begun;
+  }
+
+  /**
+   * Rebuild a run the worker no longer holds in memory.
+   *
+   * The LangGraph thread checkpoint is durable, so what a conversation is
+   * waiting on survives a restart — but the service's snapshot map does not,
+   * and without this a deploy mid-approval strands the user on a dead card
+   * ("Unknown run"). The checkpoint is the source of truth for the pending
+   * interrupt; the transcript comes back from the gateway's journal so later
+   * snapshots extend it instead of truncating it.
+   *
+   * Returns true when a resumable run is now in memory.
+   */
+  async rehydrateFromCheckpoint(input: {
+    runId: string;
+    conversationId: string;
+    projectId: string;
+    actorId: string;
+    sessionId: string;
+    modelProfileId: string;
+    model: BaseChatModel;
+    domain: DomainPort;
+    checkpointer: BaseCheckpointSaver;
+    surface?: AgentOsSurface;
+    mode?: AgentMode;
+    permissionMode?: PermissionMode;
+  }): Promise<boolean> {
+    if (this.snapshots.has(input.runId)) return true;
+
+    const graph = createAgentOsGraph({
+      model: input.model,
+      checkpointer: input.checkpointer,
+      surface: input.surface ?? "storyboard",
+      runtime: {
+        runId: input.runId,
+        conversationId: input.conversationId,
+        projectId: input.projectId,
+        actorId: input.actorId,
+        mode: input.mode ?? "ASSIST",
+        permissionMode: input.permissionMode ?? "smart",
+        domain: input.domain,
+        surface: input.surface ?? "storyboard",
+      },
+    });
+
+    const state = await graph.getState({
+      configurable: { thread_id: input.conversationId },
+    });
+    const interrupts = interruptsFromState(state);
+    const approval = interrupts[0];
+    if (!approval) return false;
+
+    const durable = await fetchJournalFromNest(input.runId);
+    const journal = this.createJournal(input.conversationId);
+    if (durable?.events?.length) journal.restore(durable.events);
+
+    const snapshot: LangGraphRunSnapshot = {
+      runId: input.runId,
+      conversationId: input.conversationId,
+      projectId: input.projectId,
+      actorId: input.actorId,
+      modelProfileId: input.modelProfileId,
+      status: "waiting_for_approval",
+      journal,
+      assistantText: durable?.assistantText ?? "",
+      surface: input.surface ?? surfaceFromJournal(journal) ?? "storyboard",
+      mode: input.mode ?? "ASSIST",
+      permissionMode: input.permissionMode ?? "smart",
+      pendingApproval: { ...approval, approvalId: crypto.randomUUID() },
+    };
+    this.snapshots.set(input.runId, snapshot);
+    return true;
   }
 
   beginResumeApproval(input: {

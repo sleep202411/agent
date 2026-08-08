@@ -39,6 +39,25 @@ export class EventJournal {
     return this.events;
   }
 
+  /**
+   * Seed a journal with events already persisted by the gateway, so a worker
+   * that restarted mid-run keeps appending ABOVE the durable tail instead of
+   * restarting at sequence 1 — which would make the next snapshot overwrite
+   * the stored transcript with a shorter one.
+   *
+   * Only valid on an untouched journal; re-seeding a live one would silently
+   * reorder history.
+   */
+  restore(events: readonly AgentEventEnvelope[]): void {
+    if (this.events.length > 0) {
+      throw new Error("EventJournal.restore on a journal that already has events");
+    }
+    for (const event of events) {
+      this.events.push(event);
+      if (event.sequence > this.sequence) this.sequence = event.sequence;
+    }
+  }
+
   append(input: AppendEventInput): AgentEventEnvelope {
     const next = this.sequence + 1;
     if (this.sequence > 0) {

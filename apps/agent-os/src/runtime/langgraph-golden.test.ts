@@ -263,6 +263,101 @@ describe("LangGraph golden path: script → characters", () => {
       expect(answeredCallIds.has(callId)).toBe(true);
     }
   });
+  it("resumes a pending approval after the worker restarts", async () => {
+    const domain = new InMemoryStoryDomain();
+    domain.setScript("角色甲。");
+
+    const model = fakeModel()
+      .respondWithTools([
+        {
+          name: "characters_upsert",
+          id: "tc-1",
+          args: {
+            baseRevision: 0,
+            characters: [
+              {
+                id: "role-a",
+                name: { "zh-CN": "角色甲" },
+                summary: "路人",
+                intent: "create",
+              },
+            ],
+          },
+        },
+      ])
+      .respond(new AIMessage("已写入。"));
+
+    // The checkpointer is the only thing that survives a deploy.
+    const checkpointer = new MemorySaver();
+    const runId = crypto.randomUUID();
+    const sessionId = `agent-os:v1:conversation:${CONVERSATION}`;
+
+    const before = new LangGraphRunService();
+    const paused = await before.start({
+      runId,
+      conversationId: CONVERSATION,
+      projectId: PROJECT,
+      actorId: "user-1",
+      sessionId,
+      message: "写入角色",
+      modelProfileId: "qwen-plus",
+      surface: "storyboard",
+      model,
+      domain,
+      checkpointer,
+    });
+    expect(paused.status).toBe("waiting_for_approval");
+
+    // A brand-new service instance: in-memory snapshots are gone, exactly as
+    // after a pod restart. Approving used to throw "Unknown run".
+    const after = new LangGraphRunService();
+    const rehydrated = await after.rehydrateFromCheckpoint({
+      runId,
+      conversationId: CONVERSATION,
+      projectId: PROJECT,
+      actorId: "user-1",
+      sessionId,
+      modelProfileId: "qwen-plus",
+      surface: "storyboard",
+      model,
+      domain,
+      checkpointer,
+    });
+    expect(rehydrated).toBe(true);
+    expect(after.getSnapshot(runId)?.pendingApproval?.toolId).toBe("characters.upsert");
+
+    const resumed = await after.resumeApproval({
+      runId,
+      sessionId,
+      conversationId: CONVERSATION,
+      decision: "approve",
+      modelProfileId: "qwen-plus",
+      model,
+      domain,
+      checkpointer,
+      projectId: PROJECT,
+      actorId: "user-1",
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(domain.characters.size).toBe(1);
+  });
+
+  it("reports no pending approval when the thread has none", async () => {
+    const service = new LangGraphRunService();
+    const rehydrated = await service.rehydrateFromCheckpoint({
+      runId: crypto.randomUUID(),
+      conversationId: crypto.randomUUID(),
+      projectId: PROJECT,
+      actorId: "user-1",
+      sessionId: "agent-os:v1:conversation:none",
+      modelProfileId: "qwen-plus",
+      model: fakeModel().respond(new AIMessage("hi")),
+      domain: new InMemoryStoryDomain(),
+      checkpointer: new MemorySaver(),
+    });
+    expect(rehydrated).toBe(false);
+  });
 });
 
 describe("LangGraph cancel", () => {
