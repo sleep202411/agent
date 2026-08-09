@@ -253,20 +253,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       ...storyBase,
       logline: z.string().max(1_000).optional(),
       synopsis: z.string().max(20_000).optional(),
-      putCharacters: z
-        .array(
-          z.object({
-            intent: z.enum(["create", "replace"]),
-            character: z.object({
-              id: storyStableId,
-              name: storyLocalizedText,
-              summary: z.string().max(4_000),
-            }),
-          })
-        )
-        .max(100)
-        .optional(),
-      removeCharacterIds: z.array(storyStableId).max(100).optional(),
+      // Cast authoring is withdrawn — the canvas offers no way to create
+      // character cards, so the agent must not be able to write them back.
       productionNotes: z.array(z.string().max(2_000)).max(200).optional(),
     })
   );

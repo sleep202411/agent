@@ -27,23 +27,23 @@ const StoryMutationBaseSchema = z
 
 export const StoryReadInputSchema = z.object({}).strict();
 
+/**
+ * Cast authoring is withdrawn from the agent surface: character cards project
+ * out of `storyBible.characters`, and the canvas no longer offers a way to
+ * create them, so letting the agent write them back would resurrect the very
+ * entry point that was removed. Stored casts keep rendering — only authoring
+ * is closed, on both the tool schema and the patch path below.
+ */
+const CHARACTER_OPERATION_KINDS = new Set([
+  "story_bible.put_character",
+  "story_bible.remove_character",
+]);
+
 export const StoryUpdateBibleInputSchema = z
   .object({
     baseDraftRevision: z.number().int().nonnegative(),
     logline: z.string().max(1_000).optional(),
     synopsis: z.string().max(20_000).optional(),
-    putCharacters: z
-      .array(
-        z
-          .object({
-            intent: z.enum(["create", "replace"]),
-            character: StoryAgentCharacterSchema,
-          })
-          .strict()
-      )
-      .max(100)
-      .optional(),
-    removeCharacterIds: z.array(StoryAgentStableIdSchema).max(100).optional(),
     productionNotes: z.array(z.string().max(2_000)).max(200).optional(),
   })
   .strict()
@@ -51,8 +51,6 @@ export const StoryUpdateBibleInputSchema = z
     (value) =>
       value.logline !== undefined ||
       value.synopsis !== undefined ||
-      Boolean(value.putCharacters?.length) ||
-      Boolean(value.removeCharacterIds?.length) ||
       value.productionNotes !== undefined,
     "At least one Story bible change is required."
   );
@@ -104,7 +102,18 @@ export const StoryReorderInputSchema = StoryMutationBaseSchema.extend({
 }).strict();
 
 export const StoryApplyPatchInputSchema = StoryMutationBaseSchema.extend({
-  operations: StoryPatchOperationsSchema,
+  // The shared patch vocabulary still carries cast operations for the executor
+  // and the copilot; this surface refuses them so the raw patch path cannot
+  // route around the withdrawn `updateBible` fields.
+  operations: StoryPatchOperationsSchema.superRefine((operations, ctx) => {
+    for (const operation of operations) {
+      if (!CHARACTER_OPERATION_KINDS.has(operation.kind)) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${operation.kind} is not available: character authoring is disabled.`,
+      });
+    }
+  }),
 }).strict();
 
 const StoryMutationOutputSchema = z
@@ -146,7 +155,7 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.updateBible",
     description:
-      "Update the Story bible overview, characters, or production notes atomically against baseDraftRevision.",
+      "Update the Story bible overview or production notes atomically against baseDraftRevision. Cast authoring is not available.",
     kind: "command",
     risk: "sensitive",
     inputSchema: StoryUpdateBibleInputSchema,

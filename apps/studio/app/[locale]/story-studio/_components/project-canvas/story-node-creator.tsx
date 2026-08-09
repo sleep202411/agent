@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconMovie, IconUser, type Icon } from "@tabler/icons-react";
+import { IconMovie, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,18 +23,19 @@ interface CreatorItem {
   iconBackground: string;
 }
 
+/**
+ * Authoring is clip + decision only. Character cards earn nothing today — the
+ * agent cannot create them and they never join the story-flow graph — so the
+ * entry points are withdrawn while the model, stored cards and rendering stay
+ * intact: existing casts still display, and restoring the option is one entry
+ * in this list.
+ */
 const CREATOR_ITEMS: CreatorItem[] = [
   {
     kind: "clip",
     icon: IconMovie,
     color: "rgba(255,255,255,0.14)",
     iconBackground: "rgba(255,255,255,0.22)",
-  },
-  {
-    kind: "character",
-    icon: IconUser,
-    color: "rgba(255,255,255,0.10)",
-    iconBackground: "rgba(255,255,255,0.18)",
   },
 ];
 

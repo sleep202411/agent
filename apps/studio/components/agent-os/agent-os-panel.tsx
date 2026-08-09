@@ -58,6 +58,23 @@ const UPLOAD_CONCURRENCY = 3;
 const LS_PERM = "fizz:agent-os:permissionMode";
 const LS_MODEL = "fizz:agent-os:modelProfileId";
 
+/**
+ * Tools that only read. Anything absent is treated as a write, so a tool added
+ * later refreshes the workbench by default instead of silently leaving it
+ * stale — the failure mode of guessing wrong is one extra refetch, not a
+ * canvas that never catches up.
+ */
+const READ_ONLY_TOOLS = new Set([
+  "story.read",
+  "canvas.read",
+  "characters.list",
+  "storyboard.listShots",
+  "script.readSection",
+]);
+
+/** A burst of writes collapses into one refetch instead of one per tool. */
+const WORKBENCH_REFRESH_COOLDOWN_MS = 1_200;
+
 function readLs(key: string): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -121,6 +138,11 @@ function AgentOsProjectSession({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
+  /** Event cursor. `sequence` restarts per run, so it resets with the run. */
+  const seenEventRunRef = useRef<string | null>(null);
+  const seenEventSeqRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshedAtRef = useRef(0);
   const [models, setModels] = useState<Array<{ id: string; label: string; hint?: string }>>([]);
   const [latestIssue, setLatestIssue] = useState<AgentOsIssue | null>(null);
 
@@ -214,6 +236,57 @@ function AgentOsProjectSession({
     lastSyncedRunRef.current = state.runId;
     void onMutationCompleted?.();
   }, [onMutationCompleted, state.runId, state.status]);
+
+  // Held in a ref so the watcher below re-runs on new events only, not on every
+  // render that hands down a fresh callback identity.
+  const mutationCallbackRef = useRef(onMutationCompleted);
+  useEffect(() => {
+    mutationCallbackRef.current = onMutationCompleted;
+  }, [onMutationCompleted]);
+
+  /**
+   * A run can write for minutes before it reports `completed`. Refreshing only
+   * at that point left the workbench frozen for the whole turn and then
+   * changing all at once, so each finished write refreshes as soon as it lands.
+   */
+  useEffect(() => {
+    if (state.runId !== seenEventRunRef.current) {
+      seenEventRunRef.current = state.runId;
+      seenEventSeqRef.current = 0;
+    }
+
+    let highest = seenEventSeqRef.current;
+    let wrote = false;
+    for (const event of state.events) {
+      if (event.sequence <= seenEventSeqRef.current) continue;
+      if (event.sequence > highest) highest = event.sequence;
+      if (event.type !== "ToolCompleted") continue;
+      const toolId = String(event.data.toolId ?? "");
+      if (toolId && !READ_ONLY_TOOLS.has(toolId)) wrote = true;
+    }
+    seenEventSeqRef.current = highest;
+    if (!wrote || !mutationCallbackRef.current) return;
+
+    const elapsed = Date.now() - refreshedAtRef.current;
+    if (elapsed >= WORKBENCH_REFRESH_COOLDOWN_MS) {
+      refreshedAtRef.current = Date.now();
+      void mutationCallbackRef.current();
+      return;
+    }
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      refreshedAtRef.current = Date.now();
+      void mutationCallbackRef.current?.();
+    }, WORKBENCH_REFRESH_COOLDOWN_MS - elapsed);
+  }, [state.events, state.runId]);
+
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    },
+    []
+  );
 
   /**
    * Failures the client itself diagnoses get a translated sentence; anything

@@ -98,18 +98,6 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
                 },
               });
             }
-            for (const value of args.putCharacters ?? []) {
-              operations.push({
-                kind: 'story_bible.put_character',
-                payload: value,
-              });
-            }
-            for (const characterId of args.removeCharacterIds ?? []) {
-              operations.push({
-                kind: 'story_bible.remove_character',
-                payload: { characterId },
-              });
-            }
             if (args.productionNotes !== undefined) {
               operations.push({
                 kind: 'production.replace_notes',
