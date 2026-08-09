@@ -37,7 +37,7 @@ fi
 for s in "${SERVICES[@]}"; do
   case "$s" in
     web|studio|admin-ui|server|agent) ;;
-    *) echo "未知服务: $s（允许: web studio admin-ui server agent all）" >&2; exit 2 ;;
+    *) echo "未知服务: ${s}（允许: web studio admin-ui server agent all）" >&2; exit 2 ;;
   esac
 done
 

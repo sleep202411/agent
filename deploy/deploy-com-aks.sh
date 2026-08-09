@@ -205,7 +205,7 @@ git --no-pager diff -- "$VALUES" || true
 
 # --- commit + push (ArgoCD 自动收敛) --------------------------------------
 if git diff --quiet -- "$VALUES"; then
-  echo "ℹ tag 未变化（已是 $SHORT），无需提交。"
+  echo "ℹ tag 未变化（已是 ${SHORT}），无需提交。"
   exit 0
 fi
 git add "$VALUES"
