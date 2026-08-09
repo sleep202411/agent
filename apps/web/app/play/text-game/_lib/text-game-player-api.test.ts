@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/src/lib/api";
-import { loadOrStartTextGameSession, playerTextGameKeys } from "./text-game-player-api";
+import {
+  getPlayingTextGameSession,
+  loadOrStartTextGameSession,
+  playerTextGameKeys,
+  sendTextGameAction,
+  startTextGameSession,
+} from "./text-game-player-api";
 
 vi.mock("@/src/lib/api", () => ({
   api: {
@@ -44,5 +50,57 @@ describe("text-game player session bootstrap", () => {
       resumed: true,
     });
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("rejects an existing session that Java labels as new", async () => {
+    vi.mocked(api.get).mockResolvedValue(session);
+    await expect(getPlayingTextGameSession(session.gameId)).rejects.toThrow("resumed=false");
+  });
+
+  it("rejects a newly started session that Java labels as resumed", async () => {
+    vi.mocked(api.post).mockResolvedValue({ ...session, resumed: true });
+    await expect(startTextGameSession(session.gameId)).rejects.toThrow("resumed=true");
+  });
+
+  it("rejects a session belonging to another work", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      ...session,
+      gameId: "tg_fedcba9876543210",
+      resumed: true,
+    });
+    await expect(getPlayingTextGameSession(session.gameId)).rejects.toThrow("while");
+  });
+
+  it("trims chat input and validates the returned session identity", async () => {
+    const response = {
+      sessionId: session.sessionId,
+      userMessage: {
+        id: "1",
+        role: "user",
+        content: "Open the door",
+        createdAt: session.startedAt,
+      },
+      assistantMessage: {
+        id: "2",
+        role: "assistant",
+        content: "The door opens.",
+        createdAt: session.startedAt,
+      },
+    };
+    vi.mocked(api.post).mockResolvedValue(response);
+
+    await expect(sendTextGameAction(session.sessionId, "  Open the door  ")).resolves.toEqual(
+      response
+    );
+    expect(api.post).toHaveBeenCalledWith(
+      `/api/player/text-game/sessions/${session.sessionId}/chat`,
+      { data: { message: "Open the door" }, timeout: 120_000 }
+    );
+
+    vi.mocked(api.post).mockResolvedValue({
+      ...response,
+      sessionId: "ts_fedcba9876543210",
+    });
+    await expect(sendTextGameAction(session.sessionId, "Again")).rejects.toThrow("while");
   });
 });

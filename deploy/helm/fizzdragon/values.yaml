@@ -354,6 +354,8 @@ adminUi:
     # 资讯 (news) admin module → Java backend; the /content prefix is essential
     # (apex without it 302s to a different Sa-Token service).
     NEWS_API_BASE_URL: https://java.fizzdragon.com/content
+    # 文游审核 → Java Studio。仅由 admin-ui 服务端调用，浏览器不直接访问。
+    TEXT_GAME_API_BASE_URL: https://java.fizzdragon.com/studio
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 1000m, memory: 1Gi }

@@ -144,7 +144,7 @@ export function TextGamePlayer({
 
   async function submitAction() {
     const value = draft.trim();
-    if (!value || !session || sendingRef.current) return;
+    if (!value || !session || sendingRef.current || restartingRef.current) return;
 
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: TextGameMessage = {
@@ -197,7 +197,7 @@ export function TextGamePlayer({
   }
 
   async function restart() {
-    if (restartingRef.current) return;
+    if (!session || restartingRef.current || sendingRef.current) return;
     restartingRef.current = true;
     setRestarting(true);
     try {
@@ -205,6 +205,7 @@ export function TextGamePlayer({
       queryClient.setQueryData(playerTextGameKeys.session(game.gameId), next);
       queryClient.setQueryData(playerTextGameKeys.progress(game.gameId), next);
       setDraft("");
+      setStillIndex(0);
       toast.success(t("restartComplete"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("restartFailed"));
@@ -313,7 +314,7 @@ export function TextGamePlayer({
                   size="icon"
                   className="text-white/58 hover:bg-white/8 hover:text-white"
                   aria-label={t("restart")}
-                  disabled={restarting}
+                  disabled={!session || restarting || sending}
                 >
                   {restarting ? (
                     <IconLoader2 className="size-5 animate-spin" />
@@ -331,7 +332,10 @@ export function TextGamePlayer({
                 </AlertDialogHeader>
                 <AlertDialogFooter className="border-white/8 bg-white/3">
                   <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-                  <AlertDialogAction disabled={restarting} onClick={() => void restart()}>
+                  <AlertDialogAction
+                    disabled={!session || restarting || sending}
+                    onClick={() => void restart()}
+                  >
                     {t("restart")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -411,7 +415,7 @@ export function TextGamePlayer({
               onKeyDown={handleKeyDown}
               minRows={1}
               maxRows={5}
-              disabled={!session || sending}
+              disabled={!session || sending || restarting}
               placeholder={t("actionPlaceholder")}
               aria-label={t("actionPlaceholder")}
               className="min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-5 text-white outline-none placeholder:text-white/28 disabled:opacity-50"
@@ -419,7 +423,7 @@ export function TextGamePlayer({
             <Button
               size="icon-lg"
               className="size-10 rounded-xl"
-              disabled={!draft.trim() || !session || sending}
+              disabled={!draft.trim() || !session || sending || restarting}
               onClick={() => void submitAction()}
               aria-label={t("sendAction")}
             >

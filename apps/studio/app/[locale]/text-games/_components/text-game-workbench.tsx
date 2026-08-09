@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element -- creator-provided CDN URLs are dynamic */
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
@@ -21,7 +21,23 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import type { TextGameDetail, TextGameUpdateInput } from "@repo/shared/text-game";
+import {
+  isTextGameCreatorActionAllowed,
+  isTextGameEditableByCreator,
+  type TextGameCreatorAction,
+  type TextGameDetail,
+} from "@repo/shared/text-game";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Field, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/components/ui/field";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
@@ -39,15 +55,11 @@ import {
   updateCreatorTextGame,
 } from "../_lib/text-game-api";
 import { hasTextGameCoverAspect, readImageDimensions } from "../_lib/text-game-cover";
-
-interface DraftForm {
-  name: string;
-  synopsis: string;
-  posterUrl: string;
-  worldviewDocxUrl: string;
-  bgmUrl: string;
-  stillUrls: string[];
-}
+import {
+  textGameDraftFormFromDetail,
+  toTextGameUpdateInput,
+  type TextGameDraftForm,
+} from "../_lib/text-game-draft";
 
 type UploadTarget = "poster" | "document" | "stills" | "bgm" | null;
 
@@ -92,14 +104,17 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   const stillInputRef = useRef<HTMLInputElement>(null);
   const bgmInputRef = useRef<HTMLInputElement>(null);
   const [game, setGame] = useState(initial);
-  const [form, setForm] = useState<DraftForm>(() => formFromGame(initial));
-  const [baseline, setBaseline] = useState<DraftForm>(() => formFromGame(initial));
+  const [form, setForm] = useState<TextGameDraftForm>(() => textGameDraftFormFromDetail(initial));
+  const [baseline, setBaseline] = useState<TextGameDraftForm>(() =>
+    textGameDraftFormFromDetail(initial)
+  );
   const [saving, setSaving] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  const editable = game.status !== "reviewing";
+  const editable = isTextGameEditableByCreator(game.status);
+  const editorBusy = saving || transitioning || uploadTarget !== null;
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(baseline), [form, baseline]);
   const requiredReady = Boolean(
     form.name.trim() && form.synopsis.trim() && form.posterUrl && form.worldviewDocxUrl
@@ -107,8 +122,15 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   const hasUnpublishedDraft =
     game.publishedVersionId !== null && game.draftVersionId !== game.publishedVersionId;
 
+  useEffect(() => {
+    if (!dirty && !saving && !transitioning && uploadTarget === null) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [dirty, saving, transitioning, uploadTarget]);
+
   const syncGame = (next: TextGameDetail) => {
-    const nextForm = formFromGame(next);
+    const nextForm = textGameDraftFormFromDetail(next);
     setGame(next);
     setForm(nextForm);
     setBaseline(nextForm);
@@ -117,13 +139,16 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   };
 
   const saveForm = async (
-    patch: Partial<DraftForm> = {},
+    patch: Partial<TextGameDraftForm> = {},
     successMessage: string | null = t("editor.saved")
   ): Promise<TextGameDetail> => {
     const nextForm = { ...form, ...patch };
     setSaving(true);
     try {
-      const next = await updateCreatorTextGame(game.gameId, toUpdateInput(nextForm, baseline));
+      const next = await updateCreatorTextGame(
+        game.gameId,
+        toTextGameUpdateInput(nextForm, baseline)
+      );
       syncGame(next);
       if (successMessage) toast.success(successMessage);
       return next;
@@ -132,11 +157,11 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
     }
   };
 
-  const saveWithFeedback = async (patch: Partial<DraftForm> = {}) => {
+  const saveWithFeedback = async (patch: Partial<TextGameDraftForm> = {}) => {
     try {
       await saveForm(patch);
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
@@ -180,7 +205,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       const posterUrl = await uploadOne("poster", file, "episode_cover");
       await saveForm({ posterUrl });
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
@@ -197,12 +222,16 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       const worldviewDocxUrl = await uploadOne("document", file, "agent_attachment_document");
       await saveForm({ worldviewDocxUrl }, t("editor.documentReparsed"));
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
   const uploadStills = async (files: File[]) => {
     if (files.length === 0) return;
+    if (files.some((file) => !file.type.startsWith("image/"))) {
+      toast.error(t("editor.stillsImageOnly"));
+      return;
+    }
     setUploadTarget("stills");
     try {
       const urls: string[] = [];
@@ -216,7 +245,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       }
       await saveForm({ stillUrls: [...form.stillUrls, ...urls] });
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     } finally {
       setUploadTarget(null);
       setUploadProgress(0);
@@ -224,15 +253,25 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   };
 
   const uploadBgm = async (file: File) => {
+    const fileName = file.name.toLowerCase();
+    if (
+      !file.type.startsWith("audio/") &&
+      !fileName.endsWith(".mp3") &&
+      !fileName.endsWith(".wav")
+    ) {
+      toast.error(t("editor.musicAudioOnly"));
+      return;
+    }
     try {
       const bgmUrl = await uploadOne("bgm", file, "story_music_audio");
       await saveForm({ bgmUrl });
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
-  const transition = async (action: "submit" | "offline") => {
+  const transition = async (action: TextGameCreatorAction) => {
+    if (!isTextGameCreatorActionAllowed(game.status, action)) return;
     setTransitioning(true);
     try {
       let current = game;
@@ -241,7 +280,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       syncGame(next);
       toast.success(action === "submit" ? t("publish.submitted") : t("publish.offlined"));
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, t("actions.unknownError")));
     } finally {
       setTransitioning(false);
     }
@@ -275,7 +314,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
           </span>
           <Button
             variant="secondary"
-            disabled={!editable || !dirty || uploadTarget !== null}
+            disabled={!editable || !dirty || editorBusy}
             loading={saving}
             onClick={() => void saveWithFeedback()}
           >
@@ -316,7 +355,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
               <Input
                 id="text-game-name"
                 value={form.name}
-                disabled={!editable}
+                disabled={!editable || editorBusy}
                 aria-required="true"
                 maxLength={120}
                 className={FIELD_CONTROL}
@@ -329,7 +368,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
               <Textarea
                 id="text-game-synopsis"
                 value={form.synopsis}
-                disabled={!editable}
+                disabled={!editable || editorBusy}
                 aria-required="true"
                 maxLength={1_000}
                 className={FIELD_CONTROL_TEXTAREA}
@@ -366,7 +405,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
             <Button
               block
               variant="secondary"
-              disabled={!editable}
+              disabled={!editable || editorBusy}
               loading={uploadTarget === "poster"}
               onClick={() => posterInputRef.current?.click()}
             >
@@ -404,7 +443,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
             <Button
               block
               variant="secondary"
-              disabled={!editable}
+              disabled={!editable || editorBusy}
               loading={uploadTarget === "document" || saving}
               onClick={() => documentInputRef.current?.click()}
             >
@@ -480,6 +519,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
                       <Button
                         variant="quiet"
                         size="icon-sm"
+                        disabled={editorBusy}
                         aria-label={t("editor.removeStill", { index: index + 1 })}
                         className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100 focus:opacity-100"
                         onClick={() =>
@@ -502,7 +542,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
             <Button
               block
               variant="secondary"
-              disabled={!editable}
+              disabled={!editable || editorBusy}
               loading={uploadTarget === "stills"}
               onClick={() => stillInputRef.current?.click()}
             >
@@ -536,13 +576,24 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
             <Button
               block
               variant="secondary"
-              disabled={!editable}
+              disabled={!editable || editorBusy}
               loading={uploadTarget === "bgm"}
               onClick={() => bgmInputRef.current?.click()}
             >
               <IconMusic data-icon="inline-start" />
               {form.bgmUrl ? t("editor.replaceMusic") : t("editor.uploadMusic")}
             </Button>
+            {form.bgmUrl && editable ? (
+              <Button
+                block
+                variant="quiet"
+                disabled={editorBusy}
+                onClick={() => void saveWithFeedback({ bgmUrl: "" })}
+              >
+                <IconTrash data-icon="inline-start" />
+                {t("editor.removeMusic")}
+              </Button>
+            ) : null}
           </InspectorSection>
 
           <InspectorSection icon={IconCheck} title={t("editor.sections.publish")}>
@@ -578,28 +629,60 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
               </Button>
             ) : null}
 
-            {game.status !== "reviewing" ? (
-              <Button
-                block
-                variant="primary-cta"
-                size="lg"
-                disabled={!requiredReady || uploadTarget !== null}
-                loading={transitioning}
-                onClick={() => void transition("submit")}
-              >
-                {game.status === "published" ? t("publish.submitUpdate") : t("publish.submit")}
-              </Button>
+            {isTextGameCreatorActionAllowed(game.status, "submit") ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    block
+                    variant="primary-cta"
+                    size="lg"
+                    disabled={!requiredReady || editorBusy}
+                  >
+                    {game.status === "published" ? t("publish.submitUpdate") : t("publish.submit")}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("publish.submitConfirmTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("publish.submitConfirmBody")}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel variant="quiet">{t("actions.cancel")}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void transition("submit")}>
+                      {t("publish.submitConfirm")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
 
-            {game.status === "published" || game.status === "reviewing" ? (
-              <Button
-                block
-                variant="destructive"
-                disabled={transitioning}
-                onClick={() => void transition("offline")}
-              >
-                {t("publish.takeOffline")}
-              </Button>
+            {isTextGameCreatorActionAllowed(game.status, "offline") ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button block variant="destructive" disabled={editorBusy}>
+                    {t("publish.takeOffline")}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("publish.offlineConfirmTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("publish.offlineConfirmBody")}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel variant="quiet">{t("actions.cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      onClick={() => void transition("offline")}
+                    >
+                      {t("publish.offlineConfirm")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
           </InspectorSection>
         </aside>
@@ -612,7 +695,7 @@ function TextGameDraftPreview({
   form,
   characters,
 }: {
-  form: DraftForm;
+  form: TextGameDraftForm;
   characters: TextGameDetail["content"]["characters"];
 }) {
   const t = useTranslations("textGames");
@@ -762,32 +845,8 @@ function Requirement({ ready, label }: { ready: boolean; label: string }) {
   );
 }
 
-function formFromGame(game: TextGameDetail): DraftForm {
-  return {
-    name: game.content.name ?? "",
-    synopsis: game.content.synopsis ?? "",
-    posterUrl: game.content.posterUrl ?? "",
-    worldviewDocxUrl: game.content.worldviewDocxUrl ?? "",
-    bgmUrl: game.content.bgmUrl ?? "",
-    stillUrls: game.content.stillUrls,
-  };
-}
-
-function toUpdateInput(form: DraftForm, baseline: DraftForm): TextGameUpdateInput {
-  return {
-    name: form.name.trim(),
-    synopsis: form.synopsis.trim(),
-    posterUrl: form.posterUrl || undefined,
-    bgmUrl: form.bgmUrl || undefined,
-    stillUrls: form.stillUrls,
-    ...(form.worldviewDocxUrl !== baseline.worldviewDocxUrl
-      ? { worldviewDocxUrl: form.worldviewDocxUrl }
-      : {}),
-  };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function TextGameWorkbenchSkeleton({ label }: { label?: string }) {

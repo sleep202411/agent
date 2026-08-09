@@ -712,7 +712,9 @@
     "actions": {
       "retry": "重试",
       "backToLibrary": "返回文游作品",
-      "save": "保存"
+      "save": "保存",
+      "cancel": "取消",
+      "unknownError": "操作失败，请稍后重试。"
     },
     "status": {
       "draft": "草稿",
@@ -786,7 +788,10 @@
       "uploadProgress": "上传中 · {progress}%",
       "noMusic": "还没有背景音乐。",
       "uploadMusic": "上传音乐",
-      "replaceMusic": "更换音乐"
+      "replaceMusic": "更换音乐",
+      "removeMusic": "移除音乐",
+      "stillsImageOnly": "请选择 JPG、PNG 或 WebP 图片。",
+      "musicAudioOnly": "请选择 MP3 或 WAV 音频文件。"
     },
     "publish": {
       "rejected": "审核反馈",
@@ -801,6 +806,12 @@
       "submit": "提交审核",
       "submitUpdate": "提交更新版本",
       "takeOffline": "下架作品",
+      "submitConfirmTitle": "提交这部文游进行审核？",
+      "submitConfirmBody": "平台审核文档、封面、简介和剧照期间，当前草稿将暂停编辑。",
+      "submitConfirm": "提交审核",
+      "offlineConfirmTitle": "下架这部文游？",
+      "offlineConfirmBody": "作品会从玩家列表消失，并停止创建新会话；已有会话仍可继续。",
+      "offlineConfirm": "确认下架",
       "submitted": "已提交审核",
       "offlined": "作品已下架"
     }

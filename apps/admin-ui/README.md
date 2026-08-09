@@ -16,9 +16,14 @@ npm run dev -w admin-ui
 ```bash
 ADMIN_GLOBAL_API_BASE_URL=https://api.fizzdragon.com/admin
 ADMIN_CN_API_BASE_URL=https://fizzdragon.fizzspace.cn/admin
+TEXT_GAME_API_BASE_URL=https://java.fizzdragon.com/studio
 ```
 
 兼容单站本地开发时也可以只设置 `ADMIN_API_BASE_URL=http://localhost:4399/admin`。
+
+`TEXT_GAME_API_BASE_URL` 指向当前站点的 Java Studio 服务。文游审核请求只在
+Admin UI 服务端发起；同源 `/api/admin/text-games/**` 路由先验证后台会话和
+`ip.moderate` 权限，再访问 Java `/api/boss/text-game/**`。
 
 ## 登录
 

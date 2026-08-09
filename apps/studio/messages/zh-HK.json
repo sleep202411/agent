@@ -712,7 +712,9 @@
     "actions": {
       "retry": "重試",
       "backToLibrary": "返回文遊作品",
-      "save": "儲存"
+      "save": "儲存",
+      "cancel": "取消",
+      "unknownError": "操作失敗，請稍後再試。"
     },
     "status": {
       "draft": "草稿",
@@ -786,7 +788,10 @@
       "uploadProgress": "上傳中 · {progress}%",
       "noMusic": "還沒有背景音樂。",
       "uploadMusic": "上傳音樂",
-      "replaceMusic": "更換音樂"
+      "replaceMusic": "更換音樂",
+      "removeMusic": "移除音樂",
+      "stillsImageOnly": "請選擇 JPG、PNG 或 WebP 圖片。",
+      "musicAudioOnly": "請選擇 MP3 或 WAV 音訊檔案。"
     },
     "publish": {
       "rejected": "審核回饋",
@@ -801,6 +806,12 @@
       "submit": "提交審核",
       "submitUpdate": "提交更新版本",
       "takeOffline": "下架作品",
+      "submitConfirmTitle": "提交這部文遊進行審核？",
+      "submitConfirmBody": "平台審核文件、封面、簡介和劇照期間，目前草稿將暫停編輯。",
+      "submitConfirm": "提交審核",
+      "offlineConfirmTitle": "下架這部文遊？",
+      "offlineConfirmBody": "作品會從玩家列表消失，並停止建立新工作階段；已有工作階段仍可繼續。",
+      "offlineConfirm": "確認下架",
       "submitted": "已提交審核",
       "offlined": "作品已下架"
     }

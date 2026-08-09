@@ -168,6 +168,7 @@ adminUi:
     # /content/api/admin/news currently 500s (Java-side handler bug); pointing
     # here is the correct target — the 500 is for the Java team to fix.
     NEWS_API_BASE_URL: https://java.fizzspace.cn/content
+    TEXT_GAME_API_BASE_URL: https://java.fizzspace.cn/studio
   nodeSelector: null
   tolerations: null
 

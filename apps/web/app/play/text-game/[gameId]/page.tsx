@@ -39,5 +39,5 @@ export default async function TextGamePlayerPage({ params }: RouteProps) {
     getPublishedTextGame(gameId),
     listPublishedTextGames().catch(() => []),
   ]);
-  return <TextGamePlayer game={game} catalogue={catalogueResult} />;
+  return <TextGamePlayer key={game.gameId} game={game} catalogue={catalogueResult} />;
 }

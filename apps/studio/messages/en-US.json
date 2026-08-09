@@ -712,7 +712,9 @@
     "actions": {
       "retry": "Retry",
       "backToLibrary": "Back to text adventures",
-      "save": "Save"
+      "save": "Save",
+      "cancel": "Cancel",
+      "unknownError": "Something went wrong."
     },
     "status": {
       "draft": "Draft",
@@ -786,7 +788,10 @@
       "uploadProgress": "Uploading · {progress}%",
       "noMusic": "No background music attached.",
       "uploadMusic": "Upload music",
-      "replaceMusic": "Replace music"
+      "replaceMusic": "Replace music",
+      "removeMusic": "Remove music",
+      "stillsImageOnly": "Choose JPG, PNG, or WebP images.",
+      "musicAudioOnly": "Choose an MP3 or WAV audio file."
     },
     "publish": {
       "rejected": "Review feedback",
@@ -801,6 +806,12 @@
       "submit": "Submit for review",
       "submitUpdate": "Submit updated version",
       "takeOffline": "Take offline",
+      "submitConfirmTitle": "Submit this text adventure for review?",
+      "submitConfirmBody": "The current draft will be locked while the platform reviews its document, cover, synopsis, and stills.",
+      "submitConfirm": "Submit for review",
+      "offlineConfirmTitle": "Take this text adventure offline?",
+      "offlineConfirmBody": "It will disappear from player lists and new sessions will be blocked. Existing sessions can continue.",
+      "offlineConfirm": "Take offline",
       "submitted": "Submitted for review",
       "offlined": "Work taken offline"
     }

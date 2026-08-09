@@ -38,6 +38,9 @@ export async function listPublishedTextGames(
   if (!parsed.success) {
     throw new TextGameLoadError("Java returned an invalid text-adventure catalogue.");
   }
+  if (parsed.data.some((game) => game.status !== "published")) {
+    throw new TextGameLoadError("Java returned a non-published work in the player catalogue.");
+  }
   return parsed.data;
 }
 
@@ -56,6 +59,14 @@ export async function getPublishedTextGame(
   if (parsed.data.gameId !== gameId) {
     throw new TextGameLoadError(
       `Java returned text adventure ${parsed.data.gameId} while ${gameId} was requested.`
+    );
+  }
+  if (parsed.data.status !== "published") {
+    throw new TextGameLoadError("Java returned a non-published work on the player endpoint.");
+  }
+  if (parsed.data.content.worldviewDocxUrl !== null) {
+    throw new TextGameLoadError(
+      "Java exposed the private worldview document on the player endpoint."
     );
   }
   return parsed.data;
@@ -91,11 +102,16 @@ async function getJavaData(url: string, fetcher: Fetcher): Promise<unknown> {
   }
 
   if (!response.ok || body.code !== 200) {
+    const status = !response.ok
+      ? response.status
+      : typeof body.code === "number" && Number.isFinite(body.code)
+        ? body.code
+        : response.status;
     throw new TextGameLoadError(
       typeof body.msg === "string" && body.msg.trim()
         ? body.msg
         : `The text-adventure request failed (HTTP ${response.status}).`,
-      response.status
+      status
     );
   }
   return body.data;

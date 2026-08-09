@@ -11,6 +11,9 @@ export const TextGameWireIdSchema = z
   .union([z.string(), z.number().int().safe()])
   .transform((value) => String(value));
 
+export const TextGameIdSchema = z.string().regex(/^tg_[A-Za-z0-9]{16}$/);
+export const TextGameSessionIdSchema = z.string().regex(/^ts_[A-Za-z0-9]{16}$/);
+
 export const TextGameStatusSchema = z.enum(["draft", "reviewing", "published", "offline"]);
 export type TextGameStatus = z.infer<typeof TextGameStatusSchema>;
 
@@ -36,7 +39,7 @@ export const TextGameCharacterSchema = z.object({
 export type TextGameCharacter = z.infer<typeof TextGameCharacterSchema>;
 
 export const TextGameSummarySchema = z.object({
-  gameId: z.string().min(1),
+  gameId: TextGameIdSchema,
   name: NullableTextSchema,
   posterUrl: NullableTextSchema,
   synopsis: NullableTextSchema,
@@ -66,7 +69,7 @@ export const TextGameVersionContentSchema = z.object({
 export type TextGameVersionContent = z.infer<typeof TextGameVersionContentSchema>;
 
 export const TextGameDetailSchema = z.object({
-  gameId: z.string().min(1),
+  gameId: TextGameIdSchema,
   projectId: NullableTextSchema,
   status: TextGameStatusSchema,
   rejectReason: NullableTextSchema,
@@ -94,8 +97,8 @@ export const TextGameMessageSchema = z.object({
 export type TextGameMessage = z.infer<typeof TextGameMessageSchema>;
 
 export const TextGamePlaySessionSchema = z.object({
-  sessionId: z.string().min(1),
-  gameId: z.string().min(1),
+  sessionId: TextGameSessionIdSchema,
+  gameId: TextGameIdSchema,
   resumed: z.boolean(),
   bgmUrl: NullableTextSchema,
   stillUrls: z
@@ -111,11 +114,16 @@ export const TextGamePlaySessionSchema = z.object({
 export type TextGamePlaySession = z.infer<typeof TextGamePlaySessionSchema>;
 
 export const TextGameChatResponseSchema = z.object({
-  sessionId: z.string().min(1),
-  userMessage: TextGameMessageSchema,
-  assistantMessage: TextGameMessageSchema,
+  sessionId: TextGameSessionIdSchema,
+  userMessage: TextGameMessageSchema.extend({ role: z.literal("user") }),
+  assistantMessage: TextGameMessageSchema.extend({ role: z.literal("assistant") }),
 });
 export type TextGameChatResponse = z.infer<typeof TextGameChatResponseSchema>;
+
+export const TextGameChatInputSchema = z.object({
+  message: z.string().trim().min(1),
+});
+export type TextGameChatInput = z.infer<typeof TextGameChatInputSchema>;
 
 export const TextGameCreateInputSchema = z.object({
   worldviewDocxUrl: z.string().url(),
@@ -128,8 +136,57 @@ export const TextGameCreateInputSchema = z.object({
 });
 export type TextGameCreateInput = z.infer<typeof TextGameCreateInputSchema>;
 
-export const TextGameUpdateInputSchema = TextGameCreateInputSchema.partial();
+export const TextGameUpdateInputSchema = z.object({
+  name: z.string().optional(),
+  posterUrl: z.string().url().optional(),
+  synopsis: z.string().optional(),
+  worldviewDocxUrl: z.string().url().optional(),
+  bgmUrl: z.union([z.string().url(), z.literal("")]).optional(),
+  stillUrls: z.array(z.string().url()).optional(),
+});
 export type TextGameUpdateInput = z.infer<typeof TextGameUpdateInputSchema>;
+
+export const TextGameCreatorActionSchema = z.enum(["submit", "offline"]);
+export type TextGameCreatorAction = z.infer<typeof TextGameCreatorActionSchema>;
+
+export const TextGameBossActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("approve") }),
+  z.object({ action: z.literal("reject"), reason: z.string().trim().min(1) }),
+  z.object({ action: z.literal("force_offline") }),
+]);
+export type TextGameBossAction = z.infer<typeof TextGameBossActionSchema>;
+
+export function isTextGameEditableByCreator(status: TextGameStatus): boolean {
+  return status !== "reviewing";
+}
+
+export function isTextGameCreatorActionAllowed(
+  status: TextGameStatus,
+  action: TextGameCreatorAction
+): boolean {
+  if (action === "submit") return status !== "reviewing";
+  return status === "published" || status === "reviewing";
+}
+
+export function textGameStatusAfterCreatorAction(action: TextGameCreatorAction): TextGameStatus {
+  return action === "submit" ? "reviewing" : "offline";
+}
+
+export function isTextGameBossActionAllowed(
+  status: TextGameStatus,
+  action: TextGameBossAction["action"]
+): boolean {
+  if (action === "approve" || action === "reject") return status === "reviewing";
+  return status === "published" || status === "reviewing";
+}
+
+export function textGameStatusAfterBossAction(
+  action: TextGameBossAction["action"]
+): TextGameStatus {
+  if (action === "approve") return "published";
+  if (action === "reject") return "draft";
+  return "offline";
+}
 
 export function parseTextGameList(input: unknown): TextGameSummary[] {
   return TextGameSummaryListSchema.parse(input);

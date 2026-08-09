@@ -74,7 +74,7 @@ export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialo
       void queryClient.invalidateQueries({ queryKey: textGameKeys.list() });
       router.replace(`/text-games/${game.gameId}`);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t("actions.unknownError")));
       setPhase("create-error");
     }
   };
@@ -109,7 +109,7 @@ export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialo
     } catch (reason) {
       uploadAbortRef.current = null;
       if (isUploadAbort(reason)) return;
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t("actions.unknownError")));
       setPhase("upload-error");
     }
   };
@@ -340,6 +340,6 @@ function DocumentDropzone({
   );
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
