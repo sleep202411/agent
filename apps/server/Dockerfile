@@ -84,6 +84,24 @@ COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
 COPY --from=builder /app/apps/server/prisma.config.ts ./apps/server/prisma.config.ts
 
+# A migration directory without its `migration.sql` aborts `migrate deploy`
+# with P3015 — every pod then dies in the db-migrate init container while the
+# old ones keep serving, so the rollout silently stalls instead of failing
+# loudly. Git cannot track an empty directory, so a cancelled `migrate dev`
+# leaves one behind invisibly and the build context ships it anyway. Fail here,
+# where the message is obvious, rather than at 3am in a half-rolled deploy.
+RUN node -e "\
+const {readdirSync,existsSync}=require('node:fs');\
+const root='apps/server/prisma/migrations';\
+const broken=readdirSync(root,{withFileTypes:true})\
+  .filter((e)=>e.isDirectory())\
+  .map((e)=>root+'/'+e.name)\
+  .filter((dir)=>!existsSync(dir+'/migration.sql'));\
+if(broken.length){\
+  console.error('Migration directories missing migration.sql: '+broken.join(', '));\
+  process.exit(1);\
+}console.log('migration integrity check: ok');"
+
 # Prisma CLI may refresh engine files during `migrate deploy`. The
 # container runs as the unprivileged `nestjs` user, so keep Prisma-owned
 # runtime assets writable by that user instead of failing at startup.
