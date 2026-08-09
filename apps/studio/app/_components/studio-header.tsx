@@ -40,17 +40,19 @@ export function StudioHeader() {
 
         <div className="flex shrink-0 items-center gap-3">
           {showWorkspaceControls ? (
-            loading ? (
-              <>
-                <div className="h-9 w-20 animate-pulse rounded-full bg-white/[0.06]" />
-                <div className="h-10 w-48 animate-pulse rounded-full bg-white/[0.06]" />
-              </>
-            ) : (
-              <>
-                <CreditsBadge />
-                <WorkspaceSwitcher />
-              </>
-            )
+            <div className="hidden items-center gap-3 sm:flex">
+              {loading ? (
+                <>
+                  <div className="h-9 w-20 animate-pulse rounded-full bg-white/[0.06]" />
+                  <div className="h-10 w-48 animate-pulse rounded-full bg-white/[0.06]" />
+                </>
+              ) : (
+                <>
+                  <CreditsBadge />
+                  <WorkspaceSwitcher />
+                </>
+              )}
+            </div>
           ) : null}
           <LocaleSwitcher />
           <AccountMenu />

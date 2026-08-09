@@ -13,6 +13,7 @@ import {
   IconSettings,
   IconVideo,
   IconVolume,
+  IconWriting,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
@@ -123,6 +124,7 @@ export function StudioSidebar() {
     { label: t("nav.home"), href: "/", icon: IconHome },
     { label: t("nav.creativeStudio"), href: "/projects", icon: IconLayoutGrid },
     { label: t("nav.storyStudio"), href: "/story-studio", icon: IconBook2 },
+    { label: t("nav.textGames"), href: "/text-games", icon: IconWriting },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },

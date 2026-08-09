@@ -101,6 +101,10 @@
     "./copilot-documents": {
       "types": "./dist/copilot-documents.d.ts",
       "default": "./dist/copilot-documents.js"
+    },
+    "./text-game": {
+      "types": "./dist/text-game.d.ts",
+      "default": "./dist/text-game.js"
     }
   },
   "scripts": {

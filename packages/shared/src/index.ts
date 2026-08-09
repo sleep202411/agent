@@ -34,3 +34,4 @@ export * from "./model-profile-id.js";
 export * from "./story-authoring-pipeline.js";
 export * from "./copilot-documents.js";
 export * from "./media-asset-readiness.js";
+export * from "./text-game.js";

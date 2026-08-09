@@ -42,7 +42,7 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
   form?: Record<string, string | number | boolean | undefined>;
   timeout?: number;
   /**
-   * Skip the `body.data ?? body.info ?? body.path ?? body` unwrap and
+   * Skip the `data` / `info` / `path` unwrap and
    * return the full envelope instead. Use this for endpoints whose
    * response carries multiple top-level fields side-by-side (e.g.
    * `{ info, level }` on `/user/query/user/info`,
@@ -273,7 +273,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   // Different endpoints return data in different fields. When `raw` is
   // set the caller wants the whole envelope (multi-field responses).
   if (config.raw) return body as T;
-  return (body.data ?? body.info ?? body.path ?? body) as T;
+  return unwrapResponseBody<T>(body);
 }
 
 /**
@@ -348,7 +348,20 @@ async function upload<T>(
     );
   }
 
-  return (body.data ?? body.info ?? body.path ?? body) as T;
+  return unwrapResponseBody<T>(body);
+}
+
+/**
+ * Preserve an explicit `data: null`. Java uses that exact value for a
+ * successful "no current record" lookup; nullish coalescing would incorrectly
+ * return the whole envelope and make callers parse `{ code, msg, data }` as a
+ * domain object. Callers that need the envelope use `raw: true` above.
+ */
+function unwrapResponseBody<T>(body: Record<string, unknown>): T {
+  if (Object.prototype.hasOwnProperty.call(body, "data")) return body.data as T;
+  if (Object.prototype.hasOwnProperty.call(body, "info")) return body.info as T;
+  if (Object.prototype.hasOwnProperty.call(body, "path")) return body.path as T;
+  return body as T;
 }
 
 // ============ 401 / unauthorized hook ============
