@@ -50,7 +50,7 @@ const BUILT_IN_PROFILES: readonly ModelProfile[] = [
   {
     id: "qwen3.7-plus",
     model: "qwen3.7-plus",
-    label: "通义 Plus",
+    label: "千问 Plus",
     hint: "Everyday driver",
     temperature: 0.4,
     maxTokens: 8192,
@@ -58,7 +58,7 @@ const BUILT_IN_PROFILES: readonly ModelProfile[] = [
   {
     id: "qwen3.8-max",
     model: "qwen3.8-max",
-    label: "通义 Max",
+    label: "千问 Max",
     hint: "Strongest, slower",
     temperature: 0.5,
     maxTokens: 8192,
