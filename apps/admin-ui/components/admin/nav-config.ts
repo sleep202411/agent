@@ -36,6 +36,7 @@ import {
   IconUserSearch,
   IconVersions,
   IconWallet,
+  IconWriting,
 } from "@tabler/icons-react";
 
 export type NavIcon = typeof IconDashboard;
@@ -281,6 +282,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
         { href: "/ip/overview", label: "总览", icon: IconVersions, permission: "ip.read" },
         { href: "/ip/titles", label: "作品库", icon: IconBook2, permission: "ip.read" },
         { href: "/ip/reviews", label: "审核队列", icon: IconShieldLock, permission: "ip.moderate" },
+        {
+          href: "/ip/text-games",
+          label: "文游审核",
+          icon: IconWriting,
+          permission: "ip.moderate",
+        },
         { href: "/ip/reports", label: "举报处理", icon: IconFlag, permission: "ip.moderate" },
       ],
     },
