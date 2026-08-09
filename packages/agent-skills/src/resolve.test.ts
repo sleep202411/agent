@@ -7,19 +7,19 @@ describe("resolveSkillMounts", () => {
     resetSkillRegistryForTests();
   });
 
-  it("mounts core + surface storyboard skills and unions tools", () => {
-    const mount = resolveSkillMounts({ surface: "storyboard" });
+  it("mounts core + Platform storyboard skills and unions tools", () => {
+    const mount = resolveSkillMounts({ projectKind: "platform", workbenchMode: "storyboard" });
     const ids = mount.skills.map((s) => s.id);
     expect(ids).toContain("agent-os.core");
-    expect(ids).toContain("agent-os.surface.storyboard");
-    expect(ids).not.toContain("agent-os.surface.canvas");
+    expect(ids).toContain("agent-os.mode.platform.storyboard");
+    expect(ids).not.toContain("agent-os.mode.platform.canvas");
     expect(mount.toolIds).toContain("storyboard.upsertShots");
     expect(mount.toolIds).toContain("characters.upsert");
     expect(mount.instructions).toMatch(/STORYBOARD/i);
   });
 
   it("storyboard instructions enforce write-intent gate for bare poetic phrases", () => {
-    const mount = resolveSkillMounts({ surface: "storyboard" });
+    const mount = resolveSkillMounts({ projectKind: "platform", workbenchMode: "storyboard" });
     expect(mount.instructions).toMatch(/Write-intent gate/i);
     expect(mount.instructions).toMatch(/chat-only/i);
     expect(mount.instructions).toMatch(/随笔爱你吧/);
@@ -28,20 +28,29 @@ describe("resolveSkillMounts", () => {
   });
 
   it("canvas mount includes applyPatch tools, not character writes", () => {
-    const mount = resolveSkillMounts({ surface: "canvas" });
+    const mount = resolveSkillMounts({ projectKind: "platform", workbenchMode: "canvas" });
     expect(mount.toolIds).toContain("canvas.applyPatch");
     expect(mount.toolIds).not.toContain("characters.upsert");
     expect(mount.toolIds).not.toContain("storyboard.upsertShots");
   });
 
-  it("applies turn skill ids when registered and surface-allowed", () => {
+  it("mounts attachment tools from core in Story workbenches", () => {
+    const mount = resolveSkillMounts({ projectKind: "story", workbenchMode: "story" });
+    expect(mount.toolIds).toContain("script.store");
+    expect(mount.toolIds).toContain("script.readSection");
+    expect(mount.toolIds).toContain("story.read");
+    expect(mount.instructions).toMatch(/untrusted user data/i);
+  });
+
+  it("applies turn skill ids when registered and context-allowed", () => {
     registerSkill({
       id: "catalog.demo-style",
       name: "Demo style",
       description: "Future catalog skill",
       instructions: "## Demo style\nUse a noir palette.",
       toolIds: [],
-      surfaces: ["storyboard", "brief"],
+      projectKinds: ["platform"],
+      workbenchModes: ["storyboard", "brief"],
       source: "catalog",
       alwaysOn: false,
       removable: true,
@@ -49,7 +58,8 @@ describe("resolveSkillMounts", () => {
     });
 
     const mount = resolveSkillMounts({
-      surface: "storyboard",
+      projectKind: "platform",
+      workbenchMode: "storyboard",
       turnSkillIds: ["catalog.demo-style", "does-not-exist"],
     });
     expect(mount.skills.map((s) => s.id)).toContain("catalog.demo-style");
@@ -57,21 +67,23 @@ describe("resolveSkillMounts", () => {
     expect(mount.skippedSkillIds).toContain("does-not-exist");
   });
 
-  it("skips turn skills that do not allow the surface", () => {
+  it("skips turn skills that do not allow the workbench", () => {
     registerSkill({
       id: "catalog.canvas-only",
       name: "Canvas only",
       description: "x",
       instructions: "## Canvas only skill",
       toolIds: ["canvas.read"],
-      surfaces: ["canvas"],
+      projectKinds: ["platform"],
+      workbenchModes: ["canvas"],
       source: "catalog",
       alwaysOn: false,
       removable: true,
       priority: 200,
     });
     const mount = resolveSkillMounts({
-      surface: "storyboard",
+      projectKind: "platform",
+      workbenchMode: "storyboard",
       turnSkillIds: ["catalog.canvas-only"],
     });
     expect(mount.skills.map((s) => s.id)).not.toContain("catalog.canvas-only");
@@ -80,7 +92,8 @@ describe("resolveSkillMounts", () => {
 
   it("mounts project defaults and turn skills after always-on", () => {
     const mount = resolveSkillMounts({
-      surface: "storyboard",
+      projectKind: "platform",
+      workbenchMode: "storyboard",
       projectDefaultSkillIds: ["agent-os.skill.long-script"],
       turnSkillIds: ["agent-os.skill.cinematic-shots"],
     });
@@ -92,9 +105,10 @@ describe("resolveSkillMounts", () => {
     expect(mount.instructions).toMatch(/Cinematic shot language/i);
   });
 
-  it("skips project default skill not allowed on surface", () => {
+  it("skips project default skill not allowed on workbench", () => {
     const mount = resolveSkillMounts({
-      surface: "brief",
+      projectKind: "platform",
+      workbenchMode: "brief",
       projectDefaultSkillIds: ["agent-os.skill.cinematic-shots"],
     });
     expect(mount.skills.map((s) => s.id)).not.toContain("agent-os.skill.cinematic-shots");
@@ -107,18 +121,21 @@ describe("listInvocableSkills", () => {
     resetSkillRegistryForTests();
   });
 
-  it("lists only userInvocable skills for a surface", async () => {
+  it("lists only userInvocable skills for a workbench", async () => {
     const { listInvocableSkills } = await import("./public-meta.js");
-    const invocable = listInvocableSkills("storyboard");
+    const invocable = listInvocableSkills({
+      projectKind: "platform",
+      workbenchMode: "storyboard",
+    });
     expect(invocable.every((s) => s.userInvocable)).toBe(true);
     expect(invocable.map((s) => s.id)).toContain("agent-os.skill.long-script");
     expect(invocable.map((s) => s.id)).toContain("agent-os.skill.cinematic-shots");
     expect(invocable.map((s) => s.id)).not.toContain("agent-os.core");
   });
 
-  it("filters invocable by surface", async () => {
+  it("filters invocable by project and workbench", async () => {
     const { listInvocableSkills } = await import("./public-meta.js");
-    const briefOnly = listInvocableSkills("brief");
+    const briefOnly = listInvocableSkills({ projectKind: "platform", workbenchMode: "brief" });
     expect(briefOnly.map((s) => s.id)).toContain("agent-os.skill.long-script");
     expect(briefOnly.map((s) => s.id)).not.toContain("agent-os.skill.cinematic-shots");
   });

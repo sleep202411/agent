@@ -20,6 +20,10 @@ const labels: ApprovalPayloadLabels = {
   showDetails: "Show full request",
   hideDetails: "Hide full request",
   untitled: "Untitled",
+  storyBible: "Story bible",
+  storyEntry: "Story entry",
+  sceneOrder: "Scene order",
+  storyScene: "Story scene",
 };
 
 let container: HTMLDivElement;
@@ -88,6 +92,32 @@ describe("ApprovalPayload", () => {
   it("still shows the raw payload for a tool it has no shape for", () => {
     const text = renderPayload("some.future.tool", { mystery: "value" });
     expect(text).toContain("mystery");
+  });
+
+  it("shows every scene an atomic Story branch will create", () => {
+    const text = renderPayload("story.addBranch", {
+      afterNodeId: "opening",
+      branches: [
+        {
+          label: { "zh-CN": "留下" },
+          scene: { nodeId: "stay", name: "留下来" },
+        },
+        {
+          label: { "zh-CN": "离开" },
+          scene: { nodeId: "leave", name: "离开这里" },
+        },
+      ],
+    });
+    expect(text).toContain("Creates 2");
+    expect(text).toContain("Updates 1");
+    expect(text).toContain("留下来");
+    expect(text).toContain("离开这里");
+  });
+
+  it("calls out a destructive Story subtree removal", () => {
+    const text = renderPayload("story.removeSubtree", { nodeId: "branch.bad-ending" });
+    expect(text).toContain("Deletes 1");
+    expect(text).toContain("branch.bad-ending");
   });
 
   it("renders nothing when there is no payload at all", () => {

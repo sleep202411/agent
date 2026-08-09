@@ -2,11 +2,11 @@ import { HumanMessage } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { Command, isInterrupted } from "@langchain/langgraph";
+import type { AgentProjectKind } from "@repo/agent-capabilities";
 import type { AgentMode, PermissionMode } from "@repo/agent-policy";
 import type { AgentRunStatus } from "@repo/agent-protocol";
 import { resolveSkillMounts } from "@repo/agent-skills";
 import type { DomainPort } from "@repo/agent-tools";
-import type { AgentOsSurface } from "@repo/shared";
 
 import { createAgentOsGraph } from "../graph/create-agent-graph.js";
 import type { ApprovalInterruptValue } from "../graph/build-langchain-tools.js";
@@ -20,16 +20,23 @@ export interface StartLangGraphRunInput {
   projectId: string;
   actorId: string;
   sessionId: string;
+  /** Exact user-authored text persisted to the product transcript. */
   message: string;
+  /** Optional trusted runtime context visible to the model, never the transcript. */
+  modelMessage?: string;
   /** Required product model profile — never defaulted here. */
   modelProfileId: string;
-  /** Trusted product surface — system surface skill mount. */
-  surface: AgentOsSurface;
+  /** Trusted server-resolved product kind. */
+  projectKind: AgentProjectKind;
+  /** Trusted product workbench mode. */
+  workbenchMode: string;
+  /** Server-validated scope selected inside the workbench. */
+  workbenchContext?: Readonly<Record<string, string>>;
   /** Project default skill ids (admin). Mounted when registered. */
   projectDefaultSkillIds?: readonly string[];
   /** Per-turn skill ids (composer). Mounted when registered. */
   turnSkillIds?: readonly string[];
-  mode?: AgentMode;
+  agentMode?: AgentMode;
   permissionMode?: PermissionMode;
   model: BaseChatModel;
   domain: DomainPort;
@@ -46,9 +53,11 @@ export interface LangGraphRunSnapshot {
   actorId?: string;
   modelProfileId?: string;
   conversationId?: string;
+  projectKind?: AgentProjectKind;
+  workbenchMode?: string;
+  workbenchContext?: Readonly<Record<string, string>>;
   permissionMode?: PermissionMode;
-  mode?: AgentMode;
-  surface?: AgentOsSurface;
+  agentMode?: AgentMode;
   projectDefaultSkillIds?: readonly string[];
   turnSkillIds?: readonly string[];
   errorMessage?: string;
@@ -117,9 +126,8 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Carry product context (surface / skills / permission) when rewriting a
- * snapshot. Losing `surface` on HITL pause caused resume to default to
- * storyboard while the user was still on canvas — tools + prompt mismatch.
+ * Carry product context when rewriting a snapshot. Project kind and workbench
+ * mode must survive HITL pause/resume because they determine the mounted tools.
  */
 function carryRunContext(
   prev: LangGraphRunSnapshot | undefined,
@@ -128,8 +136,10 @@ function carryRunContext(
     actorId?: string;
     modelProfileId?: string;
     conversationId?: string;
-    surface?: AgentOsSurface;
-    mode?: AgentMode;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    agentMode?: AgentMode;
     permissionMode?: PermissionMode;
     projectDefaultSkillIds?: readonly string[];
     turnSkillIds?: readonly string[];
@@ -140,8 +150,10 @@ function carryRunContext(
   | "actorId"
   | "modelProfileId"
   | "conversationId"
-  | "surface"
-  | "mode"
+  | "projectKind"
+  | "workbenchMode"
+  | "workbenchContext"
+  | "agentMode"
   | "permissionMode"
   | "projectDefaultSkillIds"
   | "turnSkillIds"
@@ -151,23 +163,14 @@ function carryRunContext(
     actorId: input.actorId ?? prev?.actorId,
     modelProfileId: input.modelProfileId ?? prev?.modelProfileId,
     conversationId: input.conversationId ?? prev?.conversationId,
-    surface: input.surface ?? prev?.surface,
-    mode: input.mode ?? prev?.mode,
+    projectKind: input.projectKind ?? prev?.projectKind,
+    workbenchMode: input.workbenchMode ?? prev?.workbenchMode,
+    workbenchContext: input.workbenchContext ?? prev?.workbenchContext,
+    agentMode: input.agentMode ?? prev?.agentMode,
     permissionMode: input.permissionMode ?? prev?.permissionMode,
     projectDefaultSkillIds: input.projectDefaultSkillIds ?? prev?.projectDefaultSkillIds,
     turnSkillIds: input.turnSkillIds ?? prev?.turnSkillIds,
   };
-}
-
-function surfaceFromJournal(journal: EventJournal): AgentOsSurface | undefined {
-  for (const event of journal.all()) {
-    if (event.type !== "RunStarted") continue;
-    const surface = event.data.surface;
-    if (surface === "storyboard" || surface === "canvas" || surface === "brief") {
-      return surface;
-    }
-  }
-  return undefined;
 }
 
 export class LangGraphRunService {
@@ -236,7 +239,8 @@ export class LangGraphRunService {
     const journal = this.createJournal(input.conversationId);
     const messageId = `msg:${input.runId}`;
     const mountPreview = resolveSkillMounts({
-      surface: input.surface,
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
       projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
     });
@@ -249,7 +253,9 @@ export class LangGraphRunService {
         status: "running",
         workspaceType: "project_canvas",
         modelProfileId: input.modelProfileId,
-        surface: input.surface,
+        projectKind: input.projectKind,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
         skillIds: mountPreview.skills.map((s) => s.id),
         toolIds: [...mountPreview.toolIds],
         skippedSkillIds: [...mountPreview.skippedSkillIds],
@@ -301,9 +307,11 @@ export class LangGraphRunService {
       actorId: input.actorId,
       modelProfileId: input.modelProfileId,
       conversationId: input.conversationId,
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
+      workbenchContext: input.workbenchContext,
       permissionMode: input.permissionMode ?? "smart",
-      mode: input.mode ?? "ASSIST",
-      surface: input.surface,
+      agentMode: input.agentMode ?? "ASSIST",
       projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
       assistantText: "",
@@ -319,8 +327,7 @@ export class LangGraphRunService {
       input: {
         ...input,
         permissionMode: snapshot.permissionMode,
-        mode: snapshot.mode,
-        surface: snapshot.surface ?? input.surface,
+        agentMode: snapshot.agentMode,
       },
       journal,
       messageId,
@@ -393,8 +400,10 @@ export class LangGraphRunService {
     model: BaseChatModel;
     domain: DomainPort;
     checkpointer: BaseCheckpointSaver;
-    surface?: AgentOsSurface;
-    mode?: AgentMode;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    agentMode?: AgentMode;
     permissionMode?: PermissionMode;
   }): Promise<boolean> {
     if (this.snapshots.has(input.runId)) return true;
@@ -402,16 +411,17 @@ export class LangGraphRunService {
     const graph = createAgentOsGraph({
       model: input.model,
       checkpointer: input.checkpointer,
-      surface: input.surface ?? "storyboard",
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
       runtime: {
         runId: input.runId,
         conversationId: input.conversationId,
         projectId: input.projectId,
         actorId: input.actorId,
-        mode: input.mode ?? "ASSIST",
+        workbenchContext: input.workbenchContext,
+        agentMode: input.agentMode ?? "ASSIST",
         permissionMode: input.permissionMode ?? "smart",
         domain: input.domain,
-        surface: input.surface ?? "storyboard",
       },
     });
 
@@ -432,11 +442,13 @@ export class LangGraphRunService {
       projectId: input.projectId,
       actorId: input.actorId,
       modelProfileId: input.modelProfileId,
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
+      workbenchContext: input.workbenchContext,
       status: "waiting_for_approval",
       journal,
       assistantText: durable?.assistantText ?? "",
-      surface: input.surface ?? surfaceFromJournal(journal) ?? "storyboard",
-      mode: input.mode ?? "ASSIST",
+      agentMode: input.agentMode ?? "ASSIST",
       permissionMode: input.permissionMode ?? "smart",
       pendingApproval: { ...approval, approvalId: crypto.randomUUID() },
     };
@@ -453,7 +465,10 @@ export class LangGraphRunService {
     model: BaseChatModel;
     domain: DomainPort;
     checkpointer: BaseCheckpointSaver;
-    mode?: AgentMode;
+    projectKind?: AgentProjectKind;
+    workbenchMode?: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    agentMode?: AgentMode;
     permissionMode?: PermissionMode;
     projectId: string;
     actorId: string;
@@ -469,9 +484,21 @@ export class LangGraphRunService {
       throw new Error(`Run ${input.runId} is not waiting for approval`);
     }
 
-    // Prefer explicit client mode; else keep the mode from run start.
+    if (
+      (input.projectKind && existing.projectKind !== input.projectKind) ||
+      (input.workbenchMode && existing.workbenchMode !== input.workbenchMode) ||
+      (input.workbenchContext &&
+        JSON.stringify(existing.workbenchContext) !== JSON.stringify(input.workbenchContext))
+    ) {
+      throw new Error(`Run ${input.runId} capability context does not match the approval request`);
+    }
+    if (!existing.projectKind || !existing.workbenchMode) {
+      throw new Error(`Run ${input.runId} is missing its capability context`);
+    }
+
+    // Prefer explicit agent mode; else keep the mode from run start.
     if (input.permissionMode) existing.permissionMode = input.permissionMode;
-    if (input.mode) existing.mode = input.mode;
+    if (input.agentMode) existing.agentMode = input.agentMode;
 
     existing.journal.append({
       sessionId: input.sessionId,
@@ -502,10 +529,6 @@ export class LangGraphRunService {
     const abort = new AbortController();
     this.aborts.set(input.runId, abort);
 
-    const resumeSurface = existing.surface ?? surfaceFromJournal(existing.journal) ?? "storyboard";
-    // Keep snapshot surface in sync if it was dropped on an older pause path.
-    existing.surface = resumeSurface;
-
     const work = this.runGraphTurn({
       input: {
         runId: input.runId,
@@ -515,12 +538,14 @@ export class LangGraphRunService {
         sessionId: input.sessionId,
         message: "",
         modelProfileId: input.modelProfileId,
+        projectKind: existing.projectKind,
+        workbenchMode: existing.workbenchMode,
+        workbenchContext: existing.workbenchContext,
         model: input.model,
         domain: input.domain,
         checkpointer: input.checkpointer,
-        mode: existing.mode ?? "ASSIST",
+        agentMode: existing.agentMode ?? "ASSIST",
         permissionMode: existing.permissionMode ?? "smart",
-        surface: resumeSurface,
         projectDefaultSkillIds: existing.projectDefaultSkillIds,
         turnSkillIds: existing.turnSkillIds,
       },
@@ -572,7 +597,10 @@ export class LangGraphRunService {
     model: BaseChatModel;
     domain: DomainPort;
     checkpointer: BaseCheckpointSaver;
-    mode?: AgentMode;
+    projectKind?: AgentProjectKind;
+    workbenchMode?: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    agentMode?: AgentMode;
     permissionMode?: PermissionMode;
     projectId: string;
     actorId: string;
@@ -590,7 +618,7 @@ export class LangGraphRunService {
     signal: AbortSignal;
   }): Promise<void> {
     const { input, journal, messageId, resume, signal } = args;
-    const mode = input.mode ?? "ASSIST";
+    const agentMode = input.agentMode ?? "ASSIST";
     const permissionMode = input.permissionMode ?? "smart";
     let streamed = "";
     let lastPersistAt = 0;
@@ -600,7 +628,6 @@ export class LangGraphRunService {
       return;
     }
 
-    const surface = input.surface;
     journal.append({
       sessionId: input.sessionId,
       runId: input.runId,
@@ -609,15 +636,18 @@ export class LangGraphRunService {
       data: {
         step: "permission",
         permissionMode,
-        agentMode: mode,
-        surface,
+        agentMode,
+        projectKind: input.projectKind,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
       },
     });
 
     const graph = createAgentOsGraph({
       model: input.model,
       checkpointer: input.checkpointer,
-      surface,
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
       projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
       runtime: {
@@ -625,10 +655,10 @@ export class LangGraphRunService {
         conversationId: input.conversationId,
         projectId: input.projectId,
         actorId: input.actorId,
-        mode,
+        workbenchContext: input.workbenchContext,
+        agentMode,
         permissionMode,
         domain: input.domain,
-        surface,
         onToolEvent: (event) => {
           journal.append({
             sessionId: input.sessionId,
@@ -660,7 +690,7 @@ export class LangGraphRunService {
     // thread, and every later turn would replay that phantom to the model.
     const payload = resume
       ? new Command({ resume })
-      : { messages: [new HumanMessage(input.message)] };
+      : { messages: [new HumanMessage(input.modelMessage ?? input.message)] };
 
     let finalResult: unknown;
     let usedStream = false;
@@ -826,7 +856,9 @@ export class LangGraphRunService {
         type: "RunPaused",
         data: {
           status: "waiting_for_approval",
-          surface: input.surface,
+          projectKind: input.projectKind,
+          workbenchMode: input.workbenchMode,
+          workbenchContext: input.workbenchContext,
         },
       });
       const prev = this.snapshots.get(input.runId);

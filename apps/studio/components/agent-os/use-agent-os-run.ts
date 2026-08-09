@@ -8,6 +8,7 @@ import {
   type AgentOsEvent,
   type AgentOsPendingApproval,
   type AgentOsRunStatus,
+  type AgentOsWorkbenchContext,
 } from "@/lib/agent-os/api-client";
 
 export type AgentOsChatRole = "user" | "assistant" | "system" | "tool" | "approval";
@@ -609,7 +610,7 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
     // Event-derived status / HITL override stale buffer "running".
     // Client-side decision already made: do not resurrect HITL from a journal
     // that still only has ApprovalRequired (API lag).
-    let derivedPending =
+    const derivedPending =
       optimisticReject || optimisticApprove
         ? null
         : (buf.pendingApproval ?? derivePendingApprovalFromEvents(events));
@@ -762,7 +763,6 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
     }
   }
 
-  const lastStatus = last ? mapRunStatus(last.status) : "idle";
   const lastEvents = last
     ? [...last.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence)
     : [];
@@ -855,14 +855,14 @@ export function messagesFromConversationHistory(
 
 const LS_CONV_PREFIX = "fizz:agent-os:conversationId:";
 
-function conversationStorageKey(projectId: string): string {
-  return `${LS_CONV_PREFIX}${projectId}`;
+function conversationStorageKey(projectId: string, scope: string): string {
+  return `${LS_CONV_PREFIX}${projectId}:${scope}`;
 }
 
-function readStoredConversationId(projectId: string): string | null {
+function readStoredConversationId(projectId: string, scope: string): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(conversationStorageKey(projectId));
+    const raw = localStorage.getItem(conversationStorageKey(projectId, scope));
     if (!raw || !/^[0-9a-f-]{36}$/i.test(raw)) return null;
     return raw;
   } catch {
@@ -870,10 +870,14 @@ function readStoredConversationId(projectId: string): string | null {
   }
 }
 
-function writeStoredConversationId(projectId: string, conversationId: string | null) {
+function writeStoredConversationId(
+  projectId: string,
+  scope: string,
+  conversationId: string | null
+) {
   if (typeof window === "undefined") return;
   try {
-    const key = conversationStorageKey(projectId);
+    const key = conversationStorageKey(projectId, scope);
     if (!conversationId) localStorage.removeItem(key);
     else localStorage.setItem(key, conversationId);
   } catch {
@@ -899,7 +903,7 @@ function statusFromEventType(type: string): AgentOsRunStatus | string {
   }
 }
 
-export function useAgentOsRun(projectId: string) {
+export function useAgentOsRun(projectId: string, conversationScope: string) {
   const [state, setState] = useState<AgentOsSessionState>(initial);
   const conversationRef = useRef<string | null>(null);
   const lastSequenceByRun = useRef(new Map<string, number>());
@@ -1026,10 +1030,12 @@ export function useAgentOsRun(projectId: string) {
   }, [applyToRunBuffer]);
 
   useEffect(() => {
+    const controllers = pollAborts.current;
+    const live = ablyLive.current;
     return () => {
-      for (const ac of pollAborts.current.values()) ac.abort();
-      pollAborts.current.clear();
-      ablyLive.current.detach();
+      for (const ac of controllers.values()) ac.abort();
+      controllers.clear();
+      live.detach();
     };
   }, []);
 
@@ -1181,23 +1187,16 @@ export function useAgentOsRun(projectId: string) {
     [applyToRunBuffer, projectId]
   );
 
-  // Restore durable transcript on mount / project change.
+  // Restore the durable transcript for this keyed project/workbench session.
   useEffect(() => {
-    hydratedRef.current = false;
-    conversationRef.current = null;
-    lastSequenceByRun.current = new Map();
-    activeRunIdRef.current = null;
-    runsRef.current = new Map();
-    nextRunOrder.current = 0;
-    pendingUserRef.current = null;
-    for (const ac of pollAborts.current.values()) ac.abort();
-    pollAborts.current.clear();
-    setState(initial);
-
-    const storedConversationId = readStoredConversationId(projectId);
+    const storedConversationId = readStoredConversationId(projectId, conversationScope);
+    if (!storedConversationId) {
+      hydratedRef.current = true;
+      return;
+    }
     let cancelled = false;
     void agentOsApi
-      .getConversation(projectId, storedConversationId ?? undefined)
+      .getConversation(projectId, storedConversationId)
       .then((history) => {
         if (cancelled) return;
         hydratedRef.current = true;
@@ -1212,7 +1211,7 @@ export function useAgentOsRun(projectId: string) {
           return;
         }
         conversationRef.current = history.conversationId;
-        writeStoredConversationId(projectId, history.conversationId);
+        writeStoredConversationId(projectId, conversationScope, history.conversationId);
         runsRef.current = new Map();
         nextRunOrder.current = 0;
         for (const run of history.runs) {
@@ -1254,7 +1253,7 @@ export function useAgentOsRun(projectId: string) {
     return () => {
       cancelled = true;
     };
-  }, [ensureAbly, pollRun, projectId, publishFromBuffers]);
+  }, [conversationScope, ensureAbly, pollRun, projectId, publishFromBuffers]);
 
   const send = useCallback(
     async (input: {
@@ -1263,7 +1262,8 @@ export function useAgentOsRun(projectId: string) {
       attachmentIds?: string[];
       attachmentNames?: string[];
       permissionMode?: "ask" | "smart" | "full";
-      surface?: "storyboard" | "canvas" | "brief";
+      workbenchMode: "storyboard" | "canvas" | "brief" | "story";
+      workbenchContext?: AgentOsWorkbenchContext;
       skillIds?: string[];
     }) => {
       const text = input.message.trim();
@@ -1272,7 +1272,7 @@ export function useAgentOsRun(projectId: string) {
 
       const conversationId = conversationRef.current ?? crypto.randomUUID();
       conversationRef.current = conversationId;
-      writeStoredConversationId(projectId, conversationId);
+      writeStoredConversationId(projectId, conversationScope, conversationId);
 
       const names = input.attachmentNames ?? [];
       const optimistic: OptimisticUser = {
@@ -1300,7 +1300,8 @@ export function useAgentOsRun(projectId: string) {
           conversationId,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           permissionMode: input.permissionMode,
-          surface: input.surface,
+          workbenchMode: input.workbenchMode,
+          workbenchContext: input.workbenchContext,
           skillIds: input.skillIds,
         });
 
@@ -1364,7 +1365,15 @@ export function useAgentOsRun(projectId: string) {
         throw error;
       }
     },
-    [applyToRunBuffer, ensureAbly, ensureRunBuffer, pollRun, projectId, publishFromBuffers]
+    [
+      applyToRunBuffer,
+      conversationScope,
+      ensureAbly,
+      ensureRunBuffer,
+      pollRun,
+      projectId,
+      publishFromBuffers,
+    ]
   );
 
   const resolveApproval = useCallback(
@@ -1461,9 +1470,9 @@ export function useAgentOsRun(projectId: string) {
     runsRef.current = new Map();
     nextRunOrder.current = 0;
     pendingUserRef.current = null;
-    writeStoredConversationId(projectId, null);
+    writeStoredConversationId(projectId, conversationScope, null);
     setState(initial);
-  }, [projectId]);
+  }, [conversationScope, projectId]);
 
   const stop = useCallback(
     (label = "Stopped") => {

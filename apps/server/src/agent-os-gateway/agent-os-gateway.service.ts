@@ -3,8 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, ProjectMemberRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import {
+  getModeDefinition,
+  type AgentProjectKind,
+} from '@repo/agent-capabilities';
 import {
   getSkill,
   listInvocableSkills,
@@ -13,18 +17,18 @@ import {
 } from '@repo/agent-skills';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
-import { StoryPermissionService } from '../story-studio/story-permission.service';
-import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type {
   AgentOsApprovalBody,
   AgentOsStartRunBody,
 } from './agent-os-gateway.dto';
+import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 import {
   AgentOsWorkerClient,
   type AgentOsWorkerRunResponse,
 } from './agent-os-worker.client';
 import { AgentOsDomainService } from './agent-os-domain.service';
+import { AgentOsProjectContextService } from './agent-os-project-context.service';
 import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
 
@@ -32,13 +36,13 @@ import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
 export class AgentOsGatewayService {
   constructor(
     private readonly worker: AgentOsWorkerClient,
-    private readonly storyPermissions: StoryPermissionService,
-    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly projects: AgentOsProjectContextService,
     private readonly prisma: PrismaService,
     private readonly config: AgentOsGatewayConfigService,
     private readonly journal: AgentOsRunJournalService,
     private readonly domain: AgentOsDomainService,
     private readonly realtimeTokens: AgentOsAblyTokenIssuer,
+    private readonly attachments: AgentOsAttachmentService,
   ) {}
 
   async health() {
@@ -58,7 +62,18 @@ export class AgentOsGatewayService {
     user: AuthUser,
     body: AgentOsStartRunBody,
   ): Promise<AgentOsWorkerRunResponse> {
-    await this.requireProjectWrite(user.userId, body.projectId);
+    const project = await this.requireProjectWrite(user.userId, body.projectId);
+    this.requireWorkbenchMode(project.projectKind, body.workbenchMode);
+    const workbenchContext = await this.resolveWorkbenchContext(
+      project.projectKind,
+      project.projectId,
+      body.workbenchContext,
+    );
+    const attachmentIds = await this.attachments.validateForRun(
+      project.projectKind,
+      project.projectId,
+      body.attachmentIds,
+    );
 
     const conversationId = body.conversationId ?? randomUUID();
     // conversationId becomes the LangGraph thread id, so submitting someone
@@ -89,9 +104,11 @@ export class AgentOsGatewayService {
       actorId: user.userId,
       message: body.message,
       modelProfileId: body.modelProfileId,
-      attachmentIds: body.attachmentIds,
+      attachmentIds,
       permissionMode: body.permissionMode,
-      surface: body.surface ?? 'storyboard',
+      projectKind: project.projectKind,
+      workbenchMode: body.workbenchMode,
+      workbenchContext,
       skillIds: body.skillIds,
       projectDefaultSkillIds: projectDefaults,
     });
@@ -103,13 +120,19 @@ export class AgentOsGatewayService {
     return this.worker.listModels();
   }
 
-  listSkills(surface?: string) {
+  async listSkills(user: AuthUser, projectId: string, workbenchMode: string) {
+    const project = await this.projects.requireRead(user.userId, projectId);
+    this.requireWorkbenchMode(project.projectKind, workbenchMode);
     const all = listSkills().map(toSkillPublicMeta);
-    const invocable = listInvocableSkills(surface);
+    const invocable = listInvocableSkills({
+      projectKind: project.projectKind,
+      workbenchMode,
+    });
     return {
       skills: all,
       invocable,
-      surface: surface ?? null,
+      projectKind: project.projectKind,
+      workbenchMode,
     };
   }
 
@@ -119,7 +142,6 @@ export class AgentOsGatewayService {
     return {
       projectId,
       defaultSkillIds: defaults,
-      invocable: listInvocableSkills(),
     };
   }
 
@@ -211,6 +233,9 @@ export class AgentOsGatewayService {
       actorId: user.userId,
       conversationId: run.conversationId,
       modelProfileId: body.modelProfileId,
+      projectKind: run.projectKind,
+      workbenchMode: run.workbenchMode,
+      workbenchContext: run.workbenchContext,
       permissionMode: body.permissionMode,
     });
   }
@@ -291,8 +316,7 @@ export class AgentOsGatewayService {
     } catch {
       live = null;
     }
-    const liveStatus =
-      typeof live?.status === 'string' ? (live.status as string) : '';
+    const liveStatus = typeof live?.status === 'string' ? live.status : '';
     if (
       live &&
       (liveStatus === 'running' ||
@@ -379,7 +403,14 @@ export class AgentOsGatewayService {
     runId: string,
     claimedProjectId: string,
     access: 'read' | 'write',
-  ): Promise<{ projectId: string; actorId: string; conversationId: string }> {
+  ): Promise<{
+    projectId: string;
+    actorId: string;
+    conversationId: string;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+  }> {
     const run = await this.journal.getRunOwnership(runId);
     // Same response for "no such run" and "not yours": existence is itself
     // information about another tenant.
@@ -389,59 +420,74 @@ export class AgentOsGatewayService {
         message: 'Run not found for this project.',
       });
     }
-    if (access === 'write') {
-      await this.requireProjectWrite(user.userId, run.projectId);
-    } else {
-      await this.requireProjectRead(user.userId, run.projectId);
+    const project =
+      access === 'write'
+        ? await this.requireProjectWrite(user.userId, run.projectId)
+        : await this.requireProjectRead(user.userId, run.projectId);
+    if (!run.workbenchMode) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Run not found for this Agent OS protocol version.',
+      });
     }
-    return run;
+    this.requireWorkbenchMode(project.projectKind, run.workbenchMode);
+    const workbenchContext = await this.resolveWorkbenchContext(
+      project.projectKind,
+      project.projectId,
+      run.workbenchContext ?? undefined,
+    );
+    return {
+      ...run,
+      projectKind: project.projectKind,
+      workbenchMode: run.workbenchMode,
+      workbenchContext,
+    };
   }
 
   private async requireProjectWrite(userId: string, projectId: string) {
-    const platform = await this.prisma.platformProject.findFirst({
-      where: { id: projectId, deletedAt: null },
-      select: { id: true },
-    });
-    if (platform) {
-      await this.workspacePermissions.requireProjectRole(
-        userId,
-        projectId,
-        ProjectMemberRole.editor,
-      );
-      return;
-    }
-    const story = await this.prisma.storyProject.findFirst({
-      where: { id: projectId },
-      select: { id: true },
-    });
-    if (story) {
-      await this.storyPermissions.requireProject(
-        userId,
-        projectId,
-        'story.edit',
-      );
-      return;
-    }
-    throw new NotFoundException({
-      code: 'PROJECT_NOT_FOUND',
-      message: 'Project not found.',
-    });
+    return this.projects.requireWrite(userId, projectId);
   }
 
   private async requireProjectRead(userId: string, projectId: string) {
-    const platform = await this.prisma.platformProject.findFirst({
-      where: { id: projectId, deletedAt: null },
-      select: { id: true },
-    });
-    if (platform) {
-      await this.workspacePermissions.requireProjectRole(
-        userId,
-        projectId,
-        ProjectMemberRole.viewer,
-      );
-      return;
+    return this.projects.requireRead(userId, projectId);
+  }
+
+  private requireWorkbenchMode(
+    projectKind: AgentProjectKind,
+    workbenchMode: string,
+  ) {
+    const definition = getModeDefinition(projectKind, workbenchMode);
+    if (!definition) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_WORKBENCH_MODE_UNSUPPORTED',
+        message: `Workbench mode ${workbenchMode} is not available for ${projectKind} projects.`,
+      });
     }
-    await this.storyPermissions.requireProject(userId, projectId, 'story.read');
+    return definition;
+  }
+
+  private async resolveWorkbenchContext(
+    projectKind: AgentProjectKind,
+    projectId: string,
+    context:
+      | { chapterId: string }
+      | Readonly<Record<string, string>>
+      | undefined,
+  ): Promise<Readonly<Record<string, string>> | undefined> {
+    if (projectKind === 'story') {
+      const chapterId = context?.chapterId;
+      return this.projects.requireStoryWorkbenchContext(
+        projectId,
+        typeof chapterId === 'string' ? { chapterId } : undefined,
+      );
+    }
+    if (context) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_WORKBENCH_CONTEXT_UNSUPPORTED',
+        message: 'This workbench mode does not accept a chapter context.',
+      });
+    }
+    return undefined;
   }
 }
 

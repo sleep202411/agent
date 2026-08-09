@@ -60,22 +60,23 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       message: "请根据剧本分析角色并写入项目",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
-      mode: "ASSIST",
+      agentMode: "ASSIST",
       permissionMode: "smart",
     });
 
     expect(first.status).toBe("waiting_for_approval");
     expect(first.pendingApproval?.toolId).toBe("characters.upsert");
-    // Surface must survive HITL pause (resume remounts tools from this field).
-    expect(first.surface).toBe("storyboard");
+    // Workbench mode must survive HITL pause (resume remounts tools from this field).
+    expect(first.workbenchMode).toBe("storyboard");
     expect(domain.characters.size).toBe(0);
     expect(first.journal.all().map((e) => e.type)).toContain("ApprovalRequired");
 
@@ -89,11 +90,12 @@ describe("LangGraph golden path: script → characters", () => {
       domain,
       checkpointer,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
     });
 
     expect(second.status).toBe("completed");
-    expect(second.surface).toBe("storyboard");
+    expect(second.workbenchMode).toBe("storyboard");
     expect(domain.characters.size).toBe(2);
     expect(domain.characters.get("lin-daiyu")?.name["zh-CN"]).toBe("林黛玉");
     expect(second.assistantText).toMatch(/角色/);
@@ -102,7 +104,7 @@ describe("LangGraph golden path: script → characters", () => {
     expect(second.journal.all().map((e) => e.type)).toContain("ToolCompleted");
   });
 
-  it("preserves non-default surface (brief) across HITL pause + approve", async () => {
+  it("preserves non-default workbench mode (brief) across HITL pause + approve", async () => {
     const domain = new InMemoryStoryDomain();
     domain.setScript("角色甲。", 80);
 
@@ -135,20 +137,21 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${conversationId}`,
       message: "写入角色",
       modelProfileId: "qwen-plus",
-      surface: "brief",
+      workbenchMode: "brief",
       model,
       domain,
       checkpointer,
-      mode: "ASSIST",
+      agentMode: "ASSIST",
       permissionMode: "smart",
     });
 
     expect(paused.status).toBe("waiting_for_approval");
-    expect(paused.surface).toBe("brief");
+    expect(paused.workbenchMode).toBe("brief");
 
     const done = await service.resumeApproval({
       runId,
@@ -160,11 +163,12 @@ describe("LangGraph golden path: script → characters", () => {
       domain,
       checkpointer,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
     });
 
     expect(done.status).toBe("completed");
-    expect(done.surface).toBe("brief");
+    expect(done.workbenchMode).toBe("brief");
     expect(domain.characters.size).toBe(1);
   });
 
@@ -200,11 +204,12 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       message: "写入角色",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
@@ -222,6 +227,7 @@ describe("LangGraph golden path: script → characters", () => {
       domain,
       checkpointer,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
     });
 
@@ -297,11 +303,12 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId,
       message: "写入角色",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
@@ -315,10 +322,11 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId,
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
@@ -336,6 +344,7 @@ describe("LangGraph golden path: script → characters", () => {
       domain,
       checkpointer,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
     });
 
@@ -349,6 +358,8 @@ describe("LangGraph golden path: script → characters", () => {
       runId: crypto.randomUUID(),
       conversationId: crypto.randomUUID(),
       projectId: PROJECT,
+      projectKind: "platform",
+      workbenchMode: "storyboard",
       actorId: "user-1",
       sessionId: "agent-os:v1:conversation:none",
       modelProfileId: "qwen-plus",
@@ -394,11 +405,12 @@ describe("LangGraph golden path: script → characters", () => {
       runId,
       conversationId,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${conversationId}`,
       message: "提取角色并拆分镜",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer: new MemorySaver(),
@@ -426,11 +438,13 @@ describe("LangGraph cancel", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       message: "hello",
+      modelMessage: "hello\n\n[Attachment context: internal-only]",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
@@ -441,6 +455,9 @@ describe("LangGraph cancel", () => {
     expect(cancelled?.status).toBe("cancelled");
     expect(service.getSnapshot(runId)?.status).toBe("cancelled");
     expect(cancelled?.journal.all().map((e) => e.type)).toContain("RunCancelled");
+    expect(cancelled?.journal.all().find((event) => event.type === "UserMessage")?.data.text).toBe(
+      "hello"
+    );
 
     // Idempotent: already terminal stays cancelled
     const again = service.cancel(runId);
@@ -496,11 +513,12 @@ describe("LangGraph golden path: script → storyboard shots", () => {
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       message: "把剧本拆成 storyboard shots 并写入",
       modelProfileId: "qwen-plus",
-      surface: "storyboard",
+      workbenchMode: "storyboard",
       model,
       domain,
       checkpointer,
@@ -520,6 +538,7 @@ describe("LangGraph golden path: script → storyboard shots", () => {
       domain,
       checkpointer,
       projectId: PROJECT,
+      projectKind: "platform",
       actorId: "user-1",
     });
 

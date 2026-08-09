@@ -1,3 +1,5 @@
+import type { AgentProjectKind } from "@repo/agent-capabilities";
+
 import { listSkills } from "./registry.js";
 import type { AgentSkillDefinition } from "./types.js";
 
@@ -10,7 +12,8 @@ export interface AgentSkillPublicMeta {
   alwaysOn: boolean;
   userInvocable: boolean;
   removable: boolean;
-  surfaces: readonly string[];
+  projectKinds: readonly string[];
+  workbenchModes: readonly string[];
   priority: number;
 }
 
@@ -23,19 +26,29 @@ export function toSkillPublicMeta(skill: AgentSkillDefinition): AgentSkillPublic
     alwaysOn: skill.alwaysOn,
     userInvocable: skill.userInvocable,
     removable: skill.removable,
-    surfaces: skill.surfaces,
+    projectKinds: skill.projectKinds,
+    workbenchModes: skill.workbenchModes,
     priority: skill.priority,
   };
 }
 
 /**
  * Skills the user may pick for project default or per-turn selection.
- * alwaysOn surface base skills are implicit and not listed.
+ * Always-on workbench base skills are implicit and not listed.
  */
-export function listInvocableSkills(surface?: string): AgentSkillPublicMeta[] {
+export function listInvocableSkills(context?: {
+  projectKind: AgentProjectKind;
+  workbenchMode: string;
+}): AgentSkillPublicMeta[] {
   return listSkills()
     .filter((s) => s.userInvocable)
-    .filter((s) => !surface || s.surfaces.length === 0 || s.surfaces.includes(surface))
+    .filter(
+      (skill) =>
+        !context ||
+        ((skill.projectKinds.length === 0 || skill.projectKinds.includes(context.projectKind)) &&
+          (skill.workbenchModes.length === 0 ||
+            skill.workbenchModes.includes(context.workbenchMode)))
+    )
     .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))
     .map(toSkillPublicMeta);
 }

@@ -3,6 +3,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { AgentProjectKind } from '@repo/agent-capabilities';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 
 export interface AgentOsWorkerRunRequest {
@@ -13,7 +14,9 @@ export interface AgentOsWorkerRunRequest {
   modelProfileId: string;
   attachmentIds?: string[];
   permissionMode?: 'ask' | 'smart' | 'full';
-  surface?: 'storyboard' | 'canvas' | 'brief';
+  projectKind: AgentProjectKind;
+  workbenchMode: string;
+  workbenchContext?: Readonly<Record<string, string>>;
   skillIds?: string[];
   projectDefaultSkillIds?: string[];
 }
@@ -63,6 +66,9 @@ export class AgentOsWorkerClient {
     actorId: string;
     conversationId: string;
     modelProfileId: string;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
     permissionMode?: 'ask' | 'smart' | 'full';
   }): Promise<AgentOsWorkerRunResponse> {
     return this.postJson(`/v1/agent-os/runs/${input.runId}/approvals`, {
@@ -71,6 +77,9 @@ export class AgentOsWorkerClient {
       actorId: input.actorId,
       conversationId: input.conversationId,
       modelProfileId: input.modelProfileId,
+      projectKind: input.projectKind,
+      workbenchMode: input.workbenchMode,
+      workbenchContext: input.workbenchContext,
       permissionMode: input.permissionMode,
     });
   }

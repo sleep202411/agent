@@ -46,6 +46,7 @@ import {
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
+  IconSparkles,
   IconTrash,
   IconUser,
   IconX,
@@ -55,6 +56,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
@@ -313,6 +315,7 @@ function StoryProjectCanvasInner({
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
+  const agentT = useTranslations("agentOs");
   const router = useRouter();
   const { deleteElements, fitView, screenToFlowPosition } = useReactFlow<
     StoryCanvasNode,
@@ -328,6 +331,7 @@ function StoryProjectCanvasInner({
   );
   const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [productionCanvasSession, setProductionCanvasSession] =
     useState<StoryProductionCanvasContext | null>(null);
   const closeProductionCanvasWorkspace = useCallback(() => setProductionCanvasSession(null), []);
@@ -2934,365 +2938,381 @@ function StoryProjectCanvasInner({
       draftRevision,
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
+  const refreshAfterAgentMutation = async () => {
+    await Promise.all([workbenchQuery.refetch(), layoutQuery.refetch()]);
+  };
   return (
-    <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
-      <CanvasHeader
-        title={project.title}
-        canEdit={canEdit}
-        previewPending={workingPreviewPending}
-        publishPending={publication.isPending}
-        published={
-          authorityConfirmedCurrentDraftPublished ||
-          (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
-        }
-        canPublish={
-          editPolicy.canPublish && publication.canPublish && !currentReleaseQuery.isLoading
-        }
-        publishDisabledReason={
-          currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
-        }
-        onPreview={() => void openWorkingPreview()}
-        onPublish={publication.open}
-        onOpenMediaCreation={openProductionCanvas}
-        foundationOpen={inspectorTarget.kind === "foundation"}
-        onToggleFoundation={() =>
-          setInspectorTarget((current) =>
-            current.kind === "foundation"
-              ? CLOSED_STORY_CANVAS_INSPECTOR
-              : STORY_FOUNDATION_INSPECTOR
-          )
-        }
-        chapterControl={
-          <StoryChapterDropdown
-            open={chapterDropdownOpen}
-            chapters={workbenchProjection.chapters}
-            activeChapterId={workbenchProjection.chapter.id}
-            canEdit={canEdit}
-            creating={chapterCreatePending}
-            pendingChapterId={chapterMutationPendingId}
-            onOpenChange={setChapterDropdownOpen}
-            onSelect={navigateToChapter}
-            onCreate={createChapter}
-            onRename={renameChapter}
-            onMove={moveChapter}
-            onArchive={archiveChapter}
-          />
-        }
-        shareControl={
-          <button
-            type="button"
-            onClick={() => setShareOpen(true)}
-            className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-          >
-            <IconUsers className="size-4" />
-            <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
-          </button>
-        }
-        onBackNavigate={guardBackNavigation}
-      />
-
-      <ShareDialog
-        scope={{ kind: "story-project", id: projectId, name: project.title }}
-        canManage={project.capabilities.includes("story.admin")}
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-      />
-
-      {leaveDialog}
-
-      <StoryPublicationDialog
-        state={publication.state}
-        draftRevision={draftRevision}
-        canMutate={editPolicy.canPublish}
-        disabledReason={publication.disabledReason}
-        onClose={publication.close}
-        onConfirm={() => {
-          if (editPolicy.canPublish) void publication.confirm();
-        }}
-        onRetry={() => {
-          if (editPolicy.canPublish) void publication.retry();
-        }}
-      />
-
-      <section
-        ref={canvasSectionRef}
-        // Inspectors are floating overlays over the canvas region.
-        className="absolute inset-0"
-        onDoubleClick={(event) => {
-          if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
-            return;
+    <main className="flex h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
+      <div className="relative min-w-0 flex-1">
+        <CanvasHeader
+          title={project.title}
+          canEdit={canEdit}
+          previewPending={workingPreviewPending}
+          publishPending={publication.isPending}
+          published={
+            authorityConfirmedCurrentDraftPublished ||
+            (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
           }
-          event.preventDefault();
-          openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-        }}
-      >
-        <CanvasBackdrop />
-        <MediaHoverPreviewProvider>
-          <StoryCanvasChoiceContext.Provider value={choiceContext}>
-            <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-              <StoryCanvasReactFlow
-                nodes={layeredCanvasNodes}
-                edges={canvasEdges}
-                onNodesChange={onCanvasNodesChange}
-                onEdgesChange={(changes) =>
-                  onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-                }
-                onConnect={connectStoryNodes}
-                onConnectEnd={finishConnectionOnBlankCanvas}
-                onInteractionStart={closeCreatorMenu}
-                isValidConnection={isValidStoryConnection}
-                onDelete={deleteStoryElements}
-                onSelectionChange={onCanvasSelectionChange}
-                onSelectionStart={onCanvasSelectionStart}
-                onSelectionEnd={onCanvasSelectionEnd}
-                onNodeDragStart={() => {
-                  didDragNodeRef.current = false;
-                  dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
-                    ? readHistorySnapshot()
-                    : null;
-                }}
-                onNodeDrag={() => {
-                  // A real move occurred: the following pointer-up is a drag, not
-                  // a click, so it must not open the inspector.
-                  didDragNodeRef.current = true;
-                }}
-                onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                  const beforeDrag = dragStartHistorySnapshotRef.current;
-                  dragStartHistorySnapshotRef.current = null;
-                  const movedNodes = new Map(
-                    [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                  );
-                  commitCanvasLayout(
-                    canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                    beforeDrag
-                  );
-                }}
-                onNodeClick={(event, node) => {
-                  closeCreatorMenu();
-                  const outcome = resolveStoryCanvasNodeClick({
-                    nodeId: node.id,
-                    nodeSelected: Boolean(node.selected),
-                    shiftKey: event.shiftKey,
-                    didDrag: didDragNodeRef.current,
-                    currentSelection: latestCanvasSelectionRef.current,
-                  });
-                  didDragNodeRef.current = false;
-                  // A pointer-up that ended a drag never opens the inspector.
-                  if (outcome.kind === "drag-suppressed") return;
-                  if (outcome.kind === "toggle-off") {
-                    requestedCanvasFocusRef.current = null;
-                    latestCanvasSelectionRef.current = outcome.remainingNodeIds;
-                    reconcileCanvasFocus(outcome.remainingNodeIds);
-                    return;
+          canPublish={
+            editPolicy.canPublish && publication.canPublish && !currentReleaseQuery.isLoading
+          }
+          publishDisabledReason={
+            currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
+          }
+          onPreview={() => void openWorkingPreview()}
+          onPublish={publication.open}
+          onOpenMediaCreation={openProductionCanvas}
+          agentOpen={agentOpen}
+          agentLabel={agentT("title")}
+          onToggleAgent={() => setAgentOpen((current) => !current)}
+          foundationOpen={inspectorTarget.kind === "foundation"}
+          onToggleFoundation={() =>
+            setInspectorTarget((current) =>
+              current.kind === "foundation"
+                ? CLOSED_STORY_CANVAS_INSPECTOR
+                : STORY_FOUNDATION_INSPECTOR
+            )
+          }
+          chapterControl={
+            <StoryChapterDropdown
+              open={chapterDropdownOpen}
+              chapters={workbenchProjection.chapters}
+              activeChapterId={workbenchProjection.chapter.id}
+              canEdit={canEdit}
+              creating={chapterCreatePending}
+              pendingChapterId={chapterMutationPendingId}
+              onOpenChange={setChapterDropdownOpen}
+              onSelect={navigateToChapter}
+              onCreate={createChapter}
+              onRename={renameChapter}
+              onMove={moveChapter}
+              onArchive={archiveChapter}
+            />
+          }
+          shareControl={
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+            >
+              <IconUsers className="size-4" />
+              <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
+            </button>
+          }
+          onBackNavigate={guardBackNavigation}
+        />
+
+        <ShareDialog
+          scope={{ kind: "story-project", id: projectId, name: project.title }}
+          canManage={project.capabilities.includes("story.admin")}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+        />
+
+        {leaveDialog}
+
+        <StoryPublicationDialog
+          state={publication.state}
+          draftRevision={draftRevision}
+          canMutate={editPolicy.canPublish}
+          disabledReason={publication.disabledReason}
+          onClose={publication.close}
+          onConfirm={() => {
+            if (editPolicy.canPublish) void publication.confirm();
+          }}
+          onRetry={() => {
+            if (editPolicy.canPublish) void publication.retry();
+          }}
+        />
+
+        <section
+          ref={canvasSectionRef}
+          // Inspectors are floating overlays over the canvas region.
+          className="absolute inset-0"
+          onDoubleClick={(event) => {
+            if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
+              return;
+            }
+            event.preventDefault();
+            openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+          }}
+        >
+          <CanvasBackdrop />
+          <MediaHoverPreviewProvider>
+            <StoryCanvasChoiceContext.Provider value={choiceContext}>
+              <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                <StoryCanvasReactFlow
+                  nodes={layeredCanvasNodes}
+                  edges={canvasEdges}
+                  onNodesChange={onCanvasNodesChange}
+                  onEdgesChange={(changes) =>
+                    onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
                   }
-                  // An explicit click is the only path that may open a node
-                  // inspector. Player-choice projections deliberately resolve
-                  // to "closed" because their editor lives on the card.
-                  requestedCanvasFocusRef.current = outcome.nodeId;
-                  setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
-                }}
-                onNodeDoubleClick={(event, node) => {
-                  if (node.data.kind !== "clip") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  openProductionCanvas();
-                }}
-                onPaneClick={() => {
-                  selectCanvasNodeExclusively(null);
-                  closeCreatorMenu();
-                }}
-                onPaneContextMenu={(event) => {
-                  if (!mutationBarrier.permits("layout")) return;
-                  event.preventDefault();
-                  openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-                }}
-                onMoveStart={closeCreatorMenu}
-                nodeTypes={NODE_TYPES}
-                defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                colorMode="dark"
-                proOptions={{ hideAttribution: true }}
-                minZoom={0.16}
-                maxZoom={1.4}
-                defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-                nodesDraggable={canMutateCanvasLayout}
-                nodesConnectable={canMutateCanvasLayout}
-                edgesReconnectable={false}
-                edgesFocusable={canMutateCanvasLayout}
-                deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
-                selectNodesOnDrag
-                zoomOnDoubleClick={false}
-                fitView={canvasNodes.length > 0}
-                fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-                className="relative z-10"
-                style={{ backgroundColor: "transparent" }}
-              >
-                {model.nodes.length > 0 ? (
-                  <MiniMap
-                    pannable
+                  onConnect={connectStoryNodes}
+                  onConnectEnd={finishConnectionOnBlankCanvas}
+                  onInteractionStart={closeCreatorMenu}
+                  isValidConnection={isValidStoryConnection}
+                  onDelete={deleteStoryElements}
+                  onSelectionChange={onCanvasSelectionChange}
+                  onSelectionStart={onCanvasSelectionStart}
+                  onSelectionEnd={onCanvasSelectionEnd}
+                  onNodeDragStart={() => {
+                    didDragNodeRef.current = false;
+                    dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
+                      ? readHistorySnapshot()
+                      : null;
+                  }}
+                  onNodeDrag={() => {
+                    // A real move occurred: the following pointer-up is a drag, not
+                    // a click, so it must not open the inspector.
+                    didDragNodeRef.current = true;
+                  }}
+                  onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                    const beforeDrag = dragStartHistorySnapshotRef.current;
+                    dragStartHistorySnapshotRef.current = null;
+                    const movedNodes = new Map(
+                      [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                    );
+                    commitCanvasLayout(
+                      canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                      beforeDrag
+                    );
+                  }}
+                  onNodeClick={(event, node) => {
+                    closeCreatorMenu();
+                    const outcome = resolveStoryCanvasNodeClick({
+                      nodeId: node.id,
+                      nodeSelected: Boolean(node.selected),
+                      shiftKey: event.shiftKey,
+                      didDrag: didDragNodeRef.current,
+                      currentSelection: latestCanvasSelectionRef.current,
+                    });
+                    didDragNodeRef.current = false;
+                    // A pointer-up that ended a drag never opens the inspector.
+                    if (outcome.kind === "drag-suppressed") return;
+                    if (outcome.kind === "toggle-off") {
+                      requestedCanvasFocusRef.current = null;
+                      latestCanvasSelectionRef.current = outcome.remainingNodeIds;
+                      reconcileCanvasFocus(outcome.remainingNodeIds);
+                      return;
+                    }
+                    // An explicit click is the only path that may open a node
+                    // inspector. Player-choice projections deliberately resolve
+                    // to "closed" because their editor lives on the card.
+                    requestedCanvasFocusRef.current = outcome.nodeId;
+                    setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
+                  }}
+                  onNodeDoubleClick={(event, node) => {
+                    if (node.data.kind !== "clip") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openProductionCanvas();
+                  }}
+                  onPaneClick={() => {
+                    selectCanvasNodeExclusively(null);
+                    closeCreatorMenu();
+                  }}
+                  onPaneContextMenu={(event) => {
+                    if (!mutationBarrier.permits("layout")) return;
+                    event.preventDefault();
+                    openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+                  }}
+                  onMoveStart={closeCreatorMenu}
+                  nodeTypes={NODE_TYPES}
+                  defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                  colorMode="dark"
+                  proOptions={{ hideAttribution: true }}
+                  minZoom={0.16}
+                  maxZoom={1.4}
+                  defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                  nodesDraggable={canMutateCanvasLayout}
+                  nodesConnectable={canMutateCanvasLayout}
+                  edgesReconnectable={false}
+                  edgesFocusable={canMutateCanvasLayout}
+                  deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
+                  selectNodesOnDrag
+                  zoomOnDoubleClick={false}
+                  fitView={canvasNodes.length > 0}
+                  fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                  className="relative z-10"
+                  style={{ backgroundColor: "transparent" }}
+                >
+                  {model.nodes.length > 0 ? (
+                    <MiniMap
+                      pannable
+                      position="bottom-left"
+                      className={cn(
+                        "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                        // Clear the full-width canvas's left inspector overlay.
+                        inspectorOpen ? "left-[452px]!" : "left-20!"
+                      )}
+                      bgColor="oklch(0.24 0 0 / 0.82)"
+                      maskColor="rgba(0,0,0,0.46)"
+                      nodeColor="rgba(255,255,255,0.42)"
+                      nodeStrokeWidth={0}
+                    />
+                  ) : null}
+                  <CanvasControls
                     position="bottom-left"
+                    onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
                     className={cn(
-                      "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                      "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
                       // Clear the full-width canvas's left inspector overlay.
-                      inspectorOpen ? "left-[452px]!" : "left-20!"
+                      inspectorOpen ? "left-[392px]!" : "left-5!"
                     )}
-                    bgColor="oklch(0.24 0 0 / 0.82)"
-                    maskColor="rgba(0,0,0,0.46)"
-                    nodeColor="rgba(255,255,255,0.42)"
-                    nodeStrokeWidth={0}
                   />
-                ) : null}
-                <CanvasControls
-                  position="bottom-left"
-                  onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
-                  className={cn(
-                    "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
-                    // Clear the full-width canvas's left inspector overlay.
-                    inspectorOpen ? "left-[392px]!" : "left-5!"
-                  )}
-                />
-              </StoryCanvasReactFlow>
-            </StoryCanvasFocusContext.Provider>
-          </StoryCanvasChoiceContext.Provider>
-        </MediaHoverPreviewProvider>
+                </StoryCanvasReactFlow>
+              </StoryCanvasFocusContext.Provider>
+            </StoryCanvasChoiceContext.Provider>
+          </MediaHoverPreviewProvider>
 
-        {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
+          {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
 
-        {canMutateCanvasLayout ? (
-          <CanvasHistoryControls
-            canUndo={history.canUndo}
-            canRedo={history.canRedo}
-            undo={undoStoryCanvas}
-            redo={redoStoryCanvas}
-            undoLabel={canvasT("undo")}
-            redoLabel={canvasT("redo")}
-            className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+          {canMutateCanvasLayout ? (
+            <CanvasHistoryControls
+              canUndo={history.canUndo}
+              canRedo={history.canRedo}
+              undo={undoStoryCanvas}
+              redo={redoStoryCanvas}
+              undoLabel={canvasT("undo")}
+              redoLabel={canvasT("redo")}
+              className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+            />
+          ) : null}
+
+          {canMutateCanvasLayout && creatorMenu ? (
+            <StoryNodeCreator
+              position={{ left: creatorMenu.left, top: creatorMenu.top }}
+              onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
+              onCancel={closeCreatorMenu}
+            />
+          ) : null}
+        </section>
+
+        {canMutateCanvasLayout && pendingCompletionDrop ? (
+          <StoryConnectionCreator
+            position={pendingCompletionDrop.clientPosition}
+            onCreate={createCompletionStep}
+            onCancel={() => setPendingCompletionDrop(null)}
           />
         ) : null}
 
-        {canMutateCanvasLayout && creatorMenu ? (
-          <StoryNodeCreator
-            position={{ left: creatorMenu.left, top: creatorMenu.top }}
-            onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
-            onCancel={closeCreatorMenu}
+        {inspectorOpen ? (
+          <StoryNodeInspector
+            content={content}
+            locale={authoringLocale}
+            selectedNode={focusedNode}
+            clipMedia={
+              focusedNode?.data.kind === "clip"
+                ? {
+                    clip: focusedClipVideo ?? null,
+                    canEdit: canManageClipMedia,
+                    disabledReason: clipMediaDisabledReason,
+                    candidateAssets: candidateAssets.items,
+                    candidateAssetsLoading: candidateAssets.loading,
+                    candidateAssetsError: candidateAssets.failed
+                      ? candidateAssets.error || t("inspector.media.candidateLoadError")
+                      : null,
+                    onRetryCandidates: () => void candidateAssets.refresh(),
+                    onSelectCandidate: selectCandidateClipVideo,
+                    onClearSelection: clearSelectedClipVideo,
+                    onUpload: uploadSelectedClipVideo,
+                  }
+                : undefined
+            }
+            onUpdateClipMeta={(nodeId, patch) =>
+              applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
+                mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            showFoundation={inspectorTarget.kind === "foundation"}
+            canEdit={canMutateCanvasLayout}
+            coverMedia={{
+              cover: project.cover,
+              candidateAssets: candidateAssets.items,
+              candidateAssetsLoading: candidateAssets.loading,
+              candidateAssetsError: candidateAssets.failed
+                ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
+                : null,
+              disabledReason: coverMediaDisabledReason,
+              onRetryCandidates: () => void candidateAssets.refresh(),
+              onSelectCandidate: selectProjectCover,
+              onClearSelection: () => updateProjectCover(null),
+              onUpload: uploadProjectCover,
+            }}
+            onUpdateFoundation={updateFoundation}
+            onUpdateCharacter={(characterId, patch) =>
+              applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
+                mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
+              })
+            }
+            onDeleteCharacter={deleteCharacter}
+            onCloseNode={() => selectCanvasNodeExclusively(null)}
+            chapterTargets={workbenchProjection.chapters
+              .map((chapter) => ({
+                id: chapter.id,
+                title: chapter.title,
+                entryNodeId: chapter.entryNodeId,
+              }))
+              .filter(
+                (chapter) =>
+                  chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
+              )}
+            onConnectChapter={connectChapterTarget}
+            onSetSceneExit={setSceneExit}
+            onSetEntryNode={(nodeId) =>
+              applyGraphMutation((current) => setEntryNode(current, nodeId))
+            }
+            onDeleteSelected={() => {
+              if (focusedNode) void deleteElements({ nodes: [focusedNode] });
+            }}
           />
         ) : null}
-      </section>
 
-      {canMutateCanvasLayout && pendingCompletionDrop ? (
-        <StoryConnectionCreator
-          position={pendingCompletionDrop.clientPosition}
-          onCreate={createCompletionStep}
-          onCancel={() => setPendingCompletionDrop(null)}
-        />
-      ) : null}
+        {graphError ? (
+          <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
+            <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
+            <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
+            <button
+              type="button"
+              onClick={() => setGraphError(null)}
+              className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
+              aria-label={t("graphError.dismiss")}
+            >
+              <IconX className="size-3.5" />
+            </button>
+          </FrostedPanel>
+        ) : null}
 
-      {inspectorOpen ? (
-        <StoryNodeInspector
-          content={content}
-          locale={authoringLocale}
-          selectedNode={focusedNode}
-          clipMedia={
-            focusedNode?.data.kind === "clip"
-              ? {
-                  clip: focusedClipVideo ?? null,
-                  canEdit: canManageClipMedia,
-                  disabledReason: clipMediaDisabledReason,
-                  candidateAssets: candidateAssets.items,
-                  candidateAssetsLoading: candidateAssets.loading,
-                  candidateAssetsError: candidateAssets.failed
-                    ? candidateAssets.error || t("inspector.media.candidateLoadError")
-                    : null,
-                  onRetryCandidates: () => void candidateAssets.refresh(),
-                  onSelectCandidate: selectCandidateClipVideo,
-                  onClearSelection: clearSelectedClipVideo,
-                  onUpload: uploadSelectedClipVideo,
-                }
-              : undefined
-          }
-          onUpdateClipMeta={(nodeId, patch) =>
-            applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
-              mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
-            })
-          }
-          showFoundation={inspectorTarget.kind === "foundation"}
-          canEdit={canMutateCanvasLayout}
-          coverMedia={{
-            cover: project.cover,
-            candidateAssets: candidateAssets.items,
-            candidateAssetsLoading: candidateAssets.loading,
-            candidateAssetsError: candidateAssets.failed
-              ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
-              : null,
-            disabledReason: coverMediaDisabledReason,
-            onRetryCandidates: () => void candidateAssets.refresh(),
-            onSelectCandidate: selectProjectCover,
-            onClearSelection: () => updateProjectCover(null),
-            onUpload: uploadProjectCover,
-          }}
-          onUpdateFoundation={updateFoundation}
-          onUpdateCharacter={(characterId, patch) =>
-            applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
-              mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
-            })
-          }
-          onDeleteCharacter={deleteCharacter}
-          onCloseNode={() => selectCanvasNodeExclusively(null)}
-          chapterTargets={workbenchProjection.chapters
-            .map((chapter) => ({
-              id: chapter.id,
-              title: chapter.title,
-              entryNodeId: chapter.entryNodeId,
-            }))
-            .filter(
-              (chapter) =>
-                chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
-            )}
-          onConnectChapter={connectChapterTarget}
-          onSetSceneExit={setSceneExit}
-          onSetEntryNode={(nodeId) =>
-            applyGraphMutation((current) => setEntryNode(current, nodeId))
-          }
-          onDeleteSelected={() => {
-            if (focusedNode) void deleteElements({ nodes: [focusedNode] });
-          }}
-        />
-      ) : null}
-
-      {graphError ? (
-        <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
-          <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
-          <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
-          <button
-            type="button"
-            onClick={() => setGraphError(null)}
-            className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
-            aria-label={t("graphError.dismiss")}
-          >
-            <IconX className="size-3.5" />
-          </button>
-        </FrostedPanel>
-      ) : null}
-
-      {conflict ? (
-        <ConflictBanner
-          onExportLocal={exportLocalDraftAfterConflict}
-          onLoadLatest={loadLatestAfterConflict}
-        />
-      ) : null}
-      {!conflict && layoutConflict ? (
-        <ConflictBanner
-          description={t("layoutConflict.description")}
-          onExportLocal={exportLocalLayoutAfterConflict}
-          onLoadLatest={loadLatestLayoutAfterConflict}
-        />
-      ) : null}
-      {productionCanvasSession ? (
-        <StoryProductionCanvasWorkspace
-          context={productionCanvasSession}
-          candidates={candidateAssets}
-          onClose={closeProductionCanvasWorkspace}
-        />
-      ) : null}
+        {conflict ? (
+          <ConflictBanner
+            onExportLocal={exportLocalDraftAfterConflict}
+            onLoadLatest={loadLatestAfterConflict}
+          />
+        ) : null}
+        {!conflict && layoutConflict ? (
+          <ConflictBanner
+            description={t("layoutConflict.description")}
+            onExportLocal={exportLocalLayoutAfterConflict}
+            onLoadLatest={loadLatestLayoutAfterConflict}
+          />
+        ) : null}
+        {productionCanvasSession ? (
+          <StoryProductionCanvasWorkspace
+            context={productionCanvasSession}
+            candidates={candidateAssets}
+            onClose={closeProductionCanvasWorkspace}
+          />
+        ) : null}
+      </div>
+      <AgentOsPanel
+        projectId={projectId}
+        workbenchMode="story"
+        workbenchContext={{ chapterId: workbenchProjection.chapter.id }}
+        onMutationCompleted={refreshAfterAgentMutation}
+        open={agentOpen}
+        onClose={() => setAgentOpen(false)}
+      />
     </main>
   );
 }
@@ -3316,6 +3336,9 @@ function CanvasHeader({
   onPreview,
   onPublish,
   onOpenMediaCreation,
+  agentOpen,
+  agentLabel,
+  onToggleAgent,
   foundationOpen,
   onToggleFoundation,
   chapterControl,
@@ -3332,6 +3355,9 @@ function CanvasHeader({
   onPreview: () => void;
   onPublish: () => void;
   onOpenMediaCreation: () => void;
+  agentOpen: boolean;
+  agentLabel: string;
+  onToggleAgent: () => void;
   foundationOpen: boolean;
   onToggleFoundation: () => void;
   chapterControl: ReactNode;
@@ -3384,6 +3410,21 @@ function CanvasHeader({
       </div>
 
       <div className="liquid-rim pointer-events-auto relative flex h-12 shrink-0 items-center gap-0.5 rounded-[18px] bg-white/[0.055] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.3),0_16px_48px_-18px_rgba(0,0,0,0.68)] backdrop-blur-2xl backdrop-saturate-[1.8]">
+        <button
+          type="button"
+          aria-label={agentLabel}
+          aria-pressed={agentOpen}
+          onClick={onToggleAgent}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+            agentOpen
+              ? "bg-white text-black"
+              : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
+          )}
+        >
+          <IconSparkles className="size-4" />
+          <span className={HEADER_LABEL_CLASS}>{agentLabel}</span>
+        </button>
         <button
           type="button"
           aria-pressed={foundationOpen}

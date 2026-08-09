@@ -8,17 +8,19 @@ const runtime = {
   conversationId: "c1",
   projectId: "22222222-2222-4222-8222-222222222222",
   actorId: "u1",
-  mode: "ASSIST",
+  agentMode: "ASSIST",
   permissionMode: "smart",
-  surface: "storyboard",
   domain: {
     execute: async () => ({ ok: true, data: {} }),
   },
 } as unknown as ToolRuntimeContext;
 
-describe("skill mounts (system surface skills)", () => {
+describe("skill mounts (system workbench skills)", () => {
   it("storyboard mount includes shot writes", () => {
-    const mount = resolveSkillMounts({ surface: "storyboard" });
+    const mount = resolveSkillMounts({
+      projectKind: "platform",
+      workbenchMode: "storyboard",
+    });
     const tools = buildLangChainTools(runtime, mount.toolIds);
     const names = tools.map((t) => t.name);
     expect(names).toContain("storyboard_upsertShots");
@@ -29,8 +31,8 @@ describe("skill mounts (system surface skills)", () => {
   });
 
   it("canvas mount includes applyPatch, not character writes", () => {
-    const mount = resolveSkillMounts({ surface: "canvas" });
-    const tools = buildLangChainTools({ ...runtime, surface: "canvas" }, mount.toolIds);
+    const mount = resolveSkillMounts({ projectKind: "platform", workbenchMode: "canvas" });
+    const tools = buildLangChainTools(runtime, mount.toolIds);
     const names = tools.map((t) => t.name);
     expect(names).not.toContain("storyboard_upsertShots");
     expect(names).not.toContain("characters_upsert");
@@ -39,8 +41,8 @@ describe("skill mounts (system surface skills)", () => {
   });
 
   it("brief mount is script + characters, not shots or canvas", () => {
-    const mount = resolveSkillMounts({ surface: "brief" });
-    const tools = buildLangChainTools({ ...runtime, surface: "brief" }, mount.toolIds);
+    const mount = resolveSkillMounts({ projectKind: "platform", workbenchMode: "brief" });
+    const tools = buildLangChainTools(runtime, mount.toolIds);
     const names = tools.map((t) => t.name);
     expect(names).toContain("characters_upsert");
     expect(names).toContain("script_readSection");
@@ -48,16 +50,30 @@ describe("skill mounts (system surface skills)", () => {
     expect(names).not.toContain("canvas_read");
   });
 
-  it("optional invocable skills add tools/instructions without replacing surface", () => {
+  it("Story mount exposes only intent-level Story tools", () => {
+    const mount = resolveSkillMounts({ projectKind: "story", workbenchMode: "story" });
+    const tools = buildLangChainTools(runtime, mount.toolIds);
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain("story_read");
+    expect(names).toContain("story_addScene");
+    expect(names).toContain("story_addBranch");
+    expect(names).toContain("story_removeSubtree");
+    expect(names).not.toContain("canvas_applyPatch");
+    expect(names).not.toContain("characters_upsert");
+    expect(mount.instructions).toMatch(/intent-level tools/i);
+  });
+
+  it("optional invocable skills add tools/instructions without replacing the workbench", () => {
     const mount = resolveSkillMounts({
-      surface: "storyboard",
+      projectKind: "platform",
+      workbenchMode: "storyboard",
       projectDefaultSkillIds: ["agent-os.skill.long-script"],
       turnSkillIds: ["agent-os.skill.cinematic-shots"],
     });
     expect(mount.skills.map((s) => s.id)).toEqual(
       expect.arrayContaining([
         "agent-os.core",
-        "agent-os.surface.storyboard",
+        "agent-os.mode.platform.storyboard",
         "agent-os.skill.long-script",
         "agent-os.skill.cinematic-shots",
       ])

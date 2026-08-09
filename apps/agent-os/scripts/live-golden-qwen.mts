@@ -30,7 +30,7 @@ async function main(): Promise<void> {
       "王熙凤协理宁国府，处事干练。",
       "薛宝钗稳重端庄。",
     ].join("\n"),
-    120,
+    120
   );
 
   const service = new LangGraphRunService();
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
       msg: "live-golden.start",
       runId,
       baseUrl: cfg.baseUrl,
-    })}\n`,
+    })}\n`
   );
 
   const first = await service.start({
@@ -60,11 +60,12 @@ async function main(): Promise<void> {
       "角色 id 用拼音小写加连字符，如 lin-daiyu。",
     ].join(""),
     modelProfileId: "qwen-plus",
-    surface: "brief",
+    projectKind: "platform",
+    workbenchMode: "brief",
     model,
     domain,
     checkpointer,
-    mode: "ASSIST",
+    agentMode: "ASSIST",
     permissionMode: "smart",
   });
 
@@ -76,7 +77,7 @@ async function main(): Promise<void> {
       pendingTool: first.pendingApproval?.toolId,
       eventTypes: first.journal.all().map((e) => e.type),
       characterCount: domain.characters.size,
-    })}\n`,
+    })}\n`
   );
 
   if (first.status === "waiting_for_approval" && first.pendingApproval) {
@@ -86,7 +87,6 @@ async function main(): Promise<void> {
       conversationId: CONVERSATION,
       decision: "approve",
       modelProfileId: "qwen-plus",
-    surface: "brief",
       model,
       domain,
       checkpointer,
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
           name: c.name,
         })),
         eventTypes: second.journal.all().map((e) => e.type),
-      })}\n`,
+      })}\n`
     );
 
     if (domain.characters.size < 1) {
@@ -120,17 +120,15 @@ async function main(): Promise<void> {
         level: "info",
         msg: "live-golden.completed-without-pause",
         characters: [...domain.characters.keys()],
-      })}\n`,
+      })}\n`
     );
   } else {
     throw new Error(
-      `Unexpected terminal state status=${first.status} chars=${domain.characters.size}`,
+      `Unexpected terminal state status=${first.status} chars=${domain.characters.size}`
     );
   }
 
-  process.stdout.write(
-    `${JSON.stringify({ level: "info", msg: "live-golden.ok" })}\n`,
-  );
+  process.stdout.write(`${JSON.stringify({ level: "info", msg: "live-golden.ok" })}\n`);
 }
 
 main().catch((error) => {
@@ -140,7 +138,7 @@ main().catch((error) => {
       msg: "live-golden.failed",
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
-    })}\n`,
+    })}\n`
   );
   process.exitCode = 1;
 });

@@ -23,6 +23,10 @@ export type ApprovalPayloadLabels = {
   showDetails: string;
   hideDetails: string;
   untitled: string;
+  storyBible: string;
+  storyEntry: string;
+  sceneOrder: string;
+  storyScene: string;
 };
 
 type Row = { key: string; title: string; note?: string };
@@ -55,7 +59,7 @@ type Summary = {
   recognized: boolean;
 };
 
-function summarize(toolId: string, args: unknown): Summary {
+function summarize(toolId: string, args: unknown, labels: ApprovalPayloadLabels): Summary {
   const empty: Summary = { creates: [], updates: [], deletes: [], recognized: false };
   const payload = asRecord(args);
 
@@ -104,6 +108,124 @@ function summarize(toolId: string, args: unknown): Summary {
   }
 
   if (toolId === "canvas.applyPatch") {
+    const operations = Array.isArray(payload.operations) ? payload.operations : [];
+    return {
+      creates: [],
+      updates: operations.map((raw, index) => {
+        const operation = asRecord(raw);
+        return {
+          key: str(operation.operationId) || `op-${index}`,
+          title: str(operation.kind) || `operation ${index + 1}`,
+        };
+      }),
+      deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.addScene") {
+    const scene = asRecord(payload.scene);
+    const id = str(scene.nodeId);
+    return {
+      creates: [
+        { key: id, title: str(scene.name) || id, note: str(scene.description) || undefined },
+      ],
+      updates: payload.afterNodeId
+        ? [{ key: str(payload.afterNodeId), title: str(payload.afterNodeId) }]
+        : [],
+      deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.addBranch") {
+    const branches = Array.isArray(payload.branches) ? payload.branches : [];
+    return {
+      creates: branches.map((raw, index) => {
+        const scene = asRecord(asRecord(raw).scene);
+        const id = str(scene.nodeId) || `branch-${index}`;
+        return {
+          key: id,
+          title: str(scene.name) || id,
+          note: localizedName(asRecord(raw).label) || str(scene.description) || undefined,
+        };
+      }),
+      updates: [
+        { key: str(payload.afterNodeId), title: str(payload.afterNodeId) || labels.storyScene },
+      ],
+      deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.updateBible") {
+    const putCharacters = Array.isArray(payload.putCharacters) ? payload.putCharacters : [];
+    const removeIds = Array.isArray(payload.removeCharacterIds) ? payload.removeCharacterIds : [];
+    const summary: Summary = { creates: [], updates: [], deletes: [], recognized: true };
+    for (const raw of putCharacters) {
+      const write = asRecord(raw);
+      const character = asRecord(write.character);
+      const id = str(character.id);
+      const row = {
+        key: id,
+        title: localizedName(character.name) || id,
+        note: str(character.summary) || undefined,
+      };
+      if (str(write.intent) === "create") summary.creates.push(row);
+      else summary.updates.push(row);
+    }
+    summary.deletes.push(...removeIds.map((id) => ({ key: str(id), title: str(id) })));
+    if (
+      payload.logline !== undefined ||
+      payload.synopsis !== undefined ||
+      payload.productionNotes !== undefined
+    ) {
+      summary.updates.unshift({
+        key: "story-bible",
+        title: labels.storyBible,
+        note: str(payload.logline) || str(payload.synopsis) || undefined,
+      });
+    }
+    return summary;
+  }
+
+  if (toolId === "story.editNode") {
+    const id = str(payload.nodeId);
+    return {
+      creates: [],
+      updates: [
+        { key: id, title: str(payload.name) || id, note: str(payload.description) || undefined },
+      ],
+      deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.removeSubtree") {
+    const id = str(payload.nodeId);
+    return {
+      creates: [],
+      updates: [],
+      deletes: [{ key: id, title: id }],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.setEntry" || toolId === "story.reorder") {
+    return {
+      creates: [],
+      updates: [
+        {
+          key: toolId,
+          title: toolId === "story.setEntry" ? labels.storyEntry : labels.sceneOrder,
+        },
+      ],
+      deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.applyPatch") {
     const operations = Array.isArray(payload.operations) ? payload.operations : [];
     return {
       creates: [],
@@ -183,7 +305,7 @@ export function ApprovalPayload({
   const [open, setOpen] = useState(false);
   if (args === undefined || args === null) return null;
 
-  const summary = summarize(toolId, args);
+  const summary = summarize(toolId, args, labels);
   const hasRows = summary.creates.length + summary.updates.length + summary.deletes.length > 0;
 
   return (

@@ -1003,26 +1003,31 @@ model AgentOsProjectState {
 
 /// User-uploaded files for Agent OS (scripts, notes, refs). Tools read by attachmentId.
 model AgentOsAttachment {
-  id               String   @id @default(uuid(7)) @db.Uuid
-  projectId        String   @map("project_id") @db.Uuid
-  workspaceId      String   @map("workspace_id") @db.Uuid
-  uploadedByUserId String   @map("uploaded_by_user_id") @db.VarChar(64)
-  filename         String   @db.VarChar(512)
-  mimeType         String   @map("mime_type") @db.VarChar(128)
-  sizeBytes        Int      @map("size_bytes")
+  id                String   @id @default(uuid(7)) @db.Uuid
+  projectKind       String   @map("project_kind") @db.VarChar(32)
+  platformProjectId String?  @map("platform_project_id") @db.Uuid
+  storyProjectId    String?  @map("story_project_id") @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  uploadedByUserId  String   @map("uploaded_by_user_id") @db.VarChar(64)
+  filename          String   @db.VarChar(512)
+  mimeType          String   @map("mime_type") @db.VarChar(128)
+  sizeBytes         Int      @map("size_bytes")
   /// ready | failed
-  status           String   @db.VarChar(32)
+  status            String   @db.VarChar(32)
   /// Extracted UTF-8 text for model tools (scripts / plain docs).
-  textContent      String?  @map("text_content") @db.Text
+  textContent       String?  @map("text_content") @db.Text
   /// Bounded sections for script.readSection (JSON string array).
-  sections         Json     @default("[]") @db.JsonB
-  errorMessage     String?  @map("error_message") @db.Text
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sections          Json     @default("[]") @db.JsonB
+  errorMessage      String?  @map("error_message") @db.Text
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  platformProject PlatformProject? @relation(fields: [platformProjectId], references: [id], onDelete: Cascade)
+  storyProject    StoryProject?    @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
 
-  @@index([projectId, createdAt(sort: Desc)], map: "agent_os_attachments_project_recent_idx")
+  @@index([platformProjectId, createdAt(sort: Desc)], map: "agent_os_attachments_platform_project_recent_idx")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "agent_os_attachments_story_project_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "agent_os_attachments_workspace_recent_idx")
   @@map("agent_os_attachments")
 }
 
@@ -7673,6 +7678,7 @@ model StoryProject {
   storyBuildAssets        StoryBuildAsset[]
   candidateAssets         StoryCandidateAsset[]
   videoUploadSessions     StoryVideoUploadSession[]
+  agentOsAttachments      AgentOsAttachment[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, status, updatedAt(sort: Desc)], map: "story_projects_workspace_recent_idx")

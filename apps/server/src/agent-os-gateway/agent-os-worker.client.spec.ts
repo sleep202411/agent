@@ -12,10 +12,11 @@ describe('AgentOsWorkerClient', () => {
   it('posts start run to worker', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        runId: '11111111-1111-4111-8111-111111111111',
-        status: 'waiting_for_approval',
-      }),
+      json: () =>
+        Promise.resolve({
+          runId: '11111111-1111-4111-8111-111111111111',
+          status: 'waiting_for_approval',
+        }),
     }) as unknown as typeof fetch;
 
     const client = new AgentOsWorkerClient({
@@ -33,6 +34,8 @@ describe('AgentOsWorkerClient', () => {
       actorId: 'user-1',
       message: 'extract characters',
       modelProfileId: 'qwen-plus',
+      projectKind: 'platform',
+      workbenchMode: 'storyboard',
     });
 
     expect(result.status).toBe('waiting_for_approval');
@@ -61,6 +64,8 @@ describe('AgentOsWorkerClient', () => {
         actorId: 'user-1',
         message: 'x',
         modelProfileId: 'qwen-plus',
+        projectKind: 'platform',
+        workbenchMode: 'storyboard',
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });

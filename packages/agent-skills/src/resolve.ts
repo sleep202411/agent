@@ -1,3 +1,5 @@
+import { requireModeDefinition, type AgentProjectKind } from "@repo/agent-capabilities";
+
 import { getSkill, listSkills } from "./registry.js";
 import type { AgentSkillDefinition, SkillMountContext, SkillMountResult } from "./types.js";
 
@@ -5,22 +7,21 @@ import type { AgentSkillDefinition, SkillMountContext, SkillMountResult } from "
  * Resolve the skills mounted for one agent turn.
  *
  * Order (later overrides earlier in the composed prompt):
- * 1. alwaysOn system skills (global + surface-matching)
- * 2. projectDefaultSkillIds (when registered & allowed on surface)
- * 3. turnSkillIds (when registered & allowed on surface)
+ * 1. alwaysOn system skills (global + context-matching)
+ * 2. projectDefaultSkillIds (when registered & allowed in this context)
+ * 3. turnSkillIds (when registered & allowed in this context)
  *
  * This is the final mount contract — install UI is separate; ids already work
  * once skills are registered.
  */
 export function resolveSkillMounts(context: SkillMountContext): SkillMountResult {
-  // The surface decides which tools mount at all, so a missing one is a caller
-  // bug worth naming — not a TypeError from deep inside the resolver.
-  if (typeof context.surface !== "string" || !context.surface.trim()) {
+  if (typeof context.workbenchMode !== "string" || !context.workbenchMode.trim()) {
     throw new Error(
-      "resolveSkillMounts requires a surface: it selects the tools this turn may call."
+      "resolveSkillMounts requires workbenchMode: it selects the tools this turn may call."
     );
   }
-  const surface = context.surface.trim();
+  const workbenchMode = context.workbenchMode.trim();
+  requireModeDefinition(context.projectKind, workbenchMode);
   const selected: AgentSkillDefinition[] = [];
   const seen = new Set<string>();
   const skipped: string[] = [];
@@ -31,7 +32,7 @@ export function resolveSkillMounts(context: SkillMountContext): SkillMountResult
       return;
     }
     if (seen.has(skill.id)) return;
-    if (!skillAllowedOnSurface(skill, surface)) {
+    if (!skillAllowedInContext(skill, context.projectKind, workbenchMode)) {
       if (idForSkip) skipped.push(idForSkip);
       return;
     }
@@ -39,7 +40,7 @@ export function resolveSkillMounts(context: SkillMountContext): SkillMountResult
     selected.push(skill);
   };
 
-  // 1) System always-on (core + surface base)
+  // 1) System always-on (core + project/workbench base)
   const alwaysOn = listSkills()
     .filter((s) => s.alwaysOn && s.source === "system")
     .sort((a, b) => a.priority - b.priority);
@@ -77,7 +78,14 @@ export function resolveSkillMounts(context: SkillMountContext): SkillMountResult
   };
 }
 
-function skillAllowedOnSurface(skill: AgentSkillDefinition, surface: string): boolean {
-  if (skill.surfaces.length === 0) return true;
-  return skill.surfaces.includes(surface);
+function skillAllowedInContext(
+  skill: AgentSkillDefinition,
+  projectKind: AgentProjectKind,
+  workbenchMode: string
+): boolean {
+  const projectAllowed =
+    skill.projectKinds.length === 0 || skill.projectKinds.includes(projectKind);
+  const modeAllowed =
+    skill.workbenchModes.length === 0 || skill.workbenchModes.includes(workbenchMode);
+  return projectAllowed && modeAllowed;
 }

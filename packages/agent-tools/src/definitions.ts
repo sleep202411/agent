@@ -10,6 +10,7 @@ import {
 } from "@repo/shared";
 
 import type { ToolDefinition } from "./types.js";
+import { STORY_AGENT_OS_TOOLS } from "./story-definitions.js";
 
 const stableKey = z
   .string()
@@ -62,7 +63,6 @@ export const CharactersUpsertInputSchema = z
 export const CharactersUpsertOutputSchema = z
   .object({
     projectRevision: z.number().int().nonnegative(),
-    surface: z.string().optional(),
     written: z.array(
       z
         .object({
@@ -80,7 +80,6 @@ export const CharactersListInputSchema = z.object({}).strict();
 export const CharactersListOutputSchema = z
   .object({
     revision: z.number().int().nonnegative(),
-    surface: z.string().optional(),
     contentHash: z.string().optional(),
     chapterId: z.string().optional(),
     characters: z.array(
@@ -199,11 +198,11 @@ export const CanvasApplyPatchOutputSchema = z
   .strict();
 
 /**
- * Phase-1 tool surface for Agent OS.
+ * Core + Platform capability tools for Agent OS.
  * Golden path A: script.readSection + characters.upsert
  * Golden path B: canvas.read + canvas.applyPatch
  */
-export const AGENT_OS_TOOLS = [
+const PLATFORM_AGENT_OS_TOOLS = [
   {
     id: "script.store",
     description:
@@ -219,8 +218,7 @@ export const AGENT_OS_TOOLS = [
     outputSchema: z
       .object({
         sectionCount: z.number().int().nonnegative(),
-        surface: z.string().optional(),
-        attachmentId: z.uuid().optional(),
+        attachmentId: z.uuid(),
       })
       .strict(),
   },
@@ -263,7 +261,6 @@ export const AGENT_OS_TOOLS = [
     outputSchema: z
       .object({
         revision: z.number().int().nonnegative(),
-        surface: z.string().optional(),
         shots: z.array(
           z
             .object({
@@ -305,7 +302,7 @@ export const AGENT_OS_TOOLS = [
       "→ 'low', 'dolly'), never a localized label. " +
       "`prompt` is the image-generation prompt; `description` is the human-facing 画面描述 — " +
       "do not put the same text in both. " +
-      "To REMOVE shots, use storyboard.deleteShots — not upsert. Storyboard surface only.",
+      "To REMOVE shots, use storyboard.deleteShots — not upsert. Storyboard workbench only.",
     kind: "command",
     risk: "sensitive",
     inputSchema: ShotsUpsertInputSchema,
@@ -322,7 +319,6 @@ export const AGENT_OS_TOOLS = [
             })
             .strict()
         ),
-        surface: z.string().optional(),
         /** Set when the baseRevision you sent was behind: the write still applied. */
         staleBaseRevision: z.boolean().optional(),
       })
@@ -334,7 +330,7 @@ export const AGENT_OS_TOOLS = [
       "Delete shots from the project's storyboard by id, including shots the user authored. " +
       "Prefer this over replace-with-remaining-list when the user asks to remove specific shots. " +
       "Deleting removes the row and its wires; call storyboard.listShots first if unsure of an id. " +
-      "Only available on the storyboard surface.",
+      "Only available in the storyboard workbench.",
     kind: "command",
     risk: "sensitive",
     inputSchema: ShotsDeleteInputSchema,
@@ -342,7 +338,6 @@ export const AGENT_OS_TOOLS = [
       .object({
         revision: z.number().int().nonnegative(),
         deleted: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
-        surface: z.string().optional(),
         staleBaseRevision: z.boolean().optional(),
       })
       .strict(),
@@ -362,12 +357,14 @@ export const AGENT_OS_TOOLS = [
       "(not for bare poetic phrases or candidate titles). Call canvas.read first for baseDraftRevision/baseLayoutRevision. " +
       "Each operation needs kind + payload. operationId may be omitted or any string — the server mints a valid UUID if missing/invalid. " +
       "Kinds: node.patchData {nodeId,data}, node.move {nodeId,x,y}, node.delete {nodeId}, edge.connect {edgeId,source,target}, edge.remove {edgeId}, shot.upsert {id,title,prompt,notes?}. " +
-      "On canvas surface use shot.upsert here to add/edit a shot node — do not call storyboard.upsertShots. Canvas surface only.",
+      "In the canvas workbench use shot.upsert here to add/edit a shot node — do not call storyboard.upsertShots. Canvas workbench only.",
     kind: "command",
     risk: "sensitive",
     inputSchema: CanvasApplyPatchInputSchema,
     outputSchema: CanvasApplyPatchOutputSchema,
   },
 ] as const satisfies readonly ToolDefinition[];
+
+export const AGENT_OS_TOOLS = [...PLATFORM_AGENT_OS_TOOLS, ...STORY_AGENT_OS_TOOLS] as const;
 
 export type AgentOsToolId = (typeof AGENT_OS_TOOLS)[number]["id"];

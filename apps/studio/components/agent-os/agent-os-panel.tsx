@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { IconAlertCircle, IconPaperclip, IconX } from "@tabler/icons-react";
-import { toast } from "sonner";
-import { agentOsSurfaceFromStudioMode } from "@repo/shared";
+import { IconAlertCircle, IconAlertTriangle, IconPaperclip, IconX } from "@tabler/icons-react";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
 import {
   FizzAgentModelMenu,
@@ -28,10 +25,12 @@ import {
   type AgentOsAttachmentSummary,
   type AgentOsPermissionMode,
   type AgentOsSkillMeta,
+  type AgentOsWorkbenchContext,
+  type AgentOsWorkbenchMode,
 } from "@/lib/agent-os/api-client";
-import { emitAgentOsDomainChanged } from "@/lib/agent-os/domain-events";
 import { cn } from "@/lib/utils";
 import { AgentOsTranscript } from "./agent-os-transcript";
+import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
 import { useAgentOsRun } from "./use-agent-os-run";
 
 const PERMISSION_MODES: Array<{
@@ -44,9 +43,17 @@ const PERMISSION_MODES: Array<{
 ];
 
 const SUGGESTIONS = ["suggestCharacters", "suggestShots", "suggestBoth"] as const;
+const STORY_SUGGESTIONS = [
+  "suggestStoryContinue",
+  "suggestStoryBranch",
+  "suggestStoryPolish",
+] as const;
 
 const ACCEPT =
-  ".txt,.md,.markdown,.fountain,.csv,.json,.xml,text/plain,text/markdown,text/csv,application/json";
+  ".txt,.md,.markdown,.fountain,.fdx,.csv,.json,.xml,.log,text/plain,text/markdown,text/x-markdown,text/csv,application/json,application/xml,text/xml";
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_TURN = 20;
+const UPLOAD_CONCURRENCY = 3;
 
 const LS_PERM = "fizz:agent-os:permissionMode";
 const LS_MODEL = "fizz:agent-os:modelProfileId";
@@ -68,23 +75,44 @@ function writeLs(key: string, value: string) {
   }
 }
 
-/**
- * Agent OS side panel — chat + attachments + Codex-style permission/model near send.
- */
-export function AgentOsPanel({
-  projectId,
-  open,
-  onClose,
-}: {
+interface AgentOsPanelProps {
   projectId: string;
+  workbenchMode: AgentOsWorkbenchMode;
+  workbenchContext?: AgentOsWorkbenchContext;
+  onMutationCompleted?: () => void | Promise<void>;
   open: boolean;
   onClose: () => void;
-}) {
+}
+
+/**
+ * Agent OS side panel — chat + attachments + Codex-style permission/model near send.
+ * The keyed session is a hard conversation boundary when project/workbench scope changes.
+ */
+export function AgentOsPanel(props: AgentOsPanelProps) {
+  const conversationScope = `${props.workbenchMode}:${props.workbenchContext?.chapterId ?? "project"}`;
+  return (
+    <AgentOsPanelSession
+      key={`${props.projectId}:${conversationScope}`}
+      {...props}
+      conversationScope={conversationScope}
+    />
+  );
+}
+
+function AgentOsPanelSession({
+  projectId,
+  workbenchMode,
+  workbenchContext,
+  onMutationCompleted,
+  open,
+  onClose,
+  conversationScope,
+}: AgentOsPanelProps & { conversationScope: string }) {
   const t = useTranslations("agentOs");
-  const routeParams = useParams();
-  const studioMode = typeof routeParams.mode === "string" ? routeParams.mode : "storyboard";
-  const surface = agentOsSurfaceFromStudioMode(studioMode);
-  const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
+  const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(
+    projectId,
+    conversationScope
+  );
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -98,7 +126,7 @@ export function AgentOsPanel({
   });
   const [busy, setBusy] = useState(false);
   const [workerOk, setWorkerOk] = useState<boolean | null>(null);
-  /** Invocable skills for this surface (composer multi-select). */
+  /** Invocable skills for this workbench (composer multi-select). */
   const [invocableSkills, setInvocableSkills] = useState<AgentOsSkillMeta[]>([]);
   /** Project admin defaults — pinned chips; persisted via Nest. */
   const [projectDefaultSkillIds, setProjectDefaultSkillIds] = useState<string[]>([]);
@@ -107,10 +135,15 @@ export function AgentOsPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
-  /** Domain revision last observed — pure chat must not re-apply unchanged shots. */
   const [models, setModels] = useState<Array<{ id: string; label: string; hint?: string }>>([]);
-  const lastCharacterCountRef = useRef(0);
-  const domainBaselineReady = useRef(false);
+  const [latestIssue, setLatestIssue] = useState<AgentOsIssue | null>(null);
+
+  const reportIssue = useCallback(
+    (error: unknown, fallback: string) => {
+      setLatestIssue(toAgentOsIssue(error, fallback, t("serviceUnavailable")));
+    },
+    [t]
+  );
 
   /**
    * Availability is a live fact, not a one-time reading.
@@ -145,21 +178,16 @@ export function AgentOsPanel({
     };
   }, []);
 
-  // Baseline the character count so a pure-chat turn does not toast, and load
-  // project default skills + the invocable catalog for the composer.
+  // Load project defaults, workbench-scoped skills, and the worker model catalog.
   useEffect(() => {
     let cancelled = false;
-    domainBaselineReady.current = false;
     void Promise.all([
-      agentOsApi.listCharacters(projectId),
       agentOsApi.getProjectSkills(projectId),
-      agentOsApi.listSkills(surface),
+      agentOsApi.listSkills(projectId, workbenchMode),
       agentOsApi.listModels(),
     ])
-      .then(([charactersPage, projectSkills, skillCatalog, modelCatalog]) => {
+      .then(([projectSkills, skillCatalog, modelCatalog]) => {
         if (cancelled) return;
-        lastCharacterCountRef.current = charactersPage.characters.length;
-        domainBaselineReady.current = true;
         setProjectDefaultSkillIds(projectSkills.defaultSkillIds);
         setInvocableSkills(skillCatalog.invocable);
         setModels(modelCatalog.models);
@@ -168,22 +196,19 @@ export function AgentOsPanel({
         setModelProfileId((prev) =>
           modelCatalog.models.some((m) => m.id === prev) ? prev : (modelCatalog.models[0]?.id ?? "")
         );
-        // Drop turn picks that no longer apply to this surface.
+        // Drop turn picks that no longer apply to this workbench.
         setTurnSkillIds((prev) =>
           prev.filter((id) => skillCatalog.invocable.some((s) => s.id === id))
         );
       })
       .catch(() => {
-        if (!cancelled) {
-          domainBaselineReady.current = true;
-          // Nest still loads durable defaults from DB when this optional
-          // catalog request is unavailable.
-        }
+        // Nest still loads durable defaults from DB when this optional catalog
+        // request is unavailable.
       });
     return () => {
       cancelled = true;
     };
-  }, [projectId, surface]);
+  }, [projectId, workbenchMode]);
 
   useEffect(() => {
     writeLs(LS_PERM, permissionMode);
@@ -193,28 +218,6 @@ export function AgentOsPanel({
     writeLs(LS_MODEL, modelProfileId);
   }, [modelProfileId]);
 
-  /**
-   * Characters have no product surface yet, so a count bump is the only signal
-   * the panel can give. Shots need nothing here: the server writes them into
-   * the canvas document and the documents WS fans the operation out, and
-   * reconnect catch-up is that layer's job — a second, client-side reconciler
-   * would be re-deriving a CRDT it does not own.
-   */
-  const syncProductSurfaces = useCallback(async () => {
-    if (!domainBaselineReady.current) return;
-    try {
-      const charactersPage = await agentOsApi.listCharacters(projectId);
-      const characterCount = charactersPage.characters.length;
-      const newCharacters = Math.max(0, characterCount - lastCharacterCountRef.current);
-      lastCharacterCountRef.current = characterCount;
-      if (newCharacters > 0) {
-        emitAgentOsDomainChanged({ projectId, kind: "characters" });
-      }
-    } catch {
-      /* durable state stays in Agent OS tables; nothing to reconcile here */
-    }
-  }, [projectId]);
-
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = state.status;
@@ -223,8 +226,8 @@ export function AgentOsPanel({
     if (!finishedWork || !state.runId) return;
     if (lastSyncedRunRef.current === state.runId) return;
     lastSyncedRunRef.current = state.runId;
-    void syncProductSurfaces();
-  }, [state.runId, state.status, syncProductSurfaces]);
+    void onMutationCompleted?.();
+  }, [onMutationCompleted, state.runId, state.status]);
 
   /**
    * Failures the client itself diagnoses get a translated sentence; anything
@@ -240,6 +243,11 @@ export function AgentOsPanel({
           ? t("runOrphaned")
           : (state.error ?? null)
     : state.error;
+  const diagnosticIssue =
+    latestIssue ??
+    (runErrorText
+      ? toAgentOsIssue(new Error(runErrorText), t("runFailed"), t("serviceUnavailable"))
+      : null);
 
   const turnBusy =
     busy || uploading || state.status === "running" || state.status === "waiting_for_approval";
@@ -254,27 +262,60 @@ export function AgentOsPanel({
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
+    const remaining = Math.max(0, MAX_ATTACHMENTS_PER_TURN - pendingFiles.length);
+    const selected = Array.from(list);
+    if (selected.length > remaining) {
+      reportIssue(null, t("attachmentTooMany", { count: MAX_ATTACHMENTS_PER_TURN }));
+    }
+    const candidates = selected.slice(0, remaining);
+    const accepted: File[] = [];
+    for (const file of candidates) {
+      if (file.size === 0) {
+        reportIssue(null, t("attachmentEmpty", { name: file.name }));
+      } else if (file.size > MAX_ATTACHMENT_BYTES) {
+        reportIssue(null, t("attachmentTooLarge", { name: file.name, size: 20 }));
+      } else {
+        accepted.push(file);
+      }
+    }
+    if (accepted.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       const uploaded: AgentOsAttachmentSummary[] = [];
-      for (const file of Array.from(list)) {
-        const row = await agentOsApi.uploadAttachment(projectId, file);
-        if (row.status !== "ready") {
-          toast.error(row.errorMessage || t("attachmentFailed", { name: row.filename }));
-          continue;
-        }
-        uploaded.push(row);
+      for (let index = 0; index < accepted.length; index += UPLOAD_CONCURRENCY) {
+        const batch = accepted.slice(index, index + UPLOAD_CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map((file) => agentOsApi.uploadAttachment(projectId, file))
+        );
+        results.forEach((result, batchIndex) => {
+          const file = batch[batchIndex];
+          if (result.status === "rejected") {
+            reportIssue(result.reason, t("attachmentFailed", { name: file.name }));
+            return;
+          }
+          if (result.value.status !== "ready") {
+            reportIssue(
+              result.value.errorMessage ? new Error(result.value.errorMessage) : null,
+              t("attachmentFailed", { name: result.value.filename })
+            );
+            return;
+          }
+          uploaded.push(result.value);
+        });
       }
       if (uploaded.length > 0) {
         setPendingFiles((prev) => {
-          const byId = new Map(prev.map((p) => [p.id, p]));
-          for (const u of uploaded) byId.set(u.id, u);
+          const byId = new Map(prev.map((item) => [item.id, item]));
+          for (const item of uploaded) byId.set(item.id, item);
           return [...byId.values()];
         });
-        toast.success(t("attachmentReady", { count: uploaded.length }));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("attachmentFailedGeneric"));
+      reportIssue(error, t("attachmentFailedGeneric"));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -294,10 +335,10 @@ export function AgentOsPanel({
         setProjectDefaultSkillIds(saved.defaultSkillIds);
       } catch (error) {
         setProjectDefaultSkillIds(prev);
-        toast.error(error instanceof Error ? error.message : t("skillDefaultFailed"));
+        reportIssue(error, t("skillDefaultFailed"));
       }
     },
-    [projectDefaultSkillIds, projectId, t]
+    [projectDefaultSkillIds, projectId, reportIssue, t]
   );
 
   const onSkillChipClick = useCallback(
@@ -329,6 +370,7 @@ export function AgentOsPanel({
     const attachmentNames = ready.map((f) => f.filename);
     setDraft("");
     setPendingFiles([]);
+    setLatestIssue(null);
     setBusy(true);
     try {
       await send({
@@ -337,13 +379,14 @@ export function AgentOsPanel({
         attachmentIds,
         attachmentNames,
         permissionMode,
-        surface,
+        workbenchMode,
+        workbenchContext,
         skillIds: turnSkillIds,
         // After hydrate, send composer state (includes optimistic pin).
         // Before hydrate / on load failure, omit so Nest reads durable DB defaults.
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("sendFailed"));
+      reportIssue(error, t("sendFailed"));
     } finally {
       setBusy(false);
     }
@@ -353,7 +396,7 @@ export function AgentOsPanel({
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
     if (approvalId && (approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId))) {
-      toast.error(t("approvalNotReady"));
+      reportIssue(null, t("approvalNotReady"));
       return;
     }
     setBusy(true);
@@ -362,7 +405,7 @@ export function AgentOsPanel({
       // not a floating toast.
       await resolveApproval({ decision, modelProfileId, permissionMode });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("approvalFailed"));
+      reportIssue(error, t("approvalFailed"));
     } finally {
       setBusy(false);
     }
@@ -387,7 +430,10 @@ export function AgentOsPanel({
           confirm: t("newConversationDialog.confirm"),
         },
       }}
-      onNewConversation={newChat}
+      onNewConversation={() => {
+        setLatestIssue(null);
+        newChat();
+      }}
       busy={busy}
       headerActions={
         <AlertDialog>
@@ -396,9 +442,21 @@ export function AgentOsPanel({
               type="button"
               aria-label={t("runDetails.open")}
               title={t("runDetails.open")}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+              className={cn(
+                "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                diagnosticIssue
+                  ? "bg-red-500/12 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                  : "bg-white/[0.035] text-white/54 hover:bg-white/[0.08] hover:text-white"
+              )}
             >
-              <IconAlertCircle aria-hidden="true" className="size-4" />
+              {diagnosticIssue ? (
+                <IconAlertTriangle aria-hidden="true" className="size-4" />
+              ) : (
+                <IconAlertCircle aria-hidden="true" className="size-4" />
+              )}
+              {diagnosticIssue ? (
+                <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-red-400 ring-2 ring-[oklch(0.145_0_0)]" />
+              ) : null}
             </button>
           </AlertDialogTrigger>
           <AlertDialogContent className="liquid-rim bg-[oklch(0.18_0_0_/_0.98)] ring-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.68)] backdrop-blur-[36px]">
@@ -422,6 +480,22 @@ export function AgentOsPanel({
                   {state.conversationId ?? t("runDetails.notAvailable")}
                 </dd>
               </div>
+              {diagnosticIssue ? (
+                <div className="grid gap-1 border-t border-white/[0.07] pt-2">
+                  <dt className="text-white/42">{t("runDetails.latestIssue")}</dt>
+                  <dd className="break-words text-xs/relaxed text-red-200/85">
+                    {diagnosticIssue.message}
+                  </dd>
+                  {diagnosticIssue.technicalDetail ? (
+                    <>
+                      <dt className="mt-1 text-white/42">{t("runDetails.technicalDetail")}</dt>
+                      <dd className="break-all font-mono text-[11px] text-white/58">
+                        {diagnosticIssue.technicalDetail}
+                      </dd>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </dl>
             <AlertDialogFooter>
               <AlertDialogAction variant="secondary">{t("runDetails.close")}</AlertDialogAction>
@@ -443,6 +517,27 @@ export function AgentOsPanel({
             onChange={(event) => void onPickFiles(event.target.files)}
           />
 
+          {latestIssue ? (
+            <div
+              role="alert"
+              className="flex min-w-0 items-center gap-2 rounded-xl bg-red-500/[0.09] px-3 py-2 text-red-100/80 ring-1 ring-inset ring-red-400/12"
+            >
+              <IconAlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-red-300/80" />
+              <span className="min-w-0 flex-1 truncate text-[11px]" title={latestIssue.message}>
+                {latestIssue.message}
+              </span>
+              <button
+                type="button"
+                onClick={() => setLatestIssue(null)}
+                aria-label={t("dismissIssue")}
+                title={t("dismissIssue")}
+                className="grid size-5 shrink-0 place-items-center rounded-full text-red-100/45 transition-colors hover:bg-red-100/10 hover:text-red-50"
+              >
+                <IconX aria-hidden="true" className="size-3" />
+              </button>
+            </div>
+          ) : null}
+
           <CopilotComposer
             value={draft}
             onChange={setDraft}
@@ -454,7 +549,9 @@ export function AgentOsPanel({
             busy={turnBusy}
             sendDisabled={!canSend && !turnBusy}
             canSendWithoutText={pendingFiles.some((file) => file.status === "ready")}
-            placeholder={t("composerPlaceholder")}
+            placeholder={t(
+              workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder"
+            )}
             inputLabel={t("message")}
             sendLabel={t("send")}
             stopLabel={t("stop")}
@@ -604,13 +701,19 @@ export function AgentOsPanel({
             showDetails: t("approvalShowDetails"),
             hideDetails: t("approvalHideDetails"),
             untitled: t("approvalUntitled"),
+            storyBible: t("approvalStoryBible"),
+            storyEntry: t("approvalStoryEntry"),
+            sceneOrder: t("approvalSceneOrder"),
+            storyScene: t("approvalStoryScene"),
           },
         }}
         empty={
           <div className="w-full max-w-80 space-y-3">
-            <p className="text-xs/relaxed text-white/40">{t("emptyHint")}</p>
+            <p className="text-xs/relaxed text-white/40">
+              {t(workbenchMode === "story" ? "emptyHintStory" : "emptyHint")}
+            </p>
             <div className="flex flex-wrap justify-center gap-1.5">
-              {SUGGESTIONS.map((key) => (
+              {(workbenchMode === "story" ? STORY_SUGGESTIONS : SUGGESTIONS).map((key) => (
                 <button
                   key={key}
                   type="button"

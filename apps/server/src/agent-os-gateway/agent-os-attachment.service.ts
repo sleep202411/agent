@@ -5,15 +5,20 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { ProjectMemberRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { AgentProjectKind } from '@repo/agent-capabilities';
 import { PrismaService } from '../infra/db/db.module';
-import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import {
+  AgentOsProjectContextService,
+  type AgentOsProjectContext,
+} from './agent-os-project-context.service';
 
 /** Screenplay text files — target 15–20 MiB product ceiling. */
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 /** Character budget for UTF-8 scripts (十几万字 + headroom). */
 const MAX_ATTACHMENT_CHARS = 1_000_000;
 const DEFAULT_SECTION_SIZE = 4_000;
+export const MAX_AGENT_OS_ATTACHMENTS_PER_RUN = 20;
 
 const TEXT_MIME = new Set([
   'text/plain',
@@ -46,16 +51,16 @@ export type AgentOsAttachmentSummary = {
 export class AgentOsAttachmentService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly projects: AgentOsProjectContextService,
   ) {}
 
   async list(
     userId: string,
     projectId: string,
   ): Promise<{ attachments: AgentOsAttachmentSummary[] }> {
-    await this.requireProjectRead(userId, projectId);
+    const project = await this.projects.requireRead(userId, projectId);
     const rows = await this.prisma.agentOsAttachment.findMany({
-      where: { projectId },
+      where: attachmentScopeWhere(project),
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -73,8 +78,9 @@ export class AgentOsAttachmentService {
       size: number;
       buffer: Buffer;
     },
+    options?: { sectionSize?: number },
   ): Promise<AgentOsAttachmentSummary> {
-    await this.requireProjectEdit(userId, projectId);
+    const project = await this.projects.requireWrite(userId, projectId);
     if (!file?.buffer?.length) {
       throw new BadRequestException({
         code: 'AGENT_OS_ATTACHMENT_EMPTY',
@@ -91,72 +97,57 @@ export class AgentOsAttachmentService {
       });
     }
 
-    const project = await this.prisma.platformProject.findFirst({
-      where: { id: projectId, deletedAt: null },
-      select: { id: true, workspaceId: true },
-    });
-    if (!project) {
-      throw new NotFoundException({
-        code: 'PROJECT_NOT_FOUND',
-        message: 'Platform project not found.',
+    const filename = sanitizeFilename(file.originalname);
+    const mimeType = normalizeMimeType(file.mimetype);
+    const extractable = isTextAttachment(filename, mimeType);
+
+    if (!extractable) {
+      throw new UnprocessableEntityException({
+        code: 'AGENT_OS_ATTACHMENT_UNSUPPORTED_TYPE',
+        message:
+          'Only UTF-8 text documents are supported: txt, md, markdown, fountain, fdx, csv, json, xml, and log.',
       });
     }
 
-    const filename = sanitizeFilename(file.originalname);
-    const mimeType = (file.mimetype || 'application/octet-stream').slice(
-      0,
-      128,
-    );
-    const extractable = isTextAttachment(filename, mimeType);
-
-    let status: 'ready' | 'failed' = 'ready';
-    let textContent: string | null = null;
-    let sections: string[] = [];
-    let errorMessage: string | null = null;
-
-    if (!extractable) {
-      status = 'failed';
-      errorMessage =
-        'Only text-based script/document attachments are supported (txt, md, fountain, csv, json, xml).';
-    } else {
-      try {
-        textContent = file.buffer.toString('utf8');
-        if (textContent.includes('\uFFFD') && looksBinary(file.buffer)) {
-          throw new Error('File is not valid UTF-8 text.');
-        }
-        if (!textContent.trim()) {
-          throw new Error('File has no text content.');
-        }
-        if (textContent.length > MAX_ATTACHMENT_CHARS) {
-          throw new Error(
-            `Script text exceeds ${MAX_ATTACHMENT_CHARS} characters; split the file or raise project limits.`,
-          );
-        }
-        sections = splitSections(textContent, DEFAULT_SECTION_SIZE);
-      } catch (error) {
-        status = 'failed';
-        errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Failed to extract text from attachment.';
-        textContent = null;
-        sections = [];
-      }
+    const textContent = file.buffer.toString('utf8');
+    if (textContent.includes('\uFFFD') && looksBinary(file.buffer)) {
+      throw new UnprocessableEntityException({
+        code: 'AGENT_OS_ATTACHMENT_INVALID_UTF8',
+        message: 'The attachment is not valid UTF-8 text.',
+      });
     }
+    if (!textContent.trim()) {
+      throw new UnprocessableEntityException({
+        code: 'AGENT_OS_ATTACHMENT_NO_TEXT',
+        message: 'The attachment has no text content.',
+      });
+    }
+    if (textContent.length > MAX_ATTACHMENT_CHARS) {
+      throw new UnprocessableEntityException({
+        code: 'AGENT_OS_ATTACHMENT_TEXT_TOO_LARGE',
+        message: `Attachment text must be at most ${MAX_ATTACHMENT_CHARS} characters.`,
+      });
+    }
+    const sectionSize = options?.sectionSize ?? DEFAULT_SECTION_SIZE;
+    const sections = splitSections(textContent, sectionSize);
 
     const row = await this.prisma.agentOsAttachment.create({
       data: {
         id: randomUUID(),
-        projectId: project.id,
+        projectKind: project.projectKind,
+        platformProjectId:
+          project.projectKind === 'platform' ? project.projectId : null,
+        storyProjectId:
+          project.projectKind === 'story' ? project.projectId : null,
         workspaceId: project.workspaceId,
         uploadedByUserId: userId,
         filename,
         mimeType,
         sizeBytes: file.buffer.length,
-        status,
+        status: 'ready',
         textContent,
         sections,
-        errorMessage,
+        errorMessage: null,
       },
     });
 
@@ -164,6 +155,7 @@ export class AgentOsAttachmentService {
   }
 
   async getForTool(
+    projectKind: AgentProjectKind,
     projectId: string,
     attachmentId: string,
   ): Promise<{
@@ -173,7 +165,10 @@ export class AgentOsAttachmentService {
     status: string;
   }> {
     const row = await this.prisma.agentOsAttachment.findFirst({
-      where: { id: attachmentId, projectId },
+      where: {
+        id: attachmentId,
+        ...attachmentIdentityWhere(projectKind, projectId),
+      },
     });
     if (!row) {
       throw new NotFoundException({
@@ -193,6 +188,53 @@ export class AgentOsAttachmentService {
       sections: parseStringArray(row.sections),
       status: row.status,
     };
+  }
+
+  /**
+   * Fail before a run reaches the worker when a caller references an attachment
+   * from another project, a deleted project, or an incomplete ingestion.
+   * The returned ids are de-duplicated in the caller's original order.
+   */
+  async validateForRun(
+    projectKind: AgentProjectKind,
+    projectId: string,
+    attachmentIds: readonly string[] | undefined,
+  ): Promise<string[] | undefined> {
+    if (!attachmentIds?.length) return undefined;
+    const uniqueIds = [...new Set(attachmentIds)];
+    if (uniqueIds.length > MAX_AGENT_OS_ATTACHMENTS_PER_RUN) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_TOO_MANY_ATTACHMENTS',
+        message: `A turn can include at most ${MAX_AGENT_OS_ATTACHMENTS_PER_RUN} attachments.`,
+      });
+    }
+    const rows = await this.prisma.agentOsAttachment.findMany({
+      where: {
+        id: { in: uniqueIds },
+        ...attachmentIdentityWhere(projectKind, projectId),
+      },
+      select: { id: true, status: true, errorMessage: true },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const missingId = uniqueIds.find((id) => !byId.has(id));
+    if (missingId) {
+      throw new NotFoundException({
+        code: 'ATTACHMENT_NOT_FOUND',
+        message: `Attachment ${missingId} was not found on this project.`,
+      });
+    }
+    const unavailable = uniqueIds
+      .map((id) => byId.get(id))
+      .find((row) => row?.status !== 'ready');
+    if (unavailable) {
+      throw new UnprocessableEntityException({
+        code: 'ATTACHMENT_NOT_READY',
+        message:
+          unavailable.errorMessage ??
+          `Attachment ${unavailable.id} is not ready for reading.`,
+      });
+    }
+    return uniqueIds;
   }
 
   private toSummary(row: {
@@ -216,22 +258,6 @@ export class AgentOsAttachmentService {
       createdAt: row.createdAt.toISOString(),
     };
   }
-
-  private async requireProjectEdit(userId: string, projectId: string) {
-    await this.workspacePermissions.requireProjectRole(
-      userId,
-      projectId,
-      ProjectMemberRole.editor,
-    );
-  }
-
-  private async requireProjectRead(userId: string, projectId: string) {
-    await this.workspacePermissions.requireProjectRole(
-      userId,
-      projectId,
-      ProjectMemberRole.viewer,
-    );
-  }
 }
 
 export function splitSections(text: string, sectionSize: number): string[] {
@@ -249,6 +275,14 @@ export function contentHash(text: string): string {
 function sanitizeFilename(name: string): string {
   const base = name.replace(/[/\\]/g, '_').trim() || 'attachment.txt';
   return base.slice(0, 500);
+}
+
+function normalizeMimeType(value: string): string {
+  return (value || 'application/octet-stream')
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase()
+    .slice(0, 128);
 }
 
 function isTextAttachment(filename: string, mimeType: string): boolean {
@@ -270,4 +304,27 @@ function looksBinary(buf: Buffer): boolean {
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function attachmentIdentityWhere(
+  projectKind: AgentProjectKind,
+  projectId: string,
+): Prisma.AgentOsAttachmentWhereInput {
+  return projectKind === 'platform'
+    ? {
+        projectKind,
+        platformProjectId: projectId,
+        storyProjectId: null,
+      }
+    : {
+        projectKind,
+        storyProjectId: projectId,
+        platformProjectId: null,
+      };
+}
+
+function attachmentScopeWhere(
+  project: AgentOsProjectContext,
+): Prisma.AgentOsAttachmentWhereInput {
+  return attachmentIdentityWhere(project.projectKind, project.projectId);
 }

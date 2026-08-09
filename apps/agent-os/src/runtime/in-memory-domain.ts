@@ -105,7 +105,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         sectionCount: this.scriptSections.length,
-        surface: "memory",
         attachmentId: "00000000-0000-4000-8000-000000000001",
       },
     };
@@ -153,7 +152,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         revision: this.revision,
-        surface: "memory",
         characters: [...this.characters.values()].map((c) => ({
           id: c.id,
           name: c.name["zh-CN"] ?? c.name["en-US"] ?? Object.values(c.name)[0] ?? c.id,
@@ -214,7 +212,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         projectRevision: this.revision,
-        surface: "memory",
         written,
       },
     };
@@ -225,7 +222,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         revision: this.revision,
-        surface: "memory",
         shots: [...this.shots.values()].sort(compareByOrder).map((s) => ({
           id: s.id,
           order: s.order,
@@ -278,7 +274,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         revision: this.revision,
-        surface: "memory",
         written,
       },
     };
@@ -328,7 +323,6 @@ export class InMemoryStoryDomain implements DomainPort {
       ok: true,
       data: {
         revision: this.revision,
-        surface: "memory",
         deleted,
       },
     };

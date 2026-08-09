@@ -17,8 +17,14 @@ const modelProfileIdSchema = z
 /** Codex-style autonomy: ask = approve every write; smart = sensitive only; full = auto. */
 export const AgentOsPermissionModeSchema = z.enum(['ask', 'smart', 'full']);
 
-/** Studio surface pack — trusted mode, not inferred from chat text. */
-export const AgentOsSurfaceSchema = z.enum(['storyboard', 'canvas', 'brief']);
+/** Product workbench mode; the project-kind pairing is validated server-side. */
+export const AgentOsWorkbenchModeSchema = z.string().trim().min(1).max(64);
+
+export const AgentOsWorkbenchContextSchema = z
+  .object({
+    chapterId: z.string().uuid(),
+  })
+  .strict();
 
 export const AgentOsStartRunBodySchema = z
   .object({
@@ -34,10 +40,10 @@ export const AgentOsStartRunBodySchema = z
     attachmentIds: z.array(z.string().uuid()).max(20).optional(),
     /** Permission / autonomy mode (Codex-style). Defaults to smart if omitted. */
     permissionMode: AgentOsPermissionModeSchema.optional(),
-    /**
-     * Product surface (Studio mode). Mounts system surface skills on the worker.
-     */
-    surface: AgentOsSurfaceSchema.optional(),
+    /** Product workbench mode. Required and never inferred from chat text. */
+    workbenchMode: AgentOsWorkbenchModeSchema,
+    /** Selected entity inside the workbench. Story mode requires a chapter. */
+    workbenchContext: AgentOsWorkbenchContextSchema.optional(),
     /**
      * Per-turn skill ids from the composer (future UI). Mounted when registered
      * in the skill runtime — same path as system skills.

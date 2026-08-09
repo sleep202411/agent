@@ -67,8 +67,8 @@ export interface AgentOsAttachmentSummary {
 /** Codex-style autonomy for tool writes. */
 export type AgentOsPermissionMode = "ask" | "smart" | "full";
 
-/** Studio surface pack — must match @repo/shared AgentOsSurface. */
-export type AgentOsSurface = "storyboard" | "canvas" | "brief";
+export type AgentOsWorkbenchMode = "storyboard" | "canvas" | "brief" | "story";
+export type AgentOsWorkbenchContext = Readonly<Record<string, string>>;
 
 export interface AgentOsStartRunInput {
   projectId: string;
@@ -78,8 +78,10 @@ export interface AgentOsStartRunInput {
   /** Uploaded attachment ids (file upload API) for this turn. */
   attachmentIds?: string[];
   permissionMode?: AgentOsPermissionMode;
-  /** Trusted Studio mode — mounts system surface skills. */
-  surface?: AgentOsSurface;
+  /** Trusted product workbench mode. */
+  workbenchMode: AgentOsWorkbenchMode;
+  /** Server validates this selection against the project before the run starts. */
+  workbenchContext?: AgentOsWorkbenchContext;
   /** Per-turn skill ids (composer). Mounted when registered in skill runtime. */
   skillIds?: string[];
   /** Project default skill ids (admin). Mounted when registered. */
@@ -111,7 +113,8 @@ export class AgentOsApiClient {
         conversationId: input.conversationId,
         attachmentIds: input.attachmentIds,
         permissionMode: input.permissionMode,
-        surface: input.surface,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
         skillIds: input.skillIds,
       },
       timeout: 10 * 60_000,
@@ -209,7 +212,6 @@ export class AgentOsApiClient {
   ): Promise<{
     revision: number;
     characters: AgentOsCharacterRow[];
-    surface?: string;
   }> {
     return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/characters`, {
       signal,
@@ -222,7 +224,6 @@ export class AgentOsApiClient {
   ): Promise<{
     revision: number;
     shots: AgentOsShotRow[];
-    surface?: string;
   }> {
     return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/shots`, {
       signal,
@@ -306,15 +307,17 @@ export class AgentOsApiClient {
   }
 
   listSkills(
-    surface?: string,
+    projectId: string,
+    workbenchMode: AgentOsWorkbenchMode,
     signal?: AbortSignal
   ): Promise<{
     skills: AgentOsSkillMeta[];
     invocable: AgentOsSkillMeta[];
-    surface: string | null;
+    projectKind: "platform" | "story";
+    workbenchMode: string;
   }> {
     return api.get("/aurora/agent-os/skills", {
-      params: surface ? { surface } : undefined,
+      params: { projectId, workbenchMode },
       signal,
     });
   }
@@ -325,7 +328,6 @@ export class AgentOsApiClient {
   ): Promise<{
     projectId: string;
     defaultSkillIds: string[];
-    invocable: AgentOsSkillMeta[];
   }> {
     return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/skills`, { signal });
   }
@@ -381,7 +383,8 @@ export interface AgentOsSkillMeta {
   alwaysOn: boolean;
   userInvocable: boolean;
   removable: boolean;
-  surfaces: string[];
+  projectKinds: Array<"platform" | "story">;
+  workbenchModes: string[];
   priority: number;
 }
 
