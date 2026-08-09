@@ -164,15 +164,17 @@ export function TextGameReviewDetail({
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-            <div className="grid lg:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
-              <div className="relative aspect-video bg-slate-100 lg:min-h-[280px]">
-                {content.posterUrl ? (
-                  <img src={content.posterUrl} alt={title} className="size-full object-cover" />
-                ) : (
-                  <div className="grid size-full place-items-center text-slate-300">
-                    <IconPhoto className="size-10" />
-                  </div>
-                )}
+            <div className="grid lg:grid-cols-[300px_minmax(0,1fr)]">
+              <div className="grid place-items-center bg-slate-50 p-5">
+                <div className="relative aspect-[2/3] w-full max-w-[260px] overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
+                  {content.posterUrl ? (
+                    <img src={content.posterUrl} alt={title} className="size-full object-cover" />
+                  ) : (
+                    <div className="grid size-full place-items-center text-slate-300">
+                      <IconPhoto className="size-10" />
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="p-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
