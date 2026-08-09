@@ -11,7 +11,6 @@ import { api } from "@/src/lib/api";
 
 export const playerTextGameKeys = {
   all: ["player-text-game"] as const,
-  progress: (gameId: string) => [...playerTextGameKeys.all, "progress", gameId] as const,
   session: (gameId: string) => [...playerTextGameKeys.all, "session", gameId] as const,
 };
 

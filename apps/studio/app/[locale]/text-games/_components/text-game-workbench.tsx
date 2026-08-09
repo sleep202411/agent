@@ -54,7 +54,6 @@ import {
   transitionCreatorTextGame,
   updateCreatorTextGame,
 } from "../_lib/text-game-api";
-import { hasTextGameCoverAspect, readImageDimensions } from "../_lib/text-game-cover";
 import {
   textGameDraftFormFromDetail,
   toTextGameUpdateInput,
@@ -102,7 +101,6 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   const posterInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const stillInputRef = useRef<HTMLInputElement>(null);
-  const bgmInputRef = useRef<HTMLInputElement>(null);
   const [game, setGame] = useState(initial);
   const [form, setForm] = useState<TextGameDraftForm>(() => textGameDraftFormFromDetail(initial));
   const [baseline, setBaseline] = useState<TextGameDraftForm>(() =>
@@ -191,17 +189,6 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
     }
 
     try {
-      let dimensions: { width: number; height: number };
-      try {
-        dimensions = await readImageDimensions(file);
-      } catch {
-        toast.error(t("editor.posterReadFailed"));
-        return;
-      }
-      if (!hasTextGameCoverAspect(dimensions.width, dimensions.height)) {
-        toast.error(t("editor.posterAspectError"));
-        return;
-      }
       const posterUrl = await uploadOne("poster", file, "episode_cover");
       await saveForm({ posterUrl });
     } catch (error) {
@@ -286,7 +273,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
     }
   };
 
-  const publicUrl = `${getWebBaseUrl(region)}/${locale}/games/${encodeURIComponent(game.gameId)}`;
+  const publicUrl = `${getWebBaseUrl(region)}/${locale}/play/text-game/${encodeURIComponent(game.gameId)}`;
 
   return (
     <main className="flex min-h-dvh flex-col bg-[var(--canvas-background)] min-[1100px]:h-dvh min-[1100px]:overflow-hidden">
@@ -393,11 +380,11 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
               }}
             />
             {form.posterUrl ? (
-              <div className="aspect-video overflow-hidden rounded-2xl bg-white/[0.04]">
+              <div className="mx-auto aspect-[2/3] w-full max-w-[220px] overflow-hidden rounded-2xl bg-white/[0.04]">
                 <img src={form.posterUrl} alt="" className="size-full object-cover" />
               </div>
             ) : (
-              <div className="grid aspect-video place-items-center rounded-2xl bg-white/[0.04] text-white/18">
+              <div className="mx-auto grid aspect-[2/3] w-full max-w-[220px] place-items-center rounded-2xl bg-white/[0.04] text-white/18">
                 <IconPhoto className="size-10" stroke={1.3} />
               </div>
             )}
@@ -554,18 +541,6 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
           </InspectorSection>
 
           <InspectorSection icon={IconMusic} title={t("editor.sections.music")}>
-            <input
-              ref={bgmInputRef}
-              type="file"
-              accept="audio/mpeg,audio/wav"
-              aria-label={form.bgmUrl ? t("editor.replaceMusic") : t("editor.uploadMusic")}
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void uploadBgm(file);
-                event.target.value = "";
-              }}
-            />
             {form.bgmUrl ? (
               <audio controls src={form.bgmUrl} className="h-10 w-full" />
             ) : (
@@ -573,16 +548,32 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
                 {t("editor.noMusic")}
               </p>
             )}
-            <Button
-              block
-              variant="secondary"
-              disabled={!editable || editorBusy}
-              loading={uploadTarget === "bgm"}
-              onClick={() => bgmInputRef.current?.click()}
-            >
-              <IconMusic data-icon="inline-start" />
-              {form.bgmUrl ? t("editor.replaceMusic") : t("editor.uploadMusic")}
-            </Button>
+            <div className="relative rounded-xl focus-within:ring-2 focus-within:ring-ring/30">
+              <input
+                type="file"
+                accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+                aria-label={form.bgmUrl ? t("editor.replaceMusic") : t("editor.uploadMusic")}
+                className="absolute inset-0 z-10 size-full cursor-pointer opacity-0 disabled:pointer-events-none disabled:cursor-not-allowed"
+                disabled={!editable || editorBusy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadBgm(file);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                block
+                variant="secondary"
+                disabled={!editable || editorBusy}
+                loading={uploadTarget === "bgm"}
+                tabIndex={-1}
+                aria-hidden="true"
+                className="pointer-events-none"
+              >
+                <IconMusic data-icon="inline-start" />
+                {form.bgmUrl ? t("editor.replaceMusic") : t("editor.uploadMusic")}
+              </Button>
+            </div>
             {form.bgmUrl && editable ? (
               <Button
                 block
@@ -709,29 +700,29 @@ function TextGameDraftPreview({
           {t("preview.eyebrow")}
         </p>
 
-        <div className="relative mt-5 aspect-video overflow-hidden rounded-[22px] bg-white/[0.04]">
-          {form.posterUrl ? (
-            <img
-              src={form.posterUrl}
-              alt={t("preview.posterAlt", { name })}
-              className="size-full object-cover"
-            />
-          ) : (
-            <div className="grid size-full place-items-center text-white/16">
-              <IconPhoto className="size-14" stroke={1.15} />
-            </div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
-            <h1 className="max-w-3xl text-2xl font-semibold tracking-[-0.025em] text-white sm:text-4xl">
+        <div className="mt-5 grid gap-6 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-end sm:gap-8">
+          <div className="relative aspect-[2/3] w-full max-w-[220px] overflow-hidden rounded-[22px] bg-white/[0.04]">
+            {form.posterUrl ? (
+              <img
+                src={form.posterUrl}
+                alt={t("preview.posterAlt", { name })}
+                className="size-full object-cover"
+              />
+            ) : (
+              <div className="grid size-full place-items-center text-white/16">
+                <IconPhoto className="size-14" stroke={1.15} />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 pb-1">
+            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-white sm:text-4xl">
               {name}
             </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/56 sm:text-base">
+              {form.synopsis.trim() || t("preview.synopsisFallback")}
+            </p>
           </div>
         </div>
-
-        <p className="mt-6 max-w-3xl text-sm leading-7 text-white/56 sm:text-base">
-          {form.synopsis.trim() || t("preview.synopsisFallback")}
-        </p>
 
         <section className="mt-9">
           <div className="flex items-end justify-between gap-4">
@@ -876,14 +867,15 @@ export function TextGameWorkbenchSkeleton({ label }: { label?: string }) {
             <div className="mx-auto w-full max-w-4xl px-5 py-7 sm:px-8 sm:py-10 lg:px-10">
               <Skeleton className="h-3 w-24 bg-white/[0.045]" />
 
-              <div className="relative mt-5 aspect-video overflow-hidden rounded-[22px] bg-white/[0.04]">
-                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/28 to-transparent" />
-                <Skeleton className="absolute bottom-6 left-5 h-9 w-[44%] min-w-48 bg-white/[0.08] sm:left-7" />
-              </div>
-
-              <div className="mt-6 space-y-2.5">
-                <Skeleton className="h-3.5 w-[88%] bg-white/[0.05]" />
-                <Skeleton className="h-3.5 w-[64%] bg-white/[0.04]" />
+              <div className="mt-5 grid gap-6 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-end sm:gap-8">
+                <Skeleton className="aspect-[2/3] w-full max-w-[220px] rounded-[22px] bg-white/[0.04]" />
+                <div className="space-y-4 pb-1">
+                  <Skeleton className="h-9 w-[64%] min-w-48 bg-white/[0.08]" />
+                  <div className="space-y-2.5">
+                    <Skeleton className="h-3.5 w-[88%] bg-white/[0.05]" />
+                    <Skeleton className="h-3.5 w-[64%] bg-white/[0.04]" />
+                  </div>
+                </div>
               </div>
 
               <section className="mt-9">
@@ -929,7 +921,7 @@ export function TextGameWorkbenchSkeleton({ label }: { label?: string }) {
           </SkeletonInspectorSection>
 
           <SkeletonInspectorSection titleWidth="w-14">
-            <Skeleton className="aspect-video w-full rounded-2xl bg-white/[0.04]" />
+            <Skeleton className="mx-auto aspect-[2/3] w-full max-w-[220px] rounded-2xl bg-white/[0.04]" />
             <Skeleton className="h-2.5 w-[84%] bg-white/[0.03]" />
             <Skeleton className="h-9 w-full rounded-xl bg-white/[0.05]" />
           </SkeletonInspectorSection>

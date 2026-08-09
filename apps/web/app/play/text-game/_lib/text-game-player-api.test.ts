@@ -3,7 +3,6 @@ import { api } from "@/src/lib/api";
 import {
   getPlayingTextGameSession,
   loadOrStartTextGameSession,
-  playerTextGameKeys,
   sendTextGameAction,
   startTextGameSession,
 } from "./text-game-player-api";
@@ -27,12 +26,6 @@ const session = {
 
 describe("text-game player session bootstrap", () => {
   beforeEach(() => vi.clearAllMocks());
-
-  it("keeps the detail progress probe separate from the active player cache", () => {
-    expect(playerTextGameKeys.progress(session.gameId)).not.toEqual(
-      playerTextGameKeys.session(session.gameId)
-    );
-  });
 
   it("starts a new session only when Java reports no playing session", async () => {
     vi.mocked(api.get).mockResolvedValue(null);

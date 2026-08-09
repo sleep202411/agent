@@ -63,10 +63,10 @@ export function TextGamesLibrary() {
       ) : null}
 
       {query.isLoading ? (
-        <div className="mt-8 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5">
+        <div className="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 4 }, (_, index) => (
             <div key={index} className="animate-pulse">
-              <div className="aspect-video rounded-2xl bg-white/[0.05]" />
+              <div className="aspect-[2/3] rounded-2xl bg-white/[0.05]" />
               <div className="mt-4 h-4 w-2/3 rounded bg-white/[0.06]" />
               <div className="mt-2 h-3 w-5/6 rounded bg-white/[0.04]" />
             </div>
@@ -96,7 +96,7 @@ export function TextGamesLibrary() {
       {query.data && query.data.length > 0 ? (
         <section
           aria-label={t("library.title")}
-          className="mt-8 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-5 gap-y-8"
+          className="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
         >
           {query.data.map((game) => (
             <Link
@@ -105,7 +105,7 @@ export function TextGamesLibrary() {
               className="group outline-none"
             >
               <article>
-                <div className="relative aspect-video overflow-hidden rounded-2xl bg-white/[0.045] shadow-[0_20px_55px_-30px_rgba(0,0,0,0.8)] transition duration-300 group-hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-white/50">
+                <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-white/[0.045] shadow-[0_20px_55px_-30px_rgba(0,0,0,0.8)] transition duration-300 group-hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-white/50">
                   {game.posterUrl ? (
                     <img
                       src={game.posterUrl}

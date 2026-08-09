@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
-import { resolveGameCover } from "../_data/cover-overrides";
 
 export function GamesPageClient({
   textGames,
@@ -76,22 +75,22 @@ export function GamesPageClient({
             ) : null}
           </div>
 
-          <div className="mt-6 grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {textGames.map((game) => (
               <Link
                 key={game.gameId}
-                href={localizePath(`/games/${encodeURIComponent(game.gameId)}`, locale)}
+                href={localizePath(`/play/text-game/${encodeURIComponent(game.gameId)}`, locale)}
                 className="group block focus-visible:outline-none"
               >
                 <article>
-                  <div className="relative aspect-video overflow-hidden rounded-2xl bg-secondary/60 ring-1 ring-foreground/6 transition duration-300 group-hover:-translate-y-1 group-hover:ring-foreground/14 group-focus-visible:ring-2 group-focus-visible:ring-primary">
+                  <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-secondary/60 ring-1 ring-foreground/6 transition duration-300 group-hover:-translate-y-1 group-hover:ring-foreground/14 group-focus-visible:ring-2 group-focus-visible:ring-primary">
                     {game.posterUrl ? (
                       <Image
                         src={game.posterUrl}
                         alt={game.name || t("textGames.untitled")}
                         fill
                         unoptimized
-                        sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                        sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
                         className="object-cover transition-transform duration-500 group-hover:scale-[1.025]"
                       />
                     ) : null}
@@ -143,16 +142,15 @@ export function GamesPageClient({
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {interactiveFilms.map((game) => {
-              const coverSrc = resolveGameCover(game.gameId, game.coverUrl);
               return (
                 <article
                   key={game.gameId}
                   className="group overflow-hidden rounded-2xl bg-secondary/52 ring-1 ring-foreground/6 transition-colors hover:bg-secondary/68"
                 >
                   <div className="relative aspect-video overflow-hidden bg-secondary">
-                    {coverSrc ? (
+                    {game.coverUrl ? (
                       <Image
-                        src={coverSrc}
+                        src={game.coverUrl}
                         alt={game.title}
                         fill
                         unoptimized

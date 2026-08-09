@@ -74,7 +74,7 @@ export function TextGameReviewList({
           const item = row.original;
           return (
             <div className="flex min-w-0 items-start gap-3">
-              <div className="grid h-[54px] w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+              <div className="grid h-[66px] w-11 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                 {item.posterUrl ? (
                   <img src={item.posterUrl} alt="" className="size-full object-cover" />
                 ) : (
