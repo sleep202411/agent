@@ -6,7 +6,10 @@ import {
   type MediaRefSnapshot,
   type ValidationIssue,
 } from '@repo/shared';
-import { MediaAssetDurationService } from '../media/media-asset-duration.service';
+import {
+  MediaAssetFactsService,
+  type MediaAssetFacts,
+} from '../media/media-asset-facts.service';
 import type {
   AiConditionExpression,
   AiFieldConstraint,
@@ -18,16 +21,19 @@ import type {
 
 @Injectable()
 export class AiGenerationValidatorService {
-  constructor(private readonly mediaDurations: MediaAssetDurationService) {}
+  constructor(private readonly mediaFacts: MediaAssetFactsService) {}
 
   /**
-   * Server-trusted media metadata on reference objects.
+   * Overwrite client-claimed media facts with server-resolved ones.
    *
-   * For every assetId: load (and if needed probe+persist) MediaAsset duration,
-   * then **overwrite** any client-supplied durationSeconds. Client claims are
-   * never authority when a durable asset is present.
+   * Every fact the MediaAsset row can answer for wins over whatever the client
+   * sent — duration is measured, byte size is read off the row. What the server
+   * cannot answer for is left alone on purpose: a reference without an
+   * `assetId` (a wired canvas output, an external URL) has no durable row to
+   * verify against, and the catalog duration rules fail closed, so discarding
+   * the client's value there would reject a legitimate submit outright.
    */
-  async enrichInputMediaFromAssets(
+  async applyTrustedMediaFacts(
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const assetIds = new Set<string>();
@@ -39,21 +45,17 @@ export class AiGenerationValidatorService {
         assetIds.add(assetId.trim());
       }
     }
-    if (assetIds.size === 0) return input;
 
-    const durationById = await this.mediaDurations.ensureDurations([
-      ...assetIds,
-    ]);
-    if (durationById.size === 0) return input;
+    const factsById = assetIds.size
+      ? await this.mediaFacts.ensureFacts([...assetIds])
+      : new Map<string, MediaAssetFacts>();
 
     const next: Record<string, unknown> = { ...input };
     for (const [key, value] of Object.entries(input)) {
       if (Array.isArray(value)) {
-        next[key] = value.map((item) =>
-          this.withTrustedAssetDuration(item, durationById),
-        );
+        next[key] = value.map((item) => this.withTrustedFacts(item, factsById));
       } else if (this.isRecord(value)) {
-        next[key] = this.withTrustedAssetDuration(value, durationById);
+        next[key] = this.withTrustedFacts(value, factsById);
       }
     }
     return next;
@@ -99,20 +101,22 @@ export class AiGenerationValidatorService {
     return issues;
   }
 
-  /**
-   * When assetId resolves to a measured duration, always overwrite the client
-   * value (never trust the client for duration truth).
-   */
-  private withTrustedAssetDuration(
+  private withTrustedFacts(
     item: unknown,
-    durationById: Map<string, number>,
+    factsById: Map<string, MediaAssetFacts>,
   ): unknown {
     if (!this.isRecord(item)) return item;
+
     const assetId = typeof item.assetId === 'string' ? item.assetId.trim() : '';
-    if (!assetId) return item;
-    const duration = durationById.get(assetId);
-    if (duration == null) return item;
-    return { ...item, durationSeconds: duration };
+    const facts = assetId ? factsById.get(assetId) : undefined;
+    if (!facts) return item;
+
+    const trusted: Record<string, unknown> = { ...item };
+    if (facts.durationSeconds != null) {
+      trusted.durationSeconds = facts.durationSeconds;
+    }
+    if (facts.bytes != null) trusted.bytes = facts.bytes;
+    return trusted;
   }
 
   private asItemList(value: unknown): unknown[] {
@@ -156,8 +160,18 @@ export class AiGenerationValidatorService {
   ): unknown {
     switch (field.type) {
       case 'string': {
-        const value = String(raw).trim();
         const label = this.fieldTitle(field, key);
+        // Only primitives may be coerced. `String({})` is "[object Object]" —
+        // a bogus value that passes every downstream check and fails only at
+        // the provider, after the call is paid for. Fail fast instead.
+        if (
+          typeof raw !== 'string' &&
+          typeof raw !== 'number' &&
+          typeof raw !== 'boolean'
+        ) {
+          throw this.validationError(`${label} must be a text value.`);
+        }
+        const value = String(raw).trim();
         if (field.minLength != null && value.length < field.minLength) {
           throw this.validationError(
             `${label} must be at least ${field.minLength} characters.`,

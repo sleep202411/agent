@@ -12,7 +12,7 @@ import type {
   AiCatalogSource,
 } from '../../types';
 
-export const MINIMAX_SCHEMA_VERSION = '2026-08-07-h3';
+export const MINIMAX_SCHEMA_VERSION = '2026-08-09-h3';
 export const MINIMAX_PROVIDER = 'minimax';
 export const MINIMAX_H3_ENDPOINT = 'MiniMax-H3';
 export const MINIMAX_H3_MODEL_ID = 'minimax-h3';
@@ -250,18 +250,10 @@ function videoInputSchemaFor(
   };
 
   if (imageToVideo || firstLastFrame) {
-    properties.startFrame = {
-      type: 'string',
-      title: 'Start frame',
-      'x-ui': { control: 'image_upload', group: 'reference', order: 20 },
-    };
+    properties.startFrame = mediaRefProperty('Start frame', 'image_upload', 20);
   }
   if (firstLastFrame) {
-    properties.endFrame = {
-      type: 'string',
-      title: 'End frame',
-      'x-ui': { control: 'image_upload', group: 'reference', order: 21 },
-    };
+    properties.endFrame = mediaRefProperty('End frame', 'image_upload', 21);
   }
 
   const referenceInputs = referenceInputsFor(parameterPolicy);
@@ -272,7 +264,7 @@ function videoInputSchemaFor(
         title: 'Reference images',
         minItems: referenceInputs.images.min,
         maxItems: referenceInputs.images.max,
-        items: { type: 'string' },
+        items: MEDIA_REF_ITEM,
         'x-ui': { control: 'image_upload', group: 'reference', order: 22 },
       };
     }
@@ -282,7 +274,7 @@ function videoInputSchemaFor(
         title: 'Reference videos',
         minItems: referenceInputs.videos.min,
         maxItems: referenceInputs.videos.max,
-        items: { type: 'string' },
+        items: MEDIA_REF_ITEM,
         'x-ui': { control: 'video_upload', group: 'reference', order: 23 },
       };
     }
@@ -292,7 +284,7 @@ function videoInputSchemaFor(
         title: 'Reference audio',
         minItems: referenceInputs.audios.min,
         maxItems: referenceInputs.audios.max,
-        items: { type: 'string' },
+        items: MEDIA_REF_ITEM,
         'x-ui': { control: 'audio_upload', group: 'reference', order: 24 },
       };
     }
@@ -381,6 +373,34 @@ function videoOutputSchemaFor(): AiOutputSchema {
       },
     },
   } as unknown as AiOutputSchema;
+}
+
+/**
+ * Media reference shape — `{ url }` objects, never bare strings.
+ *
+ * Every provider declares reference media this way so the validator's
+ * `format: 'uri'` check runs before enqueue, and `additionalProperties`
+ * carries `assetId` through to server-trusted fact resolution.
+ */
+const MEDIA_REF_ITEM = {
+  type: 'object' as const,
+  properties: {
+    url: { type: 'string' as const, format: 'uri', title: 'URL' },
+  },
+  required: ['url'],
+  additionalProperties: true,
+};
+
+function mediaRefProperty(
+  title: string,
+  control: string,
+  order: number,
+): AiInputSchema['properties'][string] {
+  return {
+    ...MEDIA_REF_ITEM,
+    title,
+    'x-ui': { control, group: 'reference', order },
+  } as AiInputSchema['properties'][string];
 }
 
 function referenceInputsFor(parameterPolicy?: AiJsonValue): {

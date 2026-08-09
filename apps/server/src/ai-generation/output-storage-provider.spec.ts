@@ -283,6 +283,9 @@ function submitHarness(type: AiJobType) {
     {} as never,
     { assertCanUseModel: jest.fn(), assertCanUseOptions: jest.fn() } as never,
     {
+      applyTrustedMediaFacts: jest.fn((input: Record<string, unknown>) =>
+        Promise.resolve(input),
+      ),
       normalizeInput: jest.fn(
         (_schema: object, input: Record<string, unknown>) => input,
       ),

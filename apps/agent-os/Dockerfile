@@ -43,6 +43,7 @@ COPY --from=builder /app/packages/agent-policy/dist ./packages/agent-policy/dist
 COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/model-router/dist ./packages/model-router/dist
+COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/apps/agent-os/dist ./apps/agent-os/dist
 
 # A workspace dependency added later without a COPY line above would otherwise

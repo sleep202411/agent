@@ -1,9 +1,9 @@
 /**
- * Server-trusted duration for video/audio MediaAssets.
+ * Server-trusted facts about a stored MediaAsset: duration and byte size.
  *
- * Client-reported durations are never authority. On confirm (and when
- * enrichment finds a null duration) we stream the stored object, run ffprobe
- * on the bytes, persist `durationSeconds`, and return that value.
+ * Client-reported values are never authority. `bytes` is read straight off the
+ * asset row; `durationSeconds` is read when stored and otherwise measured by
+ * streaming the object through ffprobe and persisting the result.
  *
  * High-traffic design:
  * - DB hit is O(1) when duration already stored (steady-state generate path).
@@ -69,9 +69,15 @@ export interface DurationProbeAsset {
   durationSeconds: number | null;
 }
 
+/** Authoritative media facts for one asset. `null` means genuinely unknown. */
+export interface MediaAssetFacts {
+  durationSeconds: number | null;
+  bytes: number | null;
+}
+
 @Injectable()
-export class MediaAssetDurationService {
-  private readonly logger = new Logger(MediaAssetDurationService.name);
+export class MediaAssetFactsService {
+  private readonly logger = new Logger(MediaAssetFactsService.name);
   private readonly maxConcurrent = clampInt(
     process.env.MEDIA_DURATION_PROBE_MAX_CONCURRENT,
     DEFAULT_MAX_CONCURRENT,
@@ -106,20 +112,21 @@ export class MediaAssetDurationService {
   }
 
   /**
-   * Resolve duration for many assets: use stored value when present, otherwise
-   * probe storage, persist, and return. Assets that are not video/audio are
-   * skipped. Returns a map of assetId → durationSeconds for those resolved.
+   * Resolve facts for many assets. `bytes` comes from the asset row; duration
+   * uses the stored value when present and otherwise probes storage, persists,
+   * and returns it. Non video/audio assets simply have a null duration.
    *
-   * Missing durations are probed with concurrency limits + single-flight so
-   * parallel submits for the same asset share one download.
+   * Returns a map of assetId → facts for every asset that exists. Missing
+   * durations are probed with concurrency limits + single-flight so parallel
+   * submits for the same asset share one download.
    */
-  async ensureDurations(
+  async ensureFacts(
     assetIds: readonly string[],
-  ): Promise<Map<string, number>> {
+  ): Promise<Map<string, MediaAssetFacts>> {
     const unique = [
       ...new Set(assetIds.map((id) => id.trim()).filter(Boolean)),
     ];
-    const out = new Map<string, number>();
+    const out = new Map<string, MediaAssetFacts>();
     if (unique.length === 0) return out;
 
     const rows = await this.prisma.mediaAsset.findMany({
@@ -140,16 +147,12 @@ export class MediaAssetDurationService {
 
     const pending: Array<DurationProbeAsset & { id: string }> = [];
     for (const row of rows) {
-      if (!DURATION_KINDS.has(row.kind)) continue;
-      if (
-        row.durationSeconds != null &&
-        Number.isFinite(row.durationSeconds) &&
-        row.durationSeconds > 0
-      ) {
-        out.set(row.id, row.durationSeconds);
-        continue;
-      }
-      pending.push(row);
+      const stored = storedDuration(row.durationSeconds);
+      out.set(row.id, {
+        durationSeconds: stored,
+        bytes: row.sizeBytes == null ? null : Number(row.sizeBytes),
+      });
+      if (stored == null && DURATION_KINDS.has(row.kind)) pending.push(row);
     }
 
     if (pending.length === 0) return out;
@@ -170,7 +173,8 @@ export class MediaAssetDurationService {
       }),
     );
     for (const { id, seconds } of results) {
-      if (seconds != null) out.set(id, seconds);
+      const facts = out.get(id);
+      if (facts && seconds != null) facts.durationSeconds = seconds;
     }
     return out;
   }
@@ -204,13 +208,8 @@ export class MediaAssetDurationService {
         where: { id: row.id, deletedAt: null },
         select: { durationSeconds: true },
       });
-      if (
-        fresh?.durationSeconds != null &&
-        Number.isFinite(fresh.durationSeconds) &&
-        fresh.durationSeconds > 0
-      ) {
-        return fresh.durationSeconds;
-      }
+      const stored = storedDuration(fresh?.durationSeconds ?? null);
+      if (stored != null) return stored;
       return this.probeAndPersist(row);
     }).finally(() => {
       this.inflightByAssetId.delete(row.id);
@@ -281,7 +280,7 @@ export class MediaAssetDurationService {
       });
     }
 
-    let signed;
+    let signed: Awaited<ReturnType<MediaStorageAccessService['createReadUrl']>>;
     try {
       signed = await this.storageAccess.createReadUrl(
         {
@@ -330,7 +329,7 @@ export class MediaAssetDurationService {
         response.body as unknown as NodeReadableStream,
       );
       const limiter = new Transform({
-        transform(chunk, _enc, cb) {
+        transform(chunk: Buffer, _enc, cb) {
           written += chunk.length;
           if (written > MAX_PROBE_BYTES) {
             cb(
@@ -429,6 +428,11 @@ export class MediaAssetDurationService {
     // Keep sub-second precision for combined-duration rules (e.g. Seedance 15s).
     return exact;
   }
+}
+
+/** A persisted duration counts as known only when finite and positive. */
+function storedDuration(value: number | null): number | null {
+  return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function extensionFor(

@@ -90,7 +90,7 @@ import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
 } from './uploaded-image-probe.service';
-import { MediaAssetDurationService } from './media-asset-duration.service';
+import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaAssetReadinessService } from './media-asset-readiness.service';
 
 /**
@@ -330,7 +330,7 @@ export class MediaUploadService {
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
-    private readonly mediaDurations: MediaAssetDurationService,
+    private readonly mediaFacts: MediaAssetFactsService,
     private readonly storageRegistry: StorageProviderRegistry,
   ) {}
 
@@ -631,7 +631,7 @@ export class MediaUploadService {
       confirmedAssetKind === MediaAssetKind.video ||
       confirmedAssetKind === MediaAssetKind.audio
     ) {
-      const durationSeconds = await this.mediaDurations.probeObjectDuration({
+      const durationSeconds = await this.mediaFacts.probeObjectDuration({
         kind: confirmedAssetKind,
         storageProvider: truth.storageProvider,
         bucket: truth.bucket,
