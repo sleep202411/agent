@@ -84,37 +84,21 @@ interface AgentOsPanelProps {
   onClose: () => void;
 }
 
-/**
- * Agent OS side panel — chat + attachments + Codex-style permission/model near send.
- * The keyed session is a hard conversation boundary when project/workbench scope changes.
- */
+/** Agent OS side panel — one durable conversation boundary per project. */
 export function AgentOsPanel(props: AgentOsPanelProps) {
-  const contextId =
-    props.workbenchContext?.sectionId ?? props.workbenchContext?.chapterId ?? "project";
-  const conversationScope = `${props.workbenchMode}:${contextId}`;
-  return (
-    <AgentOsPanelSession
-      key={`${props.projectId}:${conversationScope}`}
-      {...props}
-      conversationScope={conversationScope}
-    />
-  );
+  return <AgentOsProjectSession key={props.projectId} {...props} />;
 }
 
-function AgentOsPanelSession({
+function AgentOsProjectSession({
   projectId,
   workbenchMode,
   workbenchContext,
   onMutationCompleted,
   open,
   onClose,
-  conversationScope,
-}: AgentOsPanelProps & { conversationScope: string }) {
+}: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
-  const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(
-    projectId,
-    conversationScope
-  );
+  const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -676,7 +660,6 @@ function AgentOsPanelSession({
     >
       <AgentOsTranscript
         projectId={projectId}
-        sectionId={workbenchContext?.sectionId}
         messages={state.messages}
         status={state.status}
         error={runErrorText}

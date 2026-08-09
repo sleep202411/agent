@@ -110,68 +110,69 @@ export default function ProjectLayout({
       setShellInset={setShellInset}
     >
       <ProjectSectionsProvider projectId={projectId}>
-        <SectionCanvasBoundary projectId={projectId} canEdit={canEdit}>
-          <div className="flex h-dvh">
-            <ProjectSidebar />
+        <div className="flex h-dvh">
+          <SectionCanvasBoundary projectId={projectId} canEdit={canEdit}>
+            <div className="flex min-w-0 flex-1">
+              <ProjectSidebar />
 
-            <div className="flex min-w-0 flex-1 flex-col">
-              <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 px-4">
-                <input
-                  value={name}
-                  aria-label={t("projectName")}
-                  placeholder={t("untitled")}
-                  readOnly={!canEdit}
-                  onChange={(event) => {
-                    if (!canEdit) return;
-                    dirtyRef.current = true;
-                    setName(event.target.value);
-                  }}
-                  onBlur={(event) => commitName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                  }}
-                  className="field-sizing-content h-8 min-w-[80px] max-w-[240px] rounded-full px-3 text-sm font-medium outline-none transition-colors read-only:cursor-default hover:bg-white/[0.06] focus:bg-white/[0.06]"
-                />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 px-4">
+                  <input
+                    value={name}
+                    aria-label={t("projectName")}
+                    placeholder={t("untitled")}
+                    readOnly={!canEdit}
+                    onChange={(event) => {
+                      if (!canEdit) return;
+                      dirtyRef.current = true;
+                      setName(event.target.value);
+                    }}
+                    onBlur={(event) => commitName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="field-sizing-content h-8 min-w-[80px] max-w-[240px] rounded-full px-3 text-sm font-medium outline-none transition-colors read-only:cursor-default hover:bg-white/[0.06] focus:bg-white/[0.06]"
+                  />
 
-                <ModeTabs projectId={projectId} activeMode={activeMode} />
+                  <ModeTabs projectId={projectId} activeMode={activeMode} />
 
-                <div className="ml-auto flex items-center gap-2">
-                  {role === "viewer" && (
-                    <span className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium text-white/70">
-                      <IconEye className="size-4" stroke={1.8} />
-                      {t("viewOnly")}
-                    </span>
-                  )}
-                  <HeaderActions canEdit={canEdit} />
-                  {canManage && (
-                    <button
-                      type="button"
-                      onClick={openShare}
-                      className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
-                    >
-                      <IconUsers className="size-4" stroke={1.8} />
-                      {t("share")}
-                    </button>
-                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {role === "viewer" && (
+                      <span className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium text-white/70">
+                        <IconEye className="size-4" stroke={1.8} />
+                        {t("viewOnly")}
+                      </span>
+                    )}
+                    <HeaderActions canEdit={canEdit} />
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={openShare}
+                        className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
+                      >
+                        <IconUsers className="size-4" stroke={1.8} />
+                        {t("share")}
+                      </button>
+                    )}
+                  </div>
+                </header>
+
+                <div className="flex min-h-0 flex-1">
+                  <LeftDrawerSlot canEdit={canEdit} projectId={projectId} />
+                  <main className="relative min-w-0 flex-1">{children}</main>
                 </div>
-              </header>
-
-              <div className="flex min-h-0 flex-1">
-                <LeftDrawerSlot canEdit={canEdit} projectId={projectId} />
-                <main className="relative min-w-0 flex-1">{children}</main>
               </div>
             </div>
+            {historyOpen ? <HistoryOverlay onClose={closeHistory} /> : null}
+          </SectionCanvasBoundary>
 
-            <SectionAgentPanel
-              projectId={projectId}
-              activeMode={activeMode}
-              open={copilotOpen}
-              onClose={closeCopilot}
-            />
-          </div>
-
-          {historyOpen ? <HistoryOverlay onClose={closeHistory} /> : null}
-        </SectionCanvasBoundary>
+          <SectionAgentPanel
+            projectId={projectId}
+            activeMode={activeMode}
+            open={copilotOpen}
+            onClose={closeCopilot}
+          />
+        </div>
 
         {canManage && (
           <ShareDialog
@@ -198,11 +199,15 @@ function SectionCanvasBoundary({
   const t = useTranslations("project.sections");
   const { activeSection, status, error } = useProjectSections();
   if (status === "loading") {
-    return <div className="grid h-dvh place-items-center text-sm text-white/45">{t("title")}…</div>;
+    return (
+      <div className="grid min-w-0 flex-1 place-items-center text-sm text-white/45">
+        {t("title")}…
+      </div>
+    );
   }
   if (status === "error" || !activeSection) {
     return (
-      <div className="grid h-dvh place-items-center px-6 text-center text-sm text-white/55">
+      <div className="grid min-w-0 flex-1 place-items-center px-6 text-center text-sm text-white/55">
         {error?.message || t("invalid")}
       </div>
     );
@@ -263,6 +268,7 @@ function SectionAgentPanel({
   const { activeSection } = useProjectSections();
   const workbenchMode = agentOsWorkbenchModeFromStudioMode(activeMode);
   const isSectionMode = workbenchMode === "canvas" || workbenchMode === "storyboard";
+  if (isSectionMode && !activeSection) return null;
   return (
     <AgentOsPanel
       projectId={projectId}

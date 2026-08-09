@@ -86,7 +86,6 @@ function MessageMetaClock({
  */
 export function AgentOsTranscript({
   projectId,
-  sectionId,
   messages,
   status,
   error,
@@ -106,7 +105,6 @@ export function AgentOsTranscript({
   empty: ReactNode;
   /** Needed to link a written node to its place on the canvas. */
   projectId: string;
-  sectionId?: string;
   labels: {
     transcript: string;
     scrollToLatest: string;
@@ -198,7 +196,6 @@ export function AgentOsTranscript({
                       isStreaming={streamingThis}
                       showApprovalActions={message.role === "approval" && pendingApprovalActive}
                       projectId={projectId}
-                      sectionId={sectionId}
                       onApprove={onApprove}
                       labels={labels}
                     />
@@ -245,7 +242,6 @@ export function AgentOsTranscript({
 
 function AgentOsMessageRow({
   projectId,
-  sectionId,
   message,
   busy,
   isStreaming = false,
@@ -259,7 +255,6 @@ function AgentOsMessageRow({
   isStreaming?: boolean;
   showApprovalActions: boolean;
   projectId: string;
-  sectionId?: string;
   onApprove: (decision: "approve" | "reject") => void;
   labels: {
     user: string;
@@ -431,7 +426,7 @@ function AgentOsMessageRow({
           {written.length > 0 && projectId ? (
             <WrittenNodes
               projectId={projectId}
-              sectionId={sectionId}
+              sectionId={message.workbenchContext?.sectionId}
               nodes={written}
               label={labels.showOnCanvas}
             />
