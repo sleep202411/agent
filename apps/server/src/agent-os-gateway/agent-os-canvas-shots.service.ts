@@ -24,8 +24,6 @@ import { DocumentsGateway } from '../documents/documents.gateway';
 import { rootSchemaFor } from '../documents/document-modes';
 
 const SHOT_NODE_TYPE = 'shot';
-const SHOT_NODE_WIDTH = 280;
-const SHOT_STRIP_GAP = 64;
 
 export type AgentOsCanvasShot = {
   id: string;
@@ -78,6 +76,7 @@ export class AgentOsCanvasShotsService {
   async readCanvasSummary(input: {
     actorId: string;
     projectId: string;
+    documentId: string;
   }): Promise<{
     projectId: string;
     draftRevision: number;
@@ -85,18 +84,14 @@ export class AgentOsCanvasShotsService {
     nodeCount: number;
     selectedSummaries: Array<{ id: string; kind: string; title?: string }>;
   }> {
-    const user: AuthUser = { userId: input.actorId };
-    const ensured = await this.documents.ensurePrimaryDocument(
-      user,
-      input.projectId,
-      PlatformDocumentType.canvas,
-    );
-    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
-        id: documentId,
+        id: input.documentId,
+        projectId: input.projectId,
+        type: PlatformDocumentType.canvas,
         status: PlatformDocumentStatus.active,
         deletedAt: null,
+        section: { archivedAt: null },
       },
       select: {
         id: true,
@@ -107,13 +102,10 @@ export class AgentOsCanvasShotsService {
       },
     });
     if (!row) {
-      return {
-        projectId: input.projectId,
-        draftRevision: 0,
-        layoutRevision: 0,
-        nodeCount: 0,
-        selectedSummaries: [],
-      };
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_DOCUMENT_MISSING',
+        message: 'The active chapter canvas is unavailable.',
+      });
     }
 
     const schema = rootSchemaFor(PlatformDocumentType.canvas);
@@ -135,11 +127,12 @@ export class AgentOsCanvasShotsService {
       }> = [];
       nodes.forEach((yNode, id) => {
         if (!(yNode instanceof Y.Map)) return;
-        const type = String(yNode.get('type') ?? 'unknown');
-        const data = yNode.get('data');
+        const rawType: unknown = yNode.get('type');
+        const type = typeof rawType === 'string' ? rawType : 'unknown';
+        const data: unknown = yNode.get('data');
         let title: string | undefined;
         if (data instanceof Y.Map) {
-          const label = data.get('label');
+          const label: unknown = data.get('label');
           if (typeof label === 'string' && label.trim()) title = label.trim();
         }
         selectedSummaries.push({ id, kind: type, title });
@@ -168,23 +161,23 @@ export class AgentOsCanvasShotsService {
    * plain JSON and never construct a Y.Doc. Otherwise hydrate and render the
    * same shape, so the mapping below has one input format.
    */
-  async listShots(input: { actorId: string; projectId: string }): Promise<{
+  async listShots(input: {
+    actorId: string;
+    projectId: string;
+    documentId: string;
+  }): Promise<{
     documentId: string;
     revision: number;
     shots: AgentOsCanvasShotRow[];
   }> {
-    const user: AuthUser = { userId: input.actorId };
-    const ensured = await this.documents.ensurePrimaryDocument(
-      user,
-      input.projectId,
-      PlatformDocumentType.canvas,
-    );
-    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
-        id: documentId,
+        id: input.documentId,
+        projectId: input.projectId,
+        type: PlatformDocumentType.canvas,
         status: PlatformDocumentStatus.active,
         deletedAt: null,
+        section: { archivedAt: null },
       },
       select: {
         id: true,
@@ -195,7 +188,10 @@ export class AgentOsCanvasShotsService {
       },
     });
     if (!row) {
-      return { documentId, revision: 0, shots: [] };
+      throw new UnprocessableEntityException({
+        code: 'CANVAS_DOCUMENT_MISSING',
+        message: 'The active chapter canvas is unavailable.',
+      });
     }
 
     // The compactor debounces (1.5s) and hard-caps (15s), so the snapshot is
@@ -240,6 +236,7 @@ export class AgentOsCanvasShotsService {
   async applyPatch(input: {
     actorId: string;
     projectId: string;
+    documentId: string;
     baseDraftRevision: number;
     baseLayoutRevision: number;
     operations: Array<{
@@ -256,17 +253,14 @@ export class AgentOsCanvasShotsService {
     nodeIds: string[];
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const ensured = await this.documents.ensurePrimaryDocument(
-      user,
-      input.projectId,
-      PlatformDocumentType.canvas,
-    );
-    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
-        id: documentId,
+        id: input.documentId,
+        projectId: input.projectId,
+        type: PlatformDocumentType.canvas,
         status: PlatformDocumentStatus.active,
         deletedAt: null,
+        section: { archivedAt: null },
       },
       select: {
         id: true,
@@ -355,7 +349,7 @@ export class AgentOsCanvasShotsService {
       return {
         draftRevision: refreshed?.version ?? row.version + 1,
         layoutRevision:
-          (operation.sequence as number) ??
+          operation.sequence ??
           refreshed?.currentSequence ??
           row.currentSequence + 1,
         appliedOperationIds,
@@ -378,6 +372,7 @@ export class AgentOsCanvasShotsService {
   async deleteShots(input: {
     actorId: string;
     projectId: string;
+    documentId: string;
     shotIds: string[];
     idempotencyKey: string;
   }): Promise<{
@@ -387,17 +382,14 @@ export class AgentOsCanvasShotsService {
     deleted: Array<{ id: string; title: string }>;
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const ensured = await this.documents.ensurePrimaryDocument(
-      user,
-      input.projectId,
-      PlatformDocumentType.canvas,
-    );
-    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
-        id: documentId,
+        id: input.documentId,
+        projectId: input.projectId,
+        type: PlatformDocumentType.canvas,
         status: PlatformDocumentStatus.active,
         deletedAt: null,
+        section: { archivedAt: null },
       },
       select: {
         id: true,
@@ -426,8 +418,8 @@ export class AgentOsCanvasShotsService {
           missing.push(shotId);
           continue;
         }
-        const data = nodes.get(nodeId)?.get('data');
-        const label = data instanceof Y.Map ? data.get('label') : null;
+        const data: unknown = nodes.get(nodeId)?.get('data');
+        const label: unknown = data instanceof Y.Map ? data.get('label') : null;
         targets.push({
           id: shotId,
           nodeId,
@@ -475,7 +467,7 @@ export class AgentOsCanvasShotsService {
 
       return {
         documentId: row.id,
-        revision: operation.sequence as number,
+        revision: operation.sequence,
         previousRevision: row.currentSequence,
         deleted,
       };
@@ -493,6 +485,7 @@ export class AgentOsCanvasShotsService {
   async applyShots(input: {
     actorId: string;
     projectId: string;
+    documentId: string;
     shots: ShotWrite[];
     idempotencyKey: string;
   }): Promise<{
@@ -502,17 +495,14 @@ export class AgentOsCanvasShotsService {
     written: Array<{ id: string; title: string; nodeId: string }>;
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const ensured = await this.documents.ensurePrimaryDocument(
-      user,
-      input.projectId,
-      PlatformDocumentType.canvas,
-    );
-    const documentId = ensured.document.id as string;
     const row = await this.prisma.platformDocument.findFirst({
       where: {
-        id: documentId,
+        id: input.documentId,
+        projectId: input.projectId,
+        type: PlatformDocumentType.canvas,
         status: PlatformDocumentStatus.active,
         deletedAt: null,
+        section: { archivedAt: null },
       },
       select: {
         id: true,
@@ -558,7 +548,7 @@ export class AgentOsCanvasShotsService {
 
       return {
         documentId: row.id,
-        revision: operation.sequence as number,
+        revision: operation.sequence,
         previousRevision: row.currentSequence,
         written,
       };
@@ -869,8 +859,9 @@ function readNodeGeometry(
   nodes.forEach((yNode) => {
     if (!(yNode instanceof Y.Map)) return;
     const position = yNode.get('position');
+    const rawType: unknown = yNode.get('type');
     out.push({
-      type: String(yNode.get('type') ?? ''),
+      type: typeof rawType === 'string' ? rawType : '',
       position:
         position instanceof Y.Map
           ? {
@@ -912,7 +903,7 @@ function boardOrder(
     if (!(yNode instanceof Y.Map) || yNode.get('type') !== SHOT_NODE_TYPE)
       return;
     const data = yNode.get('data');
-    const order = data instanceof Y.Map ? data.get('order') : null;
+    const order: unknown = data instanceof Y.Map ? data.get('order') : null;
     rows.push({ id, order: typeof order === 'string' ? order : null });
   });
   return rows.sort(compareByOrder);

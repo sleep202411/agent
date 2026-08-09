@@ -133,6 +133,7 @@ export async function createProject(
   workspaceId: string,
   input: {
     name: string;
+    initialSectionTitle: string;
     slug?: string;
     projectType?: string;
     visibility?: ProjectVisibility;
@@ -176,6 +177,7 @@ export async function archiveProject(
 
 export type DocumentType =
   | "brief"
+  | "canvas"
   | "script"
   | "storyboard"
   | "shot_plan"
@@ -190,6 +192,7 @@ export interface FizzDocument {
   id: string;
   workspaceId: string;
   projectId: string;
+  sectionId: string | null;
   type: DocumentType;
   status: DocumentStatus;
   title: string;
@@ -207,6 +210,22 @@ export interface FizzDocument {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+}
+
+export interface ProjectSectionRef {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  version: number;
+  canvasDocumentId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectSectionsCollection {
+  projectVersion: number;
+  sections: ProjectSectionRef[];
 }
 
 export interface DocumentOperation {
@@ -262,16 +281,13 @@ export async function listDocuments(
   return res.documents;
 }
 
-/**
- * Idempotent — returns the project's primary storyboard document, creating
- * it on first open. "Documents" are internal plumbing; the user just enters
- * a project and lands on its storyboard with view-mode switching.
- */
-export async function ensurePrimaryStoryboard(projectId: string): Promise<FizzDocument> {
-  const res = await api.post<{ document: FizzDocument }>(
-    `/aurora/projects/${projectId}/storyboard/ensure`
+export async function getFirstSectionCanvas(projectId: string): Promise<FizzDocument> {
+  const collection = await api.get<ProjectSectionsCollection>(
+    `/aurora/projects/${projectId}/sections`
   );
-  return res.document;
+  const firstSection = collection.sections[0];
+  if (!firstSection) throw new Error("The project has no active chapter.");
+  return getDocument(firstSection.canvasDocumentId);
 }
 
 export async function getDocument(documentId: string): Promise<FizzDocument> {

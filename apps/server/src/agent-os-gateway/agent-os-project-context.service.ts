@@ -106,6 +106,46 @@ export class AgentOsProjectContextService {
     return { chapterId: chapter.id };
   }
 
+  /** Resolve a Platform section and its canvas without trusting client ownership. */
+  async requirePlatformWorkbenchContext(
+    projectId: string,
+    context: { sectionId: string } | undefined,
+  ): Promise<Readonly<Record<string, string>>> {
+    if (!context) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_PLATFORM_SECTION_REQUIRED',
+        message: 'Canvas and storyboard modes require the active chapter.',
+      });
+    }
+    const section = await this.prisma.platformProjectSection.findFirst({
+      where: { id: context.sectionId, projectId, archivedAt: null },
+      select: {
+        id: true,
+        documents: {
+          where: {
+            type: 'canvas',
+            status: 'active',
+            deletedAt: null,
+          },
+          select: { id: true },
+        },
+      },
+    });
+    if (!section) {
+      throw new NotFoundException({
+        code: 'PROJECT_SECTION_NOT_FOUND',
+        message: 'The selected chapter was not found in this project.',
+      });
+    }
+    if (section.documents.length !== 1) {
+      throw new NotFoundException({
+        code: 'PROJECT_SECTION_CANVAS_NOT_FOUND',
+        message: 'The selected chapter has no active canvas document.',
+      });
+    }
+    return { sectionId: section.id, canvasDocumentId: section.documents[0].id };
+  }
+
   async authorizeRead(
     actorId: string,
     context: Pick<AgentOsProjectContext, 'projectId' | 'projectKind'>,

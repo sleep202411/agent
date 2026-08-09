@@ -17,6 +17,8 @@ interface ProjectUIState {
   // ── Left drawer (single instance, mutually exclusive) ──────────────────
   /** Asset library panel open. */
   assetsOpen: boolean;
+  /** Project chapter navigator open. */
+  sectionsOpen: boolean;
   /** The storyboard shot selected for the left drawer, if any. */
   selectedShotId: string | null;
   /** Which picture slot of the selected shot the drawer is editing. */
@@ -30,6 +32,8 @@ interface ProjectUIState {
   /** Open asset library; closes any open shot drawer (mutually exclusive). */
   openAssets: () => void;
   closeAssets: () => void;
+  toggleSections: () => void;
+  closeSections: () => void;
   /** Select a shot for the drawer; closes asset library (mutually exclusive). */
   selectShot: (id: string, slot: "image" | "video") => void;
   closeShotDrawer: () => void;
@@ -43,21 +47,29 @@ export const useProjectUIStore = create<ProjectUIState>()(
   devtools(
     (set) => ({
       assetsOpen: false,
+      sectionsOpen: false,
       selectedShotId: null,
       selectedSlot: "image",
       copilotOpen: false,
       historyOpen: false,
 
-      openAssets: () => set({ assetsOpen: true, selectedShotId: null }),
+      openAssets: () => set({ assetsOpen: true, sectionsOpen: false, selectedShotId: null }),
       closeAssets: () => set({ assetsOpen: false }),
+      toggleSections: () =>
+        set((state) => ({
+          sectionsOpen: !state.sectionsOpen,
+          assetsOpen: false,
+          selectedShotId: null,
+        })),
+      closeSections: () => set({ sectionsOpen: false }),
       selectShot: (id, slot) =>
-        set({ selectedShotId: id, selectedSlot: slot, assetsOpen: false }),
+        set({ selectedShotId: id, selectedSlot: slot, assetsOpen: false, sectionsOpen: false }),
       closeShotDrawer: () => set({ selectedShotId: null }),
       toggleCopilot: () => set((s) => ({ copilotOpen: !s.copilotOpen })),
       closeCopilot: () => set({ copilotOpen: false }),
       toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
       closeHistory: () => set({ historyOpen: false }),
     }),
-    { name: "project-ui" },
-  ),
+    { name: "project-ui" }
+  )
 );

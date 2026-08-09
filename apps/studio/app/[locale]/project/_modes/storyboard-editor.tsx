@@ -6,6 +6,7 @@ import { IconLoader2 } from "@tabler/icons-react";
 import { useRouter } from "@/i18n/navigation";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
+import { useProjectSections } from "@/app/[locale]/project/_components/project-sections-context";
 import { StoryboardTable } from "./storyboard/storyboard-table";
 
 /**
@@ -22,6 +23,7 @@ import { StoryboardTable } from "./storyboard/storyboard-table";
 export function StoryboardEditor() {
   const t = useTranslations("storyboard");
   const { projectId } = useProjectContext();
+  const { activeSection } = useProjectSections();
   const router = useRouter();
   const searchParams = useSearchParams();
   // The doc connection + graph are owned by the shell — read, don't re-open.
@@ -49,7 +51,12 @@ export function StoryboardEditor() {
   return (
     <StoryboardTable
       focusRowId={searchParams.get("row")}
-      onOpenOnCanvas={(nodeId) => router.push(`/project/${projectId}/canvas?focus=${nodeId}`)}
+      onOpenOnCanvas={(nodeId) =>
+        activeSection &&
+        router.push(
+          `/project/${projectId}/canvas?section=${encodeURIComponent(activeSection.id)}&focus=${encodeURIComponent(nodeId)}`
+        )
+      }
     />
   );
 }

@@ -36,7 +36,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
   const { data: catalog } = useAiCatalog();
   // The canvas doc connection is owned by the shell (single connection for the
   // whole workspace). Read doc/awareness/provider from there — do NOT call
-  // useCanvasDocument/useCanvasDoc here (that would open a second connection).
+  // another document hook here (that would open a second connection).
   const { documentId, documentStatus, doc, awareness, provider, connectionStatus } =
     useCanvasConnection();
   const { user } = useAuth();

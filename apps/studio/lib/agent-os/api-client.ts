@@ -218,18 +218,6 @@ export class AgentOsApiClient {
     });
   }
 
-  listShots(
-    projectId: string,
-    signal?: AbortSignal
-  ): Promise<{
-    revision: number;
-    shots: AgentOsShotRow[];
-  }> {
-    return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/shots`, {
-      signal,
-    });
-  }
-
   listAttachments(
     projectId: string,
     signal?: AbortSignal

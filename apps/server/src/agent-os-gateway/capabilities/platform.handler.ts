@@ -59,13 +59,13 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       case 'characters.upsert':
         return this.upsertCharacters(input);
       case 'storyboard.listShots':
-        return this.listShots(input.actorId, input.projectId);
+        return this.listShots(input);
       case 'storyboard.upsertShots':
         return this.upsertShots(input);
       case 'storyboard.deleteShots':
         return this.deleteShots(input);
       case 'canvas.read':
-        return this.readCanvas(input.actorId, input.projectId);
+        return this.readCanvas(input);
       case 'canvas.applyPatch':
         return this.applyCanvasPatch(input);
       default:
@@ -87,11 +87,15 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     });
   }
 
-  private async listShots(actorId: string, projectId: string) {
-    await this.requireRead(actorId, projectId);
+  private async listShots(input: AgentOsCapabilityExecuteInput) {
+    await this.requireRead(input.actorId, input.projectId);
     // The canvas document is the store: this returns the whole board, including
     // shots the user authored by hand, and `revision` anchors to that document.
-    const board = await this.canvasShots.listShots({ actorId, projectId });
+    const board = await this.canvasShots.listShots({
+      actorId: input.actorId,
+      projectId: input.projectId,
+      documentId: requiredCanvasDocumentId(input.workbenchContext),
+    });
     return {
       revision: board.revision,
       shots: board.shots.map(toShotSummary),
@@ -108,6 +112,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     const result = await this.canvasShots.applyShots({
       actorId: input.actorId,
       projectId: input.projectId,
+      documentId: requiredCanvasDocumentId(input.workbenchContext),
       shots: args.shots,
       idempotencyKey: input.idempotencyKey,
     });
@@ -132,6 +137,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     const result = await this.canvasShots.deleteShots({
       actorId: input.actorId,
       projectId: input.projectId,
+      documentId: requiredCanvasDocumentId(input.workbenchContext),
       shotIds: [...new Set(args.shotIds)],
       idempotencyKey: input.idempotencyKey,
     });
@@ -250,9 +256,13 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     });
   }
 
-  private async readCanvas(actorId: string, projectId: string) {
-    await this.requireRead(actorId, projectId);
-    return this.canvasShots.readCanvasSummary({ actorId, projectId });
+  private async readCanvas(input: AgentOsCapabilityExecuteInput) {
+    await this.requireRead(input.actorId, input.projectId);
+    return this.canvasShots.readCanvasSummary({
+      actorId: input.actorId,
+      projectId: input.projectId,
+      documentId: requiredCanvasDocumentId(input.workbenchContext),
+    });
   }
 
   private async applyCanvasPatch(input: AgentOsCapabilityExecuteInput) {
@@ -293,6 +303,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     return this.canvasShots.applyPatch({
       actorId: input.actorId,
       projectId: input.projectId,
+      documentId: requiredCanvasDocumentId(input.workbenchContext),
       baseDraftRevision: raw.baseDraftRevision,
       baseLayoutRevision: raw.baseLayoutRevision,
       operations,
@@ -325,6 +336,19 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       },
     });
   }
+}
+
+function requiredCanvasDocumentId(
+  context: Readonly<Record<string, string>> | undefined,
+): string {
+  const documentId = context?.canvasDocumentId;
+  if (!documentId) {
+    throw new UnprocessableEntityException({
+      code: 'AGENT_OS_PLATFORM_SECTION_REQUIRED',
+      message: 'Canvas tools require an active chapter canvas.',
+    });
+  }
+  return documentId;
 }
 
 function primaryName(name: Record<string, string>): string {

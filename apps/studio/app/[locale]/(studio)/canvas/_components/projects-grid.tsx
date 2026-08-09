@@ -56,6 +56,7 @@ function timeAgo(input: string | number, t: ReturnType<typeof useTranslations>):
 export function CanvasProjectsGrid() {
   const t = useTranslations("projects");
   const tc = useTranslations("common");
+  const ts = useTranslations("project.sections");
   const router = useRouter();
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
@@ -113,14 +114,17 @@ export function CanvasProjectsGrid() {
     creatingRef.current = true;
     setCreating(true);
     try {
-      const project = await createProject(workspaceId, { name: t("untitledCanvas") });
+      const project = await createProject(workspaceId, {
+        name: t("untitledCanvas"),
+        initialSectionTitle: ts("defaultTitle"),
+      });
       router.push(`/project/${project.id}`);
     } catch {
       creatingRef.current = false;
       setCreating(false);
       toast.error(t("createCanvasFailed"));
     }
-  }, [router, workspaceId, t]);
+  }, [router, workspaceId, t, ts]);
 
   const confirmDelete = useCallback(async () => {
     if (deleting) {

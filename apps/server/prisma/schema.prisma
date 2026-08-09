@@ -957,6 +957,7 @@ model PlatformProject {
   workspace          Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members            ProjectMember[]
   invites            ProjectInvite[]
+  sections           PlatformProjectSection[]
   assets             ProjectAsset[]
   auditLogs          PlatformAuditLog[]
   aiJobs             AiJob[]
@@ -978,6 +979,31 @@ model PlatformProject {
   @@index([createdById, createdAt(sort: Desc)], map: "platform_projects_creator_idx")
   @@index([projectType, status, updatedAt(sort: Desc)], map: "platform_projects_type_recent_idx")
   @@map("platform_projects")
+}
+
+/// A project-owned narrative/content partition. The product may label this as
+/// a chapter, episode, scene, or page, but the persistence boundary stays
+/// neutral. Each section owns its own mode documents; today canvas is required.
+model PlatformProjectSection {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  title       String    @db.VarChar(160)
+  rank        Int
+  version     Int       @default(0)
+  createdById String    @map("created_by_id") @db.VarChar(64)
+  updatedById String?   @map("updated_by_id") @db.VarChar(64)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   PlatformProject    @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  documents PlatformDocument[]
+
+  @@unique([id, projectId], name: "uniq_platform_project_section_id_project", map: "platform_project_sections_id_project_unique")
+  @@index([projectId, archivedAt, rank], map: "platform_project_sections_project_rank_idx")
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "platform_project_sections_workspace_recent_idx")
+  @@map("platform_project_sections")
 }
 
 /// Agent OS durable project state for Platform (studio) projects.
@@ -1056,6 +1082,7 @@ model PlatformDocument {
   id                   String                 @id @default(uuid(7)) @db.Uuid
   workspaceId          String                 @map("workspace_id") @db.Uuid
   projectId            String                 @map("project_id") @db.Uuid
+  sectionId            String?                @map("section_id") @db.Uuid
   type                 PlatformDocumentType
   status               PlatformDocumentStatus @default(active)
   title                String                 @db.VarChar(160)
@@ -1081,8 +1108,9 @@ model PlatformDocument {
   updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt            DateTime?              @map("deleted_at") @db.Timestamptz(6)
 
-  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   PlatformProject @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  workspace Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject         @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  section   PlatformProjectSection? @relation(fields: [sectionId, projectId], references: [id, projectId], onDelete: Restrict)
 
   versions       PlatformDocumentVersion[]
   operations     PlatformDocumentOperation[]
@@ -1097,6 +1125,7 @@ model PlatformDocument {
   @@unique([id, workspaceId], name: "uniq_platform_document_id_workspace", map: "platform_documents_id_workspace_unique")
   @@unique([collaborationRoomId], map: "platform_documents_room_unique")
   @@index([projectId, type, updatedAt(sort: Desc)], map: "platform_documents_project_type_recent_idx")
+  @@index([sectionId, type, updatedAt(sort: Desc)], map: "platform_documents_section_type_recent_idx")
   @@index([workspaceId, updatedAt(sort: Desc)], map: "platform_documents_workspace_recent_idx")
   @@index([status, updatedAt(sort: Desc)], map: "platform_documents_status_recent_idx")
   @@map("platform_documents")

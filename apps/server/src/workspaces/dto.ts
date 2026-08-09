@@ -38,6 +38,7 @@ export type UpdateWorkspaceInput = z.infer<typeof UpdateWorkspaceSchema>;
 
 export const CreateProjectSchema = z.object({
   name: z.string().trim().min(1).max(160),
+  initialSectionTitle: z.string().trim().min(1).max(160),
   slug: SlugSchema,
   projectType: z.string().trim().min(1).max(64).default('general'),
   visibility: z.enum(['private', 'workspace', 'public']).default('private'),

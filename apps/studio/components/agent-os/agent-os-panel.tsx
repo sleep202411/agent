@@ -89,7 +89,9 @@ interface AgentOsPanelProps {
  * The keyed session is a hard conversation boundary when project/workbench scope changes.
  */
 export function AgentOsPanel(props: AgentOsPanelProps) {
-  const conversationScope = `${props.workbenchMode}:${props.workbenchContext?.chapterId ?? "project"}`;
+  const contextId =
+    props.workbenchContext?.sectionId ?? props.workbenchContext?.chapterId ?? "project";
+  const conversationScope = `${props.workbenchMode}:${contextId}`;
   return (
     <AgentOsPanelSession
       key={`${props.projectId}:${conversationScope}`}
@@ -674,6 +676,7 @@ function AgentOsPanelSession({
     >
       <AgentOsTranscript
         projectId={projectId}
+        sectionId={workbenchContext?.sectionId}
         messages={state.messages}
         status={state.status}
         error={runErrorText}

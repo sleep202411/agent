@@ -22,6 +22,7 @@ import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { DocumentsModule } from './documents';
 import { OrdersModule } from './orders/orders.module';
+import { ProjectSectionsModule } from './project-sections';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { LegacyMysqlModule } from './infra/legacy-mysql';
@@ -87,6 +88,7 @@ import { WorkspacesModule } from './workspaces';
     ReferralsModule,
     ConversationsModule,
     OrdersModule,
+    ProjectSectionsModule,
     HealthModule,
   ],
   providers: [

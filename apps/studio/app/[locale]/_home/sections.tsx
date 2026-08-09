@@ -95,6 +95,7 @@ type RecentProjectCard = {
 
 export function RecentProjects({ theme: t }: { theme: Theme }) {
   const th = useTranslations("home");
+  const ts = useTranslations("project.sections");
   const router = useRouter();
   const { user, requireAuth } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -118,7 +119,10 @@ export function RecentProjects({ theme: t }: { theme: Theme }) {
       if (!workspaceId || creating) return;
       setCreating(true);
       try {
-        const project = await createProject(workspaceId, { name: th("untitledWorkflow") });
+        const project = await createProject(workspaceId, {
+          name: th("untitledWorkflow"),
+          initialSectionTitle: ts("defaultTitle"),
+        });
         router.push(`/project/${project.id}`);
       } catch {
         setCreating(false);

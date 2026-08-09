@@ -232,14 +232,6 @@ export class AgentOsGatewayController {
     return ok(await this.gateway.listProjectCharacters(user, projectId));
   }
 
-  @Get('projects/:projectId/shots')
-  async listShots(
-    @CurrentUser() user: AuthUser,
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-  ) {
-    return ok(await this.gateway.listProjectShots(user, projectId));
-  }
-
   @Get('projects/:projectId/attachments')
   async listAttachments(
     @CurrentUser() user: AuthUser,

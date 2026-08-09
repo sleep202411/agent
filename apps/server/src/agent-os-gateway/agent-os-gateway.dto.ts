@@ -22,9 +22,17 @@ export const AgentOsWorkbenchModeSchema = z.string().trim().min(1).max(64);
 
 export const AgentOsWorkbenchContextSchema = z
   .object({
-    chapterId: z.string().uuid(),
+    chapterId: z.string().uuid().optional(),
+    sectionId: z.string().uuid().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      Number(Boolean(value.chapterId)) + Number(Boolean(value.sectionId)) === 1,
+    {
+      message: 'Workbench context must select exactly one scoped entity.',
+    },
+  );
 
 export const AgentOsStartRunBodySchema = z
   .object({

@@ -60,22 +60,25 @@ function shortNodeLabel(nodeId: string): string {
 
 export function WrittenNodes({
   projectId,
+  sectionId,
   nodes,
   label,
 }: {
   projectId: string;
+  sectionId?: string;
   nodes: readonly WrittenNode[];
   /** e.g. "Show on canvas" */
   label: string;
 }) {
   if (nodes.length === 0) return null;
+  const sectionQuery = sectionId ? `section=${encodeURIComponent(sectionId)}&` : "";
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-1">
       <span className="text-[10px] text-white/35">{label}</span>
       {nodes.slice(0, 8).map((node) => (
         <Link
           key={node.nodeId}
-          href={`/project/${projectId}/canvas?focus=${encodeURIComponent(node.nodeId)}`}
+          href={`/project/${projectId}/canvas?${sectionQuery}focus=${encodeURIComponent(node.nodeId)}`}
           className="inline-flex items-center gap-0.5 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-white/60 transition-colors hover:border-white/25 hover:text-white/90"
         >
           {node.label}

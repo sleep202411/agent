@@ -67,6 +67,7 @@ export class AgentOsGatewayService {
     const workbenchContext = await this.resolveWorkbenchContext(
       project.projectKind,
       project.projectId,
+      body.workbenchMode,
       body.workbenchContext,
     );
     const attachmentIds = await this.attachments.validateForRun(
@@ -367,24 +368,6 @@ export class AgentOsGatewayService {
     return result.data;
   }
 
-  async listProjectShots(user: AuthUser, projectId: string) {
-    await this.requireProjectRead(user.userId, projectId);
-    const result = await this.domain.execute({
-      toolId: 'storyboard.listShots',
-      actorId: user.userId,
-      projectId,
-      idempotencyKey: `shots:${projectId}:${user.userId}:${Date.now()}`,
-      arguments: {},
-    });
-    if (!result.ok) {
-      throw new NotFoundException({
-        code: result.code,
-        message: result.message,
-      });
-    }
-    return result.data;
-  }
-
   /**
    * Resolve a run and prove the caller may act on it.
    *
@@ -434,6 +417,7 @@ export class AgentOsGatewayService {
     const workbenchContext = await this.resolveWorkbenchContext(
       project.projectKind,
       project.projectId,
+      run.workbenchMode,
       run.workbenchContext ?? undefined,
     );
     return {
@@ -469,10 +453,8 @@ export class AgentOsGatewayService {
   private async resolveWorkbenchContext(
     projectKind: AgentProjectKind,
     projectId: string,
-    context:
-      | { chapterId: string }
-      | Readonly<Record<string, string>>
-      | undefined,
+    workbenchMode: string,
+    context: Readonly<Record<string, string>> | undefined,
   ): Promise<Readonly<Record<string, string>> | undefined> {
     if (projectKind === 'story') {
       const chapterId = context?.chapterId;
@@ -481,10 +463,17 @@ export class AgentOsGatewayService {
         typeof chapterId === 'string' ? { chapterId } : undefined,
       );
     }
+    if (workbenchMode === 'canvas' || workbenchMode === 'storyboard') {
+      const sectionId = context?.sectionId;
+      return this.projects.requirePlatformWorkbenchContext(
+        projectId,
+        typeof sectionId === 'string' ? { sectionId } : undefined,
+      );
+    }
     if (context) {
       throw new BadRequestException({
         code: 'AGENT_OS_WORKBENCH_CONTEXT_UNSUPPORTED',
-        message: 'This workbench mode does not accept a chapter context.',
+        message: 'This workbench mode does not accept a scoped context.',
       });
     }
     return undefined;

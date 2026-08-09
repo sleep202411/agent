@@ -61,4 +61,23 @@ describe('AgentOsStartRunBodySchema — model profile id', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('accepts one Platform section and rejects ambiguous scoped context', () => {
+    const sectionId = '22222222-2222-4222-8222-222222222222';
+    expect(
+      AgentOsStartRunBodySchema.safeParse({
+        ...validBody('qwen-plus'),
+        workbenchContext: { sectionId },
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentOsStartRunBodySchema.safeParse({
+        ...validBody('qwen-plus'),
+        workbenchContext: {
+          sectionId,
+          chapterId: '11111111-1111-4111-8111-111111111111',
+        },
+      }).success,
+    ).toBe(false);
+  });
 });

@@ -15,6 +15,9 @@ const VICTIM = {
   actorId: 'victim-user',
   conversationId: 'cccccccc-1111-4111-8111-111111111111',
   workbenchMode: 'storyboard',
+  workbenchContext: {
+    sectionId: 'dddddddd-1111-4111-8111-111111111111',
+  },
 };
 const ATTACKER_PROJECT = 'bbbbbbbb-2222-4222-8222-222222222222';
 const ATTACKER = { userId: 'attacker-user' } as never;
@@ -62,6 +65,15 @@ function makeService(overrides?: {
       .mockImplementation(
         (_projectId: string, context: { chapterId: string }) =>
           Promise.resolve(context),
+      ),
+    requirePlatformWorkbenchContext: jest
+      .fn()
+      .mockImplementation(
+        (_projectId: string, context: { sectionId: string }) =>
+          Promise.resolve({
+            ...context,
+            canvasDocumentId: 'eeeeeeee-1111-4111-8111-111111111111',
+          }),
       ),
   };
   const attachments = {
@@ -190,9 +202,40 @@ describe('run-scoped authorization', () => {
         message: 'hi',
         modelProfileId: 'qwen-plus',
         workbenchMode: 'storyboard',
+        workbenchContext: {
+          sectionId: 'dddddddd-1111-4111-8111-111111111111',
+        },
       } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(worker.startRun).not.toHaveBeenCalled();
+  });
+
+  it('passes only the validated Platform chapter canvas scope to the worker', async () => {
+    const { service, worker, projects } = makeService({
+      conversationConflicts: false,
+    });
+    await service.startRun(ATTACKER, {
+      projectId: ATTACKER_PROJECT,
+      message: 'Add a shot',
+      modelProfileId: 'qwen-plus',
+      workbenchMode: 'storyboard',
+      workbenchContext: {
+        sectionId: 'dddddddd-1111-4111-8111-111111111111',
+      },
+    });
+    expect(projects.requirePlatformWorkbenchContext).toHaveBeenCalledWith(
+      ATTACKER_PROJECT,
+      { sectionId: 'dddddddd-1111-4111-8111-111111111111' },
+    );
+    expect(worker.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectKind: 'platform',
+        workbenchContext: {
+          sectionId: 'dddddddd-1111-4111-8111-111111111111',
+          canvasDocumentId: 'eeeeeeee-1111-4111-8111-111111111111',
+        },
+      }),
+    );
   });
 
   it('passes only the validated Story chapter scope to the worker', async () => {
