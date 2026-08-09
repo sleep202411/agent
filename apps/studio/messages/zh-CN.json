@@ -1604,6 +1604,7 @@
     "sections": {
       "defaultTitle": "第 1 章",
       "title": "章节",
+      "loading": "正在加载章节…",
       "count": "{count} 个章节",
       "add": "新增章节",
       "createTitle": "新增章节",

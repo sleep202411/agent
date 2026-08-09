@@ -1604,6 +1604,7 @@
     "sections": {
       "defaultTitle": "Chapter 1",
       "title": "Chapters",
+      "loading": "Loading chapter…",
       "count": "{count, plural, one {# chapter} other {# chapters}}",
       "add": "Add chapter",
       "createTitle": "Add chapter",

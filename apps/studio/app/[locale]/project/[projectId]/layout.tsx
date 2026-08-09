@@ -201,7 +201,7 @@ function SectionCanvasBoundary({
   if (status === "loading") {
     return (
       <div className="grid min-w-0 flex-1 place-items-center text-sm text-white/45">
-        {t("title")}…
+        {t("loading")}
       </div>
     );
   }
