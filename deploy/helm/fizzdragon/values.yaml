@@ -280,7 +280,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 339fd0e50497c0652c13bc7feeea015cce89b82b
+    tag: 65b8c8fd400a1040f3ab514ad79016d8c8705b7d
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -306,7 +306,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 339fd0e50497c0652c13bc7feeea015cce89b82b
+    tag: 65b8c8fd400a1040f3ab514ad79016d8c8705b7d
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -493,7 +493,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: 669d1b80907e9707ed5ea55a69071a679c7a87ed
+    tag: 65b8c8fd400a1040f3ab514ad79016d8c8705b7d
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
