@@ -14,18 +14,18 @@ import {
 } from "@/components/ui/dialog";
 import { useRouter } from "@/i18n/navigation";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
-import { createCreatorTextGame, textGameKeys } from "../_lib/text-game-api";
-import { TextGameWorkbenchSkeleton } from "./text-game-workbench";
+import { createCreatorTextAdventure, textAdventureKeys } from "../_lib/text-adventure-api";
+import { TextAdventureWorkbenchSkeleton } from "./text-adventure-workbench";
 
 type CreationPhase = "idle" | "uploading" | "creating" | "upload-error" | "create-error";
 
-interface TextGameCreateDialogProps {
+interface TextAdventureCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialogProps) {
-  const t = useTranslations("textGames");
+export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureCreateDialogProps) {
+  const t = useTranslations("textAdventures");
   const common = useTranslations("common");
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -69,10 +69,10 @@ export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialo
     setError(null);
     onOpenChange(false);
     try {
-      const game = await createCreatorTextGame({ worldviewDocxUrl });
-      queryClient.setQueryData(textGameKeys.detail(game.gameId), game);
-      void queryClient.invalidateQueries({ queryKey: textGameKeys.list() });
-      router.replace(`/text-games/${game.gameId}`);
+      const game = await createCreatorTextAdventure({ worldviewDocxUrl });
+      queryClient.setQueryData(textAdventureKeys.detail(game.gameId), game);
+      void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list() });
+      router.replace(`/text-adventures/${game.gameId}`);
     } catch (reason) {
       setError(errorMessage(reason, t("actions.unknownError")));
       setPhase("create-error");
@@ -172,7 +172,7 @@ export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialo
 
       {workbenchEntered ? (
         <div className="fixed inset-0 z-[70] bg-[var(--canvas-background)]">
-          <TextGameWorkbenchSkeleton label={t("create.analyzingTitle")} />
+          <TextAdventureWorkbenchSkeleton label={t("create.analyzingTitle")} />
           {phase === "creating" ? (
             <div className="pointer-events-none fixed inset-0 z-[71] grid place-items-center px-5">
               <div className="flex max-w-sm flex-col items-center text-center" aria-live="polite">
@@ -244,7 +244,7 @@ export function TextGameCreateDialog({ open, onOpenChange }: TextGameCreateDialo
               onClick={() => {
                 reset();
                 onOpenChange(false);
-                void queryClient.invalidateQueries({ queryKey: textGameKeys.list() });
+                void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list() });
               }}
             >
               {common("cancel")}

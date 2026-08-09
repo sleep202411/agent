@@ -1,6 +1,6 @@
 import type { TextGameDetail, TextGameUpdateInput } from "@repo/shared/text-game";
 
-export interface TextGameDraftForm {
+export interface TextAdventureDraftForm {
   name: string;
   synopsis: string;
   posterUrl: string;
@@ -9,7 +9,7 @@ export interface TextGameDraftForm {
   stillUrls: string[];
 }
 
-export function textGameDraftFormFromDetail(game: TextGameDetail): TextGameDraftForm {
+export function textAdventureDraftFormFromDetail(game: TextGameDetail): TextAdventureDraftForm {
   return {
     name: game.content.name ?? "",
     synopsis: game.content.synopsis ?? "",
@@ -20,9 +20,9 @@ export function textGameDraftFormFromDetail(game: TextGameDetail): TextGameDraft
   };
 }
 
-export function toTextGameUpdateInput(
-  form: TextGameDraftForm,
-  baseline: TextGameDraftForm
+export function toTextAdventureUpdateInput(
+  form: TextAdventureDraftForm,
+  baseline: TextAdventureDraftForm
 ): TextGameUpdateInput {
   const input: TextGameUpdateInput = {};
   if (form.name !== baseline.name) input.name = form.name.trim();

@@ -10,4 +10,9 @@ describe("Studio route auth gates", () => {
       true
     );
   });
+
+  it("protects Text Adventures across localized routes", () => {
+    expect(isProtectedPath("/text-adventures")).toBe(true);
+    expect(isProtectedPath("/en-US/text-adventures/tg_1234567890ABCDEF")).toBe(true);
+  });
 });
