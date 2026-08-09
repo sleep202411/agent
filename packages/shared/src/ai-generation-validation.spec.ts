@@ -196,3 +196,81 @@ describe("validateGenerationInput", () => {
     expect(issues.map((i) => i.code)).toContain(VALIDATION_ISSUE_CODES.FIELD_MIN_ITEMS);
   });
 });
+
+/** Size limits judge known bytes only — an unknown size blocks nothing. */
+describe("reference file-size rules", () => {
+  function sizedSchema(): ValidationInputSchema {
+    return {
+      type: "object",
+      properties: {
+        referenceImages: {
+          type: "array",
+          "x-ui": {
+            control: "image_upload",
+            group: "references",
+            mediaKind: "image",
+            maxFileSizeMb: 30,
+          },
+        },
+        referenceVideos: {
+          type: "array",
+          "x-ui": {
+            control: "video_upload",
+            group: "references",
+            mediaKind: "video",
+            maxCombinedFileSizeMb: 50,
+          },
+        },
+      },
+    };
+  }
+
+  it("stays silent when an item's byte size is unknown", () => {
+    // Picking an image from the asset library used to fail here: the client
+    // never sent `bytes`, and the rule read "unknown" as "too large".
+    const issues = validateGenerationInput({
+      inputSchema: sizedSchema(),
+      input: { referenceImages: [{ url: "https://cdn.example.com/a.png" }] },
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("still blocks an item whose known size exceeds the limit", () => {
+    const issues = validateGenerationInput({
+      inputSchema: sizedSchema(),
+      input: {
+        referenceImages: [{ url: "https://cdn.example.com/a.png", bytes: 31 * 1024 * 1024 }],
+      },
+    });
+    expect(issues.map((i) => i.code)).toEqual([VALIDATION_ISSUE_CODES.MEDIA_FILE_SIZE_EXCEEDED]);
+  });
+
+  it("skips a combined limit when any item's size is unknown", () => {
+    // Partial knowledge understates the sum, so the total is unenforceable.
+    const issues = validateGenerationInput({
+      inputSchema: sizedSchema(),
+      input: {
+        referenceVideos: [
+          { url: "https://cdn.example.com/a.mp4", bytes: 49 * 1024 * 1024 },
+          { url: "https://cdn.example.com/b.mp4" },
+        ],
+      },
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("still blocks a combined limit when every size is known", () => {
+    const issues = validateGenerationInput({
+      inputSchema: sizedSchema(),
+      input: {
+        referenceVideos: [
+          { url: "https://cdn.example.com/a.mp4", bytes: 30 * 1024 * 1024 },
+          { url: "https://cdn.example.com/b.mp4", bytes: 25 * 1024 * 1024 },
+        ],
+      },
+    });
+    expect(issues.map((i) => i.code)).toEqual([
+      VALIDATION_ISSUE_CODES.MEDIA_COMBINED_FILE_SIZE_EXCEEDED,
+    ]);
+  });
+});

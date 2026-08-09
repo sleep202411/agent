@@ -45,12 +45,9 @@ import {
 } from "@/components/canvas/groups/canvas-groups";
 import type { CanvasGroupingController } from "@/components/canvas/groups/canvas-grouping";
 import { MediaAuthoringCanvas } from "@/components/canvas/authoring/media-authoring-canvas";
+import { CanvasBackdrop } from "@/components/canvas/canvas-backdrop";
 import type { StoryCandidateAssetsController } from "./use-story-candidate-assets";
 import { StoryCandidateAssetsPanel } from "./story-candidate-assets-panel";
-import {
-  STORY_STUDIO_CANVAS_BACKGROUND_COLOR,
-  StoryStudioCanvasBackdrop,
-} from "./story-studio-canvas-backdrop";
 
 const EXIT_DURATION_MS = 220;
 const STORY_UPLOAD_KINDS = ["image", "video", "audio"] as const;
@@ -367,8 +364,6 @@ function StoryProductionCanvasCatalogBoundary({
         grouping={grouping}
         secondaryDrawer={secondaryDrawer}
         onDrawerInsetChange={onDrawerInsetChange}
-        backdrop={<StoryStudioCanvasBackdrop />}
-        viewportBackground={false}
         statusOverlay={({ groupDropTarget }) => {
           const dropActive = groupDropTarget !== null;
           return (
@@ -411,7 +406,7 @@ function StoryProductionCanvasCatalogBoundary({
         loadingOverlay={
           status === "loading" ? (
             <div className="absolute inset-0 z-50 grid place-items-center">
-              <StoryStudioCanvasBackdrop />
+              <CanvasBackdrop />
               <IconLoader2 className="relative size-7 animate-spin text-white/38" stroke={1.5} />
             </div>
           ) : null
@@ -419,7 +414,7 @@ function StoryProductionCanvasCatalogBoundary({
         renderErrorOverlay={(nodes) =>
           status === "error" && nodes.length === 0 ? (
             <div className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
-              <StoryStudioCanvasBackdrop className="opacity-90" />
+              <CanvasBackdrop className="opacity-90" />
               <div className="relative flex max-w-sm flex-col items-center gap-3 text-center">
                 <p className="text-sm font-medium text-white/78">{tp("loadError")}</p>
                 {error ? <p className="text-xs leading-5 text-white/42">{error}</p> : null}
@@ -516,7 +511,7 @@ export function StoryProductionCanvasWorkspace({
         "absolute inset-0 z-[120] min-h-0 min-w-0 origin-center overflow-hidden transition-[opacity,transform] duration-300 ease-out",
         presented ? "scale-100 opacity-100" : "scale-[1.012] opacity-0"
       )}
-      style={{ backgroundColor: STORY_STUDIO_CANVAS_BACKGROUND_COLOR }}
+      style={{ backgroundColor: "var(--canvas-background)" }}
     >
       <ReactFlowProvider>
         <ProductionCanvasDocument

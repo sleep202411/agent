@@ -14,6 +14,10 @@ const VICTIM = {
   projectId: 'aaaaaaaa-1111-4111-8111-111111111111',
   actorId: 'victim-user',
   conversationId: 'cccccccc-1111-4111-8111-111111111111',
+  workbenchMode: 'storyboard',
+  workbenchContext: {
+    sectionId: 'dddddddd-1111-4111-8111-111111111111',
+  },
 };
 const ATTACKER_PROJECT = 'bbbbbbbb-2222-4222-8222-222222222222';
 const ATTACKER = { userId: 'attacker-user' } as never;
@@ -21,6 +25,7 @@ const ATTACKER = { userId: 'attacker-user' } as never;
 function makeService(overrides?: {
   ownership?: typeof VICTIM | null;
   conversationConflicts?: boolean;
+  projectKind?: 'platform' | 'story';
 }) {
   const worker = {
     listEvents: jest
@@ -44,21 +49,64 @@ function makeService(overrides?: {
   const realtimeTokens = {
     issueConversationToken: jest.fn().mockResolvedValue({}),
   };
+  const projects = {
+    requireRead: jest.fn().mockResolvedValue({
+      projectId: ATTACKER_PROJECT,
+      projectKind: overrides?.projectKind ?? 'platform',
+      workspaceId: 'workspace-1',
+    }),
+    requireWrite: jest.fn().mockResolvedValue({
+      projectId: ATTACKER_PROJECT,
+      projectKind: overrides?.projectKind ?? 'platform',
+      workspaceId: 'workspace-1',
+    }),
+    requireStoryWorkbenchContext: jest
+      .fn()
+      .mockImplementation(
+        (_projectId: string, context: { chapterId: string }) =>
+          Promise.resolve(context),
+      ),
+    requirePlatformWorkbenchContext: jest
+      .fn()
+      .mockImplementation(
+        (_projectId: string, context: { sectionId: string }) =>
+          Promise.resolve({
+            ...context,
+            canvasDocumentId: 'eeeeeeee-1111-4111-8111-111111111111',
+          }),
+      ),
+  };
+  const attachments = {
+    validateForRun: jest
+      .fn()
+      .mockImplementation(
+        (_kind: string, _projectId: string, ids?: readonly string[]) =>
+          Promise.resolve(ids ? [...new Set(ids)] : undefined),
+      ),
+  };
   // Permission checks pass: the point is that they are asked about the WRONG
   // project unless the run is resolved first.
   const service = new AgentOsGatewayService(
     worker as never, // worker
-    {} as never, // storyPermissions
-    { requireProjectRole: jest.fn().mockResolvedValue(undefined) } as never,
+    projects as never,
     {
       platformProject: { findFirst: jest.fn().mockResolvedValue({ id: 'p' }) },
+      agentOsProjectState: { findUnique: jest.fn().mockResolvedValue(null) },
     } as never, // prisma
     { value: {} } as never, // config
     journal as never,
     {} as never, // domain
     realtimeTokens as never,
+    attachments as never,
   );
-  return { service, worker, journal, realtimeTokens };
+  return {
+    service,
+    worker,
+    journal,
+    projects,
+    realtimeTokens,
+    attachments,
+  };
 }
 
 describe('run-scoped authorization', () => {
@@ -153,8 +201,95 @@ describe('run-scoped authorization', () => {
         conversationId: VICTIM.conversationId,
         message: 'hi',
         modelProfileId: 'qwen-plus',
+        workbenchMode: 'storyboard',
+        workbenchContext: {
+          sectionId: 'dddddddd-1111-4111-8111-111111111111',
+        },
       } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(worker.startRun).not.toHaveBeenCalled();
+  });
+
+  it('passes only the validated Platform chapter canvas scope to the worker', async () => {
+    const { service, worker, projects } = makeService({
+      conversationConflicts: false,
+    });
+    await service.startRun(ATTACKER, {
+      projectId: ATTACKER_PROJECT,
+      message: 'Add a shot',
+      modelProfileId: 'qwen-plus',
+      workbenchMode: 'storyboard',
+      workbenchContext: {
+        sectionId: 'dddddddd-1111-4111-8111-111111111111',
+      },
+    });
+    expect(projects.requirePlatformWorkbenchContext).toHaveBeenCalledWith(
+      ATTACKER_PROJECT,
+      { sectionId: 'dddddddd-1111-4111-8111-111111111111' },
+    );
+    expect(worker.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectKind: 'platform',
+        workbenchContext: {
+          sectionId: 'dddddddd-1111-4111-8111-111111111111',
+          canvasDocumentId: 'eeeeeeee-1111-4111-8111-111111111111',
+        },
+      }),
+    );
+  });
+
+  it('passes only the validated Story chapter scope to the worker', async () => {
+    const { service, worker, projects } = makeService({
+      projectKind: 'story',
+      conversationConflicts: false,
+    });
+    await service.startRun(ATTACKER, {
+      projectId: ATTACKER_PROJECT,
+      message: 'Continue this chapter',
+      modelProfileId: 'qwen-plus',
+      workbenchMode: 'story',
+      workbenchContext: {
+        chapterId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+    expect(projects.requireStoryWorkbenchContext).toHaveBeenCalledWith(
+      ATTACKER_PROJECT,
+      { chapterId: '11111111-1111-4111-8111-111111111111' },
+    );
+    expect(worker.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectKind: 'story',
+        workbenchMode: 'story',
+        workbenchContext: {
+          chapterId: '11111111-1111-4111-8111-111111111111',
+        },
+      }),
+    );
+  });
+
+  it('validates and canonicalizes attachment ids before starting a run', async () => {
+    const { service, worker, attachments } = makeService({
+      projectKind: 'story',
+      conversationConflicts: false,
+    });
+    const attachmentId = 'eeeeeeee-1111-4111-8111-111111111111';
+    await service.startRun(ATTACKER, {
+      projectId: ATTACKER_PROJECT,
+      message: 'Use this source',
+      modelProfileId: 'qwen-plus',
+      workbenchMode: 'story',
+      workbenchContext: {
+        chapterId: '11111111-1111-4111-8111-111111111111',
+      },
+      attachmentIds: [attachmentId, attachmentId],
+    });
+    expect(attachments.validateForRun).toHaveBeenCalledWith(
+      'story',
+      ATTACKER_PROJECT,
+      [attachmentId, attachmentId],
+    );
+    expect(worker.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({ attachmentIds: [attachmentId] }),
+    );
   });
 });

@@ -56,6 +56,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
@@ -63,6 +64,7 @@ import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
+import { CanvasBackdrop } from "@/components/canvas/canvas-backdrop";
 import {
   CANVAS_DELETE_KEY_CODES,
   CANVAS_NODE_DRAG_HANDLE_CLASS,
@@ -85,9 +87,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Link, useRouter } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
-import type { StudioAgentCanvasPreviewPart } from "@/lib/studio-agent";
 import { cn } from "@/lib/utils";
-import { StoryStudioCanvasBackdrop } from "./story-studio-canvas-backdrop";
 import {
   addStoryCandidateAsset,
   canvasLayoutRevisionConflict,
@@ -149,9 +149,7 @@ import {
 } from "./story-canvas-layout-retry";
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
-import { StoryCanvasAssistantLayer } from "./story-canvas-assistant-layer";
-import { projectStoryCanvasAgentPreview } from "./story-canvas-agent-preview";
-import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-agent-reconcile";
+import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
 import { StoryChapterDropdown } from "./story-chapter-dropdown";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
@@ -317,6 +315,7 @@ function StoryProjectCanvasInner({
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
+  const agentT = useTranslations("agentOs");
   const router = useRouter();
   const { deleteElements, fitView, screenToFlowPosition } = useReactFlow<
     StoryCanvasNode,
@@ -330,12 +329,9 @@ function StoryProjectCanvasInner({
   const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
     CLOSED_STORY_CANVAS_INSPECTOR
   );
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [agentCanvasPreview, setAgentCanvasPreview] = useState<StudioAgentCanvasPreviewPart | null>(
-    null
-  );
   const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [productionCanvasSession, setProductionCanvasSession] =
     useState<StoryProductionCanvasContext | null>(null);
   const closeProductionCanvasWorkspace = useCallback(() => setProductionCanvasSession(null), []);
@@ -355,8 +351,6 @@ function StoryProjectCanvasInner({
   const [conflict, setConflict] = useState<DraftRevisionConflict | null>(null);
   const [layoutConflict, setLayoutConflict] = useState<CanvasLayoutRevisionConflict | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
-  const [layoutRevision, setLayoutRevision] = useState(0);
-  const [layoutSaveState, setLayoutSaveState] = useState<SaveState>("idle");
   const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
   const [pendingLeaveRisk, setPendingLeaveRisk] = useState<StoryCanvasLeaveRisk | null>(null);
   const [recoveryExported, setRecoveryExported] = useState(false);
@@ -606,10 +600,8 @@ function StoryProjectCanvasInner({
     if (!workbenchProjection) return;
     const workbench = workbenchProjection;
     const chapterChanged = hydratedChapterIdRef.current !== workbench.chapter.id;
-    // Every canonical read arrives here, including the refetch a terminalized
-    // Studio Agent turn forces. Adoption is the gate that makes that safe: a
-    // newer canonical draft is taken only when this canvas holds nothing
-    // unsaved of its own.
+    // Every canonical read arrives here. Adoption keeps a newer server draft
+    // from replacing unsaved work held by this canvas.
     const adopt = shouldAdoptAuthoritativeStoryDraft({
       hydrated: hydratedRef.current,
       chapterChanged,
@@ -1361,10 +1353,8 @@ function StoryProjectCanvasInner({
       const initialLayout = canvasLayoutPayload(initialNodes);
       layoutHydratedRef.current = true;
       layoutRevisionRef.current = layoutProjection.revision;
-      setLayoutRevision(layoutProjection.revision);
       latestDesiredLayoutRef.current = initialLayout;
       layoutSavedSignatureRef.current = layoutPayloadSignature(initialLayout);
-      setLayoutSaveState("idle");
       canvasNodesRef.current = initialNodes;
       setCanvasNodes(initialNodes);
       reconcileFocusAfterModel(initialNodes);
@@ -1372,8 +1362,6 @@ function StoryProjectCanvasInner({
     }
     if (shouldAdoptAuthoritativeLayout) {
       layoutRevisionRef.current = layoutProjection.revision;
-      setLayoutRevision(layoutProjection.revision);
-      setLayoutSaveState("idle");
       history.clear();
       setHistoryVersion((current) => current + 1);
     }
@@ -1403,7 +1391,6 @@ function StoryProjectCanvasInner({
     }
     if (placedNodeIds.length > 0) {
       const nextLayout = canvasLayoutPayload(nextNodes);
-      setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     }
   }, [contentChapterId, history, layoutProjection, model, setCanvasNodes, workbenchProjection]);
@@ -1452,14 +1439,12 @@ function StoryProjectCanvasInner({
       if (signature === layoutSavedSignatureRef.current) {
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
-        setLayoutSaveState((current) => (current === "idle" ? "idle" : "saved"));
         return;
       }
 
       clearLayoutSaveRetry();
       recoveryLayoutRef.current = next;
       layoutSaveInFlightRef.current = true;
-      setLayoutSaveState("saving");
       let requestFailed = false;
       let requestConflicted = false;
       let failure: unknown = null;
@@ -1470,11 +1455,9 @@ function StoryProjectCanvasInner({
           sessionId,
         });
         layoutRevisionRef.current = saved.revision;
-        setLayoutRevision(saved.revision);
         layoutSavedSignatureRef.current = signature;
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
-        setLayoutSaveState("saved");
       } catch (error) {
         const nextConflict = canvasLayoutRevisionConflict(error);
         const confirmsOwnWrite = Boolean(
@@ -1482,11 +1465,9 @@ function StoryProjectCanvasInner({
         );
         if (nextConflict && confirmsOwnWrite) {
           layoutRevisionRef.current = nextConflict.current.revision;
-          setLayoutRevision(nextConflict.current.revision);
           layoutSavedSignatureRef.current = signature;
           recoveryLayoutRef.current = null;
           clearLayoutSaveRetry(true);
-          setLayoutSaveState("saved");
         } else if (nextConflict) {
           failure = error;
           requestConflicted = true;
@@ -1496,12 +1477,10 @@ function StoryProjectCanvasInner({
           setCreatorMenu(null);
           setPendingCompletionDrop(null);
           setLayoutConflict(nextConflict);
-          setLayoutSaveState("conflict");
         } else {
           failure = error;
           requestFailed = true;
           recoveryLayoutRef.current = next;
-          setLayoutSaveState("error");
         }
       } finally {
         layoutSaveInFlightRef.current = false;
@@ -1672,16 +1651,12 @@ function StoryProjectCanvasInner({
         if (generation !== finalLayoutFlushGenerationRef.current) return false;
         if (saved.revision < layoutRevisionRef.current) return false;
         layoutRevisionRef.current = saved.revision;
-        setLayoutRevision(saved.revision);
         layoutSavedSignatureRef.current = layoutPayloadSignature({
           nodePositions: saved.nodePositions,
         });
         recoveryLayoutRef.current = null;
         clearLayoutSaveRetry(true);
         queryClient.setQueryData(layoutQueryKey, saved);
-        if (!disposedRef.current) {
-          setLayoutSaveState("saved");
-        }
         return true;
       };
 
@@ -1716,10 +1691,8 @@ function StoryProjectCanvasInner({
           if (disposedRef.current) return;
           if (nextConflict) {
             setLayoutConflict(nextConflict);
-            setLayoutSaveState("conflict");
             return;
           }
-          setLayoutSaveState("error");
           scheduleLayoutSaveRetry();
         })
         .finally(() => {
@@ -1966,125 +1939,14 @@ function StoryProjectCanvasInner({
       workspaceId,
     ]
   );
-  /**
-   * Nodes StoryOS just wrote, held only long enough to be noticed.
-   *
-   * The canvas re-reads its draft when an agent write lands, so without this the
-   * graph simply changes under the creator with nothing to say where. The
-   * highlight is transient on purpose: it answers "what just happened", and a
-   * permanent marker would answer "what happened at some point", which is a
-   * different and less useful question.
-   */
-  const [agentWrittenNodeIds, setAgentWrittenNodeIds] = useState<readonly string[]>([]);
-  useEffect(() => {
-    if (agentWrittenNodeIds.length === 0) return;
-    const timer = window.setTimeout(() => setAgentWrittenNodeIds([]), 2_200);
-    return () => window.clearTimeout(timer);
-  }, [agentWrittenNodeIds]);
-
-  /**
-   * Take the creator to a node, without ever taking the canvas out of their
-   * hands.
-   *
-   * One path for both callers — the announcement after an agent write, and a
-   * click on a node named in the reply — because they are the same request and
-   * a second implementation would drift on the part that matters: the refusal
-   * to move the viewport while someone is dragging or typing.
-   */
-  const focusCanvasNodes = useCallback(
-    (nodeIds: readonly string[], options: { highlight: boolean }) => {
-      const present = nodeIds.filter((nodeId) =>
-        canvasNodesRef.current.some((node) => node.id === nodeId)
-      );
-      if (present.length === 0) return;
-      if (options.highlight) setAgentWrittenNodeIds(present);
-      // NEVER while the creator is doing something. Yanking the viewport out
-      // from under a drag, or away from the field someone is typing in, is a
-      // worse failure than not showing them where the edit landed — they can
-      // always look. The highlight above still fires, so the information is not
-      // lost, only the movement is withheld.
-      const active = document.activeElement;
-      const typing =
-        active instanceof HTMLElement &&
-        (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
-      if (typing || canvasNodesRef.current.some((node) => node.dragging)) return;
-      void fitView({
-        nodes: present.map((nodeId) => ({ id: nodeId })),
-        duration: 520,
-        padding: 0.6,
-        maxZoom: 1.1,
-        minZoom: 0.5,
-      });
-    },
-    [fitView]
-  );
-
-  const handleAgentWrote = useCallback(
-    (nodeIds: readonly string[]) => focusCanvasNodes(nodeIds, { highlight: true }),
-    [focusCanvasNodes]
-  );
-
-  /**
-   * A node named in the assistant's reply, resolved against the graph that
-   * actually exists. See `StudioAgentNodeLinkProvider` for why resolution is
-   * never a pattern.
-   */
-  const nodeLinks = useMemo(
-    () => ({
-      has: (nodeId: string) => canvasNodesRef.current.some((node) => node.id === nodeId),
-      focus: (nodeId: string) => {
-        selectCanvasNodeExclusively(nodeId);
-        focusCanvasNodes([nodeId], { highlight: true });
-      },
-    }),
-    [focusCanvasNodes, selectCanvasNodeExclusively]
-  );
-
-  const canonicalPresentationNodes = useMemo(
+  const layeredCanvasNodes = useMemo(
     () =>
       canvasNodes.map((node) => {
         const zIndex = node.id === focusedNodeId ? 1 : 0;
-        const agentWrote = agentWrittenNodeIds.includes(node.id);
-        if (node.zIndex === zIndex && Boolean(node.data.agentWrote) === agentWrote) return node;
-        return { ...node, zIndex, data: { ...node.data, agentWrote } };
+        return node.zIndex === zIndex ? node : { ...node, zIndex };
       }),
-    [agentWrittenNodeIds, canvasNodes, focusedNodeId]
+    [canvasNodes, focusedNodeId]
   );
-  const layeredCanvasNodes = useMemo(() => {
-    if (
-      !workbenchProjection ||
-      !layoutProjection ||
-      (saveState !== "idle" && saveState !== "saved") ||
-      (layoutSaveState !== "idle" && layoutSaveState !== "saved") ||
-      conflict ||
-      layoutConflict
-    ) {
-      return canonicalPresentationNodes;
-    }
-    return projectStoryCanvasAgentPreview({
-      preview: agentCanvasPreview,
-      authority: {
-        chapterId: workbenchProjection.chapter.id,
-        draftRevision,
-        contentHash: workbenchProjection.draft.contentHash,
-        layoutRevision,
-      },
-      nodes: canonicalPresentationNodes,
-      locale: authoringLocale,
-    }).nodes;
-  }, [
-    agentCanvasPreview,
-    authoringLocale,
-    canonicalPresentationNodes,
-    conflict,
-    draftRevision,
-    layoutConflict,
-    layoutRevision,
-    layoutProjection,
-    layoutSaveState,
-    saveState,
-    workbenchProjection,
-  ]);
   const displayEdges = useMemo(
     () =>
       model?.edges.map((edge) => {
@@ -2176,7 +2038,6 @@ function StoryProjectCanvasInner({
         refreshHistoryState();
       }
       if (layoutPayloadSignature(nextLayout) === layoutSavedSignatureRef.current) return;
-      setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     },
     [history, mutationBarrier, refreshHistoryState]
@@ -2228,7 +2089,6 @@ function StoryProjectCanvasInner({
         canvasNodesRef.current = next;
         return next;
       });
-      setLayoutSaveState("dirty");
       void persistLayoutRef.current(nextLayout);
     },
     [closeCreatorMenu, mutationBarrier, readHistorySnapshot, setCanvasNodes]
@@ -2321,7 +2181,6 @@ function StoryProjectCanvasInner({
         pendingNodePositionsRef.current
       ),
     };
-    setLayoutSaveState("dirty");
     void persistLayoutRef.current(nextLayout);
   };
 
@@ -2687,7 +2546,6 @@ function StoryProjectCanvasInner({
         const nextLayout: StoryCanvasLayoutPayload = {
           nodePositions: remainingPositions,
         };
-        setLayoutSaveState("dirty");
         void persistLayoutRef.current(nextLayout);
       }
       const remainingSelectedNodeIds = latestCanvasSelectionRef.current.filter(
@@ -2739,7 +2597,6 @@ function StoryProjectCanvasInner({
         const remainingPositions = Object.fromEntries(
           Object.entries(snapshot.nodePositions).filter(([nodeId]) => nodeId !== characterNodeId)
         );
-        setLayoutSaveState("dirty");
         void persistLayoutRef.current({
           nodePositions: remainingPositions,
         });
@@ -2794,7 +2651,6 @@ function StoryProjectCanvasInner({
     latestDesiredLayoutRef.current = latestLayout;
     clearLayoutSaveRetry(true);
     layoutRevisionRef.current = layoutConflict.current.revision;
-    setLayoutRevision(layoutConflict.current.revision);
     layoutSavedSignatureRef.current = layoutPayloadSignature(latestLayout);
     queryClient.setQueryData(layoutQueryKey, layoutConflict.current);
     pendingNodePositionsRef.current.clear();
@@ -2813,7 +2669,6 @@ function StoryProjectCanvasInner({
     setInspectorTarget((current) => reconcileStoryCanvasInspectorTarget(current, selectedNodeIds));
     setCanvasNodes(latestNodes);
     setLayoutConflict(null);
-    setLayoutSaveState("idle");
   };
 
   const exportLocalLayoutAfterConflict = () => {
@@ -3083,26 +2938,12 @@ function StoryProjectCanvasInner({
       draftRevision,
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
+  const refreshAfterAgentMutation = async () => {
+    await Promise.all([workbenchQuery.refetch(), layoutQuery.refetch()]);
+  };
   return (
-    <main className="relative h-screen min-w-[1120px] overflow-hidden bg-[oklch(0.18_0_0)] text-white">
-      <StoryCanvasAssistantLayer
-        projectId={projectId}
-        chapterId={workbenchProjection.chapter.id}
-        workspaceId={workspaceId}
-        open={assistantOpen}
-        onOpenChange={setAssistantOpen}
-        suspended={Boolean(productionCanvasSession)}
-        onAgentWrote={handleAgentWrote}
-        onCanvasPreviewChange={setAgentCanvasPreview}
-        nodeLinks={nodeLinks}
-        // A brand-new project renders an empty graph on purpose; this hero
-        // fills that space until the first clip exists.
-        firstOpen={{
-          chapters: workbenchProjection.chapters,
-          canvasNodeCount: model.nodes.length,
-          canEdit: canMutateCanvasLayout,
-        }}
-      >
+    <main className="flex h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
+      <div className="relative min-w-0 flex-1">
         <CanvasHeader
           title={project.title}
           canEdit={canEdit}
@@ -3121,6 +2962,9 @@ function StoryProjectCanvasInner({
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
           onOpenMediaCreation={openProductionCanvas}
+          agentOpen={agentOpen}
+          agentLabel={agentT("title")}
+          onToggleAgent={() => setAgentOpen((current) => !current)}
           foundationOpen={inspectorTarget.kind === "foundation"}
           onToggleFoundation={() =>
             setInspectorTarget((current) =>
@@ -3155,8 +2999,6 @@ function StoryProjectCanvasInner({
               <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
             </button>
           }
-          assistantOpen={assistantOpen}
-          onToggleAssistant={() => setAssistantOpen((current) => !current)}
           onBackNavigate={guardBackNavigation}
         />
 
@@ -3185,10 +3027,7 @@ function StoryProjectCanvasInner({
 
         <section
           ref={canvasSectionRef}
-          // Inspectors are floating overlays over the canvas region; StoryOS
-          // docks as a sibling column in the assistant layer's split, so this
-          // section fills whatever width the region keeps. React Flow observes
-          // its container and absorbs the resize without moving the viewport.
+          // Inspectors are floating overlays over the canvas region.
           className="absolute inset-0"
           onDoubleClick={(event) => {
             if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
@@ -3198,7 +3037,7 @@ function StoryProjectCanvasInner({
             openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
           }}
         >
-          <StoryStudioCanvasBackdrop />
+          <CanvasBackdrop />
           <MediaHoverPreviewProvider>
             <StoryCanvasChoiceContext.Provider value={choiceContext}>
               <StoryCanvasFocusContext.Provider value={focusedNodeId}>
@@ -3241,7 +3080,6 @@ function StoryProjectCanvasInner({
                   }}
                   onNodeClick={(event, node) => {
                     closeCreatorMenu();
-                    if (node.data.agentPreview?.kind === "create") return;
                     const outcome = resolveStoryCanvasNodeClick({
                       nodeId: node.id,
                       nodeSelected: Boolean(node.selected),
@@ -3459,14 +3297,22 @@ function StoryProjectCanvasInner({
             onLoadLatest={loadLatestLayoutAfterConflict}
           />
         ) : null}
-      </StoryCanvasAssistantLayer>
-      {productionCanvasSession ? (
-        <StoryProductionCanvasWorkspace
-          context={productionCanvasSession}
-          candidates={candidateAssets}
-          onClose={closeProductionCanvasWorkspace}
-        />
-      ) : null}
+        {productionCanvasSession ? (
+          <StoryProductionCanvasWorkspace
+            context={productionCanvasSession}
+            candidates={candidateAssets}
+            onClose={closeProductionCanvasWorkspace}
+          />
+        ) : null}
+      </div>
+      <AgentOsPanel
+        projectId={projectId}
+        workbenchMode="story"
+        workbenchContext={{ chapterId: workbenchProjection.chapter.id }}
+        onMutationCompleted={refreshAfterAgentMutation}
+        open={agentOpen}
+        onClose={() => setAgentOpen(false)}
+      />
     </main>
   );
 }
@@ -3490,12 +3336,13 @@ function CanvasHeader({
   onPreview,
   onPublish,
   onOpenMediaCreation,
+  agentOpen,
+  agentLabel,
+  onToggleAgent,
   foundationOpen,
   onToggleFoundation,
   chapterControl,
   shareControl,
-  assistantOpen,
-  onToggleAssistant,
   onBackNavigate,
 }: {
   title: string;
@@ -3508,12 +3355,13 @@ function CanvasHeader({
   onPreview: () => void;
   onPublish: () => void;
   onOpenMediaCreation: () => void;
+  agentOpen: boolean;
+  agentLabel: string;
+  onToggleAgent: () => void;
   foundationOpen: boolean;
   onToggleFoundation: () => void;
   chapterControl: ReactNode;
   shareControl: ReactNode;
-  assistantOpen: boolean;
-  onToggleAssistant: () => void;
   onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
@@ -3543,10 +3391,7 @@ function CanvasHeader({
     </Button>
   );
   return (
-    // `@container`: the toolbar labels below shed to sr-only when the canvas
-    // region is too narrow to hold every row — the docked StoryOS column can
-    // take the region down to ~700px, where the full-label pill overflows.
-    // Icon-only buttons keep their accessible names; nothing is removed.
+    // `@container`: toolbar labels collapse to icon-only when space is tight.
     <header className="@container pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <div className="pointer-events-auto flex h-12 min-w-0 items-center gap-3">
         <Link
@@ -3567,17 +3412,18 @@ function CanvasHeader({
       <div className="liquid-rim pointer-events-auto relative flex h-12 shrink-0 items-center gap-0.5 rounded-[18px] bg-white/[0.055] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.3),0_16px_48px_-18px_rgba(0,0,0,0.68)] backdrop-blur-2xl backdrop-saturate-[1.8]">
         <button
           type="button"
-          aria-pressed={assistantOpen}
-          onClick={onToggleAssistant}
+          aria-label={agentLabel}
+          aria-pressed={agentOpen}
+          onClick={onToggleAgent}
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            assistantOpen
-              ? "bg-white/[0.14] text-white"
+            agentOpen
+              ? "bg-white text-black"
               : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
           )}
         >
           <IconSparkles className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("assistant.action")}</span>
+          <span className={HEADER_LABEL_CLASS}>{agentLabel}</span>
         </button>
         <button
           type="button"
@@ -3715,7 +3561,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
     canClaimManual: canClaimCanvasManualPlayback,
   });
   const previewFocused = focusedNodeId === id;
-  const agentPreviewKind = data.agentPreview?.kind;
   const chipStyle =
     data.kind === "decision"
       ? { background: "rgba(91,157,255,0.38)", iconBackground: "rgba(91,157,255,0.62)" }
@@ -3723,24 +3568,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
         : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   return (
-    <div
-      className={cn(
-        "relative pt-10",
-        // What StoryOS just wrote. A rim rather than a fill or a coloured
-        // border: DESIGN.md keeps this canvas monochrome and reserves brand red
-        // for nothing at all, and a ring is the one affordance that reads as
-        // "look here" without claiming to be a state the node is in. It fades
-        // itself out — see `agentWrittenNodeIds`.
-        data.agentWrote &&
-          "after:pointer-events-none after:absolute after:inset-x-0 after:top-10 after:bottom-0 after:rounded-[26px] after:ring-2 after:ring-white/70 after:transition-opacity after:duration-700 motion-safe:after:animate-pulse",
-        agentPreviewKind === "create" && "pointer-events-none opacity-60",
-        agentPreviewKind === "replace" && "opacity-70",
-        agentPreviewKind === "remove" && "opacity-30 grayscale"
-      )}
-      data-story-node-id={id}
-      data-agent-wrote={data.agentWrote ? "" : undefined}
-      data-agent-preview={agentPreviewKind}
-    >
+    <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
         rim={false}
         className={cn(
@@ -3765,9 +3593,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
           isDecision && "w-[340px]",
           isCharacter && "w-[236px]",
-          selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]",
-          agentPreviewKind &&
-            "outline-1 outline-offset-4 outline-dashed outline-white/45 motion-safe:animate-pulse"
+          selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]"
         )}
       >
         <GlassRim width="1px" />

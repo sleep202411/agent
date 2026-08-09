@@ -40,6 +40,7 @@ import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
 import { enqueueProjectChanged } from './project-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
+import { createProjectSectionWithCanvas } from '../project-sections/project-section.persistence';
 
 type ProjectWithCanvasPreview = PlatformProject & {
   documents?: Array<{ contentSnapshot: unknown }>;
@@ -355,6 +356,13 @@ export class WorkspacesService {
           role: ProjectMemberRole.owner,
           grantedById: user.userId,
         },
+      });
+      await createProjectSectionWithCanvas(tx, {
+        workspaceId,
+        projectId: created.id,
+        title: input.initialSectionTitle,
+        rank: 0,
+        actorId: user.userId,
       });
       await tx.workspace.updateMany({
         where: { id: workspaceId, defaultProjectId: null },

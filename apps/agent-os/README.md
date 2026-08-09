@@ -11,8 +11,7 @@ Codename for **FizzDragon Agent Platform** — production Agent product built fr
 | Protocol | `fizz.agent.v1` via `@repo/agent-protocol`  |
 | Phase 1  | Free · no rate limit                        |
 
-Independent of legacy `apps/agent`, `apps/agent-platform`, and
-`apps/studio-agent-runtime`.
+Independent of the legacy `apps/agent` application.
 
 ## Local
 

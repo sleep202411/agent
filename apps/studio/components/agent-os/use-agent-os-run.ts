@@ -8,6 +8,7 @@ import {
   type AgentOsEvent,
   type AgentOsPendingApproval,
   type AgentOsRunStatus,
+  type AgentOsWorkbenchContext,
 } from "@/lib/agent-os/api-client";
 
 export type AgentOsChatRole = "user" | "assistant" | "system" | "tool" | "approval";
@@ -22,6 +23,8 @@ export interface AgentOsChatMessage {
   meta?: Record<string, unknown>;
   /** Which agent run produced this message (product turn). */
   runId?: string;
+  /** Immutable workbench target captured when this turn started. */
+  workbenchContext?: AgentOsWorkbenchContext;
 }
 
 export interface AgentOsSessionState {
@@ -107,6 +110,8 @@ type RunBuffer = {
   pendingApproval: AgentOsPendingApproval | null;
   assistantText: string | null;
   error: { code?: string; message?: string } | null;
+  /** The target captured by RunStarted; never replaced by the current UI selection. */
+  workbenchContext: AgentOsWorkbenchContext | null;
   /** Client-only user row until UserMessage lands in the journal. */
   optimisticUser: OptimisticUser | null;
   /** Client-only HITL decisions not yet in journal (no eventSequence). */
@@ -122,6 +127,7 @@ function emptyRunBuffer(runId: string, order: number): RunBuffer {
     pendingApproval: null,
     assistantText: null,
     error: null,
+    workbenchContext: null,
     optimisticUser: null,
     optimisticDecisions: [],
   };
@@ -583,6 +589,16 @@ export function derivePendingApprovalFromEvents(
   return pending;
 }
 
+function workbenchContextFromEvents(
+  events: readonly AgentOsEvent[]
+): AgentOsWorkbenchContext | null {
+  const value = events.find((event) => event.type === "RunStarted")?.data.workbenchContext;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length === 0 || entries.some(([, item]) => typeof item !== "string")) return null;
+  return Object.fromEntries(entries) as AgentOsWorkbenchContext;
+}
+
 /**
  * Conversation-level rebuild: every run in first-seen order, full event logs.
  * This is the ONLY path that produces `messages` for the UI (live + hydrate).
@@ -602,14 +618,16 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
   let last: RunBuffer | null = null;
 
   for (const buf of ordered) {
+    const messageStart = messages.length;
     last = buf;
     const events = [...buf.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence);
+    buf.workbenchContext = workbenchContextFromEvents(events) ?? buf.workbenchContext;
     const optimisticReject = buf.optimisticDecisions.some((d) => d.meta?.decision === "reject");
     const optimisticApprove = buf.optimisticDecisions.some((d) => d.meta?.decision === "approve");
     // Event-derived status / HITL override stale buffer "running".
     // Client-side decision already made: do not resurrect HITL from a journal
     // that still only has ApprovalRequired (API lag).
-    let derivedPending =
+    const derivedPending =
       optimisticReject || optimisticApprove
         ? null
         : (buf.pendingApproval ?? derivePendingApprovalFromEvents(events));
@@ -760,9 +778,17 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
         });
       }
     }
+
+    if (buf.workbenchContext) {
+      for (let index = messageStart; index < messages.length; index += 1) {
+        messages[index] = {
+          ...messages[index]!,
+          workbenchContext: buf.workbenchContext,
+        };
+      }
+    }
   }
 
-  const lastStatus = last ? mapRunStatus(last.status) : "idle";
   const lastEvents = last
     ? [...last.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence)
     : [];
@@ -853,16 +879,16 @@ export function messagesFromConversationHistory(
   };
 }
 
-const LS_CONV_PREFIX = "fizz:agent-os:conversationId:";
+const LS_CONVERSATION_PREFIX = "fizz:agent-os:conversationId:";
 
-function conversationStorageKey(projectId: string): string {
-  return `${LS_CONV_PREFIX}${projectId}`;
+export function agentOsConversationStorageKey(projectId: string): string {
+  return `${LS_CONVERSATION_PREFIX}${projectId}`;
 }
 
 function readStoredConversationId(projectId: string): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(conversationStorageKey(projectId));
+    const raw = localStorage.getItem(agentOsConversationStorageKey(projectId));
     if (!raw || !/^[0-9a-f-]{36}$/i.test(raw)) return null;
     return raw;
   } catch {
@@ -873,7 +899,7 @@ function readStoredConversationId(projectId: string): string | null {
 function writeStoredConversationId(projectId: string, conversationId: string | null) {
   if (typeof window === "undefined") return;
   try {
-    const key = conversationStorageKey(projectId);
+    const key = agentOsConversationStorageKey(projectId);
     if (!conversationId) localStorage.removeItem(key);
     else localStorage.setItem(key, conversationId);
   } catch {
@@ -908,7 +934,6 @@ export function useAgentOsRun(projectId: string) {
   const activeRunIdRef = useRef<string | null>(null);
   const ablyLive = useRef(new AgentOsAblyLive());
   const ablyConnected = useRef(false);
-  const hydratedRef = useRef(false);
 
   /** Conversation-scoped event buffers — source of truth for transcript. */
   const runsRef = useRef(new Map<string, RunBuffer>());
@@ -1026,10 +1051,12 @@ export function useAgentOsRun(projectId: string) {
   }, [applyToRunBuffer]);
 
   useEffect(() => {
+    const controllers = pollAborts.current;
+    const live = ablyLive.current;
     return () => {
-      for (const ac of pollAborts.current.values()) ac.abort();
-      pollAborts.current.clear();
-      ablyLive.current.detach();
+      for (const ac of controllers.values()) ac.abort();
+      controllers.clear();
+      live.detach();
     };
   }, []);
 
@@ -1181,26 +1208,17 @@ export function useAgentOsRun(projectId: string) {
     [applyToRunBuffer, projectId]
   );
 
-  // Restore durable transcript on mount / project change.
+  // Restore the durable transcript for this project conversation.
   useEffect(() => {
-    hydratedRef.current = false;
-    conversationRef.current = null;
-    lastSequenceByRun.current = new Map();
-    activeRunIdRef.current = null;
-    runsRef.current = new Map();
-    nextRunOrder.current = 0;
-    pendingUserRef.current = null;
-    for (const ac of pollAborts.current.values()) ac.abort();
-    pollAborts.current.clear();
-    setState(initial);
-
     const storedConversationId = readStoredConversationId(projectId);
+    if (!storedConversationId) {
+      return;
+    }
     let cancelled = false;
     void agentOsApi
-      .getConversation(projectId, storedConversationId ?? undefined)
+      .getConversation(projectId, storedConversationId)
       .then((history) => {
         if (cancelled) return;
-        hydratedRef.current = true;
         if (!history.conversationId || history.runs.length === 0) {
           if (storedConversationId) {
             conversationRef.current = storedConversationId;
@@ -1246,7 +1264,6 @@ export function useAgentOsRun(projectId: string) {
       })
       .catch(() => {
         if (cancelled) return;
-        hydratedRef.current = true;
         if (storedConversationId) {
           conversationRef.current = storedConversationId;
         }
@@ -1263,7 +1280,8 @@ export function useAgentOsRun(projectId: string) {
       attachmentIds?: string[];
       attachmentNames?: string[];
       permissionMode?: "ask" | "smart" | "full";
-      surface?: "storyboard" | "canvas" | "brief";
+      workbenchMode: "storyboard" | "canvas" | "brief" | "story";
+      workbenchContext?: AgentOsWorkbenchContext;
       skillIds?: string[];
     }) => {
       const text = input.message.trim();
@@ -1300,7 +1318,8 @@ export function useAgentOsRun(projectId: string) {
           conversationId,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           permissionMode: input.permissionMode,
-          surface: input.surface,
+          workbenchMode: input.workbenchMode,
+          workbenchContext: input.workbenchContext,
           skillIds: input.skillIds,
         });
 
@@ -1308,6 +1327,7 @@ export function useAgentOsRun(projectId: string) {
         pendingUserRef.current = null;
         const buf = ensureRunBuffer(response.runId);
         buf.optimisticUser = optimistic;
+        buf.workbenchContext = input.workbenchContext ?? null;
         lastSequenceByRun.current.set(
           response.runId,
           lastSequenceByRun.current.get(response.runId) ?? 0
@@ -1336,7 +1356,7 @@ export function useAgentOsRun(projectId: string) {
         return response;
       } catch (error) {
         pendingUserRef.current = null;
-        const message = error instanceof Error ? error.message : "Agent OS run failed";
+        const message = error instanceof Error ? error.message : "FizzAgent run failed";
         setState((prev) => ({
           ...prev,
           status: "failed",

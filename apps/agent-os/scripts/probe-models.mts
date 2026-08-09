@@ -30,9 +30,7 @@ const ATTACHMENT = "33333333-3333-4333-8333-333333333333";
 
 const CANDIDATES = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
 if (CANDIDATES.length === 0) {
-  process.stderr.write(
-    "usage: npm run probe:models -w agent-os -- <model> [<model> …]\n"
-  );
+  process.stderr.write("usage: npm run probe:models -w agent-os -- <model> [<model> …]\n");
   process.exit(2);
 }
 
@@ -59,10 +57,7 @@ async function probe(model: string): Promise<Verdict> {
 
   try {
     const domain = new InMemoryStoryDomain();
-    domain.setScript(
-      "林黛玉自贾母处来，贾宝玉笑道：妹妹来了。王熙凤协理宁国府，处事干练。",
-      120
-    );
+    domain.setScript("林黛玉自贾母处来，贾宝玉笑道：妹妹来了。王熙凤协理宁国府，处事干练。", 120);
 
     // The profile table is keyed by our own ids; this probe addresses the
     // provider's model directly, through the same constructor the app uses so
@@ -94,7 +89,8 @@ async function probe(model: string): Promise<Verdict> {
         "角色 id 用拼音小写加连字符，如 lin-daiyu。",
       ].join(""),
       modelProfileId: loadModelProfiles()[0]!.id,
-      surface: "brief",
+      projectKind: "platform",
+      workbenchMode: "brief",
       model: chat,
       domain,
       checkpointer,
@@ -128,8 +124,7 @@ async function probe(model: string): Promise<Verdict> {
     verdict.ok = resumed.status === "completed" && verdict.wroteAfterApproval;
     if (!verdict.ok) {
       verdict.failure =
-        resumed.errorMessage ??
-        `resume ended as ${resumed.status}, wrote ${verdict.characters}`;
+        resumed.errorMessage ?? `resume ended as ${resumed.status}, wrote ${verdict.characters}`;
     }
   } catch (error) {
     verdict.failure = error instanceof Error ? error.message : String(error);

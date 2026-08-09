@@ -4,17 +4,13 @@ import { InMemoryStoryDomain } from "./in-memory-domain.js";
 
 /**
  * DomainPort that executes tools against Nest Agent OS domain HTTP API.
- * Character writes hit real PostgreSQL story drafts.
+ * Every product read/write reaches the authoritative Nest domain.
  */
 export class HttpDomainPort implements DomainPort {
   constructor(
     private readonly options: {
       baseUrl: string;
       internalToken: string;
-      /** Tools that must go to Nest domain (real DB). */
-      remoteToolIds?: ReadonlySet<string>;
-      /** Local fallback for query tools not yet remote (e.g. script sections). */
-      local?: DomainPort;
     }
   ) {}
 
@@ -23,34 +19,9 @@ export class HttpDomainPort implements DomainPort {
     input: unknown,
     context: ToolExecutionContext
   ): Promise<ToolExecuteResult> {
-    // All tools Nest domain implements must be listed here. A missing id falls
-    // through to in-memory domain (revision 0 / empty shots) while list* tools
-    // hit Postgres — classic "list says rev 5, write fails expected 5 actual 0".
-    const remote =
-      this.options.remoteToolIds ??
-      new Set([
-        "characters.list",
-        "characters.upsert",
-        "script.readSection",
-        "script.store",
-        "storyboard.listShots",
-        "storyboard.upsertShots",
-        "storyboard.deleteShots",
-        "canvas.read",
-        "canvas.applyPatch",
-      ]);
-    if (!remote.has(toolId)) {
-      if (!this.options.local) {
-        return {
-          ok: false,
-          code: "TOOL_NOT_SUPPORTED",
-          message: `No domain handler for ${toolId}`,
-          retryable: false,
-        };
-      }
-      return this.options.local.execute(toolId, input, context);
-    }
-
+    // HTTP mode has exactly one product domain: Nest. It owns capability
+    // routing and rejects unsupported tools; the worker never shadows that
+    // registry or diverts a missing handler to an in-memory store.
     const url = `${this.options.baseUrl.replace(/\/$/, "")}/internal/agent-os/tools/${encodeURIComponent(toolId)}/execute`;
     let res: Response;
     try {
@@ -63,6 +34,7 @@ export class HttpDomainPort implements DomainPort {
         body: JSON.stringify({
           actorId: context.actorId,
           projectId: context.projectId,
+          workbenchContext: context.workbenchContext,
           idempotencyKey: context.idempotencyKey,
           arguments: input,
         }),
@@ -139,6 +111,5 @@ export function createWorkerDomainPort(_scriptText?: string): DomainPort {
   return new HttpDomainPort({
     baseUrl: process.env.AGENT_OS_DOMAIN_URL!.trim(),
     internalToken: process.env.AGENT_OS_INTERNAL_TOKEN!.trim(),
-    local,
   });
 }

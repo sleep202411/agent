@@ -40,6 +40,7 @@ export function CreateProjectDialog({
     if (!canSubmit) return;
     const project = await create.mutateAsync({
       name: name.trim(),
+      initialSectionTitle: t("defaultSectionTitle"),
       description: description.trim() || undefined,
     });
     onOpenChange(false);

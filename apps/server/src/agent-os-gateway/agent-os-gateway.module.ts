@@ -11,9 +11,13 @@ import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 import { AgentOsGatewayController } from './agent-os-gateway.controller';
 import { AgentOsGatewayService } from './agent-os-gateway.service';
 import { AgentOsInternalController } from './agent-os-internal.controller';
+import { AgentOsProjectContextService } from './agent-os-project-context.service';
 import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 import { AgentOsWorkerClient } from './agent-os-worker.client';
 import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
+import { AttachmentAgentCapabilityHandler } from './capabilities/attachment.handler';
+import { PlatformAgentCapabilityHandler } from './capabilities/platform.handler';
+import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
 
 @Module({
   imports: [
@@ -32,14 +36,19 @@ import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
     AgentOsWorkerClient,
     AgentOsGatewayService,
     AgentOsDomainService,
+    AgentOsProjectContextService,
     AgentOsRunJournalService,
     AgentOsAttachmentService,
     AgentOsAblyTokenIssuer,
     AgentOsCanvasShotsService,
+    AttachmentAgentCapabilityHandler,
+    PlatformAgentCapabilityHandler,
+    StoryAgentCapabilityHandler,
   ],
   exports: [
     AgentOsGatewayService,
     AgentOsDomainService,
+    AgentOsProjectContextService,
     AgentOsRunJournalService,
     AgentOsAttachmentService,
   ],

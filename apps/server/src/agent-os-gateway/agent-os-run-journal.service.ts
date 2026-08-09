@@ -77,11 +77,32 @@ export class AgentOsRunJournalService {
     projectId: string;
     actorId: string;
     conversationId: string;
+    workbenchMode: string | null;
+    workbenchContext: Readonly<Record<string, string>> | null;
   } | null> {
-    return this.prisma.agentOsRun.findUnique({
+    const row = await this.prisma.agentOsRun.findUnique({
       where: { id: runId },
-      select: { projectId: true, actorId: true, conversationId: true },
+      select: {
+        projectId: true,
+        actorId: true,
+        conversationId: true,
+        events: true,
+      },
     });
+    if (!row) return null;
+    const started = parseEvents(row.events).find(
+      (event) => event.type === 'RunStarted',
+    );
+    return {
+      projectId: row.projectId,
+      actorId: row.actorId,
+      conversationId: row.conversationId,
+      workbenchMode:
+        typeof started?.data.workbenchMode === 'string'
+          ? started.data.workbenchMode
+          : null,
+      workbenchContext: parseStringRecord(started?.data.workbenchContext),
+    };
   }
 
   /**
@@ -197,6 +218,15 @@ export class AgentOsRunJournalService {
       })),
     };
   }
+}
+
+function parseStringRecord(
+  value: unknown,
+): Readonly<Record<string, string>> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.some(([, item]) => typeof item !== 'string')) return null;
+  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 function parseEvents(value: Prisma.JsonValue): AgentOsJournalEvent[] {

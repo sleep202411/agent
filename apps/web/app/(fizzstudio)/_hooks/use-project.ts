@@ -45,8 +45,12 @@ export function useProject(projectId: string) {
 export function useCreateProject(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; description?: string; visibility?: ProjectVisibility }) =>
-      createProject(workspaceId, input),
+    mutationFn: (input: {
+      name: string;
+      initialSectionTitle: string;
+      description?: string;
+      visibility?: ProjectVisibility;
+    }) => createProject(workspaceId, input),
     onSuccess: (project) => {
       // Prepend to list cache — newest first
       qc.setQueryData<FizzProject[]>(projectKeys.list(workspaceId), (prev = []) => [

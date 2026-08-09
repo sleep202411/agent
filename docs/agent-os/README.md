@@ -4,14 +4,9 @@
 **Codename / monorepo name:** **Agent OS**  
 **Path:** `apps/agent-os` + `packages/agent-*`
 
-This is a **new, independent** production Agent product. It does **not** import from,
-extend, or dual-stack with:
-
-- `apps/agent` (legacy Mastra StoryOS)
-- `apps/agent-platform` (Mastra + Temporal replacement attempt)
-- `apps/studio-agent-runtime` (legacy Studio Temporal runtime)
-
-Those remain untouched. Agent OS is the only path for new Agent capability.
+This is a **new, independent** production Agent product. It does **not** import
+from, extend, or dual-stack with the legacy `apps/agent` Mastra StoryOS. Agent
+OS is the only path for new Agent capability.
 
 ## Authority document
 

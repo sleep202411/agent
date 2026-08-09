@@ -77,29 +77,7 @@ export class DocumentsController {
   }
 
   /**
-   * Idempotent bootstrap — returns the project's primary storyboard
-   * document, creating it on first open. POST because it has a write
-   * side effect. The user never sees "documents"; entering a project
-   * lands here and renders the storyboard editor with view modes.
-   */
-  @Post('projects/:projectId/storyboard/ensure')
-  async ensurePrimaryStoryboard(
-    @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(ProjectDocumentsParamsSchema))
-    params: ProjectDocumentsParams,
-  ) {
-    return {
-      code: 200,
-      data: await this.documents.ensurePrimaryStoryboard(
-        user,
-        params.projectId,
-      ),
-    };
-  }
-
-  /**
-   * Idempotent bootstrap for a project's primary document of a given mode
-   * (canvas / storyboard / timeline / …). Returns the detail DTO (incl.
+   * Idempotent bootstrap for a project-level document mode. Returns the detail DTO (incl.
    * crdtStateBase64 + snapshotSequence) so a CRDT client can rebuild and then
    * replay operations after the snapshot horizon. POST — has a write side effect.
    */

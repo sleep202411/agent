@@ -21,9 +21,8 @@ WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
 # Pin the heap instead of letting V8 size it from the host's memory. The build
-# agent's cgroup limit is lower than what Node detects, so tsc grew past it and
-# the step was SIGKILLed (exit 137) once the studio-agent module landed. A fixed
-# ceiling makes the build depend on the project's size, not the agent's.
+# build cgroup limit is lower than what Node detects, so tsc can grow past it
+# and get SIGKILLed (exit 137). A fixed ceiling makes the build predictable.
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npx turbo run build --filter=server
 
@@ -51,6 +50,8 @@ RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 # tier even when the feature it belongs to is disabled by flag.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
+COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
+COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
 
 # A workspace dependency added later without a COPY line above would otherwise
 # only surface as MODULE_NOT_FOUND when the container boots in production —

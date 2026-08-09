@@ -34,8 +34,8 @@ spec:
     namespace: fizzdragon-com
   syncPolicy:
     automated:
-      prune: true      # remove resources no longer in git
-      selfHeal: true   # revert drift from manual kubectl edits
+      prune: true # remove resources no longer in git
+      selfHeal: true # revert drift from manual kubectl edits
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -60,10 +60,5 @@ spec:
     - group: apps
       kind: Deployment
       name: fizzdragon-server
-      jsonPointers:
-        - /spec/replicas
-    - group: apps
-      kind: Deployment
-      name: fizzdragon-agent-platform-api
       jsonPointers:
         - /spec/replicas

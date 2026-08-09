@@ -1,8 +1,8 @@
 /**
- * Agent OS realtime transport (Ably) + surface identity.
+ * Agent OS realtime transport (Ably) + workbench identity.
  *
  * Skills (system + future catalog/project/turn) are owned by @repo/agent-skills.
- * Surface only selects which system base skills mount for the Studio mode.
+ * Workbench mode selects which system base skills mount for the product view.
  *
  * Delivery model:
  * - Worker publishes product events with a root key (never to the browser).
@@ -11,21 +11,17 @@
  * - Postgres journal remains the durable source of truth; Ably accelerates.
  */
 
-/** Studio product surface the Agent OS panel is opened from. */
-export const AGENT_OS_SURFACES = ["storyboard", "canvas", "brief"] as const;
-export type AgentOsSurface = (typeof AGENT_OS_SURFACES)[number];
+export const PLATFORM_AGENT_WORKBENCH_MODES = ["storyboard", "canvas", "brief"] as const;
+export type PlatformAgentWorkbenchMode = (typeof PLATFORM_AGENT_WORKBENCH_MODES)[number];
 
-export function isAgentOsSurface(value: unknown): value is AgentOsSurface {
-  return typeof value === "string" && (AGENT_OS_SURFACES as readonly string[]).includes(value);
-}
-
-/** Map Studio URL mode slug → Agent OS surface (system skill mount key). */
-export function agentOsSurfaceFromStudioMode(mode: string | null | undefined): AgentOsSurface {
+/** Map a Platform Studio route mode to its Agent OS workbench mode. */
+export function agentOsWorkbenchModeFromStudioMode(
+  mode: string | null | undefined
+): PlatformAgentWorkbenchMode {
   if (mode === "storyboard") return "storyboard";
   if (mode === "brief") return "brief";
   if (mode === "canvas") return "canvas";
-  // Unknown / retired modes (e.g. former "cast") → storyboard tools.
-  return "storyboard";
+  throw new Error(`Unsupported Agent OS Platform workbench mode: ${String(mode)}`);
 }
 
 export const AGENT_OS_CHANNEL_NAMESPACE = "agent-os" as const;

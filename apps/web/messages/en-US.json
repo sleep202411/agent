@@ -8499,6 +8499,7 @@
     "createProjectDescLabel": "Description",
     "createProjectDescPlaceholder": "What is this project about? (optional)",
     "createProjectSubmit": "Create project",
+    "defaultSectionTitle": "Chapter 1",
     "createTeamWorkspace": "Create team",
     "createTeamWorkspaceTitle": "Create team workspace",
     "workspaceNameLabel": "Team name",

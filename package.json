@@ -34,7 +34,6 @@
     "apps/mobile",
     "apps/server",
     "apps/studio",
-    "apps/studio-agent-runtime",
     "apps/web",
     "packages/*"
   ],

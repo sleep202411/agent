@@ -90,7 +90,7 @@ import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
 } from './uploaded-image-probe.service';
-import { MediaAssetDurationService } from './media-asset-duration.service';
+import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaAssetReadinessService } from './media-asset-readiness.service';
 
 /**
@@ -138,7 +138,7 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/webp': 'webp',
 };
 
-const STUDIO_AGENT_DOCUMENT_CONTENT_TYPES: Record<string, string> = {
+const AGENT_DOCUMENT_CONTENT_TYPES: Record<string, string> = {
   'text/plain': 'txt',
   'text/markdown': 'md',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -159,7 +159,7 @@ const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
 const CREW_ASSET_CONTENT_TYPES: Record<string, string> = {
   ...IMAGE_CONTENT_TYPES,
   ...VIDEO_CONTENT_TYPES,
-  ...STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+  ...AGENT_DOCUMENT_CONTENT_TYPES,
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
@@ -264,28 +264,11 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     verifiedImageFinalKeySegment: 'agent-attachment-image-final',
   },
   agent_attachment_document: {
-    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+    contentTypes: AGENT_DOCUMENT_CONTENT_TYPES,
     maxBytes: 10 * MiB,
     assetKind: MediaAssetKind.document,
     ttlSeconds: 900,
     keySegment: 'agent-attachment-document',
-  },
-  studio_agent_image: {
-    contentTypes: IMAGE_CONTENT_TYPES,
-    // Studio Agent accepts only server-decoded JPEG/PNG/WebP images. The cap
-    // bounds provider context and memory use during the streaming byte probe.
-    maxBytes: 30 * MiB,
-    assetKind: MediaAssetKind.image,
-    ttlSeconds: 900,
-    keySegment: 'studio-agent-image-staging',
-    verifiedImageFinalKeySegment: 'studio-agent-image-final',
-  },
-  studio_agent_document: {
-    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
-    maxBytes: 10 * MiB,
-    assetKind: MediaAssetKind.document,
-    ttlSeconds: 900,
-    keySegment: 'studio-agent-document',
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
@@ -347,7 +330,7 @@ export class MediaUploadService {
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
-    private readonly mediaDurations: MediaAssetDurationService,
+    private readonly mediaFacts: MediaAssetFactsService,
     private readonly storageRegistry: StorageProviderRegistry,
   ) {}
 
@@ -648,7 +631,7 @@ export class MediaUploadService {
       confirmedAssetKind === MediaAssetKind.video ||
       confirmedAssetKind === MediaAssetKind.audio
     ) {
-      const durationSeconds = await this.mediaDurations.probeObjectDuration({
+      const durationSeconds = await this.mediaFacts.probeObjectDuration({
         kind: confirmedAssetKind,
         storageProvider: truth.storageProvider,
         bucket: truth.bucket,

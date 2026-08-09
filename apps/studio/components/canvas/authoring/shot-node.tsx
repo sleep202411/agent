@@ -9,6 +9,7 @@ import { useRouter } from "@/i18n/navigation";
 import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useOptionalProjectSections } from "@/app/[locale]/project/_components/project-sections-context";
 import { useTextDraft } from "@/lib/use-text-draft";
 import {
   SHOT_NODE_TYPE,
@@ -34,6 +35,7 @@ function ShotNodeComponent({ id, data, selected }: NodeProps<ShotNodeType>) {
   const t = useTranslations("storyboard");
   const { nodes, patchNodeData, canEdit } = useCanvasGraphContext();
   const project = useOptionalProjectContext();
+  const projectSections = useOptionalProjectSections();
   const router = useRouter();
 
   // The shot number is a projection of the ordered shot list, never stored —
@@ -64,7 +66,12 @@ function ShotNodeComponent({ id, data, selected }: NodeProps<ShotNodeType>) {
         {project ? (
           <ToolbarButton
             label={t("node.openInStoryboard")}
-            onClick={() => router.push(`/project/${project.projectId}/storyboard?row=${id}`)}
+            onClick={() =>
+              projectSections?.activeSection &&
+              router.push(
+                `/project/${project.projectId}/storyboard?section=${encodeURIComponent(projectSections.activeSection.id)}&row=${encodeURIComponent(id)}`
+              )
+            }
           >
             <IconTable className="size-4" stroke={1.8} />
           </ToolbarButton>

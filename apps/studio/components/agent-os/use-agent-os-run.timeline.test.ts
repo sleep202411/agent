@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { AgentOsEvent } from "@/lib/agent-os/api-client";
 import {
+  agentOsConversationStorageKey,
   derivePendingApprovalFromEvents,
   messagesFromConversationHistory,
   rebuildRunTimelineFromEvents,
 } from "./use-agent-os-run";
+
+describe("project conversation identity", () => {
+  it("is keyed only by project, never by workbench mode or chapter", () => {
+    expect(agentOsConversationStorageKey("project-1")).toBe(
+      "fizz:agent-os:conversationId:project-1"
+    );
+  });
+});
 
 function ev(sequence: number, type: string, data: Record<string, unknown> = {}): AgentOsEvent {
   return {
@@ -196,6 +205,38 @@ describe("derivePendingApprovalFromEvents", () => {
 });
 
 describe("messagesFromConversationHistory (multi-run)", () => {
+  it("keeps each turn's original chapter context inside one project conversation", () => {
+    const runs = ["section-a", "section-b"].map((sectionId, index) => ({
+      runId: `run-${index + 1}`,
+      status: "completed",
+      events: [
+        {
+          ...ev(1, "RunStarted", {
+            status: "running",
+            workbenchMode: "canvas",
+            workbenchContext: { sectionId },
+          }),
+          runId: `run-${index + 1}`,
+        },
+        {
+          ...ev(2, "ToolCompleted", {
+            toolId: "canvas.applyPatch",
+            toolCallId: `call-${index + 1}`,
+            result: { nodeIds: [`node-${index + 1}`] },
+          }),
+          runId: `run-${index + 1}`,
+        },
+      ],
+    }));
+
+    const { messages } = messagesFromConversationHistory(runs);
+    expect(
+      messages
+        .filter((message) => message.role === "tool")
+        .map((message) => message.workbenchContext?.sectionId)
+    ).toEqual(["section-a", "section-b"]);
+  });
+
   it("interleaves turns: U1 → A1 → U2 → A2 (never clumps users at top)", () => {
     const run1Events: AgentOsEvent[] = [
       {

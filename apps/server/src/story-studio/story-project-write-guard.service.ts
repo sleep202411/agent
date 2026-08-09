@@ -28,7 +28,7 @@ export interface ActiveStoryExternalCommand {
  *
  * Every human mutation must call `assertHumanWriteAllowed` from the same
  * database transaction that performs the write. `FOR UPDATE` makes the
- * permanent write-state row the ordering point shared with future Agent
+ * permanent write-state row the ordering point shared with Agent OS
  * claims, while `transaction_timestamp()` keeps lease decisions on the
  * database clock.
  */
@@ -61,11 +61,11 @@ export class StoryProjectWriteGuardService {
   }
 
   /**
-   * Serialize a deferrable system reconciliation with Agent apply.
+   * Serialize a deferrable system reconciliation with Agent OS apply.
    *
    * Unlike a human mutation, polling reconciliation should not turn an active
-   * Agent lease into a 423 response. It locks the same permanent write-state
-   * row and returns `false` while Agent apply owns the project. The caller must
+   * Agent OS lease into a 423 response. It locks the same permanent write-state
+   * row and returns `false` while Agent OS apply owns the project. The caller must
    * then commit without project-visible writes and return its current read
    * model. A later poll can retry after the Agent lease is released.
    *
@@ -122,15 +122,14 @@ export class StoryProjectWriteGuardService {
   }
 
   /**
-   * Acquire the short, transaction-scoped mutation boundary used by the
-   * provider-independent Studio Agent runtime.
+   * Acquire the short, transaction-scoped mutation boundary used by Agent OS.
    *
    * Model inference and approval never run while this lock is held. A prepared
    * action enters here only for its bounded canonical database mutation. That
-   * keeps the canvas responsive while still giving human writes, legacy-agent
-   * recovery, external release commands, and the new runtime one total order.
+   * keeps the canvas responsive while still giving human writes, recovery,
+   * external release commands, and Agent OS one total order.
    */
-  async acquireStudioAgentMutationFence(
+  async acquireAgentOsMutationFence(
     tx: Prisma.TransactionClient,
     storyProjectId: string,
   ): Promise<{ fencingToken: bigint }> {
@@ -174,7 +173,7 @@ export class StoryProjectWriteGuardService {
   }
 
   /**
-   * Prevent an Agent apply from overtaking an already accepted external write.
+   * Prevent an Agent OS apply from overtaking an accepted external write.
    *
    * The caller MUST already hold the permanent project write-state row
    * `FOR UPDATE`. Release claims take that same row lock before creating their

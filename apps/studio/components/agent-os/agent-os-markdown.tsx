@@ -58,7 +58,7 @@ function AgentOsCode({ className, children, ...props }: ComponentPropsWithoutRef
 /**
  * Narrow-panel Markdown for Agent OS.
  *
- * Deliberately tighter than Studio Agent canvas markdown:
+ * Deliberately tuned for the narrow FizzAgent panel:
  * - no page-level horizontal scroll from long `code` or wide GFM tables
  * - tables stay within the bubble (cells wrap; table can still scroll *inside*
  *   a max-width container if truly wide, without expanding the chat column)

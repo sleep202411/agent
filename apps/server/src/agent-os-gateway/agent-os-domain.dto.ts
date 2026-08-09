@@ -72,7 +72,7 @@ const shotId = z
  * values and the `ShotWrite` type cross the boundary. The guard below keeps the
  * shapes from drifting apart anyway.
  */
-const ShotWriteSchema = z
+const ShotWriteSchema: z.ZodType<ShotWrite> = z
   .object({
     id: shotId,
     intent: z.enum(['create', 'replace']).default('create'),
@@ -98,9 +98,6 @@ const ShotWriteSchema = z
     path: ['title'],
   });
 
-type _ShotWriteMatchesShared =
-  z.infer<typeof ShotWriteSchema> extends ShotWrite ? true : never;
-
 export const ShotsUpsertInputSchema = z
   .object({
     /** Advisory only — reported back as stale, never a rejection. */
@@ -120,6 +117,7 @@ export const AgentOsDomainExecuteBodySchema = z
   .object({
     actorId: z.string().trim().min(1).max(128),
     projectId: z.string().uuid(),
+    workbenchContext: z.record(z.string(), z.string()).optional(),
     idempotencyKey: z.string().trim().min(8).max(512),
     arguments: z.unknown(),
   })

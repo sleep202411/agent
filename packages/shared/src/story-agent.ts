@@ -308,8 +308,8 @@ export type StoryAgentGraphNode = z.infer<typeof StoryAgentGraphNodeSchema>;
  *
  * `operationId` addresses execution errors and de-duplicates a proposal;
  * `summary` labels the operation in undo bookkeeping. Neither is a narrative
- * decision, so neither is asked of a model: on the Studio Agent capability path
- * the server fills both before the input is validated, hashed, or persisted
+ * decision, so neither is asked of a model: on the agent capability path the
+ * server fills both before the input is validated, hashed, or persisted
  * (see STORY_PATCH_SERVER_SUPPLIED_OPERATION_FIELDS), and the deterministic
  * authoring pipeline fills both in code.
  */
@@ -449,7 +449,7 @@ export type StoryPatchOperation = z.infer<typeof StoryPatchOperationSchema>;
  *
  * Read the discriminator off the schema that actually validates: a hand-copied
  * list drifts the moment an eleventh operation lands, and drift here is what
- * left the Studio Agent manifest describing operations as
+ * previously left the generated capability manifest describing operations as
  * `items: { type: "object" }` while the server rejected every call with
  * `operations.N.kind Invalid input`.
  */
@@ -484,7 +484,7 @@ export const StoryPatchOperationsSchema = StoryPatchPreflightSchema.pipe(
 /**
  * The authoritative shape of a `story.canvas.apply_patch` capability input.
  *
- * It lives beside the operation union because the Studio Agent manifest is
+ * It lives beside the operation union because the capability manifest is
  * PROJECTED from it (`storyPatchActionInputJsonSchema`) and the server executor
  * PARSES with it. One declaration, two readings — so the manifest cannot
  * describe a different SHAPE from the one the executor enforces.
@@ -756,13 +756,8 @@ type JsonSchemaNode = Record<string, unknown>;
  * What is guaranteed, and by what:
  *
  *  - STRUCTURE — which branches exist, which fields they carry, which are
- *    optional — cannot drift unnoticed. The differential spec in
- *    `apps/server/src/studio-agent/studio-agent.registry.spec.ts` feeds one
- *    maximal fixture per operation kind, per node kind and per exit kind through
- *    the manifest and the zod schema and demands the same verdict field by
- *    field, at every depth, with each field deleted in turn. It refuses to run
- *    with a kind that has no fixture, so a new branch cannot slip past by being
- *    unexercised, and it is proven to bite at all three union sites.
+ *    optional — is derived from this Zod contract rather than maintained as a
+ *    second handwritten schema.
  *  - CHECKS cannot drift UNNOTICED — which is a weaker guarantee, and the
  *    distinction matters. A zod check with no JSON Schema counterpart is dropped
  *    by `z.toJSONSchema` in silence, so the fixtures above cannot see it.

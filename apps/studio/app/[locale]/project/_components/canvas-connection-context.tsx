@@ -4,10 +4,6 @@ import { createContext, useContext, useMemo } from "react";
 import { useAuth } from "@/app/_components/auth-provider";
 import { toCollabUser } from "@/lib/collab/collab-user";
 import { useCanvasDoc, type CanvasDocHandle } from "@/lib/collab/use-canvas-doc";
-import {
-  useCanvasDocument,
-  type CanvasDocumentState,
-} from "@/lib/collab/use-canvas-document";
 import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
 import { CanvasGraphProvider } from "@/lib/canvas-core/canvas-graph-context";
 import { CanvasGenerationProvider } from "@/lib/canvas-authoring/use-canvas-generation";
@@ -17,8 +13,7 @@ import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 
 /**
- * The SINGLE owner of the canvas document connection for the whole project
- * workspace.
+ * The SINGLE owner of the active section's canvas document connection.
  *
  * `DocumentProvider` is NOT a singleton — every `useCanvasDoc` call builds its
  * own WebSocket + Y.Doc + awareness. So the connection MUST be established
@@ -33,7 +28,7 @@ import type * as Y from "yjs";
  */
 export interface CanvasConnectionValue {
   documentId: string | null;
-  documentStatus: CanvasDocumentState["status"];
+  documentStatus: "loading" | "ready" | "error";
   doc: Y.Doc | null;
   awareness: Awareness | null;
   provider: DocumentProvider | null;
@@ -45,20 +40,25 @@ const CanvasConnectionContext = createContext<CanvasConnectionValue | null>(null
 
 export function CanvasConnectionProvider({
   projectId,
+  documentId,
   canEdit,
   children,
 }: {
   projectId: string;
+  documentId: string;
   canEdit: boolean;
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
   const collabUser = useMemo(() => toCollabUser(user), [user]);
-  const { documentId, status: documentStatus } = useCanvasDocument(projectId);
-  const { doc, awareness, provider, status: connectionStatus, rtt } = useCanvasDoc(
-    documentId,
-    collabUser,
-  );
+  const documentStatus = "ready" as const;
+  const {
+    doc,
+    awareness,
+    provider,
+    status: connectionStatus,
+    rtt,
+  } = useCanvasDoc(documentId, collabUser);
   // The graph is the document's node/edge view. It's ONE per document (not per
   // surface) — canvas and storyboard read the same nodes, so the graph lives
   // here alongside the connection. This also puts it above the CopilotPanel
@@ -76,7 +76,7 @@ export function CanvasConnectionProvider({
       connectionStatus,
       rtt,
     }),
-    [documentId, documentStatus, doc, awareness, provider, connectionStatus, rtt],
+    [documentId, documentStatus, doc, awareness, provider, connectionStatus, rtt]
   );
 
   return (

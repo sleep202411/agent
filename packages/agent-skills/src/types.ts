@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { AGENT_PROJECT_KINDS, type AgentProjectKind } from "@repo/agent-capabilities";
 
 /**
  * Agent Skill — one mountable specialization.
  *
- * Same shape for system / surface base skills and future catalog/project skills.
+ * Same shape for system / workbench base skills and future catalog/project skills.
  * Installation UI is out of scope; Runtime must already accept any registered skill.
  *
  * Aligned with Agent Skills / LangChain progressive-disclosure pattern:
@@ -36,13 +37,12 @@ export const AgentSkillDefinitionSchema = z
      * Empty = instructions only (no extra tools).
      */
     toolIds: z.array(z.string().min(1).max(128)).max(64).default([]),
-    /**
-     * Surfaces this skill is valid on. Empty = any surface.
-     * System surface-base skills list exactly one surface.
-     */
-    surfaces: z.array(z.string().min(1).max(64)).max(32).default([]),
+    /** Project kinds this skill is valid for. Empty = any project kind. */
+    projectKinds: z.array(z.enum(AGENT_PROJECT_KINDS)).max(AGENT_PROJECT_KINDS.length).default([]),
+    /** Workbench modes this skill is valid for. Empty = any mode. */
+    workbenchModes: z.array(z.string().min(1).max(64)).max(32).default([]),
     source: AgentSkillSourceSchema,
-    /** Always composed when surface matches (system base). */
+    /** Always composed when project kind and workbench mode match. */
     alwaysOn: z.boolean().default(false),
     /**
      * Shown in composer / project default pickers.
@@ -59,8 +59,10 @@ export const AgentSkillDefinitionSchema = z
 export type AgentSkillDefinition = z.infer<typeof AgentSkillDefinitionSchema>;
 
 export interface SkillMountContext {
-  /** Trusted product surface (Studio mode). */
-  surface: string;
+  /** Trusted server-resolved project kind. */
+  projectKind: AgentProjectKind;
+  /** Trusted product workbench mode. */
+  workbenchMode: string;
   /** Optional product line (e.g. interactive-film). Future system packs. */
   product?: string;
   /**

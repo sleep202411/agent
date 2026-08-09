@@ -295,12 +295,3 @@ temporalDatabaseSecrets:
 #              nodeSelector: null, tolerations: null }
 agentOs:
   enabled: false
-
-studioAgentRuntime:
-  image:
-    tag: set-at-deploy
-  model:
-    baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
-  # CN has one untainted node; remove the .com worker-pool placement.
-  nodeSelector: null
-  tolerations: null

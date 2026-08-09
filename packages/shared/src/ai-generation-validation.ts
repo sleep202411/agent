@@ -397,22 +397,17 @@ export function validateGenerationInput(args: ValidateGenerationInputArgs): Vali
       }
     }
 
-    // Size limits fail closed: when a size rule is declared, every item must
-    // carry known bytes (same bar as duration rules).
+    // Size limits judge only what is actually known. Byte sizes are resolved
+    // server-side from the MediaAsset row; an unknown size is not evidence of
+    // an oversized file, so it must never block a submit. Oversized uploads are
+    // caught at file-pick time by the composer, and again here once bytes are
+    // known. Duration rules below still fail closed — those limits are the
+    // provider's, and the server can always measure them.
     if (rule.maxFileSizeMb != null && rows.length > 0) {
       const limitBytes = rule.maxFileSizeMb * 1024 * 1024;
       for (const row of rows) {
         const bytes = finiteNonNegative(row.bytes);
-        if (bytes == null) {
-          issues.push({
-            code: VALIDATION_ISSUE_CODES.MEDIA_FILE_SIZE_EXCEEDED,
-            severity: "error",
-            field: rule.field,
-            message: `File size is required for every item in ${rule.field}.`,
-            params: { field: rule.field, maxMb: rule.maxFileSizeMb, missing: true },
-          });
-          continue;
-        }
+        if (bytes == null) continue;
         if (bytes > limitBytes) {
           issues.push({
             code: VALIDATION_ISSUE_CODES.MEDIA_FILE_SIZE_EXCEEDED,
@@ -429,23 +424,13 @@ export function validateGenerationInput(args: ValidateGenerationInputArgs): Vali
       }
     }
 
+    // Same rule as above: a combined limit is only enforceable when every item's
+    // size is known. Partial knowledge understates the sum, so we stay silent.
     if (rule.maxCombinedFileSizeMb != null && rows.length > 0) {
       const known = rows
         .map((row) => finiteNonNegative(row.bytes))
         .filter((b): b is number => b != null);
-      if (known.length !== rows.length) {
-        issues.push({
-          code: VALIDATION_ISSUE_CODES.MEDIA_COMBINED_FILE_SIZE_EXCEEDED,
-          severity: "error",
-          field: rule.field,
-          message: `File size is required for every item in ${rule.field}.`,
-          params: {
-            field: rule.field,
-            maxMb: rule.maxCombinedFileSizeMb,
-            missing: true,
-          },
-        });
-      } else {
+      if (known.length === rows.length) {
         const sum = known.reduce((a, b) => a + b, 0);
         const limitBytes = rule.maxCombinedFileSizeMb * 1024 * 1024;
         if (sum > limitBytes) {

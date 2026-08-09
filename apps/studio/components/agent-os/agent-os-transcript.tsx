@@ -164,13 +164,13 @@ export function AgentOsTranscript({
         <MessageScrollerViewport aria-label={labels.transcript}>
           <MessageScrollerContent
             aria-busy={status === "running" || busy}
-            className="gap-3 px-3 py-3"
+            className="gap-4 px-4 py-3 pb-6"
             spacerClassName="!max-h-0"
           >
             {isEmpty ? (
               <MessageScrollerItem
                 messageId="timeline-empty"
-                className="flex min-h-[12rem] items-start"
+                className="flex min-h-48 flex-1 items-center justify-center px-6 text-center"
               >
                 {empty}
               </MessageScrollerItem>
@@ -225,7 +225,7 @@ export function AgentOsTranscript({
               <MessageScrollerItem key="timeline-error" messageId="timeline-error" scrollAnchor>
                 <div
                   role="alert"
-                  className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200"
+                  className="flex items-start gap-2 px-1 py-1 text-xs/relaxed text-destructive/86"
                 >
                   <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
                   <span>{error}</span>
@@ -287,13 +287,13 @@ function AgentOsMessageRow({
       : [];
     return (
       <Message align="end">
-        <MessageContent className="gap-1">
-          <MessageHeader className="flex items-center justify-end gap-2">
+        <MessageContent className="gap-1.5">
+          <MessageHeader className="sr-only">
             <MessageMetaClock message={message} />
             <span>{labels.user}</span>
           </MessageHeader>
-          <Bubble variant="secondary" className="max-w-[92%]">
-            <BubbleContent className="whitespace-pre-wrap rounded-2xl bg-white/[0.1] px-3.5 py-2 text-sm leading-6 text-foreground">
+          <Bubble variant="secondary" className="max-w-[88%]">
+            <BubbleContent className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-white/[0.07] px-3.5 py-2.5 text-sm/relaxed text-white/88">
               {message.content}
               {names.length > 0 ? (
                 <span className="mt-1.5 flex flex-wrap gap-1">
@@ -319,13 +319,13 @@ function AgentOsMessageRow({
     // poll/Ably jumps. Settled turns pass active=false and snap to full text.
     return (
       <Message align="start">
-        <MessageContent className="gap-1">
-          <MessageHeader className="flex items-center gap-2">
+        <MessageContent className="gap-1.5">
+          <MessageHeader className="sr-only">
             <span>{labels.assistant}</span>
             <MessageMetaClock message={message} />
           </MessageHeader>
           <Bubble variant="ghost" className="max-w-full min-w-0">
-            <BubbleContent className="min-w-0 max-w-full overflow-x-hidden px-0.5 text-sm leading-6 text-foreground/88">
+            <BubbleContent className="min-w-0 max-w-full overflow-x-hidden px-0.5 text-sm/relaxed text-white/82">
               <SmoothStreamMarkdown
                 target={message.content}
                 active={isStreaming}
@@ -343,11 +343,11 @@ function AgentOsMessageRow({
       <Message align="start">
         <MessageContent className="gap-1">
           <MessageHeader className="flex items-center gap-2">
-            <span className="text-amber-100/80">{labels.assistant}</span>
+            <span className="text-white/58">{labels.assistant}</span>
             <MessageMetaClock message={message} />
           </MessageHeader>
-          <div className="w-full max-w-[96%] rounded-xl border border-amber-500/20 bg-amber-500/[0.07] p-3">
-            <p className="text-xs font-medium text-amber-100/90">{message.content}</p>
+          <div className="w-full max-w-[96%] rounded-2xl bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <p className="text-xs font-medium text-white/86">{message.content}</p>
             {typeof message.meta?.description === "string" ? (
               <p className="mt-1 text-[11px] text-white/50">{message.meta.description}</p>
             ) : null}
@@ -404,7 +404,7 @@ function AgentOsMessageRow({
             <IconTool
               className={cn(
                 "size-3.5 text-white/40",
-                phase === "failed" && "text-red-300/70",
+                phase === "failed" && "text-destructive/80",
                 phase === "completed" && "text-white/50"
               )}
               stroke={1.8}
@@ -424,7 +424,12 @@ function AgentOsMessageRow({
           <MessageMetaClock message={message} />
           {/* Where the write landed. Ids in prose are not findable. */}
           {written.length > 0 && projectId ? (
-            <WrittenNodes projectId={projectId} nodes={written} label={labels.showOnCanvas} />
+            <WrittenNodes
+              projectId={projectId}
+              sectionId={message.workbenchContext?.sectionId}
+              nodes={written}
+              label={labels.showOnCanvas}
+            />
           ) : null}
         </MarkerContent>
       </Marker>

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -74,6 +75,15 @@ export class DocumentsService {
     projectId: string,
     input: CreateDocumentInput,
   ) {
+    if (
+      input.type === PlatformDocumentType.canvas ||
+      input.type === PlatformDocumentType.storyboard
+    ) {
+      throw new BadRequestException({
+        code: 'SECTION_DOCUMENT_MANAGED',
+        msg: 'Canvas and storyboard content are managed through project chapters.',
+      });
+    }
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
@@ -127,18 +137,24 @@ export class DocumentsService {
   }
 
   /**
-   * Idempotent — returns the project's primary document of a given mode
-   * (`type`), creating it if absent. This is the multi-mode ensure-on-open
-   * primitive: a project=entity has at most one primary document per mode
-   * (canvas / storyboard / timeline / script …), lazily created when the
-   * user first opens that mode. Concurrency-safe via a pg advisory lock
-   * keyed on (project, type).
+   * Idempotent project-level document bootstrap for modes such as brief or
+   * script. Section-owned canvas/storyboard content is deliberately rejected.
+   * Concurrency-safe via a pg advisory lock keyed on (project, type).
    */
   async ensurePrimaryDocument(
     user: AuthUser,
     projectId: string,
     type: PlatformDocumentType,
   ) {
+    if (
+      type === PlatformDocumentType.canvas ||
+      type === PlatformDocumentType.storyboard
+    ) {
+      throw new BadRequestException({
+        code: 'SECTION_DOCUMENT_MANAGED',
+        msg: 'Canvas and storyboard content are resolved from the active chapter.',
+      });
+    }
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
@@ -219,15 +235,6 @@ export class DocumentsService {
     });
 
     return { document: this.documentDto(document, { detail: true }) };
-  }
-
-  /** Back-compat wrapper for the existing storyboard ensure route. */
-  async ensurePrimaryStoryboard(user: AuthUser, projectId: string) {
-    return this.ensurePrimaryDocument(
-      user,
-      projectId,
-      PlatformDocumentType.storyboard,
-    );
   }
 
   async getDocument(user: AuthUser, documentId: string) {
@@ -819,6 +826,7 @@ export class DocumentsService {
       id: document.id,
       workspaceId: document.workspaceId,
       projectId: document.projectId,
+      sectionId: document.sectionId,
       type: document.type,
       status: document.status,
       title: document.title,

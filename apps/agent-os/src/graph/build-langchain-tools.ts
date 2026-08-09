@@ -7,7 +7,7 @@ import {
   parseToolInput,
   type DomainPort,
 } from "@repo/agent-tools";
-import type { AgentOsSurface } from "@repo/shared";
+import { STORY_PATCH_OPERATION_LABELS } from "@repo/shared/story-agent";
 import { z } from "zod/v3";
 
 import { toLangChainToolName } from "./tool-name.js";
@@ -17,10 +17,10 @@ export interface ToolRuntimeContext {
   conversationId: string;
   projectId: string;
   actorId: string;
-  mode: AgentMode;
+  workbenchContext?: Readonly<Record<string, string>>;
+  agentMode: AgentMode;
   permissionMode: PermissionMode;
   domain: DomainPort;
-  surface: AgentOsSurface;
   /** Journal fan-out for ToolStarted / ToolCompleted / ToolFailed. */
   onToolEvent?: (event: {
     type: "ToolStarted" | "ToolCompleted" | "ToolFailed";
@@ -53,7 +53,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       name: toLangChainToolName("script.store"),
       description: getTool("script.store").description,
       schema: z.object({
-        text: z.string().min(1).max(200_000),
+        text: z.string().min(1).max(1_000_000),
         sectionSize: z.number().int().positive().max(50_000).optional(),
       }),
     }
@@ -218,6 +218,158 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     }
   );
 
+  const storyStableId = z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z][A-Za-z0-9._:-]*$/);
+  const storyLocalizedText = z.record(z.string().min(2).max(16), z.string().max(4_000));
+  const storyClipKey = z
+    .string()
+    .min(1)
+    .max(40)
+    .regex(/^[A-Z][A-Z0-9_-]*$/);
+  const storyScene = z.object({
+    nodeId: storyStableId,
+    clipKey: storyClipKey,
+    name: z.string().max(120).optional(),
+    description: z.string().max(4_000).optional(),
+  });
+  const storyBase = { baseDraftRevision: z.number().int().nonnegative() };
+  const bindStoryTool = (toolId: string, schema: z.ZodTypeAny) =>
+    tool(
+      async (raw, config) => executeBound(toolId, raw ?? {}, runtime, toolCallIdFromConfig(config)),
+      {
+        name: toLangChainToolName(toolId),
+        description: getTool(toolId).description,
+        schema,
+      }
+    );
+
+  const storyRead = bindStoryTool("story.read", z.object({}));
+  const storyUpdateBible = bindStoryTool(
+    "story.updateBible",
+    z.object({
+      ...storyBase,
+      logline: z.string().max(1_000).optional(),
+      synopsis: z.string().max(20_000).optional(),
+      putCharacters: z
+        .array(
+          z.object({
+            intent: z.enum(["create", "replace"]),
+            character: z.object({
+              id: storyStableId,
+              name: storyLocalizedText,
+              summary: z.string().max(4_000),
+            }),
+          })
+        )
+        .max(100)
+        .optional(),
+      removeCharacterIds: z.array(storyStableId).max(100).optional(),
+      productionNotes: z.array(z.string().max(2_000)).max(200).optional(),
+    })
+  );
+  const storyAddScene = bindStoryTool(
+    "story.addScene",
+    z.object({
+      ...storyBase,
+      afterNodeId: storyStableId.nullable().optional(),
+      scene: storyScene,
+    })
+  );
+  const storyAddBranch = bindStoryTool(
+    "story.addBranch",
+    z.object({
+      ...storyBase,
+      afterNodeId: storyStableId,
+      decisionId: storyStableId,
+      prompt: storyLocalizedText,
+      branches: z
+        .array(
+          z.object({
+            choiceId: storyStableId,
+            label: storyLocalizedText,
+            scene: storyScene,
+          })
+        )
+        .min(2)
+        .max(6),
+    })
+  );
+  const storyEditNode = bindStoryTool(
+    "story.editNode",
+    z.object({
+      ...storyBase,
+      nodeId: storyStableId,
+      name: z.string().max(120).optional(),
+      description: z.string().max(4_000).optional(),
+    })
+  );
+  const storyRemoveSubtree = bindStoryTool(
+    "story.removeSubtree",
+    z.object({ ...storyBase, nodeId: storyStableId })
+  );
+  const storySetEntry = bindStoryTool(
+    "story.setEntry",
+    z.object({ ...storyBase, nodeId: storyStableId.nullable() })
+  );
+  const storyReorder = bindStoryTool(
+    "story.reorder",
+    z.object({ ...storyBase, nodeIds: z.array(storyStableId).max(500) })
+  );
+  const storyApplyPatch = tool(
+    async (raw, config) => {
+      const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const operations = Array.isArray(body.operations)
+        ? body.operations.map((value) => {
+            const operation =
+              value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+            const kind = operation.kind;
+            return {
+              ...operation,
+              operationId: crypto.randomUUID(),
+              summary:
+                typeof kind === "string" && kind in STORY_PATCH_OPERATION_LABELS
+                  ? STORY_PATCH_OPERATION_LABELS[kind as keyof typeof STORY_PATCH_OPERATION_LABELS]
+                  : "Apply a Story graph change.",
+            };
+          })
+        : body.operations;
+      return executeBound(
+        "story.applyPatch",
+        { ...body, operations },
+        runtime,
+        toolCallIdFromConfig(config)
+      );
+    },
+    {
+      name: toLangChainToolName("story.applyPatch"),
+      description: getTool("story.applyPatch").description,
+      schema: z.object({
+        ...storyBase,
+        operations: z
+          .array(
+            z.object({
+              kind: z.enum([
+                "story_bible.update_overview",
+                "story_bible.put_character",
+                "story_bible.remove_character",
+                "story_graph.set_entry_node",
+                "story_graph.put_node",
+                "story_graph.remove_node",
+                "story_graph.reorder_nodes",
+                "production.replace_notes",
+              ]),
+              payload: z.record(z.unknown()),
+            })
+          )
+          .min(1)
+          .max(200),
+      }),
+    }
+  );
+
   const byRegistryId = {
     "script.store": storeScript,
     "script.readSection": readSection,
@@ -228,6 +380,15 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "storyboard.deleteShots": deleteShots,
     "canvas.read": canvasRead,
     "canvas.applyPatch": canvasApplyPatch,
+    "story.read": storyRead,
+    "story.updateBible": storyUpdateBible,
+    "story.addScene": storyAddScene,
+    "story.addBranch": storyAddBranch,
+    "story.editNode": storyEditNode,
+    "story.removeSubtree": storyRemoveSubtree,
+    "story.setEntry": storySetEntry,
+    "story.reorder": storyReorder,
+    "story.applyPatch": storyApplyPatch,
   } as const;
 
   const allowed = new Set(toolIds);
@@ -265,13 +426,13 @@ async function executeBound(
   const callId = toolCallId ?? crypto.randomUUID();
   const emit = runtime.onToolEvent;
   const gate = requiresApproval({
-    mode: runtime.mode,
+    mode: runtime.agentMode,
     permissionMode: runtime.permissionMode,
     risk: definition.risk,
   });
 
   if (gate.required) {
-    if (runtime.mode === "DISCUSS" && definition.risk !== "read") {
+    if (runtime.agentMode === "DISCUSS" && definition.risk !== "read") {
       const denied = {
         ok: false as const,
         code: "DISCUSS_WRITE_FORBIDDEN",
@@ -325,6 +486,7 @@ async function executeBound(
       conversationId: runtime.conversationId,
       projectId: runtime.projectId,
       actorId: runtime.actorId,
+      workbenchContext: runtime.workbenchContext,
       toolCallId: callId,
       idempotencyKey: buildToolIdempotencyKey({
         projectId: runtime.projectId,

@@ -1598,11 +1598,34 @@
     "sidebar": {
       "assets": "Assets",
       "chapters": "Chapters",
-      "images": "Images",
-      "videos": "Videos",
-      "search": "Search",
       "collapse": "Collapse",
       "expand": "Expand"
+    },
+    "sections": {
+      "defaultTitle": "Chapter 1",
+      "title": "Chapters",
+      "count": "{count, plural, one {# chapter} other {# chapters}}",
+      "add": "Add chapter",
+      "createTitle": "Add chapter",
+      "createDescription": "A chapter has its own canvas and storyboard.",
+      "nameLabel": "Chapter name",
+      "namePlaceholder": "Enter a chapter name",
+      "create": "Add chapter",
+      "rename": "Rename",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "archive": "Archive",
+      "archiveTitle": "Archive chapter?",
+      "archiveDescription": "“{title}” will be removed from the active chapter list. Its canvas and history remain preserved.",
+      "archiveLast": "A project must keep at least one active chapter.",
+      "menu": "More actions for {title}",
+      "close": "Close chapters",
+      "loadError": "The chapters could not be loaded.",
+      "invalid": "This chapter does not exist in the project.",
+      "createError": "The chapter could not be created.",
+      "updateError": "The chapter could not be updated.",
+      "reorderError": "The chapter order could not be saved.",
+      "archiveError": "The chapter could not be archived."
     },
     "thisProject": "this project",
     "documentOpenError": "Couldn't open this document — check the link or your access.",
@@ -2069,197 +2092,6 @@
       "readOnly": "Read only",
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
-      "assistant": {
-        "action": "StoryOS"
-      },
-      "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS assistant",
-        "close": "Close StoryOS",
-        "newConversation": "New conversation",
-        "retry": "Try again",
-        "dismissError": "Dismiss",
-        "timeline": {
-          "log": "StoryOS conversation",
-          "empty": "Describe the story, decision, or player experience you want to develop.",
-          "loading": "Loading this conversation…",
-          "scrollToLatest": "Scroll to the latest update",
-          "loadEarlier": "Load earlier turns",
-          "loadingEarlier": "Loading earlier turns…",
-          "thinking": "Thinking…",
-          "attachments": {
-            "unknownSize": "Size unavailable",
-            "status": {
-              "processing": "Processing",
-              "ready": "Ready",
-              "failed": "Failed"
-            }
-          },
-          "roles": {
-            "user": "You",
-            "assistant": "StoryOS"
-          }
-        },
-        "attachmentAnalysis": {
-          "region": "Document analysis",
-          "queued": "Document analysis queued",
-          "mapping": "Analyzing the document · {progress}%",
-          "reducing": "Synthesizing the analysis · {progress}%",
-          "succeeded": "Document analysis ready",
-          "failed": "Document analysis failed",
-          "cancelled": "Document analysis cancelled"
-        },
-        "activity": {
-          "expand": "Show activity details",
-          "collapse": "Hide activity details",
-          "labels": {
-            "generatingResponse": "Generating response",
-            "readingStory": "Reading the current story",
-            "reviewingSource": "Reviewing source material",
-            "applyingChanges": "Applying story changes"
-          },
-          "status": {
-            "running": "In progress",
-            "succeeded": "Completed",
-            "failed": "Failed",
-            "cancelled": "Cancelled"
-          }
-        },
-        "runStatus": {
-          "queued": "Queued",
-          "running": "Working",
-          "waiting_for_approval": "Waiting for approval",
-          "waiting_for_input": "Waiting for input",
-          "cancelling": "Stopping",
-          "succeeded": "Completed",
-          "failed": "Failed",
-          "cancelled": "Cancelled"
-        },
-        "turnFailure": {
-          "region": "StoryOS turn failed",
-          "title": {
-            "inputRejected": "StoryOS sent a request this story rejected",
-            "notRecorded": "The change ran but could not be recorded",
-            "failed": "This turn failed"
-          },
-          "explanation": {
-            "inputRejected": "StoryOS built an invalid tool call, so nothing was applied. Sending the request again gives it another attempt.",
-            "notRecorded": "The action reached your story but the server could not record its result, so nothing in your story changed. The server marked this failure as one that repeating will not fix — edit the request and describe the change a different way.",
-            "failed": "The turn stopped before it finished, so nothing it promised was applied."
-          },
-          "issues": "What the server rejected",
-          "code": "Code",
-          "diagnosticId": "Diagnostic",
-          "details": "Details",
-          "dismiss": "Dismiss",
-          "retry": "Send this request again",
-          "reword": "Edit this request",
-          "openSurface": "Open StoryOS"
-        },
-        "stall": {
-          "region": "Turn not responding",
-          "title": "This turn has not reported progress",
-          "explanation": "Nothing has arrived on the conversation channel for over two minutes. The turn may still be running — or the worker handling it may have died. Wait, or stop it and try again.",
-          "stop": "Stop this turn"
-        },
-        "childRuns": {
-          "group": "Delegated tasks"
-        },
-        "composer": {
-          "input": "Message StoryOS",
-          "placeholder": "Ask StoryOS to analyze, plan, or change this story…",
-          "stop": "Stop the current run",
-          "stopping": "Stopping the current run…",
-          "cancelReason": "Cancelled by the creator.",
-          "queued": "{count, plural, one {# queued message} other {# queued messages}}",
-          "deliveryModeMenu": "Choose how this message is delivered",
-          "attachments": {
-            "add": "Attach reference files",
-            "drop": "Drop images, TXT, Markdown, DOCX, or PDF files here",
-            "remove": "Remove {fileName}",
-            "retry": "Retry {fileName}",
-            "uploading": "Uploading · {progress}%",
-            "processing": "Extracting text · {progress}%",
-            "ready": "Ready",
-            "failed": "Upload failed",
-            "emptyFile": "Empty files cannot be uploaded.",
-            "unsupportedType": "Only JPEG, PNG, WebP, UTF-8 TXT, Markdown, DOCX, and PDF files are supported.",
-            "tooLarge": "This file must be {maxSize} or smaller.",
-            "fileNameTooLong": "The file name must be 255 characters or fewer."
-          },
-          "delivery": {
-            "send": {
-              "label": "Send",
-              "description": "Start a new StoryOS turn."
-            },
-            "steer": {
-              "label": "Steer now",
-              "description": "Give the active run new direction at its next safe boundary."
-            },
-            "enqueue": {
-              "label": "Queue next",
-              "description": "Keep the current run going and handle this message afterwards."
-            },
-            "stopAndSend": {
-              "label": "Stop and send",
-              "description": "Cancel the active run, then start a new turn with this message."
-            }
-          }
-        },
-        "permission": {
-          "menu": "StoryOS action permissions",
-          "options": {
-            "ask": {
-              "label": "Ask for approval",
-              "description": "Ask before every action that changes your data."
-            },
-            "smart": {
-              "label": "Approve for me",
-              "description": "Auto-run every action except deletions."
-            },
-            "full": {
-              "label": "Full authorization",
-              "description": "Auto-run every action, including deletions. Platform safety rules still apply."
-            }
-          }
-        },
-        "toolApproval": {
-          "title": "StoryOS wants to run {toolName}.",
-          "approve": "Approve",
-          "deny": "Deny",
-          "showInput": "Show what it will run with",
-          "hideInput": "Hide what it will run with",
-          "preparing": "Preparing a safe approval checkpoint…",
-          "resuming": "Resuming the turn",
-          "decision": {
-            "approved": "Approved",
-            "denied": "Denied"
-          }
-        }
-      },
-      "firstOpen": {
-        "title": "Every choice rewrites the story",
-        "description": "Tell StoryOS what you want to build, or start from a directing skill that shapes the first draft.",
-        "start": "Describe your own story",
-        "skillsTitle": "Or start from a directing skill",
-        "connecting": "Connecting to StoryOS…",
-        "unavailable": "StoryOS is unavailable, so it can’t draft anything yet. The canvas is still yours to build by hand.",
-        "retry": "Try again",
-        "skills": {
-          "halftoneCollage": {
-            "title": "Halftone collage",
-            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
-            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Use 10-14 cinematic clips, hook within the first 2, then a meaningful choice every 2-3 clips. Let each route finish naturally on its terminal clip according to which memories the player restores or tears up.",
-            "styleBrief": "Art direction: flat paper fields, black-and-white halftone cutouts and cardstock accents, one visual metaphor per beat assembled from a few objects. No typography, no 3D, no photoreal."
-          },
-          "symmetricalStorybook": {
-            "title": "Symmetrical storybook cinema",
-            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
-            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Advance through cinematic clips, with one pivotal choice per chapter that makes the hotel more absurd and brings the truth closer. Use around 12 clips in three acts, each act closing on a visual reversal. Let each route finish naturally on its terminal clip.",
-            "styleBrief": "Art direction: deliberate symmetry and centered compositions, one chapter motif per act, a controlled vintage palette, and precise, restrained reveals."
-          }
-        }
-      },
       "saveState": {
         "idle": "Mutable draft · revision {revision}",
         "dirty": "Unsaved changes · revision {revision}",
@@ -2800,11 +2632,12 @@
     "loadingMedia": "Loading footage"
   },
   "agentOs": {
-    "title": "Agent OS",
+    "title": "FizzAgent",
     "subtitle": "Chat with an execution agent — tools write to your project",
-    "close": "Close Agent OS",
-    "open": "Open Agent OS",
-    "emptyHint": "Chat like Codex: attach a script file, ask for work, approve writes, keep going.",
+    "close": "Close FizzAgent",
+    "open": "Open FizzAgent",
+    "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
+    "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
     "modelProfile": "Model",
     "permissionMode": "Permission mode",
     "permAsk": "Ask every time",
@@ -2822,8 +2655,14 @@
     "attachmentReady": "{count, plural, one {# file attached} other {# files attached}}",
     "attachmentFailed": "Could not process {name}",
     "attachmentFailedGeneric": "Upload failed",
+    "attachmentTooMany": "You can attach up to {count} files per message",
+    "attachmentTooLarge": "{name} is larger than {size} MB",
+    "attachmentEmpty": "{name} is empty",
+    "serviceUnavailable": "FizzAgent is temporarily unavailable. Try again shortly.",
+    "dismissIssue": "Dismiss issue",
     "message": "Message",
-    "composerPlaceholder": "Message Agent OS… attach a script file if needed",
+    "composerPlaceholder": "Message FizzAgent… attach a script file if needed",
+    "composerPlaceholderStory": "Message FizzAgent… attach source material if needed",
     "skillsLabel": "Skills",
     "skillProjectDefault": "Project default: {name}",
     "skillDefaultBadge": "default",
@@ -2835,16 +2674,44 @@
     "stop": "Stop",
     "stopped": "Stopped listening to this turn",
     "newChat": "New chat",
+    "newConversationDialog": {
+      "title": "Start a new conversation?",
+      "description": "This clears the current conversation and cannot be undone. Project content already written is not affected.",
+      "cancel": "Keep conversation",
+      "confirm": "Clear and start new"
+    },
+    "runDetails": {
+      "open": "Run details",
+      "title": "Run details",
+      "description": "Diagnostic information for this FizzAgent conversation.",
+      "status": "Run status",
+      "conversationId": "Conversation ID",
+      "latestIssue": "Latest issue",
+      "technicalDetail": "Technical detail",
+      "notAvailable": "Not available",
+      "close": "Done",
+      "statusValue": {
+        "idle": "Idle",
+        "running": "Running",
+        "waiting_for_approval": "Waiting for approval",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      }
+    },
     "thinking": "Working…",
-    "transcriptLabel": "Agent OS conversation",
+    "transcriptLabel": "FizzAgent conversation",
     "scrollToLatest": "Scroll to latest",
     "roleUser": "You",
-    "roleAssistant": "Agent OS",
+    "roleAssistant": "FizzAgent",
     "roleSystem": "System",
     "roleTool": "Tool",
     "suggestCharacters": "Extract characters from this script",
     "suggestShots": "Break this script into 10 storyboard shots",
     "suggestBoth": "Store script, then characters + shots",
+    "suggestStoryContinue": "Continue the story with a new scene",
+    "suggestStoryBranch": "Add a meaningful choice and two branches",
+    "suggestStoryPolish": "Review and polish the current chapter",
     "run": "Send",
     "reset": "New chat",
     "approve": "Approve write",
@@ -2854,8 +2721,11 @@
     "runFailed": "Agent failed",
     "sendFailed": "Could not send message",
     "approvalFailed": "Approval failed",
+    "approvalStoryBible": "Story bible",
+    "approvalStoryEntry": "Story entry",
+    "approvalSceneOrder": "Scene order",
+    "approvalStoryScene": "Story scene",
     "approvalNotReady": "Approval is still preparing — wait a moment and try again",
-    "status": "{status}",
     "event": {
       "RunStarted": "Run started",
       "PlanCreated": "Plan",

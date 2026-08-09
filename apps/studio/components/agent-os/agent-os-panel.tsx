@@ -1,21 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { IconPaperclip, IconPlus, IconSparkles, IconX } from "@tabler/icons-react";
-import { toast } from "sonner";
-import { agentOsSurfaceFromStudioMode } from "@repo/shared";
+import { IconAlertCircle, IconAlertTriangle, IconPaperclip, IconX } from "@tabler/icons-react";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
+import {
+  FizzAgentModelMenu,
+  FizzAgentPermissionMenu,
+  FizzAgentSurface,
+} from "@/components/fizz-agent";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   agentOsApi,
   type AgentOsAttachmentSummary,
   type AgentOsPermissionMode,
   type AgentOsSkillMeta,
+  type AgentOsWorkbenchContext,
+  type AgentOsWorkbenchMode,
 } from "@/lib/agent-os/api-client";
-import { emitAgentOsDomainChanged } from "@/lib/agent-os/domain-events";
 import { cn } from "@/lib/utils";
 import { AgentOsTranscript } from "./agent-os-transcript";
+import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
 import { useAgentOsRun } from "./use-agent-os-run";
 
 const PERMISSION_MODES: Array<{
@@ -28,9 +43,17 @@ const PERMISSION_MODES: Array<{
 ];
 
 const SUGGESTIONS = ["suggestCharacters", "suggestShots", "suggestBoth"] as const;
+const STORY_SUGGESTIONS = [
+  "suggestStoryContinue",
+  "suggestStoryBranch",
+  "suggestStoryPolish",
+] as const;
 
 const ACCEPT =
-  ".txt,.md,.markdown,.fountain,.csv,.json,.xml,text/plain,text/markdown,text/csv,application/json";
+  ".txt,.md,.markdown,.fountain,.fdx,.csv,.json,.xml,.log,text/plain,text/markdown,text/x-markdown,text/csv,application/json,application/xml,text/xml";
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_TURN = 20;
+const UPLOAD_CONCURRENCY = 3;
 
 const LS_PERM = "fizz:agent-os:permissionMode";
 const LS_MODEL = "fizz:agent-os:modelProfileId";
@@ -52,14 +75,29 @@ function writeLs(key: string, value: string) {
   }
 }
 
-/**
- * Agent OS side panel — chat + attachments + Codex-style permission/model near send.
- */
-export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+interface AgentOsPanelProps {
+  projectId: string;
+  workbenchMode: AgentOsWorkbenchMode;
+  workbenchContext?: AgentOsWorkbenchContext;
+  onMutationCompleted?: () => void | Promise<void>;
+  open: boolean;
+  onClose: () => void;
+}
+
+/** Agent OS side panel — one durable conversation boundary per project. */
+export function AgentOsPanel(props: AgentOsPanelProps) {
+  return <AgentOsProjectSession key={props.projectId} {...props} />;
+}
+
+function AgentOsProjectSession({
+  projectId,
+  workbenchMode,
+  workbenchContext,
+  onMutationCompleted,
+  open,
+  onClose,
+}: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
-  const routeParams = useParams();
-  const studioMode = typeof routeParams.mode === "string" ? routeParams.mode : "storyboard";
-  const surface = agentOsSurfaceFromStudioMode(studioMode);
   const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
@@ -74,21 +112,24 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
   });
   const [busy, setBusy] = useState(false);
   const [workerOk, setWorkerOk] = useState<boolean | null>(null);
-  /** Invocable skills for this surface (composer multi-select). */
+  /** Invocable skills for this workbench (composer multi-select). */
   const [invocableSkills, setInvocableSkills] = useState<AgentOsSkillMeta[]>([]);
   /** Project admin defaults — pinned chips; persisted via Nest. */
   const [projectDefaultSkillIds, setProjectDefaultSkillIds] = useState<string[]>([]);
-  /** True after project skills catalog/defaults load (or fail). */
-  const [skillsHydrated, setSkillsHydrated] = useState(false);
   /** Per-turn selection (user toggles). */
   const [turnSkillIds, setTurnSkillIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
-  /** Domain revision last observed — pure chat must not re-apply unchanged shots. */
   const [models, setModels] = useState<Array<{ id: string; label: string; hint?: string }>>([]);
-  const lastCharacterCountRef = useRef(0);
-  const domainBaselineReady = useRef(false);
+  const [latestIssue, setLatestIssue] = useState<AgentOsIssue | null>(null);
+
+  const reportIssue = useCallback(
+    (error: unknown, fallback: string) => {
+      setLatestIssue(toAgentOsIssue(error, fallback, t("serviceUnavailable")));
+    },
+    [t]
+  );
 
   /**
    * Availability is a live fact, not a one-time reading.
@@ -123,22 +164,16 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     };
   }, []);
 
-  // Baseline the character count so a pure-chat turn does not toast, and load
-  // project default skills + the invocable catalog for the composer.
+  // Load project defaults, workbench-scoped skills, and the worker model catalog.
   useEffect(() => {
     let cancelled = false;
-    domainBaselineReady.current = false;
-    setSkillsHydrated(false);
     void Promise.all([
-      agentOsApi.listCharacters(projectId),
       agentOsApi.getProjectSkills(projectId),
-      agentOsApi.listSkills(surface),
+      agentOsApi.listSkills(projectId, workbenchMode),
       agentOsApi.listModels(),
     ])
-      .then(([charactersPage, projectSkills, skillCatalog, modelCatalog]) => {
+      .then(([projectSkills, skillCatalog, modelCatalog]) => {
         if (cancelled) return;
-        lastCharacterCountRef.current = charactersPage.characters.length;
-        domainBaselineReady.current = true;
         setProjectDefaultSkillIds(projectSkills.defaultSkillIds);
         setInvocableSkills(skillCatalog.invocable);
         setModels(modelCatalog.models);
@@ -147,24 +182,19 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         setModelProfileId((prev) =>
           modelCatalog.models.some((m) => m.id === prev) ? prev : (modelCatalog.models[0]?.id ?? "")
         );
-        // Drop turn picks that no longer apply to this surface.
+        // Drop turn picks that no longer apply to this workbench.
         setTurnSkillIds((prev) =>
           prev.filter((id) => skillCatalog.invocable.some((s) => s.id === id))
         );
-        setSkillsHydrated(true);
       })
       .catch(() => {
-        if (!cancelled) {
-          domainBaselineReady.current = true;
-          // Leave skillsHydrated false so the skills row stays hidden
-          // and Nest loads durable defaults from DB.
-          setSkillsHydrated(false);
-        }
+        // Nest still loads durable defaults from DB when this optional catalog
+        // request is unavailable.
       });
     return () => {
       cancelled = true;
     };
-  }, [projectId, surface]);
+  }, [projectId, workbenchMode]);
 
   useEffect(() => {
     writeLs(LS_PERM, permissionMode);
@@ -174,28 +204,6 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     writeLs(LS_MODEL, modelProfileId);
   }, [modelProfileId]);
 
-  /**
-   * Characters have no product surface yet, so a count bump is the only signal
-   * the panel can give. Shots need nothing here: the server writes them into
-   * the canvas document and the documents WS fans the operation out, and
-   * reconnect catch-up is that layer's job — a second, client-side reconciler
-   * would be re-deriving a CRDT it does not own.
-   */
-  const syncProductSurfaces = useCallback(async () => {
-    if (!domainBaselineReady.current) return;
-    try {
-      const charactersPage = await agentOsApi.listCharacters(projectId);
-      const characterCount = charactersPage.characters.length;
-      const newCharacters = Math.max(0, characterCount - lastCharacterCountRef.current);
-      lastCharacterCountRef.current = characterCount;
-      if (newCharacters > 0) {
-        emitAgentOsDomainChanged({ projectId, kind: "characters" });
-      }
-    } catch {
-      /* durable state stays in Agent OS tables; nothing to reconcile here */
-    }
-  }, [projectId]);
-
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = state.status;
@@ -204,8 +212,8 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     if (!finishedWork || !state.runId) return;
     if (lastSyncedRunRef.current === state.runId) return;
     lastSyncedRunRef.current = state.runId;
-    void syncProductSurfaces();
-  }, [state.runId, state.status, syncProductSurfaces]);
+    void onMutationCompleted?.();
+  }, [onMutationCompleted, state.runId, state.status]);
 
   /**
    * Failures the client itself diagnoses get a translated sentence; anything
@@ -221,6 +229,11 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           ? t("runOrphaned")
           : (state.error ?? null)
     : state.error;
+  const diagnosticIssue =
+    latestIssue ??
+    (runErrorText
+      ? toAgentOsIssue(new Error(runErrorText), t("runFailed"), t("serviceUnavailable"))
+      : null);
 
   const turnBusy =
     busy || uploading || state.status === "running" || state.status === "waiting_for_approval";
@@ -235,27 +248,60 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
+    const remaining = Math.max(0, MAX_ATTACHMENTS_PER_TURN - pendingFiles.length);
+    const selected = Array.from(list);
+    if (selected.length > remaining) {
+      reportIssue(null, t("attachmentTooMany", { count: MAX_ATTACHMENTS_PER_TURN }));
+    }
+    const candidates = selected.slice(0, remaining);
+    const accepted: File[] = [];
+    for (const file of candidates) {
+      if (file.size === 0) {
+        reportIssue(null, t("attachmentEmpty", { name: file.name }));
+      } else if (file.size > MAX_ATTACHMENT_BYTES) {
+        reportIssue(null, t("attachmentTooLarge", { name: file.name, size: 20 }));
+      } else {
+        accepted.push(file);
+      }
+    }
+    if (accepted.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       const uploaded: AgentOsAttachmentSummary[] = [];
-      for (const file of Array.from(list)) {
-        const row = await agentOsApi.uploadAttachment(projectId, file);
-        if (row.status !== "ready") {
-          toast.error(row.errorMessage || t("attachmentFailed", { name: row.filename }));
-          continue;
-        }
-        uploaded.push(row);
+      for (let index = 0; index < accepted.length; index += UPLOAD_CONCURRENCY) {
+        const batch = accepted.slice(index, index + UPLOAD_CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map((file) => agentOsApi.uploadAttachment(projectId, file))
+        );
+        results.forEach((result, batchIndex) => {
+          const file = batch[batchIndex];
+          if (result.status === "rejected") {
+            reportIssue(result.reason, t("attachmentFailed", { name: file.name }));
+            return;
+          }
+          if (result.value.status !== "ready") {
+            reportIssue(
+              result.value.errorMessage ? new Error(result.value.errorMessage) : null,
+              t("attachmentFailed", { name: result.value.filename })
+            );
+            return;
+          }
+          uploaded.push(result.value);
+        });
       }
       if (uploaded.length > 0) {
         setPendingFiles((prev) => {
-          const byId = new Map(prev.map((p) => [p.id, p]));
-          for (const u of uploaded) byId.set(u.id, u);
+          const byId = new Map(prev.map((item) => [item.id, item]));
+          for (const item of uploaded) byId.set(item.id, item);
           return [...byId.values()];
         });
-        toast.success(t("attachmentReady", { count: uploaded.length }));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("attachmentFailedGeneric"));
+      reportIssue(error, t("attachmentFailedGeneric"));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -275,10 +321,10 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         setProjectDefaultSkillIds(saved.defaultSkillIds);
       } catch (error) {
         setProjectDefaultSkillIds(prev);
-        toast.error(error instanceof Error ? error.message : t("skillDefaultFailed"));
+        reportIssue(error, t("skillDefaultFailed"));
       }
     },
-    [projectDefaultSkillIds, projectId, t]
+    [projectDefaultSkillIds, projectId, reportIssue, t]
   );
 
   const onSkillChipClick = useCallback(
@@ -310,6 +356,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     const attachmentNames = ready.map((f) => f.filename);
     setDraft("");
     setPendingFiles([]);
+    setLatestIssue(null);
     setBusy(true);
     try {
       await send({
@@ -318,13 +365,14 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
         attachmentIds,
         attachmentNames,
         permissionMode,
-        surface,
+        workbenchMode,
+        workbenchContext,
         skillIds: turnSkillIds,
         // After hydrate, send composer state (includes optimistic pin).
         // Before hydrate / on load failure, omit so Nest reads durable DB defaults.
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("sendFailed"));
+      reportIssue(error, t("sendFailed"));
     } finally {
       setBusy(false);
     }
@@ -334,7 +382,7 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
     if (approvalId && (approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId))) {
-      toast.error(t("approvalNotReady"));
+      reportIssue(null, t("approvalNotReady"));
       return;
     }
     setBusy(true);
@@ -343,49 +391,273 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
       // not a floating toast.
       await resolveApproval({ decision, modelProfileId, permissionMode });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("approvalFailed"));
+      reportIssue(error, t("approvalFailed"));
     } finally {
       setBusy(false);
     }
   };
 
-  const selectClassName =
-    "h-8 max-w-[7.25rem] shrink-0 rounded-xl border-0 bg-white/[0.08] px-2 text-[11px] text-white/80 outline-none focus:bg-white/[0.12] disabled:opacity-50";
+  const workerStatus =
+    workerOk === false ? t("workerOffline") : workerOk === true ? t("workerOnline") : t("subtitle");
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
-        <IconSparkles className="size-4 shrink-0 text-white/70" stroke={1.8} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-white/90">{t("title")}</h2>
-          <p className="truncate text-[10px] text-white/40">
-            {workerOk === false
-              ? t("workerOffline")
-              : workerOk === true
-                ? t("workerOnline")
-                : t("subtitle")}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={newChat}
-          disabled={busy}
-          title={t("newChat")}
-          aria-label={t("newChat")}
-          className="flex size-8 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
-        >
-          <IconPlus className="size-4" stroke={1.8} />
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t("close")}
-          className="flex size-8 items-center justify-center rounded-xl text-white/55 transition hover:bg-white/[0.08] hover:text-white"
-        >
-          <IconX className="size-4" stroke={1.8} />
-        </button>
-      </header>
+    <FizzAgentSurface
+      open={open}
+      title={t("title")}
+      subtitle={workerStatus}
+      labels={{
+        surface: t("transcriptLabel"),
+        close: t("close"),
+        newConversation: t("newChat"),
+        newConversationDialog: {
+          title: t("newConversationDialog.title"),
+          description: t("newConversationDialog.description"),
+          cancel: t("newConversationDialog.cancel"),
+          confirm: t("newConversationDialog.confirm"),
+        },
+      }}
+      onNewConversation={() => {
+        setLatestIssue(null);
+        newChat();
+      }}
+      busy={busy}
+      headerActions={
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("runDetails.open")}
+              title={t("runDetails.open")}
+              className={cn(
+                "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                diagnosticIssue
+                  ? "bg-red-500/12 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                  : "bg-white/[0.035] text-white/54 hover:bg-white/[0.08] hover:text-white"
+              )}
+            >
+              {diagnosticIssue ? (
+                <IconAlertTriangle aria-hidden="true" className="size-4" />
+              ) : (
+                <IconAlertCircle aria-hidden="true" className="size-4" />
+              )}
+              {diagnosticIssue ? (
+                <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-red-400 ring-2 ring-[oklch(0.145_0_0)]" />
+              ) : null}
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="liquid-rim bg-[oklch(0.18_0_0_/_0.98)] ring-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.68)] backdrop-blur-[36px]">
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <IconAlertCircle aria-hidden="true" />
+              </AlertDialogMedia>
+              <AlertDialogTitle>{t("runDetails.title")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("runDetails.description")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <dl className="grid gap-2 rounded-xl bg-white/[0.035] p-3 text-xs">
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-white/42">{t("runDetails.status")}</dt>
+                <dd className="text-right font-medium text-white/82">
+                  {t(`runDetails.statusValue.${state.status}`)}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="shrink-0 text-white/42">{t("runDetails.conversationId")}</dt>
+                <dd className="min-w-0 break-all text-right font-mono text-[11px] text-white/68">
+                  {state.conversationId ?? t("runDetails.notAvailable")}
+                </dd>
+              </div>
+              {diagnosticIssue ? (
+                <div className="grid gap-1 border-t border-white/[0.07] pt-2">
+                  <dt className="text-white/42">{t("runDetails.latestIssue")}</dt>
+                  <dd className="break-words text-xs/relaxed text-red-200/85">
+                    {diagnosticIssue.message}
+                  </dd>
+                  {diagnosticIssue.technicalDetail ? (
+                    <>
+                      <dt className="mt-1 text-white/42">{t("runDetails.technicalDetail")}</dt>
+                      <dd className="break-all font-mono text-[11px] text-white/58">
+                        {diagnosticIssue.technicalDetail}
+                      </dd>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </dl>
+            <AlertDialogFooter>
+              <AlertDialogAction variant="secondary">{t("runDetails.close")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      }
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      composer={
+        <div className="space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            className="hidden"
+            onChange={(event) => void onPickFiles(event.target.files)}
+          />
 
+          {latestIssue ? (
+            <div
+              role="alert"
+              className="flex min-w-0 items-center gap-2 rounded-xl bg-red-500/[0.09] px-3 py-2 text-red-100/80 ring-1 ring-inset ring-red-400/12"
+            >
+              <IconAlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-red-300/80" />
+              <span className="min-w-0 flex-1 truncate text-[11px]" title={latestIssue.message}>
+                {latestIssue.message}
+              </span>
+              <button
+                type="button"
+                onClick={() => setLatestIssue(null)}
+                aria-label={t("dismissIssue")}
+                title={t("dismissIssue")}
+                className="grid size-5 shrink-0 place-items-center rounded-full text-red-100/45 transition-colors hover:bg-red-100/10 hover:text-red-50"
+              >
+                <IconX aria-hidden="true" className="size-3" />
+              </button>
+            </div>
+          ) : null}
+
+          <CopilotComposer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => void onSend()}
+            onStop={() => {
+              stop(t("stopped"));
+              setBusy(false);
+            }}
+            busy={turnBusy}
+            sendDisabled={!canSend && !turnBusy}
+            canSendWithoutText={pendingFiles.some((file) => file.status === "ready")}
+            placeholder={t(
+              workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder"
+            )}
+            inputLabel={t("message")}
+            sendLabel={t("send")}
+            stopLabel={t("stop")}
+            autoFocus
+            appearance="fizz-agent"
+            leadingAction={
+              <button
+                type="button"
+                disabled={turnBusy}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={t("attachFile")}
+                title={t("attachFile")}
+                className="grid size-8 shrink-0 place-items-center rounded-full text-white/48 transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
+              >
+                <IconPaperclip aria-hidden="true" className="size-4" stroke={1.8} />
+              </button>
+            }
+            beforeSend={
+              <div className="flex min-w-0 shrink items-center gap-1">
+                <FizzAgentPermissionMenu
+                  value={permissionMode}
+                  disabled={turnBusy}
+                  labels={{ menu: t("permissionMode") }}
+                  options={PERMISSION_MODES.map((mode) => ({
+                    value: mode.id,
+                    label: t(mode.labelKey),
+                    description: t(`permHint_${mode.id}`),
+                  }))}
+                  onValueChange={setPermissionMode}
+                />
+                <FizzAgentModelMenu
+                  value={modelProfileId}
+                  disabled={turnBusy}
+                  label={t("modelProfile")}
+                  options={models.map((profile) => ({
+                    value: profile.id,
+                    label: profile.label,
+                    hint: profile.hint,
+                  }))}
+                  onValueChange={setModelProfileId}
+                />
+              </div>
+            }
+            attachmentBar={
+              invocableSkills.length > 0 || pendingFiles.length > 0 || uploading ? (
+                <div className="grid gap-1.5">
+                  {invocableSkills.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
+                      {invocableSkills.map((skill) => {
+                        const isDefault = projectDefaultSkillIds.includes(skill.id);
+                        const isTurn = turnSkillIds.includes(skill.id);
+                        const active = isDefault || isTurn;
+                        const titleParts = [
+                          skill.description,
+                          isDefault
+                            ? t("skillProjectDefault", { name: skill.name })
+                            : t("skillToggleTurn"),
+                          isDefault ? t("skillUnpinDefault") : t("skillPinDefault"),
+                        ];
+                        return (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            disabled={turnBusy}
+                            title={titleParts.join(" · ")}
+                            aria-pressed={active}
+                            onClick={(event) => onSkillChipClick(skill.id, event)}
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] transition-colors",
+                              active
+                                ? "bg-white/15 text-white/90"
+                                : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75"
+                            )}
+                          >
+                            {skill.name}
+                            {isDefault ? (
+                              <span className="text-white/45">
+                                {" · "}
+                                {t("skillDefaultBadge")}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {pendingFiles.length > 0 || uploading ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {uploading ? (
+                        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
+                          {t("uploading")}
+                        </span>
+                      ) : null}
+                      {pendingFiles.map((file) => (
+                        <span
+                          key={file.id}
+                          className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
+                        >
+                          <span className="truncate">{file.filename}</span>
+                          <button
+                            type="button"
+                            onClick={() => removePending(file.id)}
+                            className="shrink-0 text-white/40 transition-colors hover:text-white/80"
+                            aria-label={t("removeAttachment")}
+                          >
+                            <IconX aria-hidden="true" className="size-3" stroke={2} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null
+            }
+          />
+        </div>
+      }
+    >
       <AgentOsTranscript
         projectId={projectId}
         messages={state.messages}
@@ -415,13 +687,19 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
             showDetails: t("approvalShowDetails"),
             hideDetails: t("approvalHideDetails"),
             untitled: t("approvalUntitled"),
+            storyBible: t("approvalStoryBible"),
+            storyEntry: t("approvalStoryEntry"),
+            sceneOrder: t("approvalSceneOrder"),
+            storyScene: t("approvalStoryScene"),
           },
         }}
         empty={
-          <div className="w-full space-y-3 px-1 pt-1">
-            <p className="text-xs leading-relaxed text-white/45">{t("emptyHint")}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {SUGGESTIONS.map((key) => (
+          <div className="w-full max-w-80 space-y-3">
+            <p className="text-xs/relaxed text-white/40">
+              {t(workbenchMode === "story" ? "emptyHintStory" : "emptyHint")}
+            </p>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {(workbenchMode === "story" ? STORY_SUGGESTIONS : SUGGESTIONS).map((key) => (
                 <button
                   key={key}
                   type="button"
@@ -435,152 +713,6 @@ export function AgentOsPanel({ projectId, onClose }: { projectId: string; onClos
           </div>
         }
       />
-
-      <footer className="shrink-0 space-y-2 border-t border-white/[0.06] px-3 py-2.5">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          className="hidden"
-          onChange={(e) => void onPickFiles(e.target.files)}
-        />
-
-        {invocableSkills.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5 px-0.5">
-            <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
-            {invocableSkills.map((skill) => {
-              const isDefault = projectDefaultSkillIds.includes(skill.id);
-              const isTurn = turnSkillIds.includes(skill.id);
-              const active = isDefault || isTurn;
-              const titleParts = [
-                skill.description,
-                isDefault ? t("skillProjectDefault", { name: skill.name }) : t("skillToggleTurn"),
-                isDefault ? t("skillUnpinDefault") : t("skillPinDefault"),
-              ];
-              return (
-                <button
-                  key={skill.id}
-                  type="button"
-                  disabled={turnBusy}
-                  title={titleParts.join(" · ")}
-                  aria-pressed={active}
-                  onClick={(e) => onSkillChipClick(skill.id, e)}
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] transition",
-                    active
-                      ? "bg-white/15 text-white/90"
-                      : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75",
-                    isDefault && "ring-1 ring-white/20"
-                  )}
-                >
-                  {skill.name}
-                  {isDefault ? (
-                    <span className="text-white/45">
-                      {" · "}
-                      {t("skillDefaultBadge")}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <CopilotComposer
-          value={draft}
-          onChange={setDraft}
-          onSubmit={() => void onSend()}
-          onStop={() => {
-            stop(t("stopped"));
-            setBusy(false);
-          }}
-          busy={turnBusy}
-          sendDisabled={!canSend && !turnBusy}
-          canSendWithoutText={pendingFiles.some((f) => f.status === "ready")}
-          placeholder={t("composerPlaceholder")}
-          inputLabel={t("message")}
-          sendLabel={t("send")}
-          stopLabel={t("stop")}
-          autoFocus
-          className="bg-white/[0.04]"
-          leadingAction={
-            <button
-              type="button"
-              disabled={turnBusy}
-              onClick={() => fileInputRef.current?.click()}
-              aria-label={t("attachFile")}
-              title={t("attachFile")}
-              className="grid size-10 shrink-0 place-items-center rounded-2xl text-white/55 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
-            >
-              <IconPaperclip className="size-4" stroke={1.8} />
-            </button>
-          }
-          beforeSend={
-            <div className="flex shrink-0 items-center gap-1">
-              <select
-                value={permissionMode}
-                onChange={(e) => setPermissionMode(e.target.value as AgentOsPermissionMode)}
-                disabled={turnBusy}
-                aria-label={t("permissionMode")}
-                title={t(`permHint_${permissionMode}`)}
-                className={selectClassName}
-              >
-                {PERMISSION_MODES.map((mode) => (
-                  <option key={mode.id} value={mode.id} className="bg-neutral-900">
-                    {t(mode.labelKey)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={modelProfileId}
-                onChange={(e) => setModelProfileId(e.target.value)}
-                disabled={turnBusy}
-                aria-label={t("modelProfile")}
-                className={selectClassName}
-              >
-                {models.map((profile) => (
-                  <option key={profile.id} value={profile.id} className="bg-neutral-900">
-                    {profile.hint ? `${profile.label} · ${profile.hint}` : profile.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          }
-          attachmentBar={
-            pendingFiles.length > 0 || uploading ? (
-              <div className="flex flex-wrap gap-1.5">
-                {uploading ? (
-                  <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
-                    {t("uploading")}
-                  </span>
-                ) : null}
-                {pendingFiles.map((file) => (
-                  <span
-                    key={file.id}
-                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
-                  >
-                    <span className="truncate">{file.filename}</span>
-                    <button
-                      type="button"
-                      onClick={() => removePending(file.id)}
-                      className="shrink-0 text-white/40 hover:text-white/80"
-                      aria-label={t("removeAttachment")}
-                    >
-                      <IconX className="size-3" stroke={2} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null
-          }
-        />
-
-        <p className="px-0.5 text-[10px] tabular-nums text-white/30">
-          {t("status", { status: state.status })}
-          {state.conversationId ? ` · ${state.conversationId.slice(0, 8)}` : ""}
-        </p>
-      </footer>
-    </div>
+    </FizzAgentSurface>
   );
 }

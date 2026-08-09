@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import {
-  Background,
-  BackgroundVariant,
-  MiniMap,
-  type FitViewOptions,
-  type Node,
-} from "@xyflow/react";
+import { MiniMap, type FitViewOptions, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
@@ -24,6 +18,7 @@ import { DRAWER_INSET } from "@/components/ui/drawer-panel";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
 import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
 import { CanvasReactFlow } from "@/components/canvas/canvas-react-flow";
+import { CanvasBackdrop } from "@/components/canvas/canvas-backdrop";
 
 import { CanvasConnectionLine } from "@/components/canvas/authoring/connection-line";
 import { GradientEdge } from "@/components/canvas/authoring/gradient-edge";
@@ -94,7 +89,6 @@ export interface MediaAuthoringCanvasProps {
   secondaryDrawer?: MediaAuthoringCanvasDrawer;
   onDrawerInsetChange?: (inset: number) => void;
   backdrop?: ReactNode;
-  viewportBackground?: ReactNode | false;
   renderViewportLayers?: (nodes: Node[]) => ReactNode;
   topChrome?: ReactNode;
   panels?: ReactNode;
@@ -127,7 +121,6 @@ export function MediaAuthoringCanvas({
   secondaryDrawer,
   onDrawerInsetChange,
   backdrop,
-  viewportBackground,
   renderViewportLayers,
   topChrome,
   panels,
@@ -224,6 +217,7 @@ export function MediaAuthoringCanvas({
       ? statusOverlay({ groupDropTarget: groupingState.dropTargetGroup })
       : statusOverlay;
   const pendingWireGradientId = `canvas-pending-wire-${useId().replaceAll(":", "")}`;
+  const resolvedBackdrop = backdrop === undefined ? <CanvasBackdrop /> : backdrop;
 
   useEffect(() => {
     onDrawerInsetChange?.(drawerInset);
@@ -235,19 +229,6 @@ export function MediaAuthoringCanvas({
     },
     [onDrawerInsetChange]
   );
-
-  const defaultBackground =
-    viewportBackground === undefined ? (
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={20}
-        size={1.5}
-        bgColor="#0a0a0a"
-        color="rgb(255 255 255 / 0.12)"
-      />
-    ) : (
-      viewportBackground
-    );
 
   return (
     <CanvasGroupingActionsProvider controller={grouping} canEdit={canEdit}>
@@ -277,7 +258,7 @@ export function MediaAuthoringCanvas({
             onCanvasPointerLeave?.();
           }}
         >
-          {backdrop}
+          {resolvedBackdrop}
           <CanvasReactFlow
             nodes={nodes}
             edges={edges}
@@ -321,7 +302,6 @@ export function MediaAuthoringCanvas({
             )}
             style={{ backgroundColor: "transparent" }}
           >
-            {defaultBackground}
             {groupingState.viewportLayer}
             {renderViewportLayers?.(nodes)}
             {minimapOpen ? (

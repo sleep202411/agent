@@ -2,9 +2,6 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
 import { AgentUsersModule } from './agent-users';
-import { AgentPlatformGatewayModule } from './agent-platform-gateway';
-import { AgentDomainGatewayModule } from './agent-domain-gateway';
-import { loadAgentPlatformFeatureEnabled } from './agent-platform-feature';
 import { AgentOsGatewayModule } from './agent-os-gateway';
 import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
@@ -16,7 +13,6 @@ import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { CharactersModule } from './characters/characters.module';
 import { StoryStudioModule } from './story-studio/story-studio.module';
-import { StudioAgentModule } from './studio-agent/studio-agent.module';
 import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
@@ -26,6 +22,7 @@ import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { DocumentsModule } from './documents';
 import { OrdersModule } from './orders/orders.module';
+import { ProjectSectionsModule } from './project-sections';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { LegacyMysqlModule } from './infra/legacy-mysql';
@@ -44,10 +41,6 @@ import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 
-const agentPlatformModules = loadAgentPlatformFeatureEnabled()
-  ? [AgentDomainGatewayModule, AgentPlatformGatewayModule]
-  : [];
-
 @Module({
   imports: [
     // Infra modules first — global, others can inject PrismaService / REDIS.
@@ -64,7 +57,6 @@ const agentPlatformModules = loadAgentPlatformFeatureEnabled()
     AuthModule,
     AdminAuthModule,
     AgentUsersModule,
-    ...agentPlatformModules,
     AgentOsGatewayModule,
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
@@ -90,13 +82,13 @@ const agentPlatformModules = loadAgentPlatformFeatureEnabled()
     CertificatesModule,
     CharactersModule,
     StoryStudioModule,
-    StudioAgentModule.register(),
     MediaModule,
     CrewsModule,
     CreatorServicesModule,
     ReferralsModule,
     ConversationsModule,
     OrdersModule,
+    ProjectSectionsModule,
     HealthModule,
   ],
   providers: [

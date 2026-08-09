@@ -236,14 +236,14 @@ export class AiGenerationService {
       });
     }
 
-    // Fill durationSeconds from MediaAsset when client only sent assetId —
-    // catalog media rules need exact seconds and must not depend on FE-only
-    // probes. Still dual-checked by the same pure kernel after normalize.
-    const mediaEnrichedInput =
-      await this.validator.enrichInputMediaFromAssets(input);
+    // Drop client-claimed media facts and refill them from MediaAsset rows:
+    // catalog media rules need exact values and must never depend on what the
+    // browser reported. Still dual-checked by the same pure kernel after
+    // normalize.
+    const mediaFactInput = await this.validator.applyTrustedMediaFacts(input);
     const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
-      mediaEnrichedInput,
+      mediaFactInput,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.

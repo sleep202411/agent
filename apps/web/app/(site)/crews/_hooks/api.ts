@@ -34,8 +34,7 @@ interface CrewApiIssue {
  *
  * Why the merge happens here and not in the pipe: `{ message, issues }`
  * is the server-wide error contract, not a crew invention — other
- * producers (`studio-agent.capability-executor.ts`,
- * `admin-auth.service.ts`) emit the same shape, and
+ * producers such as `admin-auth.service.ts` emit the same shape, and
  * `src/lib/assistant/assistant-client.ts` already composes the two
  * halves for its own surface. Rewriting the pipe's top-level `message`
  * would change every endpoint in the server and hand that client the

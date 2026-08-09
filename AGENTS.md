@@ -45,8 +45,6 @@ for zh-CN / zh-HK locales only.
 | `apps/server`                | NestJS                                         | Session, chat WS, Agent OS Gateway, billing glue        |
 | `apps/agent-os`              | LangGraph.js + LiteLLM                         | **FizzDragon Agent Platform** (codename Agent OS) — NEW |
 | `apps/agent`                 | Mastra + AI SDK                                | Legacy StoryOS — do not extend                          |
-| `apps/studio-agent-runtime`  | Temporal workers (TypeScript)                  | Legacy Studio Agent runtime — do not extend             |
-| `apps/agent-platform`        | Mastra + Temporal + Ably AI Transport          | Legacy Mastra platform — do not extend                  |
 | `packages/agent-protocol`    | TypeScript + Zod                               | Agent OS wire protocol (`fizz.agent.v1`)                |
 | `packages/agent-policy`      | TypeScript                                     | Agent OS approval / risk policy                         |
 | `packages/shared`            | TypeScript                                     | Cross-app types and constants (`ForcedPersonaKey` etc.) |
@@ -65,11 +63,9 @@ for zh-CN / zh-HK locales only.
   `apps/server/src/agent-os-gateway` (`AGENT_OS_ENABLED=true`). Design authority:
   `@docs/FizzDragon_AI_Agent_Platform_Production_Guide.md`.
 - **Legacy Agent (Mastra)** → `@apps/agent/AGENTS.md` — freeze; no new features
-- **Legacy agent-platform** → `@apps/agent-platform/AGENTS.md` — freeze
-- **Legacy Studio Agent runtime** → `@apps/studio-agent-runtime/AGENTS.md` — freeze
 
 **New Agent work targets `apps/agent-os` only.** Do not import from or add
-coupling to `apps/agent`, `apps/agent-platform`, or `apps/studio-agent-runtime`.
+coupling to `apps/agent`.
 
 - **NestJS server** → no AGENTS yet; conventions live in code comments
   and `apps/server/README.md` (TODO: write one).

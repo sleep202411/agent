@@ -12,7 +12,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import { CurrentUser, type AuthUser } from '../auth';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import {
@@ -47,8 +46,20 @@ export class AgentOsGatewayController {
   }
 
   @Get('skills')
-  async listSkills(@Query('surface') surface?: string) {
-    return ok(this.gateway.listSkills(surface?.trim() || undefined));
+  async listSkills(
+    @CurrentUser() user: AuthUser,
+    @Query('projectId', ParseUUIDPipe) projectId: string,
+    @Query('workbenchMode') workbenchMode?: string,
+  ) {
+    if (!workbenchMode?.trim()) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_WORKBENCH_MODE_REQUIRED',
+        message: 'workbenchMode is required',
+      });
+    }
+    return ok(
+      await this.gateway.listSkills(user, projectId, workbenchMode.trim()),
+    );
   }
 
   /**
@@ -221,14 +232,6 @@ export class AgentOsGatewayController {
     return ok(await this.gateway.listProjectCharacters(user, projectId));
   }
 
-  @Get('projects/:projectId/shots')
-  async listShots(
-    @CurrentUser() user: AuthUser,
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-  ) {
-    return ok(await this.gateway.listProjectShots(user, projectId));
-  }
-
   @Get('projects/:projectId/attachments')
   async listAttachments(
     @CurrentUser() user: AuthUser,
@@ -240,7 +243,6 @@ export class AgentOsGatewayController {
   @Post('projects/:projectId/attachments')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(),
       limits: { fileSize: 20 * 1024 * 1024 },
     }),
   )

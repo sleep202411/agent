@@ -1598,11 +1598,34 @@
     "sidebar": {
       "assets": "資產",
       "chapters": "章節",
-      "images": "圖片",
-      "videos": "影片",
-      "search": "搜尋",
       "collapse": "收起",
       "expand": "展開"
+    },
+    "sections": {
+      "defaultTitle": "第 1 章",
+      "title": "章節",
+      "count": "{count} 個章節",
+      "add": "新增章節",
+      "createTitle": "新增章節",
+      "createDescription": "每個章節擁有獨立的畫布和分鏡表。",
+      "nameLabel": "章節名稱",
+      "namePlaceholder": "輸入章節名稱",
+      "create": "新增章節",
+      "rename": "重新命名",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "archive": "封存",
+      "archiveTitle": "封存章節？",
+      "archiveDescription": "「{title}」將從目前章節列表中移除，其畫布和歷史版本會繼續保留。",
+      "archiveLast": "項目必須至少保留一個有效章節。",
+      "menu": "{title} 的更多操作",
+      "close": "關閉章節",
+      "loadError": "無法載入章節。",
+      "invalid": "該章節不屬於目前項目或已被封存。",
+      "createError": "無法建立章節。",
+      "updateError": "無法更新章節。",
+      "reorderError": "無法儲存章節順序。",
+      "archiveError": "無法封存章節。"
     },
     "thisProject": "此專案",
     "documentOpenError": "無法開啟此文件——請檢查連結或你的存取權限。",
@@ -2069,197 +2092,6 @@
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
       "loading": "正在開啟故事畫布…",
-      "assistant": {
-        "action": "StoryOS"
-      },
-      "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS 助手",
-        "close": "關閉 StoryOS",
-        "newConversation": "新增對話",
-        "retry": "重試",
-        "dismissError": "關閉",
-        "timeline": {
-          "log": "StoryOS 對話",
-          "empty": "描述你想完善的故事、抉擇或玩家體驗。",
-          "loading": "正在載入對話……",
-          "scrollToLatest": "捲動到最新進展",
-          "loadEarlier": "載入更早的對話",
-          "loadingEarlier": "正在載入更早的對話……",
-          "thinking": "正在思考……",
-          "attachments": {
-            "unknownSize": "大小未知",
-            "status": {
-              "processing": "處理中",
-              "ready": "已就緒",
-              "failed": "失敗"
-            }
-          },
-          "roles": {
-            "user": "你",
-            "assistant": "StoryOS"
-          }
-        },
-        "attachmentAnalysis": {
-          "region": "文件分析",
-          "queued": "文件分析已排隊",
-          "mapping": "正在分析文件 · {progress}%",
-          "reducing": "正在歸納分析結果 · {progress}%",
-          "succeeded": "文件分析已完成",
-          "failed": "文件分析失敗",
-          "cancelled": "文件分析已取消"
-        },
-        "activity": {
-          "expand": "展開活動詳情",
-          "collapse": "收起活動詳情",
-          "labels": {
-            "generatingResponse": "正在生成回覆",
-            "readingStory": "正在讀取目前故事",
-            "reviewingSource": "正在查閱來源素材",
-            "applyingChanges": "正在套用故事改動"
-          },
-          "status": {
-            "running": "進行中",
-            "succeeded": "已完成",
-            "failed": "失敗",
-            "cancelled": "已取消"
-          }
-        },
-        "runStatus": {
-          "queued": "等候中",
-          "running": "正在處理",
-          "waiting_for_approval": "等待批准",
-          "waiting_for_input": "等待輸入",
-          "cancelling": "正在停止",
-          "succeeded": "已完成",
-          "failed": "失敗",
-          "cancelled": "已取消"
-        },
-        "turnFailure": {
-          "region": "StoryOS 本輪失敗",
-          "title": {
-            "inputRejected": "StoryOS 發出的請求被本故事拒絕",
-            "notRecorded": "改動已執行，但未能記錄",
-            "failed": "本輪失敗"
-          },
-          "explanation": {
-            "inputRejected": "StoryOS 建立了無效的工具呼叫，因此沒有任何改動生效。重新傳送請求可讓它再試一次。",
-            "notRecorded": "該操作已到達你的故事，但伺服器未能記錄結果，因此你的故事沒有任何改動。伺服器已將這次故障標記為重發也無法解決，請編輯這條請求，換一種方式描述你要的改動。",
-            "failed": "本輪在完成前中止，因此它承諾的改動均未生效。"
-          },
-          "issues": "伺服器拒絕的內容",
-          "code": "錯誤碼",
-          "diagnosticId": "診斷編號",
-          "details": "詳情",
-          "dismiss": "關閉",
-          "retry": "重新傳送該請求",
-          "reword": "編輯這條請求",
-          "openSurface": "開啟 StoryOS"
-        },
-        "stall": {
-          "region": "本輪無回應",
-          "title": "本輪已停止回報進度",
-          "explanation": "對話頻道已超過兩分鐘沒有任何訊息。本輪可能仍在執行，也可能是處理它的工作行程已經結束。可以繼續等待，或停止後重試。",
-          "stop": "停止本輪"
-        },
-        "childRuns": {
-          "group": "委派任務"
-        },
-        "composer": {
-          "input": "向 StoryOS 傳送訊息",
-          "placeholder": "讓 StoryOS 分析、規劃或修改這個故事……",
-          "stop": "停止目前任務",
-          "stopping": "正在停止目前執行…",
-          "cancelReason": "創作者已取消目前任務。",
-          "queued": "{count} 則訊息等待處理",
-          "deliveryModeMenu": "選擇訊息處理方式",
-          "attachments": {
-            "add": "加入參考檔案",
-            "drop": "將圖片、TXT、Markdown、DOCX 或 PDF 檔案拖到這裡",
-            "remove": "移除 {fileName}",
-            "retry": "重試 {fileName}",
-            "uploading": "正在上載 · {progress}%",
-            "processing": "正在擷取文字 · {progress}%",
-            "ready": "已就緒",
-            "failed": "上載失敗",
-            "emptyFile": "無法上載空白檔案。",
-            "unsupportedType": "只支援 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 檔案。",
-            "tooLarge": "此檔案大小不能超過 {maxSize}。",
-            "fileNameTooLong": "檔案名稱不能超過 255 個字元。"
-          },
-          "delivery": {
-            "send": {
-              "label": "傳送",
-              "description": "開始一輪新的 StoryOS 對話。"
-            },
-            "steer": {
-              "label": "立即調整",
-              "description": "在下一個安全節點為目前任務補充方向。"
-            },
-            "enqueue": {
-              "label": "排到下一則",
-              "description": "繼續目前任務，完成後再處理這則訊息。"
-            },
-            "stopAndSend": {
-              "label": "停止並傳送",
-              "description": "取消目前任務，然後用這則訊息開始新一輪。"
-            }
-          }
-        },
-        "permission": {
-          "menu": "StoryOS 操作權限",
-          "options": {
-            "ask": {
-              "label": "每次詢問",
-              "description": "執行任何會改動你資料的操作前都先請求批准。"
-            },
-            "smart": {
-              "label": "自動批准",
-              "description": "除刪除外，其餘操作都自動執行。"
-            },
-            "full": {
-              "label": "完全授權",
-              "description": "包括刪除在內的操作都自動執行；平台安全規則仍然生效。"
-            }
-          }
-        },
-        "toolApproval": {
-          "title": "StoryOS 要求執行 {toolName}。",
-          "approve": "允許",
-          "deny": "拒絕",
-          "showInput": "查看執行參數",
-          "hideInput": "隱藏執行參數",
-          "preparing": "正在準備安全審批節點……",
-          "resuming": "正在繼續本輪",
-          "decision": {
-            "approved": "已允許",
-            "denied": "已拒絕"
-          }
-        }
-      },
-      "firstOpen": {
-        "title": "讓每個選擇，改寫故事",
-        "description": "把你想創作的故事告訴 StoryOS，或選擇一種導演 Skill，由它草擬第一版。",
-        "start": "描述你自己的故事",
-        "skillsTitle": "或從一種導演 Skill 開始",
-        "connecting": "正在連接 StoryOS……",
-        "unavailable": "StoryOS 暫時無法使用，目前無法草擬任何內容。畫布仍然可以手動搭建。",
-        "retry": "重試",
-        "skills": {
-          "halftoneCollage": {
-            "title": "半調紙拼貼",
-            "description": "純色紙底、半調剪貼與卡紙點綴，每個選擇拼裝成一個視覺隱喻。",
-            "prompt": "創作一個互動短篇：一隻裝滿舊車票與照片的手提箱在午夜自動打開，每個剪貼物件都是一段被摺疊的記憶。主人公整理遺物時，逐漸拼出母親隱瞞一生的旅程。使用 10-14 個影視片段，開場 2 個片段內拋出懸念，之後每 2-3 個片段一次關鍵選擇，讓每條路線自然結束於最後一個片段。",
-            "styleBrief": "美術方向：純色紙底、黑白半調剪貼與卡紙點綴，每個節點用三至六件物件拼出一個視覺隱喻。不要文字排版、不要 3D、不要寫實照片感。"
-          },
-          "symmetricalStorybook": {
-            "title": "對稱童話電影",
-            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
-            "prompt": "創作一個互動短篇：粉色山間旅館迎來一位從不摘帽的神秘住客，門童奉命查明緣由。按影視章節推進，每章一次關鍵選擇，讓旅館秩序更荒誕一分、真相更近一步。使用約 12 個影視片段和三幕結構，每幕收在一個視覺反轉，讓每條路線自然結束於最後一個片段。",
-            "styleBrief": "美術方向：刻意對稱的置中構圖，每一幕一個章節母題，克制的復古配色，揭示時機精準而收斂。"
-          }
-        }
-      },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",
         "dirty": "有未儲存修改 · 修訂 {revision}",
@@ -2800,11 +2632,12 @@
     "loadingMedia": "正在載入影片"
   },
   "agentOs": {
-    "title": "Agent OS",
+    "title": "FizzAgent",
     "subtitle": "對話式執行智能體 — 工具會真正寫入項目",
-    "close": "關閉 Agent OS",
-    "open": "打開 Agent OS",
-    "emptyHint": "像 Codex 一樣聊天：上傳劇本檔案、提出任務、批准寫入、繼續追問。",
+    "close": "關閉 FizzAgent",
+    "open": "打開 FizzAgent",
+    "emptyHint": "上傳劇本檔案，告訴 FizzAgent 要完成的任務，批准寫入後繼續追問。",
+    "emptyHintStory": "加入參考資料，或告訴 FizzAgent 如何推進目前章節，然後繼續打磨故事。",
     "modelProfile": "模型",
     "permissionMode": "權限模式",
     "permAsk": "每次詢問",
@@ -2822,8 +2655,14 @@
     "attachmentReady": "已附加 {count} 個檔案",
     "attachmentFailed": "無法處理 {name}",
     "attachmentFailedGeneric": "上傳失敗",
+    "attachmentTooMany": "每則訊息最多可加入 {count} 個檔案",
+    "attachmentTooLarge": "{name} 超過 {size} MB",
+    "attachmentEmpty": "{name} 是空白檔案",
+    "serviceUnavailable": "FizzAgent 服務暫時無法使用，請稍後再試。",
+    "dismissIssue": "關閉錯誤提示",
     "message": "訊息",
-    "composerPlaceholder": "向 Agent OS 傳送訊息… 需要時附加劇本檔案",
+    "composerPlaceholder": "向 FizzAgent 傳送訊息… 需要時附加劇本檔案",
+    "composerPlaceholderStory": "傳送訊息給 FizzAgent… 需要時加入參考資料",
     "skillsLabel": "技能",
     "skillProjectDefault": "專案預設：{name}",
     "skillDefaultBadge": "預設",
@@ -2835,16 +2674,44 @@
     "stop": "停止",
     "stopped": "已停止接收本輪輸出",
     "newChat": "新對話",
+    "newConversationDialog": {
+      "title": "開始新對話？",
+      "description": "這會清空目前會話內容，且無法復原；已寫入項目的內容不受影響。",
+      "cancel": "保留目前對話",
+      "confirm": "清空並新增"
+    },
+    "runDetails": {
+      "open": "運行詳情",
+      "title": "運行詳情",
+      "description": "目前 FizzAgent 會話的診斷資訊。",
+      "status": "運行狀態",
+      "conversationId": "會話 ID",
+      "latestIssue": "最近問題",
+      "technicalDetail": "技術詳情",
+      "notAvailable": "暫無",
+      "close": "知道了",
+      "statusValue": {
+        "idle": "空閒",
+        "running": "運行中",
+        "waiting_for_approval": "等待審批",
+        "completed": "已完成",
+        "failed": "失敗",
+        "cancelled": "已取消"
+      }
+    },
     "thinking": "處理中…",
-    "transcriptLabel": "Agent OS 對話",
+    "transcriptLabel": "FizzAgent 對話",
     "scrollToLatest": "滾到最新",
     "roleUser": "你",
-    "roleAssistant": "Agent OS",
+    "roleAssistant": "FizzAgent",
     "roleSystem": "系統",
     "roleTool": "工具",
     "suggestCharacters": "根據劇本提取角色並寫入",
     "suggestShots": "把劇本拆成 10 個分鏡鏡頭",
     "suggestBoth": "先存劇本，再寫角色和分鏡",
+    "suggestStoryContinue": "為當前故事續寫一個新場景",
+    "suggestStoryBranch": "新增一個關鍵選擇和兩條分支",
+    "suggestStoryPolish": "檢查並潤色當前章節",
     "run": "傳送",
     "reset": "新對話",
     "approve": "批准寫入",
@@ -2854,8 +2721,11 @@
     "runFailed": "Agent 失敗",
     "sendFailed": "傳送失敗",
     "approvalFailed": "審批失敗",
+    "approvalStoryBible": "故事設定",
+    "approvalStoryEntry": "故事入口",
+    "approvalSceneOrder": "場景順序",
+    "approvalStoryScene": "故事場景",
     "approvalNotReady": "審批資訊還在準備中，請稍後再點",
-    "status": "{status}",
     "event": {
       "RunStarted": "開始運行",
       "PlanCreated": "計劃",

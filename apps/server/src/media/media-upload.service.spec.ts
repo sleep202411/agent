@@ -146,9 +146,9 @@ function serviceFixture() {
   const storageRegistry = {
     forProvider: jest.fn().mockReturnValue(r2Storage),
   };
-  const mediaDurations = {
+  const mediaFacts = {
     probeObjectDuration: jest.fn().mockResolvedValue(8.5),
-    ensureDurations: jest.fn().mockResolvedValue(new Map()),
+    ensureFacts: jest.fn().mockResolvedValue(new Map()),
   };
   const service = new MediaUploadService(
     prisma as never,
@@ -163,7 +163,7 @@ function serviceFixture() {
     {} as never,
     workspacePermissions as never,
     uploadedImages as never,
-    mediaDurations as never,
+    mediaFacts as never,
     storageRegistry as never,
   );
   return {
@@ -250,93 +250,6 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
           metadata: {
             uploadKind: 'crew_asset_file',
             crewId: 'crew-1',
-          },
-        }),
-      }),
-    );
-  });
-
-  it('issues a workspace-scoped Studio Agent document upload with a closed MIME policy', async () => {
-    const fixture = serviceFixture();
-
-    await expect(
-      fixture.service.createUploadUrl(
-        USER_ID,
-        {
-          kind: 'studio_agent_document',
-          contentType: 'application/pdf',
-          fileName: 'outline.pdf',
-          sizeBytes: 1024,
-        },
-        WORKSPACE_ID,
-      ),
-    ).resolves.toMatchObject({
-      storageKey: expect.stringContaining(
-        `/studio-agent-document/${USER_ID}/workspace-${WORKSPACE_ID}/`,
-      ),
-    });
-
-    await expect(
-      fixture.service.createUploadUrl(
-        USER_ID,
-        {
-          kind: 'studio_agent_document',
-          contentType: 'application/octet-stream',
-          fileName: 'spoofed.pdf',
-          sizeBytes: 1024,
-        },
-        WORKSPACE_ID,
-      ),
-    ).rejects.toMatchObject({
-      response: { code: 'MEDIA_CONTENT_TYPE_NOT_ALLOWED' },
-    });
-  });
-
-  it('promotes and byte-probes Studio Agent images before readiness', async () => {
-    const fixture = serviceFixture();
-    const issued = await fixture.service.createUploadUrl(
-      USER_ID,
-      {
-        kind: 'studio_agent_image',
-        contentType: 'image/png',
-        fileName: 'story-reference.png',
-        sizeBytes: 1024,
-      },
-      WORKSPACE_ID,
-    );
-
-    expect(issued.storageKey).toContain(
-      `/studio-agent-image-staging/${USER_ID}/workspace-${WORKSPACE_ID}/`,
-    );
-
-    await expect(
-      fixture.service.confirmUpload(
-        USER_ID,
-        {
-          kind: 'studio_agent_image',
-          contentType: 'image/png',
-          storageKey: issued.storageKey,
-        },
-        WORKSPACE_ID,
-      ),
-    ).resolves.toMatchObject({
-      mediaAssetId: ASSET_ID,
-      storageKey: expect.stringContaining('/studio-agent-image-final/'),
-    });
-
-    expect(fixture.uploadedImages.probe).toHaveBeenCalledWith(
-      expect.objectContaining({
-        objectKey: expect.stringContaining('/studio-agent-image-final/'),
-      }),
-      { expectedContentType: 'image/png', maxBytes: 30 * 1024 * 1024 },
-    );
-    expect(fixture.createAsset).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          metadata: {
-            uploadKind: 'studio_agent_image',
-            storagePhase: 'immutable_final',
-            inspectedBy: 'server_byte_probe',
           },
         }),
       }),

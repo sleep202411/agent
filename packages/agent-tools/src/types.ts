@@ -25,6 +25,8 @@ export interface ToolExecutionContext {
   conversationId: string;
   projectId: string;
   actorId: string;
+  /** Server-validated scope for the active workbench (for example a Story chapter). */
+  workbenchContext?: Readonly<Record<string, string>>;
   /** Stable key: projectId + runId + toolCallId + operationVersion */
   idempotencyKey: string;
   toolCallId: string;

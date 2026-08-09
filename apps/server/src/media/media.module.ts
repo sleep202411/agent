@@ -20,7 +20,7 @@ import { MediaModerationAdminService } from './media-moderation-admin.service';
 import { MediaProcessingService } from './media-processing.service';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 import { MediaUploadController } from './media-upload.controller';
-import { MediaAssetDurationService } from './media-asset-duration.service';
+import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaUploadService } from './media-upload.service';
 import { PlayableVideoProbeService } from './playable-video-probe.service';
 import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
@@ -56,7 +56,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
   ],
   providers: [
     MediaUploadService,
-    MediaAssetDurationService,
+    MediaAssetFactsService,
     MediaAssetReadinessService,
     {
       provide: MEDIA_ASSET_READINESS_ADAPTERS,
@@ -79,7 +79,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
   ],
   exports: [
     MediaUploadService,
-    MediaAssetDurationService,
+    MediaAssetFactsService,
     MediaAssetReadinessService,
     PlayableVideoProbeService,
     MediaAccessService,

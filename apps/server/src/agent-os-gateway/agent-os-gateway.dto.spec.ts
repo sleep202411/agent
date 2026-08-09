@@ -7,7 +7,7 @@ const validBody = (modelProfileId: string) => ({
   message: 'hi',
   modelProfileId,
   permissionMode: 'ask' as const,
-  surface: 'storyboard' as const,
+  workbenchMode: 'storyboard',
 });
 
 describe('AgentOsStartRunBodySchema — model profile id', () => {
@@ -48,5 +48,36 @@ describe('AgentOsStartRunBodySchema — model profile id', () => {
     expect(AgentOsStartRunBodySchema.safeParse(validBody(sample)).success).toBe(
       true,
     );
+  });
+
+  it('accepts the active Story chapter as workbench context', () => {
+    expect(
+      AgentOsStartRunBodySchema.safeParse({
+        ...validBody('qwen-plus'),
+        workbenchMode: 'story',
+        workbenchContext: {
+          chapterId: '11111111-1111-4111-8111-111111111111',
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts one Platform section and rejects ambiguous scoped context', () => {
+    const sectionId = '22222222-2222-4222-8222-222222222222';
+    expect(
+      AgentOsStartRunBodySchema.safeParse({
+        ...validBody('qwen-plus'),
+        workbenchContext: { sectionId },
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentOsStartRunBodySchema.safeParse({
+        ...validBody('qwen-plus'),
+        workbenchContext: {
+          sectionId,
+          chapterId: '11111111-1111-4111-8111-111111111111',
+        },
+      }).success,
+    ).toBe(false);
   });
 });
