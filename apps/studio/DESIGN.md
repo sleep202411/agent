@@ -160,17 +160,23 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
    In all of these, red still never tints a passive surface. Generated
    imagery is the only other saturated content by default.
 
-4. **No borders. Anywhere.** shadcn's default border-everywhere look has
-   been explicitly rejected, including hairlines on chrome and floating
-   panels. Separation comes from **tone steps** (`background` → `card` →
-   `popover`), **shadows**, and **backdrop blur** — never from an outline.
+4. **Flat by default; boundaries only where they carry structure.** The
+   shadcn border-everywhere look and card-everything layout are rejected.
+   Page sections, empty states, and ordinary content groups stay transparent;
+   do not wrap them in `FrostedPanel`, `bg-card`, or another filled rectangle.
+   A real content card may use a tone step, while a structural shell boundary
+   may use one quiet 1px separator instead of a shadow.
    - Inputs / textareas / selects: `border-transparent` + translucent fill
      (`bg-input/20`–`/30`).
-   - Cards, headers, rails, pills: fills only — no `border-*`, no
-     decorative `ring-*`.
+   - Sidebar: exact `#0f0f0f` fill, one `white/8%` right separator, no outer
+     shadow.
+   - Empty / loading / zero-data states: content directly on the page canvas,
+     with no card background, rim, border, or shadow.
+   - Real content cards, controls, and pills may use restrained fills; do not
+     add decorative `ring-*`.
    - Floating panels (dropdown / popover / dialog / tooltip / toast):
      `bg-popover` + shadow, de-ringed at the component source.
-   - The only permitted "borders": the **focus ring**
+   - Other permitted boundaries: the **focus ring**
      (`focus-visible:ring-*`), internal **separators**
      (`h-px bg-border` dividers between rows), and variants whose _name_
      is the border (`outline` button/badge).
@@ -222,14 +228,14 @@ One control radius for everything you press or type into; larger radii for
 larger surfaces; the full-round pill is reserved for segmented-control
 **containers**, not buttons.
 
-| Step          | Value                    | Use                                                          |
-| ------------- | ------------------------ | ------------------------------------------------------------ |
-| **panel**     | 24px                     | large frosted panels — composer, hero media card             |
-| **rail**      | 18px                     | the floating 56px icon-rail pill                             |
-| **card**      | 16px                     | cards, media thumbnails, promo tiles                         |
-| **control**   | 14px (`rounded-xl`)      | **all** buttons, inputs, selects, chips, pills, icon buttons |
-| **small**     | 8–10px (`rounded-md/lg`) | dense control sizes (`xs`/`sm`), tiny chips                  |
-| **segmented** | full-round               | segmented-control **containers** only (studio tabs)          |
+| Step          | Value                     | Use                                                          |
+| ------------- | ------------------------- | ------------------------------------------------------------ |
+| **panel**     | 24px                      | large frosted panels — composer, hero media card             |
+| **sidebar**   | 0px outer / 12px selected | fixed collapsible navigation sidebar; selected row/control   |
+| **card**      | 16px                      | cards, media thumbnails, promo tiles                         |
+| **control**   | 14px (`rounded-xl`)       | **all** buttons, inputs, selects, chips, pills, icon buttons |
+| **small**     | 8–10px (`rounded-md/lg`)  | dense control sizes (`xs`/`sm`), tiny chips                  |
+| **segmented** | full-round                | segmented-control **containers** only (studio tabs)          |
 
 **Buttons share the one 14px control radius** (decided 2026-08-04). The
 full-round pill for the primary CTA was tried and retired: a hero action earns
@@ -278,18 +284,32 @@ imagine.art reference, whose buttons hold a single ~12–14px radius throughout.
 
 ## Layout
 
-- **One navigation everywhere: the floating 56px icon rail** (signed off
-  2026-06-19; the earlier "context-split" with a labeled home sidebar was
-  dropped — not enough top-level menus to warrant it). A pill fixed 24px from
-  the viewport edge, vertically centered, grouped nav + detached settings;
-  ported from the web `(fizzstudio)` rail (`app/_components/studio-sidebar.tsx`);
-  content offsets `lg:pl-[104px]` (24 gap + 56 pill + 24 gap); hides below `lg`
-  (mobile chrome TBD). **The home (`app/[locale]/page.tsx`) uses this same rail**
-  — it just adds its own promo banner + auth-aware header (brand wordmark at the
-  header's left edge, since the rail has no logo) + footer around the content.
+- **One navigation everywhere: the fixed collapsible sidebar** (revised
+  2026-08-10). It is flush with the left viewport edge and fills the full
+  viewport height on the exact `#0f0f0f` shell surface. Expanded width is 224px
+  with the brand, section labels, and labeled navigation rows; at viewport
+  widths below 1024px it collapses automatically to 72px icon navigation.
+  It is separated from content by one `white/8%` right border and never by a
+  right-side drop shadow.
+  Enabled navigation labels and section headings use pure white; disabled
+  destinations remain muted so availability stays unambiguous.
+  The expanded logo row is `logo flex-1 + collapse control`. In the collapsed
+  state, the logo position becomes the expand control. Opening it on a narrow
+  viewport creates a temporary expanded sidebar that closes from the outside
+  scrim. The workspace switcher remains in its canonical header position
+  between Upgrade and Account. Primary navigation sits at the top; Settings,
+  Discord, mobile download, desktop download, and Help are grouped at the
+  bottom. There is no floating outer pill or detached Settings puck. The product
+  header and content occupy the remaining width and animate with the sidebar;
+  fixed bottom composers retain a 16px working gap from its edge.
+  **The home and app surfaces use this same shell.**
 - **Fill the shell.** The main content column FILLS its width — no page-level
   centered max-width. Only a focused text input (composer, chat) gets a centered
   cap (~1200px); galleries / grids / cards fill. (Home build: see the last section.)
+- **Do not account for the sidebar twice.** `StudioSidebarInset` already owns
+  the complete horizontal offset. Page sections use only their normal 24px
+  padding (32px on large viewports); they must not add legacy rail offsets such
+  as `sm:pl-20` or `lg:pl-[120px]`.
 - Genre conventions to follow as surfaces are built (2026 AI-studio
   research): prompt bar as the hero element with parameters in popovers /
   inline chips; create-and-browse on one surface (masonry feed of past
@@ -306,20 +326,20 @@ Implementation notes for the home (`app/[locale]/page.tsx`) and the shared
 pollo.ai and disciplined to the rules above. (This absorbs the former
 `_pollo/DESIGN.md`, now deleted; these are notes, not new rules.)
 
-- **Frosted primitives** back the header pills, cards, and panels app-wide:
+- **Frosted primitives** back the canonical header pills, cards, and panels app-wide:
   `components/ui/frosted-panel.tsx` (`FrostedPanel` — translucent fill +
-  `backdrop-blur` + `backdrop-saturate-150`; composer `blur(60)`, rail
+  `backdrop-blur` + `backdrop-saturate-150`; composer `blur(60)`, sidebar
   `blur(30)`) and `components/ui/glass-rim.tsx` (`GlassRim` / `GLASS_CONIC` —
-  the masked rim-light of rule 4: conic white hairline on panels/rail, radial
-  corner-glow on the active tab, linear ring on the active rail item).
+  the masked rim-light of rule 4: conic white hairline on panels, radial
+  corner-glow on the active tab, linear ring on the active sidebar item).
 - **Mask-icon glyphs** (`glyphs.tsx` `G`): icons are a `mask-image` over a
   solid/gradient fill so they recolor by state (idle `white/65`, active =
   gradient); glyph set from pollo's `i-cus--pol-*`. Chrome may use Tabler
   outline icons (`stroke 1.7–1.8`).
-- **Motion** (functional only): the active selection is ONE sliding element —
-  rail `translateY(index·40px)`; tabs measured from the active button
-  (`translateX` + `width`); both `.3s cubic-bezier(0,0,0.2,1)`. Tab bodies
-  crossfade in via `@keyframes polloFade` (opacity + 3px rise, 300ms).
+- **Motion** (functional only): tabs use one element measured from the active
+  button (`translateX` + `width`) at `.3s cubic-bezier(0,0,0.2,1)`. Sidebar
+  selection changes tone without moving the navigation. Tab bodies crossfade
+  via `@keyframes polloFade` (opacity + 3px rise, 300ms).
 - **Composer**: a separate rail block (absolute, right-anchored, expands LEFT on
   hover so it never reflows) + a `FrostedPanel` — upload tiles + prompt over a
   toolbar (lead `+`, mode/model pills, grouped params with the duration glyph,
@@ -340,7 +360,8 @@ video / image composer) is a floating drawer, reverse-engineered from
 imagine.art's video composer and disciplined to the rules above. Anatomy, top
 to bottom:
 
-- **Shell.** A `fixed` panel anchored beside the 56px rail (`left = rail + gap`),
+- **Shell.** A `fixed` panel anchored beside the responsive sidebar
+  (`left = sidebar + gap`),
   `top`/`bottom` inset so it floats; width responsive (~300px min,
   `max(20vw, 300px)` on wide screens); it opens/closes by animating its offset
   (300ms). It is a `FrostedPanel` (blur + saturate) carrying a `GlassRim` edge —
@@ -375,5 +396,5 @@ Built from the `components/ui/` primitives (`FrostedPanel`, `GlassRim`, the
   the values from the theme's `.dark` block into `:root` and discard its
   light block.
 - Honest UI: features without a backing implementation render disabled
-  with a "Coming soon" tooltip (see the rail), never as live-looking
+  with a "Coming soon" tooltip (see the sidebar), never as live-looking
   dead controls.

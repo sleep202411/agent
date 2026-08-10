@@ -16,8 +16,8 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import {
-  isTextGameBossActionAllowed,
-  type TextGameBossAction,
+  isTextGameAdminActionAllowed,
+  type TextGameAdminAction,
   type TextGameDetail,
 } from "@repo/shared/text-game";
 import { PageHeader } from "@/components/admin/page-header";
@@ -58,12 +58,12 @@ export function TextGameReviewDetail({
   const [game, setGame] = useState(initialGame);
   const [error, setError] = useState<string | null>(initialError);
   const [success, setSuccess] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<TextGameBossAction["action"] | null>(null);
+  const [pendingAction, setPendingAction] = useState<TextGameAdminAction["action"] | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
-  async function runAction(input: TextGameBossAction) {
-    if (!game || !isTextGameBossActionAllowed(game.status, input.action)) {
+  async function runAction(input: TextGameAdminAction) {
+    if (!game || !isTextGameAdminActionAllowed(game.status, input.action)) {
       const reason = new Error("当前作品状态不允许执行该审核动作，请刷新后重试。");
       setError(reason.message);
       throw reason;
@@ -131,8 +131,8 @@ export function TextGameReviewDetail({
 
   const content = game.content;
   const title = content.name || "未命名文游";
-  const reviewing = isTextGameBossActionAllowed(game.status, "approve");
-  const canForceOffline = isTextGameBossActionAllowed(game.status, "force_offline");
+  const reviewing = isTextGameAdminActionAllowed(game.status, "approve");
+  const canForceOffline = isTextGameAdminActionAllowed(game.status, "force_offline");
   const busy = pendingAction !== null;
 
   return (
@@ -469,7 +469,7 @@ function EmptyReviewContent({ label }: { label: string }) {
   return <p className="py-8 text-center text-[13px] text-slate-400">{label}</p>;
 }
 
-function actionSuccessMessage(action: TextGameBossAction["action"]): string {
+function actionSuccessMessage(action: TextGameAdminAction["action"]): string {
   return {
     approve: "审核通过，当前草稿版本已发布。",
     reject: "作品已驳回草稿，创作者可以修改后重新提交。",

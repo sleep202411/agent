@@ -264,12 +264,21 @@ export function useStoryboard() {
   const attachSource = useCallback(
     (shotId: string, sourceNodeId: string) => {
       try {
-        connectNodes({ getNode, catalog, graph: { addEdge, patchNodeData } }, sourceNodeId, shotId);
+        connectNodes(
+          {
+            getNode,
+            getEdges,
+            catalog,
+            graph: { addEdge, patchNodeData, removeEdge },
+          },
+          sourceNodeId,
+          shotId
+        );
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [addEdge, catalog, getNode, patchNodeData]
+    [addEdge, catalog, getEdges, getNode, patchNodeData, removeEdge]
   );
 
   const detachPicture = useCallback(
@@ -347,9 +356,29 @@ export function useStoryboard() {
           category: "general",
         },
       ]);
-      connectNodes({ getNode, catalog, graph: { addEdge, patchNodeData } }, id, shotId);
+      connectNodes(
+        {
+          getNode,
+          getEdges,
+          catalog,
+          graph: { addEdge, patchNodeData, removeEdge },
+        },
+        id,
+        shotId
+      );
     },
-    [addAssets, addEdge, addNode, canEdit, catalog, getEdges, getNode, patchNodeData, workspaceId]
+    [
+      addAssets,
+      addEdge,
+      addNode,
+      canEdit,
+      catalog,
+      getEdges,
+      getNode,
+      patchNodeData,
+      removeEdge,
+      workspaceId,
+    ]
   );
 
   /**
@@ -391,13 +420,22 @@ export function useStoryboard() {
           }),
         },
       });
-      addEdge({
-        id: crypto.randomUUID(),
-        source: id,
-        target: shotId,
-        sourceHandle: "output",
-        targetHandle: "input",
-      });
+      try {
+        connectNodes(
+          {
+            getNode,
+            getEdges,
+            catalog,
+            graph: { addEdge, patchNodeData, removeEdge },
+          },
+          id,
+          shotId
+        );
+      } catch (error) {
+        removeNode(id);
+        toast.error(error instanceof Error ? error.message : String(error));
+        return null;
+      }
       // "Make this shot move": a video source for a shot that already has a
       // frame is fed by that frame, exactly as dragging the wire by hand would.
       // Silently skipped when the chosen model takes no image input.
@@ -408,7 +446,12 @@ export function useStoryboard() {
         if (frame) {
           try {
             connectNodes(
-              { getNode, catalog, graph: { addEdge, patchNodeData } },
+              {
+                getNode,
+                getEdges,
+                catalog,
+                graph: { addEdge, patchNodeData, removeEdge },
+              },
               frame.sourceNodeId,
               id
             );
@@ -419,7 +462,20 @@ export function useStoryboard() {
       }
       return id;
     },
-    [addEdge, addNode, canEdit, catalog, getEdges, getNode, nodes, patchNodeData, rows, t]
+    [
+      addEdge,
+      addNode,
+      canEdit,
+      catalog,
+      getEdges,
+      getNode,
+      nodes,
+      patchNodeData,
+      removeEdge,
+      removeNode,
+      rows,
+      t,
+    ]
   );
 
   return {

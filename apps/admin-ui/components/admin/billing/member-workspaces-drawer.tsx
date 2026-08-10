@@ -36,7 +36,6 @@ export interface MemberSummaryForDrawer {
   phone: string | null;
   email: string | null;
   nickName: string | null;
-  userLevel: string | null;
 }
 
 interface LegacyIdentity {
@@ -144,7 +143,6 @@ export function MemberWorkspacesDrawer({
                 <Line label="昵称" value={member.nickName} />
                 <Line label="手机" value={member.phone} />
                 <Line label="邮箱" value={member.email} />
-                <Line label="等级" value={member.userLevel} />
               </section>
             ) : null}
 

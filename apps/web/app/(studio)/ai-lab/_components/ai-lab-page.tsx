@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -31,6 +32,7 @@ import { UpgradeDialogHost } from "@/components/quota/upgrade-dialog";
 import { UpgradeDialog as MembershipUpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCredits, useCurrentUser } from "@/src/hooks/use-user";
+import { getMyEntitlement } from "@/src/lib/billing/api";
 import { cn } from "@/lib/utils";
 import {
   cancelAiJob,
@@ -86,6 +88,12 @@ export function AiLabPage() {
   );
   const { user } = useCurrentUser();
   const { data: credits } = useCredits();
+  const entitlement = useQuery({
+    queryKey: ["billing", "my-entitlement"],
+    queryFn: getMyEntitlement,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
   const [mode, setMode] = useState<AiLabMode>("image");
   const [catalog, setCatalog] = useState<AiLabCatalog | null>(null);
   const [catalogSource, setCatalogSource] = useState<CatalogSource>("loading");
@@ -103,8 +111,8 @@ export function AiLabPage() {
   const [submitting, setSubmitting] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
-  const currentPlan = useMemo(() => productPlanFromClaim(user?.userLevel), [user?.userLevel]);
-  const currentPlanRank = useMemo(() => planRank(currentPlan), [currentPlan]);
+  const currentPlan = entitlement.data?.entitlement.planKey ?? "free";
+  const currentPlanRank = entitlement.data?.entitlement.rank ?? 0;
   const validationMessages = useMemo<AiValidationMessages>(
     () => ({
       required: (label) => t("error.fieldRequired", { label }),
@@ -1700,48 +1708,27 @@ function requiredPlanFor(preset: AiLabPreset | null, model: AiLabModel | null): 
   );
 }
 
-function productPlanFromClaim(value: string | null | undefined): string {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return "free";
-  if (normalized === "vip1" || normalized === "creator") return "basic";
-  if (normalized === "vip2") return "standard";
-  if (normalized === "vip3") return "pro";
-  return normalized;
-}
-
 function planRank(plan: string | null | undefined): number {
   if (!plan) return 0;
-  const normalized = productPlanFromClaim(plan);
   const ranks: Record<string, number> = {
     free: 0,
     basic: 10,
-    creator: 10,
     standard: 20,
     pro: 30,
-    studio: 40,
-    enterprise: 90,
-    team_ultimate: 110,
-    team_creator: 120,
-    team_scale: 130,
-    team_enterprise: 190,
+    team: 40,
   };
-  return ranks[normalized] ?? 0;
+  return ranks[plan.trim().toLowerCase()] ?? Number.POSITIVE_INFINITY;
 }
 
 function planLabel(plan: string | null | undefined, t?: TFn): string {
-  const normalized = productPlanFromClaim(plan);
+  const normalized = plan?.trim().toLowerCase() || "free";
   const translated = t?.(`plan.${normalized}`);
   if (translated && translated !== `aiLab.plan.${normalized}`) return translated;
   if (normalized === "free") return "Free";
-  if (normalized === "basic" || normalized === "creator") return "Basic";
+  if (normalized === "basic") return "Basic";
   if (normalized === "standard") return "Standard";
   if (normalized === "pro") return "Pro";
-  if (normalized === "studio") return "Studio";
-  if (normalized === "enterprise") return "Enterprise";
-  if (normalized === "team_ultimate") return "Teams Ultimate";
-  if (normalized === "team_creator") return "Teams Creator";
-  if (normalized === "team_scale") return "Teams Scale";
-  if (normalized === "team_enterprise") return "Enterprise Team";
+  if (normalized === "team") return "Team";
   return normalized;
 }
 

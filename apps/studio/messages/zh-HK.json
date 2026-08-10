@@ -276,6 +276,8 @@
       "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 項。",
       "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 項。",
       "MEDIA_DURATION_UNKNOWN": "提交前需要為 {field} 中每個{kind}提供時長。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每個{kind}最少需要 {min} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每個{kind}最多允許 {max} 秒，目前為 {actual} 秒。",
       "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合計時長為 {actual} 秒，最少 {min} 秒。",
       "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合計時長為 {actual} 秒，最多 {max} 秒。",
       "MEDIA_MAX_TOTAL_FILES": "參考檔案最多 {max} 個，目前 {actual} 個。",
@@ -698,7 +700,7 @@
   "textAdventures": {
     "library": {
       "eyebrow": "互動小說",
-      "title": "文遊",
+      "title": "文遊工作室",
       "subtitle": "把一份世界觀文件變成讀者可以進入、影響並持續遊玩的故事。",
       "create": "創作文遊",
       "loadFailed": "無法載入你的文遊作品",
@@ -712,7 +714,7 @@
     },
     "actions": {
       "retry": "重試",
-      "backToLibrary": "返回文遊作品",
+      "backToLibrary": "返回文遊工作室",
       "save": "儲存",
       "cancel": "取消",
       "unknownError": "操作失敗，請稍後再試。"
@@ -863,21 +865,29 @@
       "teamTag": "團隊"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首頁",
       "fizzDragonHomeAriaLabel": "FizzDragon 首頁"
     },
     "nav": {
       "home": "首頁",
-      "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
-      "textAdventures": "文遊",
+      "creativeStudio": "創意工作室",
+      "storyStudio": "影遊工作室",
+      "textAdventures": "文遊工作室",
       "image": "圖像",
       "video": "影片",
       "characters": "角色",
       "audio": "音訊",
       "settings": "設定",
+      "tools": "工具",
+      "discord": "Discord",
+      "downloadApp": "下載 App",
+      "downloadDesktop": "下載桌面版",
+      "help": "幫助",
+      "newBadge": "New",
+      "appDownloadUnavailable": "目前平台暫時沒有可用的流動版安裝檔。",
       "studioNavigation": "工作室導覽",
       "main": "主導覽",
+      "collapseSidebar": "收起側邊欄",
+      "expandSidebar": "展開側邊欄",
       "comingSoonLabel": "{label} · 即將推出"
     },
     "notifications": {
@@ -986,6 +996,7 @@
     "youSuffix": "(你)",
     "memberActions": "成員操作",
     "memberFallback": "成員",
+    "projectOnlyMember": "僅專案成員",
     "addedMember": "已新增 {name}",
     "addMemberFailed": "無法新增成員",
     "changeRoleFailed": "無法變更角色",
@@ -1062,21 +1073,21 @@
       "includedInPlan": "方案包含",
       "computeCreditsAmount": "{amount} 算力積分",
       "customCreditsAmount": "客製算力積分額度",
-      "seats": "{count, plural, other {# 個席位}}",
+      "seats": "{count, plural, other {# 個創作者席位}}",
       "seatsUpTo": " · 最多 {max} 個",
       "perMonth": "/月",
       "perYear": "/年",
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerMonth": "每月最多 {count} 次圖像生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "進階工作流程",
-      "prioritySupport": "優先支援",
+      "imagesPerDay": "每天 {count} 次圖像生成",
+      "imagesUnlimited": "不限次數的圖像生成",
+      "videosPerDay": "每天 {count} 次影片生成",
+      "videosUnlimited": "不限次數的影片生成",
       "sharedCredits": "團隊共享算力積分",
+      "seatScope": "創作者席位在所有專案間共享；Viewer 和 Reviewer 不佔席位",
       "concurrentJobs": "{count, plural, other {# 個並行任務}}",
-      "queuedJobs": "{count, plural, other {# 個排隊任務}}",
-      "topupDiscount": "增值算力積分 {percent}% 折扣"
+      "queuedJobs": "{count, plural, other {# 個排隊任務}}"
     },
     "toast": {
       "plansLoadFailed": "會員方案載入失敗",
@@ -1119,7 +1130,7 @@
       },
       "subscriptionVsTopups": {
         "question": "訂閱與算力積分增值有甚麼分別？",
-        "answer": "訂閱會提供週期性的算力積分額度，並附帶佇列優先、更高並行及支援等方案權益。增值是一次性購買算力積分——而付費方案在增值時享有折扣。"
+        "answer": "訂閱會提供週期性的算力積分額度，以及佇列優先、更高並行等方案權益。增值則是單獨的一次性算力積分購買。"
       },
       "teamShareCredits": {
         "question": "團隊方案如何共享算力積分？",
@@ -1127,7 +1138,7 @@
       },
       "cancelOrChange": {
         "question": "如何取消或變更我的方案？",
-        "answer": "在帳戶選單的「帳單與訂閱」中管理你的訂閱。方案變更會在目前計費週期結束時生效。"
+        "answer": "在「帳單與訂閱」中管理訂閱。取消後，權益會保留到目前週期結束；週期結束後可選擇其他方案。"
       },
       "commercialUse": {
         "question": "我可以將生成內容用於商業用途嗎？",
@@ -1172,6 +1183,23 @@
     "openError": "無法開啟此畫布 — 請檢查連結或你的存取權限。",
     "emptyReadOnly": "此畫布為空。",
     "activityLog": "動態",
+    "connection": {
+      "kind": {
+        "image": "圖片",
+        "video": "影片",
+        "audio": "音訊"
+      },
+      "sourceMissing": "來源節點已不存在。",
+      "targetMissing": "目標節點已不存在。",
+      "selfConnection": "節點不能連接到自身。",
+      "sourceNotConnectable": "此節點沒有可連接的圖片、影片或音訊輸出。",
+      "targetNotConnectable": "此節點不接受參考素材連接。",
+      "modelUnavailable": "請先選擇一個可用模型，再連接參考素材。",
+      "currentModeUnsupported": "目前模式不支援{kind}參考。請先手動切換模式。",
+      "unsupportedKind": "此模型不支援{kind}參考。",
+      "referenceLimit": "目前模式最多支援 {limit} 個{kind}參考。",
+      "duplicateReference": "此{kind}已連接到該節點。"
+    },
     "groups": {
       "group": "打組",
       "label": "群組",
@@ -1420,6 +1448,8 @@
       "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 項。",
       "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 項。",
       "MEDIA_DURATION_UNKNOWN": "提交前需要為 {field} 中每個{kind}提供時長。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每個{kind}最少需要 {min} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每個{kind}最多允許 {max} 秒，目前為 {actual} 秒。",
       "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合計時長為 {actual} 秒，最少 {min} 秒。",
       "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合計時長為 {actual} 秒，最多 {max} 秒。",
       "MEDIA_MAX_TOTAL_FILES": "參考檔案最多 {max} 個，目前 {actual} 個。",
@@ -1690,12 +1720,12 @@
     "yourSubscription": "你的訂閱",
     "subscriptionDescription": "管理個人方案、購買算力積分包並查看定價。",
     "managePlan": "管理方案",
+    "keepPlan": "保留方案",
     "currentPlan": "目前方案",
     "freePlanName": "免費版",
     "planRenewsOn": "{date} 續期",
     "planAccessUntil": "可用至 {date}",
     "planCanceledBadge": "已取消",
-    "changePlan": "更換方案",
     "cancelPlan": "取消訂閱",
     "cancelPlanConfirm": "確定取消訂閱？目前計費週期結束前仍可使用，之後將不再續期。",
     "cancelPlanSuccess": "訂閱已取消 —— 可用至 {date}。",
@@ -2067,10 +2097,10 @@
     "confirmRemoveEdge": "刪除這條連線？"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "影遊工作室",
     "metaDescription": "創作、製作、審核並發佈電影化互動故事。",
     "eyebrow": "互動故事製作",
-    "title": "Story Studio",
+    "title": "影遊工作室",
     "subtitle": "在一個可追溯版本的工作台內設計分支影像場景並完成發佈。",
     "newProject": "新增故事專案",
     "projects": {
@@ -2154,7 +2184,7 @@
       "switching": "正在切換到該故事所屬的工作區…"
     },
     "canvas": {
-      "back": "返回 Story Studio",
+      "back": "返回影遊工作室",
       "mode": "故事畫布",
       "chapters": {
         "action": "章節",
@@ -2246,7 +2276,7 @@
       },
       "workingPreview": {
         "action": "預覽試玩",
-        "pageTitle": "故事試玩 · Story Studio",
+        "pageTitle": "故事試玩 · 影遊工作室",
         "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
         "loading": "正在準備試玩…",
@@ -2434,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "創作畫布",
-        "identity": "Story Studio · 內容創作",
-        "groupDropHint": "放開以加入此分組",
-        "workspaceLabel": "項目素材創作空間",
-        "backToChapter": "返回章節畫布",
-        "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
-        "loadError": "無法開啟創作畫布。",
-        "retry": "重試",
-        "assets": {
-          "description": "瀏覽項目素材，並將可重用媒體拖入畫布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候選素材",
-          "description": "整理可供故事節點直接重用的媒體。",
-          "open": "開啟候選素材",
-          "close": "關閉候選素材",
           "add": "加入候選素材",
           "remove": "從候選素材移除",
           "filterLabel": "篩選候選素材",
@@ -2462,7 +2478,7 @@
           },
           "empty": "尚未有候選素材",
           "emptyFilter": "此分類暫無素材",
-          "emptyDescription": "選取已完成的媒體節點，透過浮動工具列加入。",
+          "emptyDescription": "選取已完成的媒體節點，透過節點工具列加入。",
           "loadError": "無法載入候選素材。",
           "actionError": "無法更新候選素材。",
           "retry": "重試",
@@ -2473,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "正在載入",
-          "saving": "正在儲存…",
-          "saved": "已儲存",
-          "error": "儲存失敗"
+          "loading": "正在載入"
         }
       },
       "candidatePicker": {
@@ -2501,7 +2514,7 @@
         "loading": "正在載入候選素材…",
         "retry": "重試",
         "empty": "沒有符合條件的候選素材",
-        "emptyDescription": "請先在創作畫布中將完成的圖片或影片加入候選素材。",
+        "emptyDescription": "請先在創意工作台中將完成的圖片或影片加入候選素材。",
         "assetLabel": {
           "image": "圖片 {index}",
           "video": "影片 {index}"
@@ -2610,7 +2623,7 @@
       "share": "共創"
     },
     "workbench": {
-      "back": "返回 Story Studio",
+      "back": "返回影遊工作室",
       "draftHead": "可編輯草稿 · 修訂 {revision}",
       "stageNav": "專案階段",
       "stages": {

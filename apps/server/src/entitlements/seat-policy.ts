@@ -13,7 +13,7 @@
 export interface SeatPolicy {
   /** The plan the policy came from (or `free` for the default). */
   planKey: string;
-  /** Seats included in the plan (owner counts as a seat). */
+  /** Unique creator seats included in the plan (owner counts as one). */
   includedSeats: number;
   /** Hard cap including overage; `null` = no cap once overage is allowed. */
   maxSeats: number | null;
@@ -57,23 +57,20 @@ export const DEFAULT_TEAM_SEAT_POLICY: SeatPolicy = {
 };
 
 /**
- * Default for a PERSONAL workspace with NO active plan — which is every personal
- * workspace, since plans are sold against teams. 5 is a PROVISIONAL allowance,
- * chosen so collaboration works on the workspaces people actually have rather
- * than only on a team they'd have to create first. It is not a priced tier and
- * not final policy: aligning seats with each plan's `included_seats` is
- * deliberately deferred by product decision.
+ * A free personal workspace has one creator seat (its owner). It may still have
+ * any number of project viewers/reviewers because those roles do not consume a
+ * creator seat.
  */
 export const PERSONAL_WORKSPACE_SEAT_POLICY: SeatPolicy = {
   planKey: 'free',
-  includedSeats: 5,
-  maxSeats: 5,
+  includedSeats: 1,
+  maxSeats: 1,
   seatOverageAllowed: false,
 };
 
 /**
  * Decide whether ONE more active member may occupy a seat, given the count of
- * members already occupying one (active, not removed — the owner included).
+ * unique users already occupying one across the workspace's projects.
  */
 export function decideSeatAdmission(
   policy: SeatPolicy,
@@ -102,7 +99,7 @@ export function decideSeatAdmission(
     policy.seatOverageAllowed && policy.maxSeats != null
       ? policy.maxSeats
       : policy.includedSeats;
-  const seatWord = cap === 1 ? 'seat' : 'seats';
+  const seatWord = cap === 1 ? 'creator seat' : 'creator seats';
   // Which remedy is true turns on whether removing a member could actually free a
   // seat, not on the workspace type — `planKey` cannot tell the two no-plan
   // defaults apart, both being 'free'.

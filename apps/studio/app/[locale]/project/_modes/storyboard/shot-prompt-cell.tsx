@@ -35,8 +35,9 @@ export function ShotPromptCell({
   cellId?: string;
   onNavigate?: (direction: "next" | "prev" | "down" | "up") => void;
 }) {
-  const { projectId } = useProjectContext();
-  const { assets } = useProjectAssets(projectId);
+  const { owner } = useProjectContext();
+  const crewProjectId = owner.kind === "platform_project" ? owner.projectId : "";
+  const { assets } = useProjectAssets(crewProjectId);
   const mentions = useMemo<MentionItem[]>(
     () => assets.map((asset) => projectAssetToMentionItem(asset, assets)),
     [assets]
@@ -76,7 +77,7 @@ export function ShotPromptCell({
           value={value ?? ""}
           onCommit={(next) => onCommit(next || undefined)}
           mentions={mentions}
-          projectId={projectId}
+          projectId={crewProjectId}
           aria-label={ariaLabel}
           rows={2}
           autoFocus

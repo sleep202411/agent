@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import {
   StoryProjectMemberRole,
+  WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
   WorkspaceType,
 } from '@prisma/client';
@@ -42,11 +43,14 @@ function tx(overrides: {
       workspaceMember: {
         findFirst: jest
           .fn()
-          .mockResolvedValue(
-            overrides.workspaceMember === undefined
-              ? null
-              : overrides.workspaceMember,
-          ),
+          .mockImplementation((args: { where: { removedAt: unknown } }) => {
+            const member = overrides.workspaceMember ?? null;
+            if (!member) return Promise.resolve(null);
+            const asksForActive = args.where.removedAt === null;
+            return Promise.resolve(
+              asksForActive === (member.removedAt === null) ? member : null,
+            );
+          }),
         count: workspaceMemberCount,
         create: workspaceMemberCreate,
         update: workspaceMemberUpdate,
@@ -71,17 +75,21 @@ describe('ensureWorkspaceMembershipForStory', () => {
       workspaceId: WORKSPACE_ID,
       userId: 'guest-1',
       actorUserId: 'owner-1',
+      role: StoryProjectMemberRole.viewer,
       entitlements,
       allowReactivatingRemoved: true,
     });
 
-    expect(result).toEqual({ created: true });
+    expect(result).toBeUndefined();
     expect(t.calls.workspaceMemberCreate).toHaveBeenCalledTimes(1);
     // Least privilege: the story role carries the story powers; the workspace
     // row exists only to satisfy the tenant fence.
     expect(t.calls.workspaceMemberCreate.mock.calls[0][0].data.role).toBe(
       WorkspaceMemberRole.viewer,
     );
+    expect(
+      t.calls.workspaceMemberCreate.mock.calls[0][0].data.accessScope,
+    ).toBe(WorkspaceMemberAccessScope.project_only);
   });
 
   it('is a no-op when the user already holds an active seat', async () => {
@@ -92,29 +100,30 @@ describe('ensureWorkspaceMembershipForStory', () => {
       workspaceId: WORKSPACE_ID,
       userId: 'teammate-1',
       actorUserId: 'owner-1',
+      role: StoryProjectMemberRole.viewer,
       entitlements,
       allowReactivatingRemoved: true,
     });
 
-    expect(result).toEqual({ created: false });
+    expect(result).toBeUndefined();
     expect(t.calls.workspaceMemberCreate).not.toHaveBeenCalled();
     expect(t.calls.workspaceMemberUpdate).not.toHaveBeenCalled();
   });
 
-  it('enrols into a PERSONAL workspace too — seats decide, not workspace type', async () => {
+  it('enrols a viewer into a personal workspace without consuming a seat', async () => {
     const t = tx({ workspaceType: WorkspaceType.personal });
     const result = await ensureWorkspaceMembershipForStory(t.client, {
       workspaceId: WORKSPACE_ID,
       userId: 'guest-1',
       actorUserId: 'owner-1',
+      role: StoryProjectMemberRole.viewer,
       entitlements,
       allowReactivatingRemoved: true,
     });
 
-    expect(result).toEqual({ created: true });
+    expect(result).toBeUndefined();
     expect(t.calls.workspaceMemberCreate).toHaveBeenCalledTimes(1);
-    // The seat guard still ran: story sharing consumes a seat on every type.
-    expect(t.calls.workspaceMemberCount).toHaveBeenCalledTimes(1);
+    expect(t.calls.workspaceMemberCount).not.toHaveBeenCalled();
   });
 
   it('will not let an open invite link resurrect an offboarded teammate', async () => {
@@ -130,6 +139,7 @@ describe('ensureWorkspaceMembershipForStory', () => {
         workspaceId: WORKSPACE_ID,
         userId: 'ex-teammate',
         actorUserId: 'owner-1',
+        role: StoryProjectMemberRole.viewer,
         entitlements,
         // Accepting a link, not an admin deliberately re-granting.
         allowReactivatingRemoved: false,
@@ -150,15 +160,15 @@ describe('ensureWorkspaceMembershipForStory', () => {
       workspaceId: WORKSPACE_ID,
       userId: 'ex-teammate',
       actorUserId: 'owner-1',
+      role: StoryProjectMemberRole.viewer,
       entitlements,
       allowReactivatingRemoved: true,
     });
 
-    expect(result).toEqual({ created: true });
+    expect(result).toBeUndefined();
     expect(t.calls.workspaceMemberUpdate).toHaveBeenCalledTimes(1);
     expect(t.calls.workspaceMemberUpdate.mock.calls[0][0].data).toMatchObject({
       removedAt: null,
-      seatAssigned: true,
     });
   });
 });

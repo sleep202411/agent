@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { StoryProjectCanvas } from "../../../_components/project-canvas/story-project-canvas";
 
 export const metadata: Metadata = {
-  title: "Story Canvas · Story Studio",
+  title: "Story Canvas · Interactive Film Studio",
   description: "Author the story foundation and interactive-film graph.",
 };
 

@@ -7,7 +7,10 @@ import { useCanvasDoc, type CanvasDocHandle } from "@/lib/collab/use-canvas-doc"
 import { useCanvasGraph } from "@/lib/collab/use-canvas-graph";
 import { CanvasGraphProvider } from "@/lib/canvas-core/canvas-graph-context";
 import { CanvasGenerationProvider } from "@/lib/canvas-authoring/use-canvas-generation";
-import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import {
+  useProjectContext,
+  type StudioWorkbenchOwner,
+} from "@/app/[locale]/project/_components/project-context";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
@@ -39,14 +42,18 @@ export interface CanvasConnectionValue {
 const CanvasConnectionContext = createContext<CanvasConnectionValue | null>(null);
 
 export function CanvasConnectionProvider({
-  projectId,
+  owner,
   documentId,
   canEdit,
+  canGenerate = true,
+  generationDisabledReason = null,
   children,
 }: {
-  projectId: string;
+  owner: StudioWorkbenchOwner;
   documentId: string;
   canEdit: boolean;
+  canGenerate?: boolean;
+  generationDisabledReason?: string | null;
   children: React.ReactNode;
 }) {
   const { user } = useAuth();
@@ -88,10 +95,15 @@ export function CanvasConnectionProvider({
         <CanvasGenerationProvider
           catalog={catalog.data}
           context={{
-            projectId,
+            ...(owner.kind === "platform_project"
+              ? { projectId: owner.projectId }
+              : { storyProjectId: owner.projectId }),
             documentId: documentId ?? undefined,
-            sourceSurface: "fizzstudio-canvas",
+            sourceSurface:
+              owner.kind === "platform_project" ? "fizzstudio-canvas" : "story-studio-workbench",
           }}
+          canGenerate={canGenerate}
+          disabledReason={generationDisabledReason}
         >
           {children}
         </CanvasGenerationProvider>

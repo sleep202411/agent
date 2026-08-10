@@ -2,7 +2,7 @@
  * GET /aurora/quota — snapshot for the current user.
  *
  * Limits come from the PostgreSQL membership truth (EntitlementService:
- * grants → plan row benefits), never from the retired Java `userLevel` claim.
+ * grants → plan row benefits), never from external authentication claims.
  * An optional x-fizz-workspace-id header resolves workspace-scoped team
  * plans, matching how team compute credits are scoped.
  *
@@ -13,6 +13,7 @@ import { Controller, Get, Headers } from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements';
+import { WorkspacePermissionService } from '../workspaces';
 import { QuotaService } from './quota.service';
 import type { QuotaPeek, QuotaSnapshot } from './quota.types';
 
@@ -50,6 +51,7 @@ export class QuotaController {
   constructor(
     private readonly svc: QuotaService,
     private readonly entitlements: EntitlementService,
+    private readonly workspacePermissions: WorkspacePermissionService,
   ) {}
 
   @Get()
@@ -61,6 +63,12 @@ export class QuotaController {
     const workspaceId = Array.isArray(workspaceHeader)
       ? workspaceHeader[0]
       : workspaceHeader;
+    if (workspaceId?.trim()) {
+      await this.workspacePermissions.requireWorkspacePresence(
+        user.userId,
+        workspaceId.trim(),
+      );
+    }
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: workspaceId?.trim() || null,
     });

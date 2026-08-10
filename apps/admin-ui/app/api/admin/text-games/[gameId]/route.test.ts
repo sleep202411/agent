@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { getAdminSession } from "@/lib/admin-session";
-import { getAdminTextGameDetail, transitionAdminTextGame } from "@/lib/admin-text-games";
-import { GET, POST } from "./route";
+import { transitionAdminTextGame } from "@/lib/admin-text-games";
+import { POST } from "./route";
 
 vi.mock("@/lib/admin-session", () => ({ getAdminSession: vi.fn() }));
 vi.mock("@/lib/admin-text-games", () => ({
-  getAdminTextGameDetail: vi.fn(),
   transitionAdminTextGame: vi.fn(),
 }));
 
@@ -28,9 +27,14 @@ describe("admin text-game detail route", () => {
   });
 
   it("rejects invalid work ids without calling Java", async () => {
-    const response = await GET(new NextRequest("http://localhost/api"), context("invalid"));
+    const request = new NextRequest("http://localhost/api", {
+      method: "POST",
+      body: JSON.stringify({ action: "approve" }),
+      headers: { "content-type": "application/json" },
+    });
+    const response = await POST(request, context("invalid"));
     expect(response.status).toBe(400);
-    expect(getAdminTextGameDetail).not.toHaveBeenCalled();
+    expect(transitionAdminTextGame).not.toHaveBeenCalled();
   });
 
   it("rejects malformed moderation actions without calling Java", async () => {

@@ -113,7 +113,7 @@ const OUTGOING_TONE: NodeTone = {
 };
 
 const MAX_PROMPT_LENGTH = 500;
-const MODEL_OPTIONS = ["Seedance 2.0 VIP", "Seedance 2.0 Fast", "Seedance 2.0 Pro"] as const;
+const MODEL_OPTIONS = ["Seedance 2.0", "Seedance 2.0 Fast", "Seedance 2.0 Pro"] as const;
 const ASPECT_RATIO_OPTIONS = ["16:9", "9:16", "1:1"] as const;
 const RESOLUTION_OPTIONS = ["720P", "1080P"] as const;
 const DURATION_OPTIONS = ["5s", "10s"] as const;
@@ -159,7 +159,7 @@ export function createDefaultShotComposerState(promptDraft: string): ShotCompose
     duration: "5s",
     expanded: false,
     mode: "all-reference",
-    model: "Seedance 2.0 VIP",
+    model: "Seedance 2.0",
     outputCount: 1,
     promptDraft,
     resolution: "720P",

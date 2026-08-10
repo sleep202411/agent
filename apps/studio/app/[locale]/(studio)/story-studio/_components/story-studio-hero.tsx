@@ -81,7 +81,7 @@ export function StoryStudioHero({
       ) : null}
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,17,18,0.92)_0%,rgba(16,17,18,0.58)_48%,rgba(16,17,18,0.12)_100%),linear-gradient(180deg,rgba(16,17,18,0.68)_0%,rgba(16,17,18,0.08)_28%,rgba(16,17,18,0.64)_100%)]" />
 
-      <div className="relative z-10 flex min-h-[590px] items-end px-6 pt-28 pb-14 sm:h-[525px] sm:min-h-0 sm:items-center sm:px-20 sm:py-20 lg:px-[120px]">
+      <div className="relative z-10 flex min-h-[590px] items-end px-6 pt-28 pb-14 sm:h-[525px] sm:min-h-0 sm:items-center sm:py-20 lg:px-8">
         <div className="max-w-[660px]">
           <span className="inline-flex rounded-full bg-white/[0.09] px-3 py-1.5 text-[11px] font-semibold text-white/72 backdrop-blur-md">
             {t("badge")}

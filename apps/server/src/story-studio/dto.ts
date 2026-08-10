@@ -14,14 +14,7 @@ import {
   type StoryReferenceReviewDecision,
   type StoryReferenceSlotSpec,
 } from './interactive-film.schema';
-import {
-  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-  StoryProductionCanvasContentSchema,
-  type StoryProductionCanvasContent,
-} from './story-production-canvas.schema';
-
 export * from './interactive-film.schema';
-export * from './story-production-canvas.schema';
 
 /** Product-level contracts for interactive-film production. */
 
@@ -369,17 +362,6 @@ export const PutStoryCanvasLayoutSchema = z
   .strict();
 export type PutStoryCanvasLayoutInput = z.infer<
   typeof PutStoryCanvasLayoutSchema
->;
-
-export const PutStoryProductionCanvasSchema = z
-  .object({
-    schemaVersion: z.literal(STORY_PRODUCTION_CANVAS_SCHEMA_VERSION),
-    content: StoryProductionCanvasContentSchema,
-    sessionId: SessionIdSchema,
-  })
-  .strict();
-export type PutStoryProductionCanvasInput = z.infer<
-  typeof PutStoryProductionCanvasSchema
 >;
 
 export const LockStoryRevisionSchema = z
@@ -737,16 +719,6 @@ export interface StoryCanvasLayoutDto {
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: StoryCanvasNodePositions;
   revision: number;
-  updatedByUserId: string;
-  updatedBySessionId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StoryProductionCanvasDto {
-  projectId: string;
-  schemaVersion: typeof STORY_PRODUCTION_CANVAS_SCHEMA_VERSION;
-  content: StoryProductionCanvasContent;
   updatedByUserId: string;
   updatedBySessionId: string | null;
   createdAt: string;

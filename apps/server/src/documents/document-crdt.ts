@@ -38,6 +38,44 @@ export interface MergedDocumentState {
 }
 
 /**
+ * Encode an authoritative materialized snapshot into canonical Yjs state.
+ * This is used for imports and one-time schema migrations, never for merging
+ * concurrent edits. Canvas accepts both the current map-shaped snapshot and
+ * the former Story array-shaped snapshot, then always emits the canonical form.
+ */
+export function encodeDocumentSnapshot(
+  snapshot: unknown,
+  schema: DocumentRootSchema,
+): MergedDocumentState {
+  const doc = new Y.Doc({ gc: true });
+  try {
+    declareRoots(doc, schema);
+    const source = record(snapshot);
+    doc.transact(() => {
+      for (const [name, kind] of Object.entries(schema)) {
+        const value = source[name];
+        if (kind === 'map') {
+          const target = doc.getMap(name);
+          if (name === 'nodes') seedCanvasNodes(target, value);
+          else if (name === 'edges') seedCanvasEdges(target, value);
+          else seedPlainMap(target, value);
+        } else if (kind === 'array' && Array.isArray(value)) {
+          doc.getArray(name).insert(0, value);
+        } else if (kind === 'text' && typeof value === 'string') {
+          doc.getText(name).insert(0, value);
+        }
+      }
+    });
+    return {
+      state: Y.encodeStateAsUpdate(doc),
+      snapshot: doc.toJSON() as unknown as DocumentSnapshot,
+    };
+  } finally {
+    doc.destroy();
+  }
+}
+
+/**
  * Incremental, memory-bounded folder of a base state plus a stream of Yjs
  * updates into a single document. Callers feed updates in batches (so the source
  * buffers can be GC'd between batches) and read the merged result at the end.
@@ -167,4 +205,83 @@ function declareRoots(doc: Y.Doc, schema: DocumentRootSchema): void {
         break;
     }
   }
+}
+
+function seedCanvasNodes(target: Y.Map<unknown>, value: unknown): void {
+  for (const [id, raw] of entriesById(value)) {
+    const node = record(raw);
+    const yNode = new Y.Map<unknown>();
+    yNode.set('id', typeof node.id === 'string' ? node.id : id);
+    if (typeof node.type === 'string') yNode.set('type', node.type);
+    const position = record(node.position);
+    const yPosition = new Y.Map<number>();
+    yPosition.set('x', finiteNumber(position.x));
+    yPosition.set('y', finiteNumber(position.y));
+    yNode.set('position', yPosition);
+    const yData = new Y.Map<unknown>();
+    for (const [key, field] of Object.entries(record(node.data))) {
+      yData.set(key, field);
+    }
+    yNode.set('data', yData);
+    if (typeof node.width === 'number' && Number.isFinite(node.width)) {
+      yNode.set('width', node.width);
+    }
+    if (typeof node.height === 'number' && Number.isFinite(node.height)) {
+      yNode.set('height', node.height);
+    }
+    target.set(id, yNode);
+  }
+}
+
+function seedCanvasEdges(target: Y.Map<unknown>, value: unknown): void {
+  for (const [id, raw] of entriesById(value)) {
+    const edge = record(raw);
+    if (typeof edge.source !== 'string' || typeof edge.target !== 'string') {
+      continue;
+    }
+    const yEdge = new Y.Map<unknown>();
+    yEdge.set('id', typeof edge.id === 'string' ? edge.id : id);
+    yEdge.set('source', edge.source);
+    yEdge.set('target', edge.target);
+    if (typeof edge.sourceHandle === 'string') {
+      yEdge.set('sourceHandle', edge.sourceHandle);
+    }
+    if (typeof edge.targetHandle === 'string') {
+      yEdge.set('targetHandle', edge.targetHandle);
+    }
+    target.set(id, yEdge);
+  }
+}
+
+function seedPlainMap(target: Y.Map<unknown>, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const row = record(item);
+      if (typeof row.id === 'string') target.set(row.id, row);
+    }
+    return;
+  }
+  for (const [key, field] of Object.entries(record(value))) {
+    target.set(key, field);
+  }
+}
+
+function entriesById(value: unknown): Array<[string, unknown]> {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      const row = record(item);
+      return typeof row.id === 'string' ? [[row.id, item]] : [];
+    });
+  }
+  return Object.entries(record(value));
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }

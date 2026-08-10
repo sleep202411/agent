@@ -6,6 +6,7 @@ import {
   providerCapacityFromRow,
 } from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
+import { requiredPlanFromPolicy } from '../../required-plan';
 import type {
   AiBillingPolicy,
   AiGenerationMode,
@@ -266,12 +267,6 @@ function numberFromPolicy(value: unknown, key: string): number | undefined {
   const record = recordValue(value);
   const raw = record?.[key];
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
-}
-
-function requiredPlanFromPolicy(value: unknown): string | null {
-  const record = recordValue(value);
-  const raw = record?.requiredPlan;
-  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
 }
 
 function billingPolicyFromRow(row: {

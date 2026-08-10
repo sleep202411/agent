@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 /**
  * Per-document comment threads (Figma-style). Threads are anchored to a canvas
  * node via `blockId`. Backed by the documents platform's comment routes
- * (PlatformDocumentCommentThread / Comment) under `/aurora/documents/:id/...`.
+ * (StudioDocumentCommentThread / Comment) under `/aurora/documents/:id/...`.
  */
 
 export interface CommentDto {

@@ -7,10 +7,9 @@
  * (JSON has no Infinity literal); `benefitsToSnapshotLimits` converts
  * to real numbers for runtime consumers.
  *
- * The ONLY code-defined benefits object is `DEFAULT_FREE_BENEFITS` —
- * the `free` plan is not sold as a row. Every other plan's benefits
- * MUST come from its active plan row; an active row with invalid
- * benefits fails loud at resolution time.
+ * The free baseline is code-defined because `free` is not sold as a row.
+ * Every paid plan has explicit seed data persisted in its active plan row;
+ * invalid or missing paid-plan benefits fail loud at resolution time.
  */
 import { z } from 'zod';
 import type { QuotaLimits } from '../quota/quota.types';
@@ -40,14 +39,6 @@ export const MembershipBenefitsSchema = z
     concurrentJobs: NullableJobLimitSchema,
     /** `null` = contract-managed/unlimited. */
     queuedJobs: NullableJobLimitSchema,
-    features: z
-      .object({
-        aiGeneration: z.boolean(),
-        advancedModelAccess: z.boolean(),
-        advancedParameters: z.boolean(),
-        teamSharedCredits: z.boolean(),
-      })
-      .strict(),
   })
   .strict();
 
@@ -65,14 +56,8 @@ export const DEFAULT_FREE_BENEFITS: MembershipBenefits = {
   workflowDaily: 3,
   uploadMB: 100,
   chatPerMinute: 20,
-  concurrentJobs: 1,
-  queuedJobs: 2,
-  features: {
-    aiGeneration: true,
-    advancedModelAccess: false,
-    advancedParameters: false,
-    teamSharedCredits: false,
-  },
+  concurrentJobs: 3,
+  queuedJobs: 6,
 };
 
 export class InvalidMembershipBenefitsError extends Error {

@@ -271,6 +271,8 @@ function serviceWith(input: {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
     input.billingWallet as never,
     input.providerCapacity as never,
     {} as never,

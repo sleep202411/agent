@@ -1,4 +1,9 @@
-import { defaultMode, referenceFieldsForMode, type FizzAiModel } from "./generation-api";
+import {
+  defaultMode,
+  referenceFieldsForMode,
+  type FizzAiModel,
+  type FizzAiReferenceKind,
+} from "./generation-api";
 
 /**
  * Shared reference-field routing for the canvas — used both when a wire is
@@ -34,30 +39,80 @@ export function modelAcceptsKind(model: FizzAiModel | undefined, kind: string): 
   return false;
 }
 
+export type ReferenceRoutingIssue =
+  | { code: "model_unavailable" }
+  | {
+      code: "current_mode_unsupported";
+      kind: FizzAiReferenceKind;
+    }
+  | { code: "unsupported_kind"; kind: FizzAiReferenceKind }
+  | {
+      code: "reference_limit";
+      kind: FizzAiReferenceKind;
+      limit: number;
+    };
+
+export type ReferenceRoutingResult =
+  | { ok: true; field: string }
+  | { ok: false; issue: ReferenceRoutingIssue };
+
 /**
- * Choose the reference field on a target generation card for an incoming
- * `kind`, switching the card's mode when the current mode has no free slot for
- * it (mirrors how dropping an image into a text-to-video card flips it to
- * image-to-video). Returns the field and, if a switch is needed, the new mode.
+ * Validate and choose a field in the card's CURRENT mode only.
+ *
+ * `reservedCount` represents valid incoming wires whose source has not produced
+ * a durable URL yet. Those wires still own capacity: otherwise ten unfinished
+ * image nodes could all be connected to a nine-image slot and the last wire
+ * would become an orphan when generation completed.
+ */
+export function evaluateReferenceField(
+  model: FizzAiModel | undefined,
+  currentMode: string | undefined,
+  references: Record<string, readonly unknown[] | undefined> | undefined,
+  kind: FizzAiReferenceKind,
+  reservedCount = 0
+): ReferenceRoutingResult {
+  if (!model) return { ok: false, issue: { code: "model_unavailable" } };
+
+  const mode = currentMode ?? defaultMode(model);
+  const fields = referenceFieldsForMode(model, mode);
+  const matching = fields.filter((field) => field.kind === kind);
+  if (matching.length === 0) {
+    return modelAcceptsKind(model, kind)
+      ? { ok: false, issue: { code: "current_mode_unsupported", kind } }
+      : { ok: false, issue: { code: "unsupported_kind", kind } };
+  }
+
+  const refs = references ?? {};
+  let reservations = Math.max(0, Math.floor(reservedCount));
+  for (const field of matching) {
+    const boundCount = refs[field.field]?.length ?? 0;
+    const available = Math.max(0, field.maxItems - boundCount);
+    if (reservations < available) return { ok: true, field: field.field };
+    reservations -= available;
+  }
+
+  return {
+    ok: false,
+    issue: {
+      code: "reference_limit",
+      kind,
+      limit: matching.reduce((sum, field) => sum + field.maxItems, 0),
+    },
+  };
+}
+
+/**
+ * Choose a reference field on the target card's current mode. Connecting a
+ * wire never changes the selected mode: an unsupported kind or a full slot is
+ * rejected so the user's explicit model settings remain stable.
  */
 export function routeReferenceField(
   model: FizzAiModel | undefined,
   currentMode: string | undefined,
   references: Record<string, readonly unknown[] | undefined> | undefined,
-  kind: string
-): { mode?: string; field: string } | undefined {
-  if (!model) return undefined;
-  const mode = currentMode ?? defaultMode(model);
-  const refs = references ?? {};
-  const inCurrent = referenceFieldsForMode(model, mode).find(
-    (f) => f.kind === kind && (refs[f.field]?.length ?? 0) < f.maxItems
-  );
-  if (inCurrent) return { field: inCurrent.field };
-  for (const m of model.generationModes ?? []) {
-    const f = referenceFieldsForMode(model, m).find(
-      (ff) => ff.kind === kind && (refs[ff.field]?.length ?? 0) < ff.maxItems
-    );
-    if (f) return { mode: m, field: f.field };
-  }
-  return undefined;
+  kind: FizzAiReferenceKind,
+  reservedCount = 0
+): { field: string } | undefined {
+  const result = evaluateReferenceField(model, currentMode, references, kind, reservedCount);
+  return result.ok ? { field: result.field } : undefined;
 }

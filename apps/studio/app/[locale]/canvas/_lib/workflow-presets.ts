@@ -98,7 +98,7 @@ function imageToVideo(args: {
         localId: "video",
         type: "video",
         modality: "video",
-        modelHint: ["seedance-2-0", "seedance-2-0-fast"],
+        modelHint: ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast"],
         mode: "image_to_video",
         position: { x: 560, y: 0 },
         data: { name: args.videoName, prompt: args.videoPrompt },

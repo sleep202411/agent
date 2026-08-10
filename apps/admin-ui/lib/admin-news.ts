@@ -12,7 +12,7 @@
  * (X-Admin-Api-Token), SEPARATE from the Nest admin session cookie used by
  * lib/admin-api.ts — so this is a distinct client, not a reuse of that one.
  *
- * NEWS_API_TOKEN is a server-only secret. This module must NEVER be imported
+ * JAVA_ADMIN_API_TOKEN is a server-only secret. This module must NEVER be imported
  * into a client component; client mutations go through the
  * app/api/admin/news/* route handlers, which call into here.
  *
@@ -29,8 +29,7 @@ import type {
   NewsStatus,
   NewsTag,
 } from "@/components/admin/news/types";
-
-const TOKEN_HEADER = process.env.NEWS_API_TOKEN_HEADER?.trim() || "X-Admin-Api-Token";
+import { javaAdminAuthHeaders } from "@/lib/java-admin-auth";
 
 function newsApiBaseUrl(): string {
   const base = process.env.NEWS_API_BASE_URL?.trim();
@@ -39,17 +38,11 @@ function newsApiBaseUrl(): string {
   throw new Error("Missing NEWS_API_BASE_URL (the Java 资讯 backend origin).");
 }
 
-function newsApiToken(): string {
-  const token = process.env.NEWS_API_TOKEN?.trim();
-  if (token) return token;
-  throw new Error("Missing NEWS_API_TOKEN (X-Admin-Api-Token for the Java 资讯 backend).");
-}
-
 async function newsFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${newsApiBaseUrl()}/api/admin/news${path}`, {
     ...init,
     headers: {
-      [TOKEN_HEADER]: newsApiToken(),
+      ...javaAdminAuthHeaders(),
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },

@@ -19,6 +19,8 @@ import {
 } from '../characters/character-generation.service';
 import { newUuidV7 } from '../common/id';
 import { EntitlementService } from '../entitlements';
+import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
@@ -61,6 +63,7 @@ const TERMINAL_STATUSES = new Set([
 interface AiJobContext {
   workspaceId: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
@@ -100,6 +103,8 @@ export class AiGenerationService {
     private readonly routing: AiGenerationRoutingService,
     private readonly workspaces: WorkspacesService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly documentAccess: StudioDocumentAccessService,
+    private readonly storyPermissions: StoryPermissionService,
     private readonly entitlements: EntitlementService,
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
@@ -142,6 +147,12 @@ export class AiGenerationService {
     // Resolve entitlement WITH the active workspace so a team plan's models
     // light up for members — without it, team grants never enter the candidate
     // set and team-gated models read as locked even though submitJob allows them.
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspacePresence(
+        user.userId,
+        workspaceId,
+      );
+    }
     const models = await this.catalog.listModels();
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: workspaceId ?? null,
@@ -203,7 +214,13 @@ export class AiGenerationService {
         bindings: body.referenceBindings,
         input: rawInput,
       });
-    const input = characterExpansion.input;
+    // Resolve server-trusted media duration/size BEFORE routing. Routing
+    // freezes the wallet quote, and Seedance 2.5 charges reference-video jobs
+    // on input-video + output duration; accepting client-claimed duration here
+    // would let a caller understate the hold before validation corrected it.
+    const input = await this.validator.applyTrustedMediaFacts(
+      characterExpansion.input,
+    );
     const referenceBindings = characterExpansion.bindings;
 
     const entitlement = await this.entitlements.resolveForUser(user, {
@@ -236,14 +253,9 @@ export class AiGenerationService {
       });
     }
 
-    // Drop client-claimed media facts and refill them from MediaAsset rows:
-    // catalog media rules need exact values and must never depend on what the
-    // browser reported. Still dual-checked by the same pure kernel after
-    // normalize.
-    const mediaFactInput = await this.validator.applyTrustedMediaFacts(input);
     const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
-      mediaFactInput,
+      input,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
@@ -322,6 +334,7 @@ export class AiGenerationService {
             schemaVersion: model.schemaVersion,
             workspaceId: context.workspaceId,
             projectId: context.projectId,
+            storyProjectId: context.storyProjectId,
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
             sourceSurface: context.sourceSurface,
@@ -535,9 +548,12 @@ export class AiGenerationService {
       userId: user.userId,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
+      storyProjectId: scope.storyProjectId,
       documentId: scope.documentId,
       sourceSurface,
-      includeCollaboratorJobs: Boolean(scope.projectId || scope.documentId),
+      includeCollaboratorJobs: Boolean(
+        scope.projectId || scope.storyProjectId || scope.documentId,
+      ),
       type: query.type,
       limit: Number.isFinite(limit) ? limit : 50,
     });
@@ -725,6 +741,7 @@ export class AiGenerationService {
       schemaVersion: job.schemaVersion,
       workspaceId: job.workspaceId ?? undefined,
       projectId: job.projectId ?? undefined,
+      storyProjectId: job.storyProjectId ?? undefined,
       documentId: job.documentId ?? undefined,
       documentBlockId: job.documentBlockId ?? undefined,
       sourceSurface: job.sourceSurface ?? undefined,
@@ -783,6 +800,17 @@ export class AiGenerationService {
       return job;
     }
 
+    if (job.storyProjectId) {
+      await this.storyPermissions.requireProject(
+        user.userId,
+        job.storyProjectId,
+        minimumRole === WorkspaceMemberRole.viewer
+          ? 'story.read'
+          : 'story.generate',
+      );
+      return job;
+    }
+
     if (job.workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
@@ -820,6 +848,7 @@ export class AiGenerationService {
     // entity's home workspace.
     const explicitWorkspaceId = body.context?.workspaceId ?? body.workspaceId;
     const projectId = body.context?.projectId ?? body.projectId;
+    const storyProjectId = body.context?.storyProjectId ?? body.storyProjectId;
     const documentId = body.context?.documentId ?? body.documentId;
     const documentBlockId =
       body.context?.documentBlockId ?? body.documentBlockId;
@@ -827,11 +856,13 @@ export class AiGenerationService {
       body.context?.sourceSurface ?? body.sourceSurface,
     );
 
+    this.assertSingleProjectScope(projectId, storyProjectId);
+
     if (documentId) {
-      const document = await this.workspacePermissions.requireDocumentRole(
+      const document = await this.documentAccess.requireDocument(
         user.userId,
         documentId,
-        ProjectMemberRole.editor,
+        'generate',
       );
       if (explicitWorkspaceId && explicitWorkspaceId !== document.workspaceId) {
         throw new BadRequestException({
@@ -839,15 +870,22 @@ export class AiGenerationService {
           msg: 'Document does not belong to the selected workspace.',
         });
       }
-      if (projectId && projectId !== document.projectId) {
+      if (projectId && projectId !== document.platformProjectId) {
         throw new BadRequestException({
           code: 'DOCUMENT_PROJECT_MISMATCH',
           msg: 'Document does not belong to the selected project.',
         });
       }
+      if (storyProjectId && storyProjectId !== document.storyProjectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_STORY_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected Story project.',
+        });
+      }
       return {
         workspaceId: document.workspaceId,
-        projectId: document.projectId,
+        projectId: document.platformProjectId ?? undefined,
+        storyProjectId: document.storyProjectId ?? undefined,
         documentId: document.id,
         documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
         sourceSurface,
@@ -869,6 +907,25 @@ export class AiGenerationService {
       return {
         workspaceId: project.workspaceId,
         projectId: project.id,
+        sourceSurface,
+      };
+    }
+
+    if (storyProjectId) {
+      const { project } = await this.storyPermissions.requireProject(
+        user.userId,
+        storyProjectId,
+        'story.generate',
+      );
+      if (explicitWorkspaceId && explicitWorkspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'STORY_PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Story project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        storyProjectId: project.id,
         sourceSurface,
       };
     }
@@ -900,18 +957,20 @@ export class AiGenerationService {
   ): Promise<{
     workspaceId?: string;
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
   }> {
+    this.assertSingleProjectScope(query.projectId, query.storyProjectId);
     const workspaceId = this.resolveWorkspaceScope(
       workspaceHeaderId,
       query.workspaceId,
     );
 
     if (query.documentId) {
-      const document = await this.workspacePermissions.requireDocumentRole(
+      const document = await this.documentAccess.requireDocument(
         user.userId,
         query.documentId,
-        ProjectMemberRole.viewer,
+        'read',
       );
       if (workspaceId && workspaceId !== document.workspaceId) {
         throw new BadRequestException({
@@ -919,15 +978,25 @@ export class AiGenerationService {
           msg: 'Document does not belong to the selected workspace.',
         });
       }
-      if (query.projectId && query.projectId !== document.projectId) {
+      if (query.projectId && query.projectId !== document.platformProjectId) {
         throw new BadRequestException({
           code: 'DOCUMENT_PROJECT_MISMATCH',
           msg: 'Document does not belong to the selected project.',
         });
       }
+      if (
+        query.storyProjectId &&
+        query.storyProjectId !== document.storyProjectId
+      ) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_STORY_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected Story project.',
+        });
+      }
       return {
         workspaceId: document.workspaceId,
-        projectId: document.projectId,
+        projectId: document.platformProjectId ?? undefined,
+        storyProjectId: document.storyProjectId ?? undefined,
         documentId: document.id,
       };
     }
@@ -947,6 +1016,24 @@ export class AiGenerationService {
       return { workspaceId: project.workspaceId, projectId: project.id };
     }
 
+    if (query.storyProjectId) {
+      const { project } = await this.storyPermissions.requireProject(
+        user.userId,
+        query.storyProjectId,
+        'story.read',
+      );
+      if (workspaceId && workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'STORY_PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Story project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        storyProjectId: project.id,
+      };
+    }
+
     if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
@@ -957,6 +1044,17 @@ export class AiGenerationService {
     }
 
     return {};
+  }
+
+  private assertSingleProjectScope(
+    projectId: string | undefined,
+    storyProjectId: string | undefined,
+  ): void {
+    if (!projectId || !storyProjectId) return;
+    throw new BadRequestException({
+      code: 'PROJECT_SCOPE_CONFLICT',
+      msg: 'Choose either a Creative Studio project or a Story project, not both.',
+    });
   }
 
   private resolveWorkspaceScope(
@@ -1017,6 +1115,7 @@ export class AiGenerationService {
       request_id: job.id,
       workspace_id: job.workspaceId ?? null,
       project_id: job.projectId ?? null,
+      story_project_id: job.storyProjectId ?? null,
       document_id: job.documentId ?? null,
       document_block_id: job.documentBlockId ?? null,
       source_surface: job.sourceSurface ?? null,
@@ -1040,6 +1139,7 @@ export class AiGenerationService {
       type: job.type,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,
+      storyProjectId: job.storyProjectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
       sourceSurface: job.sourceSurface ?? null,

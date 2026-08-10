@@ -25,7 +25,6 @@ interface MemberSummary {
   email: string | null;
   nickName: string | null;
   scoreBalance: number;
-  userLevel: string | null;
   accountStatus: number | null;
   createTime: string | null;
 }
@@ -162,7 +161,6 @@ export function MemberDirectoryPanel() {
               <tr className="border-b border-slate-200 text-left text-[12px] text-slate-500">
                 <th className="px-4 py-2 font-medium">昵称</th>
                 <th className="px-4 py-2 font-medium">手机 / 邮箱</th>
-                <th className="px-4 py-2 font-medium">等级</th>
                 <th className="px-4 py-2 font-medium">积分余额</th>
                 <th className="px-4 py-2 font-medium">状态</th>
                 <th className="px-4 py-2 font-medium">注册时间</th>
@@ -178,7 +176,6 @@ export function MemberDirectoryPanel() {
                       <span className="ml-1 text-[11px] text-slate-400">#{m.userId}</span>
                     </td>
                     <td className="px-4 py-2 text-slate-600">{m.phone || m.email || "—"}</td>
-                    <td className="px-4 py-2 text-slate-600">{m.userLevel || "—"}</td>
                     <td className="px-4 py-2 font-medium text-slate-900">{m.scoreBalance}</td>
                     <td className="px-4 py-2 text-slate-600">
                       {m.accountStatus == null

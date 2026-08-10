@@ -79,6 +79,7 @@ const MODEL_TAGLINES: Record<string, ModelTaglineKey> = {
   "seedream-4.5": "highQualityImage",
   "seedream-5-lite": "fastBalancedImage",
   "quick-video-1-0": "fastLowCostVideo",
+  "seedance-2-5": "cinematicVideo",
   "seedance-2-0": "cinematicVideo",
   "seedance-2-0-fast": "fastBalancedVideo",
   "wan-2-7": "stableMotionVideo",

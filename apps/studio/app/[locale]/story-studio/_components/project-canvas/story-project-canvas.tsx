@@ -196,10 +196,6 @@ import {
   type StoryNodeCreationMenuPlacement,
 } from "./story-node-creator-model";
 import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-picker-dialog";
-import {
-  StoryProductionCanvasWorkspace,
-  type StoryProductionCanvasContext,
-} from "./story-production-canvas-workspace";
 import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector, type SceneExitIntent } from "./story-node-inspector";
 import { StoryPublicationDialog } from "./story-publication-dialog";
@@ -332,9 +328,6 @@ function StoryProjectCanvasInner({
   const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
-  const [productionCanvasSession, setProductionCanvasSession] =
-    useState<StoryProductionCanvasContext | null>(null);
-  const closeProductionCanvasWorkspace = useCallback(() => setProductionCanvasSession(null), []);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
   const [chapterMutationPendingId, setChapterMutationPendingId] = useState<string | null>(null);
   const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
@@ -2115,7 +2108,7 @@ function StoryProjectCanvasInner({
   }, [history, mutationBarrier, readHistorySnapshot, refreshHistoryState, restoreHistorySnapshot]);
 
   useCanvasHistoryShortcuts({
-    enabled: canMutateCanvasLayout && !productionCanvasSession,
+    enabled: canMutateCanvasLayout,
     undo: undoStoryCanvas,
     redo: redoStoryCanvas,
   });
@@ -2907,15 +2900,12 @@ function StoryProjectCanvasInner({
     );
   }
 
-  const openProductionCanvas = () => {
-    if (productionCanvasSession) return;
-    setProductionCanvasSession({
-      projectId,
-      workspaceId,
-      sessionId,
-      canEdit: canMutateCanvasLayout,
-      canGenerate: canMutateCanvasLayout && canManageClipMedia,
-    });
+  const openProductionCanvas = (focusNodeId?: string) => {
+    router.push(
+      `/story-studio/projects/${projectId}/workbench/canvas${
+        focusNodeId ? `?focus=${encodeURIComponent(focusNodeId)}` : ""
+      }`
+    );
   };
 
   // Both hashes here were produced in THIS session, by one server version: the
@@ -2961,7 +2951,7 @@ function StoryProjectCanvasInner({
           }
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
-          onOpenMediaCreation={openProductionCanvas}
+          onOpenMediaCreation={() => openProductionCanvas()}
           agentOpen={agentOpen}
           agentLabel={agentT("title")}
           onToggleAgent={() => setAgentOpen((current) => !current)}
@@ -3106,7 +3096,7 @@ function StoryProjectCanvasInner({
                     if (node.data.kind !== "clip") return;
                     event.preventDefault();
                     event.stopPropagation();
-                    openProductionCanvas();
+                    openProductionCanvas(node.id);
                   }}
                   onPaneClick={() => {
                     selectCanvasNodeExclusively(null);
@@ -3295,13 +3285,6 @@ function StoryProjectCanvasInner({
             description={t("layoutConflict.description")}
             onExportLocal={exportLocalLayoutAfterConflict}
             onLoadLatest={loadLatestLayoutAfterConflict}
-          />
-        ) : null}
-        {productionCanvasSession ? (
-          <StoryProductionCanvasWorkspace
-            context={productionCanvasSession}
-            candidates={candidateAssets}
-            onClose={closeProductionCanvasWorkspace}
           />
         ) : null}
       </div>

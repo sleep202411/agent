@@ -1,4 +1,4 @@
-import { PlatformDocumentType } from '@prisma/client';
+import { StudioDocumentType } from '@prisma/client';
 
 /**
  * Root-type schema for CRDT document modes.
@@ -21,33 +21,32 @@ export type RootTypeKind = 'map' | 'array' | 'text' | 'xml';
 
 export type DocumentRootSchema = Readonly<Record<string, RootTypeKind>>;
 
-const ROOT_SCHEMAS: Partial<Record<PlatformDocumentType, DocumentRootSchema>> =
-  {
-    [PlatformDocumentType.canvas]: {
-      meta: 'map',
-      nodes: 'map',
-      edges: 'map',
-      groups: 'map',
-      // Shared asset library (generated + uploaded media), keyed by asset id.
-      // MUST match the client's CANVAS_ROOT_SCHEMA.
-      assets: 'map',
-    },
-    // Text mode (e.g. the Brief): a Y.Text body. MUST match the client's
-    // TEXT_DOC_ROOT_SCHEMA.
-    [PlatformDocumentType.brief]: {
-      meta: 'map',
-      content: 'text',
-    },
-  };
+const ROOT_SCHEMAS: Partial<Record<StudioDocumentType, DocumentRootSchema>> = {
+  [StudioDocumentType.canvas]: {
+    meta: 'map',
+    nodes: 'map',
+    edges: 'map',
+    groups: 'map',
+    // Shared asset library (generated + uploaded media), keyed by asset id.
+    // MUST match the client's CANVAS_ROOT_SCHEMA.
+    assets: 'map',
+  },
+  // Text mode (e.g. the Brief): a Y.Text body. MUST match the client's
+  // TEXT_DOC_ROOT_SCHEMA.
+  [StudioDocumentType.brief]: {
+    meta: 'map',
+    content: 'text',
+  },
+};
 
 /** Root-type schema for a CRDT mode, or null if the mode is not CRDT-backed. */
 export function rootSchemaFor(
-  type: PlatformDocumentType,
+  type: StudioDocumentType,
 ): DocumentRootSchema | null {
   return ROOT_SCHEMAS[type] ?? null;
 }
 
 /** Whether a document mode is CRDT-backed (and therefore compactable). */
-export function isCrdtMode(type: PlatformDocumentType): boolean {
+export function isCrdtMode(type: StudioDocumentType): boolean {
   return rootSchemaFor(type) !== null;
 }

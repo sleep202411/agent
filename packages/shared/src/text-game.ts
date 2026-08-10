@@ -49,6 +49,22 @@ export const TextGameSummarySchema = z.object({
 export type TextGameSummary = z.infer<typeof TextGameSummarySchema>;
 export const TextGameSummaryListSchema = z.array(TextGameSummarySchema);
 
+export const TextGameAdminStatsSchema = z.object({
+  total: z.number().int().nonnegative(),
+  draft: z.number().int().nonnegative(),
+  reviewing: z.number().int().nonnegative(),
+  published: z.number().int().nonnegative(),
+  offline: z.number().int().nonnegative(),
+});
+export type TextGameAdminStats = z.infer<typeof TextGameAdminStatsSchema>;
+
+export const TextGameAdminListSchema = z.object({
+  list: TextGameSummaryListSchema,
+  stats: TextGameAdminStatsSchema,
+  total: z.number().int().nonnegative(),
+});
+export type TextGameAdminList = z.infer<typeof TextGameAdminListSchema>;
+
 export const TextGameVersionContentSchema = z.object({
   versionId: TextGameWireIdSchema,
   versionNo: z.number().int().nonnegative(),
@@ -149,12 +165,12 @@ export type TextGameUpdateInput = z.infer<typeof TextGameUpdateInputSchema>;
 export const TextGameCreatorActionSchema = z.enum(["submit", "offline"]);
 export type TextGameCreatorAction = z.infer<typeof TextGameCreatorActionSchema>;
 
-export const TextGameBossActionSchema = z.discriminatedUnion("action", [
+export const TextGameAdminActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject"), reason: z.string().trim().min(1) }),
   z.object({ action: z.literal("force_offline") }),
 ]);
-export type TextGameBossAction = z.infer<typeof TextGameBossActionSchema>;
+export type TextGameAdminAction = z.infer<typeof TextGameAdminActionSchema>;
 
 export function isTextGameEditableByCreator(status: TextGameStatus): boolean {
   return status !== "reviewing";
@@ -172,16 +188,16 @@ export function textGameStatusAfterCreatorAction(action: TextGameCreatorAction):
   return action === "submit" ? "reviewing" : "offline";
 }
 
-export function isTextGameBossActionAllowed(
+export function isTextGameAdminActionAllowed(
   status: TextGameStatus,
-  action: TextGameBossAction["action"]
+  action: TextGameAdminAction["action"]
 ): boolean {
   if (action === "approve" || action === "reject") return status === "reviewing";
   return status === "published" || status === "reviewing";
 }
 
-export function textGameStatusAfterBossAction(
-  action: TextGameBossAction["action"]
+export function textGameStatusAfterAdminAction(
+  action: TextGameAdminAction["action"]
 ): TextGameStatus {
   if (action === "approve") return "published";
   if (action === "reject") return "draft";

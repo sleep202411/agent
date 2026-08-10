@@ -16,6 +16,7 @@
  */
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth';
+import { WorkspacesModule } from '../workspaces';
 import { QuotaController } from './quota.controller';
 import { QuotaEventsGateway } from './quota-events.gateway';
 import { QuotaEventsService } from './quota-events.service';
@@ -51,7 +52,7 @@ import { QuotaUsageLogService } from './quota-usage-log.service';
  */
 @Global()
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, WorkspacesModule],
   providers: [
     {
       provide: QUOTA_STRICT_REDIS,

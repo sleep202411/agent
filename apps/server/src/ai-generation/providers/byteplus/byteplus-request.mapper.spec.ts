@@ -14,6 +14,12 @@ function runtimeConfig(outputPolicy?: AiJsonValue): BytePlusImageRuntimeConfig {
   } as unknown as BytePlusImageRuntimeConfig;
 }
 
+function seedance25Runtime(): BytePlusImageRuntimeConfig {
+  return {
+    endpointId: 'dreamina-seedance-2-5-260628',
+  } as unknown as BytePlusImageRuntimeConfig;
+}
+
 /** A reference entry as character expansion stamps it (characterId present). */
 const characterStampedReference = {
   url: 'https://cdn.example.com/characters/hero-front.png',
@@ -136,6 +142,19 @@ describe('mapBytePlusVideoProviderRequest wire contract (ModelArk doc 1520757)',
     });
   });
 
+  it('supports Seedance 2.5 audio-only reference without an empty text part', () => {
+    const body = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      referenceAudios: [{ url: 'https://cdn.example.com/voice.wav' }],
+    });
+    expect(body.content).toEqual([
+      {
+        type: 'audio_url',
+        audio_url: { url: 'https://cdn.example.com/voice.wav' },
+        role: 'reference_audio',
+      },
+    ]);
+  });
+
   it('passes asset:// (provider-hosted likeness) URLs through verbatim', () => {
     const body = mapBytePlusVideoProviderRequest(runtimeConfig(), {
       prompt: 'Image 1 waves at the camera',
@@ -180,6 +199,14 @@ describe('mapBytePlusVideoProviderRequest wire contract (ModelArk doc 1520757)',
     expect(optOut.generate_audio).toBe(false);
   });
 
+  it('maps the Seedance 2.5 output container format', () => {
+    const body = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'extend this clip while preserving its audio',
+      outputFormat: 'mov',
+    });
+    expect(body.output_format).toBe('mov');
+  });
+
   it('asks for the generated last frame only when opted in (shot chaining)', () => {
     const off = mapBytePlusVideoProviderRequest(runtimeConfig(), {
       prompt: 'a quiet harbor at dawn',
@@ -204,6 +231,24 @@ describe('mapBytePlusVideoProviderRequest wire contract (ModelArk doc 1520757)',
       'first_frame',
       'last_frame',
     ]);
+  });
+
+  it('requires adaptive ratio for Seedance 2.5 frame-guided tasks', () => {
+    expect(() =>
+      mapBytePlusVideoProviderRequest(seedance25Runtime(), {
+        prompt: 'move toward the final composition',
+        startFrame: { url: 'https://cdn.example.com/start.png' },
+        aspectRatio: '16:9',
+      }),
+    ).toThrow(/requires aspectRatio=auto/);
+
+    expect(() =>
+      mapBytePlusVideoProviderRequest(seedance25Runtime(), {
+        prompt: 'move toward the final composition',
+        startFrame: { url: 'https://cdn.example.com/start.png' },
+        aspectRatio: 'auto',
+      }),
+    ).not.toThrow();
   });
 });
 

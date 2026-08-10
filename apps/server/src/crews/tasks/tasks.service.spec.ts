@@ -198,7 +198,7 @@ function build() {
       create: jest.fn().mockResolvedValue({}),
       findFirst: jest.fn().mockResolvedValue(null),
     },
-    platformDocument: {
+    studioDocument: {
       findFirst: jest.fn().mockResolvedValue({
         id: PRODUCTION_DOCUMENT_ID,
         workspaceId: '01910d50-4c88-7c78-92d4-16892c06a043',
@@ -226,11 +226,11 @@ function build() {
       }),
       update: jest.fn().mockResolvedValue({}),
     },
-    platformDocumentOperation: {
+    studioDocumentOperation: {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({}),
     },
-    platformDocumentVersion: {
+    studioDocumentVersion: {
       findFirst: jest
         .fn()
         .mockImplementation(
@@ -1024,7 +1024,7 @@ describe('CrewTasksService', () => {
       pointsAmount: 120000n,
       approvedByUserId: OWNER_ID,
     });
-    const operationCreateCalls = t.tx.platformDocumentOperation.create.mock
+    const operationCreateCalls = t.tx.studioDocumentOperation.create.mock
       .calls as unknown as Array<
       [
         {
@@ -1061,7 +1061,7 @@ describe('CrewTasksService', () => {
     );
     expect(submissionUpdate?.data.mergedAt).toBeInstanceOf(Date);
 
-    const documentUpdateCalls = t.tx.platformDocument.update.mock
+    const documentUpdateCalls = t.tx.studioDocument.update.mock
       .calls as unknown as Array<[{ where: { id: string }; data: unknown }]>;
     const productionUpdate = documentUpdateCalls.find(
       ([input]) => input.where.id === PRODUCTION_DOCUMENT_ID,

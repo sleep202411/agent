@@ -62,6 +62,11 @@ enum WorkspaceMemberStatus {
   removed
 }
 
+enum WorkspaceMemberAccessScope {
+  workspace
+  project_only
+}
+
 enum WorkspaceInviteStatus {
   pending
   accepted
@@ -177,7 +182,7 @@ enum CharacterEnrollmentSessionStatus {
   expired
 }
 
-enum PlatformDocumentType {
+enum StudioDocumentType {
   brief
   script
   storyboard
@@ -189,12 +194,12 @@ enum PlatformDocumentType {
   canvas
 }
 
-enum PlatformDocumentStatus {
+enum StudioDocumentStatus {
   active
   archived
 }
 
-enum PlatformDocumentVersionSource {
+enum StudioDocumentVersionSource {
   autosave
   manual
   import
@@ -202,7 +207,7 @@ enum PlatformDocumentVersionSource {
   system
 }
 
-enum PlatformDocumentOperationType {
+enum StudioDocumentOperationType {
   patch
   yjs_update
   snapshot
@@ -210,7 +215,7 @@ enum PlatformDocumentOperationType {
   system
 }
 
-enum PlatformDocumentCommentStatus {
+enum StudioDocumentCommentStatus {
   open
   resolved
 }
@@ -307,7 +312,7 @@ enum BillingProductType {
   /// Workspace or team membership entitlement.
   team_membership_plan
   /// Individual community membership (社区会员): member-free IP viewing + IP
-  /// purchase discounts. A separate access axis from membership_plan (studio/VIP).
+  /// purchase discounts. A separate access axis from compute memberships.
   community_membership_plan
 }
 
@@ -879,7 +884,7 @@ model Workspace {
   storyProjects            StoryProject[]
   studioCharacters         StudioCharacter[]
   mediaAssetUsages         MediaAssetUsage[]
-  documents                PlatformDocument[]
+  documents                StudioDocument[]
   billingOrders            BillingOrder[]
   subscriptions            BillingSubscription[]
   crew                     Crew?                     @relation("CrewWorkspace")
@@ -892,17 +897,17 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id           String                @id @default(uuid(7)) @db.Uuid
-  workspaceId  String                @map("workspace_id") @db.Uuid
-  userId       String                @map("user_id") @db.VarChar(64)
-  role         WorkspaceMemberRole
-  status       WorkspaceMemberStatus @default(active)
-  seatAssigned Boolean               @default(true) @map("seat_assigned")
-  invitedById  String?               @map("invited_by_id") @db.VarChar(64)
-  joinedAt     DateTime?             @default(now()) @map("joined_at") @db.Timestamptz(6)
-  removedAt    DateTime?             @map("removed_at") @db.Timestamptz(6)
-  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String                     @id @default(uuid(7)) @db.Uuid
+  workspaceId String                     @map("workspace_id") @db.Uuid
+  userId      String                     @map("user_id") @db.VarChar(64)
+  role        WorkspaceMemberRole
+  status      WorkspaceMemberStatus      @default(active)
+  accessScope WorkspaceMemberAccessScope @default(workspace) @map("access_scope")
+  invitedById String?                    @map("invited_by_id") @db.VarChar(64)
+  joinedAt    DateTime?                  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  removedAt   DateTime?                  @map("removed_at") @db.Timestamptz(6)
+  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -910,6 +915,7 @@ model WorkspaceMember {
   /// (workspace_id, user_id) WHERE removed_at IS NULL.
   @@index([userId, status], map: "workspace_members_by_user_idx")
   @@index([workspaceId, status, role], map: "workspace_members_by_workspace_idx")
+  @@index([workspaceId, accessScope, status], map: "workspace_members_scope_idx")
   @@map("workspace_members")
 }
 
@@ -962,7 +968,7 @@ model PlatformProject {
   auditLogs          PlatformAuditLog[]
   aiJobs             AiJob[]
   mediaAssetUsages   MediaAssetUsage[]
-  documents          PlatformDocument[]
+  documents          StudioDocument[]
   characterCast      CharacterProjectCast[]
   characterGrants    CharacterProjectGrant[]
   castingInvites     CharacterCastingInvite[]
@@ -997,8 +1003,8 @@ model PlatformProjectSection {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project   PlatformProject    @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  documents PlatformDocument[]
+  project   PlatformProject  @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  documents StudioDocument[]
 
   @@unique([id, projectId], name: "uniq_platform_project_section_id_project", map: "platform_project_sections_id_project_unique")
   @@index([projectId, archivedAt, rank], map: "platform_project_sections_project_rank_idx")
@@ -1078,108 +1084,111 @@ model AgentOsRun {
   @@map("agent_os_runs")
 }
 
-model PlatformDocument {
-  id                   String                 @id @default(uuid(7)) @db.Uuid
-  workspaceId          String                 @map("workspace_id") @db.Uuid
-  projectId            String                 @map("project_id") @db.Uuid
-  sectionId            String?                @map("section_id") @db.Uuid
-  type                 PlatformDocumentType
-  status               PlatformDocumentStatus @default(active)
-  title                String                 @db.VarChar(160)
-  slug                 String?                @db.VarChar(100)
-  schemaVersion        String                 @default("2026-05-27") @map("schema_version") @db.VarChar(32)
-  collaborationDialect String                 @default("fizzdragon.document.v1") @map("collaboration_dialect") @db.VarChar(64)
-  collaborationRoomId  String                 @default(uuid(7)) @map("collaboration_room_id") @db.Uuid
-  contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
-  crdtState            Bytes?                 @map("crdt_state")
-  currentSequence      Int                    @default(0) @map("current_sequence")
+model StudioDocument {
+  id                   String               @id @default(uuid(7)) @db.Uuid
+  workspaceId          String               @map("workspace_id") @db.Uuid
+  platformProjectId    String?              @map("platform_project_id") @db.Uuid
+  storyProjectId       String?              @map("story_project_id") @db.Uuid
+  sectionId            String?              @map("section_id") @db.Uuid
+  type                 StudioDocumentType
+  status               StudioDocumentStatus @default(active)
+  title                String               @db.VarChar(160)
+  slug                 String?              @db.VarChar(100)
+  schemaVersion        String               @default("2026-05-27") @map("schema_version") @db.VarChar(32)
+  collaborationDialect String               @default("fizzdragon.document.v1") @map("collaboration_dialect") @db.VarChar(64)
+  collaborationRoomId  String               @default(uuid(7)) @map("collaboration_room_id") @db.Uuid
+  contentSnapshot      Json                 @default("{}") @map("content_snapshot") @db.JsonB
+  crdtState            Bytes?               @map("crdt_state")
+  currentSequence      Int                  @default(0) @map("current_sequence")
   /// Sequence covered by the compacted `crdtState` snapshot. New clients load
   /// `crdtState` then replay only operations with sequence > snapshotSequence,
   /// so first-load is O(snapshot + recent ops) instead of O(all ops).
-  snapshotSequence     Int                    @default(0) @map("snapshot_sequence")
+  snapshotSequence     Int                  @default(0) @map("snapshot_sequence")
   /// When the warm-room last compacted `crdtState` from the op-log.
-  lastCompactedAt      DateTime?              @map("last_compacted_at") @db.Timestamptz(6)
-  currentVersionId     String?                @map("current_version_id") @db.Uuid
-  createdById          String                 @map("created_by_id") @db.VarChar(64)
-  updatedById          String?                @map("updated_by_id") @db.VarChar(64)
-  version              Int                    @default(0)
-  archivedAt           DateTime?              @map("archived_at") @db.Timestamptz(6)
-  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt            DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  lastCompactedAt      DateTime?            @map("last_compacted_at") @db.Timestamptz(6)
+  currentVersionId     String?              @map("current_version_id") @db.Uuid
+  createdById          String               @map("created_by_id") @db.VarChar(64)
+  updatedById          String?              @map("updated_by_id") @db.VarChar(64)
+  version              Int                  @default(0)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
-  workspace Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   PlatformProject         @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  section   PlatformProjectSection? @relation(fields: [sectionId, projectId], references: [id, projectId], onDelete: Restrict)
+  workspace       Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platformProject PlatformProject?        @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyProject    StoryProject?           @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  section         PlatformProjectSection? @relation(fields: [sectionId, platformProjectId], references: [id, projectId], onDelete: Restrict)
 
-  versions       PlatformDocumentVersion[]
-  operations     PlatformDocumentOperation[]
-  presences      PlatformDocumentPresence[]
-  commentThreads PlatformDocumentCommentThread[]
+  versions       StudioDocumentVersion[]
+  operations     StudioDocumentOperation[]
+  presences      StudioDocumentPresence[]
+  commentThreads StudioDocumentCommentThread[]
   assets         ProjectAsset[]
   aiJobs         AiJob[]
-  crewTaskCanvas CrewTask?                       @relation("CrewTaskCanvasDocument")
+  crewTaskCanvas CrewTask?                     @relation("CrewTaskCanvasDocument")
 
-  /// Active slug uniqueness is enforced by partial unique SQL:
-  /// (project_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
-  @@unique([id, workspaceId], name: "uniq_platform_document_id_workspace", map: "platform_documents_id_workspace_unique")
-  @@unique([collaborationRoomId], map: "platform_documents_room_unique")
-  @@index([projectId, type, updatedAt(sort: Desc)], map: "platform_documents_project_type_recent_idx")
-  @@index([sectionId, type, updatedAt(sort: Desc)], map: "platform_documents_section_type_recent_idx")
-  @@index([workspaceId, updatedAt(sort: Desc)], map: "platform_documents_workspace_recent_idx")
-  @@index([status, updatedAt(sort: Desc)], map: "platform_documents_status_recent_idx")
-  @@map("platform_documents")
+  /// Exactly one project owner is enforced by SQL. Active singleton/slug
+  /// uniqueness is likewise enforced by partial indexes per owner kind.
+  @@unique([id, workspaceId], name: "uniq_studio_document_id_workspace", map: "studio_documents_id_workspace_unique")
+  @@unique([collaborationRoomId], map: "studio_documents_room_unique")
+  @@index([platformProjectId, type, updatedAt(sort: Desc)], map: "studio_documents_platform_project_type_recent_idx")
+  @@index([storyProjectId, type, updatedAt(sort: Desc)], map: "studio_documents_story_project_type_recent_idx")
+  @@index([sectionId, type, updatedAt(sort: Desc)], map: "studio_documents_section_type_recent_idx")
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "studio_documents_workspace_recent_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "studio_documents_status_recent_idx")
+  @@map("studio_documents")
 }
 
-model PlatformDocumentVersion {
-  id            String                        @id @default(uuid(7)) @db.Uuid
-  documentId    String                        @map("document_id") @db.Uuid
-  versionNumber Int                           @map("version_number")
-  schemaVersion String                        @map("schema_version") @db.VarChar(32)
+model StudioDocumentVersion {
+  id            String                      @id @default(uuid(7)) @db.Uuid
+  documentId    String                      @map("document_id") @db.Uuid
+  versionNumber Int                         @map("version_number")
+  schemaVersion String                      @map("schema_version") @db.VarChar(32)
   sequence      Int
-  title         String?                       @db.VarChar(160)
-  label         String?                       @db.VarChar(120)
-  source        PlatformDocumentVersionSource @default(autosave)
-  sourceId      String?                       @map("source_id") @db.VarChar(128)
-  snapshot      Json                          @db.JsonB
-  crdtState     Bytes?                        @map("crdt_state")
-  metadata      Json                          @default("{}") @db.JsonB
-  createdById   String                        @map("created_by_id") @db.VarChar(64)
-  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  title         String?                     @db.VarChar(160)
+  label         String?                     @db.VarChar(120)
+  source        StudioDocumentVersionSource @default(autosave)
+  sourceId      String?                     @map("source_id") @db.VarChar(128)
+  snapshot      Json                        @db.JsonB
+  crdtState     Bytes?                      @map("crdt_state")
+  metadata      Json                        @default("{}") @db.JsonB
+  createdById   String                      @map("created_by_id") @db.VarChar(64)
+  createdAt     DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  document                 PlatformDocument     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document                 StudioDocument       @relation(fields: [documentId], references: [id], onDelete: Cascade)
   crewTaskSubmissions      CrewTaskSubmission[] @relation("CrewTaskSubmissionCanvasVersion")
   crewTaskProductionMerges CrewTaskSubmission[] @relation("CrewTaskSubmissionProductionVersion")
 
-  @@unique([documentId, versionNumber], map: "platform_document_versions_doc_number_unique")
-  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_versions_doc_recent_idx")
-  @@map("platform_document_versions")
+  @@unique([documentId, versionNumber], map: "studio_document_versions_doc_number_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "studio_document_versions_doc_recent_idx")
+  @@map("studio_document_versions")
 }
 
-model PlatformDocumentOperation {
-  id               String                        @id @default(uuid(7)) @db.Uuid
-  documentId       String                        @map("document_id") @db.Uuid
+model StudioDocumentOperation {
+  id               String                      @id @default(uuid(7)) @db.Uuid
+  documentId       String                      @map("document_id") @db.Uuid
   sequence         Int
-  operationType    PlatformDocumentOperationType @map("operation_type")
-  actorUserId      String                        @map("actor_user_id") @db.VarChar(64)
-  clientMutationId String?                       @map("client_mutation_id") @db.VarChar(128)
-  idempotencyKey   String?                       @map("idempotency_key") @db.VarChar(160)
-  baseSequence     Int?                          @map("base_sequence")
-  patch            Json?                         @db.JsonB
-  yjsUpdate        Bytes?                        @map("yjs_update")
-  snapshot         Json?                         @db.JsonB
-  metadata         Json                          @default("{}") @db.JsonB
-  createdAt        DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  operationType    StudioDocumentOperationType @map("operation_type")
+  actorUserId      String                      @map("actor_user_id") @db.VarChar(64)
+  clientMutationId String?                     @map("client_mutation_id") @db.VarChar(128)
+  idempotencyKey   String?                     @map("idempotency_key") @db.VarChar(160)
+  baseSequence     Int?                        @map("base_sequence")
+  patch            Json?                       @db.JsonB
+  yjsUpdate        Bytes?                      @map("yjs_update")
+  snapshot         Json?                       @db.JsonB
+  metadata         Json                        @default("{}") @db.JsonB
+  createdAt        DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document StudioDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, sequence], map: "platform_document_operations_doc_sequence_unique")
-  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_operations_doc_recent_idx")
-  @@index([actorUserId, createdAt(sort: Desc)], map: "platform_document_operations_actor_recent_idx")
-  @@map("platform_document_operations")
+  @@unique([documentId, sequence], map: "studio_document_operations_doc_sequence_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "studio_document_operations_doc_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "studio_document_operations_actor_recent_idx")
+  @@map("studio_document_operations")
 }
 
-model PlatformDocumentPresence {
+model StudioDocumentPresence {
   id           String   @id @default(uuid(7)) @db.Uuid
   documentId   String   @map("document_id") @db.Uuid
   userId       String   @map("user_id") @db.VarChar(64)
@@ -1191,36 +1200,36 @@ model PlatformDocumentPresence {
   expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document StudioDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, userId, connectionId], map: "platform_document_presence_connection_unique")
-  @@index([documentId, expiresAt], map: "platform_document_presence_active_idx")
-  @@map("platform_document_presence")
+  @@unique([documentId, userId, connectionId], map: "studio_document_presence_connection_unique")
+  @@index([documentId, expiresAt], map: "studio_document_presence_active_idx")
+  @@map("studio_document_presence")
 }
 
-model PlatformDocumentCommentThread {
-  id           String                        @id @default(uuid(7)) @db.Uuid
-  documentId   String                        @map("document_id") @db.Uuid
-  blockId      String?                       @map("block_id") @db.VarChar(128)
-  anchor       Json?                         @db.JsonB
-  title        String?                       @db.VarChar(160)
-  status       PlatformDocumentCommentStatus @default(open)
-  createdById  String                        @map("created_by_id") @db.VarChar(64)
-  resolvedById String?                       @map("resolved_by_id") @db.VarChar(64)
-  resolvedAt   DateTime?                     @map("resolved_at") @db.Timestamptz(6)
-  createdAt    DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt    DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+model StudioDocumentCommentThread {
+  id           String                      @id @default(uuid(7)) @db.Uuid
+  documentId   String                      @map("document_id") @db.Uuid
+  blockId      String?                     @map("block_id") @db.VarChar(128)
+  anchor       Json?                       @db.JsonB
+  title        String?                     @db.VarChar(160)
+  status       StudioDocumentCommentStatus @default(open)
+  createdById  String                      @map("created_by_id") @db.VarChar(64)
+  resolvedById String?                     @map("resolved_by_id") @db.VarChar(64)
+  resolvedAt   DateTime?                   @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?                   @map("deleted_at") @db.Timestamptz(6)
 
-  document PlatformDocument          @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  comments PlatformDocumentComment[]
+  document StudioDocument          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  comments StudioDocumentComment[]
 
-  @@index([documentId, status, updatedAt(sort: Desc)], map: "platform_document_comment_threads_doc_status_idx")
-  @@index([documentId, blockId], map: "platform_document_comment_threads_block_idx")
-  @@map("platform_document_comment_threads")
+  @@index([documentId, status, updatedAt(sort: Desc)], map: "studio_document_comment_threads_doc_status_idx")
+  @@index([documentId, blockId], map: "studio_document_comment_threads_block_idx")
+  @@map("studio_document_comment_threads")
 }
 
-model PlatformDocumentComment {
+model StudioDocumentComment {
   id          String    @id @default(uuid(7)) @db.Uuid
   threadId    String    @map("thread_id") @db.Uuid
   documentId  String    @map("document_id") @db.Uuid
@@ -1230,11 +1239,11 @@ model PlatformDocumentComment {
   editedAt    DateTime? @map("edited_at") @db.Timestamptz(6)
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  thread PlatformDocumentCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread StudioDocumentCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
-  @@index([documentId, createdAt(sort: Asc)], map: "platform_document_comments_doc_idx")
-  @@index([threadId, createdAt(sort: Asc)], map: "platform_document_comments_thread_idx")
-  @@map("platform_document_comments")
+  @@index([documentId, createdAt(sort: Asc)], map: "studio_document_comments_doc_idx")
+  @@index([threadId, createdAt(sort: Asc)], map: "studio_document_comments_thread_idx")
+  @@map("studio_document_comments")
 }
 
 model ProjectMember {
@@ -1306,9 +1315,9 @@ model ProjectAsset {
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt       DateTime?              @map("deleted_at") @db.Timestamptz(6)
 
-  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   PlatformProject   @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  document  StudioDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   @@index([projectId, type, createdAt(sort: Desc)], map: "project_assets_project_type_recent_idx")
   @@index([workspaceId, createdAt(sort: Desc)], map: "project_assets_workspace_recent_idx")
@@ -1766,12 +1775,9 @@ model BillingMembershipPlan {
   includedSeats          Int                         @default(1) @map("included_seats")
   maxSeats               Int?                        @map("max_seats")
   seatOverageAllowed     Boolean                     @default(false) @map("seat_overage_allowed")
-  topupDiscountBps       Int                         @default(0) @map("topup_discount_bps")
   billingIntervalDefault BillingPriceInterval?       @map("billing_interval_default")
-  featureFlags           Json                        @default("{}") @map("feature_flags") @db.JsonB
-  limits                 Json                        @default("{}") @db.JsonB
   /// Validated membership benefits (MembershipBenefitsSchema) — the single
-  /// source of truth for quota limits / features / queue priority. NO column
+  /// source of truth for quota limits and queue priority. NO column
   /// default on purpose: every new plan row must state its benefits.
   benefits               Json                        @db.JsonB
   marketing              Json                        @default("{}") @db.JsonB
@@ -4794,7 +4800,7 @@ model CrewTask {
   episode               CrewEpisode?              @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Restrict)
   workflowState         CrewTaskWorkflowState     @relation(fields: [workflowStateId, crewId], references: [id, crewId], onDelete: Restrict)
   canvasProject         PlatformProject?          @relation("CrewTaskCanvasProject", fields: [canvasProjectId], references: [id], onDelete: Restrict)
-  canvasDocument        PlatformDocument?         @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
+  canvasDocument        StudioDocument?           @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
   assignees             CrewTaskAssignee[]
   labels                CrewTaskLabelAssignment[]
   submissions           CrewTaskSubmission[]
@@ -5210,8 +5216,8 @@ model CrewTaskSubmission {
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   task              CrewTask                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  canvasVersion     PlatformDocumentVersion?  @relation("CrewTaskSubmissionCanvasVersion", fields: [canvasVersionId], references: [id], onDelete: Restrict)
-  productionVersion PlatformDocumentVersion?  @relation("CrewTaskSubmissionProductionVersion", fields: [productionVersionId], references: [id], onDelete: Restrict)
+  canvasVersion     StudioDocumentVersion?    @relation("CrewTaskSubmissionCanvasVersion", fields: [canvasVersionId], references: [id], onDelete: Restrict)
+  productionVersion StudioDocumentVersion?    @relation("CrewTaskSubmissionProductionVersion", fields: [productionVersionId], references: [id], onDelete: Restrict)
   assets            CrewTaskSubmissionAsset[]
 
   @@unique([taskId, versionNumber], map: "crew_task_submissions_task_version_unique")
@@ -5895,7 +5901,7 @@ model AiJob {
   userId                String                @map("user_id")
   /// Immutable product entitlement policy selected at submission time.
   /// This is the source for model access, queue priority, quota bridge,
-  /// refunds, and audit; it intentionally does not expose upstream userLevel.
+  /// refunds, and audit; upstream profile claims are not part of this model.
   entitlementSnapshot   Json?                 @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier (e.g. 'fal-ai', 'byteplus-modelark'). Free-form
@@ -5913,6 +5919,7 @@ model AiJob {
   /// selected.
   workspaceId           String?               @map("workspace_id") @db.Uuid
   projectId             String?               @map("project_id") @db.Uuid
+  storyProjectId        String?               @map("story_project_id") @db.Uuid
   documentId            String?               @map("document_id") @db.Uuid
   documentBlockId       String?               @map("document_block_id") @db.VarChar(128)
   /// UI surface snapshot for ops analysis. Examples: 'art-studio' | 'timeline' | 'batch'.
@@ -6003,7 +6010,8 @@ model AiJob {
   providerBinding        AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
   workspace              Workspace?              @relation(fields: [workspaceId], references: [id])
   project                PlatformProject?        @relation(fields: [projectId], references: [id])
-  document               PlatformDocument?       @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  storyProject           StoryProject?           @relation(fields: [storyProjectId], references: [id])
+  document               StudioDocument?         @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -6011,6 +6019,7 @@ model AiJob {
   @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
   @@index([workspaceId, createdAt(sort: Desc)], map: "ai_jobs_workspace_created_idx")
   @@index([projectId, createdAt(sort: Desc)], map: "ai_jobs_project_created_idx")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "ai_jobs_story_project_created_idx")
   @@index([documentId, documentBlockId, createdAt(sort: Desc)], map: "ai_jobs_document_block_created_idx")
   @@index([canonicalModelId, createdAt(sort: Desc)], map: "ai_jobs_canonical_model_created_idx")
   @@index([providerBindingId, createdAt(sort: Desc)], map: "ai_jobs_provider_binding_created_idx")
@@ -7690,7 +7699,7 @@ model StoryProject {
   members                 StoryProjectMember[]
   invites                 StoryProjectInvite[]
   draft                   StoryDraft?
-  productionCanvas        StoryProductionCanvas?
+  studioDocuments         StudioDocument[]
   chapters                StoryChapter[]
   canvasLayouts           StoryCanvasLayout[]
   writeState              StoryProjectWriteState?
@@ -7708,6 +7717,7 @@ model StoryProject {
   candidateAssets         StoryCandidateAsset[]
   videoUploadSessions     StoryVideoUploadSession[]
   agentOsAttachments      AgentOsAttachment[]
+  aiJobs                  AiJob[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, status, updatedAt(sort: Desc)], map: "story_projects_workspace_recent_idx")
@@ -7964,23 +7974,6 @@ model StoryDraft {
   project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
 
   @@map("story_drafts")
-}
-
-/// One project-wide media-authoring canvas shared by every chapter and story
-/// node. Entering from a clip carries navigation context only; the graph stays
-/// common so references, generated assets and visual continuity are reusable.
-model StoryProductionCanvas {
-  storyProjectId     String   @id @map("story_project_id") @db.Uuid
-  schemaVersion      String   @default("story-production-canvas-v2") @map("schema_version") @db.VarChar(64)
-  content            Json     @default("{\"nodes\":[],\"edges\":[],\"assets\":[],\"groups\":[]}") @db.JsonB
-  updatedByUserId    String   @map("updated_by_user_id") @db.VarChar(64)
-  updatedBySessionId String?  @map("updated_by_session_id") @db.VarChar(64)
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-
-  @@map("story_production_canvases")
 }
 
 /// Project-level curation of durable media produced on the Story content

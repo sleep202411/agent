@@ -20,6 +20,8 @@ export const VALIDATION_ISSUE_CODES = {
   FIELD_MAX_ITEMS: "FIELD_MAX_ITEMS",
   FIELD_MIN_ITEMS: "FIELD_MIN_ITEMS",
   MEDIA_DURATION_UNKNOWN: "MEDIA_DURATION_UNKNOWN",
+  MEDIA_DURATION_ITEM_BELOW_MIN: "MEDIA_DURATION_ITEM_BELOW_MIN",
+  MEDIA_DURATION_ITEM_EXCEEDED: "MEDIA_DURATION_ITEM_EXCEEDED",
   MEDIA_DURATION_SUM_BELOW_MIN: "MEDIA_DURATION_SUM_BELOW_MIN",
   MEDIA_DURATION_SUM_EXCEEDED: "MEDIA_DURATION_SUM_EXCEEDED",
   MEDIA_MAX_TOTAL_FILES: "MEDIA_MAX_TOTAL_FILES",
@@ -74,6 +76,8 @@ export interface ValidationSchemaProperty {
     maxCombinedFileSizeMb?: number;
     minCombinedDurationSeconds?: number;
     maxCombinedDurationSeconds?: number;
+    minItemDurationSeconds?: number;
+    maxItemDurationSeconds?: number;
     audioRequiresVisual?: boolean;
     maxTotalFiles?: number;
   };
@@ -108,6 +112,8 @@ interface ReferenceFieldRule {
   maxCombinedFileSizeMb?: number;
   minCombinedDurationSeconds?: number;
   maxCombinedDurationSeconds?: number;
+  minItemDurationSeconds?: number;
+  maxItemDurationSeconds?: number;
   audioRequiresVisual: boolean;
   maxTotalFiles?: number;
 }
@@ -183,6 +189,14 @@ export function deriveReferenceFieldRules(
         typeof ui?.maxCombinedDurationSeconds === "number" &&
         Number.isFinite(ui.maxCombinedDurationSeconds)
           ? ui.maxCombinedDurationSeconds
+          : undefined,
+      minItemDurationSeconds:
+        typeof ui?.minItemDurationSeconds === "number" && Number.isFinite(ui.minItemDurationSeconds)
+          ? ui.minItemDurationSeconds
+          : undefined,
+      maxItemDurationSeconds:
+        typeof ui?.maxItemDurationSeconds === "number" && Number.isFinite(ui.maxItemDurationSeconds)
+          ? ui.maxItemDurationSeconds
           : undefined,
       audioRequiresVisual: ui?.audioRequiresVisual === true,
       maxTotalFiles:
@@ -349,7 +363,10 @@ export function validateGenerationInput(args: ValidateGenerationInputArgs): Vali
     const needsDuration =
       rows.length > 0 &&
       (rule.kind === "video" || rule.kind === "audio") &&
-      (rule.maxCombinedDurationSeconds != null || rule.minCombinedDurationSeconds != null);
+      (rule.maxCombinedDurationSeconds != null ||
+        rule.minCombinedDurationSeconds != null ||
+        rule.maxItemDurationSeconds != null ||
+        rule.minItemDurationSeconds != null);
 
     if (needsDuration) {
       const missing = rows.filter((row) => finiteNonNegative(row.durationSeconds) == null);
@@ -362,6 +379,37 @@ export function validateGenerationInput(args: ValidateGenerationInputArgs): Vali
           params: { field: rule.field, kind: rule.kind, missing: missing.length },
         });
       } else {
+        for (const row of rows) {
+          const seconds = finiteNonNegative(row.durationSeconds) ?? 0;
+          if (rule.minItemDurationSeconds != null && seconds < rule.minItemDurationSeconds) {
+            issues.push({
+              code: VALIDATION_ISSUE_CODES.MEDIA_DURATION_ITEM_BELOW_MIN,
+              severity: "error",
+              field: rule.field,
+              message: `Each ${rule.kind} in ${rule.field} must be at least ${formatSeconds(rule.minItemDurationSeconds)}s; got ${formatSeconds(seconds)}s.`,
+              params: {
+                field: rule.field,
+                kind: rule.kind,
+                actual: seconds,
+                min: rule.minItemDurationSeconds,
+              },
+            });
+          }
+          if (rule.maxItemDurationSeconds != null && seconds > rule.maxItemDurationSeconds) {
+            issues.push({
+              code: VALIDATION_ISSUE_CODES.MEDIA_DURATION_ITEM_EXCEEDED,
+              severity: "error",
+              field: rule.field,
+              message: `Each ${rule.kind} in ${rule.field} must be at most ${formatSeconds(rule.maxItemDurationSeconds)}s; got ${formatSeconds(seconds)}s.`,
+              params: {
+                field: rule.field,
+                kind: rule.kind,
+                actual: seconds,
+                max: rule.maxItemDurationSeconds,
+              },
+            });
+          }
+        }
         const sum = rows.reduce(
           (acc, row) => acc + (finiteNonNegative(row.durationSeconds) ?? 0),
           0

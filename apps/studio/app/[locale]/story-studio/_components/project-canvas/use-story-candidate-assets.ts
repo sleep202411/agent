@@ -38,7 +38,7 @@ export function useStoryCandidateAssets({
   projectId: string;
   canEdit: boolean;
 }): StoryCandidateAssetsController {
-  const t = useTranslations("storyStudio.canvas.productionCanvas.candidates");
+  const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => storyCandidateAssetsQueryKey(workspaceId, projectId),

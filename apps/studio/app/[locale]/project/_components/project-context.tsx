@@ -4,9 +4,16 @@ import { createContext, useContext, useMemo } from "react";
 import type { ProjectRole } from "@/lib/collab/projects-api";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import type { FizzAiCatalog } from "@/lib/canvas-authoring/generation-api";
+import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
+
+export type StudioWorkbenchOwner =
+  | { kind: "platform_project"; projectId: string }
+  | { kind: "story_project"; projectId: string };
 
 interface ProjectContextValue {
   projectId: string;
+  owner: StudioWorkbenchOwner;
+  uploadKinds: readonly FizzAiReferenceKind[];
   /** The caller's effective role (null until resolved / no access). */
   role: ProjectRole | null;
   /** Can mutate content (owner/admin/editor). Server is the source of truth;
@@ -44,6 +51,7 @@ export interface ShellInset {
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
+const DEFAULT_UPLOAD_KINDS = ["image", "video"] as const;
 
 /** Provides the project identity + the caller's role to every mode editor.
  *
@@ -54,17 +62,25 @@ const ProjectContext = createContext<ProjectContextValue | null>(null);
  */
 export function ProjectProvider({
   projectId,
+  owner,
+  uploadKinds = DEFAULT_UPLOAD_KINDS,
   role,
   openShare,
   setShellInset,
   children,
 }: {
   projectId: string;
+  owner?: StudioWorkbenchOwner;
+  uploadKinds?: readonly FizzAiReferenceKind[];
   role: ProjectRole | null;
   openShare: () => void;
   setShellInset?: (inset: ShellInset) => void;
   children: React.ReactNode;
 }) {
+  const resolvedOwner = useMemo<StudioWorkbenchOwner>(
+    () => owner ?? { kind: "platform_project", projectId },
+    [owner, projectId]
+  );
   const { data, isPending, isError, refetch } = useAiCatalog();
   const catalog = useMemo<ProjectCatalog>(
     () => ({
@@ -81,6 +97,8 @@ export function ProjectProvider({
     const canManage = role === "owner" || role === "admin";
     return {
       projectId,
+      owner: resolvedOwner,
+      uploadKinds,
       role,
       canEdit,
       canManage,
@@ -88,7 +106,7 @@ export function ProjectProvider({
       setShellInset: setShellInset ?? noopShellInset,
       catalog,
     };
-  }, [projectId, role, openShare, setShellInset, catalog]);
+  }, [projectId, resolvedOwner, uploadKinds, role, openShare, setShellInset, catalog]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }

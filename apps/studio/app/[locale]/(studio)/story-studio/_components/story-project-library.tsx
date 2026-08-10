@@ -13,7 +13,6 @@ import {
   IconGitBranch,
   IconLoader2,
   IconMovie,
-  IconPhoto,
   IconPlus,
   IconRefresh,
   IconRectangle,
@@ -118,10 +117,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
   return (
     <>
       <StoryStudioHero featuredProjectHref={featuredProjectHref} playerHref={featuredPlayerHref} />
-      <section
-        id="story-projects"
-        className="relative z-20 pr-6 pb-16 pl-6 pt-12 sm:pl-20 lg:pl-[120px]"
-      >
+      <section id="story-projects" className="relative z-20 px-6 pt-12 pb-16 lg:px-8">
         <div className="w-full">
           <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
@@ -340,23 +336,16 @@ function StoryProjectCard({
           </div>
 
           <div className="absolute right-2.5 bottom-2.5 left-2.5 flex items-center gap-1.5">
-            <>
-              <ProjectMetricChip
-                icon={<IconPhoto className="size-3" />}
-                value={`${project.production.approvedReferenceCount}/${project.production.referenceSlotCount}`}
-                label={t("metrics.references")}
-              />
-              <ProjectMetricChip
-                icon={<IconMovie className="size-3" />}
-                value={String(project.production.clipCount)}
-                label={t("metrics.clips")}
-              />
-              <ProjectMetricChip
-                icon={<IconSparkles className="size-3" />}
-                value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
-                label={t("metrics.videos")}
-              />
-            </>
+            <ProjectMetricChip
+              icon={<IconMovie className="size-3" />}
+              value={String(project.production.clipCount)}
+              label={t("metrics.clips")}
+            />
+            <ProjectMetricChip
+              icon={<IconSparkles className="size-3" />}
+              value={`${project.production.currentVideoCount}/${project.production.clipCount}`}
+              label={t("metrics.videos")}
+            />
           </div>
         </div>
 
@@ -467,7 +456,7 @@ function ProjectSkeletons() {
 function EmptyProjects({ onCreate }: { onCreate: () => void }) {
   const t = useTranslations("storyStudio");
   return (
-    <FrostedPanel className="mt-5 flex min-h-64 flex-col items-center justify-center px-6 text-center">
+    <div className="mt-5 flex min-h-64 flex-col items-center justify-center px-6 text-center">
       <div className="grid size-12 place-items-center rounded-2xl bg-white/[0.055] text-white/68">
         <IconGitBranch className="size-5" />
       </div>
@@ -477,7 +466,7 @@ function EmptyProjects({ onCreate }: { onCreate: () => void }) {
         <IconPlus className="size-4" />
         {t("newProject")}
       </Button>
-    </FrostedPanel>
+    </div>
   );
 }
 

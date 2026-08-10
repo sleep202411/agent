@@ -110,7 +110,7 @@ export function UpgradeDialogHost() {
               </div>
             ) : (
               <div className="rounded-lg border border-zinc-700/40 bg-zinc-800/30 p-3 text-sm text-muted-foreground">
-                {t("upgradeDialog.vip3Body")}
+                {t("upgradeDialog.topTierBody")}
               </div>
             )}
 

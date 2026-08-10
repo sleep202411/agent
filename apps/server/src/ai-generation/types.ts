@@ -186,7 +186,7 @@ export type AiRequiredPlan = EntitlementPlanKey;
 /**
  * Per-model entitlement gating. `requiredPlan: null` = anyone.
  * Anything else is checked against the resolved product entitlement
- * snapshot, not the Java auth claim.
+ * snapshot, not external profile claims.
  *
  * Deliberately tier-only (no per-day / per-month quota) until a credits
  * system exists. Schema is forward-compatible: add `quotas` here when
@@ -376,6 +376,7 @@ export interface AiJob {
   schemaVersion: string;
   workspaceId?: string | null;
   projectId?: string | null;
+  storyProjectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;
@@ -440,12 +441,14 @@ export interface AiSubmitJobBody {
   schemaVersion?: string;
   workspaceId?: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
   context?: {
     workspaceId?: string;
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     documentBlockId?: string;
     sourceSurface?: string;
@@ -465,6 +468,7 @@ export interface AiJobListQuery {
   scope?: string;
   workspaceId?: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   sourceSurface?: string;
   type?: AiJobType;
@@ -476,6 +480,7 @@ export interface AiStatusResponse {
   request_id: string;
   workspace_id: string | null;
   project_id: string | null;
+  story_project_id: string | null;
   document_id: string | null;
   document_block_id: string | null;
   source_surface: string | null;

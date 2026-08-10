@@ -14,19 +14,15 @@ import { MediaAuthoringCanvas } from "@/components/canvas/authoring/media-author
 import type { CanvasGroupingController } from "@/components/canvas/groups/canvas-grouping";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import { CommentsLayer, CommentsProvider } from "./canvas-comments";
 import { CollabCursors } from "./collab-presence";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
-const CREATIVE_UPLOAD_KINDS = ["image", "video"] as const;
-
 function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
   const t = useTranslations("canvas");
   const tCanvasControls = useTranslations("canvasControls");
-  const { setShellInset } = useProjectContext();
-  const { data: catalog } = useAiCatalog();
+  const { setShellInset, uploadKinds, catalog } = useProjectContext();
   // The canvas doc connection is owned by the shell (single connection for the
   // whole workspace). Read doc/awareness/provider from there — do NOT call
   // another document hook here (that would open a second connection).
@@ -89,7 +85,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
         canEdit={canEdit}
         ready={documentStatus === "ready" && connectionStatus === "synced"}
         scopeKey={documentId}
-        uploadKinds={CREATIVE_UPLOAD_KINDS}
+        uploadKinds={uploadKinds}
         addNodeActions={PROJECT_CANVAS_ADD_NODE_ACTIONS}
         initialFocusNodeId={focusNodeId}
         grouping={grouping}
@@ -122,7 +118,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
             canEdit ? (
               <CanvasEmptyState
                 presets={workflowPresets}
-                catalogReady={Boolean(catalog && catalog.models.length > 0)}
+                catalogReady={Boolean(catalog.data && catalog.data.models.length > 0)}
                 onAddNode={openAddMenu}
                 onApplyPreset={applyPreset}
               />

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { PlatformDocumentType } from '@prisma/client';
+import { StudioDocumentType } from '@prisma/client';
 import { createProjectSectionWithCanvas } from './project-section.persistence';
 
 describe('createProjectSectionWithCanvas', () => {
@@ -15,13 +15,13 @@ describe('createProjectSectionWithCanvas', () => {
       platformProjectSection: {
         create: jest.fn().mockResolvedValue(section),
       },
-      platformDocument: {
+      studioDocument: {
         create: jest.fn().mockResolvedValue(document),
         update: jest
           .fn()
           .mockResolvedValue({ ...document, currentVersionId: 'version-1' }),
       },
-      platformDocumentVersion: {
+      studioDocumentVersion: {
         create: jest.fn().mockResolvedValue({ id: 'version-1' }),
       },
     };
@@ -34,20 +34,20 @@ describe('createProjectSectionWithCanvas', () => {
       actorId: 'user-1',
     });
 
-    expect(tx.platformDocument.create).toHaveBeenCalledWith({
+    expect(tx.studioDocument.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         projectId: 'project-1',
         sectionId: 'section-1',
-        type: PlatformDocumentType.canvas,
+        type: StudioDocumentType.canvas,
       }),
     });
-    expect(tx.platformDocumentVersion.create).toHaveBeenCalledWith({
+    expect(tx.studioDocumentVersion.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         documentId: 'document-1',
         metadata: { reason: 'initial_section_canvas' },
       }),
     });
-    expect(tx.platformDocument.update).toHaveBeenCalledWith({
+    expect(tx.studioDocument.update).toHaveBeenCalledWith({
       where: { id: 'document-1' },
       data: { currentVersionId: 'version-1' },
     });

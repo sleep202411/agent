@@ -60,7 +60,6 @@ export function StudioUserMenu({ credits, onTeam, onIntegralRecords }: StudioUse
 
   const displayName = user?.nickname || "User";
   const avatarUrl = user?.avatar || undefined;
-  const userLevel = user?.userLevel || "";
 
   return (
     <DropdownMenu>
@@ -80,11 +79,6 @@ export function StudioUserMenu({ credits, onTeam, onIntegralRecords }: StudioUse
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="truncate text-sm font-semibold">{displayName}</p>
-              {userLevel && (
-                <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                  {userLevel}
-                </span>
-              )}
             </div>
           </div>
         </div>

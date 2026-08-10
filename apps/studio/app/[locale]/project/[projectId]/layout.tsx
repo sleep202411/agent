@@ -5,7 +5,6 @@ import {
   use,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -31,28 +30,15 @@ import {
   useProjectSections,
 } from "@/app/[locale]/project/_components/project-sections-context";
 import { ProjectSectionsPanel } from "@/app/[locale]/project/_components/project-sections-panel";
-import {
-  PROJECT_CANVAS_ADD_NODE_ACTIONS,
-  STORYBOARD_ADD_NODE_ACTIONS,
-  type AddNodeAction,
-} from "@/components/canvas/add-node-menu";
-import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
-import { NodesPanel } from "@/components/canvas/nodes-panel";
+import { WorkbenchPanelContent } from "@/app/[locale]/project/_components/workbench-panel-content";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { FizzAgentOrbButton } from "@/components/fizz-agent";
-import { CanvasHistory } from "@/app/[locale]/canvas/_components/canvas-history";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
 import { getProject, renameProject, type ProjectRole } from "@/lib/collab/projects-api";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
-import { useStoryboard } from "@/app/[locale]/project/_modes/storyboard/use-storyboard";
-import {
-  ShotPictureDrawer,
-  type ShotPictureDrawerActions,
-} from "@/app/[locale]/project/_modes/storyboard/shot-picture-drawer";
-import { ShotVideoDrawer } from "@/app/[locale]/project/_modes/storyboard/shot-video-drawer";
 
 export default function ProjectLayout({
   params,
@@ -366,7 +352,7 @@ function SectionCanvasBoundary({
   return (
     <CanvasConnectionProvider
       key={activeSection.canvasDocumentId}
-      projectId={projectId}
+      owner={{ kind: "platform_project", projectId }}
       documentId={activeSection.canvasDocumentId}
       canEdit={canEdit}
     >
@@ -483,21 +469,7 @@ function ProjectPanelContent({
   canEdit: boolean;
   projectId: string;
 }) {
-  const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
-  const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
-  const historyOpen = useProjectUIStore((s) => s.historyOpen);
-  const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
-  const closeNodes = useProjectUIStore((s) => s.closeNodes);
-  const requestNodeInsert = useProjectUIStore((s) => s.requestNodeInsert);
-  const closeAssets = useProjectUIStore((s) => s.closeAssets);
-  const closeHistory = useProjectUIStore((s) => s.closeHistory);
-  const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
-  const selectedSlot = useProjectUIStore((s) => s.selectedSlot);
-  const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
   const { activeSection } = useProjectSections();
-  const { documentId, provider } = useCanvasConnection();
-
-  const sb = useStoryboard();
   const sbRouter = useRouter();
   const onOpenOnCanvas = useCallback(
     (nodeId: string) =>
@@ -507,82 +479,13 @@ function ProjectPanelContent({
       ),
     [sbRouter, projectId, activeSection]
   );
-  const drawerActions = useMemo<ShotPictureDrawerActions>(
-    () => ({
-      onGenerate: (shotId: string, modality: "image" | "video") =>
-        sb.createPictureSource(shotId, modality),
-      onUpload: sb.uploadPictureSource,
-      onAttach: sb.attachSource,
-      onDetach: sb.detachPicture,
-      onSetPreferredFrame: sb.setPreferredFrame,
-      onOpenOnCanvas,
-    }),
-    [sb, onOpenOnCanvas]
+  return (
+    <WorkbenchPanelContent
+      activeMode={activeMode}
+      canEdit={canEdit}
+      crewProjectId={projectId}
+      sectionsPanel={<ProjectSectionsPanel />}
+      onOpenOnCanvas={onOpenOnCanvas}
+    />
   );
-  const selectedRow = useMemo(
-    () => sb.rows.find((r) => r.id === selectedShotId) ?? null,
-    [sb.rows, selectedShotId]
-  );
-  const activePanel =
-    nodesOpen && canEdit
-      ? "nodes"
-      : assetsOpen
-        ? "assets"
-        : historyOpen
-          ? "activity"
-          : sectionsOpen
-            ? "sections"
-            : selectedShotId && selectedRow
-              ? "shot"
-              : null;
-
-  const [lastPanel, setLastPanel] = useState(activePanel);
-  const [lastSelectedRow, setLastSelectedRow] = useState(selectedRow);
-
-  if (activePanel && activePanel !== lastPanel) setLastPanel(activePanel);
-  if (selectedRow && selectedRow.id !== lastSelectedRow?.id) setLastSelectedRow(selectedRow);
-
-  const renderedPanel = activePanel ?? lastPanel;
-  const renderedRow = selectedRow ?? lastSelectedRow;
-  const nodeActions =
-    activeMode === "storyboard" ? STORYBOARD_ADD_NODE_ACTIONS : PROJECT_CANVAS_ADD_NODE_ACTIONS;
-  const handleNodeAction = (action: AddNodeAction) => {
-    if (activeMode === "storyboard") {
-      if (action === "shot") sb.insertShot(sb.rows.length);
-      closeNodes();
-      return;
-    }
-    requestNodeInsert(action);
-  };
-
-  let content: React.ReactNode = null;
-  if (renderedPanel === "nodes" && canEdit) {
-    content = <NodesPanel actions={nodeActions} onAction={handleNodeAction} onClose={closeNodes} />;
-  } else if (renderedPanel === "assets") {
-    content = <AssetLibrary open onClose={closeAssets} crewProjectId={projectId} />;
-  } else if (renderedPanel === "activity") {
-    content = <CanvasHistory documentId={documentId} provider={provider} onClose={closeHistory} />;
-  } else if (renderedPanel === "sections") {
-    content = <ProjectSectionsPanel />;
-  } else if (renderedPanel === "shot" && renderedRow) {
-    content =
-      selectedSlot === "video" ? (
-        <ShotVideoDrawer
-          row={renderedRow}
-          canEdit={canEdit}
-          actions={drawerActions}
-          onClose={closeShotDrawer}
-        />
-      ) : (
-        <ShotPictureDrawer
-          row={renderedRow}
-          slot={selectedSlot}
-          canEdit={canEdit}
-          actions={drawerActions}
-          onClose={closeShotDrawer}
-        />
-      );
-  }
-
-  return content;
 }

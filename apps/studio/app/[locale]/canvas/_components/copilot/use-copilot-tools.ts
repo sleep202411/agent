@@ -110,8 +110,12 @@ export function useCopilotTools() {
           const existing = graph.getNodes();
           const position = existing.length
             ? {
-                x: existing.reduce((s, n) => s + n.position.x, 0) / existing.length + (count % 6) * 26,
-                y: existing.reduce((s, n) => s + n.position.y, 0) / existing.length + (count % 6) * 26,
+                x:
+                  existing.reduce((s, n) => s + n.position.x, 0) / existing.length +
+                  (count % 6) * 26,
+                y:
+                  existing.reduce((s, n) => s + n.position.y, 0) / existing.length +
+                  (count % 6) * 26,
               }
             : { x: 0, y: 0 };
 
@@ -194,7 +198,7 @@ export function useCopilotTools() {
           const sourceId = typeof input.sourceId === "string" ? input.sourceId : "";
           const targetId = typeof input.targetId === "string" ? input.targetId : "";
           const { edgeId } = connectNodes(
-            { getNode: graph.getNode, catalog, graph },
+            { getNode: graph.getNode, getEdges: graph.getEdges, catalog, graph },
             sourceId,
             targetId
           );

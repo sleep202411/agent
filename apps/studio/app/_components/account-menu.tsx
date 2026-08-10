@@ -129,7 +129,7 @@ export function AccountMenu({
         <DropdownMenuTrigger
           aria-label={t("account")}
           className={cn(
-            "relative flex size-9 items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white",
+            "relative flex size-9 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full bg-secondary text-white/80 transition-colors outline-none hover:bg-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent data-[state=open]:text-white",
             triggerClassName
           )}
         >

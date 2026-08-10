@@ -20,6 +20,7 @@ export default function BillingSettingsPage() {
   const t = useTranslations("settings");
   const { activeWorkspace: ws } = useWorkspace();
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const canManageBilling = ws?.role === "owner" || ws?.role === "admin" || ws?.role === "billing";
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
@@ -39,7 +40,10 @@ export default function BillingSettingsPage() {
 
       <RedeemVoucherPanel />
 
-      <CurrentPlanPanel onManagePlan={() => setSubscriptionOpen(true)} />
+      <CurrentPlanPanel
+        canManage={canManageBilling}
+        onManagePlan={() => setSubscriptionOpen(true)}
+      />
 
       <SubscriptionDialog open={subscriptionOpen} onOpenChange={setSubscriptionOpen} />
     </main>

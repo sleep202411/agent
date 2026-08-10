@@ -3,9 +3,8 @@
  * to our brand, assembled from the shared `_pollo/` system (theme + glyphs +
  * composer) and the home-only chrome/sections in `_home/`.
  *
- * Navigation is the app's shared `StudioSidebar` (56px icon rail) — the same rail
- * the rest of the studio uses — so the home doesn't reserve space for
- * imagine.art's expanded desktop sidebar.
+ * Navigation is the app's shared collapsible `StudioSidebar`, matching every
+ * other product surface.
  *
  * Accent: locked to the **Red** preset (brand red #E52227 on primary CTAs only —
  * Login / Generate / Upgrade / Try Now — neutral everywhere else). To change the
@@ -36,10 +35,10 @@ export default function HomePage() {
       {/* imagine.art enterprise-style decorative collaboration canvas */}
       <HeroCanvas />
 
-      {/* Header + icon rail come from the (landing) layout; pt-16 keeps the
-          content clear of the floating header. */}
+      {/* Header + sidebar come from the (landing) layout; pt-16 clears the
+          product header. */}
       <div className="relative z-10 pt-16">
-        <main className="pl-20 lg:pl-[104px]">
+        <main>
           <div className="px-6 pt-[220]">
             <Composer theme={THEME} />
           </div>

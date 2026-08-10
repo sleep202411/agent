@@ -113,10 +113,7 @@ export type BillingMembershipPlanRow = {
   includedSeats: number;
   maxSeats: number | null;
   seatOverageAllowed: boolean;
-  topupDiscountBps: number;
   billingIntervalDefault: string | null;
-  featureFlags: Record<string, unknown>;
-  limits: Record<string, unknown>;
   /** Validated benefits JSONB — the entitlement/quota source of truth. */
   benefits: MembershipPlanBenefits;
   marketing: Record<string, unknown>;
@@ -140,12 +137,6 @@ export type MembershipPlanBenefits = {
   chatPerMinute: number;
   concurrentJobs: number | null;
   queuedJobs: number | null;
-  features: {
-    aiGeneration: boolean;
-    advancedModelAccess: boolean;
-    advancedParameters: boolean;
-    teamSharedCredits: boolean;
-  };
 };
 
 export type MembershipPlanBenefitsData = {

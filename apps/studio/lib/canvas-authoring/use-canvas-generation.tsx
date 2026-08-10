@@ -187,10 +187,25 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
   const mode = data.mode ?? defaultMode(model);
   const settings = data.settings ?? {};
   const refFields = referenceFieldsForMode(model, mode);
-  const uploadedReferenceCount = refFields.reduce(
-    (count, field) => count + (data.references?.[field.field]?.length ?? 0),
-    0
-  );
+  const uploadedReferenceCount = refFields
+    .filter((field) => field.kind === "image")
+    .reduce((count, field) => count + (data.references?.[field.field]?.length ?? 0), 0);
+  const referenceVideoSeconds = refFields
+    .filter((field) => field.kind === "video")
+    .reduce(
+      (seconds, field) =>
+        seconds +
+        (data.references?.[field.field] ?? []).reduce(
+          (fieldSeconds, reference) =>
+            fieldSeconds +
+            (typeof reference.durationSeconds === "number" &&
+            Number.isFinite(reference.durationSeconds)
+              ? reference.durationSeconds
+              : 0),
+          0
+        ),
+      0
+    );
   return (
     estimateModelSellPoints(model, {
       numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -200,6 +215,7 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
       durationSeconds:
         typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
       referenceImageCount: uploadedReferenceCount || undefined,
+      referenceVideoSeconds: referenceVideoSeconds || undefined,
     })?.sellPoints ?? null
   );
 }
@@ -263,6 +279,7 @@ export function CanvasGenerationProvider({
   catalog: FizzAiCatalog | undefined;
   context: {
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     sourceSurface: FizzAiSourceSurface;
   };
@@ -272,6 +289,7 @@ export function CanvasGenerationProvider({
 }) {
   const t = useTranslations("canvasOps");
   const generationProjectId = context.projectId;
+  const generationStoryProjectId = context.storyProjectId;
   const generationDocumentId = context.documentId;
   const sourceSurface = context.sourceSurface;
   // Destructured mutators/accessors are individually stable (useCallback in
@@ -411,7 +429,7 @@ export function CanvasGenerationProvider({
                 if (!routed) return {};
                 const refs = tdata.references ?? {};
                 const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-                const patch: Record<string, unknown> = {
+                return {
                   references: {
                     ...refs,
                     [routed.field]: [
@@ -427,8 +445,6 @@ export function CanvasGenerationProvider({
                     ],
                   },
                 };
-                if (routed.mode) patch.mode = routed.mode;
-                return patch;
               });
             }
           }
@@ -804,6 +820,7 @@ export function CanvasGenerationProvider({
           // project's workspace wallet.
           context: {
             ...(generationProjectId ? { projectId: generationProjectId } : {}),
+            ...(generationStoryProjectId ? { storyProjectId: generationStoryProjectId } : {}),
             ...(generationDocumentId ? { documentId: generationDocumentId } : {}),
             documentBlockId: nodeId,
             sourceSurface,
@@ -844,6 +861,7 @@ export function CanvasGenerationProvider({
       catalog,
       wallet,
       generationProjectId,
+      generationStoryProjectId,
       generationDocumentId,
       sourceSurface,
       canGenerate,

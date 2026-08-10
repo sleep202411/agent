@@ -12,9 +12,8 @@
  * `{pending}` to every zh-CN reader while en-US looks perfect. Nothing
  * else catches it: `tsc` types `t()` as `(key: string, params?) =>
  * string`, and the key-parity test deliberately refuses to compare
- * placeholders because call sites are allowed to pass a *superset*
- * (`payment.benefits.creditDiscount` passes both `percent` and
- * `discount` so each language can pick one).
+ * placeholders because call sites are allowed to pass a *superset* of
+ * interpolation values for locale-specific phrasing.
  *
  * Only the missing direction is a bug, and that is what this asserts.
  *

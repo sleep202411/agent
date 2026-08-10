@@ -1,34 +1,17 @@
 import { NextRequest } from "next/server";
-import { TextGameBossActionSchema, TextGameIdSchema } from "@repo/shared/text-game";
+import { TextGameAdminActionSchema, TextGameIdSchema } from "@repo/shared/text-game";
 import { getAdminSession } from "@/lib/admin-session";
-import { getAdminTextGameDetail, transitionAdminTextGame } from "@/lib/admin-text-games";
+import { transitionAdminTextGame } from "@/lib/admin-text-games";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ gameId: string }> };
 
-export async function GET(_request: NextRequest, context: RouteContext) {
-  const denied = await moderationDeniedResponse();
-  if (denied) return denied;
-
-  try {
-    const gameId = parseGameId(await context.params);
-    if (!gameId) return invalidGameIdResponse();
-    return Response.json({
-      code: 200,
-      msg: "成功",
-      data: await getAdminTextGameDetail(gameId),
-    });
-  } catch (error) {
-    return upstreamErrorResponse(error);
-  }
-}
-
 export async function POST(request: NextRequest, context: RouteContext) {
   const denied = await moderationDeniedResponse();
   if (denied) return denied;
 
-  const parsed = TextGameBossActionSchema.safeParse(await request.json().catch(() => null));
+  const parsed = TextGameAdminActionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ code: 400, msg: "审核动作无效；驳回时必须填写原因。" }, { status: 400 });
   }

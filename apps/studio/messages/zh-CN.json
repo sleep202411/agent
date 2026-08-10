@@ -276,6 +276,8 @@
       "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 项。",
       "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 项。",
       "MEDIA_DURATION_UNKNOWN": "提交前需要为 {field} 中每个{kind}提供时长。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每个{kind}至少需要 {min} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每个{kind}最多允许 {max} 秒，当前为 {actual} 秒。",
       "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合计时长为 {actual} 秒，最少 {min} 秒。",
       "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合计时长为 {actual} 秒，最多 {max} 秒。",
       "MEDIA_MAX_TOTAL_FILES": "参考文件最多 {max} 个，当前 {actual} 个。",
@@ -698,7 +700,7 @@
   "textAdventures": {
     "library": {
       "eyebrow": "互动小说",
-      "title": "文游",
+      "title": "文游工作室",
       "subtitle": "把一份世界观文档变成读者可以进入、影响并持续游玩的故事。",
       "create": "创作文游",
       "loadFailed": "无法加载你的文游作品",
@@ -712,7 +714,7 @@
     },
     "actions": {
       "retry": "重试",
-      "backToLibrary": "返回文游作品",
+      "backToLibrary": "返回文游工作室",
       "save": "保存",
       "cancel": "取消",
       "unknownError": "操作失败，请稍后重试。"
@@ -863,21 +865,29 @@
       "teamTag": "团队"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首页",
       "fizzDragonHomeAriaLabel": "FizzDragon 首页"
     },
     "nav": {
       "home": "首页",
-      "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
-      "textAdventures": "文游",
+      "creativeStudio": "创意工作室",
+      "storyStudio": "影游工作室",
+      "textAdventures": "文游工作室",
       "image": "图像",
       "video": "视频",
       "characters": "角色",
       "audio": "音频",
       "settings": "设置",
+      "tools": "工具",
+      "discord": "Discord",
+      "downloadApp": "下载 App",
+      "downloadDesktop": "下载桌面版",
+      "help": "帮助",
+      "newBadge": "New",
+      "appDownloadUnavailable": "当前平台暂时没有可用的移动端安装包。",
       "studioNavigation": "工作室导航",
       "main": "主导航",
+      "collapseSidebar": "收起侧边栏",
+      "expandSidebar": "展开侧边栏",
       "comingSoonLabel": "{label} · 即将推出"
     },
     "notifications": {
@@ -986,6 +996,7 @@
     "youSuffix": "(你)",
     "memberActions": "成员操作",
     "memberFallback": "成员",
+    "projectOnlyMember": "仅项目成员",
     "addedMember": "已添加 {name}",
     "addMemberFailed": "无法添加成员",
     "changeRoleFailed": "无法更改角色",
@@ -1062,21 +1073,21 @@
       "includedInPlan": "方案包含",
       "computeCreditsAmount": "{amount} 算力积分",
       "customCreditsAmount": "定制算力积分额度",
-      "seats": "{count, plural, other {# 个席位}}",
+      "seats": "{count, plural, other {# 个创作者席位}}",
       "seatsUpTo": " · 最多 {max} 个",
       "perMonth": "/月",
       "perYear": "/年",
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerMonth": "每月最多 {count} 次图像生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "高级工作流",
-      "prioritySupport": "优先支持",
+      "imagesPerDay": "每天 {count} 次图像生成",
+      "imagesUnlimited": "不限次数的图像生成",
+      "videosPerDay": "每天 {count} 次视频生成",
+      "videosUnlimited": "不限次数的视频生成",
       "sharedCredits": "团队共享算力积分",
+      "seatScope": "创作者席位在所有项目间共享；Viewer 和 Reviewer 不占席位",
       "concurrentJobs": "{count, plural, other {# 个并发任务}}",
-      "queuedJobs": "{count, plural, other {# 个排队任务}}",
-      "topupDiscount": "充值算力积分 {percent}% 折扣"
+      "queuedJobs": "{count, plural, other {# 个排队任务}}"
     },
     "toast": {
       "plansLoadFailed": "会员方案加载失败",
@@ -1119,7 +1130,7 @@
       },
       "subscriptionVsTopups": {
         "question": "订阅与算力积分充值有什么区别？",
-        "answer": "订阅会提供周期性的算力积分额度，外加队列优先、更高并发和支持等方案权益。充值是一次性购买算力积分——且付费方案在充值时享有折扣。"
+        "answer": "订阅会提供周期性的算力积分额度，以及队列优先、更高并发等方案权益。充值则是单独的一次性算力积分购买。"
       },
       "teamShareCredits": {
         "question": "团队方案如何共享算力积分？",
@@ -1127,7 +1138,7 @@
       },
       "cancelOrChange": {
         "question": "如何取消或变更我的方案？",
-        "answer": "在账户菜单的“账单与订阅”中管理你的订阅。方案变更将在当前计费周期结束时生效。"
+        "answer": "在“账单与订阅”中管理订阅。取消后，权益会保留到当前周期结束；周期结束后可选择其他方案。"
       },
       "commercialUse": {
         "question": "我可以将生成内容用于商业用途吗？",
@@ -1172,6 +1183,23 @@
     "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
     "emptyReadOnly": "此画布为空。",
     "activityLog": "动态",
+    "connection": {
+      "kind": {
+        "image": "图片",
+        "video": "视频",
+        "audio": "音频"
+      },
+      "sourceMissing": "源节点已不存在。",
+      "targetMissing": "目标节点已不存在。",
+      "selfConnection": "节点不能连接到自身。",
+      "sourceNotConnectable": "该节点没有可连接的图片、视频或音频输出。",
+      "targetNotConnectable": "该节点不接受参考素材连接。",
+      "modelUnavailable": "请先选择一个可用模型，再连接参考素材。",
+      "currentModeUnsupported": "当前模式不支持{kind}参考。请先手动切换模式。",
+      "unsupportedKind": "该模型不支持{kind}参考。",
+      "referenceLimit": "当前模式最多支持 {limit} 个{kind}参考。",
+      "duplicateReference": "该{kind}已连接到此节点。"
+    },
     "groups": {
       "group": "打组",
       "label": "分组",
@@ -1420,6 +1448,8 @@
       "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 项。",
       "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 项。",
       "MEDIA_DURATION_UNKNOWN": "提交前需要为 {field} 中每个{kind}提供时长。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每个{kind}至少需要 {min} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每个{kind}最多允许 {max} 秒，当前为 {actual} 秒。",
       "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合计时长为 {actual} 秒，最少 {min} 秒。",
       "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合计时长为 {actual} 秒，最多 {max} 秒。",
       "MEDIA_MAX_TOTAL_FILES": "参考文件最多 {max} 个，当前 {actual} 个。",
@@ -1690,12 +1720,12 @@
     "yourSubscription": "你的订阅",
     "subscriptionDescription": "管理个人套餐、购买算力积分包并查看定价。",
     "managePlan": "管理套餐",
+    "keepPlan": "保留套餐",
     "currentPlan": "当前套餐",
     "freePlanName": "免费版",
     "planRenewsOn": "{date} 续费",
     "planAccessUntil": "可用至 {date}",
     "planCanceledBadge": "已取消",
-    "changePlan": "更换套餐",
     "cancelPlan": "取消订阅",
     "cancelPlanConfirm": "确定取消订阅？当前计费周期结束前仍可使用，之后将不再续费。",
     "cancelPlanSuccess": "订阅已取消 —— 可用至 {date}。",
@@ -2067,10 +2097,10 @@
     "confirmRemoveEdge": "删除这条连线？"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "影游工作室",
     "metaDescription": "创作、制作、审核并发布电影化互动故事。",
     "eyebrow": "互动故事制作",
-    "title": "Story Studio",
+    "title": "影游工作室",
     "subtitle": "在一个可追溯版本的工作台内设计分支影像场景并完成发布。",
     "newProject": "新建故事项目",
     "projects": {
@@ -2154,7 +2184,7 @@
       "switching": "正在切换到该故事所属的工作区…"
     },
     "canvas": {
-      "back": "返回 Story Studio",
+      "back": "返回影游工作室",
       "mode": "故事画布",
       "chapters": {
         "action": "章节",
@@ -2246,7 +2276,7 @@
       },
       "workingPreview": {
         "action": "预览试玩",
-        "pageTitle": "故事试玩 · Story Studio",
+        "pageTitle": "故事试玩 · 影游工作室",
         "pageDescription": "使用正式玩家运行时试玩精确保存的私有草稿或不可变构建。",
         "draftRevision": "草稿 r{revision}",
         "loading": "正在准备试玩…",
@@ -2434,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "创作画布",
-        "identity": "Story Studio · 内容创作",
-        "groupDropHint": "松开以添加到此分组",
-        "workspaceLabel": "项目素材创作空间",
-        "backToChapter": "返回章节画布",
-        "closeSaveError": "无法保存最新的画布修改，请重试后再离开。",
-        "loadError": "无法打开创作画布。",
-        "retry": "重试",
-        "assets": {
-          "description": "浏览项目素材，并将可复用媒体拖入画布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候选素材",
-          "description": "整理可供故事节点直接复用的媒体。",
-          "open": "打开候选素材",
-          "close": "关闭候选素材",
           "add": "添加到候选素材",
           "remove": "从候选素材中移除",
           "filterLabel": "筛选候选素材",
@@ -2462,7 +2478,7 @@
           },
           "empty": "还没有候选素材",
           "emptyFilter": "此分类暂无素材",
-          "emptyDescription": "选中已完成的媒体节点，通过浮动工具栏添加。",
+          "emptyDescription": "选中已完成的媒体节点，通过节点工具栏添加。",
           "loadError": "无法加载候选素材。",
           "actionError": "无法更新候选素材。",
           "retry": "重试",
@@ -2473,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "正在加载",
-          "saving": "正在保存…",
-          "saved": "已保存",
-          "error": "保存失败"
+          "loading": "正在加载"
         }
       },
       "candidatePicker": {
@@ -2501,7 +2514,7 @@
         "loading": "正在加载候选素材…",
         "retry": "重试",
         "empty": "没有符合条件的候选素材",
-        "emptyDescription": "请先在创作画布中将完成的图片或视频加入候选素材。",
+        "emptyDescription": "请先在创意工作台中将完成的图片或视频加入候选素材。",
         "assetLabel": {
           "image": "图片 {index}",
           "video": "视频 {index}"
@@ -2610,7 +2623,7 @@
       "share": "共创"
     },
     "workbench": {
-      "back": "返回 Story Studio",
+      "back": "返回影游工作室",
       "draftHead": "可编辑草稿 · 修订 {revision}",
       "stageNav": "项目阶段",
       "stages": {

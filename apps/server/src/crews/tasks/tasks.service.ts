@@ -12,10 +12,10 @@ import {
   CrewTaskFieldType,
   CrewTaskStatus,
   MediaAssetStatus,
-  PlatformDocumentOperationType,
-  PlatformDocumentStatus,
-  PlatformDocumentType,
-  PlatformDocumentVersionSource,
+  StudioDocumentOperationType,
+  StudioDocumentStatus,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
@@ -1916,7 +1916,7 @@ export class CrewTasksService {
               description: input.description,
             },
           }),
-          tx.platformDocument.update({
+          tx.studioDocument.update({
             where: { id: locked.canvasDocumentId },
             data: {
               title: input.title,
@@ -2613,12 +2613,11 @@ export class CrewTasksService {
           tx,
           locked.canvasDocumentId,
         );
-        const latestDocumentVersion =
-          await tx.platformDocumentVersion.findFirst({
-            where: { documentId: document.id },
-            orderBy: { versionNumber: 'desc' },
-          });
-        const canvasVersion = await tx.platformDocumentVersion.create({
+        const latestDocumentVersion = await tx.studioDocumentVersion.findFirst({
+          where: { documentId: document.id },
+          orderBy: { versionNumber: 'desc' },
+        });
+        const canvasVersion = await tx.studioDocumentVersion.create({
           data: {
             documentId: document.id,
             versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
@@ -2626,7 +2625,7 @@ export class CrewTasksService {
             sequence: document.currentSequence,
             title: document.title,
             label: `Task submission v${locked.submissions.length + 1}`,
-            source: PlatformDocumentVersionSource.manual,
+            source: StudioDocumentVersionSource.manual,
             sourceId: taskId,
             snapshot: document.contentSnapshot as Prisma.InputJsonValue,
             crdtState: document.crdtState,
@@ -2639,7 +2638,7 @@ export class CrewTasksService {
           },
         });
         canvasVersionId = canvasVersion.id;
-        await tx.platformDocument.update({
+        await tx.studioDocument.update({
           where: { id: document.id },
           data: {
             currentVersionId: canvasVersion.id,
@@ -2877,11 +2876,11 @@ export class CrewTasksService {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
     `;
-    const document = await tx.platformDocument.findFirst({
+    const document = await tx.studioDocument.findFirst({
       where: {
         id: documentId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
       },
     });
@@ -2898,7 +2897,7 @@ export class CrewTasksService {
         message: 'The task canvas does not use a mergeable CRDT dialect.',
       });
     }
-    const operations = await tx.platformDocumentOperation.findMany({
+    const operations = await tx.studioDocumentOperation.findMany({
       where: {
         documentId,
         sequence: {
@@ -2915,7 +2914,7 @@ export class CrewTasksService {
     });
     const unsupported = operations.find(
       (operation) =>
-        operation.operationType !== PlatformDocumentOperationType.yjs_update ||
+        operation.operationType !== StudioDocumentOperationType.yjs_update ||
         !operation.yjsUpdate,
     );
     if (unsupported) {
@@ -2952,7 +2951,7 @@ export class CrewTasksService {
         document.snapshotSequence !== document.currentSequence ||
         !document.crdtState
       ) {
-        await tx.platformDocument.update({
+        await tx.studioDocument.update({
           where: { id: document.id },
           data: {
             crdtState,
@@ -3007,11 +3006,11 @@ export class CrewTasksService {
           'The submitted canvas version is incomplete and cannot be merged safely.',
       });
     }
-    const productionDocument = await tx.platformDocument.findFirst({
+    const productionDocument = await tx.studioDocument.findFirst({
       where: {
-        projectId: task.crew.productionProjectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: task.crew.productionProjectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
       },
       orderBy: { createdAt: 'asc' },
@@ -3039,10 +3038,10 @@ export class CrewTasksService {
       });
     }
 
-    const existing = await tx.platformDocumentVersion.findFirst({
+    const existing = await tx.studioDocumentVersion.findFirst({
       where: {
         documentId: target.id,
-        source: PlatformDocumentVersionSource.manual,
+        source: StudioDocumentVersionSource.manual,
         sourceId: submission.id,
       },
       orderBy: { versionNumber: 'desc' },
@@ -3059,11 +3058,11 @@ export class CrewTasksService {
       const merged = builder.finish();
       const nextSequence = target.currentSequence + 1;
       const idempotencyKey = `crew-task-merge:${submission.id}`;
-      await tx.platformDocumentOperation.create({
+      await tx.studioDocumentOperation.create({
         data: {
           documentId: target.id,
           sequence: nextSequence,
-          operationType: PlatformDocumentOperationType.yjs_update,
+          operationType: StudioDocumentOperationType.yjs_update,
           actorUserId: reviewerUserId,
           idempotencyKey,
           baseSequence: target.currentSequence,
@@ -3078,11 +3077,11 @@ export class CrewTasksService {
           },
         },
       });
-      const latestVersion = await tx.platformDocumentVersion.findFirst({
+      const latestVersion = await tx.studioDocumentVersion.findFirst({
         where: { documentId: target.id },
         orderBy: { versionNumber: 'desc' },
       });
-      const productionVersion = await tx.platformDocumentVersion.create({
+      const productionVersion = await tx.studioDocumentVersion.create({
         data: {
           documentId: target.id,
           versionNumber: (latestVersion?.versionNumber ?? 0) + 1,
@@ -3090,7 +3089,7 @@ export class CrewTasksService {
           sequence: nextSequence,
           title: target.title,
           label: `Merged TASK-${task.number} submission v${submission.versionNumber}`,
-          source: PlatformDocumentVersionSource.manual,
+          source: StudioDocumentVersionSource.manual,
           sourceId: submission.id,
           snapshot: merged.snapshot as unknown as Prisma.InputJsonValue,
           crdtState: Buffer.from(merged.state),
@@ -3105,7 +3104,7 @@ export class CrewTasksService {
           createdById: reviewerUserId,
         },
       });
-      await tx.platformDocument.update({
+      await tx.studioDocument.update({
         where: { id: target.id },
         data: {
           crdtState: Buffer.from(merged.state),

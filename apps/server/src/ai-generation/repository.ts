@@ -53,6 +53,7 @@ export interface AiJobListOptions {
   userId: string;
   workspaceId?: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   sourceSurface?: string;
   includeCollaboratorJobs?: boolean;
@@ -971,6 +972,9 @@ export class AiGenerationRepository {
         deletedAt: null,
         ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
         ...(options.projectId ? { projectId: options.projectId } : {}),
+        ...(options.storyProjectId
+          ? { storyProjectId: options.storyProjectId }
+          : {}),
         ...(options.documentId ? { documentId: options.documentId } : {}),
         ...(options.sourceSurface
           ? { sourceSurface: options.sourceSurface }
@@ -1237,6 +1241,7 @@ export class AiGenerationRepository {
       schemaVersion: row.schemaVersion,
       workspaceId: row.workspaceId,
       projectId: row.projectId,
+      storyProjectId: row.storyProjectId,
       documentId: row.documentId,
       documentBlockId: row.documentBlockId,
       sourceSurface: row.sourceSurface,
@@ -1333,6 +1338,7 @@ export class AiGenerationRepository {
       schemaVersion: job.schemaVersion,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,
+      storyProjectId: job.storyProjectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
       sourceSurface: job.sourceSurface ?? null,

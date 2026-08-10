@@ -30,6 +30,8 @@ function seedanceLikeSchema(): ValidationInputSchema {
           control: "video_upload",
           group: "references",
           mediaKind: "video",
+          minItemDurationSeconds: 2,
+          maxItemDurationSeconds: 15,
           minCombinedDurationSeconds: 2,
           maxCombinedDurationSeconds: 15,
           maxTotalFiles: 12,
@@ -90,6 +92,28 @@ describe("validateGenerationInput", () => {
       },
     });
     expect(issues.map((i) => i.code)).toContain(VALIDATION_ISSUE_CODES.MEDIA_DURATION_UNKNOWN);
+  });
+
+  it("enforces per-item duration bounds before evaluating the combined sum", () => {
+    const tooShort = validateGenerationInput({
+      inputSchema: seedanceLikeSchema(),
+      input: {
+        referenceVideos: [{ url: "https://cdn.example.com/a.mp4", durationSeconds: 1 }],
+      },
+    });
+    expect(tooShort.map((issue) => issue.code)).toContain(
+      VALIDATION_ISSUE_CODES.MEDIA_DURATION_ITEM_BELOW_MIN
+    );
+
+    const tooLong = validateGenerationInput({
+      inputSchema: seedanceLikeSchema(),
+      input: {
+        referenceVideos: [{ url: "https://cdn.example.com/a.mp4", durationSeconds: 16 }],
+      },
+    });
+    expect(tooLong.map((issue) => issue.code)).toContain(
+      VALIDATION_ISSUE_CODES.MEDIA_DURATION_ITEM_EXCEEDED
+    );
   });
 
   it("prefers explicit media snapshots over bare input urls", () => {

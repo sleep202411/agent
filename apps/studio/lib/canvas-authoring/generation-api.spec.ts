@@ -31,9 +31,9 @@ function catalog(models: FizzAiModel[]): FizzAiCatalog {
 }
 
 describe("canvasDefaultModel", () => {
-  it("defaults new video cards to Seedance 2.0 regardless of catalog order", () => {
+  it("defaults new video cards to Seedance 2.5 regardless of catalog order", () => {
     const agnes = videoModel("quick-video-1-0", ["multimodal_to_video"]);
-    const seedance = videoModel("seedance-2-0", [
+    const seedance = videoModel("seedance-2-5", [
       "text_to_video",
       "image_to_video",
       "multimodal_to_video",
@@ -44,7 +44,7 @@ describe("canvasDefaultModel", () => {
 
   it("falls back to a usable reference-capable model when Seedance is unavailable", () => {
     const agnes = videoModel("quick-video-1-0", ["multimodal_to_video"]);
-    const seedance = videoModel("seedance-2-0", ["multimodal_to_video"], {
+    const seedance = videoModel("seedance-2-5", ["multimodal_to_video"], {
       access: { allowed: false },
     });
 

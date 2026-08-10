@@ -276,6 +276,8 @@
       "FIELD_MAX_ITEMS": "{field} accepts at most {max} item(s).",
       "FIELD_MIN_ITEMS": "{field} requires at least {min} item(s).",
       "MEDIA_DURATION_UNKNOWN": "Duration is required for every {kind} in {field} before submit.",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "Each {kind} in {field} must be at least {min}s; got {actual}s.",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "Each {kind} in {field} must be at most {max}s; got {actual}s.",
       "MEDIA_DURATION_SUM_BELOW_MIN": "Combined {kind} duration in {field} is {actual}s; minimum is {min}s.",
       "MEDIA_DURATION_SUM_EXCEEDED": "Combined {kind} duration in {field} is {actual}s; maximum is {max}s.",
       "MEDIA_MAX_TOTAL_FILES": "At most {max} reference file(s) allowed; got {actual}.",
@@ -698,7 +700,7 @@
   "textAdventures": {
     "library": {
       "eyebrow": "Interactive fiction",
-      "title": "Text Adventures",
+      "title": "Text Adventure Studio",
       "subtitle": "Turn one worldview document into a story readers can enter, shape, and continue.",
       "create": "Create text adventure",
       "loadFailed": "Your text adventures could not be loaded",
@@ -712,7 +714,7 @@
     },
     "actions": {
       "retry": "Retry",
-      "backToLibrary": "Back to text adventures",
+      "backToLibrary": "Back to Text Adventure Studio",
       "save": "Save",
       "cancel": "Cancel",
       "unknownError": "Something went wrong."
@@ -863,21 +865,29 @@
       "teamTag": "Team"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio home",
       "fizzDragonHomeAriaLabel": "FizzDragon home"
     },
     "nav": {
       "home": "Home",
       "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
-      "textAdventures": "Text Adventures",
+      "storyStudio": "Interactive Film Studio",
+      "textAdventures": "Text Adventure Studio",
       "image": "Image",
       "video": "Video",
       "characters": "Characters",
       "audio": "Audio",
       "settings": "Settings",
+      "tools": "Tools",
+      "discord": "Discord",
+      "downloadApp": "Download app",
+      "downloadDesktop": "Download desktop app",
+      "help": "Help",
+      "newBadge": "New",
+      "appDownloadUnavailable": "No mobile app download is available for this platform yet.",
       "studioNavigation": "Studio navigation",
       "main": "Main",
+      "collapseSidebar": "Collapse sidebar",
+      "expandSidebar": "Expand sidebar",
       "comingSoonLabel": "{label} · Coming soon"
     },
     "notifications": {
@@ -986,6 +996,7 @@
     "youSuffix": "(you)",
     "memberActions": "Member actions",
     "memberFallback": "member",
+    "projectOnlyMember": "Project-only member",
     "addedMember": "Added {name}",
     "addMemberFailed": "Couldn't add member",
     "changeRoleFailed": "Couldn't change role",
@@ -1062,21 +1073,21 @@
       "includedInPlan": "Included in plan",
       "computeCreditsAmount": "{amount} compute credits",
       "customCreditsAmount": "Custom compute credit amount",
-      "seats": "{count, plural, one {# seat} other {# seats}}",
+      "seats": "{count, plural, one {# creator seat} other {# creator seats}}",
       "seatsUpTo": " · up to {max}",
       "perMonth": "/month",
       "perYear": "/year",
       "oneTime": "one-time"
     },
     "features": {
-      "imagesPerMonth": "Up to {count} image generations per month",
-      "privateGenerations": "Private generations",
-      "advancedWorkflows": "Advanced workflows",
-      "prioritySupport": "Priority support",
+      "imagesPerDay": "{count} image generations per day",
+      "imagesUnlimited": "Unlimited image generations",
+      "videosPerDay": "{count} video generations per day",
+      "videosUnlimited": "Unlimited video generations",
       "sharedCredits": "Shared team compute credits",
+      "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
-      "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}",
-      "topupDiscount": "{percent}% off compute credit top-ups"
+      "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}"
     },
     "toast": {
       "plansLoadFailed": "Membership plans failed to load",
@@ -1119,7 +1130,7 @@
       },
       "subscriptionVsTopups": {
         "question": "What is the difference between a subscription and compute credit top-ups?",
-        "answer": "A subscription grants a recurring compute credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time compute credit purchases — and paid plans get a discount on them."
+        "answer": "A subscription grants a recurring compute credit allowance plus plan benefits such as queue priority and higher concurrency. Top-ups are separate, one-time compute credit purchases."
       },
       "teamShareCredits": {
         "question": "How do team plans share compute credits?",
@@ -1127,7 +1138,7 @@
       },
       "cancelOrChange": {
         "question": "How do I cancel or change my plan?",
-        "answer": "Manage your subscription from the account menu under Billing & Subscription. Plan changes take effect at the end of the current billing cycle."
+        "answer": "Manage your subscription under Billing & Subscription. Canceling keeps access until the current period ends; after that, you can choose another plan."
       },
       "commercialUse": {
         "question": "Can I use my generations commercially?",
@@ -1172,6 +1183,23 @@
     "openError": "Couldn't open this canvas — check the link or your access.",
     "emptyReadOnly": "This canvas is empty.",
     "activityLog": "Activity",
+    "connection": {
+      "kind": {
+        "image": "image",
+        "video": "video",
+        "audio": "audio"
+      },
+      "sourceMissing": "The source node no longer exists.",
+      "targetMissing": "The target node no longer exists.",
+      "selfConnection": "A node can't be connected to itself.",
+      "sourceNotConnectable": "This node has no image, video, or audio output to connect.",
+      "targetNotConnectable": "This node does not accept reference connections.",
+      "modelUnavailable": "Choose an available model before connecting a reference.",
+      "currentModeUnsupported": "The current mode does not accept {kind} references. Switch modes manually first.",
+      "unsupportedKind": "This model does not accept {kind} references.",
+      "referenceLimit": "The current mode allows up to {limit} {kind} references.",
+      "duplicateReference": "This {kind} is already connected to the node."
+    },
     "groups": {
       "group": "Group",
       "label": "Group",
@@ -1420,6 +1448,8 @@
       "FIELD_MAX_ITEMS": "{field} accepts at most {max} item(s).",
       "FIELD_MIN_ITEMS": "{field} requires at least {min} item(s).",
       "MEDIA_DURATION_UNKNOWN": "Duration is required for every {kind} in {field} before submit.",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "Each {kind} in {field} must be at least {min}s; got {actual}s.",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "Each {kind} in {field} must be at most {max}s; got {actual}s.",
       "MEDIA_DURATION_SUM_BELOW_MIN": "Combined {kind} duration in {field} is {actual}s; minimum is {min}s.",
       "MEDIA_DURATION_SUM_EXCEEDED": "Combined {kind} duration in {field} is {actual}s; maximum is {max}s.",
       "MEDIA_MAX_TOTAL_FILES": "At most {max} reference file(s) allowed; got {actual}.",
@@ -1690,12 +1720,12 @@
     "yourSubscription": "Your subscription",
     "subscriptionDescription": "Manage your personal plan, buy compute credit packs, and view pricing.",
     "managePlan": "Manage plan",
+    "keepPlan": "Keep plan",
     "currentPlan": "Current plan",
     "freePlanName": "Free",
     "planRenewsOn": "Renews on {date}",
     "planAccessUntil": "Access until {date}",
     "planCanceledBadge": "Canceled",
-    "changePlan": "Change plan",
     "cancelPlan": "Cancel plan",
     "cancelPlanConfirm": "Cancel your subscription? You'll keep access until the end of the current period, then it stops renewing.",
     "cancelPlanSuccess": "Subscription canceled — access continues until {date}.",
@@ -2067,10 +2097,10 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "Interactive Film Studio",
     "metaDescription": "Author, produce, review, and release cinematic interactive stories.",
     "eyebrow": "Interactive story production",
-    "title": "Story Studio",
+    "title": "Interactive Film Studio",
     "subtitle": "Design branching cinematic scenes and release from one versioned workspace.",
     "newProject": "New story project",
     "projects": {
@@ -2154,7 +2184,7 @@
       "switching": "Switching to the workspace this story belongs to…"
     },
     "canvas": {
-      "back": "Back to Story Studio",
+      "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
       "chapters": {
         "action": "Chapters",
@@ -2246,7 +2276,7 @@
       },
       "workingPreview": {
         "action": "Preview playtest",
-        "pageTitle": "Story Playtest · Story Studio",
+        "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
         "loading": "Preparing the playtest…",
@@ -2434,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "Creation canvas",
-        "identity": "Story Studio · Content creation",
-        "groupDropHint": "Release to add to this group",
-        "workspaceLabel": "Project media creation workspace",
-        "backToChapter": "Back to chapter canvas",
-        "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
-        "loadError": "The creation canvas could not be opened.",
-        "retry": "Try again",
-        "assets": {
-          "description": "Browse and drag reusable project media onto the canvas."
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "Candidate assets",
-          "description": "Curate the media that Story nodes can reuse.",
-          "open": "Open candidate assets",
-          "close": "Close candidate assets",
           "add": "Add to candidate assets",
           "remove": "Remove from candidate assets",
           "filterLabel": "Filter candidate assets",
@@ -2462,7 +2478,7 @@
           },
           "empty": "No candidate assets",
           "emptyFilter": "Nothing in this category",
-          "emptyDescription": "Select a finished media node and add it from the floating toolbar.",
+          "emptyDescription": "Select a finished media node and add it from its canvas toolbar.",
           "loadError": "Candidate assets could not be loaded.",
           "actionError": "The candidate asset could not be updated.",
           "retry": "Try again",
@@ -2473,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "Loading",
-          "saving": "Saving…",
-          "saved": "Saved",
-          "error": "Save failed"
+          "loading": "Loading"
         }
       },
       "candidatePicker": {
@@ -2501,7 +2514,7 @@
         "loading": "Loading candidate media…",
         "retry": "Try again",
         "empty": "No matching candidate media",
-        "emptyDescription": "Add finished images or videos to Candidate assets on the creation canvas.",
+        "emptyDescription": "Add finished images or videos to Candidate assets in the creative workbench.",
         "assetLabel": {
           "image": "Image {index}",
           "video": "Video {index}"
@@ -2610,7 +2623,7 @@
       "share": "Share"
     },
     "workbench": {
-      "back": "Back to Story Studio",
+      "back": "Back to Interactive Film Studio",
       "draftHead": "Mutable draft · revision {revision}",
       "stageNav": "Project stages",
       "stages": {

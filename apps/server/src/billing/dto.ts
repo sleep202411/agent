@@ -445,16 +445,9 @@ const MembershipPlanShape = {
   includedSeats: z.coerce.number().int().min(1).max(100000).default(1),
   maxSeats: z.coerce.number().int().min(1).max(100000).nullable().optional(),
   seatOverageAllowed: z.coerce.boolean().default(false),
-  topupDiscountBps: z.coerce.number().int().min(0).max(10000).default(0),
   billingIntervalDefault: BillingPriceIntervalSchema.optional(),
-  featureFlags: MetadataSchema.optional(),
-  limits: MetadataSchema.optional(),
-  /**
-   * Validated membership benefits — omitted on create, the plan starts
-   * from DEFAULT_FREE_BENEFITS until configured. Edits go EXCLUSIVELY
-   * through PUT membership-plans/:planId/benefits (cache-busting).
-   */
-  benefits: MembershipBenefitsSchema.optional(),
+  /** Every paid plan must state its complete runtime policy at creation. */
+  benefits: MembershipBenefitsSchema,
   marketing: MetadataSchema.optional(),
   metadata: MetadataSchema.optional(),
 } satisfies z.ZodRawShape;

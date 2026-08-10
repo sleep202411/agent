@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import {
   DocumentStateBuilder,
+  encodeDocumentSnapshot,
   materializeSnapshot,
   mergeDocumentState,
 } from './document-crdt';
@@ -61,8 +62,102 @@ const EXPECTED_SNAPSHOT = {
 // The canvas mode's root-type schema (see document-modes.ts). Required for the
 // server to materialize a JSON snapshot from binary CRDT state.
 const SCHEMA = { meta: 'map', nodes: 'map', edges: 'map' } as const;
+const FULL_CANVAS_SCHEMA = {
+  meta: 'map',
+  nodes: 'map',
+  edges: 'map',
+  groups: 'map',
+  assets: 'map',
+} as const;
 
 describe('document-crdt', () => {
+  it('converts the former Story array snapshot into canonical canvas maps', () => {
+    const imported = encodeDocumentSnapshot(
+      {
+        nodes: [
+          {
+            id: 'image-1',
+            type: 'image',
+            position: { x: 12, y: 34 },
+            data: { label: 'Reference', mediaAssetId: 'asset-1' },
+            width: 320,
+            height: 180,
+          },
+        ],
+        edges: [
+          {
+            id: 'edge-1',
+            source: 'image-1',
+            target: 'video-1',
+            sourceHandle: 'output',
+            targetHandle: 'input',
+          },
+        ],
+        groups: [{ id: 'group-1', nodeIds: ['image-1'], color: 'neutral' }],
+        assets: [
+          { id: 'asset-1', kind: 'image', url: 'https://example.test/a.jpg' },
+        ],
+      },
+      FULL_CANVAS_SCHEMA,
+    );
+
+    expect(imported.snapshot).toEqual({
+      meta: {},
+      nodes: {
+        'image-1': {
+          id: 'image-1',
+          type: 'image',
+          position: { x: 12, y: 34 },
+          data: { label: 'Reference', mediaAssetId: 'asset-1' },
+          width: 320,
+          height: 180,
+        },
+      },
+      edges: {
+        'edge-1': {
+          id: 'edge-1',
+          source: 'image-1',
+          target: 'video-1',
+          sourceHandle: 'output',
+          targetHandle: 'input',
+        },
+      },
+      groups: {
+        'group-1': { id: 'group-1', nodeIds: ['image-1'], color: 'neutral' },
+      },
+      assets: {
+        'asset-1': {
+          id: 'asset-1',
+          kind: 'image',
+          url: 'https://example.test/a.jpg',
+        },
+      },
+    });
+    expect(
+      mergeDocumentState(imported.state, [], FULL_CANVAS_SCHEMA).snapshot,
+    ).toEqual(imported.snapshot);
+  });
+
+  it('preserves a canonical map snapshot when encoding imported state', () => {
+    const source = {
+      meta: { title: 'Shared workbench' },
+      nodes: {
+        n1: {
+          id: 'n1',
+          type: 'note',
+          position: { x: 1, y: 2 },
+          data: { prompt: 'Keep me' },
+        },
+      },
+      edges: {},
+      groups: {},
+      assets: {},
+    };
+    expect(encodeDocumentSnapshot(source, FULL_CANVAS_SCHEMA).snapshot).toEqual(
+      source,
+    );
+  });
+
   it('merges an op stream into the materialized snapshot', () => {
     const updates = captureUpdates(canvasMutations());
     const { snapshot } = mergeDocumentState(null, updates, SCHEMA);

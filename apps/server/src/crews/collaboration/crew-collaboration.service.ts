@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
-  PlatformDocumentStatus,
-  PlatformDocumentType,
-  PlatformDocumentVersionSource,
+  StudioDocumentStatus,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   PlatformProjectStatus,
   Prisma,
   ProjectMemberRole,
@@ -15,6 +15,8 @@ import {
   WalletOwnerType,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
+import { encodeDocumentSnapshot } from '../../documents/document-crdt';
+import { rootSchemaFor } from '../../documents/document-modes';
 import { WalletLedgerService } from '../../workspaces';
 import {
   CrewAuthorizationService,
@@ -129,30 +131,38 @@ export class CrewCollaborationService {
           grantedById: ownerUserId,
         },
       });
-      const document = await tx.platformDocument.create({
+      const initialCanvasState = encodeDocumentSnapshot(
+        {},
+        rootSchemaFor(StudioDocumentType.canvas)!,
+      );
+      const document = await tx.studioDocument.create({
         data: {
           workspaceId,
-          projectId: project.id,
-          type: PlatformDocumentType.canvas,
-          status: PlatformDocumentStatus.active,
+          platformProjectId: project.id,
+          type: StudioDocumentType.canvas,
+          status: StudioDocumentStatus.active,
           title: project.name,
+          contentSnapshot:
+            initialCanvasState.snapshot as unknown as Prisma.InputJsonValue,
+          crdtState: Buffer.from(initialCanvasState.state),
           createdById: ownerUserId,
         },
       });
-      const initial = await tx.platformDocumentVersion.create({
+      const initial = await tx.studioDocumentVersion.create({
         data: {
           documentId: document.id,
           versionNumber: 1,
           schemaVersion: document.schemaVersion,
           sequence: 0,
           title: document.title,
-          source: PlatformDocumentVersionSource.system,
+          source: StudioDocumentVersionSource.system,
           snapshot: document.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: document.crdtState,
           createdById: ownerUserId,
           metadata: { reason: 'crew_production_created' },
         },
       });
-      await tx.platformDocument.update({
+      await tx.studioDocument.update({
         where: { id: document.id },
         data: { currentVersionId: initial.id },
       });
@@ -172,11 +182,11 @@ export class CrewCollaborationService {
       });
     }
 
-    const productionDocument = await tx.platformDocument.findFirstOrThrow({
+    const productionDocument = await tx.studioDocument.findFirstOrThrow({
       where: {
-        projectId: productionProjectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: productionProjectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
       },
       orderBy: { createdAt: 'asc' },
@@ -229,7 +239,6 @@ export class CrewCollaborationService {
       data: {
         status: WorkspaceMemberStatus.removed,
         removedAt: now,
-        seatAssigned: false,
       },
     });
     await db.projectMember.updateMany({
@@ -287,12 +296,10 @@ export class CrewCollaborationService {
             role: WorkspaceMemberRole.viewer,
             status: WorkspaceMemberStatus.removed,
             removedAt: now,
-            seatAssigned: false,
           }
         : {
             role: WorkspaceMemberRole.viewer,
             status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
           },
     });
     await this.upsertWorkspaceMember(
@@ -364,7 +371,6 @@ export class CrewCollaborationService {
           data: {
             role,
             status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
           },
         });
       }

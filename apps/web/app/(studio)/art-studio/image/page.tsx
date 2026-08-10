@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { AssetEvent, AiJobUpdatePayload } from "@repo/shared";
@@ -20,6 +21,7 @@ import { UpgradeDialogHost } from "@/components/quota/upgrade-dialog";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
 import { useFeature } from "@/src/lib/region/provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
+import { getMyEntitlement } from "@/src/lib/billing/api";
 
 type ModelSource = "loading" | "live" | "preview" | "unavailable";
 
@@ -35,6 +37,12 @@ const IMAGE_GENERATION_SUBMIT_DISABLED = true;
 export default function AiImageLabPage() {
   const rawT = useTranslations("aiGen");
   const { user } = useCurrentUser();
+  const entitlement = useQuery({
+    queryKey: ["billing", "my-entitlement"],
+    queryFn: getMyEntitlement,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
   const t = useCallback(
     (key: string, fallback = key) => {
       const normalized = key.replace(/^aiGen\./, "");
@@ -355,7 +363,7 @@ export default function AiImageLabPage() {
     return () => window.clearInterval(timer);
   }, [activeJobCount, realtimeConnected, reconcileFromServer]);
 
-  const userPlanRank = useMemo(() => planRank(user?.userLevel), [user?.userLevel]);
+  const userPlanRank = entitlement.data?.entitlement.rank ?? 0;
 
   const canSubmit =
     prompt.trim().length > 0 &&
@@ -756,11 +764,11 @@ const PLAN_RANK: Record<string, number> = {
   BASIC: 10,
   STANDARD: 20,
   PRO: 30,
-  TEAM: 110,
+  TEAM: 40,
 };
 function planRank(level: string | null | undefined): number {
   if (!level) return 0;
-  return PLAN_RANK[level.toUpperCase()] ?? 0;
+  return PLAN_RANK[level.toUpperCase()] ?? Number.POSITIVE_INFINITY;
 }
 
 function jobToItems(job: AiJobView): GalleryItem[] {

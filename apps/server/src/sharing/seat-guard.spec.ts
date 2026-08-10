@@ -1,65 +1,84 @@
-import { WorkspaceType } from '@prisma/client';
+import {
+  ProjectMemberRole,
+  StoryProjectMemberRole,
+  WorkspaceMemberRole,
+  WorkspaceType,
+} from '@prisma/client';
 import { EntitlementService } from '../entitlements/entitlement.service';
-import { assertSeatAvailable } from './seat-guard';
+import {
+  assertCreatorSeatAvailable,
+  projectRoleConsumesCreatorSeat,
+  storyRoleConsumesCreatorSeat,
+  workspaceRoleConsumesCreatorSeat,
+} from './seat-guard';
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 
-/**
- * The real resolver + the real decision, so these pin the seat allowance a
- * member-add actually hits — not just the constants in isolation.
- */
-function txFor(input: { type: WorkspaceType; activeSeats: number }) {
+function txFor(input: { type: WorkspaceType; creatorUserIds: string[] }) {
   return {
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue(input.creatorUserIds.map((user_id) => ({ user_id }))),
     entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {
       findUnique: jest.fn().mockResolvedValue({ type: input.type }),
     },
-    workspaceMember: {
-      count: jest.fn().mockResolvedValue(input.activeSeats),
-    },
   } as never;
 }
 
-describe('assertSeatAvailable on a workspace with no plan', () => {
+describe('creator seat enforcement', () => {
   const entitlements = new EntitlementService({} as never);
 
-  it('admits collaborators into a personal workspace up to 5 seats', async () => {
-    // 4 seats taken (owner + 3) → the 5th occupant still fits.
+  it('counts one user only once across multiple projects', async () => {
     await expect(
-      assertSeatAvailable(
-        txFor({ type: WorkspaceType.personal, activeSeats: 4 }),
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.personal,
+          creatorUserIds: ['owner-1'],
+        }),
         WORKSPACE_ID,
+        'owner-1',
         entitlements,
       ),
     ).resolves.toBeUndefined();
   });
 
-  it('refuses the 6th member of a personal workspace', async () => {
+  it('blocks a second creator in a no-plan workspace', async () => {
     await expect(
-      assertSeatAvailable(
-        txFor({ type: WorkspaceType.personal, activeSeats: 5 }),
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.team,
+          creatorUserIds: ['owner-1'],
+        }),
         WORKSPACE_ID,
+        'editor-2',
         entitlements,
       ),
     ).rejects.toMatchObject({
       response: {
-        code: 'WORKSPACE_SEAT_LIMIT_REACHED',
-        includedSeats: 5,
-        activeSeats: 5,
+        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
+        includedSeats: 1,
+        activeSeats: 1,
       },
     });
   });
 
-  it('still refuses a second member of a TEAM workspace whose plan lapsed', async () => {
-    await expect(
-      assertSeatAvailable(
-        txFor({ type: WorkspaceType.team, activeSeats: 1 }),
-        WORKSPACE_ID,
-        entitlements,
-      ),
-    ).rejects.toMatchObject({
-      response: { code: 'WORKSPACE_SEAT_LIMIT_REACHED', includedSeats: 1 },
-    });
+  it('does not classify viewer/reviewer/billing roles as creator seats', () => {
+    expect(workspaceRoleConsumesCreatorSeat(WorkspaceMemberRole.billing)).toBe(
+      false,
+    );
+    expect(workspaceRoleConsumesCreatorSeat(WorkspaceMemberRole.viewer)).toBe(
+      false,
+    );
+    expect(projectRoleConsumesCreatorSeat(ProjectMemberRole.viewer)).toBe(
+      false,
+    );
+    expect(storyRoleConsumesCreatorSeat(StoryProjectMemberRole.reviewer)).toBe(
+      false,
+    );
+    expect(storyRoleConsumesCreatorSeat(StoryProjectMemberRole.viewer)).toBe(
+      false,
+    );
   });
 });
