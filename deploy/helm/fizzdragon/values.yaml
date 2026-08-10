@@ -271,7 +271,12 @@ agentOsServerSecrets:
 adminUiSecrets:
   projectedName: fizzdragon-adminui-secrets
   mapping:
-    - kv: news-api-token
+    # One token authenticates every Java admin call — 资讯 and 文游审核 both send
+    # it as X-Admin-Api-Token. It was once named for the news module alone; the
+    # Key Vault entry now carries the neutral name so nobody retires it while
+    # decommissioning news. CSI is fail-closed: this key must exist in the vault
+    # before this file references it, or admin-ui pods hang in ContainerCreating.
+    - kv: java-admin-api-token
       env: JAVA_ADMIN_API_TOKEN
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
