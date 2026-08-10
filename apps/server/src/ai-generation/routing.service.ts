@@ -427,6 +427,7 @@ function estimateQuotaCost(
       duration: durationInput(input?.duration),
       durationSeconds: numberInput(input?.durationSeconds),
       referenceImageCount: arrayLength(input?.referenceImages),
+      referenceVideoSeconds: sumMediaDuration(input?.referenceVideos),
       hasMask: hasMediaValue(input?.maskImage),
     }).sellPoints;
   } catch (err) {
@@ -438,6 +439,26 @@ function estimateQuotaCost(
           : 'Invalid product pricing.',
     });
   }
+}
+
+function sumMediaDuration(value: unknown): number | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  let total = 0;
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return undefined;
+    }
+    const duration = (item as { durationSeconds?: unknown }).durationSeconds;
+    if (
+      typeof duration !== 'number' ||
+      !Number.isFinite(duration) ||
+      duration < 0
+    ) {
+      return undefined;
+    }
+    total += duration;
+  }
+  return total;
 }
 
 function numberInput(value: unknown): number | undefined {

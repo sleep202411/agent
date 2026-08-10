@@ -272,9 +272,9 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
-    // The catalog caps COMBINED reference-video size at 50 MB, so 50 MiB is
-    // also the per-file ceiling.
-    maxBytes: 50 * MiB,
+    // Seedance 2.5 accepts each MP4/MOV reference up to 200 MB. Older models
+    // retain their smaller catalog-driven per-file/combined limits at submit.
+    maxBytes: 200 * MiB,
     assetKind: MediaAssetKind.video,
     ttlSeconds: 900,
     keySegment: 'ai-reference-video',

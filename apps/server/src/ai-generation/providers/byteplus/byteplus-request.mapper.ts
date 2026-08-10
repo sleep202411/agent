@@ -8,8 +8,9 @@ import type { BytePlusImageRuntimeConfig } from './byteplus-runtime';
  *  - text_to_video           → text only
  *  - image_to_video          → text + first_frame (exactly 1 image)
  *  - first_last_frame_to_..  → text + first_frame + last_frame (exactly 2)
- *  - multimodal_to_video     → text + reference_image / reference_video /
- *                              reference_audio parts (全能参考, 1–9 images)
+ *  - multimodal_to_video     → optional text + reference_image /
+ *                              reference_video / reference_audio parts
+ *                              (catalog-governed; 2.5 also permits audio-only)
  *
  * ⚠️ The three IMAGE scenarios are MUTUALLY EXCLUSIVE — official wording:
  * "Image to video - first frame, image to video - first and last frames,
@@ -30,9 +31,10 @@ export function mapBytePlusVideoProviderRequest(
   config: BytePlusImageRuntimeConfig,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  const content: Array<Record<string, unknown>> = [
-    { type: 'text', text: stringValue(input.prompt) },
-  ];
+  const prompt = stringValue(input.prompt).trim();
+  const content: Array<Record<string, unknown>> = prompt
+    ? [{ type: 'text', text: prompt }]
+    : [];
   const startUrl = mediaUrl(input.startFrame);
   const endUrl = mediaUrl(input.endFrame);
   const referenceImages = referenceUrls(input.referenceImages);
@@ -46,6 +48,18 @@ export function mapBytePlusVideoProviderRequest(
       referenceAudios: referenceAudios.length,
     },
   });
+  if (
+    config.endpointId === 'dreamina-seedance-2-5-260628' &&
+    (startUrl || endUrl) &&
+    typeof input.aspectRatio === 'string' &&
+    input.aspectRatio !== 'auto'
+  ) {
+    throw bytePlusError(
+      'VALIDATION_ERROR',
+      `Seedance 2.5 first/last-frame generation requires aspectRatio=auto (ModelArk ratio=adaptive), got ${input.aspectRatio}.`,
+      'Seedance 2.5 frame-guided generation requires Auto aspect ratio.',
+    );
+  }
   if (startUrl) {
     content.push({
       type: 'image_url',
@@ -113,6 +127,12 @@ export function mapBytePlusVideoProviderRequest(
   // opt-out must be sent as generate_audio:false (omission ≠ off).
   if (typeof input.generateAudio === 'boolean') {
     body.generate_audio = input.generateAudio;
+  }
+  if (
+    typeof input.outputFormat === 'string' &&
+    (input.outputFormat === 'mp4' || input.outputFormat === 'mov')
+  ) {
+    body.output_format = input.outputFormat;
   }
   // Ask ModelArk for the generated video's own last frame. That frame is the
   // documented way to chain a long continuous shot: "Use the last frame of the

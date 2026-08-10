@@ -73,6 +73,8 @@ type FizzAiSchemaProperty = {
     maxCombinedFileSizeMb?: number;
     minCombinedDurationSeconds?: number;
     maxCombinedDurationSeconds?: number;
+    minItemDurationSeconds?: number;
+    maxItemDurationSeconds?: number;
     resolutionBand?: string;
     audioRequiresVisual?: boolean;
     promptRefPrefix?: string;
@@ -525,6 +527,8 @@ export interface FizzAiReferenceFieldConstraints {
   maxCombinedFileSizeMb?: number;
   minCombinedDurationSeconds?: number;
   maxCombinedDurationSeconds?: number;
+  minItemDurationSeconds?: number;
+  maxItemDurationSeconds?: number;
   resolutionBand?: string;
   audioRequiresVisual: boolean;
   /** e.g. "@Image" — uploads are cited in the prompt as `@Image1`, `@Image2`… */
@@ -584,6 +588,10 @@ export function referenceFieldConstraints(
       typeof ui?.maxCombinedDurationSeconds === "number"
         ? ui.maxCombinedDurationSeconds
         : undefined,
+    minItemDurationSeconds:
+      typeof ui?.minItemDurationSeconds === "number" ? ui.minItemDurationSeconds : undefined,
+    maxItemDurationSeconds:
+      typeof ui?.maxItemDurationSeconds === "number" ? ui.maxItemDurationSeconds : undefined,
     resolutionBand: typeof ui?.resolutionBand === "string" ? ui.resolutionBand : undefined,
     audioRequiresVisual: ui?.audioRequiresVisual === true,
     promptRefPrefix: typeof ui?.promptRefPrefix === "string" ? ui.promptRefPrefix : undefined,
@@ -670,7 +678,7 @@ const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerat
  * falls through to the capability-based policy below.
  */
 const CANVAS_PREFERRED_MODEL_ID: Partial<Record<FizzAiJobType, string>> = {
-  video: "seedance-2-0",
+  video: "seedance-2-5",
 };
 
 /** New blank canvas cards should start in reference-friendly modes. */
@@ -1221,6 +1229,8 @@ export interface FizzAiPointEstimateInput {
   numOutputs?: number;
   quality?: string;
   referenceImageCount?: number;
+  /** Combined duration of all attached reference videos. */
+  referenceVideoSeconds?: number;
   resolution?: string;
 }
 
@@ -1239,6 +1249,7 @@ export function estimateModelSellPoints(
       duration: input.duration,
       durationSeconds: input.durationSeconds,
       referenceImageCount: input.referenceImageCount,
+      referenceVideoSeconds: input.referenceVideoSeconds,
       resolution: input.resolution,
       hasMask: input.hasMask,
     });

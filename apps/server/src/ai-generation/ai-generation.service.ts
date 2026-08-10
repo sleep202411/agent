@@ -203,7 +203,13 @@ export class AiGenerationService {
         bindings: body.referenceBindings,
         input: rawInput,
       });
-    const input = characterExpansion.input;
+    // Resolve server-trusted media duration/size BEFORE routing. Routing
+    // freezes the wallet quote, and Seedance 2.5 charges reference-video jobs
+    // on input-video + output duration; accepting client-claimed duration here
+    // would let a caller understate the hold before validation corrected it.
+    const input = await this.validator.applyTrustedMediaFacts(
+      characterExpansion.input,
+    );
     const referenceBindings = characterExpansion.bindings;
 
     const entitlement = await this.entitlements.resolveForUser(user, {
@@ -236,14 +242,9 @@ export class AiGenerationService {
       });
     }
 
-    // Drop client-claimed media facts and refill them from MediaAsset rows:
-    // catalog media rules need exact values and must never depend on what the
-    // browser reported. Still dual-checked by the same pure kernel after
-    // normalize.
-    const mediaFactInput = await this.validator.applyTrustedMediaFacts(input);
     const schemaNormalizedInput = this.validator.normalizeInput(
       model.input_schema,
-      mediaFactInput,
+      input,
     );
     // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.

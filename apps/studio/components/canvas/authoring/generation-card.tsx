@@ -432,10 +432,25 @@ function GenerationCard({
   // model has no pricing policy.
   const cost = useMemo(() => {
     if (!model) return null;
-    const uploadedReferenceCount = refFields.reduce(
-      (n, ff) => n + (references[ff.field]?.length ?? 0),
-      0
-    );
+    const uploadedReferenceCount = refFields
+      .filter((field) => field.kind === "image")
+      .reduce((n, field) => n + (references[field.field]?.length ?? 0), 0);
+    const referenceVideoSeconds = refFields
+      .filter((field) => field.kind === "video")
+      .reduce(
+        (seconds, field) =>
+          seconds +
+          (references[field.field] ?? []).reduce(
+            (fieldSeconds, reference) =>
+              fieldSeconds +
+              (typeof reference.durationSeconds === "number" &&
+              Number.isFinite(reference.durationSeconds)
+                ? reference.durationSeconds
+                : 0),
+            0
+          ),
+        0
+      );
     return (
       estimateModelSellPoints(model, {
         numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -445,6 +460,7 @@ function GenerationCard({
         durationSeconds:
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
         referenceImageCount: uploadedReferenceCount || undefined,
+        referenceVideoSeconds: referenceVideoSeconds || undefined,
       })?.sellPoints ?? null
     );
   }, [model, settings, refFields, references]);

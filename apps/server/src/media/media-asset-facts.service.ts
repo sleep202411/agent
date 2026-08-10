@@ -38,7 +38,9 @@ const DOWNLOAD_TIMEOUT_MS = 90 * 1000;
 const FFPROBE_TIMEOUT_MS = 30 * 1000;
 const FFPROBE_MAX_OUTPUT_BYTES = 256 * 1024;
 /** Hard ceiling on spool size — protects disk under concurrent probes. */
-const MAX_PROBE_BYTES = 128 * 1024 * 1024;
+// Seedance 2.5 permits reference videos up to 200 MiB; the probe ceiling must
+// cover the upload contract or a valid reference would fail before submit.
+const MAX_PROBE_BYTES = 200 * 1024 * 1024;
 
 /**
  * Simultaneous download+ffprobe operations per Node process.

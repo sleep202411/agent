@@ -185,7 +185,11 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
     }
     return {
       kind: 'pending',
-      providerJobId: encodeProviderJobId(runtime.endpointId, taskId),
+      providerJobId: encodeProviderJobId(
+        runtime.endpointId,
+        taskId,
+        hasReferenceVideo(input),
+      ),
       providerRequestId: taskId,
       providerEndpoint: runtime.endpointId,
       providerRequest: payload,
@@ -196,7 +200,8 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
   }
 
   async pollStatus(providerJobId: string): Promise<PollResult> {
-    const { endpointId, taskId } = decodeProviderJobId(providerJobId);
+    const { endpointId, taskId, hasReferenceVideo } =
+      decodeProviderJobId(providerJobId);
     const runtime = await this.requireRuntime(endpointId);
     const { body } = await this.client.getVideoTask(
       this.configService.config,
@@ -206,7 +211,12 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
 
     if (status === 'succeeded') {
       const outputs = collectVideoOutputs(runtime, body);
-      const providerCost = resolveVideoCost(runtime.endpointId, taskId, body);
+      const providerCost = resolveVideoCost(
+        runtime.endpointId,
+        taskId,
+        body,
+        hasReferenceVideo,
+      );
       return {
         kind: 'completed',
         outputs,
@@ -450,22 +460,42 @@ function extFromMime(mimeType: string): string {
   return 'png';
 }
 
-function encodeProviderJobId(endpointId: string, taskId: string): string {
-  return `${endpointId}::${taskId}`;
+function encodeProviderJobId(
+  endpointId: string,
+  taskId: string,
+  hasReferenceVideoInput = false,
+): string {
+  if (endpointId !== 'dreamina-seedance-2-5-260628') {
+    return `${endpointId}::${taskId}`;
+  }
+  return `${endpointId}::${taskId}::${hasReferenceVideoInput ? 'video-input' : 'no-video-input'}`;
 }
 
 function decodeProviderJobId(providerJobId: string): {
   endpointId: string;
   taskId: string;
+  hasReferenceVideo: boolean;
 } {
-  const [endpointId, taskId] = providerJobId.split('::');
+  const [endpointId, taskId, inputClass] = providerJobId.split('::');
   if (!endpointId || !taskId) {
     throw bytePlusError(
       'UNKNOWN',
       `Invalid BytePlus ModelArk providerJobId: ${providerJobId}`,
     );
   }
-  return { endpointId, taskId };
+  return {
+    endpointId,
+    taskId,
+    // Jobs created before this metadata was introduced have two segments.
+    // They belong to the 2.0 integration, whose cost path is duration-based.
+    hasReferenceVideo: inputClass === 'video-input',
+  };
+}
+
+function hasReferenceVideo(input: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(input.referenceVideos) && input.referenceVideos.length > 0
+  );
 }
 
 function collectVideoOutputs(
@@ -474,13 +504,17 @@ function collectVideoOutputs(
 ): RawProviderOutput[] {
   const url = body.content?.video_url;
   if (typeof url === 'string' && url.trim()) {
+    const outputFormat =
+      body.output_format === 'mov' || /\.mov(?:$|\?)/i.test(url)
+        ? 'mov'
+        : 'mp4';
     return [
       {
         index: 0,
         type: 'video',
         providerUrl: url.trim(),
-        mimeType: 'video/mp4',
-        ext: 'mp4',
+        mimeType: outputFormat === 'mov' ? 'video/quicktime' : 'video/mp4',
+        ext: outputFormat,
         durationSeconds:
           typeof body.duration === 'number' ? body.duration : undefined,
       },
@@ -540,10 +574,54 @@ function resolveVideoCost(
   endpointId: string,
   taskId: string,
   body: BytePlusVideoTaskResponse,
+  hasReferenceVideoInput: boolean,
 ): {
   costAccounting: Record<string, unknown> | null;
   pricingSnapshot: Record<string, unknown> | null;
 } {
+  if (endpointId === 'dreamina-seedance-2-5-260628') {
+    const completionTokens = positiveUsageNumber(body.usage?.completion_tokens);
+    if (completionTokens == null) {
+      return { costAccounting: null, pricingSnapshot: null };
+    }
+    const usdPerMillionTokens = hasReferenceVideoInput ? 6.4 : 10.7;
+    const capturedAt = new Date().toISOString();
+    const providerCost = roundProviderCost(
+      (completionTokens / 1_000_000) * usdPerMillionTokens,
+    );
+    return {
+      costAccounting: {
+        provider: 'byteplus-modelark',
+        source: 'byteplus_response_usage',
+        endpointId,
+        requestId: taskId,
+        billableUnits: completionTokens,
+        unitPrice: usdPerMillionTokens,
+        unit: 'million_completion_tokens',
+        inputClass: hasReferenceVideoInput
+          ? 'with_reference_video'
+          : 'without_reference_video',
+        currency: 'USD',
+        providerCost,
+        providerCostUsd: providerCost,
+        capturedAt,
+      },
+      pricingSnapshot: {
+        provider: 'byteplus-modelark',
+        source: 'byteplus_modelark_official_pricing',
+        endpointId,
+        unitPrice: usdPerMillionTokens,
+        unit: 'million_completion_tokens',
+        inputClass: hasReferenceVideoInput
+          ? 'with_reference_video'
+          : 'without_reference_video',
+        currency: 'USD',
+        capturedAt,
+        pricingVersion: 'seedance-2-5-usd-token-v1-2026-08-10',
+        usage: body.usage,
+      },
+    };
+  }
   const resolution =
     typeof body.resolution === 'string' && body.resolution
       ? body.resolution
@@ -588,17 +666,30 @@ function resolveVideoCost(
   };
 }
 
+function positiveUsageNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
 function videoErrorFromTask(
   runtime: BytePlusImageRuntimeConfig,
   body: BytePlusVideoTaskResponse,
 ): AiJobError {
   const detail = body.error?.message ?? JSON.stringify(body).slice(0, 500);
+  const providerCode = body.error?.code ?? '';
+  const taskTypeConstraint =
+    providerCode === 'InvalidParameter.TaskTypeConstraint' ||
+    /TaskTypeConstraint/i.test(detail);
   return {
-    code: 'UNKNOWN',
+    code: taskTypeConstraint ? 'VALIDATION_ERROR' : 'UNKNOWN',
     message: `BytePlus ModelArk video task failed for ${runtime.endpointId}: ${detail}`,
-    userMessage: 'Generation failed. Please try again.',
+    // ModelArk's async task classifier returns the actionable constraint here
+    // (for example, editing requires adaptive ratio and duration=-1). Preserve
+    // it verbatim so creators can correct the request instead of retrying blind.
+    userMessage: detail,
     raw: body,
-    retryable: true,
+    retryable: !taskTypeConstraint,
     createdAt: new Date().toISOString(),
   };
 }

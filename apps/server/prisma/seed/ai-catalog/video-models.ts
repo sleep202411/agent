@@ -25,6 +25,8 @@ import {
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
   SEEDANCE_2_0_SD_PARAMETER_POLICY,
+  SEEDANCE_2_5_PARAMETER_POLICY,
+  SEEDANCE_2_5_PRODUCT_PRICING,
   WAN_2_7_VIDEO_PARAMETER_POLICY,
   WAN_2_7_VIDEO_PRODUCT_PRICING,
 } from './defaults';
@@ -92,6 +94,47 @@ const bytePlusSeedanceProvider: ProviderEntry = {
   },
 };
 
+/** Dreamina Seedance 2.5 — official public ModelArk model id. */
+const bytePlusSeedance25Provider: ProviderEntry = {
+  provider: 'byteplus-modelark',
+  endpointId: 'dreamina-seedance-2-5-260628',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  maxConcurrentRequests: 10,
+  maxRequestsPerMinute: 600,
+  priority: 60,
+  catalogSnapshot: {
+    docs: [
+      {
+        title: 'Seedance 2.5 integration guide',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/2607688',
+      },
+      {
+        title: 'Create a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1520757',
+      },
+      {
+        title: 'Retrieve a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1521309',
+      },
+      {
+        title: 'Model pricing',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      },
+    ],
+    model: 'dreamina-seedance-2-5-260628',
+    api: {
+      create: 'POST /api/v3/contents/generations/tasks',
+      query: 'GET /api/v3/contents/generations/tasks/{task_id}',
+    },
+    pricing: { source: 'provider_usage', unit: 'completion_token' },
+    limits: {
+      maxConcurrentRequests: 10,
+      maxRequestsPerMinute: 600,
+    },
+  },
+};
+
 /** Official fast variant (480p/720p only, no 1080p/4k tier). */
 const bytePlusSeedanceFastProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
@@ -138,6 +181,25 @@ const miniMaxH3Provider: ProviderEntry = {
 };
 
 export const VIDEO_MODELS: VideoModelSeed[] = [
+  {
+    slug: 'seedance-2-5',
+    displayName: 'Seedance 2.5',
+    family: 'seedance',
+    vendor: 'ByteDance',
+    description:
+      'ByteDance Seedance 2.5 — native 30-second cinematic video with synced audio, multimodal references, precise editing and extension.',
+    modes: SEEDANCE_MODES,
+    tier: 'vip',
+    // Auto-duration + maximum 30s of reference video: 60s × 23 points/s.
+    cost: 1380,
+    parameterPolicy: SEEDANCE_2_5_PARAMETER_POLICY,
+    productPricing: SEEDANCE_2_5_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 5,
+    recommended: true,
+    providers: [bytePlusSeedance25Provider],
+    providerAliases: ['bytedance/seedance-2.5', 'dreamina-seedance-2-5-260628'],
+  },
   {
     slug: 'quick-video-1-0',
     displayName: 'Agnes Video 2.0',
@@ -197,7 +259,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     productPricing: SEEDANCE_2_0_PRODUCT_PRICING,
     group: 'video',
     sortOrder: 10,
-    recommended: true,
+    recommended: false,
     providers: [bytePlusSeedanceProvider],
     // 'bytedance/seedance-2.0' kept as a lookup alias for pre-cutover job
     // rows / presets that referenced the retired fal endpoint family.

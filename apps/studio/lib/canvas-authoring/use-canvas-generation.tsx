@@ -187,10 +187,25 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
   const mode = data.mode ?? defaultMode(model);
   const settings = data.settings ?? {};
   const refFields = referenceFieldsForMode(model, mode);
-  const uploadedReferenceCount = refFields.reduce(
-    (count, field) => count + (data.references?.[field.field]?.length ?? 0),
-    0
-  );
+  const uploadedReferenceCount = refFields
+    .filter((field) => field.kind === "image")
+    .reduce((count, field) => count + (data.references?.[field.field]?.length ?? 0), 0);
+  const referenceVideoSeconds = refFields
+    .filter((field) => field.kind === "video")
+    .reduce(
+      (seconds, field) =>
+        seconds +
+        (data.references?.[field.field] ?? []).reduce(
+          (fieldSeconds, reference) =>
+            fieldSeconds +
+            (typeof reference.durationSeconds === "number" &&
+            Number.isFinite(reference.durationSeconds)
+              ? reference.durationSeconds
+              : 0),
+          0
+        ),
+      0
+    );
   return (
     estimateModelSellPoints(model, {
       numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -200,6 +215,7 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
       durationSeconds:
         typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
       referenceImageCount: uploadedReferenceCount || undefined,
+      referenceVideoSeconds: referenceVideoSeconds || undefined,
     })?.sellPoints ?? null
   );
 }
