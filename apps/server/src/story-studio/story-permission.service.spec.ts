@@ -37,6 +37,7 @@ function fixture() {
     },
   };
   const workspacePermissions = {
+    requireWorkspacePresence: jest.fn().mockResolvedValue(undefined),
     requireWorkspaceRole: jest.fn().mockResolvedValue(undefined),
   };
   const writeGuard = {

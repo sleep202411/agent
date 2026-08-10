@@ -36,7 +36,7 @@ describe('createProjectSectionWithCanvas', () => {
 
     expect(tx.studioDocument.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        projectId: 'project-1',
+        platformProjectId: 'project-1',
         sectionId: 'section-1',
         type: StudioDocumentType.canvas,
       }),
