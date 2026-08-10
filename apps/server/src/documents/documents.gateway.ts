@@ -1,5 +1,5 @@
 /**
- * DocumentsGateway — realtime collaboration channel for PlatformDocument.
+ * DocumentsGateway — realtime collaboration channel for StudioDocument.
  *
  * This is a product-level transport, not the raw y-websocket protocol.
  * Clients can still use Yjs locally: encode Yjs updates as base64 and
@@ -35,14 +35,12 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { ProjectMemberRole } from '@prisma/client';
 import Redis from 'ioredis';
 import type { IncomingMessage } from 'http';
 import type { RawData, Server, WebSocket } from 'ws';
 import type { AuthUser } from '../auth';
 import { AuthService } from '../auth/auth.service';
 import { newShortId } from '../common/id';
-import { WorkspacePermissionService } from '../workspaces';
 import {
   AppendDocumentOperationSchema,
   ListDocumentOperationsQuerySchema,
@@ -50,6 +48,7 @@ import {
 } from './dto';
 import { DocumentsService } from './documents.service';
 import { DocumentAwarenessRegistry, REMOTE_ORIGIN } from './document-awareness';
+import { StudioDocumentAccessService } from './studio-document-access.service';
 
 const REDIS_CHANNEL_PATTERN = 'document:events:*';
 const REDIS_CHANNEL_PREFIX = 'document:events:';
@@ -147,7 +146,7 @@ export class DocumentsGateway
   constructor(
     private readonly authService: AuthService,
     private readonly documents: DocumentsService,
-    private readonly permissions: WorkspacePermissionService,
+    private readonly documentAccess: StudioDocumentAccessService,
   ) {}
 
   afterInit() {
@@ -421,11 +420,7 @@ export class DocumentsGateway
 
     let stillAllowed = true;
     try {
-      await this.permissions.requireDocumentRole(
-        userId,
-        documentId,
-        ProjectMemberRole.viewer,
-      );
+      await this.documentAccess.requireDocument(userId, documentId, 'read');
     } catch {
       stillAllowed = false;
     }

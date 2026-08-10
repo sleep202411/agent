@@ -1,8 +1,10 @@
 import {
-  PlatformDocumentType,
-  PlatformDocumentVersionSource,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   Prisma,
 } from '@prisma/client';
+import { encodeDocumentSnapshot } from '../documents/document-crdt';
+import { rootSchemaFor } from '../documents/document-modes';
 
 export interface CreateProjectSectionWithCanvasInput {
   workspaceId: string;
@@ -21,6 +23,10 @@ export async function createProjectSectionWithCanvas(
   tx: Prisma.TransactionClient,
   input: CreateProjectSectionWithCanvasInput,
 ) {
+  const initialState = encodeDocumentSnapshot(
+    {},
+    rootSchemaFor(StudioDocumentType.canvas)!,
+  );
   const section = await tx.platformProjectSection.create({
     data: {
       workspaceId: input.workspaceId,
@@ -31,30 +37,34 @@ export async function createProjectSectionWithCanvas(
     },
   });
 
-  const document = await tx.platformDocument.create({
+  const document = await tx.studioDocument.create({
     data: {
       workspaceId: input.workspaceId,
-      projectId: input.projectId,
+      platformProjectId: input.projectId,
       sectionId: section.id,
-      type: PlatformDocumentType.canvas,
+      type: StudioDocumentType.canvas,
       title: input.title,
+      contentSnapshot:
+        initialState.snapshot as unknown as Prisma.InputJsonValue,
+      crdtState: Buffer.from(initialState.state),
       createdById: input.actorId,
     },
   });
-  const version = await tx.platformDocumentVersion.create({
+  const version = await tx.studioDocumentVersion.create({
     data: {
       documentId: document.id,
       versionNumber: 1,
       schemaVersion: document.schemaVersion,
       sequence: 0,
       title: document.title,
-      source: PlatformDocumentVersionSource.system,
+      source: StudioDocumentVersionSource.system,
       snapshot: document.contentSnapshot as Prisma.InputJsonValue,
+      crdtState: document.crdtState,
       createdById: input.actorId,
       metadata: { reason: 'initial_section_canvas' },
     },
   });
-  const canvas = await tx.platformDocument.update({
+  const canvas = await tx.studioDocument.update({
     where: { id: document.id },
     data: { currentVersionId: version.id },
   });

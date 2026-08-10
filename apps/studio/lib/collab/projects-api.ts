@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
  * Server-backed project + collaborative-document resolution.
  *
  * A studio "project" is a server PlatformProject (under the user's personal
- * workspace); each project section owns one `canvas` PlatformDocument.
+ * workspace); each project section owns one `canvas` StudioDocument.
  * These wrap the NestJS `/aurora/*` routes (satoken cookie auth, `{code,data}`
  * envelope unwrapped by `api`).
  */
@@ -45,7 +45,11 @@ export interface ProjectRef {
 
 export interface ModeDocumentRef {
   id: string;
-  projectId: string;
+  owner:
+    | { kind: "platform_project"; projectId: string }
+    | { kind: "story_project"; projectId: string };
+  platformProjectId: string | null;
+  storyProjectId: string | null;
   workspaceId: string;
   sectionId: string | null;
   type: string;
@@ -208,6 +212,14 @@ export async function ensureModeDocument(
 ): Promise<ModeDocumentRef> {
   const data = await api.post<{ document: ModeDocumentRef }>(
     `/aurora/projects/${projectId}/documents/${type}/ensure`
+  );
+  return data.document;
+}
+
+/** Story's canvas and storyboard are two projections of this same document. */
+export async function ensureStoryCanvasDocument(storyProjectId: string): Promise<ModeDocumentRef> {
+  const data = await api.post<{ document: ModeDocumentRef }>(
+    `/aurora/story-projects/${storyProjectId}/documents/canvas/ensure`
   );
   return data.document;
 }

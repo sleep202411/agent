@@ -2464,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "创作画布",
-        "identity": "影游工作室 · 内容创作",
-        "groupDropHint": "松开以添加到此分组",
-        "workspaceLabel": "项目素材创作空间",
-        "backToChapter": "返回章节画布",
-        "closeSaveError": "无法保存最新的画布修改，请重试后再离开。",
-        "loadError": "无法打开创作画布。",
-        "retry": "重试",
-        "assets": {
-          "description": "浏览项目素材，并将可复用媒体拖入画布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候选素材",
-          "description": "整理可供故事节点直接复用的媒体。",
-          "open": "打开候选素材",
-          "close": "关闭候选素材",
           "add": "添加到候选素材",
           "remove": "从候选素材中移除",
           "filterLabel": "筛选候选素材",
@@ -2492,7 +2478,7 @@
           },
           "empty": "还没有候选素材",
           "emptyFilter": "此分类暂无素材",
-          "emptyDescription": "选中已完成的媒体节点，通过浮动工具栏添加。",
+          "emptyDescription": "选中已完成的媒体节点，通过节点工具栏添加。",
           "loadError": "无法加载候选素材。",
           "actionError": "无法更新候选素材。",
           "retry": "重试",
@@ -2503,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "正在加载",
-          "saving": "正在保存…",
-          "saved": "已保存",
-          "error": "保存失败"
+          "loading": "正在加载"
         }
       },
       "candidatePicker": {
@@ -2531,7 +2514,7 @@
         "loading": "正在加载候选素材…",
         "retry": "重试",
         "empty": "没有符合条件的候选素材",
-        "emptyDescription": "请先在创作画布中将完成的图片或视频加入候选素材。",
+        "emptyDescription": "请先在创意工作台中将完成的图片或视频加入候选素材。",
         "assetLabel": {
           "image": "图片 {index}",
           "video": "视频 {index}"

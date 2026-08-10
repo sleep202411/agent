@@ -198,6 +198,7 @@ export interface FizzAiJobView {
   type: FizzAiJobType;
   workspaceId?: string | null;
   projectId?: string | null;
+  storyProjectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;
@@ -260,6 +261,7 @@ export interface FizzAiSubmitJobInput {
     // projectId/documentId are validated for access on submit — only send them
     // once projects are server-backed entities. A local canvas id 404s.
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     documentBlockId: string;
     sourceSurface: FizzAiSourceSurface;

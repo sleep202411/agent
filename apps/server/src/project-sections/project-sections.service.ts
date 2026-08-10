@@ -5,12 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  PlatformDocumentStatus,
-  PlatformDocumentType,
+  StudioDocumentStatus,
+  StudioDocumentType,
   PlatformProjectStatus,
   ProjectMemberRole,
   Prisma,
-  type PlatformDocument,
+  type StudioDocument,
   type PlatformProjectSection,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -27,7 +27,7 @@ import type {
 import { createProjectSectionWithCanvas } from './project-section.persistence';
 
 type SectionWithDocuments = PlatformProjectSection & {
-  documents: PlatformDocument[];
+  documents: StudioDocument[];
 };
 
 @Injectable()
@@ -142,12 +142,12 @@ export class ProjectSectionsService {
           msg: 'The chapter was modified by another request.',
         });
       }
-      await tx.platformDocument.updateMany({
+      await tx.studioDocument.updateMany({
         where: {
-          projectId,
+          platformProjectId: projectId,
           sectionId,
-          type: PlatformDocumentType.canvas,
-          status: PlatformDocumentStatus.active,
+          type: StudioDocumentType.canvas,
+          status: StudioDocumentStatus.active,
           deletedAt: null,
         },
         data: { title: input.title, updatedById: user.userId },
@@ -310,15 +310,15 @@ export class ProjectSectionsService {
         },
       });
       if (version.count !== 1) this.projectVersionConflict();
-      await tx.platformDocument.updateMany({
+      await tx.studioDocument.updateMany({
         where: {
-          projectId,
+          platformProjectId: projectId,
           sectionId,
-          status: PlatformDocumentStatus.active,
+          status: StudioDocumentStatus.active,
           deletedAt: null,
         },
         data: {
-          status: PlatformDocumentStatus.archived,
+          status: StudioDocumentStatus.archived,
           archivedAt: now,
           updatedById: user.userId,
         },
@@ -406,7 +406,7 @@ export class ProjectSectionsService {
 }
 
 const activeCanvasWhere = {
-  type: PlatformDocumentType.canvas,
-  status: PlatformDocumentStatus.active,
+  type: StudioDocumentType.canvas,
+  status: StudioDocumentStatus.active,
   deletedAt: null,
 } as const;

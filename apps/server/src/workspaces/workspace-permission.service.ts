@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  PlatformDocumentStatus,
   PlatformProjectStatus,
   ProjectMemberRole,
   ProjectMemberStatus,
@@ -12,7 +11,6 @@ import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
-  type PlatformDocument,
   type PlatformProject,
   type WorkspaceMember,
 } from '@prisma/client';
@@ -200,31 +198,5 @@ export class WorkspacePermissionService {
     });
     if (!workspaceMember) return null;
     return WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
-  }
-
-  async requireDocumentRole(
-    userId: string,
-    documentId: string,
-    minimumRole: ProjectMemberRole,
-  ): Promise<PlatformDocument> {
-    const document = await this.prisma.platformDocument.findFirst({
-      where: {
-        id: documentId,
-        status: PlatformDocumentStatus.active,
-        deletedAt: null,
-        project: {
-          status: PlatformProjectStatus.active,
-          deletedAt: null,
-        },
-      },
-    });
-    if (!document) {
-      throw new NotFoundException({
-        code: 'DOCUMENT_NOT_FOUND',
-        msg: 'Document not found.',
-      });
-    }
-    await this.requireProjectRole(userId, document.projectId, minimumRole);
-    return document;
   }
 }

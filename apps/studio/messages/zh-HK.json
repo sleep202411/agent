@@ -2464,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "創作畫布",
-        "identity": "影遊工作室 · 內容創作",
-        "groupDropHint": "放開以加入此分組",
-        "workspaceLabel": "項目素材創作空間",
-        "backToChapter": "返回章節畫布",
-        "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
-        "loadError": "無法開啟創作畫布。",
-        "retry": "重試",
-        "assets": {
-          "description": "瀏覽項目素材，並將可重用媒體拖入畫布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候選素材",
-          "description": "整理可供故事節點直接重用的媒體。",
-          "open": "開啟候選素材",
-          "close": "關閉候選素材",
           "add": "加入候選素材",
           "remove": "從候選素材移除",
           "filterLabel": "篩選候選素材",
@@ -2492,7 +2478,7 @@
           },
           "empty": "尚未有候選素材",
           "emptyFilter": "此分類暫無素材",
-          "emptyDescription": "選取已完成的媒體節點，透過浮動工具列加入。",
+          "emptyDescription": "選取已完成的媒體節點，透過節點工具列加入。",
           "loadError": "無法載入候選素材。",
           "actionError": "無法更新候選素材。",
           "retry": "重試",
@@ -2503,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "正在載入",
-          "saving": "正在儲存…",
-          "saved": "已儲存",
-          "error": "儲存失敗"
+          "loading": "正在載入"
         }
       },
       "candidatePicker": {
@@ -2531,7 +2514,7 @@
         "loading": "正在載入候選素材…",
         "retry": "重試",
         "empty": "沒有符合條件的候選素材",
-        "emptyDescription": "請先在創作畫布中將完成的圖片或影片加入候選素材。",
+        "emptyDescription": "請先在創意工作台中將完成的圖片或影片加入候選素材。",
         "assetLabel": {
           "image": "圖片 {index}",
           "video": "影片 {index}"

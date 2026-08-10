@@ -20,7 +20,7 @@ import { ProjectCrewAssetLibrary } from "./project-crew-asset-library";
 
 export const ASSET_LIBRARY_WIDTH = 320;
 
-type AssetTab = "generated" | "uploaded" | "crew";
+type AssetTab = "generated" | "uploaded" | "crew" | (string & {});
 
 const BASE_TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" | "crew" }[] = [
   { id: "generated", labelKey: "myCreations" },
@@ -73,12 +73,18 @@ export function AssetLibrary({
   variant = "default",
   description,
   crewProjectId,
+  customTab,
 }: {
   open: boolean;
   onClose: () => void;
   variant?: "default" | "floating";
   description?: string;
   crewProjectId?: string;
+  customTab?: {
+    id: string;
+    label: string;
+    render: () => ReactNode;
+  };
 }) {
   const t = useTranslations("canvasNodes");
   // Same inventory as AssetSelectDialog — canvas graph + (when projectId set) crew.
@@ -86,13 +92,12 @@ export function AssetLibrary({
   const { assets: projectAssets } = useProjectAssets(crewProjectId ?? "");
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
-  const tabs = useMemo(
-    () =>
-      crewProjectId
-        ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
-        : BASE_TABS,
-    [crewProjectId]
-  );
+  const tabs = useMemo(() => {
+    const base = crewProjectId
+      ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
+      : BASE_TABS;
+    return customTab ? [...base, { id: customTab.id, label: customTab.label }] : base;
+  }, [crewProjectId, customTab]);
 
   const canvasAssetCount = useMemo(
     () => projectAssets.filter((asset) => asset.origin !== "crew").length,
@@ -140,7 +145,9 @@ export function AssetLibrary({
   const empty = filteredAssets.length === 0;
   const floating = variant === "floating";
   const content =
-    tab === "crew" && crewProjectId ? (
+    customTab && tab === customTab.id ? (
+      customTab.render()
+    ) : tab === "crew" && crewProjectId ? (
       <ProjectCrewAssetLibrary projectId={crewProjectId} query={query} floating={floating} />
     ) : empty ? (
       <EmptyState
@@ -204,7 +211,7 @@ export function AssetLibrary({
                   : "text-white/42 hover:bg-white/[0.07] hover:text-white/72"
               )}
             >
-              {t(`asset.tab.${tabItem.labelKey}`)}
+              {"label" in tabItem ? tabItem.label : t(`asset.tab.${tabItem.labelKey}`)}
             </button>
           ))}
         </div>
@@ -246,7 +253,7 @@ export function AssetLibrary({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {t(`asset.tab.${tabItem.labelKey}`)}
+            {"label" in tabItem ? tabItem.label : t(`asset.tab.${tabItem.labelKey}`)}
           </button>
         ))}
       </div>

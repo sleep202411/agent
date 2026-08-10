@@ -295,8 +295,8 @@ export class ProjectMembersService {
     // Drop the user's live sockets on this project's documents (the gateway
     // keeps any they still reach via a workspace-level role). Best-effort.
     try {
-      const documents = await this.prisma.platformDocument.findMany({
-        where: { projectId, deletedAt: null },
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { platformProjectId: projectId, deletedAt: null },
         select: { id: true },
       });
       await this.docs.revokeUserFromDocuments(

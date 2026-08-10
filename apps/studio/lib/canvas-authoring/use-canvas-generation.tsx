@@ -279,6 +279,7 @@ export function CanvasGenerationProvider({
   catalog: FizzAiCatalog | undefined;
   context: {
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     sourceSurface: FizzAiSourceSurface;
   };
@@ -288,6 +289,7 @@ export function CanvasGenerationProvider({
 }) {
   const t = useTranslations("canvasOps");
   const generationProjectId = context.projectId;
+  const generationStoryProjectId = context.storyProjectId;
   const generationDocumentId = context.documentId;
   const sourceSurface = context.sourceSurface;
   // Destructured mutators/accessors are individually stable (useCallback in
@@ -818,6 +820,7 @@ export function CanvasGenerationProvider({
           // project's workspace wallet.
           context: {
             ...(generationProjectId ? { projectId: generationProjectId } : {}),
+            ...(generationStoryProjectId ? { storyProjectId: generationStoryProjectId } : {}),
             ...(generationDocumentId ? { documentId: generationDocumentId } : {}),
             documentBlockId: nodeId,
             sourceSurface,
@@ -858,6 +861,7 @@ export function CanvasGenerationProvider({
       catalog,
       wallet,
       generationProjectId,
+      generationStoryProjectId,
       generationDocumentId,
       sourceSurface,
       canGenerate,

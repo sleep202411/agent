@@ -81,7 +81,8 @@ export function ShotPictureDrawer({
   onClose: () => void;
 }) {
   const t = useTranslations("storyboard");
-  const { catalog, projectId } = useProjectContext();
+  const { catalog, owner } = useProjectContext();
+  const crewProjectId = owner.kind === "platform_project" ? owner.projectId : "";
   const promptId = useId();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [view, setView] = useState<"compose" | "gallery">("compose");
@@ -290,7 +291,7 @@ export function ShotPictureDrawer({
           <Field label={t("drawer.promptLabel")} htmlFor={promptId} dense>
             <StoryboardPromptTextarea
               id={promptId}
-              projectId={projectId}
+              projectId={crewProjectId}
               value={form.prompt}
               onCommit={form.setPrompt}
               placeholder={t("drawer.promptPlaceholder")}

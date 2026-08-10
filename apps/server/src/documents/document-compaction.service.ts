@@ -163,7 +163,7 @@ export class DocumentCompactionService implements OnModuleDestroy {
    *          work remains, so the caller should run again.
    */
   private async compactDocument(documentId: string): Promise<boolean> {
-    const doc = await this.prisma.platformDocument.findUnique({
+    const doc = await this.prisma.studioDocument.findUnique({
       where: { id: documentId },
       select: {
         type: true,
@@ -202,7 +202,7 @@ export class DocumentCompactionService implements OnModuleDestroy {
           this.config.batchSize,
           this.config.maxOpsPerRun - applied,
         );
-        const batch = await this.prisma.platformDocumentOperation.findMany({
+        const batch = await this.prisma.studioDocumentOperation.findMany({
           where: {
             documentId,
             sequence: { gt: cursor, lte: target },
@@ -233,7 +233,7 @@ export class DocumentCompactionService implements OnModuleDestroy {
       const newSnapshotSequence = exhausted ? target : cursor;
       const merged = builder.finish();
 
-      const result = await this.prisma.platformDocument.updateMany({
+      const result = await this.prisma.studioDocument.updateMany({
         where: {
           id: documentId,
           snapshotSequence: { lt: newSnapshotSequence },
@@ -273,7 +273,7 @@ export class DocumentCompactionService implements OnModuleDestroy {
   ): Promise<void> {
     const pruneBelow = snapshotSequence - this.config.pruneRetention;
     if (pruneBelow <= 0) return;
-    const deleted = await this.prisma.platformDocumentOperation.deleteMany({
+    const deleted = await this.prisma.studioDocumentOperation.deleteMany({
       where: { documentId, sequence: { lte: pruneBelow } },
     });
     if (deleted.count > 0) {

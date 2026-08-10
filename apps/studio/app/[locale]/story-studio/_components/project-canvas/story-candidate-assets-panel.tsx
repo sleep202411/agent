@@ -20,12 +20,10 @@ type CandidateFilter = "all" | "image" | "video" | "audio";
 
 export function StoryCandidateAssetsPanel({
   controller,
-  onClose,
 }: {
   controller: StoryCandidateAssetsController;
-  onClose: () => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.productionCanvas.candidates");
+  const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const [filter, setFilter] = useState<CandidateFilter>("all");
   const items = useMemo(
     () =>
@@ -37,14 +35,6 @@ export function StoryCandidateAssetsPanel({
 
   return (
     <>
-      <DrawerPanel.Header
-        title={t("title")}
-        description={t("description")}
-        count={controller.items.length}
-        icon={<IconBookmark className="size-4" stroke={1.8} />}
-        closeLabel={t("close")}
-        onClose={onClose}
-      />
       <div className="flex shrink-0 gap-1 px-4 py-3" role="tablist" aria-label={t("filterLabel")}>
         {(["all", "image", "video", "audio"] as const).map((value) => (
           <button
@@ -123,7 +113,7 @@ function CandidateCard({
   pending: boolean;
   onRemove: () => void;
 }) {
-  const t = useTranslations("storyStudio.canvas.productionCanvas.candidates");
+  const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const { asset } = candidate;
   const Icon = asset.kind === "video" ? IconVideo : asset.kind === "audio" ? IconMusic : IconPhoto;
   const label = t(`assetLabel.${asset.kind}`, { index: index + 1 });

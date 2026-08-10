@@ -22,6 +22,7 @@ import {
   ListProjectDocumentsQuerySchema,
   ProjectDocumentEnsureParamsSchema,
   ProjectDocumentsParamsSchema,
+  StoryCanvasDocumentParamsSchema,
   UpdateDocumentSchema,
   UpsertDocumentPresenceSchema,
   type AddCommentInput,
@@ -35,6 +36,7 @@ import {
   type ListProjectDocumentsQuery,
   type ProjectDocumentEnsureParams,
   type ProjectDocumentsParams,
+  type StoryCanvasDocumentParams,
   type UpdateDocumentInput,
   type UpsertDocumentPresenceInput,
 } from './dto';
@@ -105,6 +107,21 @@ export class DocumentsController {
     return {
       code: 200,
       data: await this.documents.getDocument(user, params.documentId),
+    };
+  }
+
+  @Post('story-projects/:projectId/documents/canvas/ensure')
+  async ensureStoryCanvasDocument(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryCanvasDocumentParamsSchema))
+    params: StoryCanvasDocumentParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.documents.ensureStoryCanvasDocument(
+        user,
+        params.projectId,
+      ),
     };
   }
 

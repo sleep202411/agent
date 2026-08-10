@@ -383,8 +383,8 @@ export class WorkspaceMembersService {
     // re-checks per document and keeps any they still reach via a direct
     // project grant). Best-effort — writes are already blocked server-side.
     try {
-      const documents = await this.prisma.platformDocument.findMany({
-        where: { deletedAt: null, project: { workspaceId, deletedAt: null } },
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { workspaceId, deletedAt: null },
         select: { id: true },
       });
       await this.docs.revokeUserFromDocuments(

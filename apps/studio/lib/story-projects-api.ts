@@ -1,13 +1,4 @@
 import { api, ApiRequestError } from "@/lib/api";
-import {
-  CANVAS_GROUP_COLORS,
-  DEFAULT_CANVAS_GROUP_COLOR,
-  type CanvasAsset,
-  type CanvasEdgeShape,
-  type CanvasGroup,
-  type CanvasGroupColor,
-  type CanvasNodeShape,
-} from "@/lib/canvas-core/types";
 
 /**
  * Product Story Studio client.
@@ -20,7 +11,6 @@ import {
 
 export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v1" as const;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v3" as const;
-export const STORY_PRODUCTION_CANVAS_SCHEMA_VERSION = "story-production-canvas-v2" as const;
 
 export type StoryProjectStatus = "active" | "archived";
 export type StoryVisibility = "private" | "unlisted" | "public";
@@ -220,28 +210,6 @@ export interface StoryCanvasLayout {
   schemaVersion: typeof STORY_CANVAS_LAYOUT_SCHEMA_VERSION;
   nodePositions: Record<string, StoryCanvasPosition>;
   revision: number;
-  updatedByUserId: string;
-  updatedBySessionId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StoryProductionCanvasContent {
-  nodes: CanvasNodeShape[];
-  edges: CanvasEdgeShape[];
-  assets: CanvasAsset[];
-  groups: StoryProductionCanvasGroup[];
-}
-
-export const STORY_PRODUCTION_CANVAS_GROUP_COLORS = CANVAS_GROUP_COLORS;
-export const DEFAULT_STORY_PRODUCTION_CANVAS_GROUP_COLOR = DEFAULT_CANVAS_GROUP_COLOR;
-export type StoryProductionCanvasGroup = CanvasGroup;
-export type StoryProductionCanvasGroupColor = CanvasGroupColor;
-
-export interface StoryProductionCanvas {
-  projectId: string;
-  schemaVersion: typeof STORY_PRODUCTION_CANVAS_SCHEMA_VERSION;
-  content: StoryProductionCanvasContent;
   updatedByUserId: string;
   updatedBySessionId: string | null;
   createdAt: string;
@@ -793,42 +761,6 @@ export async function getStoryCanvasLayout(
   );
 }
 
-export async function getStoryProductionCanvas(
-  workspaceId: string,
-  projectId: string,
-  signal?: AbortSignal
-): Promise<StoryProductionCanvas> {
-  const value = await api.get<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/production-canvas`,
-    { headers: storyWorkspaceHeaders(workspaceId), signal }
-  );
-  assertStoryProductionCanvas(value, projectId);
-  return value;
-}
-
-export async function putStoryProductionCanvas(
-  workspaceId: string,
-  projectId: string,
-  content: StoryProductionCanvasContent,
-  sessionId: string,
-  request?: Pick<RequestInit, "keepalive">
-): Promise<StoryProductionCanvas> {
-  const value = await api.put<unknown>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/production-canvas`,
-    {
-      data: {
-        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-        content,
-        sessionId,
-      },
-      headers: storyWorkspaceHeaders(workspaceId),
-      ...request,
-    }
-  );
-  assertStoryProductionCanvas(value, projectId);
-  return value;
-}
-
 export async function getStoryCandidateAssets(
   workspaceId: string,
   projectId: string,
@@ -1213,121 +1145,6 @@ function assertProjectSummary(value: unknown): asserts value is StoryProjectSumm
   }
 }
 
-function assertStoryProductionCanvas(
-  value: unknown,
-  expectedProjectId: string
-): asserts value is StoryProductionCanvas {
-  if (!isRecord(value)) {
-    throw new Error("Story Studio API returned an invalid production canvas.");
-  }
-  const content = value.content;
-  if (
-    value.projectId !== expectedProjectId ||
-    value.schemaVersion !== STORY_PRODUCTION_CANVAS_SCHEMA_VERSION ||
-    !nonEmptyString(value.updatedByUserId) ||
-    !nullableNonEmptyString(value.updatedBySessionId) ||
-    !validIsoTimestamp(value.createdAt) ||
-    !validIsoTimestamp(value.updatedAt) ||
-    !isRecord(content) ||
-    !Array.isArray(content.nodes) ||
-    !Array.isArray(content.edges) ||
-    !Array.isArray(content.assets) ||
-    !Array.isArray(content.groups)
-  ) {
-    throw new Error("Story Studio API returned an invalid production canvas.");
-  }
-
-  const nodeIds = new Set<string>();
-  for (const node of content.nodes) {
-    if (
-      !isRecord(node) ||
-      !nonEmptyString(node.id) ||
-      nodeIds.has(node.id) ||
-      !["image", "panorama", "note", "videoAsset", "audioAsset", "prompt", "video"].includes(
-        String(node.type)
-      ) ||
-      !isRecord(node.position) ||
-      !finiteNumber(node.position.x) ||
-      !finiteNumber(node.position.y) ||
-      !isRecord(node.data) ||
-      !optionalPositiveNumber(node.width) ||
-      !optionalPositiveNumber(node.height)
-    ) {
-      throw new Error("Story Studio API returned an invalid production canvas.");
-    }
-    nodeIds.add(node.id);
-  }
-
-  const edgeIds = new Set<string>();
-  for (const edge of content.edges) {
-    if (
-      !isRecord(edge) ||
-      !nonEmptyString(edge.id) ||
-      edgeIds.has(edge.id) ||
-      !nonEmptyString(edge.source) ||
-      !nonEmptyString(edge.target) ||
-      !nodeIds.has(edge.source) ||
-      !nodeIds.has(edge.target) ||
-      !optionalNullableString(edge.sourceHandle) ||
-      !optionalNullableString(edge.targetHandle)
-    ) {
-      throw new Error("Story Studio API returned an invalid production canvas.");
-    }
-    edgeIds.add(edge.id);
-  }
-
-  const assetIds = new Set<string>();
-  for (const asset of content.assets) {
-    if (
-      !isRecord(asset) ||
-      !nonEmptyString(asset.id) ||
-      assetIds.has(asset.id) ||
-      !["image", "video", "audio"].includes(String(asset.kind)) ||
-      !["generated", "uploaded"].includes(String(asset.source)) ||
-      !nonEmptyString(asset.url) ||
-      !optionalNonEmptyString(asset.mediaAssetId) ||
-      !optionalPositiveInteger(asset.width) ||
-      !optionalPositiveInteger(asset.height) ||
-      !optionalString(asset.name) ||
-      !optionalString(asset.prompt) ||
-      !optionalBoolean(asset.panorama) ||
-      !nonNegativeInteger(asset.createdAt)
-    ) {
-      throw new Error("Story Studio API returned an invalid production canvas.");
-    }
-    assetIds.add(asset.id);
-  }
-
-  const groupIds = new Set<string>();
-  const groupedNodeIds = new Set<string>();
-  for (const group of content.groups) {
-    if (
-      !isRecord(group) ||
-      !nonEmptyString(group.id) ||
-      groupIds.has(group.id) ||
-      !Array.isArray(group.nodeIds) ||
-      group.nodeIds.length < 2 ||
-      !STORY_PRODUCTION_CANVAS_GROUP_COLORS.includes(group.color as StoryProductionCanvasGroupColor)
-    ) {
-      throw new Error("Story Studio API returned an invalid production canvas.");
-    }
-    const memberIds = new Set<string>();
-    for (const nodeId of group.nodeIds) {
-      if (
-        !nonEmptyString(nodeId) ||
-        !nodeIds.has(nodeId) ||
-        memberIds.has(nodeId) ||
-        groupedNodeIds.has(nodeId)
-      ) {
-        throw new Error("Story Studio API returned an invalid production canvas.");
-      }
-      memberIds.add(nodeId);
-      groupedNodeIds.add(nodeId);
-    }
-    groupIds.add(group.id);
-  }
-}
-
 function assertStoryCandidateAsset(value: unknown): asserts value is StoryCandidateAsset {
   if (!value || typeof value !== "object") {
     throw new Error("Story Studio API returned an invalid candidate asset.");
@@ -1488,48 +1305,12 @@ function sha256String(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
 function positiveNumber(value: unknown): value is number {
   return finiteNumber(value) && value > 0;
-}
-
-function positiveInteger(value: unknown): value is number {
-  return positiveNumber(value) && Number.isInteger(value);
-}
-
-function nonNegativeInteger(value: unknown): value is number {
-  return finiteNumber(value) && Number.isInteger(value) && value >= 0;
-}
-
-function optionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function optionalNonEmptyString(value: unknown): value is string | undefined {
-  return value === undefined || nonEmptyString(value);
-}
-
-function optionalNullableString(value: unknown): value is string | null | undefined {
-  return value === undefined || value === null || typeof value === "string";
-}
-
-function optionalPositiveNumber(value: unknown): value is number | undefined {
-  return value === undefined || positiveNumber(value);
-}
-
-function optionalPositiveInteger(value: unknown): value is number | undefined {
-  return value === undefined || positiveInteger(value);
-}
-
-function optionalBoolean(value: unknown): value is boolean | undefined {
-  return value === undefined || typeof value === "boolean";
 }
 
 function nullableNonEmptyString(value: unknown): value is string | null {

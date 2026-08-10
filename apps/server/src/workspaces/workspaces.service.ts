@@ -9,8 +9,8 @@ import {
   BillingOrderStatus,
   BillingSubjectType,
   BillingSubscriptionStatus,
-  PlatformDocumentStatus,
-  PlatformDocumentType,
+  StudioDocumentStatus,
+  StudioDocumentType,
   PlatformProjectStatus,
   ProjectMemberRole,
   ProjectMemberStatus,
@@ -296,8 +296,8 @@ export class WorkspacesService {
       include: {
         documents: {
           where: {
-            type: PlatformDocumentType.canvas,
-            status: PlatformDocumentStatus.active,
+            type: StudioDocumentType.canvas,
+            status: StudioDocumentStatus.active,
             deletedAt: null,
           },
           orderBy: [{ createdAt: 'asc' }],

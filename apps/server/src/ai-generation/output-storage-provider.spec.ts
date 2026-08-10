@@ -3,7 +3,7 @@ import type { AuthUser } from '../auth';
 import { AiGenerationService } from './ai-generation.service';
 import {
   resolveOutputStorageProvider,
-  STORY_PRODUCTION_CANVAS_SURFACE,
+  STORY_STUDIO_WORKBENCH_SURFACE,
 } from './output-storage-target';
 import { AiGenerationRepository } from './repository';
 import type { AiJob, AiJobOutput, AiJobType, AiSubmitJobBody } from './types';
@@ -14,7 +14,7 @@ describe('resolveOutputStorageProvider', () => {
     expect(
       resolveOutputStorageProvider({
         type: 'video',
-        sourceSurface: STORY_PRODUCTION_CANVAS_SURFACE,
+        sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
       }),
     ).toBe(MediaStorageProvider.s3_compatible);
   });
@@ -25,7 +25,7 @@ describe('resolveOutputStorageProvider', () => {
     expect(
       resolveOutputStorageProvider({
         type: 'image',
-        sourceSurface: STORY_PRODUCTION_CANVAS_SURFACE,
+        sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
       }),
     ).toBeNull();
     expect(
@@ -49,12 +49,12 @@ describe('AiGenerationService submit-time storage pin', () => {
 
     await harness.service.submitJob(
       userFixture(),
-      submitBody(STORY_PRODUCTION_CANVAS_SURFACE),
+      submitBody(STORY_STUDIO_WORKBENCH_SURFACE),
     );
 
     expect(harness.store.reserveQueuedJob).toHaveBeenCalledTimes(1);
     expect(harness.built()).toMatchObject({
-      sourceSurface: STORY_PRODUCTION_CANVAS_SURFACE,
+      sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
       outputStorageProvider: MediaStorageProvider.s3_compatible,
     });
   });
@@ -64,7 +64,7 @@ describe('AiGenerationService submit-time storage pin', () => {
 
     await harness.service.submitJob(
       userFixture(),
-      submitBody(STORY_PRODUCTION_CANVAS_SURFACE),
+      submitBody(STORY_STUDIO_WORKBENCH_SURFACE),
     );
 
     expect(harness.built().outputStorageProvider).toBeNull();
@@ -304,6 +304,8 @@ function submitHarness(type: AiJobType) {
     { resolve: jest.fn(() => routingDecision(type)) } as never,
     {} as never,
     { requireWorkspaceRole: jest.fn() } as never,
+    {} as never,
+    {} as never,
     {
       resolveForUser: jest.fn(() => ({
         subject: { type: 'user', id: 'user-1' },

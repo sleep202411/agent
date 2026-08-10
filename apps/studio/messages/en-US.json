@@ -2464,23 +2464,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "Creation canvas",
-        "identity": "Interactive Film Studio · Content creation",
-        "groupDropHint": "Release to add to this group",
-        "workspaceLabel": "Project media creation workspace",
-        "backToChapter": "Back to chapter canvas",
-        "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
-        "loadError": "The creation canvas could not be opened.",
-        "retry": "Try again",
-        "assets": {
-          "description": "Browse and drag reusable project media onto the canvas."
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "Candidate assets",
-          "description": "Curate the media that Story nodes can reuse.",
-          "open": "Open candidate assets",
-          "close": "Close candidate assets",
           "add": "Add to candidate assets",
           "remove": "Remove from candidate assets",
           "filterLabel": "Filter candidate assets",
@@ -2492,7 +2478,7 @@
           },
           "empty": "No candidate assets",
           "emptyFilter": "Nothing in this category",
-          "emptyDescription": "Select a finished media node and add it from the floating toolbar.",
+          "emptyDescription": "Select a finished media node and add it from its canvas toolbar.",
           "loadError": "Candidate assets could not be loaded.",
           "actionError": "The candidate asset could not be updated.",
           "retry": "Try again",
@@ -2503,10 +2489,7 @@
           }
         },
         "status": {
-          "loading": "Loading",
-          "saving": "Saving…",
-          "saved": "Saved",
-          "error": "Save failed"
+          "loading": "Loading"
         }
       },
       "candidatePicker": {
@@ -2531,7 +2514,7 @@
         "loading": "Loading candidate media…",
         "retry": "Try again",
         "empty": "No matching candidate media",
-        "emptyDescription": "Add finished images or videos to Candidate assets on the creation canvas.",
+        "emptyDescription": "Add finished images or videos to Candidate assets in the creative workbench.",
         "assetLabel": {
           "image": "Image {index}",
           "video": "Video {index}"

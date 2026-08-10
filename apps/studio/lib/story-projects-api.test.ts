@@ -20,19 +20,16 @@ import {
   createStoryProject,
   getStoryExperienceCurrentRelease,
   getStoryCandidateAssets,
-  getStoryProductionCanvas,
   getStoryClipVideoUploadFinalization,
   getStoryProjectWorkspace,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
-  putStoryProductionCanvas,
   putStoryClipCurrentVideo,
   removeStoryCandidateAsset,
   updateStoryChapter,
   type StoryClipVideoFinalization,
   type StoryCandidateAsset,
-  type StoryProductionCanvas,
   type StoryProjectSummary,
   type StoryVideoLibraryItem,
   waitForStoryClipVideoUploadFinalization,
@@ -130,78 +127,6 @@ describe("current-draft Story production routes", () => {
           sessionId: "session-1",
         }),
       })
-    );
-  });
-
-  it("reads and writes the project-wide production canvas independently of chapters", async () => {
-    const content = {
-      nodes: [
-        {
-          id: "note-1",
-          type: "note",
-          position: { x: 10, y: 20 },
-          data: { text: "Continuity" },
-        },
-        {
-          id: "note-2",
-          type: "note",
-          position: { x: 280, y: 20 },
-          data: { text: "Lighting reference" },
-        },
-      ],
-      edges: [],
-      assets: [],
-      groups: [{ id: "opening", nodeIds: ["note-1", "note-2"], color: "slate" }],
-    } satisfies StoryProductionCanvas["content"];
-    const controller = new AbortController();
-    const response = productionCanvas("project / one", content);
-    vi.mocked(api.get).mockResolvedValueOnce(response);
-    vi.mocked(api.put).mockResolvedValueOnce(response);
-
-    await getStoryProductionCanvas("workspace-1", "project / one", controller.signal);
-    await putStoryProductionCanvas("workspace-1", "project / one", content, "session-1", {
-      keepalive: true,
-    });
-
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/production-canvas",
-      {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        signal: controller.signal,
-      }
-    );
-    expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/production-canvas",
-      {
-        data: {
-          schemaVersion: "story-production-canvas-v2",
-          content,
-          sessionId: "session-1",
-        },
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        keepalive: true,
-      }
-    );
-  });
-
-  it("rejects a production canvas response with dangling graph references", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(
-      productionCanvas("project-1", {
-        nodes: [],
-        edges: [
-          {
-            id: "edge-1",
-            source: "missing-source",
-            target: "missing-target",
-          },
-        ],
-        assets: [],
-        groups: [],
-      })
-    );
-
-    await expect(getStoryProductionCanvas("workspace-1", "project-1")).rejects.toThrow(
-      "invalid production canvas"
     );
   });
 
@@ -577,21 +502,6 @@ function candidateAsset(): StoryCandidateAsset {
     },
     addedByUserId: "user-1",
     addedAt: "2026-07-23T12:00:00.000Z",
-  };
-}
-
-function productionCanvas(
-  projectId: string,
-  content: StoryProductionCanvas["content"]
-): StoryProductionCanvas {
-  return {
-    projectId,
-    schemaVersion: "story-production-canvas-v2",
-    content,
-    updatedByUserId: "user-1",
-    updatedBySessionId: "session-1",
-    createdAt: "2026-07-23T12:00:00.000Z",
-    updatedAt: "2026-07-23T12:00:00.000Z",
   };
 }
 

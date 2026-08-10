@@ -48,6 +48,13 @@ export type ProjectDocumentEnsureParams = z.infer<
   typeof ProjectDocumentEnsureParamsSchema
 >;
 
+export const StoryCanvasDocumentParamsSchema = z.object({
+  projectId: z.string().uuid(),
+});
+export type StoryCanvasDocumentParams = z.infer<
+  typeof StoryCanvasDocumentParamsSchema
+>;
+
 export const ListProjectDocumentsQuerySchema = z.object({
   type: DocumentTypeSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),

@@ -17,10 +17,14 @@ import {
   StoryProjectMemberStatus,
   StoryProjectStatus,
   StoryRevisionSource,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
+import { encodeDocumentSnapshot } from '../documents/document-crdt';
+import { rootSchemaFor } from '../documents/document-modes';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -31,12 +35,9 @@ import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
-  EMPTY_STORY_PRODUCTION_CANVAS_CONTENT,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
   StoryCanvasNodePositionsSchema,
-  StoryProductionCanvasContentSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
   type CreateStoryChapterInput,
@@ -51,12 +52,10 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
-  type PutStoryProductionCanvasInput,
   type StoryCapability,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryCandidateAssetDto,
-  type StoryProductionCanvasDto,
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
@@ -220,6 +219,10 @@ export class StoryProjectsService {
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
     );
+    const initialCanvasState = encodeDocumentSnapshot(
+      {},
+      rootSchemaFor(StudioDocumentType.canvas)!,
+    );
     const { project, chapter } = await this.prisma.$transaction(async (tx) => {
       const project = await tx.storyProject.create({
         data: {
@@ -249,16 +252,39 @@ export class StoryProjectsService {
               updatedByUserId: user.userId,
             },
           },
-          productionCanvas: {
-            create: {
-              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-              content:
-                EMPTY_STORY_PRODUCTION_CANVAS_CONTENT as Prisma.InputJsonObject,
-              updatedByUserId: user.userId,
-            },
-          },
           writeState: { create: {} },
         },
+      });
+      const studioDocument = await tx.studioDocument.create({
+        data: {
+          workspaceId,
+          storyProjectId: project.id,
+          type: StudioDocumentType.canvas,
+          title: project.title,
+          contentSnapshot: {
+            ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+          },
+          crdtState: Buffer.from(initialCanvasState.state),
+          createdById: user.userId,
+        },
+      });
+      const studioDocumentVersion = await tx.studioDocumentVersion.create({
+        data: {
+          documentId: studioDocument.id,
+          versionNumber: 1,
+          schemaVersion: studioDocument.schemaVersion,
+          sequence: 0,
+          title: studioDocument.title,
+          source: StudioDocumentVersionSource.system,
+          snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: studioDocument.crdtState,
+          metadata: { reason: 'initial_story_canvas' },
+          createdById: user.userId,
+        },
+      });
+      await tx.studioDocument.update({
+        where: { id: studioDocument.id },
+        data: { currentVersionId: studioDocumentVersion.id },
       });
       const chapter = await tx.storyChapter.create({
         data: {
@@ -1020,54 +1046,6 @@ export class StoryProjectsService {
       );
     }
     return this.toCanvasLayout(layout);
-  }
-
-  async getProductionCanvas(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-  ): Promise<StoryProductionCanvasDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
-    const canvas = await this.prisma.storyProductionCanvas.findUnique({
-      where: { storyProjectId: projectId },
-    });
-    if (!canvas) throwProductionCanvasNotFound();
-    return this.toProductionCanvas(canvas);
-  }
-
-  async putProductionCanvas(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    input: PutStoryProductionCanvasInput,
-  ): Promise<StoryProductionCanvasDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
-
-    const canvas = await this.prisma.$transaction(async (tx) => {
-      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const updated = await tx.storyProductionCanvas.update({
-        where: { storyProjectId: projectId },
-        data: {
-          schemaVersion: input.schemaVersion,
-          content: input.content as Prisma.InputJsonObject,
-          updatedByUserId: user.userId,
-          updatedBySessionId: input.sessionId,
-        },
-      });
-      await tx.storyProject.update({
-        where: { id: projectId },
-        data: { updatedAt: new Date() },
-      });
-      return updated;
-    });
-
-    return this.toProductionCanvas(canvas);
   }
 
   async listCandidateAssets(
@@ -1843,36 +1821,6 @@ export class StoryProjectsService {
     };
   }
 
-  private toProductionCanvas(row: {
-    storyProjectId: string;
-    schemaVersion: string;
-    content: Prisma.JsonValue;
-    updatedByUserId: string;
-    updatedBySessionId: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): StoryProductionCanvasDto {
-    if (row.schemaVersion !== STORY_PRODUCTION_CANVAS_SCHEMA_VERSION) {
-      throw corruptData(
-        'STORY_PRODUCTION_CANVAS_SCHEMA_UNSUPPORTED',
-        'production canvas schema',
-      );
-    }
-    const content = StoryProductionCanvasContentSchema.safeParse(row.content);
-    if (!content.success) {
-      throw corruptData('STORY_PRODUCTION_CANVAS_CORRUPT', 'production canvas');
-    }
-    return {
-      projectId: row.storyProjectId,
-      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-      content: content.data,
-      updatedByUserId: row.updatedByUserId,
-      updatedBySessionId: row.updatedBySessionId,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
   private toRevisionSummary(row: {
     id: string;
     number: number;
@@ -2052,13 +2000,6 @@ function throwCanvasLayoutNotFound(): never {
   throw new NotFoundException({
     code: 'STORY_CANVAS_LAYOUT_NOT_FOUND',
     message: 'Story canvas layout not found.',
-  });
-}
-
-function throwProductionCanvasNotFound(): never {
-  throw new NotFoundException({
-    code: 'STORY_PRODUCTION_CANVAS_NOT_FOUND',
-    message: 'Story production canvas not found.',
   });
 }
 

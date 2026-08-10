@@ -56,7 +56,7 @@ function build() {
       }),
     },
     workspaceMember: { findFirst: jest.fn().mockResolvedValue(null) },
-    platformDocument: { findMany: jest.fn().mockResolvedValue([]) },
+    studioDocument: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
   };
   const notifications = { send: jest.fn().mockResolvedValue({}) };

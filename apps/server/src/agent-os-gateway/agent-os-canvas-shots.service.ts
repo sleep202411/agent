@@ -5,9 +5,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
-  PlatformDocumentOperationType,
-  PlatformDocumentStatus,
-  PlatformDocumentType,
+  StudioDocumentOperationType,
+  StudioDocumentStatus,
+  StudioDocumentType,
 } from '@prisma/client';
 import {
   AGENT_SHOT_ID_PREFIX,
@@ -84,12 +84,12 @@ export class AgentOsCanvasShotsService {
     nodeCount: number;
     selectedSummaries: Array<{ id: string; kind: string; title?: string }>;
   }> {
-    const row = await this.prisma.platformDocument.findFirst({
+    const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
-        projectId: input.projectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: input.projectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
         section: { archivedAt: null },
       },
@@ -108,7 +108,7 @@ export class AgentOsCanvasShotsService {
       });
     }
 
-    const schema = rootSchemaFor(PlatformDocumentType.canvas);
+    const schema = rootSchemaFor(StudioDocumentType.canvas);
     const doc = new Y.Doc({ gc: true });
     try {
       if (schema) {
@@ -170,12 +170,12 @@ export class AgentOsCanvasShotsService {
     revision: number;
     shots: AgentOsCanvasShotRow[];
   }> {
-    const row = await this.prisma.platformDocument.findFirst({
+    const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
-        projectId: input.projectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: input.projectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
         section: { archivedAt: null },
       },
@@ -205,7 +205,7 @@ export class AgentOsCanvasShotsService {
     if (snapshotIsCurrent) {
       content = row.contentSnapshot as Record<string, unknown>;
     } else {
-      const schema = rootSchemaFor(PlatformDocumentType.canvas);
+      const schema = rootSchemaFor(StudioDocumentType.canvas);
       const doc = new Y.Doc({ gc: true });
       try {
         if (schema) {
@@ -253,12 +253,12 @@ export class AgentOsCanvasShotsService {
     nodeIds: string[];
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const row = await this.prisma.platformDocument.findFirst({
+    const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
-        projectId: input.projectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: input.projectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
         section: { archivedAt: null },
       },
@@ -296,7 +296,7 @@ export class AgentOsCanvasShotsService {
       });
     }
 
-    const schema = rootSchemaFor(PlatformDocumentType.canvas);
+    const schema = rootSchemaFor(StudioDocumentType.canvas);
     const doc = new Y.Doc({ gc: true });
     try {
       if (schema) {
@@ -329,7 +329,7 @@ export class AgentOsCanvasShotsService {
       }
 
       const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: PlatformDocumentOperationType.yjs_update,
+        operationType: StudioDocumentOperationType.yjs_update,
         yjsUpdateBase64: Buffer.from(update).toString('base64'),
         idempotencyKey: `agent-os:patch:${input.idempotencyKey}`.slice(0, 160),
         metadata: {
@@ -341,7 +341,7 @@ export class AgentOsCanvasShotsService {
 
       await this.documentsGateway.publishDocumentOperation(row.id, operation);
 
-      const refreshed = await this.prisma.platformDocument.findUnique({
+      const refreshed = await this.prisma.studioDocument.findUnique({
         where: { id: row.id },
         select: { version: true, currentSequence: true },
       });
@@ -382,12 +382,12 @@ export class AgentOsCanvasShotsService {
     deleted: Array<{ id: string; title: string }>;
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const row = await this.prisma.platformDocument.findFirst({
+    const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
-        projectId: input.projectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: input.projectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
         section: { archivedAt: null },
       },
@@ -451,7 +451,7 @@ export class AgentOsCanvasShotsService {
       }
 
       const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: PlatformDocumentOperationType.yjs_update,
+        operationType: StudioDocumentOperationType.yjs_update,
         yjsUpdateBase64: Buffer.from(update).toString('base64'),
         idempotencyKey: `agent-os:shots-del:${input.idempotencyKey}`.slice(
           0,
@@ -495,12 +495,12 @@ export class AgentOsCanvasShotsService {
     written: Array<{ id: string; title: string; nodeId: string }>;
   }> {
     const user: AuthUser = { userId: input.actorId };
-    const row = await this.prisma.platformDocument.findFirst({
+    const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
-        projectId: input.projectId,
-        type: PlatformDocumentType.canvas,
-        status: PlatformDocumentStatus.active,
+        platformProjectId: input.projectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
         deletedAt: null,
         section: { archivedAt: null },
       },
@@ -535,7 +535,7 @@ export class AgentOsCanvasShotsService {
       }
 
       const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: PlatformDocumentOperationType.yjs_update,
+        operationType: StudioDocumentOperationType.yjs_update,
         yjsUpdateBase64: Buffer.from(update).toString('base64'),
         idempotencyKey: `agent-os:shots:${input.idempotencyKey}`.slice(0, 160),
         metadata: {
@@ -559,7 +559,7 @@ export class AgentOsCanvasShotsService {
 
   /** A Y.Doc with the canvas roots declared, ready to hydrate. */
   private newCanvasDoc(): Y.Doc {
-    const schema = rootSchemaFor(PlatformDocumentType.canvas);
+    const schema = rootSchemaFor(StudioDocumentType.canvas);
     const doc = new Y.Doc({ gc: true });
     if (schema) {
       for (const [name, kind] of Object.entries(schema)) {
@@ -583,7 +583,7 @@ export class AgentOsCanvasShotsService {
         crdtState instanceof Buffer ? new Uint8Array(crdtState) : crdtState,
       );
     }
-    const tail = await this.prisma.platformDocumentOperation.findMany({
+    const tail = await this.prisma.studioDocumentOperation.findMany({
       where: {
         documentId,
         sequence: { gt: snapshotSequence },

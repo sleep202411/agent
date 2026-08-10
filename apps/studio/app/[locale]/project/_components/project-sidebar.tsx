@@ -39,10 +39,12 @@ export function ProjectSidebar({
   activeMode,
   panel,
   panelOpen,
+  backHref = "/projects",
 }: {
   activeMode: string;
   panel: ReactNode;
   panelOpen: boolean;
+  backHref?: string;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -129,7 +131,7 @@ export function ProjectSidebar({
       <aside className="relative z-20 flex h-full w-16 shrink-0 flex-col border-r border-white/10 bg-[#0A0A0A]">
         <div className="flex h-[53px] shrink-0 items-center justify-center">
           <Link
-            href="/projects"
+            href={backHref}
             aria-label={t("backToProjects")}
             title={t("backToProjects")}
             className="flex size-11 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
