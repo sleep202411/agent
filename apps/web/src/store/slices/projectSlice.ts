@@ -771,8 +771,8 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     isLoading: false,
     error: null,
 
-    // Storyboard's tab is retired (see project-tabs.tsx), so a project opens on
-    // the script — never on a view with no entry in the switcher.
+    // Keep script as the default landing view; Storyboard remains available
+    // from the project tab switcher for shot-table workflows.
     activeTab: "script",
     activePanel: "aiAssistant",
     isAiPanelOpen: false,
