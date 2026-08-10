@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { IconHistory, IconX } from "@tabler/icons-react";
+import { IconHistory } from "@tabler/icons-react";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { useDocumentVersions } from "@/lib/collab/use-versions";
 import type { VersionDto, VersionSource } from "@/lib/collab/versions-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
@@ -52,22 +53,14 @@ export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryPr
   const authors = useUsersByIds(useMemo(() => entries.map((e) => e.createdById), [entries]));
 
   return (
-    <div className="absolute top-0 right-0 z-30 flex h-full w-[380px] flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl">
-      <div className="flex items-center gap-2 px-4 py-3">
-        <IconHistory className="size-4.5 text-white/80" stroke={1.8} />
-        <span className="flex-1 text-sm font-semibold text-foreground">{t("activity.title")}</span>
-        <button
-          type="button"
-          aria-label={tc("close")}
-          onClick={onClose}
-          className="flex size-8 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
-        >
-          <IconX className="size-4.5" stroke={1.8} />
-        </button>
-      </div>
-      <div className="h-px bg-white/10" />
-
-      <div className="flex-1 overflow-y-auto px-2 py-2">
+    <>
+      <DrawerPanel.Header
+        title={t("activity.title")}
+        icon={<IconHistory className="size-4.5" stroke={1.8} />}
+        closeLabel={tc("close")}
+        onClose={onClose}
+      />
+      <DrawerPanel.Body className="px-2 pb-3">
         {loading && entries.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">{tc("loading")}</p>
         ) : entries.length === 0 ? (
@@ -84,8 +77,8 @@ export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryPr
             />
           ))
         )}
-      </div>
-    </div>
+      </DrawerPanel.Body>
+    </>
   );
 }
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TextGameDetail } from "@repo/shared/text-game";
-import { textGameDraftFormFromDetail, toTextGameUpdateInput } from "./text-game-draft";
+import {
+  textAdventureDraftFormFromDetail,
+  toTextAdventureUpdateInput,
+} from "./text-adventure-draft";
 
 const detail: TextGameDetail = {
   gameId: "tg_0123456789abcdef",
@@ -26,22 +29,24 @@ const detail: TextGameDetail = {
   },
 };
 
-describe("text-game draft payload", () => {
+describe("text-adventure draft payload", () => {
   it("emits only changed fields", () => {
-    const baseline = textGameDraftFormFromDetail(detail);
-    expect(toTextGameUpdateInput({ ...baseline, name: "  New world  " }, baseline)).toEqual({
+    const baseline = textAdventureDraftFormFromDetail(detail);
+    expect(toTextAdventureUpdateInput({ ...baseline, name: "  New world  " }, baseline)).toEqual({
       name: "New world",
     });
   });
 
   it("uses an empty string to remove optional background music", () => {
-    const baseline = textGameDraftFormFromDetail(detail);
-    expect(toTextGameUpdateInput({ ...baseline, bgmUrl: "" }, baseline)).toEqual({ bgmUrl: "" });
+    const baseline = textAdventureDraftFormFromDetail(detail);
+    expect(toTextAdventureUpdateInput({ ...baseline, bgmUrl: "" }, baseline)).toEqual({
+      bgmUrl: "",
+    });
   });
 
   it("sends the complete ordered still list when it changes", () => {
-    const baseline = textGameDraftFormFromDetail(detail);
-    expect(toTextGameUpdateInput({ ...baseline, stillUrls: [] }, baseline)).toEqual({
+    const baseline = textAdventureDraftFormFromDetail(detail);
+    expect(toTextAdventureUpdateInput({ ...baseline, stillUrls: [] }, baseline)).toEqual({
       stillUrls: [],
     });
   });

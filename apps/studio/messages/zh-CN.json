@@ -695,7 +695,7 @@
     "castingErrorNotYours": "This casting invitation was sent to someone else.",
     "castingErrorNotPending": "This casting invitation can no longer be accepted."
   },
-  "textGames": {
+  "textAdventures": {
     "library": {
       "eyebrow": "互动小说",
       "title": "文游",
@@ -707,7 +707,8 @@
       "uploadFirst": "上传世界观 DOCX",
       "untitled": "未命名文游",
       "noSynopsis": "提交审核前请补充作品简介。",
-      "open": "打开工作台"
+      "noRating": "暂无评分",
+      "lastEdited": "最后编辑于 {date}"
     },
     "actions": {
       "retry": "重试",
@@ -743,36 +744,74 @@
       "posterAlt": "《{name}》封面",
       "synopsisFallback": "补充作品简介后，可在这里预览读者进入故事世界时看到的介绍。",
       "castEyebrow": "来自世界观文档",
-      "castTitle": "解析角色",
+      "castTitle": "角色",
       "castCount": "{count} 个角色",
       "noCast": "世界观文档解析完成后，提取到的角色会显示在这里。",
       "stillsTitle": "故事场景图",
       "stillAlt": "故事场景图 {index}",
-      "notice": "编辑时可以预览封面、简介、解析角色和故事场景图。作品发布后，可从玩家页面开始正式游玩。"
+      "notice": "编辑时可以预览封面、简介、角色和故事场景图。作品发布后，可从玩家页面开始正式游玩。"
+    },
+    "playtest": {
+      "title": "玩家体验",
+      "liveVersion": "线上玩家版本",
+      "draftNotice": "中央对话使用当前线上版本；草稿修改需审核通过后才会在这里生效。",
+      "opening": "正在进入线上故事…",
+      "unavailableTitle": "发布后即可试玩",
+      "unavailableBody": "作品首次审核通过并发布后，这里会开启真实的玩家对话。",
+      "loadFailed": "无法打开玩家体验",
+      "newSession": "新的游玩会话",
+      "resumedSession": "继续上次游玩",
+      "emptyTitle": "故事已经准备好",
+      "emptyBody": "在下方输入行动即可开始。",
+      "actionPlaceholder": "接下来，你要做什么？",
+      "send": "发送行动",
+      "composerHint": "按 Enter 发送 · Shift + Enter 换行",
+      "yourAction": "你的行动",
+      "responding": "故事正在回应…",
+      "restart": "重新开始",
+      "restartTitle": "重新开始这次游玩？",
+      "restartBody": "当前对话将被新的玩家会话替换。",
+      "restartConfirm": "重新开始",
+      "restarting": "正在重新开始…",
+      "restartComplete": "已开始新的游玩",
+      "sendFailed": "无法发送这次行动",
+      "restartFailed": "无法开始新的游玩"
     },
     "editor": {
       "loadFailed": "无法加载这个草稿",
       "saved": "已保存",
       "unsaved": "有未保存修改",
       "version": "版本 {version}",
+      "inspectorTitle": "作品信息",
+      "backToOverview": "返回作品信息",
+      "openSection": "打开{section}",
+      "edit": "编辑",
+      "replace": "替换",
+      "upload": "上传",
+      "attached": "已添加",
+      "notAdded": "未添加",
+      "stillsCount": "{count} 张图片",
+      "workUpdatedAt": "作品更新于 {date}",
+      "worldviewFileFallback": "世界观.docx",
+      "musicFileFallback": "背景音乐",
       "reviewLockedTitle": "审核期间暂停编辑",
       "reviewLockedBody": "你可以将作品下架以退出审核队列，或等待平台审核结果。",
       "name": "名称",
       "synopsis": "简介",
       "sections": {
-        "basics": "作品信息",
+        "basics": "基本信息",
         "poster": "封面",
         "worldview": "世界观文档",
-        "characters": "解析角色",
+        "characters": "角色",
         "stills": "故事场景图",
-        "music": "背景音乐",
-        "publish": "发布"
+        "music": "背景音乐"
       },
       "uploadPoster": "上传封面",
       "replacePoster": "更换封面",
       "posterHint": "以 2:3 竖版展示 · 建议 1200 × 1800 · JPG、PNG 或 WebP",
       "posterImageOnly": "请选择 JPG、PNG 或 WebP 图片。",
       "worldviewAttached": "已关联世界观 DOCX",
+      "uploadDocument": "上传文档",
       "charactersFound": "已提取 {count} 个角色",
       "replaceDocument": "替换并重新解析",
       "reanalyzing": "正在重新解析文档…",
@@ -799,7 +838,9 @@
         "synopsis": "简介",
         "document": "世界观 DOCX"
       },
-      "onlineUnaffected": "草稿修改审核通过前，玩家仍会看到当前线上版本。",
+      "validationTitle": "请先补全必填信息",
+      "validationBody": "提交审核前，还需要完成以下内容：",
+      "validationAction": "继续编辑",
       "viewLive": "查看线上作品",
       "submit": "提交审核",
       "submitUpdate": "提交更新版本",
@@ -829,7 +870,7 @@
       "home": "首页",
       "creativeStudio": "Creative Studio",
       "storyStudio": "Story Studio",
-      "textGames": "文游",
+      "textAdventures": "文游",
       "image": "图像",
       "video": "视频",
       "characters": "角色",
@@ -1166,6 +1207,11 @@
       "shot": "分镜",
       "searchPlaceholder": "搜索节点",
       "noMatches": "没有匹配的节点"
+    },
+    "nodes": {
+      "title": "节点",
+      "add": "添加",
+      "close": "关闭节点面板"
     },
     "emptyState": {
       "clickToAdd": "点击添加节点",
@@ -1716,10 +1762,13 @@
     "share": "分享",
     "aiAssistant": "AI 助手",
     "sidebar": {
+      "navigation": "项目导航",
+      "nodes": "节点",
+      "nodesModeUnavailable": "说明模式下无法使用节点",
+      "nodesEditRequired": "需要编辑权限才能添加节点",
       "assets": "资产",
-      "chapters": "章节",
-      "collapse": "收起",
-      "expand": "展开"
+      "activity": "动态",
+      "members": "成员"
     },
     "sections": {
       "defaultTitle": "第 1 章",
@@ -2757,6 +2806,11 @@
     "subtitle": "对话式执行智能体 — 工具会真正写入项目",
     "close": "关闭 FizzAgent",
     "open": "打开 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想创作什么？",
+      "ask": "我是 FizzAgent，随时向我提问。",
+      "help": "我可以帮你完善故事和画布。"
+    },
     "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
     "emptyHintStory": "添加参考资料，或告诉 FizzAgent 如何推进当前章节，然后继续打磨故事。",
     "modelProfile": "模型",

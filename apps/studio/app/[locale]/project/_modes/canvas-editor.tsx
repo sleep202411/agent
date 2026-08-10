@@ -6,10 +6,9 @@ import { useProjectContext } from "@/app/[locale]/project/_components/project-co
 /**
  * Canvas mode editor — the immersive board, resolved for the active project.
  *
- * Lives inside the shell's body region (sidebar + drawer + main). The board
- * fills its container (the main flex-1 area) — not the whole viewport — so the
- * project sidebar stays visible to its left. Canvas-internal panels (asset
- * library, copilot) overlay the board, not the sidebar.
+ * Lives under the project shell's persistent overlay chrome. The board fills
+ * the complete project viewport; the shell-owned sidebar, panel, header and
+ * FizzAgent remain mounted above it while modes change.
  */
 export function CanvasEditor() {
   const { projectId, canEdit } = useProjectContext();

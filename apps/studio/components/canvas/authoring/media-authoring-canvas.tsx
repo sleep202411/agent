@@ -384,7 +384,10 @@ export function MediaAuthoringCanvas({
               redo={redo}
               undoLabel={t("undo")}
               redoLabel={t("redo")}
-              className="absolute right-4 bottom-4 z-20"
+              className="absolute bottom-4 z-20"
+              style={{
+                right: "calc(var(--project-canvas-right-overlay-inset, 0px) + 1rem)",
+              }}
             />
           ) : null}
 

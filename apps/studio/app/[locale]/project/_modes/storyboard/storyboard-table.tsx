@@ -18,8 +18,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
-import { IconLayoutList } from "@tabler/icons-react";
+import { IconLayoutList, IconPlus } from "@tabler/icons-react";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertDialog,
@@ -99,14 +100,7 @@ export function StoryboardTable({
   const selectShot = useProjectUIStore((s) => s.selectShot);
   const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
   const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
-  const {
-    rows,
-    canEdit,
-    insertShot,
-    patchShot,
-    deleteShot,
-    moveShotToIndex,
-  } = useStoryboard();
+  const { rows, canEdit, insertShot, patchShot, deleteShot, moveShotToIndex } = useStoryboard();
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [skipNextTime, setSkipNextTime] = useState(false);
@@ -151,7 +145,8 @@ export function StoryboardTable({
   // Excel-style grid navigation: Tab/Enter/Esc move focus between editable cells.
   const { pendingFocus, moveFocus, resolvePendingFocus } = useGridNavigation({
     rowCount: rows.length,
-    scrollToIndex: (idx, opts) => virtualizer.scrollToIndex(idx, opts as { align?: "start" | "center" | "end" }),
+    scrollToIndex: (idx, opts) =>
+      virtualizer.scrollToIndex(idx, opts as { align?: "start" | "center" | "end" }),
   });
 
   // After virtual items render, resolve any pending focus (target row was outside the virtual window).
@@ -163,7 +158,7 @@ export function StoryboardTable({
     (rowIndex: number, columnKey: string, direction: NavDirection) => {
       moveFocus(direction, rowIndex, columnKey, rowIds);
     },
-    [moveFocus, rowIds],
+    [moveFocus, rowIds]
   );
 
   const sensors = useSensors(
@@ -272,6 +267,12 @@ export function StoryboardTable({
             <span className="text-xs text-white/35 tabular-nums">
               {t("shotCount", { count: rows.length })}
             </span>
+            {canEdit ? (
+              <Button className="ml-auto" size="sm" onClick={() => insertShot(rows.length)}>
+                <IconPlus data-icon="inline-start" />
+                {t("addShot")}
+              </Button>
+            ) : null}
           </header>
           <div className="h-px bg-white/[0.07]" />
           {rows.length === 0 ? (
@@ -362,7 +363,9 @@ export function StoryboardTable({
                             highlighted={highlightId === row.id}
                             measureRef={virtualizer.measureElement}
                             actions={rowActions}
-                            onNavigate={(dir, columnKey) => handleNavigate(item.index, columnKey, dir)}
+                            onNavigate={(dir, columnKey) =>
+                              handleNavigate(item.index, columnKey, dir)
+                            }
                           />
                         );
                       })}

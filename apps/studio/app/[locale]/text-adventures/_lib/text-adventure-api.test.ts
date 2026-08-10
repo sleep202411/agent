@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
 import {
-  createCreatorTextGame,
-  getCreatorTextGame,
-  listCreatorTextGames,
-  transitionCreatorTextGame,
-  updateCreatorTextGame,
-} from "./text-game-api";
+  createCreatorTextAdventure,
+  getCreatorTextAdventure,
+  listCreatorTextAdventures,
+  transitionCreatorTextAdventure,
+  updateCreatorTextAdventure,
+} from "./text-adventure-api";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -44,7 +44,7 @@ function detail(status: "draft" | "reviewing" | "published" | "offline" = "draft
   };
 }
 
-describe("creator text-game API", () => {
+describe("creator text-adventure API", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("loads and validates the creator catalogue", async () => {
@@ -58,19 +58,19 @@ describe("creator text-game API", () => {
         updatedAt: "2026-08-09T12:00:00Z",
       },
     ]);
-    await expect(listCreatorTextGames()).resolves.toHaveLength(1);
+    await expect(listCreatorTextAdventures()).resolves.toHaveLength(1);
     expect(api.get).toHaveBeenCalledWith("/api/user/text-game");
   });
 
   it("rejects a detail response for a different work", async () => {
     vi.mocked(api.get).mockResolvedValue({ ...detail(), gameId: "tg_fedcba9876543210" });
-    await expect(getCreatorTextGame(GAME_ID)).rejects.toThrow("while");
+    await expect(getCreatorTextAdventure(GAME_ID)).rejects.toThrow("while");
   });
 
   it("creates a draft with the long document-analysis timeout", async () => {
     vi.mocked(api.post).mockResolvedValue(detail());
     await expect(
-      createCreatorTextGame({ worldviewDocxUrl: "https://cdn.example.com/world.docx" })
+      createCreatorTextAdventure({ worldviewDocxUrl: "https://cdn.example.com/world.docx" })
     ).resolves.toMatchObject({ gameId: GAME_ID, status: "draft" });
     expect(api.post).toHaveBeenCalledWith("/api/user/text-game", {
       data: { worldviewDocxUrl: "https://cdn.example.com/world.docx" },
@@ -80,13 +80,13 @@ describe("creator text-game API", () => {
 
   it("uses the long timeout only when replacing the worldview document", async () => {
     vi.mocked(api.put).mockResolvedValue(detail());
-    await updateCreatorTextGame(GAME_ID, { name: "Renamed" });
+    await updateCreatorTextAdventure(GAME_ID, { name: "Renamed" });
     expect(api.put).toHaveBeenLastCalledWith(`/api/user/text-game/${GAME_ID}`, {
       data: { name: "Renamed" },
       timeout: 45_000,
     });
 
-    await updateCreatorTextGame(GAME_ID, {
+    await updateCreatorTextAdventure(GAME_ID, {
       worldviewDocxUrl: "https://cdn.example.com/replacement.docx",
     });
     expect(api.put).toHaveBeenLastCalledWith(`/api/user/text-game/${GAME_ID}`, {
@@ -97,11 +97,13 @@ describe("creator text-game API", () => {
 
   it("validates the status returned after creator transitions", async () => {
     vi.mocked(api.post).mockResolvedValue(detail("reviewing"));
-    await expect(transitionCreatorTextGame(GAME_ID, "submit")).resolves.toMatchObject({
+    await expect(transitionCreatorTextAdventure(GAME_ID, "submit")).resolves.toMatchObject({
       status: "reviewing",
     });
 
     vi.mocked(api.post).mockResolvedValue(detail("published"));
-    await expect(transitionCreatorTextGame(GAME_ID, "offline")).rejects.toThrow("expected offline");
+    await expect(transitionCreatorTextAdventure(GAME_ID, "offline")).rejects.toThrow(
+      "expected offline"
+    );
   });
 });
