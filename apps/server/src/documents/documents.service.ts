@@ -267,10 +267,15 @@ export class DocumentsService {
 
   /** Idempotent bootstrap for Story's shared canvas/storyboard document. */
   async ensureStoryCanvasDocument(user: AuthUser, storyProjectId: string) {
+    // An archived Story project still opens read-only (the same contract
+    // `StoryProjectsService.workbench` honours), so an existing canvas has to
+    // resolve here. Creating one below stays behind the un-widened
+    // `story.edit` gate, which keeps archived projects unwritable.
     const { project } = await this.storyPermissions.requireProject(
       user.userId,
       storyProjectId,
       'story.read',
+      { allowArchived: true },
     );
     const existing = await this.prisma.studioDocument.findFirst({
       where: {

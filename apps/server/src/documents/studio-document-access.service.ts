@@ -57,6 +57,11 @@ export class StudioDocumentAccessService {
             : action === 'generate'
               ? 'story.generate'
               : 'story.edit',
+        // Read-only for archived: `requireProject` gates archived purely on
+        // this flag — the write guard it runs afterwards is the agent-run
+        // fence, not an archive fence — so widening it for anything but
+        // `read` would make an archived project editable.
+        { allowArchived: action === 'read' },
       );
       return document;
     }

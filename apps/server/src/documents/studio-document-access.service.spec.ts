@@ -43,32 +43,39 @@ describe('StudioDocumentAccessService', () => {
     expect(harness.storyPermissions.requireProject).not.toHaveBeenCalled();
   });
 
+  // `allowArchived` is the whole archive contract: an archived Story project
+  // still opens read-only, so only `read` may widen it. Any other action
+  // widening it would silently make an archived project editable.
   it.each([
-    ['read', 'story.read'],
-    ['comment', 'story.review'],
-    ['edit', 'story.edit'],
-    ['generate', 'story.generate'],
-  ] as const)('maps Story %s access to %s', async (action, capability) => {
-    const harness = createHarness();
-    const document = {
-      id: 'document-2',
-      platformProjectId: null,
-      storyProjectId: 'story-project-1',
-    };
-    harness.prisma.studioDocument.findFirst.mockResolvedValue(document);
+    ['read', 'story.read', true],
+    ['comment', 'story.review', false],
+    ['edit', 'story.edit', false],
+    ['generate', 'story.generate', false],
+  ] as const)(
+    'maps Story %s access to %s (allowArchived=%s)',
+    async (action, capability, allowArchived) => {
+      const harness = createHarness();
+      const document = {
+        id: 'document-2',
+        platformProjectId: null,
+        storyProjectId: 'story-project-1',
+      };
+      harness.prisma.studioDocument.findFirst.mockResolvedValue(document);
 
-    await expect(
-      harness.service.requireDocument('user-2', document.id, action),
-    ).resolves.toBe(document);
-    expect(harness.storyPermissions.requireProject).toHaveBeenCalledWith(
-      'user-2',
-      'story-project-1',
-      capability,
-    );
-    expect(
-      harness.workspacePermissions.requireProjectRole,
-    ).not.toHaveBeenCalled();
-  });
+      await expect(
+        harness.service.requireDocument('user-2', document.id, action),
+      ).resolves.toBe(document);
+      expect(harness.storyPermissions.requireProject).toHaveBeenCalledWith(
+        'user-2',
+        'story-project-1',
+        capability,
+        { allowArchived },
+      );
+      expect(
+        harness.workspacePermissions.requireProjectRole,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it('fails closed when a corrupted document has no owner', async () => {
     const harness = createHarness();
