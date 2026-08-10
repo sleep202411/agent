@@ -13,24 +13,26 @@ import {
 } from "@repo/shared/text-game";
 import { api } from "@/lib/api";
 
-export const textGameKeys = {
-  all: ["text-games"] as const,
-  list: () => [...textGameKeys.all, "list"] as const,
-  detail: (gameId: string) => [...textGameKeys.all, "detail", gameId] as const,
+export const textAdventureKeys = {
+  all: ["text-adventures"] as const,
+  list: () => [...textAdventureKeys.all, "list"] as const,
+  detail: (gameId: string) => [...textAdventureKeys.all, "detail", gameId] as const,
 };
 
-export async function listCreatorTextGames(): Promise<TextGameSummary[]> {
+export async function listCreatorTextAdventures(): Promise<TextGameSummary[]> {
   return TextGameSummaryListSchema.parse(await api.get<unknown>("/api/user/text-game"));
 }
 
-export async function getCreatorTextGame(gameId: string): Promise<TextGameDetail> {
+export async function getCreatorTextAdventure(gameId: string): Promise<TextGameDetail> {
   return parseCreatorDetail(
     await api.get<unknown>(`/api/user/text-game/${encodeURIComponent(gameId)}`),
     gameId
   );
 }
 
-export async function createCreatorTextGame(input: TextGameCreateInput): Promise<TextGameDetail> {
+export async function createCreatorTextAdventure(
+  input: TextGameCreateInput
+): Promise<TextGameDetail> {
   const payload = TextGameCreateInputSchema.parse(input);
   const detail = TextGameDetailSchema.parse(
     await api.post<unknown>("/api/user/text-game", {
@@ -44,7 +46,7 @@ export async function createCreatorTextGame(input: TextGameCreateInput): Promise
   return detail;
 }
 
-export async function updateCreatorTextGame(
+export async function updateCreatorTextAdventure(
   gameId: string,
   input: TextGameUpdateInput
 ): Promise<TextGameDetail> {
@@ -58,7 +60,7 @@ export async function updateCreatorTextGame(
   );
 }
 
-export async function transitionCreatorTextGame(
+export async function transitionCreatorTextAdventure(
   gameId: string,
   input: TextGameCreatorAction
 ): Promise<TextGameDetail> {

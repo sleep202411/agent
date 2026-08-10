@@ -64,7 +64,9 @@ export function CanvasAuthoringControls({
   return (
     <div
       className="nodrag nopan nowheel absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
-      style={{ left: 16 + leftInset }}
+      style={{
+        left: `calc(var(--project-canvas-left-overlay-inset, 0px) + ${16 + leftInset}px)`,
+      }}
     >
       <CanvasToolButtons
         buttonClassName={controlClass}

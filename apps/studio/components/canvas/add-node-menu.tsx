@@ -23,6 +23,15 @@ export const DEFAULT_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
   "note",
 ];
 
+/** Complete node catalog used by the project canvas and its sidebar panel. */
+export const PROJECT_CANVAS_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
+  ...DEFAULT_ADD_NODE_ACTIONS,
+  "shot",
+];
+
+/** Storyboard projects the canvas's shot nodes as rows, so this is its only creation action. */
+export const STORYBOARD_ADD_NODE_ACTIONS: readonly AddNodeAction[] = ["shot"];
+
 /** Keyboard shortcut per creation action (single key, no modifier). */
 export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
   upload: "u",
@@ -32,7 +41,7 @@ export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
   shot: "s",
 };
 
-const ACTION_ICONS: Record<AddNodeAction, Icon> = {
+export const ADD_NODE_ICONS: Record<AddNodeAction, Icon> = {
   upload: IconCloudUpload,
   "generate-image": IconPhoto,
   "generate-video": IconVideo,
@@ -79,7 +88,7 @@ export function AddNodeMenu({
     () =>
       actions.map((action) => ({
         label: t(`addNode.${ADD_NODE_LABEL_KEYS[action]}`),
-        icon: ACTION_ICONS[action],
+        icon: ADD_NODE_ICONS[action],
         shortcut: ADD_NODE_SHORTCUTS[action].toUpperCase(),
         action,
       })),

@@ -6,7 +6,7 @@ import { usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import type { ComponentType } from "react";
 import {
-  IconBook2,
+  IconDeviceGamepad2,
   IconLayoutGrid,
   IconHome,
   IconPhoto,
@@ -123,8 +123,8 @@ export function StudioSidebar() {
   const items: RailItem[] = [
     { label: t("nav.home"), href: "/", icon: IconHome },
     { label: t("nav.creativeStudio"), href: "/projects", icon: IconLayoutGrid },
-    { label: t("nav.storyStudio"), href: "/story-studio", icon: IconBook2 },
-    { label: t("nav.textGames"), href: "/text-games", icon: IconWriting },
+    { label: t("nav.storyStudio"), href: "/story-studio", icon: IconDeviceGamepad2 },
+    { label: t("nav.textAdventures"), href: "/text-adventures", icon: IconWriting },
     // Plural to match the web app's /fizzstudio/images so that page ports 1:1.
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },

@@ -3,28 +3,22 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  IconAlertTriangle,
-  IconArrowRight,
-  IconBook2,
-  IconFileText,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconBook2, IconFileText, IconPlus } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { cn } from "@/lib/utils";
-import { listCreatorTextGames, textGameKeys } from "../_lib/text-game-api";
-import { TextGameCreateDialog } from "./text-game-create-dialog";
+import { listCreatorTextAdventures, textAdventureKeys } from "../_lib/text-adventure-api";
+import { TextAdventureCreateDialog } from "./text-adventure-create-dialog";
 
-export function TextGamesLibrary() {
-  const t = useTranslations("textGames");
+export function TextAdventuresLibrary() {
+  const t = useTranslations("textAdventures");
   const locale = useLocale();
   const [createOpen, setCreateOpen] = useState(false);
   const query = useQuery({
-    queryKey: textGameKeys.list(),
-    queryFn: listCreatorTextGames,
+    queryKey: textAdventureKeys.list(),
+    queryFn: listCreatorTextAdventures,
   });
 
   return (
@@ -63,12 +57,20 @@ export function TextGamesLibrary() {
       ) : null}
 
       {query.isLoading ? (
-        <div className="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="animate-pulse">
-              <div className="aspect-[2/3] rounded-2xl bg-white/[0.05]" />
-              <div className="mt-4 h-4 w-2/3 rounded bg-white/[0.06]" />
-              <div className="mt-2 h-3 w-5/6 rounded bg-white/[0.04]" />
+            <div
+              key={index}
+              className="flex h-[168px] animate-pulse gap-4 rounded-2xl bg-white/[0.025] p-3"
+            >
+              <div className="aspect-[2/3] h-full shrink-0 rounded-xl bg-white/[0.06]" />
+              <div className="flex min-w-0 flex-1 flex-col py-1">
+                <div className="h-4 w-3/5 rounded bg-white/[0.06]" />
+                <div className="mt-2 h-3 w-1/3 rounded bg-white/[0.04]" />
+                <div className="mt-4 h-3 w-full rounded bg-white/[0.045]" />
+                <div className="mt-2 h-3 w-4/5 rounded bg-white/[0.035]" />
+                <div className="mt-auto h-8 rounded-xl bg-white/[0.04]" />
+              </div>
             </div>
           ))}
         </div>
@@ -96,51 +98,51 @@ export function TextGamesLibrary() {
       {query.data && query.data.length > 0 ? (
         <section
           aria-label={t("library.title")}
-          className="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+          className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
         >
           {query.data.map((game) => (
             <Link
               key={game.gameId}
-              href={`/text-games/${game.gameId}`}
+              href={`/text-adventures/${game.gameId}`}
               className="group outline-none"
             >
-              <article>
-                <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-white/[0.045] shadow-[0_20px_55px_-30px_rgba(0,0,0,0.8)] transition duration-300 group-hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-white/50">
+              <article className="flex h-[168px] gap-4 rounded-2xl p-3 transition duration-300 group-hover:-translate-y-0.5 group-hover:bg-white/[0.045] group-focus-visible:ring-2 group-focus-visible:ring-white/50">
+                <div className="relative aspect-[2/3] h-full shrink-0 overflow-hidden rounded-xl bg-white/[0.045]">
                   {game.posterUrl ? (
                     <img
                       src={game.posterUrl}
                       alt=""
-                      className="size-full object-cover transition duration-500 group-hover:scale-[1.025]"
+                      className="size-full object-cover transition duration-500 group-hover:scale-[1.03]"
                     />
                   ) : (
                     <div className="grid size-full place-items-center text-white/16">
-                      <IconBook2 className="size-12" stroke={1.15} />
+                      <IconBook2 className="size-9" stroke={1.15} />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/88 via-black/5 to-transparent" />
                   <span
                     className={cn(
-                      "absolute left-3 top-3 rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md",
+                      "absolute left-2 top-2 rounded-lg bg-black/60 px-2 py-1 text-[10px] font-semibold backdrop-blur-md",
                       game.status === "reviewing" ? "text-white/85" : "text-white/65"
                     )}
                   >
                     {t(`status.${game.status}`)}
                   </span>
-                  <div className="absolute inset-x-4 bottom-4">
-                    <h2 className="line-clamp-2 text-lg font-semibold leading-6 text-white">
-                      {game.name || t("library.untitled")}
-                    </h2>
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/58">
-                      {game.synopsis || t("library.noSynopsis")}
-                    </p>
-                  </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3 px-1">
-                  <p className="text-xs text-white/35">{formatUpdatedAt(game.updatedAt, locale)}</p>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-white/55 transition group-hover:text-white">
-                    {t("library.open")}
-                    <IconArrowRight className="size-3.5" stroke={1.8} />
-                  </span>
+                <div className="flex min-w-0 flex-1 flex-col py-1">
+                  <h2 className="line-clamp-1 text-base font-semibold leading-5 text-white">
+                    {game.name || t("library.untitled")}
+                  </h2>
+                  <p className="mt-1.5 text-[11px] font-medium leading-4 text-white/38">
+                    {t("library.noRating")}
+                  </p>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-white/58">
+                    {game.synopsis || t("library.noSynopsis")}
+                  </p>
+                  <p className="mt-auto text-[11px] leading-4 text-white/38">
+                    {t("library.lastEdited", {
+                      date: formatUpdatedAt(game.updatedAt, locale),
+                    })}
+                  </p>
                 </div>
               </article>
             </Link>
@@ -148,7 +150,7 @@ export function TextGamesLibrary() {
         </section>
       ) : null}
 
-      <TextGameCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <TextAdventureCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </main>
   );
 }

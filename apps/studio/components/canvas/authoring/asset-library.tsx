@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
-import { IconLayoutGrid, IconPhoto, IconSearch } from "@tabler/icons-react";
+import { IconLibraryPhoto, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import {
@@ -152,7 +152,7 @@ export function AssetLibrary({
     ) : (
       <div
         className={cn(
-          "grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto",
+          "grid auto-rows-max grid-cols-3 gap-1.5 overflow-y-auto",
           floating ? "min-h-0 flex-1 px-4 pb-4" : "p-4"
         )}
       >
@@ -185,7 +185,7 @@ export function AssetLibrary({
           title={t("asset.title")}
           description={description}
           count={canvasAssetCount}
-          icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
+          icon={<IconLibraryPhoto className="size-4" stroke={1.8} />}
           closeLabel={t("asset.close")}
           onClose={onClose}
         />
@@ -228,19 +228,19 @@ export function AssetLibrary({
     <>
       <DrawerPanel.Header
         title={t("asset.title")}
-        icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
+        icon={<IconLibraryPhoto className="size-4" stroke={1.8} />}
         closeLabel={t("asset.close")}
         onClose={onClose}
       />
 
-      <div className="flex shrink-0 gap-1.5 px-4 py-2">
+      <div className="grid shrink-0 grid-cols-3 gap-1 px-4 py-2">
         {tabs.map((tabItem) => (
           <button
             key={tabItem.id}
             type="button"
             onClick={() => setTab(tabItem.id)}
             className={cn(
-              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
+              "min-w-0 truncate rounded-xl px-1.5 py-1.5 text-[10px] font-medium transition-colors",
               tab === tabItem.id
                 ? "bg-white/[0.1] text-foreground"
                 : "text-muted-foreground hover:text-foreground"

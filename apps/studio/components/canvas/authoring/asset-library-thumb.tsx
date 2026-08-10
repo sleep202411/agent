@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { MediaAssetReadinessResult } from "@repo/shared";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
-import { IconMusic } from "@tabler/icons-react";
+import { IconMusic, IconPhotoOff } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ export function AssetThumb({
   floating?: boolean;
 }) {
   const t = useTranslations("canvasNodes");
+  const [previewFailed, setPreviewFailed] = useState(false);
   const title = asset.name ?? asset.prompt ?? undefined;
   const state =
     asset.kind === "image" || asset.kind === "video"
@@ -47,12 +49,17 @@ export function AssetThumb({
       )}
     >
       <div className="relative aspect-square overflow-hidden">
-        {asset.kind === "video" ? (
+        {previewFailed ? (
+          <div className="pointer-events-none flex size-full items-center justify-center bg-white/[0.035] text-white/24">
+            <IconPhotoOff className="size-6" stroke={1.4} />
+          </div>
+        ) : asset.kind === "video" ? (
           <video
             src={asset.url}
             muted
             playsInline
             draggable={false}
+            onError={() => setPreviewFailed(true)}
             className="pointer-events-none size-full object-cover"
           />
         ) : asset.kind === "audio" ? (
@@ -65,6 +72,7 @@ export function AssetThumb({
             src={asset.url}
             alt={title ?? t("asset.alt")}
             draggable={false}
+            onError={() => setPreviewFailed(true)}
             className="pointer-events-none size-full object-cover"
           />
         )}
@@ -73,12 +81,7 @@ export function AssetThumb({
             <Icon720 className="size-2.5" /> 720°
           </span>
         )}
-        <MediaAssetReadinessChip capability={SEEDANCE_REFERENCE_CAPABILITY} state={state} />
-      </div>
-      <div className="min-w-0 px-2 py-1.5">
-        <p className="truncate text-[11px] leading-tight text-white/75">
-          {title ?? t("asset.untitled")}
-        </p>
+        <MediaAssetReadinessChip capability={SEEDANCE_REFERENCE_CAPABILITY} state={state} compact />
       </div>
     </div>
   );

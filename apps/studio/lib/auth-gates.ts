@@ -20,7 +20,7 @@ const PROTECTED_PREFIXES = [
   "/projects",
   "/project",
   "/story-studio/projects",
-  "/text-games",
+  "/text-adventures",
   "/settings",
   "/invite",
 ] as const;

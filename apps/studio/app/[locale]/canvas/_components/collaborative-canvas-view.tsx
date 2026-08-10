@@ -9,6 +9,7 @@ import { useAuth } from "@/app/_components/auth-provider";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
 import { CanvasEmptyState } from "@/app/[locale]/canvas/_components/canvas-empty-state";
+import { PROJECT_CANVAS_ADD_NODE_ACTIONS } from "@/components/canvas/add-node-menu";
 import { MediaAuthoringCanvas } from "@/components/canvas/authoring/media-authoring-canvas";
 import type { CanvasGroupingController } from "@/components/canvas/groups/canvas-grouping";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
@@ -20,14 +21,6 @@ import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
 const CREATIVE_UPLOAD_KINDS = ["image", "video"] as const;
-/** Creative Studio adds the shot — the node its storyboard mode projects. */
-const CREATIVE_ADD_NODE_ACTIONS = [
-  "upload",
-  "generate-image",
-  "generate-video",
-  "note",
-  "shot",
-] as const;
 
 function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
   const t = useTranslations("canvas");
@@ -97,7 +90,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
         ready={documentStatus === "ready" && connectionStatus === "synced"}
         scopeKey={documentId}
         uploadKinds={CREATIVE_UPLOAD_KINDS}
-        addNodeActions={CREATIVE_ADD_NODE_ACTIONS}
+        addNodeActions={PROJECT_CANVAS_ADD_NODE_ACTIONS}
         initialFocusNodeId={focusNodeId}
         grouping={grouping}
         onDrawerInsetChange={reportDrawerInset}
