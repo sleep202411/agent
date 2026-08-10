@@ -2,6 +2,7 @@ import {
   BillingMembershipPlanStatus,
   BillingPriceInterval,
   BillingProductType,
+  BillingProviderBindingStatus,
   BillingSubjectType,
   PaymentProvider,
   type Prisma,

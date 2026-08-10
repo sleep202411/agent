@@ -4,6 +4,12 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*", "test/**/*"],
+  // `prisma/**/*` is here because it was not: the seed catalogue sat outside
+  // every check we own — outside tsconfig's `include`, outside jest's `roots`,
+  // and outside the deploy (migrate deploy never runs seeds). A required field
+  // missing from a model declaration survived in the repo unnoticed, and the
+  // one line that gated all 32 models behind a paid plan type-checked cleanly
+  // because nothing was checking it.
+  "include": ["src/**/*", "test/**/*", "prisma/**/*"],
   "exclude": ["node_modules", "dist"]
 }

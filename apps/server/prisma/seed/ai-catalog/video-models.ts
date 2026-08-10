@@ -559,6 +559,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'minimax-h3',
     displayName: 'MiniMax H3',
     family: 'minimax',
+    vendor: 'MiniMax',
     description:
       'MiniMax-H3 multimodal video — text / first-last frame / reference media. Async create + poll; 720p (768P) or 1080p (2K), 4–15s.',
     modes: SEEDANCE_MODES,
