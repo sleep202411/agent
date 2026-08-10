@@ -1,10 +1,19 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
-import { IconEye, IconHistory, IconSparkles, IconUsers } from "@tabler/icons-react";
+import { IconEye } from "@tabler/icons-react";
 import { agentOsWorkbenchModeFromStudioMode } from "@repo/shared";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -13,18 +22,26 @@ import {
   CanvasConnectionProvider,
   useCanvasConnection,
 } from "@/app/[locale]/project/_components/canvas-connection-context";
-import { ProjectSidebar } from "@/app/[locale]/project/_components/project-sidebar";
+import {
+  PROJECT_PANEL_WIDTH,
+  ProjectSidebar,
+} from "@/app/[locale]/project/_components/project-sidebar";
 import {
   ProjectSectionsProvider,
   useProjectSections,
 } from "@/app/[locale]/project/_components/project-sections-context";
 import { ProjectSectionsPanel } from "@/app/[locale]/project/_components/project-sections-panel";
+import {
+  PROJECT_CANVAS_ADD_NODE_ACTIONS,
+  STORYBOARD_ADD_NODE_ACTIONS,
+  type AddNodeAction,
+} from "@/components/canvas/add-node-menu";
 import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
-import { DrawerPanel } from "@/components/ui/drawer-panel";
+import { NodesPanel } from "@/components/canvas/nodes-panel";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
-import { ConnectionSignal } from "@/app/[locale]/canvas/_components/connection-signal";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
+import { FizzAgentOrbButton } from "@/components/fizz-agent";
 import { CanvasHistory } from "@/app/[locale]/canvas/_components/canvas-history";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
@@ -38,7 +55,6 @@ import {
 import { ShotVideoDrawer } from "@/app/[locale]/project/_modes/storyboard/shot-video-drawer";
 
 export default function ProjectLayout({
-  children,
   params,
 }: {
   children: React.ReactNode;
@@ -57,7 +73,11 @@ export default function ProjectLayout({
   const copilotOpen = useProjectUIStore((s) => s.copilotOpen);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
-  const closeHistory = useProjectUIStore((s) => s.closeHistory);
+  const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
+  const closeNodes = useProjectUIStore((s) => s.closeNodes);
+  const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
+  const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
 
   const dirtyRef = useRef(false);
   const committedRef = useRef("");
@@ -79,7 +99,23 @@ export default function ProjectLayout({
 
   const canEdit = role == null ? true : role !== "viewer";
   const canManage = role === "owner" || role === "admin";
+  const isCanvasMode = activeMode === "canvas";
+  const nodesEnabled = (isCanvasMode || activeMode === "storyboard") && canEdit;
+  const leftDrawerOpen =
+    (nodesOpen && nodesEnabled) ||
+    assetsOpen ||
+    historyOpen ||
+    sectionsOpen ||
+    Boolean(selectedShotId);
+  const projectShellLeftInset = 64 + (leftDrawerOpen ? PROJECT_PANEL_WIDTH : 0);
+  const projectShellInsetTransition = leftDrawerOpen
+    ? "420ms cubic-bezier(0.22, 1, 0.36, 1)"
+    : "280ms cubic-bezier(0.4, 0, 1, 1)";
   const openShare = useCallback(() => setShareOpen(true), []);
+
+  useEffect(() => {
+    if (!nodesEnabled && nodesOpen) closeNodes();
+  }, [closeNodes, nodesEnabled, nodesOpen]);
 
   const commitName = (next: string) => {
     if (!canEdit) return;
@@ -102,6 +138,45 @@ export default function ProjectLayout({
     });
   };
 
+  const projectHeader = (
+    <header
+      className="pointer-events-none absolute top-0 right-0 z-30 flex h-14 shrink-0 items-center gap-3 bg-transparent px-4"
+      style={{
+        left: "var(--project-shell-left-inset, 64px)",
+        transition: `left ${projectShellInsetTransition}`,
+      }}
+    >
+      <input
+        value={name}
+        aria-label={t("projectName")}
+        placeholder={t("untitled")}
+        readOnly={!canEdit}
+        onChange={(event) => {
+          if (!canEdit) return;
+          dirtyRef.current = true;
+          setName(event.target.value);
+        }}
+        onBlur={(event) => commitName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="pointer-events-auto field-sizing-content h-8 min-w-[80px] max-w-[240px] rounded-full px-3 text-sm font-medium outline-none transition-colors read-only:cursor-default hover:bg-white/[0.06] focus:bg-white/[0.06]"
+      />
+
+      <ModeTabs projectId={projectId} activeMode={activeMode} />
+
+      <div className="pointer-events-auto ml-auto flex items-center gap-2">
+        {role === "viewer" && (
+          <span className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium text-white/70">
+            <IconEye className="size-4" stroke={1.8} />
+            {t("viewOnly")}
+          </span>
+        )}
+        <HeaderActions />
+      </div>
+    </header>
+  );
+
   return (
     <ProjectProvider
       projectId={projectId}
@@ -112,58 +187,38 @@ export default function ProjectLayout({
       <ProjectSectionsProvider projectId={projectId}>
         <div className="flex h-dvh">
           <SectionCanvasBoundary projectId={projectId} canEdit={canEdit}>
-            <div className="flex min-w-0 flex-1">
-              <ProjectSidebar />
-
-              <div className="flex min-w-0 flex-1 flex-col">
-                <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 px-4">
-                  <input
-                    value={name}
-                    aria-label={t("projectName")}
-                    placeholder={t("untitled")}
-                    readOnly={!canEdit}
-                    onChange={(event) => {
-                      if (!canEdit) return;
-                      dirtyRef.current = true;
-                      setName(event.target.value);
-                    }}
-                    onBlur={(event) => commitName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") event.currentTarget.blur();
-                    }}
-                    className="field-sizing-content h-8 min-w-[80px] max-w-[240px] rounded-full px-3 text-sm font-medium outline-none transition-colors read-only:cursor-default hover:bg-white/[0.06] focus:bg-white/[0.06]"
-                  />
-
-                  <ModeTabs projectId={projectId} activeMode={activeMode} />
-
-                  <div className="ml-auto flex items-center gap-2">
-                    {role === "viewer" && (
-                      <span className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium text-white/70">
-                        <IconEye className="size-4" stroke={1.8} />
-                        {t("viewOnly")}
-                      </span>
-                    )}
-                    <HeaderActions canEdit={canEdit} />
-                    {canManage && (
-                      <button
-                        type="button"
-                        onClick={openShare}
-                        className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium transition-colors hover:bg-white/[0.1]"
-                      >
-                        <IconUsers className="size-4" stroke={1.8} />
-                        {t("share")}
-                      </button>
-                    )}
-                  </div>
-                </header>
-
-                <div className="flex min-h-0 flex-1">
-                  <LeftDrawerSlot canEdit={canEdit} projectId={projectId} />
-                  <main className="relative min-w-0 flex-1">{children}</main>
-                </div>
+            <div
+              className="relative min-w-0 flex-1 overflow-hidden"
+              style={
+                {
+                  "--project-shell-left-inset": `${projectShellLeftInset}px`,
+                  "--project-canvas-left-overlay-inset": `${projectShellLeftInset}px`,
+                  "--project-canvas-right-overlay-inset": "80px",
+                } as CSSProperties
+              }
+            >
+              <PersistentModeStage
+                activeMode={activeMode}
+                shellInsetTransition={projectShellInsetTransition}
+              />
+              <div className="pointer-events-auto absolute inset-y-0 left-0 z-40">
+                <ProjectSidebar
+                  activeMode={activeMode}
+                  panel={
+                    <ProjectPanelContent
+                      activeMode={activeMode}
+                      canEdit={canEdit}
+                      projectId={projectId}
+                    />
+                  }
+                  panelOpen={leftDrawerOpen}
+                />
               </div>
+              {projectHeader}
+              {!copilotOpen && (
+                <AgentToggle className="pointer-events-auto absolute right-4 bottom-4 z-30" />
+              )}
             </div>
-            {historyOpen ? <HistoryOverlay onClose={closeHistory} /> : null}
           </SectionCanvasBoundary>
 
           <SectionAgentPanel
@@ -184,6 +239,102 @@ export default function ProjectLayout({
         )}
       </ProjectSectionsProvider>
     </ProjectProvider>
+  );
+}
+
+/**
+ * Keeps every mode visited in this project mounted while switching routes.
+ * Inactive layers remain sized but are not painted or interactive, so React
+ * Flow never observes a zero-sized canvas and media DOM, scroll positions and
+ * editor drafts survive mode changes.
+ */
+interface PersistentModeStageProps {
+  activeMode: string;
+  shellInsetTransition: string;
+}
+
+interface PersistentModeStageState {
+  mountedModes: readonly string[];
+}
+
+class PersistentModeStage extends Component<PersistentModeStageProps, PersistentModeStageState> {
+  state: PersistentModeStageState = { mountedModes: [this.props.activeMode] };
+
+  static getDerivedStateFromProps(
+    { activeMode }: PersistentModeStageProps,
+    { mountedModes }: PersistentModeStageState
+  ): PersistentModeStageState | null {
+    if (!getMode(activeMode) || mountedModes.includes(activeMode)) return null;
+    return { mountedModes: [...mountedModes, activeMode] };
+  }
+
+  render() {
+    const { activeMode, shellInsetTransition } = this.props;
+
+    return (
+      <main className="absolute inset-0 min-w-0">
+        {this.state.mountedModes.map((slug) => {
+          const mode = getMode(slug);
+          if (!mode) return null;
+
+          return (
+            <PersistentModeLayer
+              key={slug}
+              slug={slug}
+              active={slug === activeMode}
+              shellInsetTransition={shellInsetTransition}
+            />
+          );
+        })}
+      </main>
+    );
+  }
+}
+
+function PersistentModeLayer({
+  slug,
+  active,
+  shellInsetTransition,
+}: {
+  slug: string;
+  active: boolean;
+  shellInsetTransition: string;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const mode = getMode(slug);
+
+  useEffect(() => {
+    if (active) return;
+    rootRef.current
+      ?.querySelectorAll<HTMLMediaElement>("video, audio")
+      .forEach((media) => media.pause());
+  }, [active]);
+
+  if (!mode) return null;
+  const Editor = mode.Editor;
+  const isCanvas = slug === "canvas";
+
+  return (
+    <div
+      ref={rootRef}
+      aria-hidden={!active}
+      inert={!active}
+      className={cn(
+        "absolute inset-0 min-w-0",
+        !isCanvas && "pt-14",
+        active ? "z-0 opacity-100" : "-z-10 pointer-events-none opacity-0"
+      )}
+      style={
+        isCanvas
+          ? undefined
+          : {
+              paddingLeft: "var(--project-shell-left-inset, 64px)",
+              transition: `padding-left ${shellInsetTransition}`,
+            }
+      }
+    >
+      <Editor />
+    </div>
   );
 }
 
@@ -228,7 +379,7 @@ function ModeTabs({ projectId, activeMode }: { projectId: string; activeMode: st
   const t = useTranslations("project");
   const { activeSection } = useProjectSections();
   return (
-    <div className="mx-auto flex items-center gap-0.5 rounded-full bg-white/[0.06] p-1">
+    <div className="pointer-events-auto mx-auto flex items-center gap-0.5 rounded-full bg-white/[0.06] p-1">
       {MODE_ORDER.map((slug) => {
         const mode = getMode(slug);
         if (!mode || !activeSection) return null;
@@ -282,75 +433,69 @@ function SectionAgentPanel({
   );
 }
 
-function HeaderActions({ canEdit }: { canEdit: boolean }) {
+function AgentToggle({ className, size = 60 }: { className?: string; size?: number }) {
   const tAgentOs = useTranslations("agentOs");
-  const tCanvas = useTranslations("canvas");
-  const { connectionStatus, rtt, awareness, doc } = useCanvasConnection();
   const copilotOpen = useProjectUIStore((s) => s.copilotOpen);
   const toggleCopilot = useProjectUIStore((s) => s.toggleCopilot);
-  const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
-  const historyOpen = useProjectUIStore((s) => s.historyOpen);
-  const toggleHistory = useProjectUIStore((s) => s.toggleHistory);
   const closeHistory = useProjectUIStore((s) => s.closeHistory);
 
   return (
+    <FizzAgentOrbButton
+      active={copilotOpen}
+      size={size}
+      hoverMessages={
+        size >= 48
+          ? [
+              tAgentOs("launcherPrompts.create"),
+              tAgentOs("launcherPrompts.ask"),
+              tAgentOs("launcherPrompts.help"),
+            ]
+          : undefined
+      }
+      aria-label={tAgentOs(copilotOpen ? "close" : "open")}
+      title={tAgentOs(copilotOpen ? "close" : "open")}
+      onClick={() => {
+        closeHistory();
+        toggleCopilot();
+      }}
+      className={className}
+    />
+  );
+}
+
+function HeaderActions() {
+  const { awareness, doc } = useCanvasConnection();
+
+  return (
     <>
-      <button
-        type="button"
-        aria-label={tAgentOs("open")}
-        onClick={() => {
-          closeHistory();
-          toggleCopilot();
-        }}
-        className={cn(
-          "flex size-8 items-center justify-center rounded-full transition-colors",
-          copilotOpen
-            ? "bg-white text-black"
-            : "text-white/70 hover:bg-white/[0.08] hover:text-white"
-        )}
-      >
-        <IconSparkles className="size-4" stroke={1.8} />
-      </button>
-      <span className="flex h-8 items-center rounded-full bg-white/[0.06] px-3">
-        <ConnectionSignal status={connectionStatus} rtt={rtt} />
-      </span>
-      {canEdit ? (
-        <button
-          type="button"
-          aria-label={tCanvas("activityLog")}
-          onClick={() => {
-            closeCopilot();
-            toggleHistory();
-          }}
-          className={cn(
-            "flex size-8 items-center justify-center rounded-full transition-colors",
-            historyOpen
-              ? "bg-white text-black"
-              : "text-white/70 hover:bg-white/[0.08] hover:text-white"
-          )}
-        >
-          <IconHistory className="size-4" stroke={1.8} />
-        </button>
-      ) : null}
       <CollabAvatars awareness={awareness} localClientId={doc?.clientID} />
       <CreditsBadge className="flex h-8 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-xs font-medium tabular-nums" />
     </>
   );
 }
 
-function HistoryOverlay({ onClose }: { onClose: () => void }) {
-  const { documentId, provider } = useCanvasConnection();
-  return <CanvasHistory documentId={documentId} provider={provider} onClose={onClose} />;
-}
-
-function LeftDrawerSlot({ canEdit, projectId }: { canEdit: boolean; projectId: string }) {
+function ProjectPanelContent({
+  activeMode,
+  canEdit,
+  projectId,
+}: {
+  activeMode: string;
+  canEdit: boolean;
+  projectId: string;
+}) {
+  const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
+  const closeNodes = useProjectUIStore((s) => s.closeNodes);
+  const requestNodeInsert = useProjectUIStore((s) => s.requestNodeInsert);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
+  const closeHistory = useProjectUIStore((s) => s.closeHistory);
   const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
   const selectedSlot = useProjectUIStore((s) => s.selectedSlot);
   const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
   const { activeSection } = useProjectSections();
+  const { documentId, provider } = useCanvasConnection();
 
   const sb = useStoryboard();
   const sbRouter = useRouter();
@@ -378,24 +523,59 @@ function LeftDrawerSlot({ canEdit, projectId }: { canEdit: boolean; projectId: s
     () => sb.rows.find((r) => r.id === selectedShotId) ?? null,
     [sb.rows, selectedShotId]
   );
+  const activePanel =
+    nodesOpen && canEdit
+      ? "nodes"
+      : assetsOpen
+        ? "assets"
+        : historyOpen
+          ? "activity"
+          : sectionsOpen
+            ? "sections"
+            : selectedShotId && selectedRow
+              ? "shot"
+              : null;
+
+  const [lastPanel, setLastPanel] = useState(activePanel);
+  const [lastSelectedRow, setLastSelectedRow] = useState(selectedRow);
+
+  if (activePanel && activePanel !== lastPanel) setLastPanel(activePanel);
+  if (selectedRow && selectedRow.id !== lastSelectedRow?.id) setLastSelectedRow(selectedRow);
+
+  const renderedPanel = activePanel ?? lastPanel;
+  const renderedRow = selectedRow ?? lastSelectedRow;
+  const nodeActions =
+    activeMode === "storyboard" ? STORYBOARD_ADD_NODE_ACTIONS : PROJECT_CANVAS_ADD_NODE_ACTIONS;
+  const handleNodeAction = (action: AddNodeAction) => {
+    if (activeMode === "storyboard") {
+      if (action === "shot") sb.insertShot(sb.rows.length);
+      closeNodes();
+      return;
+    }
+    requestNodeInsert(action);
+  };
 
   let content: React.ReactNode = null;
-  if (assetsOpen) {
+  if (renderedPanel === "nodes" && canEdit) {
+    content = <NodesPanel actions={nodeActions} onAction={handleNodeAction} onClose={closeNodes} />;
+  } else if (renderedPanel === "assets") {
     content = <AssetLibrary open onClose={closeAssets} crewProjectId={projectId} />;
-  } else if (sectionsOpen) {
+  } else if (renderedPanel === "activity") {
+    content = <CanvasHistory documentId={documentId} provider={provider} onClose={closeHistory} />;
+  } else if (renderedPanel === "sections") {
     content = <ProjectSectionsPanel />;
-  } else if (selectedShotId && selectedRow) {
+  } else if (renderedPanel === "shot" && renderedRow) {
     content =
       selectedSlot === "video" ? (
         <ShotVideoDrawer
-          row={selectedRow}
+          row={renderedRow}
           canEdit={canEdit}
           actions={drawerActions}
           onClose={closeShotDrawer}
         />
       ) : (
         <ShotPictureDrawer
-          row={selectedRow}
+          row={renderedRow}
           slot={selectedSlot}
           canEdit={canEdit}
           actions={drawerActions}
@@ -404,13 +584,5 @@ function LeftDrawerSlot({ canEdit, projectId }: { canEdit: boolean; projectId: s
       );
   }
 
-  if (!content) return null;
-
-  return (
-    <aside className="h-full shrink-0">
-      <DrawerPanel placement="inline" width={380}>
-        {content}
-      </DrawerPanel>
-    </aside>
-  );
+  return content;
 }

@@ -6,6 +6,7 @@ import { IconAlertCircle, IconAlertTriangle, IconPaperclip, IconX } from "@table
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
 import {
   FizzAgentModelMenu,
+  FizzAgentOrbButton,
   FizzAgentPermissionMenu,
   FizzAgentSurface,
 } from "@/components/fizz-agent";
@@ -768,6 +769,12 @@ function AgentOsProjectSession({
         }}
         empty={
           <div className="w-full max-w-80 space-y-3">
+            <FizzAgentOrbButton
+              size={64}
+              aria-hidden="true"
+              tabIndex={-1}
+              className="pointer-events-none mx-auto mb-1"
+            />
             <p className="text-xs/relaxed text-white/40">
               {t(workbenchMode === "story" ? "emptyHintStory" : "emptyHint")}
             </p>

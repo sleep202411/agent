@@ -1208,6 +1208,11 @@
       "searchPlaceholder": "Search nodes",
       "noMatches": "No matching nodes"
     },
+    "nodes": {
+      "title": "Nodes",
+      "add": "Add",
+      "close": "Close nodes"
+    },
     "emptyState": {
       "clickToAdd": "Click to add a node",
       "or": "Or"
@@ -1757,10 +1762,13 @@
     "share": "Share",
     "aiAssistant": "AI assistant",
     "sidebar": {
+      "navigation": "Project navigation",
+      "nodes": "Nodes",
+      "nodesModeUnavailable": "Nodes aren't available in Brief mode",
+      "nodesEditRequired": "You need edit access to add nodes",
       "assets": "Assets",
-      "chapters": "Chapters",
-      "collapse": "Collapse",
-      "expand": "Expand"
+      "activity": "Activity",
+      "members": "Members"
     },
     "sections": {
       "defaultTitle": "Chapter 1",
@@ -2798,6 +2806,11 @@
     "subtitle": "Chat with an execution agent — tools write to your project",
     "close": "Close FizzAgent",
     "open": "Open FizzAgent",
+    "launcherPrompts": {
+      "create": "What would you like to create?",
+      "ask": "I'm FizzAgent — ask me anything.",
+      "help": "I can help refine your story and canvas."
+    },
     "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
     "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
     "modelProfile": "Model",

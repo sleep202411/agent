@@ -1208,6 +1208,11 @@
       "searchPlaceholder": "搜索节点",
       "noMatches": "没有匹配的节点"
     },
+    "nodes": {
+      "title": "节点",
+      "add": "添加",
+      "close": "关闭节点面板"
+    },
     "emptyState": {
       "clickToAdd": "点击添加节点",
       "or": "或"
@@ -1757,10 +1762,13 @@
     "share": "分享",
     "aiAssistant": "AI 助手",
     "sidebar": {
+      "navigation": "项目导航",
+      "nodes": "节点",
+      "nodesModeUnavailable": "说明模式下无法使用节点",
+      "nodesEditRequired": "需要编辑权限才能添加节点",
       "assets": "资产",
-      "chapters": "章节",
-      "collapse": "收起",
-      "expand": "展开"
+      "activity": "动态",
+      "members": "成员"
     },
     "sections": {
       "defaultTitle": "第 1 章",
@@ -2798,6 +2806,11 @@
     "subtitle": "对话式执行智能体 — 工具会真正写入项目",
     "close": "关闭 FizzAgent",
     "open": "打开 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想创作什么？",
+      "ask": "我是 FizzAgent，随时向我提问。",
+      "help": "我可以帮你完善故事和画布。"
+    },
     "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
     "emptyHintStory": "添加参考资料，或告诉 FizzAgent 如何推进当前章节，然后继续打磨故事。",
     "modelProfile": "模型",

@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { CanvasHistoryController } from "./canvas-history";
@@ -8,6 +9,7 @@ interface CanvasHistoryControlsProps extends CanvasHistoryController {
   undoLabel: string;
   redoLabel: string;
   className?: string;
+  style?: CSSProperties;
 }
 
 export function CanvasHistoryControls({
@@ -18,6 +20,7 @@ export function CanvasHistoryControls({
   undoLabel,
   redoLabel,
   className,
+  style,
 }: CanvasHistoryControlsProps) {
   return (
     <div
@@ -25,6 +28,7 @@ export function CanvasHistoryControls({
         "flex items-center gap-0.5 rounded-full bg-popover/90 p-1 shadow-md backdrop-blur-xl",
         className
       )}
+      style={style}
     >
       <button
         type="button"

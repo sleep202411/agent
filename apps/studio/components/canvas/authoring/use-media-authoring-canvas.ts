@@ -199,6 +199,8 @@ export function useMediaAuthoringCanvas({
   const storeAssetsOpen = useProjectUIStore((s) => s.assetsOpen);
   const storeCloseAssets = useProjectUIStore((s) => s.closeAssets);
   const storeOpenAssets = useProjectUIStore((s) => s.openAssets);
+  const nodeInsertRequest = useProjectUIStore((s) => s.nodeInsertRequest);
+  const clearNodeInsertRequest = useProjectUIStore((s) => s.clearNodeInsertRequest);
   const [localAssetsOpen, setLocalAssetsOpen] = useState(false);
   const assetsOpen = projectCtx ? storeAssetsOpen : localAssetsOpen;
   const setAssetsOpen = projectCtx
@@ -211,6 +213,7 @@ export function useMediaAuthoringCanvas({
   const pendingUploadFlowPos = useRef<{ x: number; y: number } | null>(null);
   const pendingUploadConnection = useRef<PendingConnection | null>(null);
   const pendingWires = useRef(new Map<string, () => void>());
+  const handledNodeInsertRequest = useRef<number | null>(null);
   const reconnectDone = useRef(true);
   const lastConnectEndAt = useRef(0);
   const connectStartRef = useRef<{ x: number; y: number; color: string } | null>(null);
@@ -641,6 +644,24 @@ export function useMediaAuthoringCanvas({
     },
     [addNodeOfType, nodes.length, screenToFlowPosition]
   );
+
+  useEffect(() => {
+    if (!projectCtx || !nodeInsertRequest) return;
+    if (handledNodeInsertRequest.current === nodeInsertRequest.id) return;
+
+    handledNodeInsertRequest.current = nodeInsertRequest.id;
+    if (canEdit && addNodeActions.includes(nodeInsertRequest.action)) {
+      addNodeFromDock(nodeInsertRequest.action);
+    }
+    clearNodeInsertRequest(nodeInsertRequest.id);
+  }, [
+    addNodeActions,
+    addNodeFromDock,
+    canEdit,
+    clearNodeInsertRequest,
+    nodeInsertRequest,
+    projectCtx,
+  ]);
 
   useCanvasAuthoringShortcuts({
     enabled: canEdit,
