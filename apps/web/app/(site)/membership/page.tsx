@@ -1,9 +1,9 @@
-import { MembershipPlans } from "./_components/membership-plans";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getStudioHref } from "@/src/lib/region/cell";
 
-export default function MembershipPage() {
-  return (
-    <main className="min-h-screen bg-background">
-      <MembershipPlans />
-    </main>
-  );
+/** The canonical compute-membership catalog and checkout live in Studio. */
+export default async function MembershipPage() {
+  const locale = (await headers()).get("x-locale") ?? "en-US";
+  redirect(`${getStudioHref(locale)}#settings/billing`);
 }

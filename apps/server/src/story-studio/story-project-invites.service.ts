@@ -26,6 +26,10 @@ import { NotificationService } from '../notification';
 import { generateInviteToken } from '../sharing/invite-token';
 import type { InvitePreviewDTO } from '../sharing/mappers';
 import { effectiveInviteStatus, isUniqueViolation } from '../sharing/util';
+import {
+  acquireSeatLock,
+  storyRoleConsumesCreatorSeat,
+} from '../sharing/seat-guard';
 import { PlatformAuditLogService } from '../workspaces';
 import { ensureWorkspaceMembershipForStory } from './story-project-membership';
 import {
@@ -191,6 +195,11 @@ export class StoryProjectInvitesService {
     let created = false;
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Keep the same lock order as add-by-account and generic project
+        // invites: workspace creator-seat lock before the invite row lock.
+        if (storyRoleConsumesCreatorSeat(current.role)) {
+          await acquireSeatLock(tx, project.workspaceId);
+        }
         const locked = await tx.$queryRaw<
           { status: StoryProjectInviteStatus; expires_at: Date }[]
         >`SELECT status, expires_at FROM story_project_invites WHERE id = ${invite.id}::uuid FOR UPDATE`;
@@ -235,6 +244,7 @@ export class StoryProjectInvitesService {
           workspaceId: project.workspaceId,
           userId: user.userId,
           actorUserId: current.invitedByUserId,
+          role: current.role,
           entitlements: this.entitlements,
           allowReactivatingRemoved: false,
         });

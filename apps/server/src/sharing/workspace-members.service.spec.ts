@@ -1,4 +1,6 @@
 import {
+  ProjectMemberStatus,
+  WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceType,
@@ -16,26 +18,30 @@ const COOKIE = 'satoken=abc';
  * cover is that a personal workspace reaches the seat gate at all, and that the
  * gate is the only thing that can refuse it.
  */
-function build(input: { activeSeats: number }) {
+function build() {
   const memberCreate = jest.fn().mockResolvedValue({
     id: 'wm-new',
     userId: 'guest-1',
-    role: WorkspaceMemberRole.editor,
+    role: WorkspaceMemberRole.viewer,
     status: WorkspaceMemberStatus.active,
     joinedAt: new Date('2026-07-26T00:00:00.000Z'),
   });
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(0),
-    $queryRaw: jest.fn().mockResolvedValue([{ next_seq: 2n }]),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([{ user_id: ACTOR.userId, next_seq: 2n }]),
     entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {
       findUnique: jest.fn().mockResolvedValue({ type: WorkspaceType.personal }),
     },
     workspaceMember: {
-      count: jest.fn().mockResolvedValue(input.activeSeats),
       create: memberCreate,
+      update: jest.fn(),
     },
+    projectMember: { findFirst: jest.fn().mockResolvedValue(null) },
+    storyProjectMember: { findFirst: jest.fn().mockResolvedValue(null) },
     aiEventOutbox: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
@@ -50,6 +56,7 @@ function build(input: { activeSeats: number }) {
       }),
     },
     workspaceMember: { findFirst: jest.fn().mockResolvedValue(null) },
+    platformDocument: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
   };
   const notifications = { send: jest.fn().mockResolvedValue({}) };
@@ -62,30 +69,33 @@ function build(input: { activeSeats: number }) {
   };
   const permissions = { requireWorkspaceRole: jest.fn() };
   const audit = { record: jest.fn() };
+  const docs = { revokeUserFromDocuments: jest.fn() };
+  const realtime = { revokeWorkspaceAccess: jest.fn() };
   return {
     tx,
     prisma,
     notifications,
     audit,
     memberCreate,
+    docs,
+    realtime,
     service: new WorkspaceMembersService(
       prisma as never,
       notifications as never,
       users as never,
       permissions as never,
       audit as never,
-      { revokeUserFromDocuments: jest.fn() } as never,
+      docs as never,
       new EntitlementService({} as never),
-      { revokeWorkspaceAccess: jest.fn() } as never,
+      realtime as never,
     ),
   };
 }
 
 describe('WorkspaceMembersService.add on a personal workspace', () => {
-  const input = { account: 'guest@example.com', role: 'editor' } as const;
-
-  it('adds a collaborator while seats remain', async () => {
-    const t = build({ activeSeats: 1 });
+  it('adds a viewer without consuming a creator seat', async () => {
+    const t = build();
+    const input = { account: 'guest@example.com', role: 'viewer' } as const;
 
     const member = await t.service.add(WORKSPACE_ID, ACTOR, COOKIE, input);
 
@@ -97,22 +107,85 @@ describe('WorkspaceMembersService.add on a personal workspace', () => {
     expect(calls[0][0].data).toMatchObject({
       workspaceId: WORKSPACE_ID,
       userId: 'guest-1',
-      role: WorkspaceMemberRole.editor,
-      seatAssigned: true,
+      role: WorkspaceMemberRole.viewer,
     });
     expect(t.notifications.send).toHaveBeenCalledTimes(1);
     expect(t.audit.record).toHaveBeenCalledTimes(1);
   });
 
-  it('is refused by the seat gate once the 5 seats are full', async () => {
-    const t = build({ activeSeats: 5 });
+  it('refuses a second creator in a no-plan personal workspace', async () => {
+    const t = build();
+    const input = { account: 'guest@example.com', role: 'editor' } as const;
 
     await expect(
       t.service.add(WORKSPACE_ID, ACTOR, COOKIE, input),
     ).rejects.toMatchObject({
-      response: { code: 'WORKSPACE_SEAT_LIMIT_REACHED', includedSeats: 5 },
+      response: {
+        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
+        includedSeats: 1,
+      },
     });
     expect(t.memberCreate).not.toHaveBeenCalled();
     expect(t.audit.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('WorkspaceMembersService.remove', () => {
+  it('keeps project collaborators in the roster without workspace-wide access', async () => {
+    const t = build();
+    const current = {
+      id: 'wm-existing',
+      userId: 'guest-1',
+      role: WorkspaceMemberRole.editor,
+      status: WorkspaceMemberStatus.active,
+      accessScope: WorkspaceMemberAccessScope.workspace,
+    };
+    const projected = {
+      ...current,
+      role: WorkspaceMemberRole.viewer,
+      accessScope: WorkspaceMemberAccessScope.project_only,
+    };
+    t.prisma.workspaceMember.findFirst.mockResolvedValue(current);
+    t.tx.projectMember.findFirst.mockResolvedValue({
+      id: 'pm-1',
+      status: ProjectMemberStatus.active,
+    });
+    t.tx.workspaceMember.update.mockResolvedValue(projected);
+
+    await t.service.remove(WORKSPACE_ID, ACTOR, current.id);
+
+    expect(t.tx.workspaceMember.update).toHaveBeenCalledWith({
+      where: { id: current.id },
+      data: {
+        role: WorkspaceMemberRole.viewer,
+        accessScope: WorkspaceMemberAccessScope.project_only,
+      },
+    });
+    expect(t.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `workspace.member.workspace_access_removed:${current.id}`,
+      }),
+      t.tx,
+    );
+    expect(t.tx.aiEventOutbox.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({
+            action: 'role_changed',
+            member: expect.objectContaining({
+              role: WorkspaceMemberRole.viewer,
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(t.realtime.revokeWorkspaceAccess).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      current.userId,
+    );
+    expect(t.docs.revokeUserFromDocuments).toHaveBeenCalledWith(
+      [],
+      current.userId,
+    );
   });
 });

@@ -325,7 +325,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'OpenAI image generation and editing model for instruction-following, typography, layout, product mockups, and structured visual edits.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    tier: 'basic',
     cost: 60,
     parameterPolicy: GPT_IMAGE_2_PARAMETER_POLICY,
     productPricing: GPT_IMAGE_2_PRODUCT_PRICING,
@@ -350,7 +350,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Black Forest Labs Flux 2 Pro for production photorealism, product marketing visuals, typography, color control, and multi-reference image editing up to 4 megapixels.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 30,
     parameterPolicy: FLUX_2_PRO_PARAMETER_POLICY,
     productPricing: FLUX_2_PRO_PRODUCT_PRICING,
@@ -390,7 +390,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Tencent Hunyuan World 1.0 — expands a single image into a 2:1 equirectangular 360° panorama. Reached via the studio panorama (720°) action, not the model picker.',
     modes: [I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 40,
     parameterPolicy: HUNYUAN_WORLD_PARAMETER_POLICY,
     productPricing: HUNYUAN_WORLD_PRODUCT_PRICING,
@@ -423,7 +423,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Topaz image upscaler — increases resolution with detail recovery. Reached via the studio Upscale action, not the model picker.',
     modes: [UPSCALE],
-    tier: 'vip',
+    tier: 'basic',
     cost: 15,
     parameterPolicy: TOPAZ_UPSCALE_PARAMETER_POLICY,
     productPricing: TOPAZ_UPSCALE_PRODUCT_PRICING,
@@ -457,7 +457,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Bria background removal — mattes the subject out to a transparent image. Reached via the studio Remove BG action, not the model picker.',
     modes: [REMOVE_BG],
-    tier: 'vip',
+    tier: 'basic',
     cost: 10,
     parameterPolicy: BRIA_RMBG_PARAMETER_POLICY,
     productPricing: BRIA_RMBG_PRODUCT_PRICING,
@@ -491,7 +491,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'IC-Light V2 relighting — re-lights the subject to match a described scene/lighting. Reached via the studio Relight action, not the model picker.',
     modes: [RELIGHT],
-    tier: 'vip',
+    tier: 'basic',
     cost: 20,
     parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
     productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING,
@@ -525,7 +525,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Qwen multiple-angles — re-shoots the subject from a new camera viewpoint (orbit / tilt / zoom). Reached via the studio Multi-Angle action, not the model picker.',
     modes: [MULTI_ANGLE],
-    tier: 'vip',
+    tier: 'basic',
     cost: 18,
     parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
     productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING,
@@ -560,7 +560,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Bria image expand (outpainting) — grows the canvas and generatively fills the new area. Reached via the studio Expand action, not the model picker.',
     modes: [OUTPAINT],
-    tier: 'vip',
+    tier: 'basic',
     cost: 15,
     parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
     productPricing: BRIA_EXPAND_PRODUCT_PRICING,
@@ -594,7 +594,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Black Forest Labs Flux 2 Flex for typography-heavy production images and multi-reference editing with explicit guidance and inference-step controls.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 50,
     parameterPolicy: FLUX_2_FLEX_PARAMETER_POLICY,
     productPricing: FLUX_2_FLEX_PRODUCT_PRICING,
@@ -633,7 +633,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Black Forest Labs Flux 2 Max — the highest-fidelity FLUX.2 tier for premium photorealism, typography, precise color control, and multi-reference image editing up to 4 megapixels.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 70,
     parameterPolicy: FLUX_2_MAX_PARAMETER_POLICY,
     productPricing: FLUX_2_MAX_PRODUCT_PRICING,
@@ -672,7 +672,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Black Forest Labs Flux 2 Dev — the open-weight FLUX.2 base model for low-cost, configurable generation with adjustable guidance and inference steps, multi-image batches, and reference editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 12,
     parameterPolicy: FLUX_2_DEV_PARAMETER_POLICY,
     productPricing: FLUX_2_DEV_PRODUCT_PRICING,
@@ -711,7 +711,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Alibaba Wan Image 2.7 Pro for high-fidelity text-to-image, reference-guided generation, image editing, and inpainting up to 4K.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    tier: 'basic',
     cost: 45,
     parameterPolicy: WAN_IMAGE_27_PRO_PARAMETER_POLICY,
     productPricing: WAN_IMAGE_27_PRO_PRODUCT_PRICING,
@@ -749,7 +749,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Alibaba Wan Image 2.7 for efficient text-to-image, reference-guided generation, image editing, and inpainting up to 2K.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    tier: 'basic',
     cost: 20,
     parameterPolicy: WAN_IMAGE_27_PARAMETER_POLICY,
     productPricing: WAN_IMAGE_27_PRODUCT_PRICING,
@@ -787,7 +787,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Alibaba Qwen Image 2.0 Pro for precise typography, semantic adherence, realistic text-to-image, and multi-image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 35,
     parameterPolicy: QWEN_IMAGE_20_PRO_PARAMETER_POLICY,
     productPricing: QWEN_IMAGE_20_PRO_PRODUCT_PRICING,
@@ -842,7 +842,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Alibaba Qwen Image 2.0 for balanced speed, text rendering, semantic adherence, and image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 20,
     parameterPolicy: QWEN_IMAGE_20_PARAMETER_POLICY,
     productPricing: QWEN_IMAGE_20_PRODUCT_PRICING,
@@ -896,7 +896,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Fast, low-cost image generation and reference-guided editing model for everyday creative variations.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 10,
     parameterPolicy: NANO_BANANA_PARAMETER_POLICY,
     productPricing: NANO_BANANA_PRODUCT_PRICING,
@@ -921,7 +921,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Agnes AI lightweight image model for text-to-image and single-reference image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 6,
     parameterPolicy: QUICK_IMAGE_PARAMETER_POLICY,
     productPricing: QUICK_IMAGE_PRODUCT_PRICING,
@@ -961,7 +961,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Balanced image generation and editing model with higher reference-image capacity and selectable output resolution.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 20,
     parameterPolicy: NANO_BANANA_2_PARAMETER_POLICY,
     productPricing: NANO_BANANA_2_PRODUCT_PRICING,
@@ -986,7 +986,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'Premium image generation and editing model for high-fidelity creative output at 2K and 4K resolutions.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 50,
     parameterPolicy: NANO_BANANA_PRO_PARAMETER_POLICY,
     productPricing: NANO_BANANA_PRO_PRODUCT_PRICING,
@@ -1011,7 +1011,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'ByteDance Seedream 4.5 image generation and editing model for higher-fidelity 2K and 4K creative output.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 12,
     parameterPolicy: SEEDREAM_45_PARAMETER_POLICY,
     productPricing: SEEDREAM_45_PRODUCT_PRICING,
@@ -1045,7 +1045,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'ByteDance Seedream 5.0 Lite image generation and reference-guided editing model optimized for efficient 2K, 3K, and 4K output.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 10,
     parameterPolicy: SEEDREAM_5_LITE_PARAMETER_POLICY,
     productPricing: SEEDREAM_5_LITE_PRODUCT_PRICING,
@@ -1079,7 +1079,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     description:
       'ByteDance Seedream 5.0 Pro — newest flagship image generation and precise editing model with full layer control (2K output).',
     modes: [T2I, I2I],
-    tier: 'vip',
+    tier: 'basic',
     cost: 15,
     parameterPolicy: SEEDREAM_5_PRO_PARAMETER_POLICY,
     productPricing: SEEDREAM_5_PRO_PRODUCT_PRICING,

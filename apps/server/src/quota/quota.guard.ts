@@ -45,7 +45,7 @@ export class QuotaGuard implements CanActivate {
    * row to `quota_usage_log` for durable audit; this guard's logger
    * additionally emits a structured warn line on rejections so Loki
    * / Kibana / kubectl-logs filters can spot tier-too-tight or
-   * VIP3-leak issues without joining tables.
+   * top-tier leakage issues without joining tables.
    *
    * Grep recipe:  `quota.reject` (one line per 429).
    *

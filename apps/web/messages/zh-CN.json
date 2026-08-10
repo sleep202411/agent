@@ -6013,11 +6013,7 @@
   },
   "payment": {
     "upgrade": "升级套餐",
-    "vipPlans": "VIP 套餐",
     "credits": "积分充值",
-    "perMonth": "/月",
-    "days": "天",
-    "selectPlan": "选择套餐",
     "wechatPay": "微信支付",
     "payNow": "立即支付",
     "noPackages": "No top-up packages available yet.",
@@ -6036,9 +6032,7 @@
     "orderNo": "订单号",
     "backToCreatorCenter": "返回创作者中心",
     "changePlan": "更换套餐",
-    "popular": "推荐",
     "creditsUnit": "积分",
-    "originalPrice": "原价",
     "creditsRechargeDesc": "选择积分套餐进行充值",
     "communityRechargeTitle": "社区积分充值",
     "communityRechargeDesc": "选择套餐或输入自定义金额，为社区积分充值",
@@ -6065,65 +6059,14 @@
     "pointsTypeLabel": "社区积分",
     "customGetLabel": "充值数量",
     "unlockMore": "解锁更多 AI 创作能力，提升你的制作效率",
-    "billingPeriod": "按 {days} {unit}计费",
-    "disclaimer": "订阅即表示您同意我们的服务条款。会员权益按账单周期续订；包含的算力积分将在付款成功后发放，并以结账页展示的计划规则为准。",
     "plans": {
       "basic": "Basic · 基础版",
       "standard": "Standard · 标准版",
       "pro": "Pro · 专业版",
       "team": "团队版"
     },
-    "benefits": {
-      "bonusCredits": "包含 {value} 积分",
-      "creditDiscount": "积分充值享 {discount} 折优惠",
-      "freeCourses": "专属课程权益",
-      "outputTitle": "预估创作产出",
-      "outputImagesVideos": "可生成约 {images} 张图片或 {videos} 个视频",
-      "outputTime": "约 {min}–{max} 分钟创作时长",
-      "outputAgents": "支持 {count} 次专业智能体拆解",
-      "storyosCore": "基础访问",
-      "storyosFull": "完整访问",
-      "storyosMessages": "每对话 {count} 条消息",
-      "storyosRetention": "{days} 天对话历史",
-      "storyosUnlimited": "无限使用 AI 助手",
-      "storyosPriority": "优先任务队列"
-    },
     "membership": {
-      "subscriptionLabel": "FizzDragon 会员",
-      "headline": "选择你的创作会员",
-      "subheadline": "用每月算力积分、优先访问和团队工作流扩展图片、视频与 StoryOS 创作能力。",
-      "planAudience": "计划类型",
-      "billingCycle": "账单周期",
-      "annualSavings": "省 25%",
-      "currencyNote": "{currency} 价格",
-      "contactSales": "联系销售",
-      "includedInPlan": "计划包含",
-      "getStarted": "开始订阅",
-      "perMonth": "/月",
-      "perYear": "/年",
-      "secureCheckout": "安全结账。币种会根据你的访问地区自动选择。",
-      "individual": "个人",
-      "teams": "团队",
-      "monthly": "月付",
-      "yearly": "年付",
-      "oneTime": "一次性",
-      "loadFailed": "会员计划加载失败。",
-      "emptyTitle": "暂无可购买会员计划",
-      "emptyBody": "请先在后台计费中创建会员计划，并配置已同步支付渠道的价格。",
-      "defaultDescription": "面向 AI 创作工作流的会员权益。",
-      "computeCredits": "算力积分",
-      "seats": "席位",
-      "maxSeats": "最多 {count}",
-      "approxImages": "每月最多约 {count} 次图片生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "高级工作流",
-      "prioritySupport": "优先支持",
-      "sharedCredits": "团队共享积分",
-      "concurrentJobs": "{count} 个并发任务",
-      "queuedJobs": "{count} 个排队任务",
-      "customPrice": "定制",
-      "priceUnavailable": "价格未配置",
-      "workspaceRequired": "购买团队会员前，请先进入团队工作区。"
+      "getStarted": "开始订阅"
     }
   },
   "guide": {
@@ -7532,7 +7475,7 @@
       "upload": "MB"
     },
     "badge": {
-      "unlimited": "VIP · 队列优先",
+      "unlimited": "不限量 · 队列优先",
       "tooltipUsed": "今日 {used}/{limit}{unit} · {resetIn} 后重置"
     },
     "blocker": {
@@ -7548,7 +7491,7 @@
       "nextTierPriority": "升级 {tier} · 队列优先",
       "nextTierBody": "立即解锁 {limit}{unit}/天",
       "nextTierBodyUnlimited": "立即解锁无每日上限",
-      "vip3Body": "你已是 VIP3 最高套餐,当前队列繁忙,稍后再试。",
+      "topTierBody": "你已是最高套餐，当前队列繁忙，请稍后再试。",
       "later": "明天再说",
       "upgradeNow": "立即升级"
     }

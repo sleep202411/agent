@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
+import { useActiveWorkspace } from "@/app/_components/workspace-context";
 import { getMyEntitlement } from "@/lib/billing";
 import { PageHeader, Panel } from "../_components/settings-ui";
 import { CurrentPlanPanel, myEntitlementQueryKey } from "../_components/current-plan-panel";
@@ -24,11 +25,15 @@ import { CurrentPlanPanel, myEntitlementQueryKey } from "../_components/current-
 export default function UsageSettingsPage() {
   const t = useTranslations("settings");
   const { user } = useAuth();
+  const workspace = useActiveWorkspace();
+  const workspaceId = workspace?.id ?? null;
+  const canManageBilling =
+    workspace?.role === "owner" || workspace?.role === "admin" || workspace?.role === "billing";
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const { data: credits } = useComputeWalletBalance(Boolean(user));
   const { data } = useQuery({
-    queryKey: myEntitlementQueryKey,
-    queryFn: getMyEntitlement,
+    queryKey: myEntitlementQueryKey(workspaceId),
+    queryFn: () => getMyEntitlement(workspaceId),
     enabled: Boolean(user),
     staleTime: 30_000,
   });
@@ -54,7 +59,7 @@ export default function UsageSettingsPage() {
     <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
       <PageHeader title={t("usageTitle")} subtitle={t("usageSubtitle")} />
 
-      <CurrentPlanPanel onManagePlan={() => setUpgradeOpen(true)} />
+      <CurrentPlanPanel canManage={canManageBilling} onManagePlan={() => setUpgradeOpen(true)} />
 
       <Panel
         title={t("computeCredits")}
@@ -74,9 +79,11 @@ export default function UsageSettingsPage() {
               </div>
             )}
           </div>
-          <Button size="sm" onClick={() => setUpgradeOpen(true)}>
-            {t("rechargeCredits")}
-          </Button>
+          {canManageBilling ? (
+            <Button size="sm" onClick={() => setUpgradeOpen(true)}>
+              {t("rechargeCredits")}
+            </Button>
+          ) : null}
         </div>
         {available != null && total != null && Number(total) > 0 && (
           <UsageBar available={available} total={total} className="mt-3" />

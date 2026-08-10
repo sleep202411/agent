@@ -1,5 +1,6 @@
 import { createFalModelConfig, toAiModelDefinition } from './fal-schema.mapper';
 import { mapFalProviderRequest } from './fal-request.mapper';
+import type { AiRequiredPlan } from '../../types';
 import {
   BRIA_EXPAND_PARAMETER_POLICY,
   BRIA_EXPAND_PRODUCT_PRICING,
@@ -26,7 +27,7 @@ function writablePolicy<T>(value: T): DeepWritable<T> {
 
 // Shared queue/billing scaffolding so each case only states what it varies.
 const baseArgs = {
-  requiredPlan: null as string | null,
+  requiredPlan: null as AiRequiredPlan | null,
   enabled: true,
   queueName: 'ai-image-generation' as const,
   globalConcurrency: 4,

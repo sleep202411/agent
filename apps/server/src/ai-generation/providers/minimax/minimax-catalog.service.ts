@@ -7,12 +7,12 @@ import {
   providerCapacityFromRow,
 } from '../../provider-capacity';
 import { AI_QUEUE_VIDEO } from '../../queue';
+import { requiredPlanFromPolicy } from '../../required-plan';
 import type {
   AiBillingPolicy,
   AiGenerationMode,
   AiJsonValue,
   AiModelDefinition,
-  AiRequiredPlan,
 } from '../../types';
 import { MiniMaxConfigService } from './minimax-config.service';
 import {
@@ -206,24 +206,6 @@ function numberFromPolicy(value: unknown, key: string): number | undefined {
   const record = recordValue(value);
   const raw = record?.[key];
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
-}
-
-function requiredPlanFromPolicy(value: unknown): AiRequiredPlan | null {
-  const record = recordValue(value);
-  const raw = record?.requiredPlan;
-  // Plan keys only — dead keys normalize to null in EntitlementService
-  // (no gate). Keep in sync with membership plan rows.
-  if (
-    raw === 'free' ||
-    raw === 'basic' ||
-    raw === 'standard' ||
-    raw === 'pro' ||
-    raw === 'enterprise' ||
-    raw === 'vip'
-  ) {
-    return raw;
-  }
-  return null;
 }
 
 function billingPolicyFromRow(row: {

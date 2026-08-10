@@ -299,11 +299,6 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                   </button>
                 </div>
                 <div className="mt-1 flex items-center gap-1.5">
-                  {info?.userLevel && (
-                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-px text-[10px] font-medium text-primary">
-                      {info.userLevel}
-                    </span>
-                  )}
                   {(info?.levels ?? []).map((lvl) => (
                     <span
                       key={lvl.id}

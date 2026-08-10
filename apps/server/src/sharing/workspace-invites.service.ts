@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import {
   WorkspaceInviteStatus,
+  WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
@@ -33,7 +34,11 @@ import {
 } from '../workspaces';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
-import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
+import {
+  acquireSeatLock,
+  assertCreatorSeatAvailable,
+  workspaceRoleConsumesCreatorSeat,
+} from './seat-guard';
 import { enqueueTeamMemberChanged } from './team-realtime';
 import {
   toWorkspaceInviteDTO,
@@ -195,11 +200,9 @@ export class WorkspaceInvitesService {
     let created = false;
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Seat advisory lock FIRST — before any row FOR UPDATE — so the
-        // per-workspace lock order is identical to the admin add path (no
-        // deadlock). The seat assertion itself runs only once we know a new
-        // member row will be created (after the no-op / removed checks).
-        await acquireSeatLock(tx, invite.workspaceId);
+        if (workspaceRoleConsumesCreatorSeat(current.role)) {
+          await acquireSeatLock(tx, invite.workspaceId);
+        }
         // Lock the invite row so a concurrent revoke/expiry cannot slip between
         // the status check and the membership insert (TOCTOU).
         const locked = await tx.$queryRaw<
@@ -223,20 +226,24 @@ export class WorkspaceInvitesService {
             userId: user.userId,
             removedAt: null,
           },
-          select: { id: true },
+          select: { id: true, accessScope: true },
         });
-        if (active) return; // already a member — idempotent no-op
+        if (active?.accessScope === WorkspaceMemberAccessScope.workspace) {
+          return;
+        }
 
         // A previously-removed member must not silently rejoin via an open link
         // (offboarding bypass); an admin re-adds them by account explicitly.
-        const removed = await tx.workspaceMember.findFirst({
-          where: {
-            workspaceId: invite.workspaceId,
-            userId: user.userId,
-            removedAt: { not: null },
-          },
-          select: { id: true },
-        });
+        const removed = active
+          ? null
+          : await tx.workspaceMember.findFirst({
+              where: {
+                workspaceId: invite.workspaceId,
+                userId: user.userId,
+                removedAt: { not: null },
+              },
+              select: { id: true },
+            });
         if (removed) {
           throw new ForbiddenException({
             code: 'REMOVED_CANNOT_REJOIN',
@@ -244,22 +251,34 @@ export class WorkspaceInvitesService {
           });
         }
 
-        // A genuinely new member occupies a seat — assert the plan's limit.
-        // The advisory lock is already held (top of txn); this resolves the
-        // policy + counts members on this same locked transaction.
-        await assertSeatAvailable(tx, invite.workspaceId, this.entitlements);
+        if (workspaceRoleConsumesCreatorSeat(current.role)) {
+          await assertCreatorSeatAvailable(
+            tx,
+            invite.workspaceId,
+            user.userId,
+            this.entitlements,
+          );
+        }
 
-        const m = await tx.workspaceMember.create({
-          data: {
-            workspaceId: invite.workspaceId,
-            userId: user.userId,
-            role: current.role,
-            status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
-            invitedById: current.invitedById,
-            joinedAt: new Date(),
-          },
-        });
+        const memberData = {
+          role: current.role,
+          status: WorkspaceMemberStatus.active,
+          accessScope: WorkspaceMemberAccessScope.workspace,
+          invitedById: current.invitedById,
+          joinedAt: new Date(),
+        } as const;
+        const m = active
+          ? await tx.workspaceMember.update({
+              where: { id: active.id },
+              data: memberData,
+            })
+          : await tx.workspaceMember.create({
+              data: {
+                workspaceId: invite.workspaceId,
+                userId: user.userId,
+                ...memberData,
+              },
+            });
         // Stamp last-accepted; the link stays pending (multi-use) until revoke/expiry.
         await tx.workspaceInvite.update({
           where: { id: invite.id },

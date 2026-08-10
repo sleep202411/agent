@@ -9,7 +9,6 @@ import {
   AdminDialog,
   ColumnHeader,
   ErrorBanner,
-  formatBpsPercent,
   formatDate,
   formatInteger,
   formatMoneyMinor,
@@ -40,10 +39,16 @@ import { emptyMembershipPlans } from "./types";
 
 type BillingSiteKey = "global" | "cn";
 
-const DEFAULT_LIMITS_TEMPLATE = {
-  queuePriority: 5,
-  concurrentJobs: 1,
-  queuedJobs: 4,
+const DEFAULT_BENEFITS_TEMPLATE: MembershipPlanBenefits = {
+  queuePriority: 10,
+  imageDaily: 5,
+  videoDaily: 0,
+  chatDaily: 30,
+  workflowDaily: 3,
+  uploadMB: 100,
+  chatPerMinute: 20,
+  concurrentJobs: 3,
+  queuedJobs: 6,
 };
 
 export function BillingMembershipsPanel({
@@ -309,9 +314,6 @@ function MembershipPlansTable({
                 {plan.maxSeats ? ` / 上限 ${plan.maxSeats}` : " / 不限上限"}
               </p>
               <p className="text-[12px] text-slate-500">
-                充值折扣 {formatBpsPercent(plan.topupDiscountBps)}
-              </p>
-              <p className="text-[12px] text-slate-500">
                 图/日 {dailyText(plan.benefits?.imageDaily)} · 聊/日{" "}
                 {dailyText(plan.benefits?.chatDaily)} · {priorityText(plan.benefits?.chatPerMinute)}
                 /分钟
@@ -404,8 +406,7 @@ function MembershipPlanForm({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
   const jsonDefaults = {
-    featureFlags: stringifyJson(plan?.featureFlags ?? {}),
-    limits: stringifyJson(plan?.limits ?? DEFAULT_LIMITS_TEMPLATE),
+    benefits: stringifyJson(plan?.benefits ?? DEFAULT_BENEFITS_TEMPLATE),
     marketing: stringifyJson(plan?.marketing ?? {}),
     metadata: stringifyJson(plan?.metadata ?? {}),
   };
@@ -475,15 +476,6 @@ function MembershipPlanForm({
             defaultValue={plan?.maxSeats ?? ""}
           />
         </FormLabel>
-        <FormLabel label="充值折扣 bps" help="1000 = 10%，仅作为权益策略，具体优惠券仍需单独配置。">
-          <TextInput
-            name="topupDiscountBps"
-            type="number"
-            min={0}
-            max={10000}
-            defaultValue={plan?.topupDiscountBps ?? 0}
-          />
-        </FormLabel>
         <FormLabel label="默认计费周期">
           <Select
             name="billingIntervalDefault"
@@ -514,17 +506,14 @@ function MembershipPlanForm({
       </FormLabel>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <JsonFormField
-          name="featureFlags"
-          label="Feature Flags JSON"
-          defaultValue={jsonDefaults.featureFlags}
-        />
-        <JsonFormField
-          name="limits"
-          label="Limits JSON"
-          defaultValue={jsonDefaults.limits}
-          help="遗留展示字段（如 chatHistoryDays 等营销数字）。配额、并发与队列优先级的判定以「权益」按钮里的 benefits 为准。"
-        />
+        {mode === "create" ? (
+          <JsonFormField
+            name="benefits"
+            label="Benefits JSON"
+            defaultValue={jsonDefaults.benefits}
+            help="创建时必须提交完整权益；创建后请使用列表中的「权益」编辑器修改。"
+          />
+        ) : null}
         <JsonFormField
           name="marketing"
           label="Marketing JSON"
@@ -599,15 +588,13 @@ function membershipPlanPayload(form: FormData, mode: "create" | "update") {
     includedSeats: Number(stringField(form, "includedSeats") || 1),
     maxSeats: maxSeats ? Number(maxSeats) : null,
     seatOverageAllowed: form.get("seatOverageAllowed") === "on",
-    topupDiscountBps: Number(stringField(form, "topupDiscountBps") || 0),
     billingIntervalDefault: billingIntervalDefault || undefined,
-    featureFlags: jsonObjectField(form, "featureFlags"),
-    limits: jsonObjectField(form, "limits"),
     marketing: jsonObjectField(form, "marketing"),
     metadata: jsonObjectField(form, "metadata"),
   };
   if (mode === "create") {
     payload.planKey = stringField(form, "planKey");
+    payload.benefits = jsonObjectField(form, "benefits");
   }
   return payload;
 }
@@ -622,7 +609,7 @@ function jsonObjectField(form: FormData, key: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function stringifyJson(value: Record<string, unknown>) {
+function stringifyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
@@ -656,7 +643,6 @@ type BenefitsDraft = {
   chatPerMinute: string;
   concurrentJobs: CapDraft;
   queuedJobs: CapDraft;
-  features: MembershipPlanBenefits["features"];
 };
 
 const DAILY_CAP_FIELDS: Array<{
@@ -667,16 +653,6 @@ const DAILY_CAP_FIELDS: Array<{
   { key: "videoDaily", label: "视频 / 日" },
   { key: "chatDaily", label: "对话 / 日" },
   { key: "workflowDaily", label: "工作流 / 日" },
-];
-
-const FEATURE_FIELDS: Array<{
-  key: keyof MembershipPlanBenefits["features"];
-  label: string;
-}> = [
-  { key: "aiGeneration", label: "AI 生成" },
-  { key: "advancedModelAccess", label: "高级模型" },
-  { key: "advancedParameters", label: "高级参数" },
-  { key: "teamSharedCredits", label: "团队共享算力" },
 ];
 
 function capDraft(value: unknown, fallback: number): CapDraft {
@@ -694,7 +670,6 @@ function numberDraft(value: unknown, fallback: number): string {
 }
 
 function benefitsDraft(raw: Record<string, unknown>): BenefitsDraft {
-  const features = (raw.features ?? {}) as Record<string, unknown>;
   return {
     queuePriority: numberDraft(raw.queuePriority, 10),
     imageDaily: capDraft(raw.imageDaily, 5),
@@ -703,14 +678,8 @@ function benefitsDraft(raw: Record<string, unknown>): BenefitsDraft {
     workflowDaily: capDraft(raw.workflowDaily, 3),
     uploadMB: numberDraft(raw.uploadMB, 100),
     chatPerMinute: numberDraft(raw.chatPerMinute, 20),
-    concurrentJobs: capDraft(raw.concurrentJobs, 1),
-    queuedJobs: capDraft(raw.queuedJobs, 2),
-    features: {
-      aiGeneration: features.aiGeneration !== false,
-      advancedModelAccess: features.advancedModelAccess === true,
-      advancedParameters: features.advancedParameters === true,
-      teamSharedCredits: features.teamSharedCredits === true,
-    },
+    concurrentJobs: capDraft(raw.concurrentJobs, 3),
+    queuedJobs: capDraft(raw.queuedJobs, 6),
   };
 }
 
@@ -737,7 +706,6 @@ function benefitsPayload(draft: BenefitsDraft): MembershipPlanBenefits {
       ? null
       : capNumber(draft.concurrentJobs, "并发任务"),
     queuedJobs: draft.queuedJobs.unlimited ? null : capNumber(draft.queuedJobs, "排队任务"),
-    features: draft.features,
   };
 }
 
@@ -883,32 +851,6 @@ function MembershipPlanBenefitsForm({
           unlimitedLabel="不限 (合同管理)"
           onChange={(next) => setCap("queuedJobs", next)}
         />
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-2">
-        {FEATURE_FIELDS.map(({ key, label }) => (
-          <label
-            key={key}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-          >
-            <input
-              type="checkbox"
-              checked={draft.features[key]}
-              onChange={(event) =>
-                setDraft((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        features: { ...prev.features, [key]: event.target.checked },
-                      }
-                    : prev
-                )
-              }
-              className="size-4 rounded border-slate-300"
-            />
-            {label}
-          </label>
-        ))}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">

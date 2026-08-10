@@ -23,7 +23,7 @@ function grant(overrides: Record<string, unknown> = {}) {
     id: 'grant-1',
     subjectType: BillingSubjectType.user,
     subjectId: 'user-1',
-    planKey: 'studio',
+    planKey: 'basic',
     status: EntitlementGrantStatus.active,
     startsAt: new Date('2026-06-01T00:00:00.000Z'),
     endsAt: null,
@@ -43,12 +43,6 @@ function benefits(overrides: Record<string, unknown> = {}) {
     chatPerMinute: 80,
     concurrentJobs: 7,
     queuedJobs: 21,
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: false,
-    },
     ...overrides,
   };
 }
@@ -56,14 +50,12 @@ function benefits(overrides: Record<string, unknown> = {}) {
 function plan(overrides: Record<string, unknown> = {}) {
   return {
     id: 'plan-1',
-    planKey: 'studio',
+    planKey: 'basic',
     productType: 'membership_plan',
     subjectType: BillingSubjectType.user,
-    rank: 40,
+    rank: 10,
     status: BillingMembershipPlanStatus.active,
     archivedAt: null,
-    featureFlags: {},
-    limits: {},
     benefits: benefits(),
     ...overrides,
   };
@@ -100,8 +92,8 @@ describe('EntitlementService benefits resolution', () => {
     const snapshot = await service.resolveForUser(user(), { now: NOW });
 
     expect(snapshot.subject).toEqual({ type: 'user', id: 'user-1' });
-    expect(snapshot.planKey).toBe('studio');
-    expect(snapshot.rank).toBe(40);
+    expect(snapshot.planKey).toBe('basic');
+    expect(snapshot.rank).toBe(10);
     expect(snapshot.limits.queuePriority).toBe(2);
     expect(snapshot.limits.imageDaily).toBe(Number.POSITIVE_INFINITY);
     expect(snapshot.limits.chatDaily).toBe(Number.POSITIVE_INFINITY);
@@ -109,7 +101,6 @@ describe('EntitlementService benefits resolution', () => {
     expect(snapshot.limits.chatPerMinute).toBe(80);
     expect(snapshot.limits.concurrentJobs).toBe(7);
     expect(snapshot.limits.queuedJobs).toBe(21);
-    expect(snapshot.features.advancedParameters).toBe(true);
   });
 
   it('caches plan rows in-process and re-reads after invalidatePlanCache', async () => {
@@ -136,7 +127,7 @@ describe('EntitlementService benefits resolution', () => {
     const service = new EntitlementService(prisma as never);
 
     await expect(service.resolveForUser(user(), { now: NOW })).rejects.toThrow(
-      /Membership plan "studio" has invalid benefits/,
+      /Membership plan "basic" has invalid benefits/,
     );
   });
 
@@ -152,17 +143,15 @@ describe('EntitlementService benefits resolution', () => {
     expect(snapshot.limits.queuePriority).toBe(
       DEFAULT_FREE_BENEFITS.queuePriority,
     );
-    expect(snapshot.features).toEqual(DEFAULT_FREE_BENEFITS.features);
   });
 
-  it('falls back to free benefits (with the grant planKey kept) when the plan row is missing', async () => {
+  it('fails loud when a paid grant has no active plan row', async () => {
     const prisma = prismaMock({ grants: [grant()], plans: [] });
     const service = new EntitlementService(prisma as never);
 
-    const snapshot = await service.resolveForUser(user(), { now: NOW });
-
-    expect(snapshot.planKey).toBe('studio');
-    expect(snapshot.limits.chatDaily).toBe(DEFAULT_FREE_BENEFITS.chatDaily);
+    await expect(service.resolveForUser(user(), { now: NOW })).rejects.toThrow(
+      /active compute membership plan row is missing/i,
+    );
   });
 
   it('excludes community membership grants from compute resolution', async () => {
@@ -196,16 +185,10 @@ describe('EntitlementService benefits resolution', () => {
           planKey: 'team',
           productType: 'team_membership_plan',
           subjectType: BillingSubjectType.workspace,
-          rank: 120,
+          rank: 40,
           benefits: benefits({
             concurrentJobs: 16,
             queuedJobs: 64,
-            features: {
-              aiGeneration: true,
-              advancedModelAccess: true,
-              advancedParameters: true,
-              teamSharedCredits: true,
-            },
           }),
         }),
       ],
@@ -221,18 +204,17 @@ describe('EntitlementService benefits resolution', () => {
       type: 'workspace',
       id: 'workspace-1',
     });
-    expect(snapshot.features.teamSharedCredits).toBe(true);
     expect(snapshot.limits.concurrentJobs).toBe(16);
     expect(snapshot.limits.queuedJobs).toBe(64);
   });
 
-  it('preserves null limits for contract-managed enterprise plans', async () => {
+  it('preserves null limits for contract-managed plans', async () => {
     const prisma = prismaMock({
-      grants: [grant({ planKey: 'enterprise' })],
+      grants: [grant({ planKey: 'team' })],
       plans: [
         plan({
-          planKey: 'enterprise',
-          rank: 90,
+          planKey: 'team',
+          rank: 40,
           benefits: benefits({
             queuePriority: 1,
             concurrentJobs: null,
@@ -282,12 +264,22 @@ describe('EntitlementService.grantComplimentary', () => {
     expect(prisma.entitlementGrant.upsert).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a plan key with no plan row instead of granting free benefits', async () => {
+  it('rejects a non-canonical plan key before looking up a plan row', async () => {
     const prisma = grantPrismaMock(null);
     const service = new EntitlementService(prisma as never);
 
     await expect(
-      service.grantComplimentary({ ...input, planKey: 'team_creator' }),
+      service.grantComplimentary({ ...input, planKey: 'unknown_plan' }),
+    ).rejects.toThrow('Unknown compute membership plan key: unknown_plan');
+    expect(prisma.entitlementGrant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a canonical plan with no active row instead of granting free benefits', async () => {
+    const prisma = grantPrismaMock(null);
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.grantComplimentary({ ...input, planKey: 'basic' }),
     ).rejects.toMatchObject({
       response: { code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE' },
     });

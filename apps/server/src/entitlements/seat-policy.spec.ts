@@ -33,13 +33,11 @@ describe('decideSeatAdmission', () => {
     expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1).kind).toBe('block');
   });
 
-  it('no-plan PERSONAL allowance: fills 5 seats, refuses the 6th member', () => {
-    for (let activeSeats = 0; activeSeats < 5; activeSeats += 1) {
-      expect(
-        decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, activeSeats).kind,
-      ).toBe('allow');
-    }
-    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 5).kind).toBe(
+  it('no-plan PERSONAL allowance is owner-only for creator seats', () => {
+    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 0).kind).toBe(
+      'allow',
+    );
+    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 1).kind).toBe(
       'block',
     );
   });
@@ -51,15 +49,15 @@ describe('decideSeatAdmission', () => {
     const result = decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1);
     if (result.kind !== 'block') throw new Error('expected a block');
     expect(result.reason).toBe(
-      'This workspace is limited to 1 seat. That seat belongs to the workspace owner, so there is no member to remove — subscribe to a plan with more seats to add a member.',
+      'This workspace is limited to 1 creator seat. That seat belongs to the workspace owner, so there is no member to remove — subscribe to a plan with more seats to add a member.',
     );
   });
 
   it('at the cap with removable members, tells the owner to remove one', () => {
-    const result = decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 5);
+    const result = decideSeatAdmission(policy(), 3);
     if (result.kind !== 'block') throw new Error('expected a block');
     expect(result.reason).toBe(
-      'This workspace is limited to 5 seats. Remove a member before adding another.',
+      'This workspace is limited to 3 creator seats. Remove a member before adding another.',
     );
   });
 
@@ -69,7 +67,7 @@ describe('decideSeatAdmission', () => {
     const result = decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 5);
     if (result.kind !== 'block') throw new Error('expected a block');
     expect(result.reason).toBe(
-      'This workspace is limited to 1 seat. 5 members already hold a seat, so removing one will not free any — restore the plan that granted them to add another member.',
+      'This workspace is limited to 1 creator seat. 5 members already hold a seat, so removing one will not free any — restore the plan that granted them to add another member.',
     );
   });
 
@@ -79,7 +77,7 @@ describe('decideSeatAdmission', () => {
       5,
     );
     if (result.kind !== 'block') throw new Error('expected a block');
-    expect(result.reason).toContain('limited to 5 seats');
+    expect(result.reason).toContain('limited to 5 creator seats');
   });
 
   it('allows free overage when seatOverageAllowed and no price is set', () => {

@@ -2,7 +2,6 @@ import {
   BillingMembershipPlanStatus,
   BillingPriceInterval,
   BillingProductType,
-  BillingProviderBindingStatus,
   BillingSubjectType,
   PaymentProvider,
   type Prisma,
@@ -26,19 +25,9 @@ type MembershipPlanSeed = {
   includedSeats: number;
   maxSeats: number | null;
   seatOverageAllowed: boolean;
-  topupDiscountBps: number;
-  featureFlags: Prisma.InputJsonValue;
-  limits: Prisma.InputJsonValue;
+  benefits: MembershipBenefits;
   marketing: Prisma.InputJsonValue;
   metadata: Prisma.InputJsonValue;
-  /**
-   * Validated benefits for the plan row. Optional: omitted plans start from
-   * DEFAULT_FREE_BENEFITS — mirroring BillingService.createMembershipPlan
-   * (apps/server/src/billing/billing.service.ts) — and are then tuned via the
-   * dedicated admin benefits endpoint. The seed deliberately does not invent
-   * per-tier benefit numbers; product policy is set in admin.
-   */
-  benefits?: MembershipBenefits;
 };
 
 type MembershipPriceSeed = {
@@ -55,21 +44,6 @@ const PLAN_SEED_SOURCE = 'seed.membership_plans.v1';
 const PRICE_SEED_SOURCE = 'seed.membership_prices.v1';
 const BINDING_SEED_SOURCE = 'seed.provider_bindings.v1';
 
-// Plans that existed in earlier seeds but are no longer offered. The seed
-// archives them (+ their prices + provider bindings) so they neither display
-// nor check out, without deleting historical rows. 2026-06-22: collapsed the
-// individual lineup to Basic/Standard/Pro (dropped Studio) and the team lineup
-// to a single self-serve Team tier (dropped Ultimate/Creator/Scale).
-const retiredPlanKeys = [
-  'team_ultimate',
-  'team_creator',
-  'team_scale',
-  // Enterprise + Enterprise Team pulled from the lineup; archive (never delete)
-  // their plan + prices + provider bindings.
-  'enterprise',
-  'team_enterprise',
-];
-
 const individualPlans: MembershipPlanSeed[] = [
   {
     planKey: 'basic',
@@ -83,21 +57,16 @@ const individualPlans: MembershipPlanSeed[] = [
     includedSeats: 1,
     maxSeats: 1,
     seatOverageAllowed: false,
-    topupDiscountBps: 0,
-    featureFlags: {
-      storyOs: 'basic',
-      privateGenerations: false,
-      commercialUse: true,
-      prioritySupport: false,
-    },
-    limits: {
+    benefits: {
       queuePriority: 5,
-      concurrentJobs: 1,
-      queuedJobs: 4,
-      messagesPerConversation: 100,
-      chatHistoryDays: 15,
-      approximateImagesPerMonth: 100,
-      approximateVideosPerMonth: 30,
+      imageDaily: 30,
+      videoDaily: 4,
+      chatDaily: 200,
+      workflowDaily: 10,
+      uploadMB: 1024,
+      chatPerMinute: 40,
+      concurrentJobs: 5,
+      queuedJobs: 10,
     },
     marketing: {
       audience: 'Starter creators',
@@ -118,21 +87,16 @@ const individualPlans: MembershipPlanSeed[] = [
     includedSeats: 1,
     maxSeats: 1,
     seatOverageAllowed: false,
-    topupDiscountBps: 1000,
-    featureFlags: {
-      storyOs: 'full',
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: false,
-    },
-    limits: {
+    benefits: {
       queuePriority: 4,
-      concurrentJobs: 2,
-      queuedJobs: 6,
-      messagesPerConversation: 200,
-      chatHistoryDays: 90,
-      approximateImagesPerMonth: 200,
-      approximateVideosPerMonth: 60,
+      imageDaily: 60,
+      videoDaily: 10,
+      chatDaily: 350,
+      workflowDaily: 20,
+      uploadMB: 3072,
+      chatPerMinute: 50,
+      concurrentJobs: 8,
+      queuedJobs: 16,
     },
     marketing: {
       audience: 'Active creators',
@@ -153,21 +117,16 @@ const individualPlans: MembershipPlanSeed[] = [
     includedSeats: 1,
     maxSeats: 1,
     seatOverageAllowed: false,
-    topupDiscountBps: 1000,
-    featureFlags: {
-      storyOs: 'full',
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-    },
-    limits: {
+    benefits: {
       queuePriority: 3,
-      concurrentJobs: 3,
-      queuedJobs: 10,
-      messagesPerConversation: 500,
-      chatHistoryDays: 365,
-      approximateImagesPerMonth: 300,
-      approximateVideosPerMonth: 120,
+      imageDaily: 100,
+      videoDaily: 20,
+      chatDaily: 500,
+      workflowDaily: 30,
+      uploadMB: 5120,
+      chatPerMinute: 60,
+      concurrentJobs: 12,
+      queuedJobs: 24,
     },
     marketing: {
       audience: 'Professional creators',
@@ -180,8 +139,7 @@ const individualPlans: MembershipPlanSeed[] = [
 
 // Team membership is the 4th tier of the unified studio lineup, but stays a
 // workspace-subject plan (it grants a team workspace + shared compute pool +
-// seats + member management). A single self-serve Team tier + a sales-only
-// Enterprise Team tier.
+// creator seats + member management). Team is the single workspace tier.
 const teamPlans: MembershipPlanSeed[] = [
   {
     planKey: 'team',
@@ -191,29 +149,21 @@ const teamPlans: MembershipPlanSeed[] = [
     rank: 40,
     name: 'Team',
     description:
-      'Team workspace plan: shared compute credits, up to 8 seats, and member management.',
+      'Team workspace plan: shared compute credits and up to 28 unique creator seats across all projects.',
     includedComputeCredits: 22500n,
-    includedSeats: 8,
-    maxSeats: 8,
+    includedSeats: 28,
+    maxSeats: 28,
     seatOverageAllowed: false,
-    topupDiscountBps: 1000,
-    featureFlags: {
-      storyOs: 'full',
-      sharedCredits: true,
-      teamWorkspace: true,
-      memberManagement: true,
-      privateGenerations: true,
-      commercialUse: true,
-      prioritySupport: true,
-      advancedWorkflows: true,
-    },
-    limits: {
+    benefits: {
       queuePriority: 2,
-      concurrentJobs: 8,
-      queuedJobs: 32,
-      messagesPerConversation: 1000,
-      chatHistoryDays: 365,
-      sharedWorkspaceStorageGb: 500,
+      imageDaily: 'Infinity',
+      videoDaily: 'Infinity',
+      chatDaily: 'Infinity',
+      workflowDaily: 'Infinity',
+      uploadMB: 51200,
+      chatPerMinute: 100,
+      concurrentJobs: 28,
+      queuedJobs: 56,
     },
     marketing: {
       audience: 'Teams & studios',
@@ -242,14 +192,7 @@ const communityPlans: MembershipPlanSeed[] = [
     includedSeats: 1,
     maxSeats: 1,
     seatOverageAllowed: false,
-    topupDiscountBps: 0,
-    featureFlags: {
-      communityMemberFreeViewing: true,
-      ipPurchaseDiscount: true,
-      exclusiveContent: true,
-      memberBadge: true,
-    },
-    limits: {},
+    benefits: DEFAULT_FREE_BENEFITS,
     marketing: {
       audience: 'Community viewers & supporters',
       badge: null,
@@ -283,7 +226,8 @@ const defaultUsdPrices = [
   },
   {
     // Team = single self-serve tier: $270/mo (list $300, auto-renew 0.9),
-    // $2,700/yr (annual = list $300 x 12 x 0.75). 8 seats, 22,500 shared credits.
+    // $2,700/yr (annual = list $300 x 12 x 0.75). 28 creator seats,
+    // 22,500 shared credits per billing grant period.
     planKey: 'team',
     monthlyAutoRenewMinor: 27000n,
     monthlyOriginalMinor: 30000n,
@@ -304,11 +248,7 @@ const defaultUsdPrices = [
 export async function seedMembershipPlans(prisma: PrismaClient) {
   const plans = [...individualPlans, ...teamPlans, ...communityPlans];
   for (const plan of plans) {
-    // Same defaulting rule as BillingService.createMembershipPlan: an un-tuned
-    // plan row starts from DEFAULT_FREE_BENEFITS until admin sets real policy.
-    // benefits is supplied on `create` only — re-runs never clobber a value an
-    // admin later tuned via PUT membership-plans/:planId/benefits.
-    const benefits = (plan.benefits ?? DEFAULT_FREE_BENEFITS) as Prisma.InputJsonValue;
+    const benefits = plan.benefits as Prisma.InputJsonValue;
     await prisma.billingMembershipPlan.upsert({
       where: { planKey: plan.planKey },
       create: {
@@ -327,10 +267,8 @@ export async function seedMembershipPlans(prisma: PrismaClient) {
         includedSeats: plan.includedSeats,
         maxSeats: plan.maxSeats,
         seatOverageAllowed: plan.seatOverageAllowed,
-        topupDiscountBps: plan.topupDiscountBps,
         billingIntervalDefault: BillingPriceInterval.month,
-        featureFlags: plan.featureFlags,
-        limits: plan.limits,
+        benefits,
         marketing: plan.marketing,
         metadata: plan.metadata,
         archivedAt: null,
@@ -343,40 +281,7 @@ export async function seedMembershipPlans(prisma: PrismaClient) {
     await seedMembershipPrice(prisma, price);
   }
 
-  // Order matters: archive retired plans/prices BEFORE seeding bindings so the
-  // binding pass never (re)binds a price that is on its way out.
-  await retireRemovedPlans(prisma);
   await seedAirwallexProviderBindings(prisma);
-}
-
-// Archive plans removed from the lineup, plus their prices and provider
-// bindings. Idempotent: no-ops when the rows are absent (fresh DB) or already
-// archived. Never deletes — keeps historical rows for audit/refunds.
-async function retireRemovedPlans(prisma: PrismaClient) {
-  const now = new Date();
-  for (const planKey of retiredPlanKeys) {
-    await prisma.billingMembershipPlan.updateMany({
-      where: { planKey, archivedAt: null },
-      data: {
-        status: BillingMembershipPlanStatus.archived,
-        archivedAt: now,
-      },
-    });
-    const prices = await prisma.billingPrice.findMany({
-      where: { grantsPlanKey: planKey, archivedAt: null },
-      select: { id: true },
-    });
-    const priceIds = prices.map((price) => price.id);
-    if (priceIds.length === 0) continue;
-    await prisma.billingProviderPriceBinding.updateMany({
-      where: { priceId: { in: priceIds }, archivedAt: null },
-      data: { status: BillingProviderBindingStatus.inactive, archivedAt: now },
-    });
-    await prisma.billingPrice.updateMany({
-      where: { id: { in: priceIds } },
-      data: { isActive: false, archivedAt: now },
-    });
-  }
 }
 
 // Create a sync_pending Airwallex provider binding for every active, non-archived

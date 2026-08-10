@@ -229,7 +229,6 @@ export class CrewCollaborationService {
       data: {
         status: WorkspaceMemberStatus.removed,
         removedAt: now,
-        seatAssigned: false,
       },
     });
     await db.projectMember.updateMany({
@@ -287,12 +286,10 @@ export class CrewCollaborationService {
             role: WorkspaceMemberRole.viewer,
             status: WorkspaceMemberStatus.removed,
             removedAt: now,
-            seatAssigned: false,
           }
         : {
             role: WorkspaceMemberRole.viewer,
             status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
           },
     });
     await this.upsertWorkspaceMember(
@@ -364,7 +361,6 @@ export class CrewCollaborationService {
           data: {
             role,
             status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
           },
         });
       }

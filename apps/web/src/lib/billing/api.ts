@@ -3,8 +3,8 @@
 // Community-point top-ups go through this path: list `community_point_pack`
 // packages, create a hosted checkout, redirect to the provider (Airwallex),
 // and the provider webhook credits the user's PG `community_point` wallet.
-// Studio (AI generation) credits stay on the legacy Java path — see
-// components/payment/credits-recharge-dialog.tsx.
+// Canonical compute membership and entitlement resolution are also owned by
+// Nest; this Web adapter only reads that entitlement for legacy creation pages.
 
 import { api } from "@/src/lib/api";
 
@@ -80,14 +80,61 @@ export interface MembershipPlan {
   includedSeats: number;
   maxSeats: number | null;
   seatOverageAllowed: boolean;
-  topupDiscountBps: number;
   billingIntervalDefault: "one_time" | "month" | "year" | null;
-  featureFlags: Record<string, unknown>;
-  limits: Record<string, unknown>;
+  benefits: {
+    queuePriority: number;
+    imageDaily: number | "Infinity";
+    videoDaily: number | "Infinity";
+    chatDaily: number | "Infinity";
+    workflowDaily: number | "Infinity";
+    uploadMB: number;
+    chatPerMinute: number;
+    concurrentJobs: number | null;
+    queuedJobs: number | null;
+  };
   marketing: Record<string, unknown>;
   metadata: Record<string, unknown>;
   prices: MembershipPrice[];
   updatedAt: string;
+}
+
+export interface EntitlementSnapshot {
+  planKey: "free" | "basic" | "standard" | "pro" | "team";
+  rank: number;
+  source: string;
+  status: "active" | "expired" | string;
+  expiresAt: string | null;
+  limits: {
+    queuePriority: number;
+    imageDaily: number;
+    videoDaily: number;
+    chatDaily: number;
+    workflowDaily: number;
+    uploadMB: number;
+    chatPerMinute: number;
+    concurrentJobs: number | null;
+    queuedJobs: number | null;
+  };
+}
+
+export interface ActiveMembershipSubscription {
+  id: string;
+  status: "incomplete" | "active" | "past_due" | "canceled" | "expired" | string;
+  planKey: EntitlementSnapshot["planKey"] | null;
+  productType: string;
+  subjectType: "user" | "workspace" | string;
+  currency: string;
+  amountMinor: string;
+  interval: "one_time" | "month" | "year" | string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  endedAt: string | null;
+}
+
+export interface MyEntitlement {
+  entitlement: EntitlementSnapshot;
+  subscription: ActiveMembershipSubscription | null;
 }
 
 /** List active `community_point_pack` packages for the given fiat currency. */
@@ -110,6 +157,11 @@ export function listMembershipPlans(input?: {
       },
     }
   );
+}
+
+/** The canonical compute plan resolved by Nest across personal/workspace grants. */
+export function getMyEntitlement() {
+  return api.get<MyEntitlement>("/aurora/billing/entitlement/me");
 }
 
 /**

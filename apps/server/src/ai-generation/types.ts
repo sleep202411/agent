@@ -186,7 +186,7 @@ export type AiRequiredPlan = EntitlementPlanKey;
 /**
  * Per-model entitlement gating. `requiredPlan: null` = anyone.
  * Anything else is checked against the resolved product entitlement
- * snapshot, not the Java auth claim.
+ * snapshot, not external profile claims.
  *
  * Deliberately tier-only (no per-day / per-month quota) until a credits
  * system exists. Schema is forward-compatible: add `quotas` here when

@@ -1,6 +1,6 @@
 import type { QuotaLimits } from '../quota/quota.types';
 
-export const ENTITLEMENT_POLICY_VERSION = '2026-07-19' as const;
+export const ENTITLEMENT_POLICY_VERSION = '2026-08-10' as const;
 
 /**
  * Plan ORDERING for gating (`hasPlan`) and as the rank fallback when a
@@ -18,17 +18,29 @@ export const ENTITLEMENT_PLAN_RANK = {
   basic: 10,
   standard: 20,
   pro: 30,
-  team: 110,
+  team: 40,
 } as const;
 
 export type KnownEntitlementPlanKey = keyof typeof ENTITLEMENT_PLAN_RANK;
-export type EntitlementPlanKey = string;
+export type EntitlementPlanKey = KnownEntitlementPlanKey;
+
+export function isKnownEntitlementPlanKey(
+  value: string,
+): value is KnownEntitlementPlanKey {
+  return value in ENTITLEMENT_PLAN_RANK;
+}
+
+export function rankForEntitlementPlanKey(planKey: string): number {
+  if (!isKnownEntitlementPlanKey(planKey)) {
+    throw new Error(`Unknown compute membership plan key: ${planKey}`);
+  }
+  return ENTITLEMENT_PLAN_RANK[planKey];
+}
 
 export type EntitlementSubjectType = 'user' | 'workspace';
 
 export type EntitlementSource =
   | 'system_default'
-  | 'auth_claim'
   | 'billing_membership_plan'
   | 'workspace_subscription'
   | 'subscription_grace'
@@ -48,12 +60,6 @@ export interface EntitlementSnapshot {
   status: 'active' | 'expired' | 'suspended';
   effectiveAt: string;
   expiresAt?: string | null;
-  features: {
-    aiGeneration: boolean;
-    advancedModelAccess: boolean;
-    advancedParameters: boolean;
-    teamSharedCredits: boolean;
-  };
   limits: {
     queuePriority: number;
     imageDaily: number;

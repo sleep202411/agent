@@ -62,6 +62,11 @@ enum WorkspaceMemberStatus {
   removed
 }
 
+enum WorkspaceMemberAccessScope {
+  workspace
+  project_only
+}
+
 enum WorkspaceInviteStatus {
   pending
   accepted
@@ -307,7 +312,7 @@ enum BillingProductType {
   /// Workspace or team membership entitlement.
   team_membership_plan
   /// Individual community membership (社区会员): member-free IP viewing + IP
-  /// purchase discounts. A separate access axis from membership_plan (studio/VIP).
+  /// purchase discounts. A separate access axis from compute memberships.
   community_membership_plan
 }
 
@@ -892,17 +897,17 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id           String                @id @default(uuid(7)) @db.Uuid
-  workspaceId  String                @map("workspace_id") @db.Uuid
-  userId       String                @map("user_id") @db.VarChar(64)
-  role         WorkspaceMemberRole
-  status       WorkspaceMemberStatus @default(active)
-  seatAssigned Boolean               @default(true) @map("seat_assigned")
-  invitedById  String?               @map("invited_by_id") @db.VarChar(64)
-  joinedAt     DateTime?             @default(now()) @map("joined_at") @db.Timestamptz(6)
-  removedAt    DateTime?             @map("removed_at") @db.Timestamptz(6)
-  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String                     @id @default(uuid(7)) @db.Uuid
+  workspaceId String                     @map("workspace_id") @db.Uuid
+  userId      String                     @map("user_id") @db.VarChar(64)
+  role        WorkspaceMemberRole
+  status      WorkspaceMemberStatus      @default(active)
+  accessScope WorkspaceMemberAccessScope @default(workspace) @map("access_scope")
+  invitedById String?                    @map("invited_by_id") @db.VarChar(64)
+  joinedAt    DateTime?                  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  removedAt   DateTime?                  @map("removed_at") @db.Timestamptz(6)
+  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -910,6 +915,7 @@ model WorkspaceMember {
   /// (workspace_id, user_id) WHERE removed_at IS NULL.
   @@index([userId, status], map: "workspace_members_by_user_idx")
   @@index([workspaceId, status, role], map: "workspace_members_by_workspace_idx")
+  @@index([workspaceId, accessScope, status], map: "workspace_members_scope_idx")
   @@map("workspace_members")
 }
 
@@ -1766,12 +1772,9 @@ model BillingMembershipPlan {
   includedSeats          Int                         @default(1) @map("included_seats")
   maxSeats               Int?                        @map("max_seats")
   seatOverageAllowed     Boolean                     @default(false) @map("seat_overage_allowed")
-  topupDiscountBps       Int                         @default(0) @map("topup_discount_bps")
   billingIntervalDefault BillingPriceInterval?       @map("billing_interval_default")
-  featureFlags           Json                        @default("{}") @map("feature_flags") @db.JsonB
-  limits                 Json                        @default("{}") @db.JsonB
   /// Validated membership benefits (MembershipBenefitsSchema) — the single
-  /// source of truth for quota limits / features / queue priority. NO column
+  /// source of truth for quota limits and queue priority. NO column
   /// default on purpose: every new plan row must state its benefits.
   benefits               Json                        @db.JsonB
   marketing              Json                        @default("{}") @db.JsonB
@@ -5895,7 +5898,7 @@ model AiJob {
   userId                String                @map("user_id")
   /// Immutable product entitlement policy selected at submission time.
   /// This is the source for model access, queue priority, quota bridge,
-  /// refunds, and audit; it intentionally does not expose upstream userLevel.
+  /// refunds, and audit; upstream profile claims are not part of this model.
   entitlementSnapshot   Json?                 @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier (e.g. 'fal-ai', 'byteplus-modelark'). Free-form

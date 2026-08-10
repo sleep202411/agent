@@ -427,7 +427,7 @@ export function CanvasGenerationProvider({
                 if (!routed) return {};
                 const refs = tdata.references ?? {};
                 const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-                const patch: Record<string, unknown> = {
+                return {
                   references: {
                     ...refs,
                     [routed.field]: [
@@ -443,8 +443,6 @@ export function CanvasGenerationProvider({
                     ],
                   },
                 };
-                if (routed.mode) patch.mode = routed.mode;
-                return patch;
               });
             }
           }

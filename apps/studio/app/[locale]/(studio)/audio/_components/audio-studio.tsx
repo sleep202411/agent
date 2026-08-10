@@ -395,7 +395,7 @@ export function AudioStudio() {
 
       <form
         onSubmit={handleSubmit}
-        className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]"
+        className="pointer-events-none fixed inset-x-4 bottom-5 z-40 transition-[left] duration-200 lg:left-[calc(var(--studio-sidebar-width)+1rem)]"
       >
         <div className="pointer-events-auto mx-auto w-full max-w-[1120px] rounded-4xl bg-[oklch(0.18_0_0_/_0.94)] p-3 shadow-[0_28px_90px_rgba(0,0,0,0.55)] ring-1 ring-white/[0.08] backdrop-blur-2xl">
           <textarea

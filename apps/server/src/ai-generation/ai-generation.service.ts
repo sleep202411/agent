@@ -142,6 +142,12 @@ export class AiGenerationService {
     // Resolve entitlement WITH the active workspace so a team plan's models
     // light up for members — without it, team grants never enter the candidate
     // set and team-gated models read as locked even though submitJob allows them.
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspacePresence(
+        user.userId,
+        workspaceId,
+      );
+    }
     const models = await this.catalog.listModels();
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: workspaceId ?? null,

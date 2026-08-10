@@ -262,7 +262,8 @@ agentOsServerSecrets:
       env: AGENT_OS_INTERNAL_TOKEN
 
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
-# exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
+# exactly ONE secret — the Java admin X-Admin-Api-Token used by news and text
+# games — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
 # creds — never pour those into a public-facing admin console).
 # PREREQUISITE: create `news-api-token` in Key Vault BEFORE deploying (CSI is
@@ -271,7 +272,7 @@ adminUiSecrets:
   projectedName: fizzdragon-adminui-secrets
   mapping:
     - kv: news-api-token
-      env: NEWS_API_TOKEN
+      env: JAVA_ADMIN_API_TOKEN
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------

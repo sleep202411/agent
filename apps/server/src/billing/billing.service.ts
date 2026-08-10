@@ -64,9 +64,11 @@ import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region';
 import { PrismaService } from '../infra/db/db.module';
-import { EntitlementService } from '../entitlements/entitlement.service';
 import {
-  DEFAULT_FREE_BENEFITS,
+  COMMUNITY_MEMBERSHIP_PLAN_KEY,
+  EntitlementService,
+} from '../entitlements/entitlement.service';
+import {
   MembershipBenefitsSchema,
   type MembershipBenefits,
 } from '../entitlements/membership-benefits';
@@ -937,16 +939,10 @@ export class BillingService {
         includedSeats: input.includedSeats,
         maxSeats: input.maxSeats ?? null,
         seatOverageAllowed: input.seatOverageAllowed,
-        topupDiscountBps: input.topupDiscountBps,
         billingIntervalDefault:
           (input.billingIntervalDefault as BillingPriceInterval | undefined) ??
           null,
-        featureFlags: (input.featureFlags ?? {}) as Prisma.InputJsonValue,
-        limits: (input.limits ?? {}) as Prisma.InputJsonValue,
-        // New plans start from the free baseline until the admin configures
-        // benefits (dedicated benefits endpoint) — never an implicit grant.
-        benefits: (input.benefits ??
-          DEFAULT_FREE_BENEFITS) as Prisma.InputJsonValue,
+        benefits: input.benefits as Prisma.InputJsonValue,
         marketing: (input.marketing ?? {}) as Prisma.InputJsonValue,
         metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
         createdById: adminId,
@@ -1068,17 +1064,10 @@ export class BillingService {
         includedSeats: input.includedSeats,
         maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
         seatOverageAllowed: input.seatOverageAllowed,
-        topupDiscountBps: input.topupDiscountBps,
         billingIntervalDefault:
           input.billingIntervalDefault === undefined
             ? undefined
             : (input.billingIntervalDefault as BillingPriceInterval),
-        featureFlags: input.featureFlags
-          ? (input.featureFlags as Prisma.InputJsonValue)
-          : undefined,
-        limits: input.limits
-          ? (input.limits as Prisma.InputJsonValue)
-          : undefined,
         marketing: input.marketing
           ? (input.marketing as Prisma.InputJsonValue)
           : undefined,
@@ -2896,6 +2885,15 @@ export class BillingService {
         msg: 'Use the dedicated /compute-topup endpoint for compute credit packs.',
       });
     }
+    if (
+      isMembershipProductType(price.item.productType) &&
+      input.quantity !== 1
+    ) {
+      throw new BadRequestException({
+        code: 'BILLING_MEMBERSHIP_QUANTITY_INVALID',
+        msg: 'Membership checkout quantity must be exactly 1.',
+      });
+    }
     const subject = await this.resolveCheckoutSubject(user, price, input);
     const quantity = input.quantity;
     const subtotalAmountMinor = price.amountMinor * BigInt(quantity);
@@ -2905,6 +2903,68 @@ export class BillingService {
 
     const { order, promotionReservation } = await this.prisma.$transaction(
       async (tx) => {
+        if (isMembershipProductType(price.item.productType)) {
+          const now = new Date();
+          const productTypes = membershipProductAxis(price.item.productType);
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(
+              hashtext(${`billing:membership-checkout:${subject.subjectType}:${subject.subjectId}:${productTypes.join(',')}`})::bigint
+            )
+          `;
+
+          const existingSubscription = await tx.billingSubscription.findFirst({
+            where: {
+              subjectType: subject.subjectType,
+              subjectId: subject.subjectId,
+              status: {
+                in: [
+                  BillingSubscriptionStatus.incomplete,
+                  BillingSubscriptionStatus.active,
+                  BillingSubscriptionStatus.past_due,
+                ],
+              },
+              price: { item: { productType: { in: productTypes } } },
+            },
+            select: { id: true },
+          });
+          const activeGrant = await tx.entitlementGrant.findFirst({
+            where: {
+              subjectType: subject.subjectType,
+              subjectId: subject.subjectId,
+              status: EntitlementGrantStatus.active,
+              startsAt: { lte: now },
+              OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+              planKey:
+                price.item.productType ===
+                BillingProductType.community_membership_plan
+                  ? COMMUNITY_MEMBERSHIP_PLAN_KEY
+                  : { in: ['basic', 'standard', 'pro', 'team'] },
+            },
+            select: { id: true },
+          });
+          const pendingOrder = await tx.billingOrder.findFirst({
+            where: {
+              subjectType: subject.subjectType,
+              subjectId: subject.subjectId,
+              status: {
+                in: [
+                  BillingOrderStatus.pending_payment,
+                  BillingOrderStatus.paid,
+                ],
+              },
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+              item: { productType: { in: productTypes } },
+            },
+            select: { id: true },
+          });
+          if (existingSubscription || activeGrant || pendingOrder) {
+            throw new ConflictException({
+              code: 'BILLING_MEMBERSHIP_ALREADY_ACTIVE',
+              msg: 'This account already has an active or pending membership. Cancel it and wait for the current period to end before choosing another plan.',
+            });
+          }
+        }
+
         const promotionReservation = input.promotionCode
           ? await this.reserveCheckoutPromotionTx(tx, {
               userId: user.userId,
@@ -3905,41 +3965,53 @@ export class BillingService {
     return this.subscriptionDto(updated);
   }
 
-  /**
-   * The caller's own entitlement snapshot (current plan / features / limits)
-   * plus the active Nest subscription that backs it (for "renews on X" + the
-   * cancel affordance). subscription is null for Java-VIP / auth-claim plans
-   * that have no /aurora subscription — the UI then shows the plan with no
-   * cancel button, which is correct. Considers the caller's personal pot and
-   * the active workspace (header), so a team member sees the team subscription.
-   */
+  /** The resolved compute plan plus the exact subscription that backs it. */
   async getMyEntitlement(user: AuthUser, workspaceId?: string | null) {
+    const workspaceMembership = workspaceId
+      ? await this.permissions.requireWorkspacePresence(
+          user.userId,
+          workspaceId,
+        )
+      : null;
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: workspaceId ?? null,
     });
 
-    const subjects: Prisma.BillingSubscriptionWhereInput[] = [
-      { subjectType: BillingSubjectType.user, subjectId: user.userId },
-    ];
-    if (workspaceId) {
-      subjects.push({
-        subjectType: BillingSubjectType.workspace,
-        subjectId: workspaceId,
-      });
-    }
-    const subscription = await this.prisma.billingSubscription.findFirst({
-      where: {
-        OR: subjects,
-        status: {
-          in: [
-            BillingSubscriptionStatus.active,
-            BillingSubscriptionStatus.past_due,
-          ],
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-      include: { price: { include: { item: true } } },
-    });
+    const canReadSubscription =
+      entitlement.subject.type === 'user' ||
+      workspaceMembership?.role === WorkspaceMemberRole.owner ||
+      workspaceMembership?.role === WorkspaceMemberRole.admin ||
+      workspaceMembership?.role === WorkspaceMemberRole.billing;
+    const subscription = canReadSubscription
+      ? await this.prisma.billingSubscription.findFirst({
+          where: {
+            subjectType:
+              entitlement.subject.type === 'workspace'
+                ? BillingSubjectType.workspace
+                : BillingSubjectType.user,
+            subjectId: entitlement.subject.id,
+            planKey: entitlement.planKey,
+            status: {
+              in: [
+                BillingSubscriptionStatus.active,
+                BillingSubscriptionStatus.past_due,
+              ],
+            },
+            price: {
+              item: {
+                productType: {
+                  in: [
+                    BillingProductType.membership_plan,
+                    BillingProductType.team_membership_plan,
+                  ],
+                },
+              },
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          include: { price: { include: { item: true } } },
+        })
+      : null;
 
     return {
       entitlement,
@@ -7472,10 +7544,8 @@ export class BillingService {
       includedSeats: plan.includedSeats,
       maxSeats: plan.maxSeats,
       seatOverageAllowed: plan.seatOverageAllowed,
-      topupDiscountBps: plan.topupDiscountBps,
       billingIntervalDefault: plan.billingIntervalDefault,
-      featureFlags: plan.featureFlags,
-      limits: plan.limits,
+      benefits: plan.benefits,
       marketing: plan.marketing,
       metadata: plan.metadata,
       prices: prices.map((price) =>
@@ -7507,10 +7577,7 @@ export class BillingService {
       includedSeats: plan.includedSeats,
       maxSeats: plan.maxSeats,
       seatOverageAllowed: plan.seatOverageAllowed,
-      topupDiscountBps: plan.topupDiscountBps,
       billingIntervalDefault: plan.billingIntervalDefault,
-      featureFlags: plan.featureFlags,
-      limits: plan.limits,
       benefits: plan.benefits,
       marketing: plan.marketing,
       metadata: plan.metadata,
@@ -8323,6 +8390,26 @@ function assertMembershipPlanShape(
   }
 }
 
+function isMembershipProductType(productType: BillingProductType): boolean {
+  return (
+    productType === BillingProductType.membership_plan ||
+    productType === BillingProductType.team_membership_plan ||
+    productType === BillingProductType.community_membership_plan
+  );
+}
+
+function membershipProductAxis(
+  productType: BillingProductType,
+): BillingProductType[] {
+  if (productType === BillingProductType.community_membership_plan) {
+    return [BillingProductType.community_membership_plan];
+  }
+  return [
+    BillingProductType.membership_plan,
+    BillingProductType.team_membership_plan,
+  ];
+}
+
 function assertMetadataMatches(
   metadata: Record<string, unknown>,
   key: string,
@@ -8681,10 +8768,8 @@ function membershipPlanSnapshot(plan: BillingMembershipPlan) {
     includedSeats: plan.includedSeats,
     maxSeats: plan.maxSeats,
     seatOverageAllowed: plan.seatOverageAllowed,
-    topupDiscountBps: plan.topupDiscountBps,
     billingIntervalDefault: plan.billingIntervalDefault,
-    featureFlags: plan.featureFlags,
-    limits: plan.limits,
+    benefits: plan.benefits,
     marketing: plan.marketing,
   };
 }

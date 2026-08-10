@@ -111,7 +111,6 @@ export class WorkspacesService {
               userId: user.userId,
               role: WorkspaceMemberRole.owner,
               status: WorkspaceMemberStatus.active,
-              seatAssigned: true,
             },
           });
         } else {
@@ -129,7 +128,6 @@ export class WorkspacesService {
                 userId: user.userId,
                 role: WorkspaceMemberRole.owner,
                 status: WorkspaceMemberStatus.active,
-                seatAssigned: true,
               },
             });
           }
@@ -169,7 +167,6 @@ export class WorkspacesService {
           userId: user.userId,
           role: WorkspaceMemberRole.owner,
           status: WorkspaceMemberStatus.active,
-          seatAssigned: true,
         },
       });
       return created;
@@ -192,10 +189,9 @@ export class WorkspacesService {
   }
 
   async getWorkspace(user: AuthUser, workspaceId: string) {
-    const membership = await this.permissions.requireWorkspaceRole(
+    const membership = await this.permissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
@@ -276,27 +272,26 @@ export class WorkspacesService {
   }
 
   async listProjects(user: AuthUser, workspaceId: string) {
-    await this.permissions.requireWorkspaceRole(
+    const membership = await this.permissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
     const projects = await this.prisma.platformProject.findMany({
       where: {
         deletedAt: null,
         status: PlatformProjectStatus.active,
-        OR: [
-          { workspaceId },
-          {
-            members: {
-              some: {
-                userId: user.userId,
-                status: ProjectMemberStatus.active,
-                removedAt: null,
+        workspaceId,
+        ...(membership.accessScope === 'project_only'
+          ? {
+              members: {
+                some: {
+                  userId: user.userId,
+                  status: ProjectMemberStatus.active,
+                  removedAt: null,
+                },
               },
-            },
-          },
-        ],
+            }
+          : {}),
       },
       include: {
         documents: {

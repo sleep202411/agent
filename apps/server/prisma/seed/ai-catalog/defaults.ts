@@ -12,8 +12,8 @@
 import type { Prisma } from '@prisma/client';
 import type { AiProductPricingPolicy } from '@repo/shared';
 
-/** Plan tiers used by `entitlementPolicy.requiredPlan`. `null` = free tier. */
-export type RequiredPlan = 'vip' | null;
+/** Canonical compute-plan keys used by model gates. `null` = no plan gate. */
+export type RequiredPlan = 'basic' | 'standard' | 'pro' | 'team' | null;
 
 /**
  * GPT Image 2 `parameterPolicy`. Parameter policies are per ContainerModel:
@@ -1687,9 +1687,8 @@ export const IMAGE_QUEUE_NAME = 'ai-image-generation';
 export const VIDEO_QUEUE_NAME = 'ai-video-generation';
 
 /**
- * `entitlementPolicy` factory — only `requiredPlan` varies. `freeUserVisible`
- * keeps the model in the public catalog; `providerSelectionPlan` gates manual
- * provider override behind a paid plan.
+ * `entitlementPolicy` factory — only the canonical compute `requiredPlan`
+ * varies. Provider selection is an internal routing concern.
  */
 export function buildEntitlementPolicy(
   requiredPlan: RequiredPlan,
@@ -1697,7 +1696,6 @@ export function buildEntitlementPolicy(
   return {
     requiredPlan,
     freeUserVisible: true,
-    providerSelectionPlan: 'vip',
   };
 }
 

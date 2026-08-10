@@ -8,6 +8,7 @@ import {
   PlatformProjectStatus,
   ProjectMemberRole,
   ProjectMemberStatus,
+  WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
@@ -35,8 +36,8 @@ const PROJECT_ROLE_RANK: Record<ProjectMemberRole, number> = {
 /**
  * Maps a workspace role onto the effective project role it grants via the
  * `requireProjectRole` fallback (by the rank gates that fallback applies):
- * admin-capable (>=admin) → admin, edit-capable (>=editor, incl. billing) →
- * editor, else viewer.
+ * admin-capable roles map to admin, creator roles map to editor, and billing
+ * stays read-only. Billing access never consumes or bypasses a creator seat.
  */
 const WORKSPACE_TO_PROJECT_ROLE: Record<
   WorkspaceMemberRole,
@@ -44,7 +45,7 @@ const WORKSPACE_TO_PROJECT_ROLE: Record<
 > = {
   [WorkspaceMemberRole.owner]: ProjectMemberRole.owner,
   [WorkspaceMemberRole.admin]: ProjectMemberRole.admin,
-  [WorkspaceMemberRole.billing]: ProjectMemberRole.editor,
+  [WorkspaceMemberRole.billing]: ProjectMemberRole.viewer,
   [WorkspaceMemberRole.editor]: ProjectMemberRole.editor,
   [WorkspaceMemberRole.viewer]: ProjectMemberRole.viewer,
 };
@@ -64,6 +65,7 @@ export class WorkspacePermissionService {
         userId,
         status: WorkspaceMemberStatus.active,
         removedAt: null,
+        accessScope: WorkspaceMemberAccessScope.workspace,
         workspace: {
           status: WorkspaceStatus.active,
           deletedAt: null,
@@ -82,6 +84,35 @@ export class WorkspacePermissionService {
       throw new ForbiddenException({
         code: 'WORKSPACE_PERMISSION_DENIED',
         msg: 'You do not have permission to perform this workspace action.',
+      });
+    }
+    return membership;
+  }
+
+  /**
+   * A roster presence check for workspace shell/navigation. Project-only rows
+   * pass this check but do not grant any workspace-wide project permission.
+   */
+  async requireWorkspacePresence(
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceMember> {
+    const membership = await this.prisma.workspaceMember.findFirst({
+      where: {
+        workspaceId,
+        userId,
+        status: WorkspaceMemberStatus.active,
+        removedAt: null,
+        workspace: {
+          status: WorkspaceStatus.active,
+          deletedAt: null,
+        },
+      },
+    });
+    if (!membership) {
+      throw new ForbiddenException({
+        code: 'WORKSPACE_ACCESS_DENIED',
+        msg: 'You do not have access to this workspace.',
       });
     }
     return membership;
@@ -121,17 +152,18 @@ export class WorkspacePermissionService {
       return project;
     }
 
-    const requiredWorkspaceRole =
-      minimumRole === ProjectMemberRole.viewer
-        ? WorkspaceMemberRole.viewer
-        : minimumRole === ProjectMemberRole.editor
-          ? WorkspaceMemberRole.editor
-          : WorkspaceMemberRole.admin;
-    await this.requireWorkspaceRole(
+    const workspaceMember = await this.requireWorkspaceRole(
       userId,
       project.workspaceId,
-      requiredWorkspaceRole,
+      WorkspaceMemberRole.viewer,
     );
+    const effectiveRole = WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
+    if (PROJECT_ROLE_RANK[effectiveRole] < PROJECT_ROLE_RANK[minimumRole]) {
+      throw new ForbiddenException({
+        code: 'PROJECT_PERMISSION_DENIED',
+        msg: 'You do not have permission to perform this project action.',
+      });
+    }
     return project;
   }
 
@@ -162,6 +194,7 @@ export class WorkspacePermissionService {
         userId,
         status: WorkspaceMemberStatus.active,
         removedAt: null,
+        accessScope: WorkspaceMemberAccessScope.workspace,
         workspace: { status: WorkspaceStatus.active, deletedAt: null },
       },
     });

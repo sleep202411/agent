@@ -312,10 +312,9 @@ export class StoryProjectsService {
     workspaceId: string,
     query: StoryProjectListQuery,
   ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
-    await this.workspacePermissions.requireWorkspaceRole(
+    await this.workspacePermissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
 
     const cursor = query.cursor

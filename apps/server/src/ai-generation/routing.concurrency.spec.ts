@@ -22,17 +22,11 @@ function entitlement(
   return {
     version: ENTITLEMENT_POLICY_VERSION,
     subject: { type: 'user', id: 'user-1' },
-    planKey: 'studio',
+    planKey: 'team',
     rank: 40,
     source: 'billing_membership_plan',
     status: 'active',
     effectiveAt: NOW,
-    features: {
-      aiGeneration: true,
-      advancedModelAccess: true,
-      advancedParameters: true,
-      teamSharedCredits: false,
-    },
     limits: {
       queuePriority: 2,
       imageDaily: Number.POSITIVE_INFINITY,
@@ -170,7 +164,7 @@ describe('AiGenerationRoutingService concurrency policy', () => {
 
     const decision = await service.resolve({
       entitlement: entitlement({
-        planKey: 'enterprise',
+        planKey: 'team',
         limits: {
           ...entitlement().limits,
           queuePriority: 1,

@@ -413,7 +413,9 @@ export function StudioComposer({
   );
 
   return docked ? (
-    <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 lg:left-[104px]">{shell}</div>
+    <div className="pointer-events-none fixed inset-x-4 bottom-5 z-40 transition-[left] duration-200 lg:left-[calc(var(--studio-sidebar-width)+1rem)]">
+      {shell}
+    </div>
   ) : (
     shell
   );

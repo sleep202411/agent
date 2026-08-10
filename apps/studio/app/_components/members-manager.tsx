@@ -243,9 +243,16 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                     <span className="text-muted-foreground"> {t("youSuffix")}</span>
                   )}
                 </span>
-                <span className="text-xs text-muted-foreground">{roleLabel(member.role)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {scope.kind === "workspace" && member.accessScope === "project_only"
+                    ? t("projectOnlyMember")
+                    : roleLabel(member.role)}
+                </span>
               </div>
-              {canManage && !member.isOwner && !member.isSelf ? (
+              {canManage &&
+              !member.isOwner &&
+              !member.isSelf &&
+              member.accessScope !== "project_only" ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label={t("memberActions")}

@@ -1,21 +1,19 @@
 import "server-only";
 
 import {
-  TextGameBossActionSchema,
+  TextGameAdminActionSchema,
+  TextGameAdminListSchema,
   TextGameDetailSchema,
   TextGameIdSchema,
-  TextGameSummaryListSchema,
-  textGameStatusAfterBossAction,
-  type TextGameBossAction,
+  textGameStatusAfterAdminAction,
+  type TextGameAdminAction,
+  type TextGameAdminList,
   type TextGameDetail,
-  type TextGameSummary,
+  type TextGameStatus,
 } from "@repo/shared/text-game";
+import { javaAdminAuthHeaders } from "@/lib/java-admin-auth";
 
-const BOSS_TEXT_GAME_PATH = "/api/boss/text-game";
-
-// Java currently exposes the boss endpoints without authentication. Keep this
-// module server-only: browser calls terminate at admin-ui Route Handlers, which
-// enforce the admin session and `ip.moderate` before reaching these functions.
+const ADMIN_TEXT_GAME_PATH = "/api/admin/text-game";
 
 type JavaEnvelope = {
   code?: unknown;
@@ -23,16 +21,25 @@ type JavaEnvelope = {
   data?: unknown;
 };
 
+export type AdminTextGameStatusFilter = "all" | TextGameStatus;
+
+export type AdminTextGameListParams = {
+  status?: AdminTextGameStatusFilter;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
 export type AdminTextGameLoadResult<T> = {
   data: T | null;
   error: string | null;
 };
 
-export async function loadReviewingTextGames(): Promise<
-  AdminTextGameLoadResult<TextGameSummary[]>
-> {
+export async function loadAdminTextGames(
+  params?: AdminTextGameListParams
+): Promise<AdminTextGameLoadResult<TextGameAdminList>> {
   try {
-    return { data: await getReviewingTextGames(), error: null };
+    return { data: await getAdminTextGames(params), error: null };
   } catch (error) {
     return { data: null, error: textGameErrorMessage(error) };
   }
@@ -48,31 +55,38 @@ export async function loadAdminTextGameDetail(
   }
 }
 
-export async function getReviewingTextGames(): Promise<TextGameSummary[]> {
-  const data = await requestJavaTextGame(`${BOSS_TEXT_GAME_PATH}/reviewing`);
-  const items = TextGameSummaryListSchema.parse(data);
-  if (items.some((item) => item.status !== "reviewing")) {
-    throw new Error("Java 文游审核队列返回了非审核中作品。");
-  }
-  return items;
+export async function getAdminTextGames(
+  params: AdminTextGameListParams = {}
+): Promise<TextGameAdminList> {
+  const query = new URLSearchParams({
+    status: params.status ?? "all",
+    page: String(params.page ?? 1),
+    pageSize: String(params.pageSize ?? 20),
+  });
+  const keyword = params.q?.trim();
+  if (keyword) query.set("q", keyword);
+
+  return TextGameAdminListSchema.parse(
+    await requestJavaTextGame(`${ADMIN_TEXT_GAME_PATH}/reviewing?${query.toString()}`)
+  );
 }
 
 export async function getAdminTextGameDetail(gameId: string): Promise<TextGameDetail> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
   const data = await requestJavaTextGame(
-    `${BOSS_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}`
+    `${ADMIN_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}`
   );
   return parseAdminTextGameDetail(data, requestedGameId);
 }
 
 export async function transitionAdminTextGame(
   gameId: string,
-  input: TextGameBossAction
+  input: TextGameAdminAction
 ): Promise<TextGameDetail> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
-  const action = TextGameBossActionSchema.parse(input);
+  const action = TextGameAdminActionSchema.parse(input);
   const data = await requestJavaTextGame(
-    `${BOSS_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}/status`,
+    `${ADMIN_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}/status`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -80,7 +94,7 @@ export async function transitionAdminTextGame(
     }
   );
   const detail = parseAdminTextGameDetail(data, requestedGameId);
-  const expectedStatus = textGameStatusAfterBossAction(action.action);
+  const expectedStatus = textGameStatusAfterAdminAction(action.action);
   if (detail.status !== expectedStatus) {
     throw new Error(
       `Java 执行 ${action.action} 后返回状态 ${detail.status}，预期为 ${expectedStatus}。`
@@ -112,6 +126,7 @@ async function requestJavaTextGame(path: string, init?: RequestInit): Promise<un
       ...init,
       headers: {
         Accept: "application/json",
+        ...javaAdminAuthHeaders(),
         ...(init?.headers ?? {}),
       },
       cache: "no-store",

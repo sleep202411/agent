@@ -7,12 +7,12 @@ import {
   providerCapacityFromRow,
 } from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
+import { requiredPlanFromPolicy } from '../../required-plan';
 import type {
   AiBillingPolicy,
   AiGenerationMode,
   AiJobType,
   AiJsonValue,
-  AiRequiredPlan,
 } from '../../types';
 import type { AiModelDefinition } from '../../types';
 import {
@@ -206,26 +206,6 @@ function numberFromPolicy(value: unknown, key: string): number | undefined {
   const record = recordValue(value);
   const raw = record?.[key];
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
-}
-
-function requiredPlanFromPolicy(value: unknown): AiRequiredPlan | null {
-  const record = recordValue(value);
-  const raw = record?.requiredPlan;
-  return isRequiredPlan(raw) ? raw : null;
-}
-
-function isRequiredPlan(value: unknown): value is AiRequiredPlan {
-  // Plan keys only — every value here must be a key with an active
-  // billing_membership_plans row. Keys without a row normalize to null in
-  // EntitlementService.requiredPlan, i.e. NO gate at all, so listing a dead key
-  // here silently unlocks a model that was meant to be gated.
-  return (
-    value === 'free' ||
-    value === 'basic' ||
-    value === 'standard' ||
-    value === 'pro' ||
-    value === 'enterprise'
-  );
 }
 
 function billingPolicyFromRow(row: {
