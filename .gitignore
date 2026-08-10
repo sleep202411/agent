@@ -33,9 +33,6 @@ coverage
 # Turbo
 .turbo
 
-# Retired Agent Platform local build artifacts (safe to remove manually)
-/apps/agent-platform/
-
 # Vercel
 .vercel
 

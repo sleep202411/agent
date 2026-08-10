@@ -73,18 +73,29 @@ ok "egress allows DNS and excludes node metadata"
 
 # ── CN inherits every default it does not override ───────────────────────────
 if [ -f "$CN_VALUES" ]; then
-  # Assert the VALUE, not the render: rendering the CN overlay currently fails
-  # on an unrelated template, so an empty result would silently pass whatever
-  # this checks. CN must either disable agent-os or clear .com's node placement
-  # — inheriting `pool: worker` leaves the pod Pending on CN's single untainted
+  # Assert the RENDER, not the raw values. A .com-only template that acquires a
+  # `required` on a value CN leaves empty breaks deploy-cn.sh at its helm step
+  # and nothing else in CI notices — which is exactly how the retired Temporal
+  # template wedged CN until it was removed.
+  cn_render="$(helm template fizzdragon "$CHART" -f "$CN_VALUES")" ||
+    fail "CN overlay must render"
+  ok "CN overlay renders"
+
+  # CN must either disable agent-os or clear .com's node placement —
+  # inheriting `pool: worker` leaves the pod Pending on CN's single untainted
   # node, with a perfectly green chart.
-  cn_enabled="$(grep -A 2 '^agentOs:' "$CN_VALUES" | grep -c 'enabled: false' || true)"
-  if [ "$cn_enabled" = "1" ]; then
-    ok "CN disables agent-os explicitly"
+  # Scope this to the agent-os template. Matching the whole render is a false
+  # positive: server.yaml carries `fizzdragon-agent-os-server-secrets` and the
+  # worker URL whether or not the workload itself is enabled.
+  cn_agent_os="$(helm template fizzdragon "$CHART" -f "$CN_VALUES" \
+    -s templates/agent-os.yaml 2>/dev/null || true)"
+  if grep -q '^kind: Deployment' <<<"$cn_agent_os"; then
+    if grep -q 'pool: worker' <<<"$cn_agent_os"; then
+      fail "CN renders agent-os onto .com's worker pool — the pod would stay Pending"
+    fi
+    ok "CN enables agent-os without .com node placement"
   else
-    grep -A 20 '^agentOs:' "$CN_VALUES" | grep -q 'nodeSelector: null' ||
-      fail "CN enables agent-os but keeps .com's nodeSelector — the pod would stay Pending"
-    ok "CN enables agent-os and clears .com node placement"
+    ok "CN disables agent-os explicitly"
   fi
 fi
 

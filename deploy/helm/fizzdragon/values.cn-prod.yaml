@@ -265,23 +265,6 @@ agentWorker:
     # Aliyun community Redis is plaintext :6379.
     enableTLS: "false"
 
-temporal:
-  # The Temporal images follow the global image.registry override above, so the
-  # only prerequisite here is that they have been imported into the ACR EE
-  # instance — Docker Hub is unreachable from cn-hangzhou, and this registry
-  # serves blobs only over the VPC endpoint.
-  database:
-    # Dedicated PostgreSQL 16 RDS instance, not the application database.
-    host: ""
-    user: temporal
-  # CN has one untainted node; remove the .com worker-pool placement.
-  nodeSelector: null
-  tolerations: null
-# Azure Key Vault is off here, so the Temporal database password Secret is
-# created out-of-band with kubectl, same trust model as the other CN Secrets.
-temporalDatabaseSecrets:
-  mapping: null
-
 # Agent OS is not on CN yet: the image is not built for the CN registry, the
 # out-of-band Secret does not exist, and deploy-cn-services.sh has no arm for
 # it. Off explicitly rather than by omission — inheriting .com's defaults would
