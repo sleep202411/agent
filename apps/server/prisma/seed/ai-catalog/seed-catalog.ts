@@ -43,7 +43,7 @@ interface ModalityConfig {
   outputType: OutputType;
   models: ImageModelSeed[];
   /** Overrides forwarded to `buildQueuePolicy`. */
-  queueOverrides: Parameters<typeof buildQueuePolicy>[1];
+  queueOverrides: NonNullable<Parameters<typeof buildQueuePolicy>[0]>;
   label: string;
 }
 
@@ -59,10 +59,19 @@ const VIDEO_CONFIG: ModalityConfig = {
   modality: 'video',
   outputType: 'video',
   models: VIDEO_MODELS,
+  // Video capacity, raised from globalConcurrency 4 / perUserRunning 1 on the
+  // evidence in 5,689 jobs: per-user concurrency peaked at exactly 1 and
+  // platform concurrency on the busiest model at exactly 4 — both sat ON their
+  // ceilings, so the ceilings were the constraint rather than demand. Against
+  // that, only 6 of 818 failures carried a provider 429, and none of the
+  // BytePlus/Bailian endpoints declares a capacity limit at all, so there is
+  // room. 3 of 8 keeps one user off more than half the pool while finally
+  // letting a plan upgrade be felt — at 1, `team`'s 28 concurrent jobs were
+  // indistinguishable from the free tier.
   queueOverrides: {
     queueName: VIDEO_QUEUE_NAME,
-    globalConcurrency: 4,
-    perUserRunning: 1,
+    globalConcurrency: 8,
+    perUserRunning: 3,
     maxProviderRuntimeSeconds: 2700,
   },
   label: 'video',
@@ -89,9 +98,16 @@ function buildCanonicalPayload(
     description: model.description,
     parameterPolicy: model.parameterPolicy,
     outputPolicy: buildOutputPolicy(model.productPricing, cfg.outputType),
-    entitlementPolicy: buildEntitlementPolicy(model.tier),
+    entitlementPolicy: buildEntitlementPolicy(model.requiredPlan),
     billingPolicy: buildBillingPolicy(model.cost, model.productPricing),
-    queuePolicy: buildQueuePolicy(model.tier, cfg.queueOverrides),
+    // Capacity, NOT entitlement. These two used to share `model.tier`: the
+    // per-user caps were `gated ? 2 : 1` off the very same value that decided
+    // who may call the model. So "make this model free" also halved its
+    // concurrency, "give it more concurrency" also paywalled it, and a
+    // migration that merely re-mapped a legacy plan name took the entire
+    // catalogue offline. Who may call a model and how much of it one user may
+    // occupy are unrelated questions; they now have unrelated inputs.
+    queuePolicy: buildQueuePolicy(cfg.queueOverrides),
     uiPolicy: buildUiPolicy({
       group: model.group,
       recommended: model.recommended ?? false,
@@ -194,7 +210,7 @@ function buildBindingPayload(args: {
 interface SeedSummaryRow {
   slug: string;
   status: string;
-  tier: string;
+  requiredPlan: string;
   cost: number;
   providers: string;
   bindings: number;
@@ -304,7 +320,7 @@ async function seedModalityCatalog(
     summary.push({
       slug: canonical.slug,
       status: canonical.status,
-      tier: model.tier ?? 'free',
+      requiredPlan: model.requiredPlan ?? 'open',
       cost: model.cost,
       providers: boundProviders.join(', ') || '(canonical-only)',
       bindings: bindingCount,

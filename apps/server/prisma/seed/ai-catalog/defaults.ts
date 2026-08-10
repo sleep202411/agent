@@ -1720,26 +1720,45 @@ export function buildBillingPolicy(
 }
 
 /**
- * `queuePolicy` factory — per-user limits and priority scale with whether the
- * model is gated (any non-null `requiredPlan` = paid tier gets higher caps and
- * queue priority).
+ * `queuePolicy` factory — how much of a model one user may occupy, and how much
+ * of it exists at all. Every number here is a CAPACITY statement about the
+ * provider, deliberately independent of `requiredPlan`.
+ *
+ * It did not used to be: the caps were `gated ? 2 : 1` off the model's plan
+ * gate, which welded two unrelated decisions together — opening a model to
+ * everyone silently halved its concurrency, and widening its concurrency
+ * silently put it behind a paid plan.
+ *
+ * The user's own plan is the other half of the limit and is applied at request
+ * time: `routing.service.ts` takes `min(entitlement.limits.concurrentJobs,
+ * queuePolicy.perUserRunning)`. So these values are a ceiling that protects the
+ * shared pool, not the product's idea of what a paying customer deserves — set
+ * them from provider capacity, and let the plan decide the rest. Set them too
+ * low and no plan upgrade can be felt: at perUserRunning 1, `team`'s 28
+ * concurrent jobs bought the customer exactly nothing.
  */
 export function buildQueuePolicy(
-  requiredPlan: RequiredPlan,
   overrides: {
     queueName?: string;
     globalConcurrency?: number;
     perUserRunning?: number;
+    perUserQueued?: number;
     maxProviderRuntimeSeconds?: number;
   } = {},
 ): Prisma.InputJsonObject {
-  const gated = Boolean(requiredPlan);
   return {
     queueName: overrides.queueName ?? IMAGE_QUEUE_NAME,
+    // Image defaults. 5,689 jobs of history peaked at 4 concurrent platform-wide
+    // and exactly 2 per user — i.e. the old per-user cap of 2 was the binding
+    // constraint, not demand. 6 of a 12-wide pool leaves room for two users at
+    // full tilt; images are seconds long and cheap.
     globalConcurrency: overrides.globalConcurrency ?? 12,
-    perUserRunning: overrides.perUserRunning ?? (gated ? 2 : 1),
-    perUserQueued: gated ? 12 : 8,
-    priority: gated ? 10 : 0,
+    perUserRunning: overrides.perUserRunning ?? 6,
+    perUserQueued: overrides.perUserQueued ?? 12,
+    // Read by nothing today (no consumer of queuePolicy.priority exists in
+    // apps/server). Kept as a constant so the stored shape stays stable rather
+    // than gaining and losing a key; do not reintroduce a derived value here.
+    priority: 0,
     maxProviderRuntimeSeconds: overrides.maxProviderRuntimeSeconds ?? 600,
   };
 }
