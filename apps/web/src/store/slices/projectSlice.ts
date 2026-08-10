@@ -771,9 +771,7 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     isLoading: false,
     error: null,
 
-    // Keep script as the default landing view; Storyboard remains available
-    // from the project tab switcher for shot-table workflows.
-    activeTab: "script",
+    activeTab: "storyboard",
     activePanel: "aiAssistant",
     isAiPanelOpen: false,
     isAiPanelExpanded: false,
