@@ -84,6 +84,13 @@ const PROJECT_NOT_FOUND = {
   message: 'Story project not found.',
 } as const;
 
+/** Media a story can hold as a candidate. Typed wide so `includes` accepts any kind. */
+const CANDIDATE_ASSET_KINDS: MediaAssetKind[] = [
+  MediaAssetKind.image,
+  MediaAssetKind.video,
+  MediaAssetKind.audio,
+];
+
 const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
   cover: {
     include: {
@@ -502,10 +509,12 @@ export class StoryProjectsService {
         // og:image. A video could only ever have appeared on the studio's own
         // library card, so accepting one meant a creator could set a cover that
         // no player and no catalogue would ever show.
+        // No workspaceId here either — same reasoning as addCandidateAsset: the
+        // caller's right to edit this project is already settled, and uploads
+        // carry no workspace, so scoping by it only blocked legitimate covers.
         const cover = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,
-            workspaceId,
             status: MediaAssetStatus.ready,
             moderationStatus: {
               not: MediaAssetModerationStatus.blocked,
@@ -1094,28 +1103,52 @@ export class StoryProjectsService {
 
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const asset = await tx.mediaAsset.findFirst({
-        where: {
-          id: mediaAssetId,
-          workspaceId,
-          status: MediaAssetStatus.ready,
-          moderationStatus: { not: MediaAssetModerationStatus.blocked },
-          deletedAt: null,
-          kind: {
-            in: [
-              MediaAssetKind.image,
-              MediaAssetKind.video,
-              MediaAssetKind.audio,
-            ],
-          },
+      // Deliberately NOT scoped by workspaceId. The id can only reach here from
+      // the project's own canvas, and `requireScopedProject` above already
+      // decided whether the caller may edit that project — re-checking the
+      // asset's workspace is a second lock on a door that is already shut.
+      //
+      // What it did instead was break real work: uploads never recorded a
+      // workspace (the client omits `x-fizz-workspace-id`, so the server stores
+      // null), which equality can never match, so 4,210 uploaded assets could
+      // not be used as candidates and the creator was told their media "must be
+      // ready" — a message about a condition that was already satisfied.
+      //
+      // Recording the workspace on upload is worth fixing on its own terms; it
+      // is not a reason to keep this check.
+      const asset = await tx.mediaAsset.findUnique({
+        where: { id: mediaAssetId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          moderationStatus: true,
+          deletedAt: true,
         },
       });
-      if (!asset) {
+      // One reason per rejection. These used to be a single `findFirst` whose
+      // miss said "must be a ready … asset", which reads as "wait for the
+      // upload" no matter which condition actually failed.
+      const invalid = (message: string): never => {
         throw new UnprocessableEntityException({
           code: 'STORY_CANDIDATE_ASSET_INVALID',
-          message:
-            'Candidate media must be a ready image, video, or audio asset in this project workspace.',
+          message,
         });
+      };
+      if (!asset || asset.deletedAt) {
+        invalid('That media no longer exists.');
+      } else if (!CANDIDATE_ASSET_KINDS.includes(asset.kind)) {
+        invalid(
+          `Candidate media must be an image, video, or audio file — this one is ${asset.kind}.`,
+        );
+      } else if (asset.status !== MediaAssetStatus.ready) {
+        invalid(
+          `That media is still ${asset.status}. Wait for it to finish, then add it again.`,
+        );
+      } else if (
+        asset.moderationStatus === MediaAssetModerationStatus.blocked
+      ) {
+        invalid('That media was blocked by moderation and cannot be used.');
       }
       await tx.storyCandidateAsset.upsert({
         where: {
