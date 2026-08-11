@@ -49,19 +49,37 @@ export const TextGameSummarySchema = z.object({
 export type TextGameSummary = z.infer<typeof TextGameSummarySchema>;
 export const TextGameSummaryListSchema = z.array(TextGameSummarySchema);
 
+/**
+ * A count from the Java admin API, which serialises these as JSON strings
+ * (`"5"`) even though its own contract documents numbers — and even though the
+ * sibling news endpoint on the same host returns real numbers. Rejecting the
+ * string took down the whole 文游审核 page over five display-only tallies while
+ * the list beside them parsed fine, so accept both and normalise to a number.
+ *
+ * Deliberately not `z.coerce.number()`: that also swallows `null`, `""` and
+ * `true` as 0/1, which would hide a genuinely broken payload.
+ */
+const TextGameCountSchema = z.union([
+  z.number().int().nonnegative(),
+  z
+    .string()
+    .regex(/^\d+$/)
+    .transform((value) => Number(value)),
+]);
+
 export const TextGameAdminStatsSchema = z.object({
-  total: z.number().int().nonnegative(),
-  draft: z.number().int().nonnegative(),
-  reviewing: z.number().int().nonnegative(),
-  published: z.number().int().nonnegative(),
-  offline: z.number().int().nonnegative(),
+  total: TextGameCountSchema,
+  draft: TextGameCountSchema,
+  reviewing: TextGameCountSchema,
+  published: TextGameCountSchema,
+  offline: TextGameCountSchema,
 });
 export type TextGameAdminStats = z.infer<typeof TextGameAdminStatsSchema>;
 
 export const TextGameAdminListSchema = z.object({
   list: TextGameSummaryListSchema,
   stats: TextGameAdminStatsSchema,
-  total: z.number().int().nonnegative(),
+  total: TextGameCountSchema,
 });
 export type TextGameAdminList = z.infer<typeof TextGameAdminListSchema>;
 
