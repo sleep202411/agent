@@ -6,8 +6,10 @@ import { useTranslations } from "next-intl";
 import {
   IconArrowLeft,
   IconBlocks,
+  IconBook2,
   IconHistory,
   IconLibraryPhoto,
+  IconPuzzle,
   IconShare3,
   IconSettings,
   IconUsersGroup,
@@ -26,6 +28,8 @@ import { cn } from "@/lib/utils";
 gsap.registerPlugin(useGSAP, CustomEase);
 
 export const PROJECT_PANEL_WIDTH = 300;
+export const PROJECT_PANEL_OPEN_DURATION_MS = 200;
+export const PROJECT_PANEL_CLOSE_DURATION_MS = 160;
 
 const PROJECT_PANEL_OPEN_EASE = CustomEase.create("project-panel-open", "0.22,1,0.36,1");
 const PROJECT_PANEL_CLOSE_EASE = CustomEase.create("project-panel-close", "0.4,0,1,1");
@@ -53,12 +57,14 @@ export function ProjectSidebar({
   const tShell = useTranslations("shell");
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
+  const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
   const openAssets = useProjectUIStore((s) => s.openAssets);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
   const openNodes = useProjectUIStore((s) => s.openNodes);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const toggleHistory = useProjectUIStore((s) => s.toggleHistory);
+  const toggleSections = useProjectUIStore((s) => s.toggleSections);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const { connectionStatus, rtt } = useCanvasConnection();
   const { canEdit, canManage, openShare } = useProjectContext();
@@ -78,7 +84,11 @@ export function ProjectSidebar({
       gsap.to(element, {
         x: panelOpen ? 0 : -PROJECT_PANEL_WIDTH,
         autoAlpha: panelOpen ? 1 : 0,
-        duration: reducedMotion ? 0 : panelOpen ? 0.42 : 0.28,
+        duration: reducedMotion
+          ? 0
+          : panelOpen
+            ? PROJECT_PANEL_OPEN_DURATION_MS / 1_000
+            : PROJECT_PANEL_CLOSE_DURATION_MS / 1_000,
         ease: panelOpen ? PROJECT_PANEL_OPEN_EASE : PROJECT_PANEL_CLOSE_EASE,
         overwrite: "auto",
         onStart: () => {
@@ -94,6 +104,13 @@ export function ProjectSidebar({
 
   const items = [
     {
+      icon: IconBook2,
+      label: t("sidebar.chapters"),
+      active: sectionsOpen,
+      disabledReason: undefined,
+      onClick: toggleSections,
+    },
+    {
       icon: IconBlocks,
       label: t("sidebar.nodes"),
       active: nodesOpen && !nodesDisabledReason,
@@ -106,6 +123,13 @@ export function ProjectSidebar({
       active: assetsOpen,
       disabledReason: undefined,
       onClick: () => (assetsOpen ? closeAssets() : openAssets()),
+    },
+    {
+      icon: IconPuzzle,
+      label: t("sidebar.skills"),
+      active: false,
+      disabledReason: t("sidebar.skillsComingSoon"),
+      onClick: () => undefined,
     },
     ...(canEdit
       ? [

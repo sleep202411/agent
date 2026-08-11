@@ -22,6 +22,8 @@ import {
   useCanvasConnection,
 } from "@/app/[locale]/project/_components/canvas-connection-context";
 import {
+  PROJECT_PANEL_CLOSE_DURATION_MS,
+  PROJECT_PANEL_OPEN_DURATION_MS,
   PROJECT_PANEL_WIDTH,
   ProjectSidebar,
 } from "@/app/[locale]/project/_components/project-sidebar";
@@ -95,8 +97,8 @@ export default function ProjectLayout({
     Boolean(selectedShotId);
   const projectShellLeftInset = 64 + (leftDrawerOpen ? PROJECT_PANEL_WIDTH : 0);
   const projectShellInsetTransition = leftDrawerOpen
-    ? "420ms cubic-bezier(0.22, 1, 0.36, 1)"
-    : "280ms cubic-bezier(0.4, 0, 1, 1)";
+    ? `${PROJECT_PANEL_OPEN_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+    : `${PROJECT_PANEL_CLOSE_DURATION_MS}ms cubic-bezier(0.4, 0, 1, 1)`;
   const openShare = useCallback(() => setShareOpen(true), []);
 
   useEffect(() => {
@@ -408,6 +410,7 @@ function SectionAgentPanel({
   if (isSectionMode && !activeSection) return null;
   return (
     <AgentOsPanel
+      className="p-0"
       projectId={projectId}
       workbenchMode={workbenchMode}
       workbenchContext={

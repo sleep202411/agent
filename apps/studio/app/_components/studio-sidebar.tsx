@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { useGSAP } from "@gsap/react";
 import { useLocale, useTranslations } from "next-intl";
-import type { ComponentType } from "react";
+import { useRef, type ComponentType, type ReactNode } from "react";
 import {
   IconBrandDiscord,
   IconDeviceGamepad2,
@@ -19,7 +20,7 @@ import {
   IconVolume,
   IconWriting,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
+import gsap from "gsap";
 import { Link, usePathname } from "@/i18n/navigation";
 import { getWebBaseUrl } from "@/lib/web-base";
 import { openSettings } from "@/lib/settings-hash";
@@ -29,13 +30,23 @@ import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStudioSidebar } from "./studio-sidebar-context";
 
+gsap.registerPlugin(useGSAP);
+
 type SidebarIcon = ComponentType<{ className?: string; stroke?: number }>;
+type SidebarAccent = "blue" | "yellow" | "red";
+
+const SIDEBAR_BADGE_ACCENT_CLASSES: Record<SidebarAccent, string> = {
+  blue: "bg-[#5b9dff]/20 text-[#a8c8ff]",
+  yellow: "bg-[#ffd166]/20 text-[#ffe7a3]",
+  red: "bg-[#e52227]/20 text-[#ff9c9f]",
+};
 
 type SidebarItem = {
   label: string;
   href: string;
   icon: SidebarIcon;
   badge?: string;
+  accent?: SidebarAccent;
   disabled?: boolean;
   onClick?: () => void;
 };
@@ -43,6 +54,43 @@ type SidebarItem = {
 function isSidebarItemActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function AnimatedSidebarLabel({
+  children,
+  accent,
+}: {
+  children: ReactNode;
+  accent: SidebarAccent;
+}) {
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  useGSAP(
+    () => {
+      if (!textRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+      }
+
+      gsap.fromTo(
+        textRef.current,
+        { backgroundPosition: "100% 50%" },
+        {
+          backgroundPosition: "0% 50%",
+          duration: 3.6,
+          ease: "none",
+          repeat: -1,
+          repeatDelay: 1.2,
+        }
+      );
+    },
+    { scope: textRef }
+  );
+
+  return (
+    <span ref={textRef} className="sidebar-menu-shimmer" data-accent={accent}>
+      {children}
+    </span>
+  );
 }
 
 function SidebarButton({
@@ -74,14 +122,27 @@ function SidebarButton({
       {active && !disabled ? <GlassRim className="opacity-70" /> : null}
       <Icon className="relative size-[19px] shrink-0" stroke={1.8} />
       {collapsed ? null : (
-        <>
-          <span className="relative min-w-0 flex-1 truncate">{item.label}</span>
+        <span className="relative flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0 truncate">
+            {item.accent ? (
+              <AnimatedSidebarLabel accent={item.accent}>{item.label}</AnimatedSidebarLabel>
+            ) : (
+              item.label
+            )}
+          </span>
           {item.badge ? (
-            <span className="absolute -top-1 right-1 rounded-md bg-primary px-1 py-0.5 text-[8px] leading-none font-semibold tracking-[0.04em] text-primary-foreground uppercase">
+            <span
+              className={cn(
+                "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] leading-3 font-semibold tracking-[0.04em] uppercase",
+                item.accent
+                  ? SIDEBAR_BADGE_ACCENT_CLASSES[item.accent]
+                  : "bg-white/[0.08] text-white/80"
+              )}
+            >
               {item.badge}
             </span>
           ) : null}
-        </>
+        </span>
       )}
     </>
   );
@@ -250,12 +311,14 @@ export function StudioSidebar() {
       href: "/story-studio",
       icon: IconDeviceGamepad2,
       badge: t("nav.newBadge"),
+      accent: "blue",
     },
     {
       label: t("nav.textAdventures"),
       href: "/text-adventures",
       icon: IconWriting,
       badge: t("nav.newBadge"),
+      accent: "yellow",
     },
   ];
   const toolItems: SidebarItem[] = [
@@ -268,29 +331,6 @@ export function StudioSidebar() {
     href: "/settings/account",
     icon: IconSettings,
     onClick: () => openSettings("account"),
-  };
-
-  const downloadMobileApp = async () => {
-    const platform = /iPad|iPhone|iPod/.test(window.navigator.userAgent) ? "ios" : "android";
-    try {
-      const response = await fetch(`/aurora/app-releases/latest?platform=${platform}`);
-      const payload = (await response.json()) as {
-        code?: number;
-        message?: string;
-        data?: { release?: { downloadUrl?: string } | null };
-      };
-      if (!response.ok || payload.code !== 200) {
-        throw new Error(payload.message || `${response.status} ${response.statusText}`);
-      }
-      const downloadUrl = payload.data?.release?.downloadUrl;
-      if (!downloadUrl) {
-        toast.info(t("nav.appDownloadUnavailable"));
-        return;
-      }
-      window.location.assign(downloadUrl);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("nav.appDownloadUnavailable"));
-    }
   };
 
   const utilityItems: SidebarUtilityItem[] = [
@@ -308,7 +348,7 @@ export function StudioSidebar() {
     {
       label: t("nav.downloadApp"),
       icon: IconDeviceMobileDown,
-      onClick: () => void downloadMobileApp(),
+      disabled: true,
     },
     {
       label: t("nav.downloadDesktop"),

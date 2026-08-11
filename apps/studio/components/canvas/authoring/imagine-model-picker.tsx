@@ -27,6 +27,7 @@ import {
   IconBrandOpenai,
   IconBrandTiktok,
   IconCheck,
+  IconChevronDown,
   IconClock,
   IconCoin,
   IconCube,
@@ -55,22 +56,35 @@ import { useAiCatalog, visibleModelsByModality } from "@/lib/canvas-authoring/us
 /* ------------------------------------------------------------------ *
  * Brand glyph for the icon tile.
  * ------------------------------------------------------------------ */
-function brandIcon(model: FizzAiModel): Icon {
-  const s = `${model.id} ${model.name} ${model.family ?? ""}`.toLowerCase();
-  if (s.includes("gpt") || s.includes("openai") || s.includes("dall")) return IconBrandOpenai;
+function VendorGlyph({
+  vendor,
+  hint = "",
+  className,
+}: {
+  vendor?: string | null;
+  hint?: string;
+  className?: string;
+}) {
+  const s = `${vendor ?? ""} ${hint}`.toLowerCase();
+  if (s.includes("gpt") || s.includes("openai") || s.includes("dall")) {
+    return <IconBrandOpenai className={className} />;
+  }
   if (
     s.includes("nano-banana") ||
     s.includes("gemini") ||
     s.includes("imagen") ||
     s.includes("google")
-  )
-    return IconBrandGoogle;
-  if (s.includes("seedance") || s.includes("seedream") || s.includes("byte"))
-    return IconBrandTiktok;
-  if (s.includes("flux")) return IconBolt;
-  if (s.includes("wan") || s.includes("qwen") || s.includes("alibaba") || s.includes("bailian"))
-    return IconCube;
-  return IconSparkles;
+  ) {
+    return <IconBrandGoogle className={className} />;
+  }
+  if (s.includes("seedance") || s.includes("seedream") || s.includes("byte")) {
+    return <IconBrandTiktok className={className} />;
+  }
+  if (s.includes("flux")) return <IconBolt className={className} />;
+  if (s.includes("wan") || s.includes("qwen") || s.includes("alibaba") || s.includes("bailian")) {
+    return <IconCube className={className} />;
+  }
+  return <IconSparkles className={className} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -223,7 +237,8 @@ export function ImagineModelPicker({
   const togglePin = (id: string) =>
     setPinned((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 
@@ -285,8 +300,9 @@ export function ImagineModelPicker({
               (vendorFilter || providersOpen) && "bg-muted text-foreground"
             )}
           >
+            <VendorGlyph vendor={vendorFilter} className="size-4 shrink-0 text-muted-foreground" />
             <span className="whitespace-nowrap">{vendorFilter ?? "Providers"}</span>
-            <IconSparkles
+            <IconChevronDown
               className={cn(
                 "ml-auto size-4 shrink-0 transition-transform",
                 providersOpen && "rotate-180"
@@ -302,28 +318,35 @@ export function ImagineModelPicker({
                   setProvidersOpen(false);
                 }}
                 className={cn(
-                  "block w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
                   !vendorFilter && "bg-muted"
                 )}
               >
-                All
+                <IconSparkles className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">All</span>
+                {!vendorFilter ? <IconCheck className="size-4 shrink-0" /> : null}
               </button>
-              {vendors.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => {
-                    setVendorFilter(v);
-                    setProvidersOpen(false);
-                  }}
-                  className={cn(
-                    "block w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-                    vendorFilter === v && "bg-muted"
-                  )}
-                >
-                  {v}
-                </button>
-              ))}
+              {vendors.map((v) => {
+                const selected = vendorFilter === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => {
+                      setVendorFilter(v);
+                      setProvidersOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
+                      selected && "bg-muted"
+                    )}
+                  >
+                    <VendorGlyph vendor={v} className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{v}</span>
+                    {selected ? <IconCheck className="size-4 shrink-0" /> : null}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -356,7 +379,6 @@ export function ImagineModelPicker({
               <span>{section.label}</span>
             </div>
             {section.models.map((model) => {
-              const Brand = brandIcon(model);
               const cost = cheapestSellPoints(model);
               const selected = model.id === selectedId;
               const isPinned = pinned.has(model.id);
@@ -390,7 +412,11 @@ export function ImagineModelPicker({
                     Same flush tone as the row (neutral-100); only the hairline border sets it off. */}
                     <div className="relative shrink-0">
                       <span className="flex size-10 items-center justify-center overflow-hidden rounded-lg border border-border bg-background [&_svg]:size-6">
-                        <Brand className="size-6 text-foreground/80" />
+                        <VendorGlyph
+                          vendor={model.vendor}
+                          hint={`${model.id} ${model.name} ${model.family ?? ""}`}
+                          className="size-6 text-foreground/80"
+                        />
                       </span>
                     </div>
 

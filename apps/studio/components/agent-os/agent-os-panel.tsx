@@ -100,6 +100,7 @@ interface AgentOsPanelProps {
   onMutationCompleted?: () => void | Promise<void>;
   open: boolean;
   onClose: () => void;
+  className?: string;
 }
 
 /** Agent OS side panel — one durable conversation boundary per project. */
@@ -114,6 +115,7 @@ function AgentOsProjectSession({
   onMutationCompleted,
   open,
   onClose,
+  className,
 }: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
   const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
@@ -476,6 +478,7 @@ function AgentOsProjectSession({
 
   return (
     <FizzAgentSurface
+      className={className}
       open={open}
       title={t("title")}
       subtitle={workerStatus}

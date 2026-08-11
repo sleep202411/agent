@@ -1802,10 +1802,13 @@
     "aiAssistant": "AI 助手",
     "sidebar": {
       "navigation": "專案導覽",
+      "chapters": "章節",
       "nodes": "節點",
       "nodesModeUnavailable": "說明模式下無法使用節點",
       "nodesEditRequired": "需要編輯權限才能新增節點",
       "assets": "資產",
+      "skills": "技能",
+      "skillsComingSoon": "技能 · 即將推出",
       "activity": "動態",
       "members": "成員"
     },

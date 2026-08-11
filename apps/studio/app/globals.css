@@ -383,6 +383,49 @@ button:disabled,
   }
 }
 
+/* New-surface menu labels stay white at rest. Each surface selects one accent
+   token, shared by its focused title highlight and static NEW badge. */
+.sidebar-menu-shimmer {
+  --sidebar-shimmer-accent: #5b9dff;
+  --sidebar-shimmer-muted: #dce9ff;
+
+  display: inline-block;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    #fff 0%,
+    #fff 42%,
+    var(--sidebar-shimmer-muted) 46%,
+    var(--sidebar-shimmer-accent) 51%,
+    var(--sidebar-shimmer-muted) 56%,
+    #fff 60%,
+    #fff 100%
+  );
+  background-position: 100% 50%;
+  background-size: 280% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  will-change: background-position;
+}
+
+.sidebar-menu-shimmer[data-accent="yellow"] {
+  --sidebar-shimmer-accent: #ffd166;
+  --sidebar-shimmer-muted: #fff0c2;
+}
+
+.sidebar-menu-shimmer[data-accent="red"] {
+  --sidebar-shimmer-accent: #e52227;
+  --sidebar-shimmer-muted: #ffc3c5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-menu-shimmer {
+    color: #fff;
+    background-image: none;
+    will-change: auto;
+  }
+}
+
 /* React Bits GlitchText, adapted for Studio's restrained monochrome canvas.
    The base text never moves; only clipped decorative copies animate. */
 @keyframes glitch-text-slice {

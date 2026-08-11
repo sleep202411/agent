@@ -329,9 +329,9 @@ export function FizzAgentOrbButton({
             y2="88"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset="0" stopColor="#FF5BB9" stopOpacity="0.86" />
-            <stop offset="0.34" stopColor="#DD4A9D" stopOpacity="0.64" />
-            <stop offset="0.7" stopColor="#8442AA" stopOpacity="0.3" />
+            <stop offset="0" stopColor="#E52227" stopOpacity="0.9" />
+            <stop offset="0.34" stopColor="#FF4D38" stopOpacity="0.7" />
+            <stop offset="0.7" stopColor="#FFB84D" stopOpacity="0.34" />
             <stop offset="1" stopColor="#02101D" stopOpacity="0" />
           </linearGradient>
           <linearGradient
@@ -355,9 +355,9 @@ export function FizzAgentOrbButton({
             y2="92"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset="0" stopColor="#FF3424" stopOpacity="0.88" />
-            <stop offset="0.3" stopColor="#FF7740" stopOpacity="0.64" />
-            <stop offset="0.66" stopColor="#E34B8C" stopOpacity="0.33" />
+            <stop offset="0" stopColor="#FFC45B" stopOpacity="0.94" />
+            <stop offset="0.3" stopColor="#FF8A2B" stopOpacity="0.72" />
+            <stop offset="0.66" stopColor="#E52227" stopOpacity="0.48" />
             <stop offset="1" stopColor="#071421" stopOpacity="0" />
           </linearGradient>
           <linearGradient
@@ -409,8 +409,8 @@ export function FizzAgentOrbButton({
             gradientUnits="userSpaceOnUse"
           >
             <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.52" />
-            <stop offset="0.25" stopColor="#EF5AAE" stopOpacity="0.32" />
-            <stop offset="0.6" stopColor="#FF6842" stopOpacity="0.45" />
+            <stop offset="0.25" stopColor="#E52227" stopOpacity="0.46" />
+            <stop offset="0.6" stopColor="#FFB84D" stopOpacity="0.5" />
             <stop offset="0.82" stopColor="#1FE2F8" stopOpacity="0.54" />
             <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.36" />
           </linearGradient>
@@ -423,8 +423,8 @@ export function FizzAgentOrbButton({
             gradientUnits="userSpaceOnUse"
           >
             <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.65" />
-            <stop offset="0.22" stopColor="#FFE9F5" stopOpacity="0.54" />
-            <stop offset="0.5" stopColor="#FF59A8" stopOpacity="0.38" />
+            <stop offset="0.22" stopColor="#FFF0C9" stopOpacity="0.58" />
+            <stop offset="0.5" stopColor="#E52227" stopOpacity="0.5" />
             <stop offset="0.77" stopColor="#15DDF5" stopOpacity="0.58" />
             <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.56" />
           </linearGradient>
@@ -436,10 +436,10 @@ export function FizzAgentOrbButton({
             y2="30"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset="0" stopColor="#F0406E" stopOpacity="0.2" />
-            <stop offset="0.42" stopColor="#FF4EA5" stopOpacity="0.55" />
-            <stop offset="0.72" stopColor="#FF6A31" stopOpacity="0.6" />
-            <stop offset="1" stopColor="#FFB152" stopOpacity="0.34" />
+            <stop offset="0" stopColor="#E52227" stopOpacity="0.32" />
+            <stop offset="0.42" stopColor="#FF4A36" stopOpacity="0.64" />
+            <stop offset="0.72" stopColor="#FF8A2B" stopOpacity="0.72" />
+            <stop offset="1" stopColor="#FFC45B" stopOpacity="0.5" />
           </linearGradient>
           <linearGradient
             id={id("cool-arc")}

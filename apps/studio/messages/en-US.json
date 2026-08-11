@@ -1802,10 +1802,13 @@
     "aiAssistant": "AI assistant",
     "sidebar": {
       "navigation": "Project navigation",
+      "chapters": "Chapters",
       "nodes": "Nodes",
       "nodesModeUnavailable": "Nodes aren't available in Brief mode",
       "nodesEditRequired": "You need edit access to add nodes",
       "assets": "Assets",
+      "skills": "Skills",
+      "skillsComingSoon": "Skills · Coming soon",
       "activity": "Activity",
       "members": "Members"
     },
