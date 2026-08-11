@@ -14,7 +14,18 @@ import {
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 
-function txFor(input: { type: WorkspaceType; creatorUserIds: string[] }) {
+/** After LEGACY_PERSONAL_WORKSPACE_CUTOFF (2026-08-12T00:00+08:00) → owner-only. */
+const CREATED_AFTER_CUTOFF = new Date('2026-08-12T00:00:01+08:00');
+/** Before it — the grandfathered era, when teams could not hold a second creator. */
+const CREATED_BEFORE_CUTOFF = new Date('2026-07-10T09:03:27Z');
+/** The grace day itself: shipped 08-11, so this must still be grandfathered. */
+const CREATED_ON_GRACE_DAY = new Date('2026-08-11T18:00:00+08:00');
+
+function txFor(input: {
+  type: WorkspaceType;
+  creatorUserIds: string[];
+  createdAt?: Date;
+}) {
   return {
     $queryRaw: jest
       .fn()
@@ -22,7 +33,10 @@ function txFor(input: { type: WorkspaceType; creatorUserIds: string[] }) {
     entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {
-      findUnique: jest.fn().mockResolvedValue({ type: input.type }),
+      findUnique: jest.fn().mockResolvedValue({
+        type: input.type,
+        createdAt: input.createdAt ?? CREATED_AFTER_CUTOFF,
+      }),
     },
   } as never;
 }
@@ -44,7 +58,7 @@ describe('creator seat enforcement', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('blocks a second creator in a no-plan PERSONAL workspace', async () => {
+  it('blocks a second creator in a NEW no-plan PERSONAL workspace', async () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
@@ -60,6 +74,64 @@ describe('creator seat enforcement', () => {
         code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
         includedSeats: 1,
         activeSeats: 1,
+      },
+    });
+  });
+
+  /**
+   * Grandfathering. Before 2026-08-11 a free team was owner-only, so every
+   * collaborative project ended up in someone's personal workspace — 虎豹花园 is
+   * seven projects across four of them. Those keep working; the owner-only rule
+   * applies only to personal workspaces created once teams were a real option.
+   */
+  it('admits a second creator in a PERSONAL workspace from before the cutoff', async () => {
+    await expect(
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.personal,
+          creatorUserIds: ['owner-1'],
+          createdAt: CREATED_BEFORE_CUTOFF,
+        }),
+        WORKSPACE_ID,
+        'editor-2',
+        entitlements,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  /** The change shipped on 08-11, so that whole day is inside the grace period. */
+  it('grandfathers a PERSONAL workspace created on the day the change shipped', async () => {
+    await expect(
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.personal,
+          creatorUserIds: ['owner-1'],
+          createdAt: CREATED_ON_GRACE_DAY,
+        }),
+        WORKSPACE_ID,
+        'editor-2',
+        entitlements,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still caps a grandfathered PERSONAL workspace at the team allowance', async () => {
+    await expect(
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.personal,
+          creatorUserIds: Array.from({ length: 28 }, (_, i) => `user-${i}`),
+          createdAt: CREATED_BEFORE_CUTOFF,
+        }),
+        WORKSPACE_ID,
+        'editor-29',
+        entitlements,
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
+        includedSeats: 28,
+        activeSeats: 28,
       },
     });
   });

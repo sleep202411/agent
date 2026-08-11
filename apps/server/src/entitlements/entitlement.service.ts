@@ -29,6 +29,8 @@ import {
 import type { QuotaPlanProfile, QuotaProfile } from '../quota/quota.types';
 import {
   DEFAULT_TEAM_SEAT_POLICY,
+  LEGACY_PERSONAL_WORKSPACE_CUTOFF,
+  LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY,
   PERSONAL_WORKSPACE_SEAT_POLICY,
   type SeatPolicy,
 } from './seat-policy';
@@ -181,11 +183,17 @@ export class EntitlementService {
   ): Promise<SeatPolicy> {
     const workspace = await db.workspace.findUnique({
       where: { id: workspaceId },
-      select: { type: true },
+      select: { type: true, createdAt: true },
     });
-    return workspace?.type === WorkspaceType.personal
-      ? PERSONAL_WORKSPACE_SEAT_POLICY
-      : DEFAULT_TEAM_SEAT_POLICY;
+    if (workspace?.type !== WorkspaceType.personal) {
+      return DEFAULT_TEAM_SEAT_POLICY;
+    }
+    // Personal workspaces from before teams were usable keep collaborating —
+    // see LEGACY_PERSONAL_WORKSPACE_CUTOFF for why this exists and why it is a
+    // fixed instant rather than a rolling window.
+    return workspace.createdAt < LEGACY_PERSONAL_WORKSPACE_CUTOFF
+      ? LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY
+      : PERSONAL_WORKSPACE_SEAT_POLICY;
   }
 
   requiredPlan(input: string | null | undefined): EntitlementPlanKey | null {

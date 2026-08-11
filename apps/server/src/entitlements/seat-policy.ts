@@ -81,6 +81,41 @@ export const PERSONAL_WORKSPACE_SEAT_POLICY: SeatPolicy = {
 };
 
 /**
+ * Personal workspaces that existed before team workspaces became usable are
+ * grandfathered onto the team allowance.
+ *
+ * Until 2026-08-11 a free team was owner-only, so "create a team and collaborate
+ * there" was advice nobody could act on — every collaborative project on .com
+ * ended up inside somebody's personal workspace. The 虎豹花园 series is the shape
+ * of it: seven projects spread across four separate personal workspaces, none of
+ * which can admit a second creator, and the owners only find out when an invitee
+ * clicks accept.
+ *
+ * Punishing that history would be punishing users for our own gap, so anything
+ * created before the cutoff keeps collaborating. New personal workspaces stay
+ * owner-only, which is what makes a team workspace worth creating — the boundary
+ * holds going forward, it just isn't applied retroactively.
+ *
+ * This is deliberately a fixed instant, not a rolling window: the exemption must
+ * stop growing the moment teams became a real option.
+ *
+ * The instant is midnight of 2026-08-12 in UTC+8, where the product and its
+ * users are — a day of grace past the seat change rather than a hard cut at the
+ * moment it shipped, so nobody who signed up the same day is caught out.
+ */
+export const LEGACY_PERSONAL_WORKSPACE_CUTOFF = new Date(
+  '2026-08-12T00:00:00+08:00',
+);
+
+/** Same allowance as a free team, so there is one seat number to reason about. */
+export const LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY: SeatPolicy = {
+  planKey: 'free',
+  includedSeats: 28,
+  maxSeats: 28,
+  seatOverageAllowed: false,
+};
+
+/**
  * Decide whether ONE more active member may occupy a seat, given the count of
  * unique users already occupying one across the workspace's projects.
  */
