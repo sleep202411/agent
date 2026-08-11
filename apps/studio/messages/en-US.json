@@ -1268,7 +1268,10 @@
         "cinematicVideo": "Makes cinematic videos with audio",
         "stableMotionVideo": "Makes stable motion videos",
         "creativeVideo": "Makes flexible creative videos"
-      }
+      },
+      "requiresPlan": "Available on the {plan} plan",
+      "locked": "Not available on your plan",
+      "membershipExpired": "Membership expired — renew to use"
     },
     "sizePresets": {
       "squareHd": "Square HD",
@@ -1476,7 +1479,13 @@
     "opExpand": "Expand",
     "opMotion": "Motion",
     "opGeneratePanorama": "Generate Panorama",
-    "opPanorama": "Panorama"
+    "opPanorama": "Panorama",
+    "lockedForOpPlan": "{op} is available on the {plan} plan",
+    "lockedForOp": "{op} isn't available on your plan",
+    "requiresPlan": "{plan} plan",
+    "unavailableOnPlan": "Not on your plan",
+    "lockedForOpExpired": "Your membership expired — renew to use {op}",
+    "membershipExpired": "Membership expired"
   },
   "canvasEditors": {
     "reset": "Reset",

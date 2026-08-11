@@ -112,6 +112,12 @@ export interface FizzAiModel {
   access?: {
     allowed?: boolean;
     reason?: string;
+    /**
+     * Minimum plan this model needs, stamped per-user by the server
+     * (`authz.service.ts#decideModelAccess`). `null`/absent = open to everyone.
+     * Present on both verdicts, so it labels a lock without a second lookup.
+     */
+    requiredPlan?: string | null;
   };
   input_schema: FizzAiInputSchema;
   parameter_policy?: Record<string, unknown>;
@@ -1133,8 +1139,49 @@ export function mergeCompatibleSettings(
   return next;
 }
 
+/**
+ * Can this user actually submit to the model? Use for anything that picks a
+ * model *on the user's behalf* — defaults, auto-select, presets, copilot.
+ */
 export function isFizzAiModelUsable(model: FizzAiModel): boolean {
   return model.enabled && model.access?.allowed !== false;
+}
+
+/**
+ * Does the model belong in a picker at all? Operator kill-switch only.
+ *
+ * These two used to be one function, so a plan gate didn't lock a model — it
+ * DELETED it from every list. That is how the catalogue vanished when a
+ * migration moved all 32 models to a paid plan: nothing errored, the models
+ * were simply gone. A gate now shows the model and disables the row, which is
+ * also the only honest way to advertise what an upgrade buys.
+ */
+export function isFizzAiModelVisible(model: FizzAiModel): boolean {
+  return model.enabled;
+}
+
+/**
+ * Why a visible model can't be run, or `null` when it can.
+ *
+ * `expired` is its own case on purpose: the server denies EVERY model to a
+ * lapsed member, so telling them to upgrade would be wrong — they already
+ * bought the tier, they need to renew it. A `null` requiredPlan on a denial
+ * that isn't expiry (the emergency denylist) still shows a lock, just without
+ * naming a tier to buy.
+ */
+export function fizzAiModelLock(
+  model: FizzAiModel
+): { requiredPlan: string | null; expired: boolean } | null {
+  if (!isFizzAiModelVisible(model) || isFizzAiModelUsable(model)) return null;
+  return {
+    requiredPlan: model.access?.requiredPlan ?? null,
+    expired: model.access?.reason === "membership_expired",
+  };
+}
+
+/** "pro" → "Pro". Plan keys are `free | basic | standard | pro | team`. */
+export function fizzAiPlanLabel(planKey: string): string {
+  return planKey.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function canvasDefaultModel(

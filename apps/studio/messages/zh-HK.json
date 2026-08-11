@@ -1268,7 +1268,10 @@
         "cinematicVideo": "音畫電影成片",
         "stableMotionVideo": "動作穩定成片",
         "creativeVideo": "創意靈活成片"
-      }
+      },
+      "requiresPlan": "需要 {plan} 方案",
+      "locked": "目前方案不可用",
+      "membershipExpired": "會員已過期，續費後可用"
     },
     "sizePresets": {
       "squareHd": "正方形 HD",
@@ -1476,7 +1479,13 @@
     "opExpand": "擴展畫面",
     "opMotion": "運動",
     "opGeneratePanorama": "生成全景",
-    "opPanorama": "全景"
+    "opPanorama": "全景",
+    "lockedForOpPlan": "{op} 需要 {plan} 方案",
+    "lockedForOp": "目前方案無法使用 {op}",
+    "requiresPlan": "需要 {plan} 方案",
+    "unavailableOnPlan": "目前方案不可用",
+    "lockedForOpExpired": "會員已過期，續費後可使用 {op}",
+    "membershipExpired": "會員已過期"
   },
   "canvasEditors": {
     "reset": "重設",

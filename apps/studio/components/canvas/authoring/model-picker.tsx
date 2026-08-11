@@ -9,6 +9,7 @@ import {
   IconBrandTiktok,
   IconCheck,
   IconCube,
+  IconLock,
   IconSearch,
   IconSparkles,
   type Icon,
@@ -16,11 +17,13 @@ import {
 import { cn } from "@/lib/utils";
 import {
   cheapestSellPoints,
+  fizzAiModelLock,
+  fizzAiPlanLabel,
   isOperationOnlyModel,
   type FizzAiCatalog,
   type FizzAiModel,
 } from "@/lib/canvas-authoring/generation-api";
-import { usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
+import { visibleModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 
 /** Pick a provider brand glyph from the model id/name. */
 function brandIcon(model: FizzAiModel): Icon {
@@ -136,7 +139,10 @@ export function ModelPicker({
   const sections = useMemo<ModelSection[]>(() => {
     // Operation-only models (Upscale / Remove BG / 720°) are reached via their
     // image-toolbar actions, not the general picker.
-    const all = (catalog ? usableModelsByModality(catalog, modality) : []).filter(
+    // Visible, not usable: a model this plan can't run stays listed and renders
+    // locked. Filtering by entitlement here is what made the catalogue look
+    // deleted rather than gated.
+    const all = (catalog ? visibleModelsByModality(catalog, modality) : []).filter(
       (m) => !isOperationOnlyModel(m) && !/hunyuan|panorama/i.test(m.id)
     );
     const q = query.trim().toLowerCase();
@@ -151,20 +157,26 @@ export function ModelPicker({
           .sort((a, b) => a.rank - b.rank || a.index - b.index)
           .map((item) => item.model)
       : all;
+    // Locked models stay in the list but sink below the ones this plan can
+    // run, so gating never pushes a usable model off the first screen.
+    const ordered = [
+      ...filtered.filter((m) => !fizzAiModelLock(m)),
+      ...filtered.filter((m) => fizzAiModelLock(m)),
+    ];
     if (q) {
       return [
         {
           id: "search",
           title: t("modelPicker.searchResults"),
           icon: IconSearch,
-          models: filtered,
+          models: ordered,
         },
       ];
     }
 
-    const featured = filtered.filter((model) => isFeaturedModel(model, selectedId));
+    const featured = ordered.filter((model) => isFeaturedModel(model, selectedId));
     const featuredIds = new Set(featured.map((model) => model.id));
-    const remaining = filtered.filter((model) => !featuredIds.has(model.id));
+    const remaining = ordered.filter((model) => !featuredIds.has(model.id));
     return [
       ...(featured.length > 0
         ? [
@@ -237,17 +249,30 @@ export function ModelPicker({
                 const cost = cheapestSellPoints(model);
                 const Brand = brandIcon(model);
                 const selected = model.id === selectedId;
-                const tagline = t(`modelPicker.taglines.${modelTaglineKey(model)}`);
+                const lock = fizzAiModelLock(model);
+                const tagline = !lock
+                  ? t(`modelPicker.taglines.${modelTaglineKey(model)}`)
+                  : lock.expired
+                    ? t("modelPicker.membershipExpired")
+                    : lock.requiredPlan
+                      ? t("modelPicker.requiresPlan", {
+                          plan: fizzAiPlanLabel(lock.requiredPlan),
+                        })
+                      : t("modelPicker.locked");
                 return (
                   <button
                     key={model.id}
                     type="button"
+                    disabled={Boolean(lock)}
+                    aria-disabled={Boolean(lock)}
                     onClick={() => {
+                      if (lock) return;
                       onSelect(model);
                       onClose();
                     }}
                     className={cn(
-                      "group block w-full rounded-xl p-2.5 text-left transition-colors hover:bg-white/[0.06]",
+                      "group block w-full rounded-xl p-2.5 text-left transition-colors",
+                      lock ? "opacity-45" : "hover:bg-white/[0.06]",
                       selected && "bg-white/[0.07]"
                     )}
                   >
@@ -262,13 +287,19 @@ export function ModelPicker({
                         </span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
-                        {cost != null && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <IconBolt className="size-3.5" stroke={1.8} />
-                            {cost}
-                          </span>
+                        {lock ? (
+                          <IconLock className="size-4 text-muted-foreground" stroke={1.8} />
+                        ) : (
+                          <>
+                            {cost != null && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <IconBolt className="size-3.5" stroke={1.8} />
+                                {cost}
+                              </span>
+                            )}
+                            {selected && <IconCheck className="size-4 text-white" stroke={2} />}
+                          </>
                         )}
-                        {selected && <IconCheck className="size-4 text-white" stroke={2} />}
                       </span>
                     </div>
                   </button>

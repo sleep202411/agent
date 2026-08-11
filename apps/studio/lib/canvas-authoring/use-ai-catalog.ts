@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   isFizzAiModelUsable,
+  isFizzAiModelVisible,
   listFizzAiCatalog,
   type FizzAiCatalog,
   type FizzAiModel,
@@ -42,11 +43,26 @@ export function modelsByModality(
   return (catalog?.models ?? []).filter((model) => model.type === modality);
 }
 
+/**
+ * Models this user can actually run. For code that CHOOSES a model —
+ * defaults, auto-select, presets, copilot tools — never for a picker list.
+ */
 export function usableModelsByModality(
   catalog: FizzAiCatalog | undefined,
   modality: StudioModality
 ): FizzAiModel[] {
   return modelsByModality(catalog, modality).filter(isFizzAiModelUsable);
+}
+
+/**
+ * Models to SHOW, including ones this user's plan can't run — those render as
+ * locked rows. Pickers use this; anything that auto-selects must not.
+ */
+export function visibleModelsByModality(
+  catalog: FizzAiCatalog | undefined,
+  modality: StudioModality
+): FizzAiModel[] {
+  return modelsByModality(catalog, modality).filter(isFizzAiModelVisible);
 }
 
 export function imageModels(catalog: FizzAiCatalog | undefined): FizzAiModel[] {

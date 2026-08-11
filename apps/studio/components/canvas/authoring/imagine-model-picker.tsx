@@ -31,6 +31,7 @@ import {
   IconCoin,
   IconCube,
   IconFrame,
+  IconLock,
   IconPin,
   IconPlayerPlay,
   IconSearch,
@@ -43,11 +44,13 @@ import { cn } from "@/lib/utils";
 import {
   cheapestSellPoints,
   enumOptions,
+  fizzAiModelLock,
+  fizzAiPlanLabel,
   isOperationOnlyModel,
   type FizzAiCatalog,
   type FizzAiModel,
 } from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
+import { useAiCatalog, visibleModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 
 /* ------------------------------------------------------------------ *
  * Brand glyph for the icon tile.
@@ -55,9 +58,15 @@ import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use
 function brandIcon(model: FizzAiModel): Icon {
   const s = `${model.id} ${model.name} ${model.family ?? ""}`.toLowerCase();
   if (s.includes("gpt") || s.includes("openai") || s.includes("dall")) return IconBrandOpenai;
-  if (s.includes("nano-banana") || s.includes("gemini") || s.includes("imagen") || s.includes("google"))
+  if (
+    s.includes("nano-banana") ||
+    s.includes("gemini") ||
+    s.includes("imagen") ||
+    s.includes("google")
+  )
     return IconBrandGoogle;
-  if (s.includes("seedance") || s.includes("seedream") || s.includes("byte")) return IconBrandTiktok;
+  if (s.includes("seedance") || s.includes("seedream") || s.includes("byte"))
+    return IconBrandTiktok;
   if (s.includes("flux")) return IconBolt;
   if (s.includes("wan") || s.includes("qwen") || s.includes("alibaba") || s.includes("bailian"))
     return IconCube;
@@ -84,7 +93,10 @@ function resolutionChip(model: FizzAiModel): string | null {
     enumOptions(model, "resolution") ??
     enumOptions(model, "aspect_ratio");
   if (!opts || opts.length === 0) return null;
-  const short = opts.map((o) => o.replace(/.*x/g, "").replace("p", "p")).filter(Boolean).slice(0, 2);
+  const short = opts
+    .map((o) => o.replace(/.*x/g, "").replace("p", "p"))
+    .filter(Boolean)
+    .slice(0, 2);
   return short.length ? short.join("-") : null;
 }
 
@@ -98,7 +110,9 @@ function durationChip(model: FizzAiModel): string | null {
 
 function hasAudio(model: FizzAiModel): boolean {
   const props = model.input_schema?.properties ?? {};
-  return Boolean((props as Record<string, unknown>).audio || (props as Record<string, unknown>).with_audio);
+  return Boolean(
+    (props as Record<string, unknown>).audio || (props as Record<string, unknown>).with_audio
+  );
 }
 
 function searchRank(model: FizzAiModel, q: string): number {
@@ -154,7 +168,9 @@ export function ImagineModelPicker({
    * tier). vendor is seeded per canonical model.
    */
   const vendors = useMemo(() => {
-    const all = catalog ? usableModelsByModality(catalog, modality) : [];
+    // Visible, not usable — see `groupedRows`. A vendor whose models are all
+    // plan-gated must still appear, or the filter silently loses a company.
+    const all = catalog ? visibleModelsByModality(catalog, modality) : [];
     const usable = all.filter((m) => !isOperationOnlyModel(m) && !/hunyuan|panorama/i.test(m.id));
     const seen = new Set<string>();
     for (const m of usable) {
@@ -167,7 +183,9 @@ export function ImagineModelPicker({
   // Rows grouped by vendor, alphabetised, so the list renders in stable
   // per-company sections (like imagine's provider sections).
   const groupedRows = useMemo(() => {
-    const all = catalog ? usableModelsByModality(catalog, modality) : [];
+    // Visible, not usable: models this plan can't run stay listed and render
+    // locked, sorted to the bottom of their vendor bucket.
+    const all = catalog ? visibleModelsByModality(catalog, modality) : [];
     const usable = all.filter((m) => !isOperationOnlyModel(m) && !/hunyuan|panorama/i.test(m.id));
     const q = query.trim().toLowerCase();
     const filtered = usable.filter((m) => {
@@ -182,9 +200,12 @@ export function ImagineModelPicker({
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key)!.push(m);
     }
-    // Sort within each bucket: pinned → recommended → name.
+    // Sort within each bucket: usable → pinned → recommended → name.
     for (const list of buckets.values()) {
       list.sort((a, b) => {
+        const la = fizzAiModelLock(a) ? 1 : 0;
+        const lb = fizzAiModelLock(b) ? 1 : 0;
+        if (la !== lb) return la - lb;
         const pa = pinned.has(a.id) ? 0 : 1;
         const pb = pinned.has(b.id) ? 0 : 1;
         if (pa !== pb) return pa - pb;
@@ -232,7 +253,7 @@ export function ImagineModelPicker({
         // No role="dialog" here: when embedded, a Radix DialogContent supplies that
         // role + label; nested dialogs are an a11y anti-pattern.
         "flex h-[630px] w-[600px] flex-col overflow-hidden rounded-2xl border border-border bg-background p-2 text-foreground shadow-2xl",
-        "animate-in fade-in-0 zoom-in-95 duration-150",
+        "animate-in fade-in-0 zoom-in-95 duration-150"
       )}
     >
       {/* Header */}
@@ -261,13 +282,16 @@ export function ImagineModelPicker({
             className={cn(
               "flex h-8 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors",
               "ring-1 ring-inset ring-border hover:ring-foreground/20",
-              (vendorFilter || providersOpen) && "bg-muted text-foreground",
+              (vendorFilter || providersOpen) && "bg-muted text-foreground"
             )}
           >
-            <span className="whitespace-nowrap">
-              {vendorFilter ?? "Providers"}
-            </span>
-            <IconSparkles className={cn("ml-auto size-4 shrink-0 transition-transform", providersOpen && "rotate-180")} />
+            <span className="whitespace-nowrap">{vendorFilter ?? "Providers"}</span>
+            <IconSparkles
+              className={cn(
+                "ml-auto size-4 shrink-0 transition-transform",
+                providersOpen && "rotate-180"
+              )}
+            />
           </button>
           {providersOpen && (
             <div className="absolute left-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-xl">
@@ -279,7 +303,7 @@ export function ImagineModelPicker({
                 }}
                 className={cn(
                   "block w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-                  !vendorFilter && "bg-muted",
+                  !vendorFilter && "bg-muted"
                 )}
               >
                 All
@@ -294,7 +318,7 @@ export function ImagineModelPicker({
                   }}
                   className={cn(
                     "block w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-                    vendorFilter === v && "bg-muted",
+                    vendorFilter === v && "bg-muted"
                   )}
                 >
                   {v}
@@ -313,7 +337,7 @@ export function ImagineModelPicker({
             className={cn(
               "h-8 w-full rounded-lg bg-transparent pl-8 pr-2.5 text-sm outline-none",
               "ring-1 ring-inset ring-border placeholder:text-muted-foreground",
-              "focus-visible:ring-foreground",
+              "focus-visible:ring-foreground"
             )}
           />
         </div>
@@ -332,81 +356,98 @@ export function ImagineModelPicker({
               <span>{section.label}</span>
             </div>
             {section.models.map((model) => {
-          const Brand = brandIcon(model);
-          const cost = cheapestSellPoints(model);
-          const selected = model.id === selectedId;
-          const isPinned = pinned.has(model.id);
-          const badge = model.ui_policy?.recommended ? "PRO" : null;
-          const fm = frameMode(model);
-          const res = resolutionChip(model);
-          const dur = durationChip(model);
-          const audio = hasAudio(model);
-          const tagline = model.description ?? model.ui_policy?.group ?? "—";
-          return (
-            <div key={model.id} className="group/model-row relative" data-state="closed">
-              <button
-                type="button"
-                onClick={() => onSelect?.(model)}
-                className={cn(
-                  // imagine: row resting bg = fill-primary-variant = neutral-100 (#171717),
-                  // IDENTICAL to the modal's surface-primary-variant. So the row is
-                  // flush with the panel — no seam, no separate card. Hover lifts one
-                  // tier to neutral-90 (#212121) = studio's --card (oklch 0.215 ≈ #1F1F1F).
-                  "flex w-full cursor-pointer items-start gap-3 rounded-xl bg-background p-2 pr-4 text-left transition-colors",
-                  "hover:bg-card",
-                )}
-              >
-                {/* Icon tile: imagine bg-fill-primary-variant + border-border-secondary.
-                    Same flush tone as the row (neutral-100); only the hairline border sets it off. */}
-                <div className="relative shrink-0">
-                  <span className="flex size-10 items-center justify-center overflow-hidden rounded-lg border border-border bg-background [&_svg]:size-6">
-                    <Brand className="size-6 text-foreground/80" />
-                  </span>
-                </div>
-
-                {/* Text body */}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  {/* Name + PRO pill */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                      {model.name}
-                    </span>
-                    {badge && (
-                      <span className="inline-flex w-fit shrink-0 items-center rounded-full bg-primary/15 px-1 text-[0.625rem] font-medium text-primary">
-                        {badge}
-                      </span>
+              const Brand = brandIcon(model);
+              const cost = cheapestSellPoints(model);
+              const selected = model.id === selectedId;
+              const isPinned = pinned.has(model.id);
+              const badge = model.ui_policy?.recommended ? "PRO" : null;
+              const fm = frameMode(model);
+              const res = resolutionChip(model);
+              const dur = durationChip(model);
+              const audio = hasAudio(model);
+              const lock = fizzAiModelLock(model);
+              const tagline = model.description ?? model.ui_policy?.group ?? "—";
+              return (
+                <div key={model.id} className="group/model-row relative" data-state="closed">
+                  <button
+                    type="button"
+                    disabled={Boolean(lock)}
+                    aria-disabled={Boolean(lock)}
+                    onClick={() => {
+                      if (lock) return;
+                      onSelect?.(model);
+                    }}
+                    className={cn(
+                      // imagine: row resting bg = fill-primary-variant = neutral-100 (#171717),
+                      // IDENTICAL to the modal's surface-primary-variant. So the row is
+                      // flush with the panel — no seam, no separate card. Hover lifts one
+                      // tier to neutral-90 (#212121) = studio's --card (oklch 0.215 ≈ #1F1F1F).
+                      "flex w-full cursor-pointer items-start gap-3 rounded-xl bg-background p-2 pr-4 text-left transition-colors",
+                      lock ? "opacity-45" : "hover:bg-card"
                     )}
-                  </div>
-                  {/* Tagline */}
-                  <span className="truncate text-xs text-muted-foreground/70">{tagline}</span>
-                  {/* Chips row: flex flex-wrap gap-1 */}
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {cost != null && <Chip icon={IconCoin}>{cost} credits</Chip>}
-                    {fm && <Chip icon={IconPlayerPlay}>{fm}</Chip>}
-                    {res && <Chip icon={IconFrame}>{res}</Chip>}
-                    {audio && <Chip icon={IconVolume}>Audio</Chip>}
-                    {dur && <Chip icon={IconClock}>{dur}</Chip>}
-                  </div>
+                  >
+                    {/* Icon tile: imagine bg-fill-primary-variant + border-border-secondary.
+                    Same flush tone as the row (neutral-100); only the hairline border sets it off. */}
+                    <div className="relative shrink-0">
+                      <span className="flex size-10 items-center justify-center overflow-hidden rounded-lg border border-border bg-background [&_svg]:size-6">
+                        <Brand className="size-6 text-foreground/80" />
+                      </span>
+                    </div>
+
+                    {/* Text body */}
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      {/* Name + PRO pill */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                          {model.name}
+                        </span>
+                        {badge && (
+                          <span className="inline-flex w-fit shrink-0 items-center rounded-full bg-primary/15 px-1 text-[0.625rem] font-medium text-primary">
+                            {badge}
+                          </span>
+                        )}
+                      </div>
+                      {/* Tagline */}
+                      <span className="truncate text-xs text-muted-foreground/70">{tagline}</span>
+                      {/* Chips row: flex flex-wrap gap-1 */}
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {lock && (
+                          <Chip icon={IconLock}>
+                            {lock.expired
+                              ? "Membership expired"
+                              : lock.requiredPlan
+                                ? `${fizzAiPlanLabel(lock.requiredPlan)} plan`
+                                : "Unavailable on your plan"}
+                          </Chip>
+                        )}
+                        {cost != null && <Chip icon={IconCoin}>{cost} credits</Chip>}
+                        {fm && <Chip icon={IconPlayerPlay}>{fm}</Chip>}
+                        {res && <Chip icon={IconFrame}>{res}</Chip>}
+                        {audio && <Chip icon={IconVolume}>Audio</Chip>}
+                        {dur && <Chip icon={IconClock}>{dur}</Chip>}
+                      </div>
+                    </div>
+
+                    {selected && !lock && (
+                      <IconCheck className="mt-1 size-4 shrink-0 text-foreground" />
+                    )}
+                  </button>
+
+                  {/* Pin (top-right, hover) */}
+                  <button
+                    type="button"
+                    onClick={() => togglePin(model.id)}
+                    aria-label="Pin model"
+                    className={cn(
+                      "absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground",
+                      "group-hover/model-row:opacity-100",
+                      isPinned && "opacity-100 text-foreground"
+                    )}
+                  >
+                    <IconPin className={cn("size-3.5", isPinned && "fill-current")} />
+                  </button>
                 </div>
-
-                {selected && <IconCheck className="mt-1 size-4 shrink-0 text-foreground" />}
-              </button>
-
-              {/* Pin (top-right, hover) */}
-              <button
-                type="button"
-                onClick={() => togglePin(model.id)}
-                aria-label="Pin model"
-                className={cn(
-                  "absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground",
-                  "group-hover/model-row:opacity-100",
-                  isPinned && "opacity-100 text-foreground",
-                )}
-              >
-                <IconPin className={cn("size-3.5", isPinned && "fill-current")} />
-              </button>
-            </div>
-          );
+              );
             })}
           </section>
         ))}
