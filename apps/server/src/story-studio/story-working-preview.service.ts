@@ -185,7 +185,6 @@ export class StoryWorkingPreviewService {
     );
     const prepared = clipNodes.map((node) =>
       prepareWorkingPreviewVideo(
-        project.workspaceId,
         node.nodeId,
         selectionByNodeId.get(node.nodeId) ?? null,
         this.assetUrls,
@@ -278,7 +277,6 @@ export class StoryWorkingPreviewService {
 }
 
 function prepareWorkingPreviewVideo(
-  workspaceId: string,
   graphNodeId: string,
   selection: WorkingPreviewSelection | null,
   assetUrls: MediaAssetUrlResolverService,
@@ -323,23 +321,32 @@ function prepareWorkingPreviewVideo(
   } else {
     const source = selection.currentAsset;
     const variant = selection.currentVariant;
-    if (
+    // Workspace is deliberately not compared here: uploads record none, so an
+    // uploaded cut sitting ready on the canvas was reported as "not a ready,
+    // usable asset in this workspace" — a sentence with no actionable part.
+    // The reason, when there is one, now names itself.
+    const ineligible =
       source.id !== selection.currentAssetId ||
-      source.workspaceId !== workspaceId ||
-      source.kind !== MediaAssetKind.video ||
-      source.status !== MediaAssetStatus.ready ||
-      source.deletedAt !== null ||
-      source.moderationStatus === MediaAssetModerationStatus.blocked ||
       variant.id !== selection.currentVariantId ||
-      variant.assetId !== source.id ||
-      variant.status !== MediaAssetVariantStatus.ready ||
-      variant.deletedAt !== null
-    ) {
+      variant.assetId !== source.id
+        ? 'no longer matches the selected asset and variant'
+        : source.kind !== MediaAssetKind.video
+          ? `is a ${source.kind} asset, not a video`
+          : source.deletedAt !== null || variant.deletedAt !== null
+            ? 'has been deleted'
+            : source.moderationStatus === MediaAssetModerationStatus.blocked
+              ? 'was blocked by moderation'
+              : source.status !== MediaAssetStatus.ready
+                ? `is still ${source.status}`
+                : variant.status !== MediaAssetVariantStatus.ready
+                  ? `has a variant that is still ${variant.status}`
+                  : null;
+    if (ineligible) {
       diagnostics.push(
         previewDiagnostic(
           'error',
           'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-          `Graph clip ${graphNodeId} current video is not a ready, usable asset in this workspace.`,
+          `Graph clip ${graphNodeId} current video ${ineligible}.`,
           'asset',
           source.id,
         ),
