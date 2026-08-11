@@ -266,8 +266,8 @@ agentOsServerSecrets:
 # games — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
 # creds — never pour those into a public-facing admin console).
-# PREREQUISITE: create `news-api-token` in Key Vault BEFORE deploying (CSI is
-# fail-closed). On non-Azure clusters (CN/ACK) azure.enabled=false → inert.
+# PREREQUISITE: create `java-admin-api-token` in Key Vault BEFORE deploying (CSI
+# is fail-closed). On non-Azure clusters (CN/ACK) azure.enabled=false → inert.
 adminUiSecrets:
   projectedName: fizzdragon-adminui-secrets
   mapping:
