@@ -1,3 +1,6 @@
+import { sha256 } from "@noble/hashes/sha256";
+import { bytesToHex } from "@noble/hashes/utils";
+
 import {
   ExperienceJsonValueSchema,
   ExperienceThemeConfigSchema,
@@ -6,7 +9,7 @@ import {
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
 
-import { resolveAssetUrl, webBaseUrl } from "@/config";
+import { resolveExperienceAssetUrl } from "@/config";
 
 export type ExperienceThemeLoader = (
   manifest: ExperienceRuntimeManifest,
@@ -24,29 +27,18 @@ export async function loadExperienceTheme(
   if (!asset || asset.kind !== "data" || asset.format !== "json") {
     throw new Error(`Theme ${manifest.theme.themeId} has no JSON configuration asset`);
   }
-  const uri = absolutizeThemeUri(asset.uri);
+  const uri = resolveExperienceAssetUrl(asset.uri);
   const response = await fetch(uri, { signal });
   if (!response.ok) {
     throw new Error(`Theme ${manifest.theme.themeId} could not be loaded (${response.status})`);
   }
   const input: unknown = await response.json();
   const json = ExperienceJsonValueSchema.parse(input);
-  const digest = await sha256(canonicalizeExperienceJson(json));
+  // Hermes has no WebCrypto, so this cannot use `crypto.subtle` like the web
+  // player does. @noble/hashes is pure JS — no native module, no rebuild.
+  const digest = bytesToHex(sha256(canonicalizeExperienceJson(json)));
   if (digest !== asset.sha256) {
     throw new Error(`Theme ${manifest.theme.themeId} failed integrity validation`);
   }
   return ExperienceThemeConfigSchema.parse(json);
-}
-
-function absolutizeThemeUri(uri: string): string {
-  if (/^https?:\/\//i.test(uri)) return uri;
-  if (uri.startsWith("//")) return `https:${uri}`;
-  if (uri.startsWith("/")) return resolveAssetUrl(uri, webBaseUrl);
-  return uri;
-}
-
-async function sha256(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

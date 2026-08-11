@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Carousel from "react-native-reanimated-carousel";
 
 import { ThemedText } from "@/components/themed-text";
+import type { AppLocale } from "@/config";
 import {
   ChipRail,
   EmptyState,
@@ -35,7 +36,7 @@ import {
 import type { Genre, IpSummary } from "@/data/types";
 import { navigateToPlay } from "@/features/experience-player";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { getLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
 // Featured banner height — single source for the carousel slot, the card style,
@@ -43,6 +44,32 @@ import { toHref } from "@/lib/navigation";
 const FEATURED_HEIGHT = 200;
 const PAGE_SIZE = 30;
 const GAMES_RAIL_SIZE = 10;
+
+/**
+ * Last successful all-genres load, kept outside the tree so the tab remount
+ * after a landscape play session restores the page instead of re-skeletoning.
+ * A background refetch still runs on every mount and swaps the lists in place.
+ */
+type HomeSnapshot = {
+  locale: AppLocale;
+  discovery: IpDiscovery;
+  games: ExperienceGameSummary[];
+  gridIps: IpSummary[];
+  genres: Genre[];
+  nextCursor: string | null;
+};
+
+let homeSnapshot: HomeSnapshot | undefined;
+let homeScrollY = 0;
+
+function readHomeSnapshot(): HomeSnapshot | undefined {
+  // Copy stays locale-bound; a stale-language restore is worse than a skeleton.
+  if (homeSnapshot && homeSnapshot.locale !== getLocale()) {
+    homeSnapshot = undefined;
+    homeScrollY = 0;
+  }
+  return homeSnapshot;
+}
 
 function openIp(id: string) {
   router.push(toHref(`/ip/${id}`));
@@ -60,16 +87,20 @@ export default function IpDiscoveryScreen() {
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const cardWidth = Math.floor((featuredWidth - Spacing.three) / 2);
 
-  // Featured carousel + trending rail come from the discovery placements.
-  const [discovery, setDiscovery] = useState<IpDiscovery>();
-  // Published interactive films (影游) for the home rail — failures stay quiet.
-  const [games, setGames] = useState<ExperienceGameSummary[]>([]);
-  // The "All IPs" grid is its own cursor-paginated catalog (infinite scroll).
-  const [gridIps, setGridIps] = useState<IpSummary[]>([]);
-  const [genres, setGenres] = useState<Genre[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [restored] = useState(readHomeSnapshot);
+  // Only meaningful alongside a restore — a cold mount always starts at the top.
+  const [initialScrollY] = useState(() => (restored ? homeScrollY : 0));
 
-  const [loading, setLoading] = useState(true);
+  // Featured carousel + trending rail come from the discovery placements.
+  const [discovery, setDiscovery] = useState<IpDiscovery | undefined>(restored?.discovery);
+  // Published interactive films (影游) for the home rail — failures stay quiet.
+  const [games, setGames] = useState<ExperienceGameSummary[]>(restored?.games ?? []);
+  // The "All IPs" grid is its own cursor-paginated catalog (infinite scroll).
+  const [gridIps, setGridIps] = useState<IpSummary[]>(restored?.gridIps ?? []);
+  const [genres, setGenres] = useState<Genre[]>(restored?.genres ?? []);
+  const [nextCursor, setNextCursor] = useState<string | null>(restored?.nextCursor ?? null);
+
+  const [loading, setLoading] = useState(restored === undefined);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
@@ -77,7 +108,7 @@ export default function IpDiscoveryScreen() {
   const [featuredIndex, setFeaturedIndex] = useState(0);
   // Bumped when a mutation elsewhere (e.g. blocking an IP) invalidates lists.
   const browseVersion = useBrowseVersion();
-  const hasDataRef = useRef(false);
+  const hasDataRef = useRef(restored !== undefined);
   // Stops a fling from queuing a second page-2 fetch before the first resolves.
   const loadingMoreRef = useRef(false);
 
@@ -106,7 +137,7 @@ export default function IpDiscoveryScreen() {
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
-      const [data, , gameList] = await Promise.all([
+      const [data, page, gameList] = await Promise.all([
         getIpDiscovery(),
         loadGridFirstPage(selectedGenreCode),
         listPublishedInteractiveFilms({ page: 1, pageSize: GAMES_RAIL_SIZE }).catch(
@@ -117,7 +148,19 @@ export default function IpDiscoveryScreen() {
       setDiscovery(data);
       setGames(gameList);
       // Prefer the discovery taxonomy (full list) once it lands.
+      const taxonomy = data.genres.length ? data.genres : page.genres;
       if (data.genres.length) setGenres(data.genres);
+      // Only the unfiltered view is restorable — a remount always starts there.
+      if (!selectedGenreCode) {
+        homeSnapshot = {
+          locale: getLocale(),
+          discovery: data,
+          games: gameList,
+          gridIps: page.items,
+          genres: taxonomy,
+          nextCursor: page.nextCursor,
+        };
+      }
     } catch (loadError) {
       // A failed background refetch keeps the list we already have; the
       // full-screen error is reserved for an empty first load.
@@ -329,6 +372,12 @@ export default function IpDiscoveryScreen() {
         columnWrapperStyle={styles.column}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
+        contentOffset={{ x: 0, y: initialScrollY }}
+        onScroll={(event) => {
+          // Only the unfiltered grid is restorable, so only its offset is kept.
+          homeScrollY = selectedGenreCode ? 0 : event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={100}
         contentContainerStyle={[
           styles.listContent,
           {

@@ -17,7 +17,6 @@ import {
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
-  ExperienceCoreVideoRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
   type ExperienceGraphNode,
   type ExperienceImageAsset,
@@ -27,7 +26,7 @@ import {
 } from "@repo/shared/experience-runtime";
 
 import { ThemedText } from "@/components/themed-text";
-import { webBaseUrl, resolveAssetUrl } from "@/config";
+import { resolveExperienceAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
@@ -37,7 +36,9 @@ import {
   type ExperienceThemeLoader,
 } from "./experience-theme-loader";
 import { createExperienceRuntime } from "./experience-runtime-host";
+import { ExperienceVideoRenderer } from "./experience-video-renderer";
 import { localize } from "./localize";
+import { useExperiencePreload } from "./use-experience-preload";
 
 const START_ACCENT = EXPERIENCE_START_ACCENT;
 export interface ExperiencePlayerProps {
@@ -50,8 +51,7 @@ export interface ExperiencePlayerProps {
 }
 
 /**
- * Phase B host: engine + start/choices/text/fixed-clock. Video scenes expose an
- * "advance clip" control until expo-video lands in Phase C.
+ * Native experience host: engine + cinematic start + expo-video playback.
  */
 export function ExperiencePlayer({
   runtime,
@@ -150,6 +150,7 @@ function ActiveExperienceRuntimePlayer({
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const preload = useExperiencePreload(manifest);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
@@ -163,13 +164,15 @@ function ActiveExperienceRuntimePlayer({
     [coverUrl, manifest]
   );
   const [coverIndex, setCoverIndex] = useState(0);
+  const [coverCandidatesKey, setCoverCandidatesKey] = useState(coverCandidates);
+  // Adjust during render — an effect that only resets state is a cascading
+  // render the React Compiler rejects (react-hooks/set-state-in-effect).
+  if (coverCandidates !== coverCandidatesKey) {
+    setCoverCandidatesKey(coverCandidates);
+    setCoverIndex(0);
+  }
   const activeCoverUri =
     coverIndex < coverCandidates.length ? coverCandidates[coverIndex] : undefined;
-
-  // Reset cover attempts when the release changes.
-  useEffect(() => {
-    setCoverIndex(0);
-  }, [coverCandidates]);
 
   const applyResult = useCallback((result: ExperienceEventQueueResult) => {
     setRuntimeState(result.state);
@@ -337,6 +340,11 @@ function ActiveExperienceRuntimePlayer({
     const summary = manifest.metadata.summary
       ? localize(manifest.metadata.summary, locale, defaultLocale)
       : null;
+    // Floor percent so 100% never shows while a clip is still loading (same as web).
+    const mediaLoading = preload.total > 0 && !preload.done;
+    const loadingPercent = mediaLoading ? Math.floor((preload.loaded / preload.total) * 100) : null;
+    const loadingMediaLabel =
+      loadingPercent != null ? `${copy.loadingMedia} ${loadingPercent}%` : null;
     return (
       <ExperienceStartShell
         eyebrow={copy.interactiveFilm}
@@ -345,7 +353,9 @@ function ActiveExperienceRuntimePlayer({
         coverUri={activeCoverUri}
         surface={surface}
         ctaLabel={starting ? copy.starting : copy.start}
-        ctaDisabled={starting}
+        ctaDisabled={starting || mediaLoading}
+        loadingMediaLabel={loadingMediaLabel}
+        loadingMediaPercent={loadingPercent}
         onPressCta={handleStart}
         onCoverError={() => setCoverIndex((index) => index + 1)}
       />
@@ -353,26 +363,28 @@ function ActiveExperienceRuntimePlayer({
   }
 
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={styles.playPad}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={styles.stage}>
       {visibleRenderers.map((renderer) => (
-        <RendererPanel
+        <View
           key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
-          manifest={manifest}
-          renderer={renderer}
-          runtimeState={runtimeState}
-          open={openRendererIds.has(renderer.instanceId)}
-          locale={locale}
-          copy={copy}
-          accent={accent}
-          surface={surface}
-          onOutcome={emitOutcome}
-        />
+          style={[styles.rendererLayer, { zIndex: renderer.layer }]}
+          pointerEvents="box-none"
+        >
+          <RendererPanel
+            manifest={manifest}
+            renderer={renderer}
+            runtimeState={runtimeState}
+            open={openRendererIds.has(renderer.instanceId)}
+            locale={locale}
+            copy={copy}
+            accent={accent}
+            onOutcome={emitOutcome}
+            onRuntimeError={setRuntimeError}
+            onTimelineTimeMs={advanceTimeline}
+          />
+        </View>
       ))}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -384,8 +396,9 @@ function RendererPanel({
   locale,
   copy,
   accent,
-  surface,
   onOutcome,
+  onRuntimeError,
+  onTimelineTimeMs,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -394,31 +407,26 @@ function RendererPanel({
   locale: string;
   copy: ExperiencePlayerCopy;
   accent: string;
-  surface: string;
   onOutcome: (
     instanceId: string,
     outcomeType: string,
     payload?: Record<string, never> | { choiceId: string }
   ) => void;
+  onRuntimeError: (message: string) => void;
+  onTimelineTimeMs: (timeMs: number) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
 
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
-    const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
-    const empty = parsed.success && parsed.data.sequence.length === 0;
     return (
-      <View style={[styles.panel, { backgroundColor: surface }]}>
-        {empty ? (
-          <ThemedText type="small" style={styles.lightMuted}>
-            {copy.emptySequence}
-          </ThemedText>
-        ) : null}
-        <PrimaryButton
-          label={copy.advanceClip}
-          accent={accent}
-          onPress={() => onOutcome(renderer.instanceId, "media-ended", {})}
-        />
-      </View>
+      <ExperienceVideoRenderer
+        manifest={manifest}
+        renderer={renderer}
+        copy={copy}
+        onTimelineTimeMs={onTimelineTimeMs}
+        onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
+        onRuntimeError={onRuntimeError}
+      />
     );
   }
 
@@ -427,7 +435,11 @@ function RendererPanel({
     const textTitle = config.title ? localize(config.title, locale, defaultLocale) : null;
     const body = localize(config.body, locale, defaultLocale);
     return (
-      <View style={[styles.panel, { backgroundColor: surface }]}>
+      <ScrollView
+        style={styles.textOverlay}
+        contentContainerStyle={styles.textOverlayContent}
+        keyboardShouldPersistTaps="handled"
+      >
         {textTitle ? (
           <ThemedText type="smallBold" style={styles.lightText}>
             {textTitle}
@@ -443,7 +455,7 @@ function RendererPanel({
             onPress={() => onOutcome(renderer.instanceId, "text-completed", {})}
           />
         ) : null}
-      </View>
+      </ScrollView>
     );
   }
 
@@ -460,8 +472,8 @@ function RendererPanel({
         })
     );
     return (
-      <View style={[styles.panel, { backgroundColor: surface }]}>
-        <ThemedText type="smallBold" style={styles.lightText}>
+      <View style={styles.choiceOverlay} pointerEvents="box-none">
+        <ThemedText type="smallBold" style={styles.choicePrompt}>
           {localize(config.prompt, locale, defaultLocale)}
         </ThemedText>
         {choices.length === 0 ? (
@@ -555,10 +567,8 @@ function resolveCoverCandidates(
 
 /** Root-relative theme/cover paths are web-hosted; native fetch needs an absolute URL. */
 function absolutizeAssetUri(uri: string): string | undefined {
-  if (/^https?:\/\//i.test(uri)) return uri;
-  if (uri.startsWith("//")) return `https:${uri}`;
-  if (uri.startsWith("/")) return resolveAssetUrl(uri, webBaseUrl);
-  return undefined;
+  const resolved = resolveExperienceAssetUrl(uri);
+  return resolved || undefined;
 }
 
 function themeColor(theme: ExperienceThemeConfig | null, key: string, fallback: string): string {
@@ -599,16 +609,37 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.three,
   },
-  playPad: {
-    padding: Spacing.four,
-    gap: Spacing.two,
-    paddingBottom: Spacing.seven,
+  stage: {
+    flex: 1,
+    backgroundColor: "#000000",
   },
-  panel: {
-    marginTop: Spacing.three,
-    borderRadius: 12,
-    padding: Spacing.three,
+  rendererLayer: {
+    ...StyleSheet.absoluteFill,
+  },
+  textOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  textOverlayContent: {
+    flexGrow: 1,
+    padding: Spacing.five,
     gap: Spacing.two,
+    justifyContent: "center",
+  },
+  choiceOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.seven,
+    paddingBottom: Spacing.five,
+    gap: Spacing.two,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  choicePrompt: {
+    color: "#FFFFFF",
+    textAlign: "center",
   },
   button: {
     minHeight: 48,

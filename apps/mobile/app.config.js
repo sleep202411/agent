@@ -269,6 +269,13 @@ module.exports = ({ config }) => {
       "expo-router",
       "expo-asset",
       "expo-font",
+      [
+        "expo-dev-client",
+        {
+          launchMode: "most-recent",
+        },
+      ],
+      "expo-file-system",
       "expo-image",
       "expo-localization",
       "expo-secure-store",

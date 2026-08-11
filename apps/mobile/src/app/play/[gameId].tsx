@@ -26,15 +26,16 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Play route boot: short black gate only while locking landscape (hides the
- * portrait flash). Once landscape, show the start shell from list preview and
- * load the manifest behind a disabled CTA — not a long black wait.
+ * Play route boot: black gate while lockAsync rotates to landscape on enter,
+ * and again while restoring portrait on leave (usePreventRemove) before pop.
+ * Orientation is lockAsync-only — Stack orientation does not drive iOS rotation
+ * reliably with react-native-screens / Dev Client.
  */
 export default function PlayGameScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const insets = useSafeAreaInsets();
-  const { landscapeReady } = usePlayScreenOrientation();
+  const { landscapeReady, exiting } = usePlayScreenOrientation();
   const params = useLocalSearchParams<{
     gameId?: string | string[];
     chapter?: string | string[];
@@ -60,6 +61,7 @@ export default function PlayGameScreen() {
       interactiveFilm: t("play.interactiveFilm"),
       starting: t("play.starting"),
       start: t("play.start"),
+      loadingMedia: t("play.loadingMedia"),
       endingEyebrow: t("play.endingEyebrow"),
       unknownEnding: t("play.unknownEnding"),
       playAgain: t("play.playAgain"),
@@ -67,8 +69,8 @@ export default function PlayGameScreen() {
       restart: t("play.restart"),
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
-      advanceClip: t("play.advanceClip"),
       emptySequence: t("play.emptySequence"),
+      mediaError: (assetId: string) => t("play.mediaError").replace("{assetId}", assetId),
     }),
     [t]
   );
@@ -78,8 +80,8 @@ export default function PlayGameScreen() {
   }, []);
 
   useEffect(() => {
-    // Lock landscape first, then fetch — locking mid-request cancels Expo
-    // networking on iOS (FetchRequestCanceledException).
+    // Wait for landscape lock before fetch — orientation mid-request can
+    // cancel Expo networking on iOS (FetchRequestCanceledException).
     if (!landscapeReady) return;
 
     let cancelled = false;
@@ -127,11 +129,15 @@ export default function PlayGameScreen() {
           headerTitle: "",
           headerTintColor: "#FFFFFF",
           headerBackButtonDisplayMode: "minimal",
+          // Required with usePreventRemove on native-stack (see RN screens / RN nav docs).
+          headerBackButtonMenuEnabled: false,
+          gestureEnabled: false,
+          fullScreenGestureEnabled: false,
         }}
       />
 
-      {/* Black only covers the orientation lock window — not the network wait. */}
-      {!landscapeReady ? (
+      {/* Black covers enter/leave orientation windows — not the network wait. */}
+      {!landscapeReady || exiting ? (
         <View style={styles.blackGate} />
       ) : published && !error ? (
         <View style={styles.body}>

@@ -19,6 +19,10 @@ export interface ExperienceStartShellProps {
   ctaDisabled?: boolean;
   /** Small in-button spinner while manifest/bootstrap is still running. */
   ctaBusy?: boolean;
+  /** e.g. "Loading footage 42%" — shown while video clips preload before start. */
+  loadingMediaLabel?: string | null;
+  /** 0–100 while catalogue preload is in progress; omit when idle / done. */
+  loadingMediaPercent?: number | null;
   onPressCta?: () => void;
   /** Parent can advance to the next cover candidate. */
   onCoverError?: () => void;
@@ -37,9 +41,16 @@ export function ExperienceStartShell({
   ctaLabel,
   ctaDisabled,
   ctaBusy,
+  loadingMediaLabel,
+  loadingMediaPercent,
   onPressCta,
   onCoverError,
 }: ExperienceStartShellProps) {
+  const showMediaProgress =
+    loadingMediaLabel != null || (loadingMediaPercent != null && loadingMediaPercent >= 0);
+  const barWidth =
+    loadingMediaPercent != null ? Math.max(0, Math.min(100, loadingMediaPercent)) : null;
+
   return (
     <View style={styles.startScreen}>
       <View style={[styles.coverFill, { backgroundColor: surface }]} />
@@ -66,6 +77,25 @@ export function ExperienceStartShell({
           <Text style={styles.startSummary} numberOfLines={5}>
             {summary}
           </Text>
+        ) : null}
+        {showMediaProgress ? (
+          <View
+            style={styles.loadingBlock}
+            accessibilityRole="progressbar"
+            accessibilityValue={
+              barWidth != null ? { min: 0, max: 100, now: Math.floor(barWidth) } : undefined
+            }
+            accessibilityLabel={loadingMediaLabel ?? undefined}
+          >
+            {barWidth != null ? (
+              <View style={styles.loadingTrack}>
+                <View style={[styles.loadingFill, { width: `${barWidth}%` }]} />
+              </View>
+            ) : null}
+            {loadingMediaLabel ? (
+              <Text style={styles.loadingMedia}>{loadingMediaLabel}</Text>
+            ) : null}
+          </View>
         ) : null}
         <Pressable
           accessibilityRole="button"
@@ -138,6 +168,30 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontSize: 14,
     maxWidth: 420,
+  },
+  loadingBlock: {
+    width: "100%",
+    maxWidth: 280,
+    gap: 8,
+    alignItems: "center",
+  },
+  loadingTrack: {
+    width: "100%",
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    overflow: "hidden",
+  },
+  loadingFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.7)",
+  },
+  loadingMedia: {
+    color: "rgba(255,255,255,0.52)",
+    textAlign: "center",
+    fontSize: 13,
+    fontWeight: "600",
   },
   startButtonHit: {
     marginTop: Spacing.three,

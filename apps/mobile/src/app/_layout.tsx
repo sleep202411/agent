@@ -8,6 +8,7 @@ import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
 import { lockAppPortrait } from "@/hooks/use-screen-orientation";
+import { PlayOrientationExitCover } from "@/components/play-orientation-exit-cover";
 import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
@@ -46,7 +47,7 @@ export default function RootLayout() {
         <AuthProvider>
           <AnimatedSplashOverlay />
           <MobileAppFrame>
-            <Stack screenOptions={{ headerShown: false, orientation: "portrait" }}>
+            <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               {/* Login / register / reset — a full-page route the gate pushes
                   (or replaces) onto the stack; always skippable. */}
@@ -60,7 +61,13 @@ export default function RootLayout() {
               <Stack.Screen name="games" options={detailHeader} />
               <Stack.Screen
                 name="play/[gameId]"
-                options={{ ...detailHeader, orientation: "landscape" }}
+                options={{
+                  ...detailHeader,
+                  animation: "fade",
+                  headerBackButtonMenuEnabled: false,
+                  gestureEnabled: false,
+                  fullScreenGestureEnabled: false,
+                }}
               />
               <Stack.Screen name="ip/[id]" options={detailHeader} />
               <Stack.Screen name="crew/[id]" options={detailHeader} />
@@ -69,6 +76,7 @@ export default function RootLayout() {
             </Stack>
           </MobileAppFrame>
           <ConsentGate />
+          <PlayOrientationExitCover />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
@@ -79,5 +87,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+    overflow: "hidden",
   },
 });

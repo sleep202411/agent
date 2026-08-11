@@ -4,6 +4,7 @@ export interface ExperiencePlayerCopy {
   interactiveFilm: string;
   starting: string;
   start: string;
+  loadingMedia: string;
   endingEyebrow: string;
   unknownEnding: string;
   playAgain: string;
@@ -11,6 +12,6 @@ export interface ExperiencePlayerCopy {
   restart: string;
   noVisibleChoices: string;
   continue: string;
-  advanceClip: string;
   emptySequence: string;
+  mediaError: (assetId: string) => string;
 }
