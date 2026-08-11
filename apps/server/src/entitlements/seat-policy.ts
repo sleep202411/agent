@@ -38,21 +38,33 @@ export type SeatAdmission =
     };
 
 /**
- * Default for a TEAM workspace with NO active team plan: owner-only.
+ * Default for a TEAM workspace with NO active team plan.
  *
  * Creating a team is ungated — `POST /workspaces/team` checks no entitlement, the
  * switcher offers it to every signed-in user, and the subscription dialog creates
- * the team BEFORE checkout, so an abandoned payment leaves one behind. A team that
- * never had a plan is therefore the ordinary case here, not a lapsed one.
+ * the team BEFORE checkout (it has to: a team entitlement's subject IS the
+ * workspace, so the workspace must exist before the grant can attach). A team
+ * that never had a plan is therefore the ordinary case here, not a lapsed one.
  *
- * Either way the owner keeps their seat and needs seats to add anyone. Members
- * granted by a plan that later lapsed are grandfathered, because enforcement is
- * add-time only.
+ * That default used to be owner-only, which made every free team a dead end: you
+ * could create one, invite someone, and only when THEY clicked accept did anyone
+ * learn the team could not hold a second creator. All 10 teams on .com sat at one
+ * member with zero workspace-subject grants between them — the feature had never
+ * once worked. Seats are now free up to the same 28 the paid plan carries, so a
+ * team is usable the moment it exists.
+ *
+ * What the team plan sells is therefore capacity, not colleagues: unlimited daily
+ * chat/image/video/workflow, 28 concurrent jobs, 50 GB of upload. That split holds
+ * because compute is metered separately — `resolvePayerTx` charges every job to
+ * the workspace's own point wallet, so an extra collaborator costs us no AI spend.
+ *
+ * Members granted by a plan that later lapsed are grandfathered, because
+ * enforcement is add-time only.
  */
 export const DEFAULT_TEAM_SEAT_POLICY: SeatPolicy = {
   planKey: 'free',
-  includedSeats: 1,
-  maxSeats: 1,
+  includedSeats: 28,
+  maxSeats: 28,
   seatOverageAllowed: false,
 };
 

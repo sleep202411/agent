@@ -44,11 +44,11 @@ describe('creator seat enforcement', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('blocks a second creator in a no-plan workspace', async () => {
+  it('blocks a second creator in a no-plan PERSONAL workspace', async () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.team,
+          type: WorkspaceType.personal,
           creatorUserIds: ['owner-1'],
         }),
         WORKSPACE_ID,
@@ -60,6 +60,45 @@ describe('creator seat enforcement', () => {
         code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
         includedSeats: 1,
         activeSeats: 1,
+      },
+    });
+  });
+
+  /**
+   * A team with no plan is the ordinary case (creating one is ungated), and it
+   * has to work: this used to reject, which is why every team on .com sat at one
+   * member. The invitee was the one who found out, at accept time.
+   */
+  it('admits a second creator in a no-plan TEAM workspace', async () => {
+    await expect(
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.team,
+          creatorUserIds: ['owner-1'],
+        }),
+        WORKSPACE_ID,
+        'editor-2',
+        entitlements,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still blocks the 29th creator in a no-plan TEAM workspace', async () => {
+    await expect(
+      assertCreatorSeatAvailable(
+        txFor({
+          type: WorkspaceType.team,
+          creatorUserIds: Array.from({ length: 28 }, (_, i) => `user-${i}`),
+        }),
+        WORKSPACE_ID,
+        'editor-29',
+        entitlements,
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
+        includedSeats: 28,
+        activeSeats: 28,
       },
     });
   });
