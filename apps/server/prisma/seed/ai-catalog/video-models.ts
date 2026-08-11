@@ -100,8 +100,14 @@ const bytePlusSeedance25Provider: ProviderEntry = {
   endpointId: 'dreamina-seedance-2-5-260628',
   modes: SEEDANCE_MODES,
   requestTimeoutSeconds: 1800,
-  maxConcurrentRequests: 10,
-  maxRequestsPerMinute: 600,
+  // No maxConcurrentRequests / maxRequestsPerMinute on purpose, matching every
+  // other BytePlus endpoint. Setting either one is what flips
+  // `hasRuntimeCapacity` true, which routes the job through the Redis-backed
+  // provider capacity gate — a path no endpoint in production currently takes,
+  // and one that fails CLOSED: it requeues when Redis is slow or absent. The
+  // canonical queuePolicy.globalConcurrency is the binding limit anyway
+  // (min(8, 10) = 8), so the gate would buy nothing and would make the studio's
+  // default video model the one model a Redis blip can stop.
   priority: 60,
   catalogSnapshot: {
     docs: [
