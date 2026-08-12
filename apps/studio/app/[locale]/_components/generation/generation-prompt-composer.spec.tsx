@@ -20,18 +20,33 @@ vi.mock("@/lib/use-dismiss", () => ({
 vi.mock("@/components/canvas/authoring/prompt-textarea", () => ({
   PromptTextarea: ({
     "aria-label": ariaLabel,
+    mentions,
+    onMentionActivate,
     onCommit,
     value,
   }: {
     "aria-label"?: string;
+    mentions?: Array<{ id: string; kind: "image" | "video" | "audio" | "skill"; label: string }>;
+    onMentionActivate?: (mention: {
+      id: string;
+      kind: "image" | "video" | "audio" | "skill";
+      label: string;
+    }) => void;
     onCommit: (value: string) => void;
     value: string;
   }) => (
-    <textarea
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(event) => onCommit(event.currentTarget.value)}
-    />
+    <div>
+      <textarea
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => onCommit(event.currentTarget.value)}
+      />
+      {mentions?.map((mention) => (
+        <button key={mention.id} type="button" onClick={() => onMentionActivate?.(mention)}>
+          {mention.label}
+        </button>
+      ))}
+    </div>
   ),
 }));
 
@@ -147,6 +162,96 @@ describe("GenerationPromptComposer presentation", () => {
     expect(
       document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')?.value
     ).toBe("A quiet garden");
+  });
+
+  it("renders an active Skill as an actionable inline prompt entity", async () => {
+    const onMentionActivate = vi.fn();
+    const skill = {
+      id: "skill-classic-cel",
+      kind: "skill" as const,
+      label: "Classic Cel Animation",
+    };
+    await act(async () => {
+      root.render(
+        <GenerationPromptComposer
+          {...props({
+            mentions: [skill],
+            onMentionActivate,
+            prompt: "A rainy pursuit /Classic Cel Animation",
+          })}
+        />
+      );
+    });
+
+    const prompt = document.querySelector('textarea[aria-label="Prompt"]');
+    const skillButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Classic Cel Animation"
+    );
+    const toolbar = document.querySelector('button[aria-label="Generate"]');
+
+    expect(prompt?.compareDocumentPosition(skillButton as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(skillButton?.compareDocumentPosition(toolbar as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+
+    await act(async () => skillButton?.click());
+    expect(onMentionActivate).toHaveBeenCalledWith(skill);
+  });
+
+  it("places the Skill picker in a dedicated action row above the prompt", async () => {
+    await act(async () => {
+      root.render(
+        <GenerationPromptComposer
+          {...props({
+            skillMarketOptions: [],
+          })}
+        />
+      );
+    });
+
+    const actionRow = document.querySelector('[data-composer-action-row=""]');
+    const skillPicker = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="chooseSkill"]'
+    );
+    const prompt = document.querySelector('textarea[aria-label="Prompt"]');
+
+    expect(actionRow).not.toBeNull();
+    expect(skillPicker).not.toBeNull();
+    expect(skillPicker?.compareDocumentPosition(prompt as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  it("places generation mode after the selected model", async () => {
+    await act(async () => {
+      root.render(
+        <GenerationPromptComposer
+          {...props({
+            modelPickerEnabled: true,
+            modelFallbackLabel: "MiniMax H3",
+            onSelectModel: vi.fn(),
+            mode: "all-round",
+            modes: ["all-round", "start-end"],
+            onSelectMode: vi.fn(),
+          })}
+        />
+      );
+    });
+
+    const modelButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("MiniMax H3")
+    );
+    const modeButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("all-round")
+    );
+
+    expect(modelButton).toBeDefined();
+    expect(modeButton).toBeDefined();
+    expect(modelButton?.compareDocumentPosition(modeButton as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 
   it("returns to the compact composer when Escape closes the expanded layer", async () => {

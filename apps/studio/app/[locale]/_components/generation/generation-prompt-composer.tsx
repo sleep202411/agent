@@ -12,11 +12,12 @@ import {
   IconChevronDown,
   IconPhoto,
   IconLoader2,
+  IconPuzzle,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import type { MentionItem } from "@/lib/prompt-mentions";
+import type { MentionItem, SkillMarketItem } from "@/lib/prompt-mentions";
 import { cn } from "@/lib/utils";
 import {
   type FizzAiCatalog,
@@ -32,7 +33,10 @@ import {
   hasRenderableModelSettings,
   ModelSettings as ModelSettingsPanel,
 } from "@/components/canvas/authoring/model-settings";
-import { PromptTextarea } from "@/components/canvas/authoring/prompt-textarea";
+import {
+  PromptTextarea,
+  type PromptTextareaHandle,
+} from "@/components/canvas/authoring/prompt-textarea";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 gsap.registerPlugin(useGSAP);
@@ -64,6 +68,12 @@ export function GenerationPromptComposer({
   promptRows = 4,
   showPrompt = true,
   mentions,
+  skillMarketOptions,
+  skillMarketLoading = false,
+  skillMarketError = false,
+  onMentionActivate,
+  onSkillMarketRetry,
+  onOpenSkillMarket,
   referenceContent,
   mode,
   modes = [],
@@ -106,6 +116,12 @@ export function GenerationPromptComposer({
   promptRows?: number;
   showPrompt?: boolean;
   mentions?: readonly MentionItem[];
+  skillMarketOptions?: readonly SkillMarketItem[];
+  skillMarketLoading?: boolean;
+  skillMarketError?: boolean;
+  onMentionActivate?: (mention: MentionItem) => void;
+  onSkillMarketRetry?: () => void;
+  onOpenSkillMarket?: (catalogId: string) => void;
   referenceContent?: ReactNode;
   mode?: string;
   modes?: string[];
@@ -133,6 +149,7 @@ export function GenerationPromptComposer({
   className?: string;
 }) {
   const t = useTranslations("canvasOps");
+  const tg = useTranslations("generation");
   const ml = useModeLabel();
   useDismiss(panel !== null, () => onPanelChange(null));
   const modeTriggerRef = useRef<HTMLButtonElement>(null);
@@ -140,6 +157,7 @@ export function GenerationPromptComposer({
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const expandTriggerRef = useRef<HTMLButtonElement>(null);
   const expandedSurfaceRef = useRef<HTMLDivElement>(null);
+  const promptTextareaRef = useRef<PromptTextareaHandle>(null);
   const disabledReasonId = useId();
   const [expanded, setExpanded] = useState(false);
 
@@ -154,6 +172,8 @@ export function GenerationPromptComposer({
       ? (cancelLabel ?? submitLabel)
       : (submittingLabel ?? submitLabel)
     : submitLabel;
+  const skillPickerVisible =
+    skillMarketOptions !== undefined || Boolean(mentions?.some((item) => item.kind === "skill"));
 
   const closePanelAndRestoreFocus = (
     closingPanel: Exclude<GenerationPromptComposerPanel, null>
@@ -312,14 +332,38 @@ export function GenerationPromptComposer({
           )}
         >
           <div className={cn(isExpanded ? "min-h-0 flex-1" : "pr-10")}>
+            {skillPickerVisible ? (
+              <div
+                data-composer-action-row=""
+                className="mb-2 flex min-h-9 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => promptTextareaRef.current?.openSkillPicker()}
+                  className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-9 shrink-0 items-center gap-2 rounded-xl bg-transparent px-3 text-xs font-medium text-white/68 ring-1 ring-inset transition-colors hover:text-white/92 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+                  aria-label={tg("chooseSkill")}
+                >
+                  <IconPuzzle className="text-brand-yellow size-3.5" stroke={1.8} />
+                  <span>{tg("chooseSkill")}</span>
+                </button>
+              </div>
+            ) : null}
+
             {referenceContent}
 
             {showPrompt ? (
               <div>
                 <PromptTextarea
+                  ref={promptTextareaRef}
                   value={prompt}
                   onCommit={onPromptCommit}
                   mentions={mentions}
+                  skillMarketOptions={skillMarketOptions}
+                  skillMarketLoading={skillMarketLoading}
+                  skillMarketError={skillMarketError}
+                  onMentionActivate={onMentionActivate}
+                  onSkillMarketRetry={onSkillMarketRetry}
+                  onOpenSkillMarket={onOpenSkillMarket}
                   placeholder={promptPlaceholder}
                   aria-label={promptAriaLabel}
                   rows={isExpanded ? Math.max(promptRows, 10) : promptRows}
@@ -354,30 +398,6 @@ export function GenerationPromptComposer({
           >
             {fixedControls}
 
-            {modeControlVisible ? (
-              <div className="relative" data-popover-zone>
-                <button
-                  ref={modeTriggerRef}
-                  type="button"
-                  onClick={() => onPanelChange(panel === "mode" ? null : "mode")}
-                  aria-haspopup="menu"
-                  aria-expanded={panel === "mode"}
-                  className="flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
-                >
-                  {ml(mode ?? "")}
-                  <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
-                </button>
-                {panel === "mode" ? (
-                  <ModeMenu
-                    modes={modes}
-                    value={mode}
-                    onSelect={(nextMode) => onSelectMode?.(nextMode)}
-                    onClose={() => closePanelAndRestoreFocus("mode")}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-
             {modelControlVisible ? (
               <div className="relative" data-popover-zone>
                 <button
@@ -403,6 +423,30 @@ export function GenerationPromptComposer({
                     selectedId={model?.id}
                     onSelect={(nextModel) => onSelectModel?.(nextModel)}
                     onClose={() => closePanelAndRestoreFocus("model")}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {modeControlVisible ? (
+              <div className="relative" data-popover-zone>
+                <button
+                  ref={modeTriggerRef}
+                  type="button"
+                  onClick={() => onPanelChange(panel === "mode" ? null : "mode")}
+                  aria-haspopup="menu"
+                  aria-expanded={panel === "mode"}
+                  className="flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
+                >
+                  {ml(mode ?? "")}
+                  <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
+                </button>
+                {panel === "mode" ? (
+                  <ModeMenu
+                    modes={modes}
+                    value={mode}
+                    onSelect={(nextMode) => onSelectMode?.(nextMode)}
+                    onClose={() => closePanelAndRestoreFocus("mode")}
                   />
                 ) : null}
               </div>

@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   mergeAttributes,
@@ -19,25 +28,37 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Suggestion, {
   exitSuggestion,
   type SuggestionKeyDownProps,
   type SuggestionProps,
 } from "@tiptap/suggestion";
-import { MentionChip, MentionMenu, type MentionItem } from "@/lib/prompt-mentions";
+import {
+  MentionChip,
+  MentionMenu,
+  SkillMentionDialog,
+  type MentionItem,
+  type SkillMarketItem,
+} from "@/lib/prompt-mentions";
 import {
   PROMPT_MENTION_NODE_NAME,
   promptDocumentToText,
   promptMentionParts,
+  promptMentionToken,
   promptTextToDocument,
 } from "@/lib/prompt-document";
 import { cn } from "@/lib/utils";
 
 const EMPTY_MENTIONS: readonly MentionItem[] = [];
+const MENTION_TRIGGER_ACTIVATION_KEY = new PluginKey("promptMentionTriggerActivation");
+const REFERENCE_SUGGESTION_KEY = new PluginKey("promptReferenceSuggestion");
+const SKILL_SUGGESTION_KEY = new PluginKey("promptSkillSuggestion");
 
 type PromptEditorContextValue = {
   editable: boolean;
   mentions: readonly MentionItem[];
+  onMentionActivate?: (mention: MentionItem) => void;
 };
 
 const PromptEditorContext = createContext<PromptEditorContextValue>({
@@ -47,6 +68,7 @@ const PromptEditorContext = createContext<PromptEditorContextValue>({
 
 type MentionMenuState = {
   active: number;
+  kind: "reference" | "skill";
   suggestion: SuggestionProps<MentionItem>;
 };
 
@@ -57,6 +79,15 @@ type PromptMentionNodeOptions = {
 type PromptMentionNodeStorage = {
   mentions: readonly MentionItem[];
   placeholder: string;
+};
+
+type SkillDialogState = {
+  options: MentionItem[];
+  suggestion: SuggestionProps<MentionItem> | null;
+};
+
+export type PromptTextareaHandle = {
+  openSkillPicker: () => void;
 };
 
 declare module "@tiptap/core" {
@@ -78,17 +109,35 @@ function itemAttributes(item: MentionItem) {
     label: item.label,
     name: item.name ?? "",
     previewUrl: item.previewUrl ?? "",
+    previewVideoUrl: item.previewVideoUrl ?? "",
+    assetId: item.assetId ?? "",
+    durationSeconds: item.durationSeconds ?? null,
+    bytes: item.bytes ?? null,
+    width: item.width ?? null,
+    height: item.height ?? null,
   };
+}
+
+function optionalFiniteNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
 function mentionFromNode(node: NodeViewProps["node"]): MentionItem {
   const kind = node.attrs.kind;
   return {
     id: String(node.attrs.id ?? ""),
-    kind: kind === "video" || kind === "audio" ? kind : "image",
+    kind: kind === "video" || kind === "audio" || kind === "skill" ? kind : "image",
     label: String(node.attrs.label ?? ""),
     name: String(node.attrs.name ?? "") || undefined,
     previewUrl: String(node.attrs.previewUrl ?? "") || undefined,
+    previewVideoUrl: String(node.attrs.previewVideoUrl ?? "") || undefined,
+    assetId: String(node.attrs.assetId ?? "") || undefined,
+    durationSeconds: optionalFiniteNumber(node.attrs.durationSeconds),
+    bytes: optionalFiniteNumber(node.attrs.bytes),
+    width: optionalFiniteNumber(node.attrs.width),
+    height: optionalFiniteNumber(node.attrs.height),
   };
 }
 
@@ -179,7 +228,7 @@ function mentionInsertion(editor: Editor, range: Range, item: MentionItem) {
 }
 
 function PromptMentionNodeView({ editor, getPos, node }: NodeViewProps) {
-  const { editable, mentions } = useContext(PromptEditorContext);
+  const { editable, mentions, onMentionActivate } = useContext(PromptEditorContext);
   const storedMention = mentionFromNode(node);
   const liveMention = mentions.find((item) => item.id === storedMention.id);
   const mention = liveMention
@@ -199,7 +248,12 @@ function PromptMentionNodeView({ editor, getPos, node }: NodeViewProps) {
     >
       <MentionChip
         mention={mention}
-        text={`@${mention.label}`}
+        text={promptMentionToken(mention)}
+        onActivate={
+          mention.kind === "skill" && onMentionActivate
+            ? () => onMentionActivate(mention)
+            : undefined
+        }
         onRemove={
           editable
             ? () => {
@@ -255,6 +309,12 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
       label: { default: "", rendered: false },
       name: { default: "", rendered: false },
       previewUrl: { default: "", rendered: false },
+      previewVideoUrl: { default: "", rendered: false },
+      assetId: { default: "", rendered: false },
+      durationSeconds: { default: null, rendered: false },
+      bytes: { default: null, rendered: false },
+      width: { default: null, rendered: false },
+      height: { default: null, rendered: false },
     };
   },
 
@@ -270,6 +330,12 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
             label: element.dataset.label ?? "",
             name: element.dataset.name ?? "",
             previewUrl: element.dataset.previewUrl ?? "",
+            previewVideoUrl: element.dataset.previewVideoUrl ?? "",
+            assetId: element.dataset.assetId ?? "",
+            durationSeconds: optionalFiniteNumber(element.dataset.durationSeconds),
+            bytes: optionalFiniteNumber(element.dataset.bytes),
+            width: optionalFiniteNumber(element.dataset.width),
+            height: optionalFiniteNumber(element.dataset.height),
           };
         },
       },
@@ -286,13 +352,31 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
         "data-label": node.attrs.label,
         "data-name": node.attrs.name,
         "data-preview-url": node.attrs.previewUrl,
+        "data-preview-video-url": node.attrs.previewVideoUrl,
+        "data-asset-id": node.attrs.assetId,
+        "data-duration-seconds": node.attrs.durationSeconds,
+        "data-bytes": node.attrs.bytes,
+        "data-width": node.attrs.width,
+        "data-height": node.attrs.height,
       }),
-      `@${node.attrs.label}`,
+      promptMentionToken({
+        kind:
+          node.attrs.kind === "video" || node.attrs.kind === "audio" || node.attrs.kind === "skill"
+            ? node.attrs.kind
+            : "image",
+        label: String(node.attrs.label ?? ""),
+      }),
     ];
   },
 
   renderText({ node }) {
-    return `@${node.attrs.label}`;
+    return promptMentionToken({
+      kind:
+        node.attrs.kind === "video" || node.attrs.kind === "audio" || node.attrs.kind === "skill"
+          ? node.attrs.kind
+          : "image",
+      label: String(node.attrs.label ?? ""),
+    });
   },
 
   addNodeView() {
@@ -334,25 +418,72 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
   addProseMirrorPlugins() {
     const { setMenu } = this.options;
     const { storage } = this;
-    return [
-      Suggestion<MentionItem>({
+    const triggerActivation = { reference: false, skill: false };
+    const armTypedTrigger = (text: string) => {
+      triggerActivation.reference = text === "@";
+      triggerActivation.skill = text === "/";
+    };
+    const triggerActivationPlugin = new Plugin({
+      key: MENTION_TRIGGER_ACTIVATION_KEY,
+      state: {
+        init: () => null,
+        apply: (_transaction, value) => {
+          triggerActivation.reference = false;
+          triggerActivation.skill = false;
+          return value;
+        },
+      },
+      props: {
+        handleKeyDown: (_view, event) => {
+          armTypedTrigger(event.isComposing || event.keyCode === 229 ? "" : event.key);
+          return false;
+        },
+        handleTextInput: (_view, _from, _to, text) => {
+          armTypedTrigger(text);
+          return false;
+        },
+      },
+    });
+    const createSuggestion = ({
+      char,
+      kind,
+      pluginKey,
+    }: {
+      char: "@" | "/";
+      kind: "reference" | "skill";
+      pluginKey: PluginKey;
+    }) => {
+      let userActivated = false;
+      return Suggestion<MentionItem>({
         editor: this.editor,
-        char: "@",
+        pluginKey,
+        char,
         allowSpaces: false,
-        // Prompts commonly place a reference directly after Chinese text or
-        // another mention, so the default whitespace-only prefix is invalid.
-        allowedPrefixes: null,
-        allow: () => storage.mentions.length > 0,
+        // References may follow Chinese text directly. Slash Skills follow the
+        // standard command boundary to avoid opening on URLs and aspect ratios.
+        allowedPrefixes: kind === "reference" ? null : [" "],
+        allow: () =>
+          storage.mentions.some((item) =>
+            kind === "skill" ? item.kind === "skill" : item.kind !== "skill"
+          ),
+        shouldShow: ({ editor, text }) => {
+          if (!editor.isFocused) return false;
+          if (!userActivated && text === char && triggerActivation[kind]) {
+            userActivated = true;
+          }
+          triggerActivation[kind] = false;
+          return userActivated;
+        },
         items: ({ query }) => {
           const normalized = query.toLowerCase();
-          return storage.mentions
-            .filter(
-              (item) =>
-                !normalized ||
+          const filtered = storage.mentions.filter(
+            (item) =>
+              (kind === "skill" ? item.kind === "skill" : item.kind !== "skill") &&
+              (!normalized ||
                 item.label.toLowerCase().includes(normalized) ||
-                item.name?.toLowerCase().includes(normalized)
-            )
-            .slice(0, 10);
+                item.name?.toLowerCase().includes(normalized))
+          );
+          return kind === "skill" ? filtered : filtered.slice(0, 10);
         },
         command: ({ editor, props: item, range }) => {
           if (!editor.view.composing) mentionInsertion(editor, range, item);
@@ -360,7 +491,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
         render: () => {
           let active = 0;
           let suggestion: SuggestionProps<MentionItem> | null = null;
-          const publish = () => setMenu(suggestion ? { active, suggestion } : null);
+          const publish = () => setMenu(suggestion ? { active, kind, suggestion } : null);
 
           return {
             onStart: (props) => {
@@ -370,7 +501,8 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
             },
             onUpdate: (props) => {
               suggestion = props;
-              active = Math.max(0, Math.min(active, props.items.length - 1));
+              const visibleCount = Math.min(props.items.length, kind === "skill" ? 8 : 10);
+              active = Math.max(0, Math.min(active, visibleCount - 1));
               publish();
             },
             onKeyDown: ({ event, view }: SuggestionKeyDownProps) => {
@@ -378,11 +510,12 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
               if (!suggestion) return false;
               if (
                 (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-                suggestion.items.length
+                Math.min(suggestion.items.length, kind === "skill" ? 8 : 10)
               ) {
                 event.preventDefault();
                 const delta = event.key === "ArrowDown" ? 1 : -1;
-                active = (active + delta + suggestion.items.length) % suggestion.items.length;
+                const visibleCount = Math.min(suggestion.items.length, kind === "skill" ? 8 : 10);
+                active = (active + delta + visibleCount) % visibleCount;
                 publish();
                 return true;
               }
@@ -400,42 +533,106 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
               return false;
             },
             onExit: () => {
+              userActivated = false;
               suggestion = null;
               publish();
             },
           };
         },
-      }),
+      });
+    };
+
+    return [
+      createSuggestion({ char: "@", kind: "reference", pluginKey: REFERENCE_SUGGESTION_KEY }),
+      createSuggestion({ char: "/", kind: "skill", pluginKey: SKILL_SUGGESTION_KEY }),
+      // Keep this after Suggestion: its state hook clears the one-transaction
+      // activation only after both suggestion plugins have inspected it.
+      triggerActivationPlugin,
     ];
   },
 });
 
-function PromptMentionMenuPortal({ state }: { state: MentionMenuState }) {
+function PromptMentionMenuPortal({
+  state,
+  onShowAll,
+}: {
+  state: MentionMenuState;
+  onShowAll: () => void;
+}) {
   if (typeof document === "undefined") return null;
-  const rect = state.suggestion.clientRect?.();
-  if (!rect) return null;
+  const fallbackRect = state.suggestion.clientRect?.();
+  let caretRect = fallbackRect;
+  try {
+    const coords = state.suggestion.editor.view.coordsAtPos(state.suggestion.range.to);
+    caretRect = {
+      bottom: coords.bottom,
+      height: coords.bottom - coords.top,
+      left: coords.left,
+      right: coords.right,
+      top: coords.top,
+      width: coords.right - coords.left,
+      x: coords.left,
+      y: coords.top,
+      toJSON: () => ({}),
+    };
+  } catch {
+    // The suggestion may be exiting while React commits; its decoration rect
+    // remains a safe one-frame fallback.
+  }
+  if (!caretRect) return null;
 
   const viewportGap = 8;
-  const menuWidth = 256;
-  const estimatedHeight = Math.max(42, Math.min(state.suggestion.items.length, 10) * 44 + 12);
-  const below = rect.bottom + 6;
-  const top =
-    below + estimatedHeight <= window.innerHeight - viewportGap
-      ? below
-      : Math.max(viewportGap, rect.top - estimatedHeight - 6);
+  const menuWidth = state.kind === "skill" ? 288 : 256;
+  const itemHeight = state.kind === "skill" ? 52 : 44;
+  const visibleCount = Math.min(state.suggestion.items.length, state.kind === "skill" ? 8 : 10);
+  const footerHeight = state.kind === "skill" && state.suggestion.items.length > 8 ? 40 : 0;
+  const estimatedHeight = Math.min(
+    512,
+    Math.max(42, visibleCount * itemHeight + footerHeight + 12)
+  );
+  const menuGap = 6;
+  const spaceBelow = window.innerHeight - caretRect.bottom - menuGap - viewportGap;
+  const spaceAbove = caretRect.top - menuGap - viewportGap;
+  const placeAbove =
+    estimatedHeight <= spaceBelow
+      ? false
+      : estimatedHeight <= spaceAbove
+        ? true
+        : spaceAbove > spaceBelow;
+  const availableHeight = Math.max(42, placeAbove ? spaceAbove : spaceBelow);
+  const renderedHeight = Math.min(estimatedHeight, availableHeight);
+  const top = placeAbove
+    ? Math.max(viewportGap, caretRect.top - renderedHeight - menuGap)
+    : caretRect.bottom + menuGap;
   const left = Math.min(
-    Math.max(viewportGap, rect.left),
+    Math.max(viewportGap, caretRect.left),
     Math.max(viewportGap, window.innerWidth - menuWidth - viewportGap)
   );
+  const originX = caretRect.left - left;
+  const originY = (placeAbove ? caretRect.top : caretRect.bottom) - top;
 
   return createPortal(
     <MentionMenu
-      options={state.suggestion.items}
+      options={
+        state.kind === "skill"
+          ? state.suggestion.items.slice(0, 8)
+          : state.suggestion.items.slice(0, 10)
+      }
       active={state.active}
+      emptyKind={state.kind}
+      totalCount={state.suggestion.items.length}
+      onShowAll={state.kind === "skill" ? onShowAll : undefined}
       onPick={(item) => {
         if (!state.suggestion.editor.view.composing) state.suggestion.command(item);
       }}
-      style={{ position: "fixed", top, left, zIndex: 1000 }}
+      style={{
+        position: "fixed",
+        top,
+        left,
+        zIndex: 1000,
+        maxHeight: availableHeight,
+        transformOrigin: `${originX}px ${originY}px`,
+      }}
     />,
     document.body
   );
@@ -462,14 +659,18 @@ function syncEditorDocument(
 }
 
 /**
- * IME-safe prompt editor backed by one ProseMirror layout tree. Reference chips,
- * text, selection, caret, wrapping, and scroll height now share the same DOM;
- * the persisted/Yjs/backend value remains the existing plain `@Image1` string.
+ * IME-safe prompt editor backed by one ProseMirror layout tree. Reference and
+ * Skill chips, text, selection, caret, wrapping, and scroll height share the
+ * same DOM; callers still own the persisted wire representation.
  */
 export function PromptTextarea({
+  ref: imperativeRef,
   value,
   onCommit,
   mentions = EMPTY_MENTIONS,
+  skillMarketOptions,
+  skillMarketLoading = false,
+  skillMarketError = false,
   className,
   placeholder,
   rows = 4,
@@ -479,12 +680,19 @@ export function PromptTextarea({
   id,
   "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
+  onMentionActivate,
+  onSkillMarketRetry,
+  onOpenSkillMarket,
   onKeyDown,
   onBlur,
 }: {
+  ref?: Ref<PromptTextareaHandle>;
   value: string;
   onCommit: (next: string) => void;
   mentions?: readonly MentionItem[];
+  skillMarketOptions?: readonly SkillMarketItem[];
+  skillMarketLoading?: boolean;
+  skillMarketError?: boolean;
   className?: string;
   placeholder?: string;
   rows?: number;
@@ -494,6 +702,10 @@ export function PromptTextarea({
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  /** Opens contextual UI for actionable inline entities such as Skills. */
+  onMentionActivate?: (mention: MentionItem) => void;
+  onSkillMarketRetry?: () => void;
+  onOpenSkillMarket?: (catalogId: string) => void;
   /** Capture keydown at the editor DOM level (for grid Tab/Enter/Esc nav). */
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   /** Fired when the editor loses focus. */
@@ -502,6 +714,7 @@ export function PromptTextarea({
   const [focused, setFocused] = useState(false);
   const [composing, setComposing] = useState(false);
   const [menuState, setMenuState] = useState<MentionMenuState | null>(null);
+  const [skillDialogState, setSkillDialogState] = useState<SkillDialogState | null>(null);
   const lastCommittedRef = useRef(value);
 
   useEffect(() => {
@@ -594,7 +807,8 @@ export function PromptTextarea({
         if (!instance.view.composing) {
           syncEditorDocument(instance, editorPrompt(instance), mentions);
         }
-        exitSuggestion(instance.view);
+        exitSuggestion(instance.view, REFERENCE_SUGGESTION_KEY);
+        exitSuggestion(instance.view, SKILL_SUGGESTION_KEY);
         onBlur?.();
       },
       onUpdate: ({ editor: instance, transaction }) => {
@@ -634,9 +848,25 @@ export function PromptTextarea({
     return () => cancelAnimationFrame(frame);
   }, [autoFocus, disabled, editor, readOnly]);
 
+  useImperativeHandle(
+    imperativeRef,
+    () => ({
+      openSkillPicker: () => {
+        if (!editor || disabled || readOnly) return;
+        setMenuState(null);
+        exitSuggestion(editor.view, SKILL_SUGGESTION_KEY);
+        setSkillDialogState({
+          options: mentions.filter((item) => item.kind === "skill"),
+          suggestion: null,
+        });
+      },
+    }),
+    [disabled, editor, mentions, readOnly]
+  );
+
   const editorContext = useMemo<PromptEditorContextValue>(
-    () => ({ editable: !disabled && !readOnly, mentions }),
-    [disabled, mentions, readOnly]
+    () => ({ editable: !disabled && !readOnly, mentions, onMentionActivate }),
+    [disabled, mentions, onMentionActivate, readOnly]
   );
 
   return (
@@ -654,7 +884,43 @@ export function PromptTextarea({
       <PromptEditorContext.Provider value={editorContext}>
         <EditorContent editor={editor} />
       </PromptEditorContext.Provider>
-      {menuState && !composing ? <PromptMentionMenuPortal state={menuState} /> : null}
+      {menuState && !composing ? (
+        <PromptMentionMenuPortal
+          state={menuState}
+          onShowAll={() =>
+            setSkillDialogState({
+              options: menuState.suggestion.items.filter((item) => item.kind === "skill"),
+              suggestion: menuState.suggestion,
+            })
+          }
+        />
+      ) : null}
+      <SkillMentionDialog
+        open={Boolean(skillDialogState)}
+        options={skillDialogState?.options ?? []}
+        marketOptions={skillMarketOptions}
+        marketLoading={skillMarketLoading}
+        marketError={skillMarketError}
+        onOpenChange={(open) => {
+          if (!open) setSkillDialogState(null);
+        }}
+        onPick={(item) => {
+          const state = skillDialogState;
+          if (!state) return;
+          if (state.suggestion) {
+            if (!state.suggestion.editor.view.composing) state.suggestion.command(item);
+            return;
+          }
+          if (!editor || editor.view.composing) return;
+          mentionInsertion(
+            editor,
+            { from: editor.state.selection.from, to: editor.state.selection.to },
+            item
+          );
+        }}
+        onMarketRetry={onSkillMarketRetry}
+        onOpenMarket={onOpenSkillMarket}
+      />
     </div>
   );
 }
