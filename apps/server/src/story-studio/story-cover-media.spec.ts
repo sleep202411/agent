@@ -79,11 +79,15 @@ describe('resolveStoryCover', () => {
       },
       eligibilityDiagnostics: [],
     });
-    // Workspace and image-kind are query predicates: another workspace's asset
-    // must never be published inside someone else's release, and a cover has to
-    // be a still.
+    // Image-kind stays a query predicate — a cover has to be a still. Workspace
+    // does NOT: uploads record no workspace, so scoping by it made an uploaded
+    // cover unpublishable, and the id was already accepted when the cover was
+    // set on a project the caller may edit.
     expect(queries[0]).toMatchObject({
-      where: { id: COVER_ASSET_ID, workspaceId: WORKSPACE_ID, kind: 'image' },
+      where: { id: COVER_ASSET_ID, kind: 'image' },
+    });
+    expect(queries[0]).not.toMatchObject({
+      where: { workspaceId: expect.anything() },
     });
   });
 

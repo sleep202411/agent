@@ -228,8 +228,11 @@ async function requireUsableVideoVariant(
   assetId: string,
   variantId: string,
 ): Promise<UsableVideoVariant> {
+  // Not scoped by workspaceId — see addCandidateAsset. Uploaded video carries
+  // no workspace, so this was the one condition a finished cut could never
+  // satisfy, reported as "not a ready, accessible video in this workspace".
   const asset = await tx.mediaAsset.findFirst({
-    where: { id: assetId, workspaceId },
+    where: { id: assetId },
     include: MEDIA_ASSET_INCLUDE,
   });
   const variant = asset?.variants.find(

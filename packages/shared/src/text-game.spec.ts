@@ -91,6 +91,39 @@ describe("text-game wire contracts", () => {
     expect(parsed.total).toBe(3);
   });
 
+  /**
+   * Production returns every count as a JSON string — `{"total":"5",
+   * "stats":{"total":"5","draft":"2",...}}` — which failed the whole page.
+   */
+  it("accepts counts the Java API serialises as strings", () => {
+    const parsed = TextGameAdminListSchema.parse({
+      list: [],
+      stats: { total: "5", draft: "2", reviewing: "1", published: "1", offline: "1" },
+      total: "5",
+    });
+
+    expect(parsed.stats).toEqual({
+      total: 5,
+      draft: 2,
+      reviewing: 1,
+      published: 1,
+      offline: 1,
+    });
+    expect(parsed.total).toBe(5);
+  });
+
+  it("still rejects a count that is neither a number nor a numeric string", () => {
+    const withCount = (total: unknown) => ({
+      list: [],
+      stats: { total: 0, draft: 0, reviewing: 0, published: 0, offline: 0 },
+      total,
+    });
+
+    for (const bad of [null, "", "abc", true, -1, 1.5]) {
+      expect(TextGameAdminListSchema.safeParse(withCount(bad)).success).toBe(false);
+    }
+  });
+
   it("normalizes nullable character text to empty strings", () => {
     const parsed = TextGameDetailSchema.parse({
       gameId: "tg_0123456789abcdef",

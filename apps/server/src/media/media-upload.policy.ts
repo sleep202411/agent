@@ -1,4 +1,12 @@
 const MiB = 1024 * 1024;
+const GiB = 1024 * MiB;
+
+/**
+ * Long-form episode source video. Direct-to-storage PUT; duration is measured
+ * via signed-URL ffprobe (see MediaAssetFactsService) so confirm does not
+ * spool the object onto the API pod.
+ */
+export const EPISODE_VIDEO_MAX_BYTES = 2 * GiB;
 
 /**
  * Story clip completion streams the confirmed object through this server for

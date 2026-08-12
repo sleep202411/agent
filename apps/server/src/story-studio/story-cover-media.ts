@@ -72,10 +72,13 @@ export async function resolveStoryCover(
   // query at all.
   if (!coverAssetId) return { asset: null, eligibilityDiagnostics: [] };
 
+  // Not scoped by workspaceId: the id was already accepted when the cover was
+  // set, so re-scoping here could only make a previously-valid cover
+  // unpublishable — which is exactly what happened to uploads, whose workspace
+  // is null and therefore matches nothing.
   const row = await db.mediaAsset.findFirst({
     where: {
       id: coverAssetId,
-      workspaceId,
       kind: MediaAssetKind.image,
     },
     select: COVER_ASSET_SELECT,

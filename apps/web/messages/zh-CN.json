@@ -644,9 +644,9 @@
     "epDropzoneHint": "MP4 / WebM，最大 2 GB",
     "epCoverLabel": "封面",
     "epCoverDropzoneTitle": "拖拽或点击上传",
-    "epCoverHint": "JPG / PNG，最大 5 MB",
+    "epCoverHint": "JPG / PNG，最大 10 MB",
     "epCoverNotImage": "请选择图片文件",
-    "epCoverTooLarge": "封面图大小超过 5 MB",
+    "epCoverTooLarge": "封面图大小超过 10 MB",
     "epCoverRequired": "请上传剧集封面",
     "epProbing": "读取视频信息中…",
     "epLoadingPreview": "加载预览中…",
@@ -6474,7 +6474,7 @@
   },
   "home": {
     "hero": {
-      "statusPill": "Happy Horse · 现已上线",
+      "statusPill": "Seedance 2.5 · 现已上线",
       "headlineLine1": "全宇宙超精彩的",
       "headlineLine2": "AI故事剧集",
       "subtitle": "集结全球各路创作高手，融汇历史、文学、漫画、哲学、英雄与传说，打造风靡全球的走心爆款——超越模版，后劲极大。",

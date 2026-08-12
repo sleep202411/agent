@@ -444,7 +444,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.mediaAsset.findFirst).toHaveBeenCalledWith({
       where: {
         id: MEDIA_ASSET_ID,
-        workspaceId: WORKSPACE_ID,
         status: MediaAssetStatus.ready,
         moderationStatus: {
           not: MediaAssetModerationStatus.blocked,
@@ -717,7 +716,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     const tx = {
       mediaAsset: {
-        findFirst: jest.fn().mockResolvedValue(candidate.asset),
+        findUnique: jest.fn().mockResolvedValue({
+          ...candidate.asset,
+          deletedAt: null,
+          moderationStatus: MediaAssetModerationStatus.unreviewed,
+        }),
       },
       storyCandidateAsset: {
         upsert: jest.fn().mockResolvedValue({}),
@@ -768,6 +771,58 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         mediaAssetId: MEDIA_ASSET_ID,
       },
     });
+  });
+
+  /**
+   * These six conditions used to be one `findFirst` whose miss always said the
+   * media "must be a ready image, video, or audio asset in this project
+   * workspace" — so a creator whose upload was merely still transcoding, and a
+   * creator whose file was blocked by moderation, were told the same thing and
+   * both concluded they should wait. Each rejection now names its own cause.
+   */
+  it('names the specific reason a candidate is rejected', async () => {
+    const attempt = async (asset: unknown) => {
+      const harness = serviceWith({
+        $transaction: transactionMock({
+          mediaAsset: { findUnique: jest.fn().mockResolvedValue(asset) },
+        }),
+      });
+      return harness.service
+        .addCandidateAsset(
+          USER as never,
+          WORKSPACE_ID,
+          PROJECT_ID,
+          MEDIA_ASSET_ID,
+        )
+        .then(() => 'resolved')
+        .catch((error: { response?: { message?: string } }) =>
+          String(error.response?.message ?? error),
+        );
+    };
+    const base = {
+      id: MEDIA_ASSET_ID,
+      kind: MediaAssetKind.video,
+      status: MediaAssetStatus.ready,
+      moderationStatus: MediaAssetModerationStatus.unreviewed,
+      deletedAt: null,
+    };
+
+    expect(await attempt(null)).toContain('no longer exists');
+    expect(await attempt({ ...base, deletedAt: new Date() })).toContain(
+      'no longer exists',
+    );
+    expect(await attempt({ ...base, kind: MediaAssetKind.other })).toContain(
+      'image, video, or audio',
+    );
+    expect(
+      await attempt({ ...base, status: MediaAssetStatus.uploading }),
+    ).toContain('still uploading');
+    expect(
+      await attempt({
+        ...base,
+        moderationStatus: MediaAssetModerationStatus.blocked,
+      }),
+    ).toContain('blocked by moderation');
   });
 
   it('exposes a ready video variant even when advisory metadata is absent', async () => {

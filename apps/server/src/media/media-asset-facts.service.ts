@@ -3,15 +3,18 @@
  *
  * Client-reported values are never authority. `bytes` is read straight off the
  * asset row; `durationSeconds` is read when stored and otherwise measured by
- * streaming the object through ffprobe and persisting the result.
+ * ffprobe against a short-lived signed read URL and persisting the result.
  *
  * High-traffic design:
  * - DB hit is O(1) when duration already stored (steady-state generate path).
  * - Probe work is bounded per process (concurrency + wait queue) so a traffic
- *   spike cannot unbounded-spawn downloads/ffprobe and OOM the pod.
+ *   spike cannot unbounded-spawn ffprobe and pin the pod.
  * - Same assetId is single-flighted (one probe shared by concurrent waiters).
  * - When the wait queue is full we shed load with 503 backpressure rather than
  *   melting the node; already-probed assets and pure text jobs are unaffected.
+ * - Duration probe never spools the object onto local disk — episode videos
+ *   are allowed up to EPISODE_VIDEO_MAX_BYTES (2 GiB); a full download would
+ *   exhaust tmp under concurrent confirms.
  */
 import {
   Injectable,
@@ -21,29 +24,23 @@ import {
 } from '@nestjs/common';
 import { MediaAssetKind, MediaStorageProvider } from '@prisma/client';
 import { execFile } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { Readable, Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
+import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 
-const SIGNED_READ_TTL_SECONDS = 10 * 60;
-/** Cap download time so hung storage cannot pin probe slots forever. */
-const DOWNLOAD_TIMEOUT_MS = 90 * 1000;
-const FFPROBE_TIMEOUT_MS = 30 * 1000;
+/** Signed URL must outlive remote seeks on large MP4s (moov-at-end). */
+const SIGNED_READ_TTL_SECONDS = 30 * 60;
+/** Remote ffprobe: storage RTT + range seeks, not a local open. */
+const FFPROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const FFPROBE_MAX_OUTPUT_BYTES = 256 * 1024;
-/** Hard ceiling on spool size — protects disk under concurrent probes. */
-// Seedance 2.5 permits reference videos up to 200 MiB; the probe ceiling must
-// cover the upload contract or a valid reference would fail before submit.
-const MAX_PROBE_BYTES = 200 * 1024 * 1024;
+/**
+ * Hard ceiling — must cover the largest video/audio upload contract
+ * (`episode_video`). Larger objects are rejected before ffprobe runs.
+ */
+const MAX_PROBE_BYTES = EPISODE_VIDEO_MAX_BYTES;
 
 /**
- * Simultaneous download+ffprobe operations per Node process.
+ * Simultaneous ffprobe operations per Node process.
  * Override with MEDIA_DURATION_PROBE_MAX_CONCURRENT (1–32).
  */
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -109,7 +106,7 @@ export class MediaAssetFactsService {
     private readonly storageAccess: MediaStorageAccessService,
   ) {
     this.logger.log(
-      `duration probe pool maxConcurrent=${this.maxConcurrent} maxQueue=${this.maxQueue}`,
+      `duration probe pool maxConcurrent=${this.maxConcurrent} maxQueue=${this.maxQueue} maxBytes=${MAX_PROBE_BYTES}`,
     );
   }
 
@@ -120,7 +117,7 @@ export class MediaAssetFactsService {
    *
    * Returns a map of assetId → facts for every asset that exists. Missing
    * durations are probed with concurrency limits + single-flight so parallel
-   * submits for the same asset share one download.
+   * submits for the same asset share one remote ffprobe.
    */
   async ensureFacts(
     assetIds: readonly string[],
@@ -302,67 +299,13 @@ export class MediaAssetFactsService {
       });
     }
 
-    const tempPath = join(
-      tmpdir(),
-      `media-duration-${randomUUID()}${extensionFor(asset.contentType, asset.kind)}`,
-    );
-    try {
-      await this.downloadToFile(signed.url, tempPath);
-      return await this.ffprobeDurationSeconds(tempPath);
-    } finally {
-      await unlink(tempPath).catch(() => undefined);
-    }
+    // Probe the object in place over HTTPS. ffprobe uses HTTP range requests
+    // when the container supports them (OSS / Azure Blob do), so a 2 GiB
+    // episode does not need a full local spool.
+    return this.ffprobeDurationSeconds(signed.url);
   }
 
-  private async downloadToFile(url: string, destPath: string): Promise<void> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok || !response.body) {
-        throw new ServiceUnavailableException({
-          code: 'MEDIA_DURATION_DOWNLOAD_FAILED',
-          message: `Failed to download media for duration probe (HTTP ${response.status}).`,
-        });
-      }
-      // Enforce size while streaming so a wrong Content-Length cannot fill disk.
-      let written = 0;
-      const body = Readable.fromWeb(
-        response.body as unknown as NodeReadableStream,
-      );
-      const limiter = new Transform({
-        transform(chunk: Buffer, _enc, cb) {
-          written += chunk.length;
-          if (written > MAX_PROBE_BYTES) {
-            cb(
-              new UnprocessableEntityException({
-                code: 'MEDIA_DURATION_PROBE_TOO_LARGE',
-                message: 'Media is too large to inspect for duration.',
-              }),
-            );
-            return;
-          }
-          cb(null, chunk);
-        },
-      });
-      await pipeline(body, limiter, createWriteStream(destPath));
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        (err.name === 'AbortError' || err.message.includes('aborted'))
-      ) {
-        throw new ServiceUnavailableException({
-          code: 'MEDIA_DURATION_DOWNLOAD_TIMEOUT',
-          message: 'Timed out downloading media for duration probe.',
-        });
-      }
-      throw err;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  private async ffprobeDurationSeconds(filePath: string): Promise<number> {
+  private async ffprobeDurationSeconds(source: string): Promise<number> {
     const executable = process.env.MEDIA_FFPROBE_PATH?.trim() || 'ffprobe';
     const output = await new Promise<string>((resolve, reject) => {
       execFile(
@@ -370,11 +313,15 @@ export class MediaAssetFactsService {
         [
           '-v',
           'error',
+          // Allow probing https signed URLs (default builds already include
+          // these; explicit whitelist keeps restricted builds usable).
+          '-protocol_whitelist',
+          'file,http,https,tcp,tls,crypto',
           '-show_entries',
           'format=duration',
           '-of',
           'default=noprint_wrappers=1:nokey=1',
-          filePath,
+          source,
         ],
         {
           encoding: 'utf8',
@@ -435,19 +382,6 @@ export class MediaAssetFactsService {
 /** A persisted duration counts as known only when finite and positive. */
 function storedDuration(value: number | null): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function extensionFor(
-  contentType: string | null | undefined,
-  kind: MediaAssetKind,
-): string {
-  const ct = (contentType ?? '').toLowerCase();
-  if (ct.includes('quicktime') || ct.includes('mov')) return '.mov';
-  if (ct.includes('webm')) return '.webm';
-  if (ct.includes('mp4')) return '.mp4';
-  if (ct.includes('mpeg') || ct.includes('mp3')) return '.mp3';
-  if (ct.includes('wav')) return '.wav';
-  return kind === MediaAssetKind.audio ? '.bin' : '.mp4';
 }
 
 function clampInt(

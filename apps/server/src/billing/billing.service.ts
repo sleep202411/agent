@@ -8522,6 +8522,39 @@ function subscriptionRenewalIdempotencyKey(input: {
   return `sub_renewal:${digest}`;
 }
 
+/**
+ * Flatten Airwallex's two webhook envelopes into the one shape the ~65
+ * `['data', …]` lookups below already expect.
+ *
+ * Airwallex ships two product families with different envelopes:
+ *
+ *   Payments API   `{ id, name, account_id, data: { object: { …resource… } } }`
+ *   Billing API    `{ id, name, org_id,     data: { …resource fields… } }`
+ *
+ * Every lookup here was written against the Billing shape, so `payment_intent.*`
+ * resolved `data.id` / `data.metadata.fizzdragon_order_id` to null, `matchPaymentIntent`
+ * built an empty OR list and returned before issuing a query, and the event was
+ * filed as "No matching payment intent or refund found." — a message that reads
+ * like a failed lookup but describes one that never ran. On .com that swallowed
+ * the first real customer top-up (order FD202608101707159A2589B51E, USD 10):
+ * `billing_payment_intents` held a row whose `provider_payment_intent_id` was
+ * exactly the payload's `data.object.id`, and nothing ever compared them.
+ *
+ * Sibling keys are kept and the wrapped resource wins on collision, so the
+ * Billing shape — which has no `object` key — passes through untouched.
+ *
+ * Airwallex docs: the Payments envelope carries "the response body from the
+ * Retrieve a … API" under `data.object` for PaymentIntent, PaymentAttempt,
+ * Refund and PaymentConsent alike.
+ */
+export function unwrapProviderPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const data = payload.data;
+  if (!isRecord(data) || !isRecord(data.object)) return payload;
+  return { ...payload, data: { ...data, ...data.object } };
+}
+
 function providerPayloadRecord(
   value: Prisma.JsonValue,
 ): Record<string, unknown> {
@@ -8531,13 +8564,13 @@ function providerPayloadRecord(
       msg: 'Billing provider event payload is invalid.',
     });
   }
-  return value;
+  return unwrapProviderPayload(value);
 }
 
 function providerPayloadRecordOrNull(
   value: Prisma.JsonValue,
 ): Record<string, unknown> | null {
-  return isRecord(value) ? value : null;
+  return isRecord(value) ? unwrapProviderPayload(value) : null;
 }
 
 function providerEventPayloadSummary(payload: Record<string, unknown>) {
