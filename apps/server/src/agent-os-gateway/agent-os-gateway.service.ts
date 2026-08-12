@@ -3,20 +3,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import {
   getModeDefinition,
   type AgentProjectKind,
 } from '@repo/agent-capabilities';
 import {
-  getSkill,
   listInvocableSkills,
   listSkills,
   toSkillPublicMeta,
 } from '@repo/agent-skills';
 import type { AuthUser } from '../auth';
-import { PrismaService } from '../infra/db/db.module';
 import type {
   AgentOsApprovalBody,
   AgentOsStartRunBody,
@@ -31,18 +28,19 @@ import { AgentOsDomainService } from './agent-os-domain.service';
 import { AgentOsProjectContextService } from './agent-os-project-context.service';
 import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
+import { ProjectSkillsResolver } from '../project-skills';
 
 @Injectable()
 export class AgentOsGatewayService {
   constructor(
     private readonly worker: AgentOsWorkerClient,
     private readonly projects: AgentOsProjectContextService,
-    private readonly prisma: PrismaService,
     private readonly config: AgentOsGatewayConfigService,
     private readonly journal: AgentOsRunJournalService,
     private readonly domain: AgentOsDomainService,
     private readonly realtimeTokens: AgentOsAblyTokenIssuer,
     private readonly attachments: AgentOsAttachmentService,
+    private readonly projectSkills: ProjectSkillsResolver,
   ) {}
 
   async health() {
@@ -93,12 +91,31 @@ export class AgentOsGatewayService {
         message: 'Conversation not found for this project.',
       });
     }
-    // Project defaults come from the database, never from the request: they are
-    // the admin-pinned set, and letting a caller supply them makes the pin
-    // advisory. Per-turn selection is `skillIds`, which is the client's to send.
-    const projectDefaults = await this.readProjectDefaultSkillIds(
-      body.projectId,
+    const allowedSystemSkills = new Set(
+      listInvocableSkills({
+        projectKind: project.projectKind,
+        workbenchMode: body.workbenchMode,
+      }).map((skill) => skill.id),
     );
+    for (const skillId of body.skillIds ?? []) {
+      if (!allowedSystemSkills.has(skillId)) {
+        throw new BadRequestException({
+          code: 'AGENT_OS_SKILL_NOT_INVOCABLE',
+          message: `Skill ${skillId} is not selectable in this workbench.`,
+        });
+      }
+    }
+    const skillMountSnapshot = await this.projectSkills.resolve({
+      ownerKind: project.projectKind,
+      projectId: project.projectId,
+      scope: 'agent_prompt',
+      workbenchMode: body.workbenchMode,
+      sourceSurface: `agent_os:${body.workbenchMode}`,
+      selection: {
+        includeInstallationIds: body.projectSkillInstallationIds,
+        excludeInstallationIds: body.disabledDefaultSkillInstallationIds,
+      },
+    });
     return this.worker.startRun({
       projectId: body.projectId,
       conversationId,
@@ -111,7 +128,7 @@ export class AgentOsGatewayService {
       workbenchMode: body.workbenchMode,
       workbenchContext,
       skillIds: body.skillIds,
-      projectDefaultSkillIds: projectDefaults,
+      skillMountSnapshot,
     });
   }
 
@@ -135,81 +152,6 @@ export class AgentOsGatewayService {
       projectKind: project.projectKind,
       workbenchMode,
     };
-  }
-
-  async getProjectSkills(user: AuthUser, projectId: string) {
-    await this.requireProjectRead(user.userId, projectId);
-    const defaults = await this.readProjectDefaultSkillIds(projectId);
-    return {
-      projectId,
-      defaultSkillIds: defaults,
-    };
-  }
-
-  async setProjectDefaultSkills(
-    user: AuthUser,
-    projectId: string,
-    defaultSkillIds: string[],
-  ) {
-    await this.requireProjectWrite(user.userId, projectId);
-    const unique = [
-      ...new Set(defaultSkillIds.map((id) => id.trim()).filter(Boolean)),
-    ];
-    for (const id of unique) {
-      const skill = getSkill(id);
-      if (!skill) {
-        throw new BadRequestException({
-          code: 'AGENT_OS_UNKNOWN_SKILL',
-          message: `Unknown skill: ${id}`,
-        });
-      }
-      if (!skill.userInvocable) {
-        throw new BadRequestException({
-          code: 'AGENT_OS_SKILL_NOT_INVOCABLE',
-          message: `Skill ${id} is not selectable as a project default.`,
-        });
-      }
-    }
-
-    const project = await this.prisma.platformProject.findFirst({
-      where: { id: projectId, deletedAt: null },
-      select: { id: true, workspaceId: true },
-    });
-    if (!project) {
-      throw new NotFoundException({
-        code: 'PROJECT_NOT_FOUND',
-        message: 'Platform project not found.',
-      });
-    }
-
-    await this.prisma.agentOsProjectState.upsert({
-      where: { projectId },
-      create: {
-        projectId: project.id,
-        workspaceId: project.workspaceId,
-        revision: 0,
-        characters: [],
-        scriptSections: [],
-        defaultSkillIds: unique as unknown as Prisma.InputJsonValue,
-        updatedByUserId: user.userId,
-      },
-      update: {
-        defaultSkillIds: unique as unknown as Prisma.InputJsonValue,
-        updatedByUserId: user.userId,
-      },
-    });
-
-    return { projectId, defaultSkillIds: unique };
-  }
-
-  private async readProjectDefaultSkillIds(
-    projectId: string,
-  ): Promise<string[]> {
-    const state = await this.prisma.agentOsProjectState.findUnique({
-      where: { projectId },
-      select: { defaultSkillIds: true },
-    });
-    return parseSkillIdArray(state?.defaultSkillIds);
   }
 
   async resolveApproval(
@@ -356,6 +298,10 @@ export class AgentOsGatewayService {
       toolId: 'characters.list',
       actorId: user.userId,
       projectId,
+      // This read endpoint is not an Agent turn. Use an explicit no-Skill
+      // provenance marker instead of weakening the Domain contract.
+      skillResolutionId: '00000000-0000-4000-8000-000000000000',
+      skillVersionIds: [],
       idempotencyKey: `list:${projectId}:${user.userId}:${Date.now()}`,
       arguments: {},
     });
@@ -407,6 +353,12 @@ export class AgentOsGatewayService {
       access === 'write'
         ? await this.requireProjectWrite(user.userId, run.projectId)
         : await this.requireProjectRead(user.userId, run.projectId);
+    if (run.projectKind && run.projectKind !== project.projectKind) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Run not found for this Agent OS protocol version.',
+      });
+    }
     if (!run.workbenchMode) {
       throw new NotFoundException({
         code: 'AGENT_OS_RUN_NOT_FOUND',
@@ -478,11 +430,4 @@ export class AgentOsGatewayService {
     }
     return undefined;
   }
-}
-
-function parseSkillIdArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (id): id is string => typeof id === 'string' && id.trim().length > 0,
-  );
 }

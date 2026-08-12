@@ -67,8 +67,7 @@ describe("skill mounts (system workbench skills)", () => {
     const mount = resolveSkillMounts({
       projectKind: "platform",
       workbenchMode: "storyboard",
-      projectDefaultSkillIds: ["agent-os.skill.long-script"],
-      turnSkillIds: ["agent-os.skill.cinematic-shots"],
+      turnSkillIds: ["agent-os.skill.long-script", "agent-os.skill.cinematic-shots"],
     });
     expect(mount.skills.map((s) => s.id)).toEqual(
       expect.arrayContaining([

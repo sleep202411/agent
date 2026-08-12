@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import type { AgentProjectKind } from '@repo/agent-capabilities';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
 
 export type AgentOsJournalEvent = {
   id: string;
@@ -32,6 +34,10 @@ export class AgentOsRunJournalService {
     events: AgentOsJournalEvent[];
     pendingApproval?: unknown;
     assistantText?: string | null;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    skillMountSnapshot: ProjectSkillResolutionSnapshot;
   }): Promise<void> {
     const lastSequence =
       input.events.length === 0
@@ -53,6 +59,12 @@ export class AgentOsRunJournalService {
           (input.pendingApproval as Prisma.InputJsonValue | undefined) ??
           Prisma.JsonNull,
         assistantText: input.assistantText ?? null,
+        projectKind: input.projectKind,
+        workbenchMode: input.workbenchMode,
+        workbenchContext:
+          (input.workbenchContext as Prisma.InputJsonValue | undefined) ??
+          Prisma.JsonNull,
+        skillSnapshot: input.skillMountSnapshot as Prisma.InputJsonValue,
       },
       update: {
         status: input.status,
@@ -79,6 +91,8 @@ export class AgentOsRunJournalService {
     conversationId: string;
     workbenchMode: string | null;
     workbenchContext: Readonly<Record<string, string>> | null;
+    projectKind: AgentProjectKind | null;
+    skillMountSnapshot: ProjectSkillResolutionSnapshot | null;
   } | null> {
     const row = await this.prisma.agentOsRun.findUnique({
       where: { id: runId },
@@ -86,22 +100,25 @@ export class AgentOsRunJournalService {
         projectId: true,
         actorId: true,
         conversationId: true,
-        events: true,
+        projectKind: true,
+        workbenchMode: true,
+        workbenchContext: true,
+        skillSnapshot: true,
       },
     });
     if (!row) return null;
-    const started = parseEvents(row.events).find(
-      (event) => event.type === 'RunStarted',
-    );
     return {
       projectId: row.projectId,
       actorId: row.actorId,
       conversationId: row.conversationId,
-      workbenchMode:
-        typeof started?.data.workbenchMode === 'string'
-          ? started.data.workbenchMode
+      projectKind:
+        row.projectKind === 'platform' || row.projectKind === 'story'
+          ? row.projectKind
           : null,
-      workbenchContext: parseStringRecord(started?.data.workbenchContext),
+      workbenchMode: row.workbenchMode,
+      workbenchContext: parseStringRecord(row.workbenchContext),
+      skillMountSnapshot:
+        (row.skillSnapshot as ProjectSkillResolutionSnapshot | null) ?? null,
     };
   }
 
@@ -137,6 +154,10 @@ export class AgentOsRunJournalService {
     events: AgentOsJournalEvent[];
     pendingApproval: unknown;
     assistantText: string | null;
+    projectKind: AgentProjectKind | null;
+    workbenchMode: string | null;
+    workbenchContext: Readonly<Record<string, string>> | null;
+    skillMountSnapshot: ProjectSkillResolutionSnapshot | null;
   } | null> {
     const row = await this.prisma.agentOsRun.findUnique({
       where: { id: runId },
@@ -149,6 +170,14 @@ export class AgentOsRunJournalService {
       events: all.filter((event) => event.sequence > afterSequence),
       pendingApproval: row.pendingApproval,
       assistantText: row.assistantText,
+      projectKind:
+        row.projectKind === 'platform' || row.projectKind === 'story'
+          ? row.projectKind
+          : null,
+      workbenchMode: row.workbenchMode,
+      workbenchContext: parseStringRecord(row.workbenchContext),
+      skillMountSnapshot:
+        (row.skillSnapshot as ProjectSkillResolutionSnapshot | null) ?? null,
     };
   }
 

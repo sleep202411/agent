@@ -17,6 +17,8 @@ export interface ToolRuntimeContext {
   conversationId: string;
   projectId: string;
   actorId: string;
+  skillResolutionId: string;
+  skillVersionIds: readonly string[];
   workbenchContext?: Readonly<Record<string, string>>;
   agentMode: AgentMode;
   permissionMode: PermissionMode;
@@ -380,6 +382,10 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   } as const;
 
   const allowed = new Set(toolIds);
+  const unknown = [...allowed].filter((id) => !(id in byRegistryId));
+  if (unknown.length > 0) {
+    throw new Error(`Skill snapshot requested unknown deployed tool(s): ${unknown.join(", ")}`);
+  }
   return [...allowed]
     .map((id) => byRegistryId[id as keyof typeof byRegistryId])
     .filter((t): t is NonNullable<typeof t> => t != null);
@@ -474,6 +480,8 @@ async function executeBound(
       conversationId: runtime.conversationId,
       projectId: runtime.projectId,
       actorId: runtime.actorId,
+      skillResolutionId: runtime.skillResolutionId,
+      skillVersionIds: runtime.skillVersionIds,
       workbenchContext: runtime.workbenchContext,
       toolCallId: callId,
       idempotencyKey: buildToolIdempotencyKey({

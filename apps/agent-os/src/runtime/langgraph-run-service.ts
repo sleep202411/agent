@@ -5,10 +5,10 @@ import { Command, isInterrupted } from "@langchain/langgraph";
 import type { AgentProjectKind } from "@repo/agent-capabilities";
 import type { AgentMode, PermissionMode } from "@repo/agent-policy";
 import type { AgentRunStatus } from "@repo/agent-protocol";
-import { resolveSkillMounts } from "@repo/agent-skills";
+import type { ProjectSkillResolutionSnapshot } from "@repo/agent-skills";
 import type { DomainPort } from "@repo/agent-tools";
 
-import { createAgentOsGraph } from "../graph/create-agent-graph.js";
+import { createAgentOsGraph, resolveAgentOsSkillMount } from "../graph/create-agent-graph.js";
 import type { ApprovalInterruptValue } from "../graph/build-langchain-tools.js";
 import { agentOsAbly } from "./ably-publisher.js";
 import { EventJournal } from "./event-journal.js";
@@ -32,10 +32,10 @@ export interface StartLangGraphRunInput {
   workbenchMode: string;
   /** Server-validated scope selected inside the workbench. */
   workbenchContext?: Readonly<Record<string, string>>;
-  /** Project default skill ids (admin). Mounted when registered. */
-  projectDefaultSkillIds?: readonly string[];
   /** Per-turn skill ids (composer). Mounted when registered. */
   turnSkillIds?: readonly string[];
+  /** Immutable project catalog mount resolved and signed by Nest. */
+  skillMountSnapshot: ProjectSkillResolutionSnapshot;
   agentMode?: AgentMode;
   permissionMode?: PermissionMode;
   model: BaseChatModel;
@@ -58,8 +58,8 @@ export interface LangGraphRunSnapshot {
   workbenchContext?: Readonly<Record<string, string>>;
   permissionMode?: PermissionMode;
   agentMode?: AgentMode;
-  projectDefaultSkillIds?: readonly string[];
   turnSkillIds?: readonly string[];
+  skillMountSnapshot?: ProjectSkillResolutionSnapshot;
   errorMessage?: string;
 }
 
@@ -141,8 +141,8 @@ function carryRunContext(
     workbenchContext?: Readonly<Record<string, string>>;
     agentMode?: AgentMode;
     permissionMode?: PermissionMode;
-    projectDefaultSkillIds?: readonly string[];
     turnSkillIds?: readonly string[];
+    skillMountSnapshot?: ProjectSkillResolutionSnapshot;
   }
 ): Pick<
   LangGraphRunSnapshot,
@@ -155,8 +155,8 @@ function carryRunContext(
   | "workbenchContext"
   | "agentMode"
   | "permissionMode"
-  | "projectDefaultSkillIds"
   | "turnSkillIds"
+  | "skillMountSnapshot"
 > {
   return {
     projectId: input.projectId ?? prev?.projectId,
@@ -168,8 +168,8 @@ function carryRunContext(
     workbenchContext: input.workbenchContext ?? prev?.workbenchContext,
     agentMode: input.agentMode ?? prev?.agentMode,
     permissionMode: input.permissionMode ?? prev?.permissionMode,
-    projectDefaultSkillIds: input.projectDefaultSkillIds ?? prev?.projectDefaultSkillIds,
     turnSkillIds: input.turnSkillIds ?? prev?.turnSkillIds,
+    skillMountSnapshot: input.skillMountSnapshot ?? prev?.skillMountSnapshot,
   };
 }
 
@@ -238,11 +238,11 @@ export class LangGraphRunService {
     }
     const journal = this.createJournal(input.conversationId);
     const messageId = `msg:${input.runId}`;
-    const mountPreview = resolveSkillMounts({
+    const mountPreview = resolveAgentOsSkillMount({
       projectKind: input.projectKind,
       workbenchMode: input.workbenchMode,
-      projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
+      skillMountSnapshot: input.skillMountSnapshot,
     });
     journal.append({
       sessionId: input.sessionId,
@@ -256,7 +256,10 @@ export class LangGraphRunService {
         projectKind: input.projectKind,
         workbenchMode: input.workbenchMode,
         workbenchContext: input.workbenchContext,
-        skillIds: mountPreview.skills.map((s) => s.id),
+        skillIds: mountPreview.systemSkillIds,
+        projectSkillResolutionId: input.skillMountSnapshot.resolutionId,
+        projectSkillVersionIds: mountPreview.projectSkillVersionIds,
+        projectSkillChecksum: input.skillMountSnapshot.checksum,
         toolIds: [...mountPreview.toolIds],
         skippedSkillIds: [...mountPreview.skippedSkillIds],
       },
@@ -312,8 +315,8 @@ export class LangGraphRunService {
       workbenchContext: input.workbenchContext,
       permissionMode: input.permissionMode ?? "smart",
       agentMode: input.agentMode ?? "ASSIST",
-      projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
+      skillMountSnapshot: input.skillMountSnapshot,
       assistantText: "",
     };
     this.snapshots.set(input.runId, snapshot);
@@ -405,19 +408,27 @@ export class LangGraphRunService {
     workbenchContext?: Readonly<Record<string, string>>;
     agentMode?: AgentMode;
     permissionMode?: PermissionMode;
+    skillMountSnapshot?: ProjectSkillResolutionSnapshot;
   }): Promise<boolean> {
     if (this.snapshots.has(input.runId)) return true;
+
+    const durable = await fetchJournalFromNest(input.runId);
+    const skillMountSnapshot = input.skillMountSnapshot ?? durable?.skillMountSnapshot ?? undefined;
+    if (!skillMountSnapshot) return false;
 
     const graph = createAgentOsGraph({
       model: input.model,
       checkpointer: input.checkpointer,
       projectKind: input.projectKind,
       workbenchMode: input.workbenchMode,
+      skillMountSnapshot,
       runtime: {
         runId: input.runId,
         conversationId: input.conversationId,
         projectId: input.projectId,
         actorId: input.actorId,
+        skillResolutionId: skillMountSnapshot.resolutionId,
+        skillVersionIds: skillMountSnapshot.skills.map((skill) => skill.versionId),
         workbenchContext: input.workbenchContext,
         agentMode: input.agentMode ?? "ASSIST",
         permissionMode: input.permissionMode ?? "smart",
@@ -432,7 +443,6 @@ export class LangGraphRunService {
     const approval = interrupts[0];
     if (!approval) return false;
 
-    const durable = await fetchJournalFromNest(input.runId);
     const journal = this.createJournal(input.conversationId);
     if (durable?.events?.length) journal.restore(durable.events);
 
@@ -450,6 +460,7 @@ export class LangGraphRunService {
       assistantText: durable?.assistantText ?? "",
       agentMode: input.agentMode ?? "ASSIST",
       permissionMode: input.permissionMode ?? "smart",
+      skillMountSnapshot,
       pendingApproval: { ...approval, approvalId: crypto.randomUUID() },
     };
     this.snapshots.set(input.runId, snapshot);
@@ -494,6 +505,9 @@ export class LangGraphRunService {
     }
     if (!existing.projectKind || !existing.workbenchMode) {
       throw new Error(`Run ${input.runId} is missing its capability context`);
+    }
+    if (!existing.skillMountSnapshot) {
+      throw new Error(`Run ${input.runId} is missing its frozen Skill snapshot`);
     }
 
     // Prefer explicit agent mode; else keep the mode from run start.
@@ -546,8 +560,8 @@ export class LangGraphRunService {
         checkpointer: input.checkpointer,
         agentMode: existing.agentMode ?? "ASSIST",
         permissionMode: existing.permissionMode ?? "smart",
-        projectDefaultSkillIds: existing.projectDefaultSkillIds,
         turnSkillIds: existing.turnSkillIds,
+        skillMountSnapshot: existing.skillMountSnapshot,
       },
       journal: existing.journal,
       messageId,
@@ -648,13 +662,15 @@ export class LangGraphRunService {
       checkpointer: input.checkpointer,
       projectKind: input.projectKind,
       workbenchMode: input.workbenchMode,
-      projectDefaultSkillIds: input.projectDefaultSkillIds,
       turnSkillIds: input.turnSkillIds,
+      skillMountSnapshot: input.skillMountSnapshot,
       runtime: {
         runId: input.runId,
         conversationId: input.conversationId,
         projectId: input.projectId,
         actorId: input.actorId,
+        skillResolutionId: input.skillMountSnapshot.resolutionId,
+        skillVersionIds: input.skillMountSnapshot.skills.map((skill) => skill.versionId),
         workbenchContext: input.workbenchContext,
         agentMode,
         permissionMode,
@@ -956,6 +972,10 @@ export class LangGraphRunService {
       events: snapshot.journal.all(),
       pendingApproval: snapshot.pendingApproval ?? null,
       assistantText: snapshot.assistantText ?? null,
+      projectKind: snapshot.projectKind,
+      workbenchMode: snapshot.workbenchMode,
+      workbenchContext: snapshot.workbenchContext,
+      skillMountSnapshot: snapshot.skillMountSnapshot,
     });
   }
 }

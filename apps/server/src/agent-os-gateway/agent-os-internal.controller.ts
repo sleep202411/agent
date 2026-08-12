@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { ProjectSkillResolutionSnapshotSchema } from '@repo/agent-skills';
 import { Public } from '../auth';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 import { AgentOsRunJournalService } from './agent-os-run-journal.service';
@@ -26,6 +27,10 @@ const journalBodySchema = z
     events: z.array(z.record(z.string(), z.unknown())).max(10_000),
     pendingApproval: z.unknown().optional(),
     assistantText: z.string().max(200_000).nullable().optional(),
+    projectKind: z.enum(['platform', 'story']),
+    workbenchMode: z.string().trim().min(1).max(64),
+    workbenchContext: z.record(z.string(), z.string()).optional(),
+    skillMountSnapshot: ProjectSkillResolutionSnapshotSchema,
   })
   .strict();
 
@@ -70,6 +75,10 @@ export class AgentOsInternalController {
       events: parsed.data.events as never,
       pendingApproval: parsed.data.pendingApproval,
       assistantText: parsed.data.assistantText,
+      projectKind: parsed.data.projectKind,
+      workbenchMode: parsed.data.workbenchMode,
+      workbenchContext: parsed.data.workbenchContext,
+      skillMountSnapshot: parsed.data.skillMountSnapshot,
     });
     return { ok: true, runId };
   }

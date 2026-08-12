@@ -81,43 +81,6 @@ export class AgentOsGatewayController {
     );
   }
 
-  @Get('projects/:projectId/skills')
-  async getProjectSkills(
-    @CurrentUser() user: AuthUser,
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-  ) {
-    return ok(await this.gateway.getProjectSkills(user, projectId));
-  }
-
-  @Post('projects/:projectId/skills/defaults')
-  async setProjectDefaultSkills(
-    @CurrentUser() user: AuthUser,
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Body() body: unknown,
-  ) {
-    const defaultSkillIds =
-      body &&
-      typeof body === 'object' &&
-      Array.isArray((body as { defaultSkillIds?: unknown }).defaultSkillIds)
-        ? (body as { defaultSkillIds: unknown[] }).defaultSkillIds.filter(
-            (id): id is string => typeof id === 'string',
-          )
-        : null;
-    if (!defaultSkillIds) {
-      throw new BadRequestException({
-        code: 'AGENT_OS_INVALID_BODY',
-        message: 'defaultSkillIds array is required',
-      });
-    }
-    return ok(
-      await this.gateway.setProjectDefaultSkills(
-        user,
-        projectId,
-        defaultSkillIds,
-      ),
-    );
-  }
-
   @Post('runs')
   /**
    * Use HTTP 200 + envelope code 200 so Studio's api client and Next rewrites

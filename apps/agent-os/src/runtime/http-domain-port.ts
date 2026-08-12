@@ -34,6 +34,8 @@ export class HttpDomainPort implements DomainPort {
         body: JSON.stringify({
           actorId: context.actorId,
           projectId: context.projectId,
+          skillResolutionId: context.skillResolutionId,
+          skillVersionIds: context.skillVersionIds,
           workbenchContext: context.workbenchContext,
           idempotencyKey: context.idempotencyKey,
           arguments: input,

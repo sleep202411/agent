@@ -37,6 +37,8 @@ describe('AttachmentAgentCapabilityHandler', () => {
         toolId: 'script.readSection',
         actorId: 'actor-1',
         projectId: STORY_PROJECT.projectId,
+        skillResolutionId: '00000000-0000-4000-8000-000000000001',
+        skillVersionIds: [],
         idempotencyKey: 'request-key-1',
         arguments: {
           attachmentId: '33333333-3333-4333-8333-333333333333',
@@ -70,6 +72,8 @@ describe('AttachmentAgentCapabilityHandler', () => {
         toolId: 'script.store',
         actorId: 'actor-1',
         projectId: STORY_PROJECT.projectId,
+        skillResolutionId: '00000000-0000-4000-8000-000000000001',
+        skillVersionIds: [],
         idempotencyKey: 'request-key-1',
         arguments: { text: 'source text', sectionSize: 2_000 },
       },

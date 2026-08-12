@@ -3,6 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { AGENT_PROJECT_KINDS, type AgentProjectKind } from "@repo/agent-capabilities";
 import type { DomainPort } from "@repo/agent-tools";
 import {
+  verifyProjectSkillSnapshot,
+  type ProjectSkillResolutionSnapshot,
+} from "@repo/agent-skills";
+import {
   createLiteLlmChatModel,
   isLiveModelConfigured,
   loadModelProfiles,
@@ -30,6 +34,27 @@ const runProject = new Map<string, string>();
 
 function isAgentProjectKind(value: unknown): value is AgentProjectKind {
   return typeof value === "string" && (AGENT_PROJECT_KINDS as readonly string[]).includes(value);
+}
+
+function validatedSkillSnapshot(
+  value: unknown,
+  expected: {
+    projectId: string;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+  }
+): ProjectSkillResolutionSnapshot | null {
+  const snapshot = verifyProjectSkillSnapshot(value);
+  if (!snapshot) return null;
+  if (
+    snapshot.projectId !== expected.projectId ||
+    snapshot.ownerKind !== expected.projectKind ||
+    snapshot.scope !== "agent_prompt" ||
+    snapshot.workbenchMode !== expected.workbenchMode
+  ) {
+    return null;
+  }
+  return snapshot;
 }
 
 function domainForProject(projectId: string): DomainPort {
@@ -180,8 +205,7 @@ export function createAgentOsHttpServer() {
           workbenchContext?: Record<string, string>;
           /** Per-turn skill ids (composer). Mounted when registered in skill runtime. */
           skillIds?: string[];
-          /** Project default skill ids (admin). Mounted when registered. */
-          projectDefaultSkillIds?: string[];
+          skillMountSnapshot?: unknown;
         };
         if (
           !body.projectId ||
@@ -202,6 +226,20 @@ export function createAgentOsHttpServer() {
           return;
         }
         const runId = crypto.randomUUID();
+        const skillMountSnapshot = validatedSkillSnapshot(body.skillMountSnapshot, {
+          projectId: body.projectId,
+          projectKind: body.projectKind,
+          workbenchMode: body.workbenchMode.trim(),
+        });
+        if (!skillMountSnapshot) {
+          send(res, 400, {
+            error: {
+              code: "INVALID_SKILL_SNAPSHOT",
+              message: "A valid, signed project Skill snapshot is required for every run.",
+            },
+          });
+          return;
+        }
         const domain = domainForProject(body.projectId);
         runProject.set(runId, body.projectId);
         const checkpointer = await getAgentOsCheckpointer();
@@ -225,9 +263,6 @@ export function createAgentOsHttpServer() {
         const turnSkillIds = (body.skillIds ?? []).filter(
           (id): id is string => typeof id === "string" && id.trim().length > 0
         );
-        const projectDefaultSkillIds = (body.projectDefaultSkillIds ?? []).filter(
-          (id): id is string => typeof id === "string" && id.trim().length > 0
-        );
         const snapshot = service.beginStart({
           runId,
           projectId: body.projectId,
@@ -242,8 +277,7 @@ export function createAgentOsHttpServer() {
           workbenchContext: body.workbenchContext,
           permissionMode,
           turnSkillIds: turnSkillIds.length > 0 ? turnSkillIds : undefined,
-          projectDefaultSkillIds:
-            projectDefaultSkillIds.length > 0 ? projectDefaultSkillIds : undefined,
+          skillMountSnapshot,
           model,
           domain,
           checkpointer,

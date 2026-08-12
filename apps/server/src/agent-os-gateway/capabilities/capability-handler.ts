@@ -4,6 +4,8 @@ export interface AgentOsCapabilityExecuteInput {
   toolId: string;
   actorId: string;
   projectId: string;
+  skillResolutionId: string;
+  skillVersionIds: readonly string[];
   workbenchContext?: Readonly<Record<string, string>>;
   idempotencyKey: string;
   arguments: unknown;

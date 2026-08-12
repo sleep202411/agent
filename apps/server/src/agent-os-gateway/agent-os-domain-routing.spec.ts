@@ -4,6 +4,8 @@ const INPUT = {
   toolId: 'characters.list',
   actorId: 'actor-1',
   projectId: 'project-1',
+  skillResolutionId: '00000000-0000-4000-8000-000000000000',
+  skillVersionIds: [],
   idempotencyKey: 'request-key-1',
   arguments: {},
 };

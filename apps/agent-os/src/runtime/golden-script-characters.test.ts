@@ -25,6 +25,8 @@ describe("golden path: script → characters → domain", () => {
       conversationId: CONVERSATION,
       projectId: PROJECT,
       actorId: "user-1",
+      skillResolutionId: "00000000-0000-4000-8000-000000000001",
+      skillVersionIds: [],
       mode: "ASSIST",
       permissionMode: "smart",
       domain,
@@ -111,6 +113,8 @@ describe("golden path: script → characters → domain", () => {
       conversationId: CONVERSATION,
       projectId: PROJECT,
       actorId: "user-1",
+      skillResolutionId: "00000000-0000-4000-8000-000000000001",
+      skillVersionIds: [],
       toolCallId: "call-upsert-1",
       idempotencyKey: `${PROJECT}:${RUN}:call-upsert-1:v1`,
     });

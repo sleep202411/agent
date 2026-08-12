@@ -62,6 +62,8 @@ export class AgentOsDomainController {
       toolId,
       actorId: parsed.data.actorId,
       projectId: parsed.data.projectId,
+      skillResolutionId: parsed.data.skillResolutionId,
+      skillVersionIds: parsed.data.skillVersionIds,
       workbenchContext: parsed.data.workbenchContext,
       idempotencyKey: parsed.data.idempotencyKey,
       arguments: parsed.data.arguments,

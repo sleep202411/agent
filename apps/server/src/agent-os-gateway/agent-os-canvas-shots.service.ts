@@ -245,6 +245,8 @@ export class AgentOsCanvasShotsService {
       payload: Record<string, unknown>;
     }>;
     idempotencyKey: string;
+    skillResolutionId: string;
+    skillVersionIds: readonly string[];
   }): Promise<{
     draftRevision: number;
     layoutRevision: number;
@@ -336,6 +338,8 @@ export class AgentOsCanvasShotsService {
           source: 'agent-os',
           toolId: 'canvas.applyPatch',
           appliedOperationIds,
+          skillResolutionId: input.skillResolutionId,
+          skillVersionIds: [...input.skillVersionIds],
         },
       });
 
@@ -375,6 +379,8 @@ export class AgentOsCanvasShotsService {
     documentId: string;
     shotIds: string[];
     idempotencyKey: string;
+    skillResolutionId: string;
+    skillVersionIds: readonly string[];
   }): Promise<{
     documentId: string;
     revision: number;
@@ -460,6 +466,8 @@ export class AgentOsCanvasShotsService {
         metadata: {
           source: 'agent-os',
           toolId: 'storyboard.deleteShots',
+          skillResolutionId: input.skillResolutionId,
+          skillVersionIds: [...input.skillVersionIds],
         },
       });
 
@@ -488,6 +496,8 @@ export class AgentOsCanvasShotsService {
     documentId: string;
     shots: ShotWrite[];
     idempotencyKey: string;
+    skillResolutionId: string;
+    skillVersionIds: readonly string[];
   }): Promise<{
     documentId: string;
     revision: number;
@@ -541,6 +551,8 @@ export class AgentOsCanvasShotsService {
         metadata: {
           source: 'agent-os',
           toolId: 'storyboard.upsertShots',
+          skillResolutionId: input.skillResolutionId,
+          skillVersionIds: [...input.skillVersionIds],
         },
       });
 

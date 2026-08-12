@@ -89,15 +89,12 @@ function makeService(overrides?: {
   const service = new AgentOsGatewayService(
     worker as never, // worker
     projects as never,
-    {
-      platformProject: { findFirst: jest.fn().mockResolvedValue({ id: 'p' }) },
-      agentOsProjectState: { findUnique: jest.fn().mockResolvedValue(null) },
-    } as never, // prisma
     { value: {} } as never, // config
     journal as never,
     {} as never, // domain
     realtimeTokens as never,
     attachments as never,
+    { resolve: jest.fn().mockResolvedValue({ skills: [] }) } as never,
   );
   return {
     service,

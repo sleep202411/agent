@@ -1,4 +1,9 @@
 import type { AgentEventEnvelope } from "@repo/agent-protocol";
+import type { AgentProjectKind } from "@repo/agent-capabilities";
+import {
+  verifyProjectSkillSnapshot,
+  type ProjectSkillResolutionSnapshot,
+} from "@repo/agent-skills";
 
 /**
  * Push the full event journal snapshot to Nest for durable storage.
@@ -14,6 +19,10 @@ export async function reportJournalToNest(input: {
   events: readonly AgentEventEnvelope[];
   pendingApproval?: unknown;
   assistantText?: string | null;
+  projectKind?: AgentProjectKind;
+  workbenchMode?: string;
+  workbenchContext?: Readonly<Record<string, string>>;
+  skillMountSnapshot?: ProjectSkillResolutionSnapshot;
 }): Promise<void> {
   const baseUrl = process.env.AGENT_OS_DOMAIN_URL?.trim();
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
@@ -36,6 +45,10 @@ export async function reportJournalToNest(input: {
         events: input.events,
         pendingApproval: input.pendingApproval ?? null,
         assistantText: input.assistantText ?? null,
+        projectKind: input.projectKind,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
+        skillMountSnapshot: input.skillMountSnapshot,
       }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -74,6 +87,10 @@ export async function fetchJournalFromNest(runId: string): Promise<{
   events: AgentEventEnvelope[];
   pendingApproval: unknown;
   assistantText: string | null;
+  projectKind: AgentProjectKind | null;
+  workbenchMode: string | null;
+  workbenchContext: Readonly<Record<string, string>> | null;
+  skillMountSnapshot: ProjectSkillResolutionSnapshot | null;
 } | null> {
   const baseUrl = process.env.AGENT_OS_DOMAIN_URL?.trim();
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
@@ -92,13 +109,26 @@ export async function fetchJournalFromNest(runId: string): Promise<{
       events?: AgentEventEnvelope[];
       pendingApproval?: unknown;
       assistantText?: string | null;
+      projectKind?: AgentProjectKind | null;
+      workbenchMode?: string | null;
+      workbenchContext?: Readonly<Record<string, string>> | null;
+      skillMountSnapshot?: unknown;
     };
     if (!body.ok || !Array.isArray(body.events)) return null;
+    const skillMountSnapshot = verifyProjectSkillSnapshot(body.skillMountSnapshot);
     return {
       status: typeof body.status === "string" ? body.status : "running",
       events: body.events,
       pendingApproval: body.pendingApproval ?? null,
       assistantText: body.assistantText ?? null,
+      projectKind:
+        body.projectKind === "platform" || body.projectKind === "story" ? body.projectKind : null,
+      workbenchMode: typeof body.workbenchMode === "string" ? body.workbenchMode : null,
+      workbenchContext:
+        body.workbenchContext && typeof body.workbenchContext === "object"
+          ? body.workbenchContext
+          : null,
+      skillMountSnapshot,
     };
   } catch {
     return null;

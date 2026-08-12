@@ -11,6 +11,8 @@ export interface TurnRunnerConfig {
   conversationId: string;
   projectId: string;
   actorId: string;
+  skillResolutionId: string;
+  skillVersionIds: readonly string[];
   mode: AgentMode;
   permissionMode: PermissionMode;
   domain: DomainPort;
@@ -139,6 +141,8 @@ export class TurnRunner {
         conversationId: this.config.conversationId,
         projectId: this.config.projectId,
         actorId: this.config.actorId,
+        skillResolutionId: this.config.skillResolutionId,
+        skillVersionIds: this.config.skillVersionIds,
       },
     });
 
@@ -207,6 +211,8 @@ export class TurnRunner {
           conversationId: this.config.conversationId,
           projectId: this.config.projectId,
           actorId: this.config.actorId,
+          skillResolutionId: this.config.skillResolutionId,
+          skillVersionIds: this.config.skillVersionIds,
         },
       });
 

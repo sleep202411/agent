@@ -2,6 +2,10 @@ import { AIMessage } from "@langchain/core/messages";
 import { fakeModel } from "@langchain/core/testing";
 import { MemorySaver } from "@langchain/langgraph";
 import { describe, expect, it } from "vitest";
+import {
+  projectSkillSnapshotChecksum,
+  type ProjectSkillResolutionSnapshot,
+} from "@repo/agent-skills";
 
 import { InMemoryStoryDomain } from "./in-memory-domain.js";
 import { LangGraphRunService } from "./langgraph-run-service.js";
@@ -9,6 +13,22 @@ import { LangGraphRunService } from "./langgraph-run-service.js";
 const PROJECT = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const ATTACHMENT = "00000000-0000-4000-8000-000000000001";
+
+function emptySkillMountSnapshot(workbenchMode: string): ProjectSkillResolutionSnapshot {
+  const unsigned = {
+    schemaVersion: "project-skill-resolution/v1" as const,
+    resolutionId: "50000000-0000-7000-8000-000000000001",
+    ownerKind: "platform" as const,
+    projectId: PROJECT,
+    projectRevision: 0,
+    scope: "agent_prompt" as const,
+    workbenchMode,
+    sourceSurface: "fizzagent",
+    resolvedAt: "2026-08-11T00:00:00.000Z",
+    skills: [],
+  };
+  return { ...unsigned, checksum: projectSkillSnapshotChecksum(unsigned) };
+}
 
 describe("LangGraph golden path: script → characters", () => {
   it("interrupts on characters_upsert, then writes after approve", async () => {
@@ -66,6 +86,7 @@ describe("LangGraph golden path: script → characters", () => {
       message: "请根据剧本分析角色并写入项目",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,
@@ -143,6 +164,7 @@ describe("LangGraph golden path: script → characters", () => {
       message: "写入角色",
       modelProfileId: "qwen-plus",
       workbenchMode: "brief",
+      skillMountSnapshot: emptySkillMountSnapshot("brief"),
       model,
       domain,
       checkpointer,
@@ -210,6 +232,7 @@ describe("LangGraph golden path: script → characters", () => {
       message: "写入角色",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,
@@ -309,6 +332,7 @@ describe("LangGraph golden path: script → characters", () => {
       message: "写入角色",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,
@@ -327,6 +351,7 @@ describe("LangGraph golden path: script → characters", () => {
       sessionId,
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,
@@ -360,6 +385,7 @@ describe("LangGraph golden path: script → characters", () => {
       projectId: PROJECT,
       projectKind: "platform",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       actorId: "user-1",
       sessionId: "agent-os:v1:conversation:none",
       modelProfileId: "qwen-plus",
@@ -411,6 +437,7 @@ describe("LangGraph golden path: script → characters", () => {
       message: "提取角色并拆分镜",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer: new MemorySaver(),
@@ -445,6 +472,7 @@ describe("LangGraph cancel", () => {
       modelMessage: "hello\n\n[Attachment context: internal-only]",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,
@@ -519,6 +547,7 @@ describe("LangGraph golden path: script → storyboard shots", () => {
       message: "把剧本拆成 storyboard shots 并写入",
       modelProfileId: "qwen-plus",
       workbenchMode: "storyboard",
+      skillMountSnapshot: emptySkillMountSnapshot("storyboard"),
       model,
       domain,
       checkpointer,

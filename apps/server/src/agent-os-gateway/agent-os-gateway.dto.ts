@@ -58,8 +58,15 @@ export const AgentOsStartRunBodySchema = z
      */
     skillIds: z.array(z.string().trim().min(1).max(128)).max(16).optional(),
     /**
-     * Project default skill ids (admin). Mounted when registered.
+     * Installed project Skills selected for this turn. Project defaults are
+     * resolved from the database and cannot be supplied by the client.
      */
+    projectSkillInstallationIds: z.array(z.string().uuid()).max(32).optional(),
+    /** Project defaults disabled for this turn only. */
+    disabledDefaultSkillInstallationIds: z
+      .array(z.string().uuid())
+      .max(32)
+      .optional(),
   })
   .strict();
 

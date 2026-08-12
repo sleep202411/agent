@@ -115,6 +115,8 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       documentId: requiredCanvasDocumentId(input.workbenchContext),
       shots: args.shots,
       idempotencyKey: input.idempotencyKey,
+      skillResolutionId: input.skillResolutionId,
+      skillVersionIds: input.skillVersionIds,
     });
 
     return {
@@ -140,6 +142,8 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       documentId: requiredCanvasDocumentId(input.workbenchContext),
       shotIds: [...new Set(args.shotIds)],
       idempotencyKey: input.idempotencyKey,
+      skillResolutionId: input.skillResolutionId,
+      skillVersionIds: input.skillVersionIds,
     });
 
     return {
@@ -308,6 +312,8 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       baseLayoutRevision: raw.baseLayoutRevision,
       operations,
       idempotencyKey: input.idempotencyKey,
+      skillResolutionId: input.skillResolutionId,
+      skillVersionIds: input.skillVersionIds,
     });
   }
 

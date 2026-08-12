@@ -117,6 +117,8 @@ export const AgentOsDomainExecuteBodySchema = z
   .object({
     actorId: z.string().trim().min(1).max(128),
     projectId: z.string().uuid(),
+    skillResolutionId: z.string().uuid(),
+    skillVersionIds: z.array(z.string().uuid()).max(32),
     workbenchContext: z.record(z.string(), z.string()).optional(),
     idempotencyKey: z.string().trim().min(8).max(512),
     arguments: z.unknown(),

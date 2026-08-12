@@ -4,6 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AgentProjectKind } from '@repo/agent-capabilities';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 
 export interface AgentOsWorkerRunRequest {
@@ -18,7 +19,7 @@ export interface AgentOsWorkerRunRequest {
   workbenchMode: string;
   workbenchContext?: Readonly<Record<string, string>>;
   skillIds?: string[];
-  projectDefaultSkillIds?: string[];
+  skillMountSnapshot?: ProjectSkillResolutionSnapshot;
 }
 
 export interface AgentOsWorkerRunResponse {

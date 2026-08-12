@@ -25,6 +25,9 @@ export interface ToolExecutionContext {
   conversationId: string;
   projectId: string;
   actorId: string;
+  /** Immutable Skill resolution that authorized/influenced this tool call. */
+  skillResolutionId: string;
+  skillVersionIds: readonly string[];
   /** Server-validated scope for the active workbench (for example a Story chapter). */
   workbenchContext?: Readonly<Record<string, string>>;
   /** Stable key: projectId + runId + toolCallId + operationVersion */
