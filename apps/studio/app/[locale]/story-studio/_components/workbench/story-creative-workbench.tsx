@@ -310,6 +310,7 @@ function StoryWorkbenchShell({
 
         <AgentOsPanel
           projectId={projectId}
+          projectKind="story"
           workbenchMode="story"
           open={agentOpen}
           onClose={closeAgent}

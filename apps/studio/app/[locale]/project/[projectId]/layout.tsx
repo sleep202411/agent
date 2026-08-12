@@ -414,6 +414,7 @@ function SectionAgentPanel({
     <AgentOsPanel
       className="p-0"
       projectId={projectId}
+      projectKind="platform"
       workbenchMode={workbenchMode}
       workbenchContext={
         isSectionMode && activeSection ? { sectionId: activeSection.id } : undefined

@@ -84,7 +84,10 @@ export interface AgentOsStartRunInput {
   workbenchContext?: AgentOsWorkbenchContext;
   /** Per-turn skill ids (composer). Mounted when registered in skill runtime. */
   skillIds?: string[];
-  /** Project default skill ids (admin). Mounted when registered. */
+  /** Installed project Skills added for this turn. */
+  projectSkillInstallationIds?: string[];
+  /** Installed project defaults removed for this turn. */
+  disabledDefaultSkillInstallationIds?: string[];
 }
 
 export interface AgentOsApprovalInput {
@@ -116,6 +119,8 @@ export class AgentOsApiClient {
         workbenchMode: input.workbenchMode,
         workbenchContext: input.workbenchContext,
         skillIds: input.skillIds,
+        projectSkillInstallationIds: input.projectSkillInstallationIds,
+        disabledDefaultSkillInstallationIds: input.disabledDefaultSkillInstallationIds,
       },
       timeout: 10 * 60_000,
       signal,
@@ -306,27 +311,6 @@ export class AgentOsApiClient {
   }> {
     return api.get("/aurora/agent-os/skills", {
       params: { projectId, workbenchMode },
-      signal,
-    });
-  }
-
-  getProjectSkills(
-    projectId: string,
-    signal?: AbortSignal
-  ): Promise<{
-    projectId: string;
-    defaultSkillIds: string[];
-  }> {
-    return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/skills`, { signal });
-  }
-
-  setProjectDefaultSkills(
-    projectId: string,
-    defaultSkillIds: string[],
-    signal?: AbortSignal
-  ): Promise<{ projectId: string; defaultSkillIds: string[] }> {
-    return api.post(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/skills/defaults`, {
-      data: { defaultSkillIds },
       signal,
     });
   }

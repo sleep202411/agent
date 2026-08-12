@@ -3290,6 +3290,7 @@ function StoryProjectCanvasInner({
       </div>
       <AgentOsPanel
         projectId={projectId}
+        projectKind="story"
         workbenchMode="story"
         workbenchContext={{ chapterId: workbenchProjection.chapter.id }}
         onMutationCompleted={refreshAfterAgentMutation}

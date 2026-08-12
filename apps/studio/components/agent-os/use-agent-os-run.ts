@@ -1283,6 +1283,8 @@ export function useAgentOsRun(projectId: string) {
       workbenchMode: "storyboard" | "canvas" | "brief" | "story";
       workbenchContext?: AgentOsWorkbenchContext;
       skillIds?: string[];
+      projectSkillInstallationIds?: string[];
+      disabledDefaultSkillInstallationIds?: string[];
     }) => {
       const text = input.message.trim();
       const attachmentIds = input.attachmentIds ?? [];
@@ -1321,6 +1323,8 @@ export function useAgentOsRun(projectId: string) {
           workbenchMode: input.workbenchMode,
           workbenchContext: input.workbenchContext,
           skillIds: input.skillIds,
+          projectSkillInstallationIds: input.projectSkillInstallationIds,
+          disabledDefaultSkillInstallationIds: input.disabledDefaultSkillInstallationIds,
         });
 
         // Bind optimistic user to this run *before* merging events.

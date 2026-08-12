@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { IconAlertCircle, IconAlertTriangle, IconPaperclip, IconX } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  IconAlertCircle,
+  IconAlertTriangle,
+  IconChevronDown,
+  IconPaperclip,
+  IconPuzzle,
+  IconX,
+} from "@tabler/icons-react";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
 import {
   FizzAgentModelMenu,
@@ -22,6 +30,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   agentOsApi,
   type AgentOsAttachmentSummary,
   type AgentOsPermissionMode,
@@ -33,6 +48,8 @@ import { cn } from "@/lib/utils";
 import { AgentOsTranscript } from "./agent-os-transcript";
 import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
 import { useAgentOsRun } from "./use-agent-os-run";
+import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { listProjectSkillInstallations } from "@/lib/project-skills-api";
 
 const PERMISSION_MODES: Array<{
   id: AgentOsPermissionMode;
@@ -95,6 +112,7 @@ function writeLs(key: string, value: string) {
 
 interface AgentOsPanelProps {
   projectId: string;
+  projectKind: "platform" | "story";
   workbenchMode: AgentOsWorkbenchMode;
   workbenchContext?: AgentOsWorkbenchContext;
   onMutationCompleted?: () => void | Promise<void>;
@@ -110,6 +128,7 @@ export function AgentOsPanel(props: AgentOsPanelProps) {
 
 function AgentOsProjectSession({
   projectId,
+  projectKind,
   workbenchMode,
   workbenchContext,
   onMutationCompleted,
@@ -118,6 +137,20 @@ function AgentOsProjectSession({
   className,
 }: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
+  const ts = useTranslations("project.skills");
+  const projectContext = useOptionalProjectContext();
+  const projectSkillsQuery = useQuery({
+    queryKey: ["project-skills", "installations", projectKind, projectId],
+    queryFn: () => listProjectSkillInstallations(projectKind, projectId),
+    enabled: !projectContext,
+    staleTime: 10_000,
+  });
+  const projectSkills = projectContext?.projectSkills ?? {
+    data: projectSkillsQuery.data,
+    loading: projectSkillsQuery.isPending,
+    error: projectSkillsQuery.isError,
+    retry: () => void projectSkillsQuery.refetch(),
+  };
   const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
@@ -134,10 +167,13 @@ function AgentOsProjectSession({
   const [workerOk, setWorkerOk] = useState<boolean | null>(null);
   /** Invocable skills for this workbench (composer multi-select). */
   const [invocableSkills, setInvocableSkills] = useState<AgentOsSkillMeta[]>([]);
-  /** Project admin defaults — pinned chips; persisted via Nest. */
-  const [projectDefaultSkillIds, setProjectDefaultSkillIds] = useState<string[]>([]);
   /** Per-turn selection (user toggles). */
   const [turnSkillIds, setTurnSkillIds] = useState<string[]>([]);
+  /** Installed catalog Skills explicitly added/disabled for this message. */
+  const [turnProjectSkillIds, setTurnProjectSkillIds] = useState<string[]>([]);
+  const [disabledProjectDefaultSkillIds, setDisabledProjectDefaultSkillIds] = useState<string[]>(
+    []
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
@@ -148,6 +184,54 @@ function AgentOsProjectSession({
   const refreshedAtRef = useRef(0);
   const [models, setModels] = useState<Array<{ id: string; label: string; hint?: string }>>([]);
   const [latestIssue, setLatestIssue] = useState<AgentOsIssue | null>(null);
+
+  const projectSkillEntries = useMemo(() => {
+    const expectedSource = `agent_os:${workbenchMode}`;
+    return (projectSkills.data?.installations ?? [])
+      .filter(
+        (installation) =>
+          installation.status === "active" &&
+          installation.version.capabilities.includes("agent_prompt") &&
+          (installation.version.workbenchModes.length === 0 ||
+            installation.version.workbenchModes.includes(workbenchMode))
+      )
+      .map((installation) => ({
+        installation,
+        name: installation.translationKey
+          ? ts(`items.${installation.translationKey}.name`)
+          : (installation.name ?? installation.slug ?? ts("title")),
+        isDefault: installation.defaults.some(
+          (activation) =>
+            activation.scope === "agent_prompt" &&
+            (!activation.workbenchMode || activation.workbenchMode === workbenchMode) &&
+            (!activation.sourceSurface || activation.sourceSurface === expectedSource)
+        ),
+      }));
+  }, [projectSkills.data?.installations, ts, workbenchMode]);
+  const projectSkillsReady = !projectSkills.loading && !projectSkills.error && !!projectSkills.data;
+
+  const availableProjectSkillIds = useMemo(
+    () => new Set(projectSkillEntries.map((entry) => entry.installation.id)),
+    [projectSkillEntries]
+  );
+  const defaultProjectSkillIds = useMemo(
+    () =>
+      new Set(
+        projectSkillEntries.filter((entry) => entry.isDefault).map((entry) => entry.installation.id)
+      ),
+    [projectSkillEntries]
+  );
+  const effectiveTurnProjectSkillIds = turnProjectSkillIds.filter((id) =>
+    availableProjectSkillIds.has(id)
+  );
+  const effectiveDisabledProjectDefaultSkillIds = disabledProjectDefaultSkillIds.filter((id) =>
+    defaultProjectSkillIds.has(id)
+  );
+  const activeProjectSkillEntries = projectSkillEntries.filter(({ installation, isDefault }) =>
+    isDefault
+      ? !effectiveDisabledProjectDefaultSkillIds.includes(installation.id)
+      : effectiveTurnProjectSkillIds.includes(installation.id)
+  );
 
   const reportIssue = useCallback(
     (error: unknown, fallback: string) => {
@@ -189,17 +273,13 @@ function AgentOsProjectSession({
     };
   }, []);
 
-  // Load project defaults, workbench-scoped skills, and the worker model catalog.
+  // Load workbench-scoped system skills and the worker model catalog. Project
+  // defaults come exclusively from installed catalog Skills below.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      agentOsApi.getProjectSkills(projectId),
-      agentOsApi.listSkills(projectId, workbenchMode),
-      agentOsApi.listModels(),
-    ])
-      .then(([projectSkills, skillCatalog, modelCatalog]) => {
+    void Promise.all([agentOsApi.listSkills(projectId, workbenchMode), agentOsApi.listModels()])
+      .then(([skillCatalog, modelCatalog]) => {
         if (cancelled) return;
-        setProjectDefaultSkillIds(projectSkills.defaultSkillIds);
         setInvocableSkills(skillCatalog.invocable);
         setModels(modelCatalog.models);
         // Keep the remembered pick only if the deployment still offers it —
@@ -212,14 +292,13 @@ function AgentOsProjectSession({
           prev.filter((id) => skillCatalog.invocable.some((s) => s.id === id))
         );
       })
-      .catch(() => {
-        // Nest still loads durable defaults from DB when this optional catalog
-        // request is unavailable.
+      .catch((error) => {
+        if (!cancelled) reportIssue(error, t("catalogLoadFailed"));
       });
     return () => {
       cancelled = true;
     };
-  }, [projectId, workbenchMode]);
+  }, [projectId, reportIssue, t, workbenchMode]);
 
   useEffect(() => {
     writeLs(LS_PERM, permissionMode);
@@ -305,8 +384,16 @@ function AgentOsProjectSession({
           ? t("runOrphaned")
           : (state.error ?? null)
     : state.error;
+  const projectSkillIssue = projectSkills.error
+    ? toAgentOsIssue(
+        new Error(t("skillCatalogFailed")),
+        t("skillCatalogFailed"),
+        t("serviceUnavailable")
+      )
+    : null;
+  const composerIssue = latestIssue ?? projectSkillIssue;
   const diagnosticIssue =
-    latestIssue ??
+    composerIssue ??
     (runErrorText
       ? toAgentOsIssue(new Error(runErrorText), t("runFailed"), t("serviceUnavailable"))
       : null);
@@ -319,6 +406,7 @@ function AgentOsProjectSession({
   const canSend =
     !turnBusy &&
     workerOk !== false &&
+    projectSkillsReady &&
     modelProfileId.trim().length > 0 &&
     (draft.trim().length > 0 || pendingFiles.some((f) => f.status === "ready"));
 
@@ -388,40 +476,34 @@ function AgentOsProjectSession({
     setPendingFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  const persistProjectDefaults = useCallback(
-    async (next: string[]) => {
-      const prev = projectDefaultSkillIds;
-      setProjectDefaultSkillIds(next);
-      try {
-        const saved = await agentOsApi.setProjectDefaultSkills(projectId, next);
-        setProjectDefaultSkillIds(saved.defaultSkillIds);
-      } catch (error) {
-        setProjectDefaultSkillIds(prev);
-        reportIssue(error, t("skillDefaultFailed"));
-      }
-    },
-    [projectDefaultSkillIds, projectId, reportIssue, t]
-  );
-
   const onSkillChipClick = useCallback(
-    (skillId: string, e: MouseEvent) => {
+    (skillId: string) => {
       if (turnBusy) return;
-      // Alt/Option-click pins or unpins as project default (persisted).
-      if (e.altKey) {
-        e.preventDefault();
-        const isDefault = projectDefaultSkillIds.includes(skillId);
-        const next = isDefault
-          ? projectDefaultSkillIds.filter((id) => id !== skillId)
-          : [...projectDefaultSkillIds, skillId];
-        void persistProjectDefaults(next);
-        return;
-      }
-      if (projectDefaultSkillIds.includes(skillId)) return;
       setTurnSkillIds((prev) =>
         prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]
       );
     },
-    [persistProjectDefaults, projectDefaultSkillIds, turnBusy]
+    [turnBusy]
+  );
+
+  const onProjectSkillChipClick = useCallback(
+    (installationId: string, isDefault: boolean) => {
+      if (turnBusy) return;
+      if (isDefault) {
+        setDisabledProjectDefaultSkillIds((current) =>
+          current.includes(installationId)
+            ? current.filter((id) => id !== installationId)
+            : [...current, installationId]
+        );
+        return;
+      }
+      setTurnProjectSkillIds((current) =>
+        current.includes(installationId)
+          ? current.filter((id) => id !== installationId)
+          : [...current, installationId]
+      );
+    },
+    [turnBusy]
   );
 
   const onSend = async () => {
@@ -444,9 +526,16 @@ function AgentOsProjectSession({
         workbenchMode,
         workbenchContext,
         skillIds: turnSkillIds,
-        // After hydrate, send composer state (includes optimistic pin).
-        // Before hydrate / on load failure, omit so Nest reads durable DB defaults.
+        projectSkillInstallationIds:
+          effectiveTurnProjectSkillIds.length > 0 ? effectiveTurnProjectSkillIds : undefined,
+        disabledDefaultSkillInstallationIds:
+          effectiveDisabledProjectDefaultSkillIds.length > 0
+            ? effectiveDisabledProjectDefaultSkillIds
+            : undefined,
       });
+      setTurnSkillIds([]);
+      setTurnProjectSkillIds([]);
+      setDisabledProjectDefaultSkillIds([]);
     } catch (error) {
       reportIssue(error, t("sendFailed"));
     } finally {
@@ -580,24 +669,26 @@ function AgentOsProjectSession({
             onChange={(event) => void onPickFiles(event.target.files)}
           />
 
-          {latestIssue ? (
+          {composerIssue ? (
             <div
               role="alert"
               className="flex min-w-0 items-center gap-2 rounded-xl bg-red-500/[0.09] px-3 py-2 text-red-100/80 ring-1 ring-inset ring-red-400/12"
             >
               <IconAlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-red-300/80" />
-              <span className="min-w-0 flex-1 truncate text-[11px]" title={latestIssue.message}>
-                {latestIssue.message}
+              <span className="min-w-0 flex-1 truncate text-[11px]" title={composerIssue.message}>
+                {composerIssue.message}
               </span>
-              <button
-                type="button"
-                onClick={() => setLatestIssue(null)}
-                aria-label={t("dismissIssue")}
-                title={t("dismissIssue")}
-                className="grid size-5 shrink-0 place-items-center rounded-full text-red-100/45 transition-colors hover:bg-red-100/10 hover:text-red-50"
-              >
-                <IconX aria-hidden="true" className="size-3" />
-              </button>
+              {latestIssue ? (
+                <button
+                  type="button"
+                  onClick={() => setLatestIssue(null)}
+                  aria-label={t("dismissIssue")}
+                  title={t("dismissIssue")}
+                  className="grid size-5 shrink-0 place-items-center rounded-full text-red-100/45 transition-colors hover:bg-red-100/10 hover:text-red-50"
+                >
+                  <IconX aria-hidden="true" className="size-3" />
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -659,30 +750,25 @@ function AgentOsProjectSession({
               </div>
             }
             attachmentBar={
-              invocableSkills.length > 0 || pendingFiles.length > 0 || uploading ? (
+              invocableSkills.length > 0 ||
+              projectSkillEntries.length > 0 ||
+              pendingFiles.length > 0 ||
+              uploading ? (
                 <div className="grid gap-1.5">
                   {invocableSkills.length > 0 ? (
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
                       {invocableSkills.map((skill) => {
-                        const isDefault = projectDefaultSkillIds.includes(skill.id);
                         const isTurn = turnSkillIds.includes(skill.id);
-                        const active = isDefault || isTurn;
-                        const titleParts = [
-                          skill.description,
-                          isDefault
-                            ? t("skillProjectDefault", { name: skill.name })
-                            : t("skillToggleTurn"),
-                          isDefault ? t("skillUnpinDefault") : t("skillPinDefault"),
-                        ];
+                        const active = isTurn;
                         return (
                           <button
                             key={skill.id}
                             type="button"
                             disabled={turnBusy}
-                            title={titleParts.join(" · ")}
+                            title={`${skill.description} · ${t("skillToggleTurn")}`}
                             aria-pressed={active}
-                            onClick={(event) => onSkillChipClick(skill.id, event)}
+                            onClick={() => onSkillChipClick(skill.id)}
                             className={cn(
                               "rounded-full px-2 py-0.5 text-[10px] transition-colors",
                               active
@@ -691,15 +777,83 @@ function AgentOsProjectSession({
                             )}
                           >
                             {skill.name}
-                            {isDefault ? (
-                              <span className="text-white/45">
-                                {" · "}
-                                {t("skillDefaultBadge")}
-                              </span>
-                            ) : null}
                           </button>
                         );
                       })}
+                    </div>
+                  ) : null}
+
+                  {projectSkillEntries.length > 0 ? (
+                    <div className="flex min-w-0 items-center">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          disabled={turnBusy}
+                          aria-label={t("chooseProjectSkills")}
+                          title={t("chooseProjectSkills")}
+                          className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-transparent px-2.5 text-[11px] font-medium text-white/70 ring-1 ring-inset outline-none transition-colors hover:text-white/92 focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-45"
+                        >
+                          <IconPuzzle
+                            aria-hidden="true"
+                            className="text-brand-yellow size-3.5"
+                            stroke={1.8}
+                          />
+                          <span>{t("skillsLabel")}</span>
+                          {activeProjectSkillEntries.length > 0 ? (
+                            <span className="text-brand-yellow/75 tabular-nums">
+                              · {activeProjectSkillEntries.length}
+                            </span>
+                          ) : null}
+                          <IconChevronDown
+                            aria-hidden="true"
+                            className="size-3 text-white/35"
+                            stroke={1.8}
+                          />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="start"
+                          side="top"
+                          sideOffset={8}
+                          className="liquid-rim max-h-72 w-[min(320px,calc(100vw-24px))] rounded-2xl bg-[oklch(0.18_0_0_/_0.98)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_72px_rgba(0,0,0,0.68)] backdrop-blur-[36px]"
+                        >
+                          <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-white/38">
+                            {t("projectSkillsLabel")}
+                          </DropdownMenuLabel>
+                          {projectSkillEntries.map(({ installation, name, isDefault }) => {
+                            const active = isDefault
+                              ? !effectiveDisabledProjectDefaultSkillIds.includes(installation.id)
+                              : effectiveTurnProjectSkillIds.includes(installation.id);
+                            return (
+                              <DropdownMenuCheckboxItem
+                                key={installation.id}
+                                checked={active}
+                                disabled={turnBusy}
+                                onSelect={(event) => event.preventDefault()}
+                                onCheckedChange={() =>
+                                  onProjectSkillChipClick(installation.id, isDefault)
+                                }
+                                className="min-h-9 rounded-xl px-2.5 py-2 pr-9 focus:bg-white/[0.06]"
+                              >
+                                <IconPuzzle
+                                  aria-hidden="true"
+                                  className={cn(
+                                    "size-3.5",
+                                    active ? "text-brand-yellow" : "text-white/28"
+                                  )}
+                                  stroke={1.8}
+                                />
+                                <span className="min-w-0 flex-1 truncate text-white/78">
+                                  {name}
+                                </span>
+                                {isDefault ? (
+                                  <span className="text-brand-yellow/55 text-[10px]">
+                                    {t("skillDefaultBadge")}
+                                  </span>
+                                ) : null}
+                              </DropdownMenuCheckboxItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   ) : null}
 
