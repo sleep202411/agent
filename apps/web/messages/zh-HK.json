@@ -1113,7 +1113,6 @@
       "accessAlreadyEditor": "此用戶已擁有編輯權限。",
       "accessUserId": "ID：{id}",
       "accessGrantedLine": "ID：{id} · 授權於 {date}",
-      "creatorShareLine": "每筆銷售中創作者可獲得 {pct}（由平台設定）。",
       "splitPrompt": "將此收益池分配給你的團隊：",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "未分配的部分以及取整餘額，歸 IP 管理員所有。",

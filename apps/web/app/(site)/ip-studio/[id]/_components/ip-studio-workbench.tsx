@@ -2162,7 +2162,6 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
     );
   }
 
-  const creatorPct = formatBpsPercent(data.creatorShareBps, locale);
   const allocatedPct = formatBpsPercent(data.poolAllocatedBps, locale);
   const overAllocated = data.poolAllocatedBps > BPS_FULL;
 
@@ -2173,10 +2172,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
         <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-medium text-foreground">
-                {t("membersPanel.creatorShareLine", { pct: creatorPct })}
-              </p>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">{t("membersPanel.splitPrompt")}</p>
             </div>
             <div className="text-right">

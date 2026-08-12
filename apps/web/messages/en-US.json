@@ -1113,7 +1113,6 @@
       "accessAlreadyEditor": "This user already has edit access.",
       "accessUserId": "ID: {id}",
       "accessGrantedLine": "ID: {id} · granted {date}",
-      "creatorShareLine": "Creators earn {pct} of each sale (set by platform).",
       "splitPrompt": "Split that pool among your team:",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "Anything left unallocated, plus rounding, goes to the IP owner.",
