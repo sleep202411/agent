@@ -503,7 +503,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: fd20974fa8abc969b5b1355e9daa534a1d79600c
+    tag: f12f63f1bc2c53a74ed385d22cdf80061273767b
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
