@@ -81,6 +81,7 @@ import type {
 } from './dto';
 import type { UploadKind } from './dto';
 import {
+  EPISODE_VIDEO_MAX_BYTES,
   STORY_CLIP_VIDEO_CONTENT_TYPE,
   STORY_CLIP_VIDEO_MAX_BYTES,
 } from './media-upload.policy';
@@ -118,7 +119,6 @@ interface UploadKindPolicy {
 }
 
 const MiB = 1024 * 1024;
-const GiB = 1024 * MiB;
 
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
@@ -210,7 +210,7 @@ const REFERENCE_AUDIO_CONTENT_TYPES: Record<string, string> = {
 const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   episode_video: {
     contentTypes: VIDEO_CONTENT_TYPES,
-    maxBytes: 2 * GiB,
+    maxBytes: EPISODE_VIDEO_MAX_BYTES,
     assetKind: MediaAssetKind.video,
     ttlSeconds: 3600, // 60 min — large video can be slow on the PUT
     keySegment: 'episode-video',
