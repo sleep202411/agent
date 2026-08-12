@@ -50,7 +50,11 @@ export function ProjectSkillDetailDialog({
   skill,
   loading = false,
   error = false,
+  activeForGeneration = false,
+  actionPending = false,
+  canInstall = false,
   onManage,
+  onUse,
   onOpenChange,
   onRetry,
 }: {
@@ -58,7 +62,11 @@ export function ProjectSkillDetailDialog({
   skill: ProjectSkillCatalogItem | null;
   loading?: boolean;
   error?: boolean;
-  onManage: (skillId: string) => void;
+  activeForGeneration?: boolean;
+  actionPending?: boolean;
+  canInstall?: boolean;
+  onManage?: (skillId: string) => void;
+  onUse?: (skill: ProjectSkillCatalogItem) => void;
   onOpenChange: (open: boolean) => void;
   onRetry?: () => void;
 }) {
@@ -122,10 +130,12 @@ export function ProjectSkillDetailDialog({
               <span className="text-brand-yellow ring-brand-yellow/25 inline-flex size-8 items-center justify-center rounded-xl bg-transparent ring-1 ring-inset">
                 <KindIcon className="size-4" stroke={1.8} />
               </span>
-              <span className="bg-brand-yellow/10 text-brand-yellow inline-flex h-6 items-center gap-1 rounded-lg px-2 text-[10px] font-medium">
-                <IconCheck className="size-3" stroke={2} />
-                {t("detail.activeForGeneration")}
-              </span>
+              {activeForGeneration ? (
+                <span className="bg-brand-yellow/10 text-brand-yellow inline-flex h-6 items-center gap-1 rounded-lg px-2 text-[10px] font-medium">
+                  <IconCheck className="size-3" stroke={2} />
+                  {t("detail.activeForGeneration")}
+                </span>
+              ) : null}
             </div>
             <DialogTitle className="mt-3 text-xl leading-tight font-semibold text-white/94">
               {name}
@@ -194,7 +204,9 @@ export function ProjectSkillDetailDialog({
               <h3 id="inline-skill-defaults" className="text-sm font-semibold text-white/90">
                 {t("detail.projectDefaults")}
               </h3>
-              {installedDefaults.length ? (
+              {!skill.installation ? (
+                <p className="mt-2 text-xs leading-5 text-white/38">{t("detail.installToUse")}</p>
+              ) : installedDefaults.length ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {installedDefaults.map((scope) => (
                     <span
@@ -219,9 +231,28 @@ export function ProjectSkillDetailDialog({
           <DialogClose asChild>
             <Button variant="ghost">{tc("close")}</Button>
           </DialogClose>
-          <Button variant="secondary" onClick={() => onManage(skill.id)}>
-            {t("detail.manageSkill")}
-          </Button>
+          {onUse ? (
+            <div className="flex flex-col items-end gap-1.5">
+              <Button
+                disabled={actionPending || (!skill.installation && !canInstall)}
+                onClick={() => onUse(skill)}
+              >
+                {actionPending ? (
+                  <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
+                ) : null}
+                {skill.installation ? t("detail.useSkill") : t("detail.installAndUse")}
+              </Button>
+              {!skill.installation && !canInstall ? (
+                <p className="text-[10px] leading-4 text-white/34">
+                  {t("detail.managePermission")}
+                </p>
+              ) : null}
+            </div>
+          ) : onManage ? (
+            <Button variant="secondary" onClick={() => onManage(skill.id)}>
+              {t("detail.manageSkill")}
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

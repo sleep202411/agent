@@ -121,7 +121,7 @@ export function GenerationPromptComposer({
   skillMarketError?: boolean;
   onMentionActivate?: (mention: MentionItem) => void;
   onSkillMarketRetry?: () => void;
-  onOpenSkillMarket?: (catalogId: string) => void;
+  onOpenSkillMarket?: (catalogId: string, applySkill: (item: MentionItem) => void) => void;
   referenceContent?: ReactNode;
   mode?: string;
   modes?: string[];

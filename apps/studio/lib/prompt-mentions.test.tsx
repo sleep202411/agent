@@ -177,6 +177,7 @@ describe("MentionChip", () => {
 
   it("separates installed Skills from the real market and routes uninstalled items", async () => {
     const onOpenMarket = vi.fn();
+    const onPick = vi.fn();
     await act(async () => {
       root.render(
         <SkillMentionDialog
@@ -190,10 +191,17 @@ describe("MentionChip", () => {
               kind: "skill",
               label: "Market Skill",
             },
+            {
+              id: "installed-1",
+              catalogId: "market-2",
+              installed: true,
+              kind: "skill",
+              label: "Installed Market Skill",
+            },
           ]}
           onOpenChange={vi.fn()}
           onOpenMarket={onOpenMarket}
-          onPick={vi.fn()}
+          onPick={onPick}
         />
       );
     });
@@ -218,5 +226,37 @@ describe("MentionChip", () => {
     expect(marketSkill).toBeDefined();
     await act(async () => marketSkill?.click());
     expect(onOpenMarket).toHaveBeenCalledWith("market-1");
+    expect(onPick).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.render(
+        <SkillMentionDialog
+          open
+          options={[{ id: "installed-1", kind: "skill", label: "Installed Skill" }]}
+          marketOptions={[
+            {
+              id: "installed-1",
+              catalogId: "market-2",
+              installed: true,
+              kind: "skill",
+              label: "Installed Market Skill",
+            },
+          ]}
+          onOpenChange={vi.fn()}
+          onOpenMarket={onOpenMarket}
+          onPick={onPick}
+        />
+      );
+    });
+    const renderedMarketTab = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    ).find((button) => button.textContent?.includes("skillMarketTab"));
+    await act(async () => renderedMarketTab?.click());
+    const installedMarketSkill = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button")
+    ).find((button) => button.textContent?.includes("Installed Market Skill"));
+    await act(async () => installedMarketSkill?.click());
+    expect(onOpenMarket).toHaveBeenLastCalledWith("market-2");
+    expect(onPick).not.toHaveBeenCalled();
   });
 });

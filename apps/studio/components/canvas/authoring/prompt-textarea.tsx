@@ -705,7 +705,7 @@ export function PromptTextarea({
   /** Opens contextual UI for actionable inline entities such as Skills. */
   onMentionActivate?: (mention: MentionItem) => void;
   onSkillMarketRetry?: () => void;
-  onOpenSkillMarket?: (catalogId: string) => void;
+  onOpenSkillMarket?: (catalogId: string, applySkill: (item: MentionItem) => void) => void;
   /** Capture keydown at the editor DOM level (for grid Tab/Enter/Esc nav). */
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   /** Fired when the editor loses focus. */
@@ -716,10 +716,15 @@ export function PromptTextarea({
   const [menuState, setMenuState] = useState<MentionMenuState | null>(null);
   const [skillDialogState, setSkillDialogState] = useState<SkillDialogState | null>(null);
   const lastCommittedRef = useRef(value);
+  const onCommitRef = useRef(onCommit);
 
   useEffect(() => {
     lastCommittedRef.current = value;
   }, [value]);
+
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
 
   const extensions = useMemo(
     () => [
@@ -755,7 +760,7 @@ export function PromptTextarea({
   const emitPrompt = (next: string) => {
     if (lastCommittedRef.current === next) return;
     lastCommittedRef.current = next;
-    onCommit(next);
+    onCommitRef.current(next);
   };
 
   const editorClassName = cn(
@@ -919,7 +924,19 @@ export function PromptTextarea({
           );
         }}
         onMarketRetry={onSkillMarketRetry}
-        onOpenMarket={onOpenSkillMarket}
+        onOpenMarket={(catalogId) => {
+          if (!editor || !onOpenSkillMarket) return;
+          const state = skillDialogState;
+          const selection = state?.suggestion?.range ?? editor.state.selection;
+          const insertionRange = { from: selection.from, to: selection.to };
+          onOpenSkillMarket(catalogId, (item) => {
+            if (editor.isDestroyed || editor.view.composing) return;
+            const maxPosition = Math.max(1, editor.state.doc.content.size - 1);
+            const from = Math.min(insertionRange.from, maxPosition);
+            const to = Math.max(from, Math.min(insertionRange.to, maxPosition));
+            mentionInsertion(editor, { from, to }, item);
+          });
+        }}
       />
     </div>
   );

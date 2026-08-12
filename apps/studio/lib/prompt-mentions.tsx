@@ -899,10 +899,10 @@ export function SkillMentionDialog({
                     key={tab === "market" ? (marketItem?.catalogId ?? item.id) : item.id}
                     type="button"
                     onClick={() => {
-                      if (installed) {
-                        onPick(item);
-                      } else if (marketItem) {
+                      if (marketItem) {
                         onOpenMarket?.(marketItem.catalogId);
+                      } else {
+                        onPick(item);
                       }
                       changeOpen(false);
                     }}
@@ -917,7 +917,7 @@ export function SkillMentionDialog({
                             {t("installedBadge")}
                           </span>
                         ) : (
-                          <span className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-black/60 text-white/62 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
+                          <span className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-black/60 text-white/62 backdrop-blur-md transition-colors group-hover:bg-black/72 group-hover:text-white/86">
                             <IconExternalLink className="size-3.5" stroke={1.8} />
                           </span>
                         )

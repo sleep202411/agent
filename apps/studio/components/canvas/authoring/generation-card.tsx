@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
@@ -90,7 +91,11 @@ import {
   resolveEffectiveProjectSkills,
   type CanvasProjectSkillSelection,
 } from "@/lib/project-skill-runtime";
-import type { ProjectSkillCatalogItem, ProjectSkillInstallation } from "@/lib/project-skills-api";
+import {
+  installProjectSkill,
+  type ProjectSkillCatalogItem,
+  type ProjectSkillInstallation,
+} from "@/lib/project-skills-api";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -376,6 +381,13 @@ function GenerationCard({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
+  const [detailSkillIntent, setDetailSkillIntent] = useState<"inspect" | "use" | null>(null);
+  const pendingSkillApplyRef = useRef<((item: MentionItem) => void) | null>(null);
+  // The install response is authoritative before the catalog refetch reaches
+  // React. Keep it available to the prompt commit fired by mention insertion,
+  // so the new installation id is never discarded during that short window.
+  const justInstalledSkillsRef = useRef(new Map<string, ProjectSkillInstallation>());
+  const queryClient = useQueryClient();
   const openSkills = useProjectUIStore((state) => state.openSkills);
   // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
   // height metadata) so the card hugs its content instead of the size default.
@@ -561,9 +573,50 @@ function GenerationCard({
   }, [compatibleSkills, referencesForDisplay, refFields, skillLabelFor]);
   const detailSkill = useMemo(
     () =>
-      projectSkillCatalog.data?.items.find((skill) => skill.installation?.id === detailSkillId) ??
-      null,
+      projectSkillCatalog.data?.items.find(
+        (skill) => skill.id === detailSkillId || skill.installation?.id === detailSkillId
+      ) ?? null,
     [detailSkillId, projectSkillCatalog.data?.items]
+  );
+  const installSkillMutation = useMutation({
+    mutationFn: (skill: ProjectSkillCatalogItem) =>
+      installProjectSkill({
+        ownerKind: owner.kind === "platform_project" ? "platform" : "story",
+        projectId: owner.projectId,
+        skillId: skill.id,
+        expectedProjectRevision:
+          projectSkills.data?.projectRevision ?? projectSkillCatalog.data?.projectRevision ?? 0,
+      }),
+    onSuccess: async (response, skill) => {
+      const translationKey = catalogTranslationKey(skill);
+      const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+      justInstalledSkillsRef.current.set(response.installation.id, response.installation);
+      pendingSkillApplyRef.current?.(projectSkillMention(response.installation, label));
+      justInstalledSkillsRef.current.delete(response.installation.id);
+      toast.success(ts("detail.installAndUseSuccess", { name: label }));
+      pendingSkillApplyRef.current = null;
+      setDetailSkillIntent(null);
+      setDetailSkillId(null);
+      await queryClient.invalidateQueries({ queryKey: ["project-skills"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : ts("errors.install")),
+  });
+  const useDetailSkill = useCallback(
+    (skill: ProjectSkillCatalogItem) => {
+      const applySkill = pendingSkillApplyRef.current;
+      if (!applySkill) return;
+      if (!skill.installation) {
+        installSkillMutation.mutate(skill);
+        return;
+      }
+      const translationKey = catalogTranslationKey(skill);
+      const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+      applySkill(projectSkillMention(skill.installation, label));
+      pendingSkillApplyRef.current = null;
+      setDetailSkillIntent(null);
+      setDetailSkillId(null);
+    },
+    [installSkillMutation, ts]
   );
 
   // Live compute-point estimate for the current model + settings + wired/uploaded
@@ -1114,9 +1167,15 @@ function GenerationCard({
                 modelPickerEnabled={!data.locked && !data.modelLocked}
                 prompt={promptWithSkills}
                 onPromptCommit={(prompt) => {
+                  const skillsForCommit = [...compatibleSkills];
+                  for (const installation of justInstalledSkillsRef.current.values()) {
+                    if (!skillsForCommit.some((candidate) => candidate.id === installation.id)) {
+                      skillsForCommit.push(installation);
+                    }
+                  }
                   const extracted = extractProjectSkillSelection({
                     value: prompt,
-                    mentions: compatibleSkills.map((installation) =>
+                    mentions: skillsForCommit.map((installation) =>
                       projectSkillMention(installation, skillLabelFor(installation))
                     ),
                     defaultInstallationIds: defaultSkillIds,
@@ -1135,10 +1194,18 @@ function GenerationCard({
                 skillMarketLoading={projectSkillCatalog.loading}
                 skillMarketError={projectSkillCatalog.error}
                 onMentionActivate={(mention) => {
-                  if (mention.kind === "skill") setDetailSkillId(mention.id);
+                  if (mention.kind === "skill") {
+                    pendingSkillApplyRef.current = null;
+                    setDetailSkillIntent("inspect");
+                    setDetailSkillId(mention.id);
+                  }
                 }}
                 onSkillMarketRetry={projectSkillCatalog.retry}
-                onOpenSkillMarket={(catalogId) => openSkills(catalogId)}
+                onOpenSkillMarket={(catalogId, applySkill) => {
+                  pendingSkillApplyRef.current = applySkill;
+                  setDetailSkillIntent("use");
+                  setDetailSkillId(catalogId);
+                }}
                 referenceContent={
                   refFields.length > 0 ? (
                     <ReferenceStack
@@ -1183,11 +1250,22 @@ function GenerationCard({
         skill={detailSkill}
         loading={projectSkillCatalog.loading}
         error={projectSkillCatalog.error}
+        activeForGeneration={detailSkillIntent === "inspect" && Boolean(detailSkill)}
+        actionPending={installSkillMutation.isPending}
+        canInstall={projectSkillCatalog.data?.canManage ?? false}
         onRetry={projectSkillCatalog.retry}
         onOpenChange={(open) => {
-          if (!open) setDetailSkillId(null);
+          if (!open) {
+            if (installSkillMutation.isPending) return;
+            pendingSkillApplyRef.current = null;
+            setDetailSkillIntent(null);
+            setDetailSkillId(null);
+          }
         }}
+        onUse={detailSkillIntent === "use" ? useDetailSkill : undefined}
         onManage={(skillId) => {
+          pendingSkillApplyRef.current = null;
+          setDetailSkillIntent(null);
           setDetailSkillId(null);
           openSkills(skillId);
         }}
