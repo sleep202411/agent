@@ -12,6 +12,17 @@ export type AiPromptDocumentNode =
       type: 'style_ref';
       refId: string;
       label?: string;
+    }
+  | {
+      /**
+       * An installed project Skill rendered as an inline prompt chip. The
+       * installation id is the authorization boundary; its label is display
+       * metadata only. Runtime instructions come exclusively from the
+       * server-resolved frozen Skill snapshot.
+       */
+      type: 'skill_ref';
+      refId: string;
+      label?: string;
     };
 
 export interface AiPromptDocument {

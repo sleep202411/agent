@@ -11,6 +11,7 @@ import { WorkspacesModule } from '../workspaces';
 import { MediaModule } from '../media/media.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { StoryAccessModule } from '../story-studio/story-access.module';
+import { ProjectSkillsModule } from '../project-skills';
 import { AiModelOpsController } from './admin/ai-model-ops.controller';
 import { AiModelOpsService } from './admin/ai-model-ops.service';
 import { AiGenerationController } from './ai-generation.controller';
@@ -63,6 +64,7 @@ import { AiGenerationWorkerService } from './worker.service';
     MediaModule,
     DocumentsModule,
     StoryAccessModule,
+    ProjectSkillsModule,
   ],
   controllers: [AiGenerationController, AiModelOpsController],
   providers: [

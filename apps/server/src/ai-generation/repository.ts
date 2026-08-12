@@ -1263,6 +1263,8 @@ export class AiGenerationRepository {
         undefined,
       styleSnapshot:
         (row.styleSnapshot as AiJob['styleSnapshot'] | null) ?? undefined,
+      skillSnapshot:
+        (row.skillSnapshot as AiJob['skillSnapshot'] | null) ?? undefined,
       idempotencyKey: row.idempotencyKey,
       providerJobId: row.providerJobId ?? undefined,
       outputs: row.outputs.map((o) => this.outputToDomain(o)),
@@ -1359,6 +1361,9 @@ export class AiGenerationRepository {
       styleSnapshot:
         (job.styleSnapshot as Prisma.InputJsonValue | undefined) ??
         Prisma.DbNull,
+      skillSnapshot:
+        (job.skillSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
       idempotencyKey: job.idempotencyKey,
       input: job.input as Prisma.InputJsonValue,
       normalizedInput: job.normalizedInput as Prisma.InputJsonValue,
@@ -1427,6 +1432,7 @@ export class AiGenerationRepository {
         key === 'promptDocument' ||
         key === 'referenceSnapshot' ||
         key === 'styleSnapshot' ||
+        key === 'skillSnapshot' ||
         key === 'entitlementSnapshot' ||
         key === 'routingSnapshot' ||
         key === 'logs' ||

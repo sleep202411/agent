@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
 import type { AuthUser } from '../auth';
 import {
   CharacterGenerationService,
@@ -22,6 +23,12 @@ import { EntitlementService } from '../entitlements';
 import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
+import {
+  ProjectSkillSelectionSchema,
+  ProjectSkillsResolver,
+  type ProjectSkillOwnerKind,
+  type ProjectSkillSelection,
+} from '../project-skills';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationEtaService } from './eta.service';
@@ -75,6 +82,8 @@ interface AiJobContext {
  */
 export interface AiJobSubmissionHooks {
   afterJobCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+  /** Trusted internal retry path. Never exposed through the HTTP DTO. */
+  frozenSkillSnapshot?: ProjectSkillResolutionSnapshot | null;
 }
 
 /**
@@ -110,6 +119,7 @@ export class AiGenerationService {
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly promptCompiler: AiPromptCompilerService,
     private readonly characterGeneration: CharacterGenerationService,
+    private readonly projectSkills: ProjectSkillsResolver,
   ) {}
 
   /**
@@ -265,12 +275,19 @@ export class AiGenerationService {
       model.input_schema.properties?.referenceVideos ||
       model.input_schema.properties?.referenceAudios,
     );
+    const skillSnapshot = await this.resolveGenerationSkillSnapshot({
+      context,
+      body,
+      type: model.type,
+      frozen: hooks.frozenSkillSnapshot,
+    });
     const promptCompilation = this.promptCompiler.compile({
       normalizedInput: schemaNormalizedInput,
       rawInput: input,
       promptDocument: body.promptDocument,
       references: supportsReferences ? referenceBindings : undefined,
       styles: body.styleBindings,
+      skillSnapshot,
     });
     const normalizedInput = promptCompilation.normalizedInput;
     const prompt = promptCompilation.snapshot.displayText;
@@ -364,6 +381,7 @@ export class AiGenerationService {
                 ? body.referenceBindings
                 : promptCompilation.snapshot.references,
             styleSnapshot: promptCompilation.snapshot.styles,
+            skillSnapshot,
             idempotencyKey,
             routingSnapshot: snapshot,
             outputs: [],
@@ -734,27 +752,70 @@ export class AiGenerationService {
 
   async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
     const job = await this.getEditableJob(user, id);
-    return this.submitJob(user, {
-      modelId: job.modelId,
-      presetId: job.routingSnapshot?.presetId,
-      campaignId: job.routingSnapshot?.policy.quota.campaignId,
-      schemaVersion: job.schemaVersion,
-      workspaceId: job.workspaceId ?? undefined,
-      projectId: job.projectId ?? undefined,
-      storyProjectId: job.storyProjectId ?? undefined,
-      documentId: job.documentId ?? undefined,
-      documentBlockId: job.documentBlockId ?? undefined,
-      sourceSurface: job.sourceSurface ?? undefined,
-      // Strip server-minted asset:// urls before resubmit: the submit-time
-      // rejectClientAssetReferences guard would otherwise 400 the retry, and
-      // expansion re-derives asset:// from the frozen referenceSnapshot anyway
-      // (the stamped url-less entries are stripped + re-appended). Preserves
-      // the guard for genuine client-sent asset:// (which never reach here).
-      input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
-      promptDocument: job.promptDocument ?? undefined,
-      referenceBindings: job.referenceSnapshot ?? undefined,
-      styleBindings: job.styleSnapshot ?? undefined,
-      idempotencyKey: randomUUID(),
+    return this.submitJob(
+      user,
+      {
+        modelId: job.modelId,
+        presetId: job.routingSnapshot?.presetId,
+        campaignId: job.routingSnapshot?.policy.quota.campaignId,
+        schemaVersion: job.schemaVersion,
+        workspaceId: job.workspaceId ?? undefined,
+        projectId: job.projectId ?? undefined,
+        storyProjectId: job.storyProjectId ?? undefined,
+        documentId: job.documentId ?? undefined,
+        documentBlockId: job.documentBlockId ?? undefined,
+        sourceSurface: job.sourceSurface ?? undefined,
+        // Strip server-minted asset:// urls before resubmit: the submit-time
+        // rejectClientAssetReferences guard would otherwise 400 the retry, and
+        // expansion re-derives asset:// from the frozen referenceSnapshot anyway
+        // (the stamped url-less entries are stripped + re-appended). Preserves
+        // the guard for genuine client-sent asset:// (which never reach here).
+        input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
+        promptDocument: job.promptDocument ?? undefined,
+        referenceBindings: job.referenceSnapshot ?? undefined,
+        styleBindings: job.styleSnapshot ?? undefined,
+        idempotencyKey: randomUUID(),
+      },
+      undefined,
+      { frozenSkillSnapshot: job.skillSnapshot ?? null },
+    );
+  }
+
+  private async resolveGenerationSkillSnapshot(input: {
+    context: AiJobContext;
+    body: AiSubmitJobBody;
+    type: AiJob['type'];
+    frozen?: ProjectSkillResolutionSnapshot | null;
+  }): Promise<ProjectSkillResolutionSnapshot | null> {
+    const owner = projectOwner(input.context);
+    const selection = parseSkillSelection(input.body);
+    if (!owner) {
+      if (
+        input.frozen ||
+        (selection.includeInstallationIds?.length ?? 0) > 0 ||
+        (selection.excludeInstallationIds?.length ?? 0) > 0
+      ) {
+        throw new BadRequestException({
+          code: 'PROJECT_SKILL_CONTEXT_REQUIRED',
+          msg: 'Project Skills can only be used by a generation with a trusted project context.',
+        });
+      }
+      return null;
+    }
+
+    const scope =
+      input.type === 'image' ? 'image_generation' : 'video_generation';
+    if (input.frozen) {
+      return this.projectSkills.validateFrozen(input.frozen, {
+        ...owner,
+        scope,
+      });
+    }
+    return this.projectSkills.resolve({
+      ...owner,
+      scope,
+      sourceSurface: input.context.sourceSurface,
+      selection,
     });
   }
 
@@ -1169,6 +1230,7 @@ export class AiGenerationService {
       compiledPrompt: job.compiledPrompt ?? null,
       referenceSnapshot: job.referenceSnapshot ?? [],
       styleSnapshot: job.styleSnapshot ?? [],
+      skillSnapshot: job.skillSnapshot ?? null,
       // Always include the normalized input so the gallery can render
       // the correct aspect ratio for queued/in-flight cards on reload
       // (output rows don't carry width/height until upload finishes).
@@ -1261,4 +1323,46 @@ export class AiGenerationService {
       );
     }
   }
+}
+
+function projectOwner(context: AiJobContext): {
+  ownerKind: ProjectSkillOwnerKind;
+  projectId: string;
+} | null {
+  if (context.projectId) {
+    return { ownerKind: 'platform', projectId: context.projectId };
+  }
+  if (context.storyProjectId) {
+    return { ownerKind: 'story', projectId: context.storyProjectId };
+  }
+  return null;
+}
+
+function parseSkillSelection(
+  body: AiSubmitJobBody,
+): NonNullable<ProjectSkillSelection> {
+  const inlineInstallationIds = (body.promptDocument?.nodes ?? []).flatMap(
+    (node) => (node.type === 'skill_ref' ? [node.refId] : []),
+  );
+  const candidate = {
+    includeInstallationIds: uniqueStrings([
+      ...(body.skillSelection?.includeInstallationIds ?? []),
+      ...inlineInstallationIds,
+    ]),
+    excludeInstallationIds: uniqueStrings(
+      body.skillSelection?.excludeInstallationIds ?? [],
+    ),
+  };
+  const parsed = ProjectSkillSelectionSchema.safeParse(candidate);
+  if (!parsed.success) {
+    throw new BadRequestException({
+      code: 'INVALID_PROJECT_SKILL_SELECTION',
+      msg: parsed.error.issues[0]?.message ?? 'Skill selection is invalid.',
+    });
+  }
+  return parsed.data ?? {};
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }

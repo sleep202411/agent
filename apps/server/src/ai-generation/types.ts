@@ -26,6 +26,8 @@ import type {
   AiPromptStyleBinding,
   AiSubmitReferenceBinding,
 } from './prompt-document.types';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
+import type { ProjectSkillSelection } from '../project-skills';
 
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
@@ -404,6 +406,8 @@ export interface AiJob {
    */
   referenceSnapshot?: AiSubmitReferenceBinding[] | null;
   styleSnapshot?: AiPromptStyleBinding[] | null;
+  /** Immutable, server-resolved project Skill versions used for this job. */
+  skillSnapshot?: ProjectSkillResolutionSnapshot | null;
   idempotencyKey: string;
   providerJobId?: string;
   providerRequest?: Record<string, unknown>;
@@ -457,6 +461,11 @@ export interface AiSubmitJobBody {
   promptDocument?: AiPromptDocument;
   referenceBindings?: AiSubmitReferenceBinding[];
   styleBindings?: AiPromptStyleBinding[];
+  /**
+   * Per-generation override of installed project Skills. IDs are installation
+   * IDs and are re-authorized against the trusted project context server-side.
+   */
+  skillSelection?: ProjectSkillSelection;
   idempotencyKey?: string;
   routing?: {
     presetId?: string;

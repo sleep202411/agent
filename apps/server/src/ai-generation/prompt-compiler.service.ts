@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
 import type {
   AiPromptCompilationSnapshot,
   AiPromptDocument,
@@ -14,6 +15,7 @@ interface CompilePromptInput {
   promptDocument?: unknown;
   references?: unknown;
   styles?: unknown;
+  skillSnapshot?: ProjectSkillResolutionSnapshot | null;
 }
 
 interface CompilePromptResult {
@@ -62,10 +64,17 @@ export class AiPromptCompilerService {
     });
     const styles = normalizeStyleBindings(input.styles);
     const rendered = renderPromptDocument(document, references, styles);
-    const compiledPrompt = compileProviderPrompt(rendered.providerText, {
-      references,
-      usedReferenceIds: rendered.usedReferenceIds,
-    });
+    const referenceCompiledPrompt = compileProviderPrompt(
+      rendered.providerText,
+      {
+        references,
+        usedReferenceIds: rendered.usedReferenceIds,
+      },
+    );
+    const compiledPrompt = compileSkillPrompt(
+      referenceCompiledPrompt,
+      input.skillSnapshot,
+    );
     const displayText = rendered.displayText || promptText;
     const searchText = [displayText, ...references.map((item) => item.label)]
       .filter(Boolean)
@@ -160,6 +169,14 @@ function normalizePromptNode(value: unknown): AiPromptDocumentNode | null {
     return label
       ? { type: 'style_ref', refId, label }
       : { type: 'style_ref', refId };
+  }
+  if (value.type === 'skill_ref') {
+    const refId = stringValue(value.refId);
+    if (!refId) return null;
+    const label = stringValue(value.label);
+    return label
+      ? { type: 'skill_ref', refId, label }
+      : { type: 'skill_ref', refId };
   }
   return null;
 }
@@ -357,9 +374,16 @@ function renderPromptDocument(
       providerParts.push(`[${node.label || node.refId}]`);
       continue;
     }
-    const style = styleById.get(node.refId);
-    displayParts.push(`#${node.label || style?.label || node.refId}`);
-    providerParts.push(node.label || style?.label || node.refId);
+    if (node.type === 'style_ref') {
+      const style = styleById.get(node.refId);
+      displayParts.push(`#${node.label || style?.label || node.refId}`);
+      providerParts.push(node.label || style?.label || node.refId);
+      continue;
+    }
+    // Skill chips remain visible in the canonical display document, but the
+    // client label is never trusted as an instruction. The server-resolved
+    // immutable snapshot is compiled below.
+    displayParts.push(`@${node.label || node.refId}`);
   }
 
   return {
@@ -367,6 +391,40 @@ function renderPromptDocument(
     providerText: normalizePromptText(providerParts.join('')),
     usedReferenceIds,
   };
+}
+
+function compileSkillPrompt(
+  providerPrompt: string,
+  snapshot: ProjectSkillResolutionSnapshot | null | undefined,
+): string {
+  if (!snapshot || snapshot.skills.length === 0) return providerPrompt;
+  const policyKey =
+    snapshot.scope === 'image_generation'
+      ? 'image'
+      : snapshot.scope === 'video_generation'
+        ? 'video'
+        : null;
+  if (!policyKey) return providerPrompt;
+
+  const directives = snapshot.skills.map((skill) => {
+    const policy = skill.generationPolicy[policyKey];
+    if (!policy) {
+      throw new Error(
+        `Published Skill ${skill.slug}@${skill.version} has no ${policyKey} generation policy.`,
+      );
+    }
+    return `[Project Skill: ${skill.name} · ${skill.version}]\n${policy.promptSuffix}`;
+  });
+
+  return normalizePromptText(
+    [
+      providerPrompt,
+      'Apply every project Skill directive below. Preserve the user request unless a directive explicitly constrains style, composition, motion, or continuity.',
+      directives.join('\n\n'),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+  );
 }
 
 function compileProviderPrompt(

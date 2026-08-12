@@ -277,6 +277,7 @@ function serviceWith(input: {
     input.providerCapacity as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

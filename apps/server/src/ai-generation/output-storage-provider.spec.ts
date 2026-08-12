@@ -338,6 +338,7 @@ function submitHarness(type: AiJobType) {
         }),
       ),
     } as never,
+    {} as never,
   );
   return {
     service,
