@@ -29,7 +29,7 @@ import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
-import { removeEdgeById } from "@/lib/canvas-authoring/canvas-wiring";
+import { removeEdgeById, sourceMediaMetadata } from "@/lib/canvas-authoring/canvas-wiring";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
 import {
   EXPAND_OP,
@@ -203,6 +203,7 @@ function uploadedReferenceGraph({
   targetNodeId,
   url,
   durationSeconds,
+  bytes,
 }: {
   edgeId: string;
   fileName: string;
@@ -214,6 +215,7 @@ function uploadedReferenceGraph({
   targetNodeId: string;
   url: string;
   durationSeconds?: number;
+  bytes?: number;
 }): { edge: CanvasEdgeShape; node: CanvasNodeShape } {
   return {
     node: {
@@ -225,6 +227,7 @@ function uploadedReferenceGraph({
         mediaAssetId,
         label: fileName,
         ...(durationSeconds != null ? { durationSeconds } : {}),
+        ...(bytes != null ? { bytes } : {}),
       },
     },
     edge: {
@@ -417,16 +420,39 @@ function GenerationCard({
   // preview + spinner) — never written to the doc; on confirm the durable URL
   // is patched into `references` and the pending chip is dropped.
   const [pendingRefs, setPendingRefs] = useState<CardReferences>({});
+  const hydratedReferences = useMemo<CardReferences>(() => {
+    let changed = false;
+    const next: CardReferences = {};
+    for (const [field, list] of Object.entries(references)) {
+      next[field] = list.map((reference) => {
+        if (!reference.sourceNodeId) return reference;
+        const metadata = sourceMediaMetadata(getNode, reference.sourceNodeId);
+        const hydrated = { ...metadata, ...reference };
+        if (
+          hydrated.name !== reference.name ||
+          hydrated.durationSeconds !== reference.durationSeconds ||
+          hydrated.bytes !== reference.bytes ||
+          hydrated.width !== reference.width ||
+          hydrated.height !== reference.height
+        ) {
+          changed = true;
+          return hydrated;
+        }
+        return reference;
+      });
+    }
+    return changed ? next : references;
+  }, [getNode, references]);
   const referencesForDisplay = useMemo<CardReferences>(() => {
     const fields = Object.keys(pendingRefs);
-    if (fields.length === 0) return references;
-    const merged: CardReferences = { ...references };
+    if (fields.length === 0) return hydratedReferences;
+    const merged: CardReferences = { ...hydratedReferences };
     for (const field of fields) {
       const pend = pendingRefs[field] ?? [];
-      if (pend.length) merged[field] = [...(references[field] ?? []), ...pend];
+      if (pend.length) merged[field] = [...(hydratedReferences[field] ?? []), ...pend];
     }
     return merged;
-  }, [references, pendingRefs]);
+  }, [hydratedReferences, pendingRefs]);
   const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
@@ -520,6 +546,11 @@ function GenerationCard({
           name: ref.name,
           kind: ref.kind,
           previewUrl: ref.url,
+          assetId: ref.assetId,
+          durationSeconds: ref.durationSeconds,
+          bytes: ref.bytes,
+          width: ref.width,
+          height: ref.height,
         });
       }
     }
@@ -636,6 +667,7 @@ function GenerationCard({
             targetNodeId: id,
             url: uploaded.url,
             durationSeconds: durationSeconds ?? undefined,
+            bytes: file.size,
           });
           addNodesAndEdges([node], [edge]);
           addAssets([

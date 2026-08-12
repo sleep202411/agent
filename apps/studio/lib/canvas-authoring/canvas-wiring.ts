@@ -126,6 +126,38 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   return undefined;
 }
 
+export function sourceMediaMetadata(
+  getNode: GetNode,
+  nodeId: string
+): Pick<CardReference, "bytes" | "durationSeconds" | "height" | "name" | "width"> {
+  const node = getNode(nodeId);
+  if (!node) return {};
+  const source =
+    node.type === "prompt" || node.type === "video"
+      ? (node.data as GenerationNodeData).generation?.outputs?.[0]
+      : (node.data as {
+          bytes?: number | null;
+          durationSeconds?: number | null;
+          height?: number | null;
+          width?: number | null;
+        });
+  if (!source) return {};
+  const sourceName =
+    node.type === "prompt" || node.type === "video"
+      ? (node.data as GenerationNodeData).prompt
+      : ((node.data as { label?: string; name?: string }).label ??
+        (node.data as { label?: string; name?: string }).name);
+  const positiveFinite = (value: number | null | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0;
+  return {
+    ...(sourceName?.trim() ? { name: sourceName.trim() } : {}),
+    ...(positiveFinite(source.durationSeconds) ? { durationSeconds: source.durationSeconds } : {}),
+    ...(positiveFinite(source.bytes) ? { bytes: source.bytes } : {}),
+    ...(positiveFinite(source.width) ? { width: source.width } : {}),
+    ...(positiveFinite(source.height) ? { height: source.height } : {}),
+  };
+}
+
 function withoutEdgeReference(
   references: CardReferences | undefined,
   edgeId: string
@@ -270,6 +302,7 @@ export function bindEdgeReference(
   const kind = validation.kind;
   const url = sourceMediaUrl(ctx.getNode, source);
   const assetId = sourceMediaAssetId(ctx.getNode, source);
+  const metadata = sourceMediaMetadata(ctx.getNode, source);
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
   if (!url || url.startsWith("blob:")) return { status: "pending" };
@@ -280,6 +313,7 @@ export function bindEdgeReference(
     url,
     kind,
     ...(assetId ? { assetId } : {}),
+    ...metadata,
   };
   ctx.graph.patchNodeData(target, (node) => {
     const refs = (node.data as { references?: CardReferences }).references ?? {};

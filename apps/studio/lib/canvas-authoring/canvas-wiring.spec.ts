@@ -88,6 +88,59 @@ describe("atomic canvas reference wiring", () => {
     expect((patch.references as { referenceImages: unknown[] }).referenceImages).toHaveLength(9);
   });
 
+  it("carries generated media facts into the bound reference", () => {
+    const source = {
+      type: "prompt",
+      data: {
+        generation: {
+          status: "done",
+          outputs: [
+            {
+              type: "image",
+              url: "https://assets.test/generated.png",
+              assetId: "asset-1",
+              durationSeconds: 5,
+              bytes: 2_097_152,
+              width: 1920,
+              height: 1080,
+            },
+          ],
+        },
+      },
+    };
+    const target = {
+      type: "video",
+      data: { modelId: seedance.id, mode: "multimodal_to_video", references: {} },
+    };
+    const nodes = new Map<string, typeof source | typeof target>([
+      ["source", source],
+      ["target", target],
+    ]);
+    const patchNodeData = vi.fn();
+    const ctx = {
+      getNode: (id: string) => nodes.get(id),
+      getEdges: () => [],
+      catalog: { models: [seedance] },
+      graph: { addEdge: vi.fn(), patchNodeData, removeEdge: vi.fn() },
+    } as unknown as WiringCtx;
+
+    connectNodes(ctx, "source", "target");
+
+    const update = patchNodeData.mock.calls[0]?.[1] as (
+      node: typeof target
+    ) => Record<string, unknown>;
+    const references = update(target).references as {
+      referenceImages: Array<Record<string, unknown>>;
+    };
+    expect(references.referenceImages[0]).toMatchObject({
+      assetId: "asset-1",
+      durationSeconds: 5,
+      bytes: 2_097_152,
+      width: 1920,
+      height: 1080,
+    });
+  });
+
   it("reserves capacity for connected sources that have not generated yet", () => {
     const pendingSources = Array.from({ length: 9 }, (_, index) => `pending-${index}`);
     const target = {

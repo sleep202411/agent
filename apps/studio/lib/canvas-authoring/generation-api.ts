@@ -328,6 +328,7 @@ export interface GenerationState {
     width?: number;
     height?: number;
     durationSeconds?: number;
+    bytes?: number;
   }[];
   errorCode?: string;
   error?: string;
@@ -367,6 +368,7 @@ export function generationStateFromJob(job: {
     width?: number;
     height?: number;
     durationSeconds?: number;
+    bytes?: number;
   }>;
   error?: { code?: string; userMessage?: string; message?: string };
 }): GenerationState {
@@ -385,6 +387,7 @@ export function generationStateFromJob(job: {
       width: output.width,
       height: output.height,
       durationSeconds: output.durationSeconds,
+      bytes: output.bytes,
     })),
     errorCode: job.error?.code,
     error: safeGenerationErrorMessage(rawError),

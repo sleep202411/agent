@@ -89,6 +89,8 @@ type GenNodeData = {
       uploading?: boolean;
       durationSeconds?: number | null;
       bytes?: number | null;
+      width?: number | null;
+      height?: number | null;
     }[]
   >;
   generation?: GenerationState;
@@ -463,7 +465,14 @@ export function CanvasGenerationProvider({
                         sourceNodeId: match.id,
                         url: doneUrl,
                         kind,
+                        ...(matchData?.prompt?.trim() ? { name: matchData.prompt.trim() } : {}),
                         ...(out?.assetId ? { assetId: out.assetId } : {}),
+                        ...(typeof out?.durationSeconds === "number"
+                          ? { durationSeconds: out.durationSeconds }
+                          : {}),
+                        ...(typeof out?.bytes === "number" ? { bytes: out.bytes } : {}),
+                        ...(typeof out?.width === "number" ? { width: out.width } : {}),
+                        ...(typeof out?.height === "number" ? { height: out.height } : {}),
                       },
                     ],
                   },
