@@ -109,21 +109,25 @@ function SidebarButton({
   const disabled = item.disabled ?? false;
   const accessibleLabel = disabled ? t("nav.comingSoonLabel", { label: item.label }) : item.label;
   const className = cn(
-    "group relative flex h-10 items-center rounded-xl text-left text-[13px] font-medium transition-colors",
-    collapsed ? "w-10 justify-center" : "w-full gap-[6px] px-3",
+    "group relative flex h-10 items-center text-left text-[13px] font-medium transition-colors",
+    collapsed ? "w-10 justify-center rounded-xl" : "w-full gap-2",
     disabled
       ? "cursor-not-allowed text-white/25"
       : active
-        ? "bg-white/[0.11] text-white"
-        : "text-white hover:bg-white/[0.07]"
+        ? collapsed
+          ? "bg-white/[0.11] text-white"
+          : "font-semibold text-white before:absolute before:-left-3 before:h-5 before:w-0.5 before:rounded-full before:bg-white/70 before:content-['']"
+        : collapsed
+          ? "text-white hover:bg-white/[0.07]"
+          : "text-white/80 hover:text-white"
   );
   const contents = (
     <>
-      {active && !disabled ? <GlassRim className="opacity-70" /> : null}
+      {active && !disabled && collapsed ? <GlassRim className="opacity-70" /> : null}
       <Icon className="relative size-[19px] shrink-0" stroke={1.8} />
       {collapsed ? null : (
-        <span className="relative flex min-w-0 flex-1 items-center gap-2">
-          <span className="min-w-0 truncate">
+        <span className="relative flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap">
+          <span className="shrink-0">
             {item.accent ? (
               <AnimatedSidebarLabel accent={item.accent}>{item.label}</AnimatedSidebarLabel>
             ) : (

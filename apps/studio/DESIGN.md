@@ -240,14 +240,14 @@ One control radius for everything you press or type into; larger radii for
 larger surfaces; the full-round pill is reserved for segmented-control
 **containers**, not buttons.
 
-| Step          | Value                     | Use                                                          |
-| ------------- | ------------------------- | ------------------------------------------------------------ |
-| **panel**     | 24px                      | large frosted panels — composer, hero media card             |
-| **sidebar**   | 0px outer / 12px selected | fixed collapsible navigation sidebar; selected row/control   |
-| **card**      | 16px                      | cards, media thumbnails, promo tiles                         |
-| **control**   | 14px (`rounded-xl`)       | **all** buttons, inputs, selects, chips, pills, icon buttons |
-| **small**     | 8–10px (`rounded-md/lg`)  | dense control sizes (`xs`/`sm`), tiny chips                  |
-| **segmented** | full-round                | segmented-control **containers** only (studio tabs)          |
+| Step          | Value                      | Use                                                          |
+| ------------- | -------------------------- | ------------------------------------------------------------ |
+| **panel**     | 24px                       | large frosted panels — composer, hero media card             |
+| **sidebar**   | 0px outer / 12px collapsed | expanded rows stay flat; collapsed active icon uses 12px     |
+| **card**      | 16px                       | cards, media thumbnails, promo tiles                         |
+| **control**   | 14px (`rounded-xl`)        | **all** buttons, inputs, selects, chips, pills, icon buttons |
+| **small**     | 8–10px (`rounded-md/lg`)   | dense control sizes (`xs`/`sm`), tiny chips                  |
+| **segmented** | full-round                 | segmented-control **containers** only (studio tabs)          |
 
 **Buttons share the one 14px control radius** (decided 2026-08-04). The
 full-round pill for the primary CTA was tried and retired: a hero action earns
@@ -298,7 +298,7 @@ imagine.art reference, whose buttons hold a single ~12–14px radius throughout.
 
 - **One navigation everywhere: the fixed collapsible sidebar** (revised
   2026-08-10). It is flush with the left viewport edge and fills the full
-  viewport height on the exact `#0f0f0f` shell surface. Expanded width is 224px
+  viewport height on the exact `#0f0f0f` shell surface. Expanded width is 240px
   with the brand, section labels, and labeled navigation rows; at viewport
   widths below 1024px it collapses automatically to 72px icon navigation.
   It is separated from content by one `white/8%` right border and never by a
@@ -315,6 +315,11 @@ imagine.art reference, whose buttons hold a single ~12–14px radius throughout.
   header and content occupy the remaining width and animate with the sidebar;
   fixed bottom composers retain a 16px working gap from its edge.
   **The home and app surfaces use this same shell.**
+  Expanded navigation rows do not use card fills or horizontal row padding:
+  labels and compact badges share the available inline space, hover changes
+  foreground only, and the active route uses a quiet 2px leading marker.
+  Collapsed icon navigation may retain the 12px selected fill because there is
+  no label rhythm to preserve.
 - **Fill the shell.** The main content column FILLS its width — no page-level
   centered max-width. Only a focused text input (composer, chat) gets a centered
   cap (~1200px); galleries / grids / cards fill. (Home build: see the last section.)
