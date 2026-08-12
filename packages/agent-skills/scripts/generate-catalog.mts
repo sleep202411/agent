@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { format, resolveConfig } from "prettier";
+import { format } from "prettier";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 
@@ -186,7 +186,6 @@ unique(catalog.map((skill) => skill.version.id), "version ids");
 unique(catalog.map((skill) => String(skill.catalogOrder)), "catalog order");
 catalog.sort((left, right) => left.catalogOrder - right.catalogOrder);
 
-const prettierConfig = await resolveConfig(generatedFile);
 const output = await format(
   [
     "/* eslint-disable */",
@@ -196,7 +195,15 @@ const output = await format(
     `export const GENERATED_BUNDLED_CATALOG_SKILLS = ${JSON.stringify(catalog.map(({ catalogOrder: _catalogOrder, ...skill }) => skill), null, 2)} as const satisfies readonly BundledCatalogSkillSource[];`,
     "",
   ].join("\n"),
-  { ...prettierConfig, filepath: generatedFile, parser: "typescript" },
+  {
+    parser: "typescript",
+    semi: true,
+    singleQuote: false,
+    tabWidth: 2,
+    trailingComma: "es5",
+    printWidth: 100,
+    endOfLine: "lf",
+  },
 );
 
 if (process.argv.includes("--check")) {
