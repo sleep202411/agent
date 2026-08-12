@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rhythmic Montage Editor"
+  short_description: "Build meaning through shot contrast, visual rhyme, tempo and pre"
+  default_prompt: "Use $rhythmic-montage-editor to apply this creative direction to my request."

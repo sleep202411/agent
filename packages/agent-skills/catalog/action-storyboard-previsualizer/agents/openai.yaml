@@ -1,0 +1,4 @@
+interface:
+  display_name: "Action Storyboard Previsualizer"
+  short_description: "Previsualize action with simple figures, legible staging, collis"
+  default_prompt: "Use $action-storyboard-previsualizer to apply this creative direction to my request."

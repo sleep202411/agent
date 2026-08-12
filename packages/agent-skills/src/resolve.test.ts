@@ -90,12 +90,11 @@ describe("resolveSkillMounts", () => {
     expect(mount.skippedSkillIds).toContain("catalog.canvas-only");
   });
 
-  it("mounts project defaults and turn skills after always-on", () => {
+  it("mounts selected system skills after always-on", () => {
     const mount = resolveSkillMounts({
       projectKind: "platform",
       workbenchMode: "storyboard",
-      projectDefaultSkillIds: ["agent-os.skill.long-script"],
-      turnSkillIds: ["agent-os.skill.cinematic-shots"],
+      turnSkillIds: ["agent-os.skill.long-script", "agent-os.skill.cinematic-shots"],
     });
     const ids = mount.skills.map((s) => s.id);
     expect(ids.indexOf("agent-os.core")).toBeLessThan(ids.indexOf("agent-os.skill.long-script"));
@@ -105,11 +104,11 @@ describe("resolveSkillMounts", () => {
     expect(mount.instructions).toMatch(/Cinematic shot language/i);
   });
 
-  it("skips project default skill not allowed on workbench", () => {
+  it("skips a selected system skill not allowed on the workbench", () => {
     const mount = resolveSkillMounts({
       projectKind: "platform",
       workbenchMode: "brief",
-      projectDefaultSkillIds: ["agent-os.skill.cinematic-shots"],
+      turnSkillIds: ["agent-os.skill.cinematic-shots"],
     });
     expect(mount.skills.map((s) => s.id)).not.toContain("agent-os.skill.cinematic-shots");
     expect(mount.skippedSkillIds).toContain("agent-os.skill.cinematic-shots");

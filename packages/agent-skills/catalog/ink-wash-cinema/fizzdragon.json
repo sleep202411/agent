@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000008",
+  "catalogOrder": 8,
+  "displayDescription": "Expressive brush economy, atmospheric negative space and controlled cinnabar accents.",
+  "translationKey": "inkWashCinema",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "general",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "ink-wash-cinema-v2.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000008",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/ink-wash-cinema/v1"
+  }
+}

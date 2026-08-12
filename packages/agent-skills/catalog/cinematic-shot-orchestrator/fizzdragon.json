@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000024",
+  "catalogOrder": 24,
+  "displayDescription": "Choose and sequence production-readable shots automatically from dramatic intent, geography and continuity.",
+  "translationKey": "cinematicShotOrchestrator",
+  "publisherName": "FizzDragon",
+  "category": "production",
+  "kind": "video",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "cinematic-shot-orchestrator.jpg",
+    "video": "cinematic-shot-orchestrator.mp4"
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000024",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/cinematic-shot-orchestrator/v1"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000022",
+  "catalogOrder": 22,
+  "displayDescription": "Audit a short video's hook, clarity, retention beats, continuity and payoff before recommending precise revisions.",
+  "translationKey": "shortVideoDiagnostic",
+  "publisherName": "FizzDragon",
+  "category": "production",
+  "kind": "video",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "short-video-diagnostic.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000022",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "qa"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/short-video-diagnostic/v1"
+  }
+}

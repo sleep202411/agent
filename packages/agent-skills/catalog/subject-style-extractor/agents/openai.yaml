@@ -1,0 +1,4 @@
+interface:
+  display_name: "Subject Style Extractor"
+  short_description: "Separate a reference's transferable visual system from subject i"
+  default_prompt: "Use $subject-style-extractor to apply this creative direction to my request."

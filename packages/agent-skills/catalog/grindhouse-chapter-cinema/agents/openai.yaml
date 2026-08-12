@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grindhouse Chapter Cinema"
+  short_description: "Chapter-card structure, bold framing, hard cuts and worn genre-f"
+  default_prompt: "Use $grindhouse-chapter-cinema to apply this creative direction to my request."

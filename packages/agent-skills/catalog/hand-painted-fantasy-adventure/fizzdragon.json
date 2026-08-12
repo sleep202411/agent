@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000005",
+  "catalogOrder": 5,
+  "displayDescription": "Airy hand-painted worlds, environmental storytelling and gentle, physically coherent motion.",
+  "translationKey": "handPaintedFantasyAdventure",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "general",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "hand-painted-fantasy-adventure.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000005",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/hand-painted-fantasy-adventure/v1"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000018",
+  "catalogOrder": 18,
+  "displayDescription": "Plan identity-safe 16:9, 1:1 and 9:16 reframes with protected action, eyelines and readable composition.",
+  "translationKey": "aspectRatioReframing",
+  "publisherName": "FizzDragon",
+  "category": "production",
+  "kind": "video",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "aspect-ratio-reframing.jpg",
+    "video": "aspect-ratio-reframing.mp4"
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000018",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/aspect-ratio-reframing/v1"
+  }
+}

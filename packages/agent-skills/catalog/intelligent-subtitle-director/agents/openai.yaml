@@ -1,0 +1,4 @@
+interface:
+  display_name: "Intelligent Subtitle Director"
+  short_description: "Create timed subtitle direction that protects meaning, reading r"
+  default_prompt: "Use $intelligent-subtitle-director to apply this creative direction to my request."

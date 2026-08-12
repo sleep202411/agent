@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Editorial Photography"
+  short_description: "Readable product hierarchy, controlled materials, lighting and c"
+  default_prompt: "Use $product-editorial-photography to apply this creative direction to my request."

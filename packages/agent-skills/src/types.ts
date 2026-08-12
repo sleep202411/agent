@@ -20,6 +20,70 @@ export const AgentSkillSourceSchema = z.enum([
 ]);
 export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
 
+export const PROJECT_SKILL_SCOPES = [
+  "agent_prompt",
+  "prompt_authoring",
+  "image_generation",
+  "video_generation",
+  "preflight",
+  "qa",
+] as const;
+export const ProjectSkillScopeSchema = z.enum(PROJECT_SKILL_SCOPES);
+export type ProjectSkillScope = z.infer<typeof ProjectSkillScopeSchema>;
+
+const PromptPolicySchema = z
+  .object({
+    promptSuffix: z.string().trim().min(1).max(20_000),
+  })
+  .strict();
+
+export const SkillGenerationPolicySchema = z
+  .object({
+    image: PromptPolicySchema.optional(),
+    video: PromptPolicySchema.optional(),
+    promptAuthoring: z
+      .object({ instructions: z.string().trim().min(1).max(20_000) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type SkillGenerationPolicy = z.infer<typeof SkillGenerationPolicySchema>;
+
+export const ResolvedProjectSkillSchema = z
+  .object({
+    installationId: z.string().uuid(),
+    skillId: z.string().uuid(),
+    slug: z.string().trim().min(1).max(128),
+    name: z.string().trim().min(1).max(160),
+    versionId: z.string().uuid(),
+    version: z.string().trim().min(1).max(32),
+    versionChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+    instructions: z.string().trim().min(1).max(50_000),
+    generationPolicy: SkillGenerationPolicySchema,
+    toolIds: z.array(z.string().trim().min(1).max(128)).max(64),
+    config: z.record(z.string(), z.unknown()),
+    source: z.enum(["project_default", "turn_selection"]),
+  })
+  .strict();
+export type ResolvedProjectSkill = z.infer<typeof ResolvedProjectSkillSchema>;
+
+export const ProjectSkillResolutionSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal("project-skill-resolution/v1"),
+    resolutionId: z.string().uuid(),
+    ownerKind: z.enum(["platform", "story"]),
+    projectId: z.string().uuid(),
+    projectRevision: z.number().int().nonnegative(),
+    scope: ProjectSkillScopeSchema,
+    workbenchMode: z.string().trim().min(1).max(64).nullable(),
+    sourceSurface: z.string().trim().min(1).max(64).nullable(),
+    resolvedAt: z.string().datetime({ offset: true }),
+    skills: z.array(ResolvedProjectSkillSchema).max(32),
+    checksum: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+export type ProjectSkillResolutionSnapshot = z.infer<typeof ProjectSkillResolutionSnapshotSchema>;
+
 export const AgentSkillDefinitionSchema = z
   .object({
     id: z
@@ -65,11 +129,6 @@ export interface SkillMountContext {
   workbenchMode: string;
   /** Optional product line (e.g. interactive-film). Future system packs. */
   product?: string;
-  /**
-   * Project default skill ids (admin). Applied when registered.
-   * Target product path — not a temporary stub.
-   */
-  projectDefaultSkillIds?: readonly string[];
   /**
    * Per-turn skill ids from the composer. Applied when registered.
    * Target product path — not a temporary stub.

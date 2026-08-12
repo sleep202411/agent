@@ -1,0 +1,4 @@
+interface:
+  display_name: "Movie Poster & Key Art"
+  short_description: "Develop cinematic poster concepts with coherent imagery, title s"
+  default_prompt: "Use $movie-poster-key-art to apply this creative direction to my request."

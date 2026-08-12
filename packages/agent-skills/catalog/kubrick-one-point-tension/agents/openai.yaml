@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kubrick One-Point Tension"
+  short_description: "One-point perspective, geometric staging, slow pushes and contro"
+  default_prompt: "Use $kubrick-one-point-tension to apply this creative direction to my request."

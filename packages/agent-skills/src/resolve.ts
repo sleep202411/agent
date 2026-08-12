@@ -8,8 +8,7 @@ import type { AgentSkillDefinition, SkillMountContext, SkillMountResult } from "
  *
  * Order (later overrides earlier in the composed prompt):
  * 1. alwaysOn system skills (global + context-matching)
- * 2. projectDefaultSkillIds (when registered & allowed in this context)
- * 3. turnSkillIds (when registered & allowed in this context)
+ * 2. turnSkillIds (when registered & allowed in this context)
  *
  * This is the final mount contract — install UI is separate; ids already work
  * once skills are registered.
@@ -48,12 +47,8 @@ export function resolveSkillMounts(context: SkillMountContext): SkillMountResult
     push(skill);
   }
 
-  // 2) Project defaults
-  for (const id of context.projectDefaultSkillIds ?? []) {
-    push(getSkill(id), id);
-  }
-
-  // 3) Turn selection
+  // 2) Per-turn system Skill selection. Project-installed Skills are resolved
+  // by Nest as an immutable signed snapshot and never enter this registry.
   for (const id of context.turnSkillIds ?? []) {
     push(getSkill(id), id);
   }

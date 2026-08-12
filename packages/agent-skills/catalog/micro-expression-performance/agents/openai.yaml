@@ -1,0 +1,4 @@
+interface:
+  display_name: "Micro-Expression Performance"
+  short_description: "Direct restrained facial acting through readable eye, breath and"
+  default_prompt: "Use $micro-expression-performance to apply this creative direction to my request."
