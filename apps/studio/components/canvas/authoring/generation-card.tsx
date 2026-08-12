@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
@@ -46,7 +46,7 @@ import {
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
-import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
+import { mentionLabel, type MentionItem, type SkillMarketItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
   canvasDefaultMode,
@@ -66,6 +66,7 @@ import {
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
 import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
+import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -77,6 +78,19 @@ import {
 import { PortPlus } from "./ports";
 import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import {
+  compatibleProjectSkillInstallations,
+  composePromptWithProjectSkills,
+  extractProjectSkillSelection,
+  generationSkillScope,
+  isProjectSkillDefault,
+  projectSkillMention,
+  resolveEffectiveProjectSkills,
+  type CanvasProjectSkillSelection,
+} from "@/lib/project-skill-runtime";
+import type { ProjectSkillCatalogItem, ProjectSkillInstallation } from "@/lib/project-skills-api";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -87,6 +101,12 @@ import { CanvasMediaViewer } from "./canvas-media-viewer";
  * node types via the thin wrappers at the bottom).
  */
 export type GenerationModality = "image" | "video";
+
+function catalogTranslationKey(skill: ProjectSkillCatalogItem): string | null {
+  if (!skill.localizedMetadata || typeof skill.localizedMetadata !== "object") return null;
+  const key = (skill.localizedMetadata as { translationKey?: unknown }).translationKey;
+  return typeof key === "string" && key ? key : null;
+}
 
 export type GenerationNodeData = {
   name?: string;
@@ -101,6 +121,8 @@ export type GenerationNodeData = {
   settings?: ModelSettings;
   references?: CardReferences;
   generation?: GenerationState;
+  /** Explicit per-card additions/removals relative to project Skill defaults. */
+  skillSelection?: CanvasProjectSkillSelection;
   /** Set when a node is spawned to auto-run once on mount (e.g. panorama). */
   autoSubmit?: boolean;
   /**
@@ -324,8 +346,10 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
+  const ts = useTranslations("project.skills");
   const ol = useOperationLabel();
   const graph = useCanvasGraphContext();
+  const { owner, projectSkills, projectSkillCatalog } = useProjectContext();
   const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
@@ -348,6 +372,8 @@ function GenerationCard({
   const [pano, setPano] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
+  const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
+  const openSkills = useProjectUIStore((state) => state.openSkills);
   // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
   // height metadata) so the card hugs its content instead of the size default.
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
@@ -404,6 +430,80 @@ function GenerationCard({
   const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+  const skillScope = generationSkillScope(modality);
+  const skillSourceSurface =
+    owner.kind === "platform_project" ? "fizzstudio-canvas" : "story-studio-workbench";
+  const skillLabelFor = useCallback(
+    (installation: ProjectSkillInstallation) =>
+      installation.translationKey
+        ? ts(`items.${installation.translationKey}.name`)
+        : (installation.name ?? installation.slug ?? ts("title")),
+    [ts]
+  );
+  const compatibleSkills = useMemo(
+    () => compatibleProjectSkillInstallations(projectSkills.data, skillScope),
+    [projectSkills.data, skillScope]
+  );
+  const skillMarketOptions = useMemo<SkillMarketItem[]>(() => {
+    const installationBySkillId = new Map(
+      compatibleSkills.map((installation) => [installation.skillId, installation])
+    );
+    return (projectSkillCatalog.data?.items ?? [])
+      .filter((skill) => skill.latestVersion?.capabilities.includes(skillScope))
+      .map((skill) => {
+        const installation = installationBySkillId.get(skill.id);
+        const translationKey = catalogTranslationKey(skill);
+        const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+        return {
+          id: installation?.id ?? `catalog:${skill.id}`,
+          catalogId: skill.id,
+          installed: Boolean(installation),
+          kind: "skill" as const,
+          label,
+          name: label,
+          previewUrl: skill.previewUrl ?? undefined,
+          previewVideoUrl: skill.previewVideoUrl ?? undefined,
+        };
+      });
+  }, [compatibleSkills, projectSkillCatalog.data?.items, skillScope, ts]);
+  const defaultSkillIds = useMemo(
+    () =>
+      new Set(
+        compatibleSkills
+          .filter((installation) =>
+            isProjectSkillDefault({
+              installation,
+              scope: skillScope,
+              sourceSurface: skillSourceSurface,
+            })
+          )
+          .map((installation) => installation.id)
+      ),
+    [compatibleSkills, skillScope, skillSourceSurface]
+  );
+  const effectiveSkills = useMemo(
+    () =>
+      resolveEffectiveProjectSkills({
+        projectSkills: projectSkills.data,
+        scope: skillScope,
+        sourceSurface: skillSourceSurface,
+        selection: data.skillSelection,
+        labelFor: skillLabelFor,
+        promptLength: (data.prompt ?? "").length,
+      }),
+    [
+      data.prompt,
+      data.skillSelection,
+      projectSkills.data,
+      skillLabelFor,
+      skillScope,
+      skillSourceSurface,
+    ]
+  );
+  const promptWithSkills = useMemo(
+    () => composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills),
+    [data.prompt, effectiveSkills]
+  );
   // Attached references the prompt can cite with `@` — labeled per kind
   // (Image1, Video1, …) in the same scheme as the studio composer. Still-
   // uploading items are skipped (no stable target yet).
@@ -423,8 +523,17 @@ function GenerationCard({
         });
       }
     }
+    for (const installation of compatibleSkills) {
+      items.push(projectSkillMention(installation, skillLabelFor(installation)));
+    }
     return items;
-  }, [referencesForDisplay, refFields]);
+  }, [compatibleSkills, referencesForDisplay, refFields, skillLabelFor]);
+  const detailSkill = useMemo(
+    () =>
+      projectSkillCatalog.data?.items.find((skill) => skill.installation?.id === detailSkillId) ??
+      null,
+    [detailSkillId, projectSkillCatalog.data?.items]
+  );
 
   // Live compute-point estimate for the current model + settings + wired/uploaded
   // references — mirrors the model-settings panel and the standalone studio
@@ -973,13 +1082,33 @@ function GenerationCard({
                 modelFallbackLabel={data.modelName}
                 onSelectModel={onSelectModel}
                 modelPickerEnabled={!data.locked && !data.modelLocked}
-                prompt={data.prompt ?? ""}
-                onPromptCommit={(prompt) => patchNodeData(id, { prompt })}
+                prompt={promptWithSkills}
+                onPromptCommit={(prompt) => {
+                  const extracted = extractProjectSkillSelection({
+                    value: prompt,
+                    mentions: compatibleSkills.map((installation) =>
+                      projectSkillMention(installation, skillLabelFor(installation))
+                    ),
+                    defaultInstallationIds: defaultSkillIds,
+                  });
+                  patchNodeData(id, {
+                    prompt: extracted.prompt,
+                    skillSelection: extracted.selection,
+                  });
+                }}
                 promptPlaceholder={t(promptPlaceholderKey(mode))}
                 promptAriaLabel={t(promptPlaceholderKey(mode))}
                 promptAutoFocus
                 showPrompt={!model || hasSchemaProperty(model, "prompt")}
                 mentions={mentionItems}
+                skillMarketOptions={skillMarketOptions}
+                skillMarketLoading={projectSkillCatalog.loading}
+                skillMarketError={projectSkillCatalog.error}
+                onMentionActivate={(mention) => {
+                  if (mention.kind === "skill") setDetailSkillId(mention.id);
+                }}
+                onSkillMarketRetry={projectSkillCatalog.retry}
+                onOpenSkillMarket={(catalogId) => openSkills(catalogId)}
                 referenceContent={
                   refFields.length > 0 ? (
                     <ReferenceStack
@@ -1019,6 +1148,20 @@ function GenerationCard({
           the right. The output port is tinted by the card's output kind. */}
       <PortPlus type="target" id="input" side="left" />
       <PortPlus type="source" id="output" side="right" dataType={modality} />
+      <ProjectSkillDetailDialog
+        open={detailSkillId !== null}
+        skill={detailSkill}
+        loading={projectSkillCatalog.loading}
+        error={projectSkillCatalog.error}
+        onRetry={projectSkillCatalog.retry}
+        onOpenChange={(open) => {
+          if (!open) setDetailSkillId(null);
+        }}
+        onManage={(skillId) => {
+          setDetailSkillId(null);
+          openSkills(skillId);
+        }}
+      />
     </div>
   );
 }

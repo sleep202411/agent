@@ -71,7 +71,7 @@ export function CanvasConnectionProvider({
   // here alongside the connection. This also puts it above the CopilotPanel
   // (which needs CanvasGraphProvider for its tools).
   const graph = useCanvasGraph(doc, awareness, canEdit);
-  const { catalog } = useProjectContext();
+  const { catalog, projectSkills } = useProjectContext();
 
   const value = useMemo<CanvasConnectionValue>(
     () => ({
@@ -94,6 +94,7 @@ export function CanvasConnectionProvider({
             call useGeneration() without each mode wrapping it. */}
         <CanvasGenerationProvider
           catalog={catalog.data}
+          projectSkills={projectSkills}
           context={{
             ...(owner.kind === "platform_project"
               ? { projectId: owner.projectId }

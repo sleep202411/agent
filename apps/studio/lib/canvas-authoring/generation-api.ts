@@ -12,6 +12,7 @@ import {
   type ValidationIssue,
 } from "@repo/shared";
 import { api } from "@/lib/api";
+import type { ProjectSkillSelection } from "@/lib/project-skills-api";
 
 export type { MediaRefSnapshot, ValidationIssue };
 
@@ -172,6 +173,11 @@ export type FizzAiPromptDocumentNode =
       type: "style_ref";
       refId: string;
       label?: string;
+    }
+  | {
+      type: "skill_ref";
+      refId: string;
+      label?: string;
     };
 
 export interface FizzAiPromptDocument {
@@ -277,6 +283,7 @@ export interface FizzAiSubmitJobInput {
   promptDocument?: FizzAiPromptDocument;
   referenceBindings?: FizzAiReferenceBinding[];
   styleBindings?: FizzAiStyleBinding[];
+  skillSelection?: ProjectSkillSelection;
   modelId: string;
   schemaVersion: string;
 }
@@ -1365,6 +1372,7 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
         promptDocument: input.promptDocument,
         referenceBindings: input.referenceBindings,
         styleBindings: input.styleBindings,
+        skillSelection: input.skillSelection,
         modelId: input.modelId,
         schemaVersion: input.schemaVersion,
       },
@@ -1393,15 +1401,16 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
 
 /* ── prompt document builders (shared by the image + video studios) ───────── */
 
-/** Minimal mention source `buildPromptDocument` needs to bind `@Label` tokens. */
+/** Minimal mention source `buildPromptDocument` needs to bind inline entity tokens. */
 export interface FizzAiPromptMentionSource {
   refId: string;
   label: string;
+  nodeType?: "asset_ref" | "skill_ref";
 }
 
 /**
  * Build the structured prompt document from the raw prompt text plus the
- * reference bindings whose `@Label` tokens appear in it. Falls back to a
+ * reference bindings whose `@Label` or `/Skill` tokens appear in it. Falls back to a
  * single text node when nothing is mentioned.
  */
 export function buildPromptDocument(
@@ -1423,7 +1432,7 @@ function promptDocumentNodesFromMentions(
 
   const matches: Array<{ binding: FizzAiPromptMentionSource; end: number; start: number }> = [];
   for (const binding of references) {
-    const token = `@${binding.label}`;
+    const token = `${binding.nodeType === "skill_ref" ? "/" : "@"}${binding.label}`;
     let cursor = 0;
     while (cursor < prompt.length) {
       const start = prompt.indexOf(token, cursor);
@@ -1449,7 +1458,7 @@ function promptDocumentNodesFromMentions(
       nodes.push({ type: "text", text: prompt.slice(cursor, match.start) });
     }
     nodes.push({
-      type: "asset_ref",
+      type: match.binding.nodeType ?? "asset_ref",
       refId: match.binding.refId,
       label: match.binding.label,
     });

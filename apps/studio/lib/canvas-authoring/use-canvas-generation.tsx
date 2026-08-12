@@ -53,6 +53,19 @@ import {
   type ValidationIssue,
 } from "./generation-api";
 import { probeMediaDurationSeconds } from "./probe-media-duration";
+import {
+  compatibleProjectSkillInstallations,
+  composePromptWithProjectSkills,
+  generationSkillScope,
+  resolveEffectiveProjectSkills,
+  sanitizeProjectSkillSelection,
+  type CanvasProjectSkillSelection,
+} from "@/lib/project-skill-runtime";
+import type {
+  ProjectSkillInstallation,
+  ProjectSkillInstallationsResponse,
+  ProjectSkillSelection,
+} from "@/lib/project-skills-api";
 
 /** Reconcile cadence while a card is running — slower when realtime is healthy. */
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
@@ -79,6 +92,7 @@ type GenNodeData = {
     }[]
   >;
   generation?: GenerationState;
+  skillSelection?: CanvasProjectSkillSelection;
 };
 
 /** An equirectangular (~2:1) image output is a panorama. */
@@ -272,6 +286,7 @@ function insufficientComputePointDetails(
 export function CanvasGenerationProvider({
   catalog,
   context,
+  projectSkills,
   canGenerate = true,
   disabledReason = null,
   children,
@@ -283,15 +298,23 @@ export function CanvasGenerationProvider({
     documentId?: string;
     sourceSurface: FizzAiSourceSurface;
   };
+  projectSkills: {
+    data: ProjectSkillInstallationsResponse | undefined;
+    loading: boolean;
+    error: boolean;
+  };
   canGenerate?: boolean;
   disabledReason?: string | null;
   children: React.ReactNode;
 }) {
   const t = useTranslations("canvasOps");
+  const ts = useTranslations("project.skills");
   const generationProjectId = context.projectId;
   const generationStoryProjectId = context.storyProjectId;
   const generationDocumentId = context.documentId;
   const sourceSurface = context.sourceSurface;
+  const projectSkillsReady = !projectSkills.loading && !projectSkills.error && !!projectSkills.data;
+  const effectiveDisabledReason = projectSkillsReady ? disabledReason : ts("generationUnavailable");
   // Destructured mutators/accessors are individually stable (useCallback in
   // useCanvasGraph), unlike the graph object itself whose identity tracks
   // nodes/edges. Every callback and effect below depends on these — NEVER on
@@ -689,8 +712,8 @@ export function CanvasGenerationProvider({
 
   const submit = useCallback(
     async (nodeId: string) => {
-      if (!canGenerate) {
-        if (disabledReason) toast.error(disabledReason);
+      if (!canGenerate || !projectSkillsReady) {
+        if (effectiveDisabledReason) toast.error(effectiveDisabledReason);
         return;
       }
       // Read source-of-truth from the doc (synchronous) so a card created/edited
@@ -783,6 +806,30 @@ export function CanvasGenerationProvider({
 
       const referenceInput = buildReferenceInputForMode(model, mode, references);
       const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
+      const skillScope = generationSkillScope(model.type);
+      const compatibleSkills = compatibleProjectSkillInstallations(projectSkills.data, skillScope);
+      const skillSelection = sanitizeProjectSkillSelection(data.skillSelection, compatibleSkills);
+      const labelForSkill = (installation: ProjectSkillInstallation) =>
+        installation.translationKey
+          ? ts(`items.${installation.translationKey}.name`)
+          : (installation.name ?? installation.slug ?? ts("title"));
+      const effectiveSkills = resolveEffectiveProjectSkills({
+        projectSkills: projectSkills.data,
+        scope: skillScope,
+        sourceSurface,
+        selection: skillSelection,
+        labelFor: labelForSkill,
+        promptLength: (data.prompt ?? "").length,
+      });
+      const promptWithSkills = composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills);
+      const requestSkillSelection: ProjectSkillSelection = {
+        ...(skillSelection?.includeInstallationIds?.length
+          ? { includeInstallationIds: skillSelection.includeInstallationIds }
+          : {}),
+        ...(skillSelection?.excludeInstallationIds?.length
+          ? { excludeInstallationIds: skillSelection.excludeInstallationIds }
+          : {}),
+      };
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -827,8 +874,17 @@ export function CanvasGenerationProvider({
           },
           idempotencyKey: generationIdempotencyKey("canvas"),
           input,
-          promptDocument: buildPromptDocument(data.prompt ?? "", referenceBindings),
+          promptDocument: buildPromptDocument(promptWithSkills, [
+            ...referenceBindings,
+            ...effectiveSkills.map((skill) => ({
+              refId: skill.installation.id,
+              label: skill.mention.label,
+              nodeType: "skill_ref" as const,
+            })),
+          ]),
           referenceBindings: referenceBindings.length ? referenceBindings : undefined,
+          skillSelection:
+            Object.keys(requestSkillSelection).length > 0 ? requestSkillSelection : undefined,
           modelId: model.id,
           schemaVersion: model.schemaVersion,
         });
@@ -865,11 +921,14 @@ export function CanvasGenerationProvider({
       generationDocumentId,
       sourceSurface,
       canGenerate,
-      disabledReason,
+      projectSkills.data,
+      projectSkillsReady,
+      effectiveDisabledReason,
       patch,
       patchNodeData,
       queryClient,
       t,
+      ts,
     ]
   );
 
@@ -907,12 +966,20 @@ export function CanvasGenerationProvider({
     () => ({
       submit: (id) => void submit(id),
       cancel: (id) => void cancel(id),
-      canSubmit: canGenerate,
-      disabledReason,
+      canSubmit: canGenerate && projectSkillsReady,
+      disabledReason: effectiveDisabledReason,
       preflightIssues,
       clearPreflightIssues,
     }),
-    [submit, cancel, canGenerate, disabledReason, preflightIssues, clearPreflightIssues]
+    [
+      submit,
+      cancel,
+      canGenerate,
+      projectSkillsReady,
+      effectiveDisabledReason,
+      preflightIssues,
+      clearPreflightIssues,
+    ]
   );
 
   return (
