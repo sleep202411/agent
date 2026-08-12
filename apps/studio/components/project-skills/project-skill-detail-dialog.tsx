@@ -1,17 +1,16 @@
 "use client";
 
-import Image from "next/image";
 import { useTranslations } from "next-intl";
 import {
   IconAlertTriangle,
   IconCheck,
-  IconFileDescription,
   IconLoader2,
   IconPhoto,
   IconPuzzle,
   IconVideo,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { SkillPreviewImage } from "@/components/project-skills/skill-preview-image";
 import {
   Dialog,
   DialogClose,
@@ -150,19 +149,14 @@ export function ProjectSkillDetailDialog({
                   aria-label={name}
                   className="size-full object-cover"
                 />
-              ) : skill.previewUrl ? (
-                <Image
+              ) : (
+                <SkillPreviewImage
                   src={skill.previewUrl}
                   alt={name}
-                  fill
-                  loading="eager"
                   sizes="(max-width: 768px) calc(100vw - 80px), 812px"
                   className="object-cover"
+                  fallbackIconClassName="size-12"
                 />
-              ) : (
-                <span className="absolute inset-0 grid place-items-center text-white/20">
-                  <IconFileDescription className="size-12" stroke={1.2} />
-                </span>
               )}
               <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/68 px-2 py-1 text-[10px] font-medium text-white/78 backdrop-blur-md">
                 <KindIcon

@@ -1,14 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import {
   IconArrowLeft,
   IconCheck,
   IconDownload,
-  IconFileDescription,
   IconFileUpload,
   IconLoader2,
   IconPhoto,
@@ -40,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { Field } from "@/components/ui/field";
+import { SkillPreviewImage } from "@/components/project-skills/skill-preview-image";
 import { cn } from "@/lib/utils";
 import {
   installProjectSkill,
@@ -251,19 +250,14 @@ export function ProjectSkillsPanel() {
                 aria-label={skillName(selectedSkill)}
                 className="size-full object-cover"
               />
-            ) : selectedSkill.previewUrl ? (
-              <Image
+            ) : (
+              <SkillPreviewImage
                 src={selectedSkill.previewUrl}
                 alt={skillName(selectedSkill)}
-                fill
-                loading="eager"
                 sizes="288px"
                 className="object-cover"
+                fallbackIconClassName="size-10"
               />
-            ) : (
-              <span className="absolute inset-0 grid place-items-center text-white/22">
-                <IconFileDescription className="size-10" stroke={1.25} />
-              </span>
             )}
             <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/68 px-2 py-1 text-[10px] font-medium text-white/78 backdrop-blur-md">
               <SelectedKindIcon
@@ -483,20 +477,12 @@ export function ProjectSkillsPanel() {
                     className="group block w-full rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                   >
                     <div className="relative aspect-3/2 overflow-hidden rounded-xl bg-white/[0.055]">
-                      {skill.previewUrl ? (
-                        <Image
-                          src={skill.previewUrl}
-                          alt={name}
-                          fill
-                          loading="eager"
-                          sizes="134px"
-                          className="object-cover transition-transform duration-200 group-hover:scale-[1.025]"
-                        />
-                      ) : (
-                        <span className="absolute inset-0 grid place-items-center text-white/24">
-                          <IconFileDescription className="size-7" stroke={1.4} />
-                        </span>
-                      )}
+                      <SkillPreviewImage
+                        src={skill.previewUrl}
+                        alt={name}
+                        sizes="134px"
+                        className="object-cover transition-transform duration-200 group-hover:scale-[1.025]"
+                      />
                       {skill.ownershipScope !== "community" ? (
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[9px] font-medium text-white/65 backdrop-blur-sm">
                           {t(`ownership.${skill.ownershipScope}`)}

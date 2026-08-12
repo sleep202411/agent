@@ -46,6 +46,28 @@ requiredEnv("NEXT_PUBLIC_SITE_REGION");
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker runner stage.
   output: "standalone",
+  // Project Skill preview URLs are materialized by the Nest control plane from
+  // the deployment cell's trusted media origin. Keep the optimizer allowlist
+  // path-scoped so arbitrary remote URLs cannot be proxied through Studio.
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "r2.fizzdragon.com",
+        port: "",
+        pathname: "/product-skills/previews/**",
+        search: "",
+      },
+      {
+        protocol: "https",
+        hostname: "media.fizzspace.cn",
+        port: "",
+        pathname: "/product-skills/previews/**",
+        search: "",
+      },
+    ],
+    maximumRedirects: 0,
+  },
   // Let Azure Front Door compress at the edge, not the Next server. App-level
   // gzip + AFD over HTTP/2 double-compresses → net::ERR_HTTP2_PROTOCOL_ERROR
   // (CSS/JS chunks stall, blank page). Required before putting studio behind FD.
