@@ -24,6 +24,10 @@ interface ProjectUIState {
   historyOpen: boolean;
   /** Project chapter navigator open. */
   sectionsOpen: boolean;
+  /** Project skill catalog panel open. */
+  skillsOpen: boolean;
+  /** Catalog Skill whose detail should be shown when the panel opens. */
+  selectedSkillId: string | null;
   /** The storyboard shot selected for the left drawer, if any. */
   selectedShotId: string | null;
   /** Which picture slot of the selected shot the drawer is editing. */
@@ -47,6 +51,10 @@ interface ProjectUIState {
   clearNodeInsertRequest: (id: number) => void;
   toggleSections: () => void;
   closeSections: () => void;
+  openSkills: (skillId?: string) => void;
+  selectSkill: (skillId: string | null) => void;
+  toggleSkills: () => void;
+  closeSkills: () => void;
   /** Select a shot for the drawer; closes asset library (mutually exclusive). */
   selectShot: (id: string, slot: "image" | "video") => void;
   closeShotDrawer: () => void;
@@ -62,6 +70,8 @@ export const useProjectUIStore = create<ProjectUIState>()(
       assetsOpen: false,
       nodesOpen: false,
       sectionsOpen: false,
+      skillsOpen: false,
+      selectedSkillId: null,
       selectedShotId: null,
       selectedSlot: "image",
       copilotOpen: false,
@@ -75,6 +85,8 @@ export const useProjectUIStore = create<ProjectUIState>()(
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
           selectedShotId: null,
         }),
       closeAssets: () => set({ assetsOpen: false }),
@@ -84,6 +96,8 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           historyOpen: false,
           sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
           selectedShotId: null,
         }),
       closeNodes: () => set({ nodesOpen: false }),
@@ -104,9 +118,33 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
           selectedShotId: null,
         })),
       closeSections: () => set({ sectionsOpen: false }),
+      openSkills: (skillId) =>
+        set({
+          skillsOpen: true,
+          selectedSkillId: skillId ?? null,
+          assetsOpen: false,
+          nodesOpen: false,
+          historyOpen: false,
+          sectionsOpen: false,
+          selectedShotId: null,
+        }),
+      toggleSkills: () =>
+        set((state) => ({
+          skillsOpen: !state.skillsOpen,
+          selectedSkillId: null,
+          assetsOpen: false,
+          nodesOpen: false,
+          historyOpen: false,
+          sectionsOpen: false,
+          selectedShotId: null,
+        })),
+      closeSkills: () => set({ skillsOpen: false, selectedSkillId: null }),
+      selectSkill: (skillId) => set({ selectedSkillId: skillId }),
       selectShot: (id, slot) =>
         set({
           selectedShotId: id,
@@ -115,6 +153,8 @@ export const useProjectUIStore = create<ProjectUIState>()(
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
         }),
       closeShotDrawer: () => set({ selectedShotId: null }),
       toggleCopilot: () => set((s) => ({ copilotOpen: !s.copilotOpen })),
@@ -125,6 +165,8 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           nodesOpen: false,
           sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
           selectedShotId: null,
         })),
       closeHistory: () => set({ historyOpen: false }),

@@ -176,8 +176,10 @@ function StoryWorkbenchShell({
   const assetsOpen = useProjectUIStore((state) => state.assetsOpen);
   const nodesOpen = useProjectUIStore((state) => state.nodesOpen);
   const historyOpen = useProjectUIStore((state) => state.historyOpen);
+  const skillsOpen = useProjectUIStore((state) => state.skillsOpen);
   const selectedShotId = useProjectUIStore((state) => state.selectedShotId);
-  const leftDrawerOpen = assetsOpen || nodesOpen || historyOpen || Boolean(selectedShotId);
+  const leftDrawerOpen =
+    assetsOpen || nodesOpen || historyOpen || skillsOpen || Boolean(selectedShotId);
   const leftInset = 64 + (leftDrawerOpen ? PROJECT_PANEL_WIDTH : 0);
   const candidates = useStoryCandidateAssets({ workspaceId, projectId, canEdit });
   const { awareness, doc } = useCanvasConnection();

@@ -1812,6 +1812,270 @@
       "activity": "Activity",
       "members": "Members"
     },
+    "skills": {
+      "title": "Skills",
+      "launchAnnouncement": {
+        "title": "Project Skills are here",
+        "leadStrong": "Capture your team's creative direction",
+        "leadRest": "to align visual standards, reduce repeated prompting and tuning, and produce consistent images and videos faster.",
+        "supportingText": "Set a project default so every generation starts aligned, then adjust it when needed.",
+        "cta": "Explore Project Skills",
+        "close": "Close Skill announcement",
+        "mute": "Mute preview",
+        "unmute": "Unmute preview",
+        "mediaAlt": "Preview of cinematic Project Skills in FizzDragon"
+      },
+      "mockNotice": "Preview catalog · Installation is coming soon",
+      "catalogDescription": "Install skills for this project and choose where they apply by default",
+      "loadFailed": "Skills could not be loaded. Select to try again.",
+      "generationUnavailable": "Project Skills are not ready. Open Skills to retry before generating.",
+      "filterLabel": "Filter skills",
+      "filters": {
+        "all": "All",
+        "general": "General",
+        "image": "Image",
+        "video": "Video"
+      },
+      "recommended": "Recommended",
+      "all": "All skills",
+      "searchPlaceholder": "Search skills",
+      "noMatches": "No skills match your search.",
+      "install": "Install",
+      "installComingSoon": "Project installation · Coming soon",
+      "close": "Close skills",
+      "errors": {
+        "install": "The Skill could not be installed.",
+        "upload": "The Skill package could not be imported.",
+        "uninstall": "The Skill could not be uninstalled.",
+        "defaults": "The project defaults could not be updated.",
+        "notInstalled": "This Skill is not installed in the project."
+      },
+      "ownership": {
+        "project": "Project only",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "Upload Skill",
+        "title": "Upload a private Skill",
+        "description": "Import a standards-based SKILL.md or ZIP package. Uploaded instructions stay inside the project or workspace scope you choose and cannot add executable tools.",
+        "fileLabel": "Skill package",
+        "chooseFile": "Choose SKILL.md or a ZIP package",
+        "fileHint": "UTF-8 · maximum 1 MB · ZIP may include Markdown references",
+        "downloadTemplate": "Download template",
+        "zipSafety": "ZIP accepts only one SKILL.md and Markdown files under references/. Scripts, binaries, links, encrypted archives, and unsafe paths are rejected.",
+        "fileRequired": "Choose a Skill package before uploading.",
+        "fileTooLarge": "Skill packages must be 1 MB or smaller.",
+        "scopeLabel": "Visibility",
+        "scopes": {
+          "project": "This project",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "Only members of this project can discover and use it.",
+          "workspace": "Other projects in this workspace can discover and install it."
+        },
+        "kindLabel": "Generation type",
+        "cancel": "Cancel",
+        "confirm": "Upload and install",
+        "success": "{name} was uploaded and installed."
+      },
+      "uninstall": {
+        "title": "Remove this Skill?",
+        "description": "{name} will be removed from this project and all of its default generation scopes will be cleared. The catalog source is not deleted.",
+        "cancel": "Keep Skill",
+        "confirm": "Remove",
+        "success": "Skill removed from the project."
+      },
+      "categories": {
+        "style": "Visual style",
+        "production": "Production",
+        "commercial": "Commercial"
+      },
+      "detail": {
+        "dialogTitle": "Skill details",
+        "loading": "Loading the latest Skill details…",
+        "loadFailed": "The latest Skill details could not be loaded.",
+        "activeForGeneration": "Active in this generation",
+        "projectDefaults": "Project defaults",
+        "noProjectDefaults": "This Skill is enabled only for this generation.",
+        "manageSkill": "Manage Skill",
+        "open": "View {name} details",
+        "back": "Back to skills",
+        "curatedBy": "Curated by FizzDragon",
+        "addSkill": "Add Skill",
+        "addComingSoon": "Project installation is coming soon",
+        "installed": "Installed",
+        "remove": "Remove",
+        "uninstall": "Uninstall Skill",
+        "managePermission": "Only project owners and admins can manage Skills.",
+        "defaultsTitle": "Use by default",
+        "defaultsDescription": "Default Skills are shown in every matching generation and can still be removed for one request.",
+        "effectPreview": "Effect preview",
+        "about": "About this skill",
+        "introduction": "Introduction",
+        "category": "Type",
+        "appliesToLabel": "Works with",
+        "howToUseLabel": "How to use",
+        "outputLabel": "Adds to generation",
+        "appliesTo": {
+          "general": "Prompt authoring, image generation and video generation",
+          "image": "Image generation and image prompt authoring",
+          "video": "Video generation, motion design and shot planning"
+        },
+        "howToUse": {
+          "general": "After installation, enable it as a project default or turn it off for an individual generation.",
+          "image": "Select it in an image generation request to apply its visual rules and prompt guidance.",
+          "video": "Select it in a video generation request to apply its motion, timing and continuity guidance."
+        },
+        "output": {
+          "general": "Structured prompt guidance and capability-specific generation constraints.",
+          "image": "An optimized image prompt, visual direction and generation constraints.",
+          "video": "An optimized video prompt, motion beats, camera direction and continuity constraints."
+        }
+      },
+      "scopes": {
+        "image_generation": "Images",
+        "video_generation": "Videos",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "Prompt",
+        "image": "Image",
+        "video": "Video",
+        "agent": "Agent",
+        "qa": "QA"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "Wes Anderson Cinematic",
+          "description": "Centered storybook compositions, restrained performances, tactile sets and precise lateral movement."
+        },
+        "kubrickOnePointTension": {
+          "name": "Kubrick One-Point Tension",
+          "description": "One-point perspective, geometric staging, slow pushes and controlled psychological pressure."
+        },
+        "wongKarWaiNeonTime": {
+          "name": "Wong Kar-wai Neon Time",
+          "description": "Neon color separation, step-printed motion, intimate framing and suspended emotional time."
+        },
+        "grindhouseChapterCinema": {
+          "name": "Grindhouse Chapter Cinema",
+          "description": "Chapter-card structure, bold framing, hard cuts and worn genre-film texture."
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "Hand-painted Fantasy Adventure",
+          "description": "Airy hand-painted worlds, environmental storytelling and gentle, physically coherent motion."
+        },
+        "classicCelAnimation": {
+          "name": "Classic Cel Animation",
+          "description": "Hand-drawn character animation with crisp ink lines, painted backgrounds and readable pose-to-pose staging."
+        },
+        "stopMotionClayCinema": {
+          "name": "Stop-motion Clay Cinema",
+          "description": "Handcrafted clay characters, miniature sets, practical lighting and tactile frame-by-frame motion."
+        },
+        "inkWashCinema": {
+          "name": "Ink-wash Cinema",
+          "description": "Expressive brush economy, atmospheric negative space and controlled cinnabar accents."
+        },
+        "retroAnimeKeyVisual": {
+          "name": "Retro Anime Key Visual",
+          "description": "Painted cel backgrounds, crisp character silhouettes and dramatic analog-era color design."
+        },
+        "cinematicShotLanguage": {
+          "name": "Cinematic Shot Language",
+          "description": "Turn story intent into production-readable framing, lens, light, movement and continuity."
+        },
+        "scriptToStoryboard": {
+          "name": "Script to Storyboard",
+          "description": "Break scripts into narrative beats, coverage and generation-ready storyboard shots."
+        },
+        "visualContinuityGuardian": {
+          "name": "Visual Continuity Guardian",
+          "description": "Keep characters, wardrobe, locations, props and screen direction consistent."
+        },
+        "imageToVideoMotionDirector": {
+          "name": "Image-to-Video Motion Director",
+          "description": "Convert still frames into timed action beats, camera movement and stable end states."
+        },
+        "promptPreflightQa": {
+          "name": "Prompt Preflight & QA",
+          "description": "Check missing references, conflicting instructions and likely generation failures before submission."
+        },
+        "productEditorialPhotography": {
+          "name": "Product Editorial Photography",
+          "description": "Readable product hierarchy, controlled materials, lighting and campaign-ready compositions."
+        },
+        "moviePosterKeyArt": {
+          "name": "Movie Poster & Key Art",
+          "description": "Develop cinematic poster concepts with coherent imagery, title space and campaign hierarchy."
+        },
+        "pixelArtAdventure": {
+          "name": "Pixel Art Adventure",
+          "description": "Cinematic pixel environments, readable silhouettes and disciplined limited-palette lighting."
+        },
+        "postImpressionistNightPainting": {
+          "name": "Van Gogh Starry Night Painting",
+          "description": "Swirling night skies, energetic impasto and expressive cobalt-and-gold color rhythm."
+        },
+        "surrealCollageDreamscape": {
+          "name": "Surreal Collage Dreamscape",
+          "description": "Analog paper textures, unexpected scale and poetic photomontage composition."
+        },
+        "rhythmicMontageEditor": {
+          "name": "Rhythmic Montage Editor",
+          "description": "Build meaning through shot contrast, visual rhyme, tempo and precisely motivated cuts."
+        },
+        "aspectRatioReframing": {
+          "name": "Aspect-Ratio Reframing Director",
+          "description": "Plan identity-safe 16:9, 1:1 and 9:16 reframes with protected action, eyelines and readable composition."
+        },
+        "viralVideoReconstruction": {
+          "name": "Viral Video Reconstruction",
+          "description": "Rebuild a reference's transferable hook, beat structure and payoff without copying protected content."
+        },
+        "portraitCookingShort": {
+          "name": "Portrait Cooking Short",
+          "description": "Turn one recipe action into a tactile portrait-format cooking story with appetizing continuity and a clean payoff."
+        },
+        "multiPanelSequenceDirector": {
+          "name": "Multi-Panel Sequence Director",
+          "description": "Design readable multi-panel coverage with distinct shot purposes, continuity and an edit-ready progression."
+        },
+        "shortVideoDiagnostic": {
+          "name": "Short-Video Diagnostic",
+          "description": "Audit a short video's hook, clarity, retention beats, continuity and payoff with evidence-based revisions."
+        },
+        "microExpressionPerformance": {
+          "name": "Micro-Expression Performance",
+          "description": "Direct restrained facial acting through readable eye, breath and muscle changes instead of exaggerated emotion."
+        },
+        "cinematicShotOrchestrator": {
+          "name": "Cinematic Shot Orchestrator",
+          "description": "Choose and sequence production-readable shots from dramatic intent, geography and continuity."
+        },
+        "realisticPerformanceCoach": {
+          "name": "Realistic Performance Coach",
+          "description": "Replace generic AI acting with intention, listening, physical weight and behavior grounded in circumstance."
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "Action Storyboard Previsualizer",
+          "description": "Previsualize action with simple figures, legible staging, safe geography and editable beat progression."
+        },
+        "subjectStyleExtractor": {
+          "name": "Subject Style Extractor",
+          "description": "Separate a reference's transferable visual system from subject identity and apply it without copying content."
+        },
+        "intelligentSubtitleDirector": {
+          "name": "Intelligent Subtitle Director",
+          "description": "Create timed subtitle direction that protects meaning, reading rhythm, safe areas and visual hierarchy."
+        },
+        "brandVisualConsistency": {
+          "name": "Brand Visual Consistency",
+          "description": "Apply project color, typography, product and tone rules across every generated asset."
+        }
+      }
+    },
     "sections": {
       "defaultTitle": "Chapter 1",
       "title": "Chapters",

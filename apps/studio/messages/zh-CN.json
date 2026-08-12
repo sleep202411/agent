@@ -1812,6 +1812,270 @@
       "activity": "动态",
       "members": "成员"
     },
+    "skills": {
+      "title": "技能",
+      "launchAnnouncement": {
+        "title": "项目 Skill 正式上线",
+        "leadStrong": "沉淀团队的创作方法，",
+        "leadRest": "统一视觉风格与创作标准，减少重复沟通和调参，更快产出稳定的图片与视频。",
+        "supportingText": "设为项目默认后，团队每次生成都会自动应用，也可以按需调整。",
+        "cta": "探索项目 Skill",
+        "close": "关闭 Skill 上线介绍",
+        "mute": "关闭预览声音",
+        "unmute": "打开预览声音",
+        "mediaAlt": "FizzDragon 项目 Skill 电影创作能力预览"
+      },
+      "mockNotice": "目录预览 · 项目安装即将推出",
+      "catalogDescription": "为当前项目安装 Skill，并设置默认生效范围",
+      "loadFailed": "Skill 加载失败，点击重试。",
+      "generationUnavailable": "项目 Skill 尚未就绪，请打开技能面板重试后再生成。",
+      "filterLabel": "筛选技能",
+      "filters": {
+        "all": "全部",
+        "general": "通用",
+        "image": "图片",
+        "video": "视频"
+      },
+      "recommended": "推荐",
+      "all": "全部技能",
+      "searchPlaceholder": "搜索技能",
+      "noMatches": "没有匹配的技能。",
+      "install": "安装",
+      "installComingSoon": "安装到项目 · 即将推出",
+      "close": "关闭技能",
+      "errors": {
+        "install": "Skill 安装失败。",
+        "upload": "Skill 包导入失败。",
+        "uninstall": "Skill 卸载失败。",
+        "defaults": "项目默认设置更新失败。",
+        "notInstalled": "该 Skill 尚未安装到当前项目。"
+      },
+      "ownership": {
+        "project": "仅当前项目",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "上传 Skill",
+        "title": "上传私有 Skill",
+        "description": "导入标准 SKILL.md 或 ZIP 包。上传的指令只在所选项目或 Workspace 范围内可见，且不能加入可执行工具。",
+        "fileLabel": "Skill 包",
+        "chooseFile": "选择 SKILL.md 或 ZIP 包",
+        "fileHint": "UTF-8 · 最大 1 MB · ZIP 可包含 Markdown 参考资料",
+        "downloadTemplate": "下载模板",
+        "zipSafety": "ZIP 仅接受一个 SKILL.md 与 references/ 下的 Markdown；脚本、二进制、链接、加密包和不安全路径都会被拒绝。",
+        "fileRequired": "请先选择一个 Skill 包。",
+        "fileTooLarge": "Skill 包不能超过 1 MB。",
+        "scopeLabel": "可见范围",
+        "scopes": {
+          "project": "当前项目",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "只有当前项目成员可以发现和使用。",
+          "workspace": "同一 Workspace 的其他项目可以发现并安装。"
+        },
+        "kindLabel": "生成类型",
+        "cancel": "取消",
+        "confirm": "上传并安装",
+        "success": "{name} 已上传并安装。"
+      },
+      "uninstall": {
+        "title": "移除这个 Skill？",
+        "description": "将从当前项目移除 {name}，并清除它的所有默认生效范围。Skill 来源不会被删除。",
+        "cancel": "保留 Skill",
+        "confirm": "移除",
+        "success": "已从项目移除 Skill。"
+      },
+      "categories": {
+        "style": "视觉风格",
+        "production": "制作流程",
+        "commercial": "商业创意"
+      },
+      "detail": {
+        "dialogTitle": "Skill 详情",
+        "loading": "正在加载最新的 Skill 详情…",
+        "loadFailed": "无法加载最新的 Skill 详情。",
+        "activeForGeneration": "本次生成已启用",
+        "projectDefaults": "项目默认",
+        "noProjectDefaults": "此 Skill 仅在本次生成中启用。",
+        "manageSkill": "管理 Skill",
+        "open": "查看{name}详情",
+        "back": "返回技能列表",
+        "curatedBy": "FizzDragon 精选",
+        "addSkill": "添加 Skill",
+        "addComingSoon": "项目安装即将推出",
+        "installed": "已安装",
+        "remove": "移除",
+        "uninstall": "卸载 Skill",
+        "managePermission": "仅项目所有者和管理员可以管理 Skill。",
+        "defaultsTitle": "默认使用",
+        "defaultsDescription": "默认 Skill 会显示在每次匹配的生成中，也可以在单次生成里手动移除。",
+        "effectPreview": "效果预览",
+        "about": "关于此 Skill",
+        "introduction": "简介",
+        "category": "类型",
+        "appliesToLabel": "适用范围",
+        "howToUseLabel": "如何使用",
+        "outputLabel": "加入生成",
+        "appliesTo": {
+          "general": "提示词、生图与生视频",
+          "image": "生图与图片提示词创作",
+          "video": "生视频、运动设计与镜头规划"
+        },
+        "howToUse": {
+          "general": "安装后可设为项目默认，也可以在单次生成中临时关闭。",
+          "image": "在图片生成请求中选择它，应用对应的视觉规则与提示词指导。",
+          "video": "在视频生成请求中选择它，应用对应的运动、时序与连续性指导。"
+        },
+        "output": {
+          "general": "结构化提示词指导，以及面向不同生成能力的约束。",
+          "image": "优化后的图片提示词、视觉方向与生成约束。",
+          "video": "优化后的视频提示词、动作节拍、镜头方向与连续性约束。"
+        }
+      },
+      "scopes": {
+        "image_generation": "生图",
+        "video_generation": "生视频",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "提示词",
+        "image": "生图",
+        "video": "生视频",
+        "agent": "Agent",
+        "qa": "质检"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "韦斯·安德森电影美学",
+          "description": "居中式绘本构图、克制表演、实体布景与精准的横向镜头运动。"
+        },
+        "kubrickOnePointTension": {
+          "name": "库布里克单点透视张力",
+          "description": "单点透视、几何调度、缓慢推进，以及持续受控的心理压迫感。"
+        },
+        "wongKarWaiNeonTime": {
+          "name": "王家卫霓虹时间",
+          "description": "霓虹色彩分离、抽帧运动、亲密取景与悬置的情绪时间。"
+        },
+        "grindhouseChapterCinema": {
+          "name": "磨坊电影章节叙事",
+          "description": "章节卡结构、大胆取景、硬切与做旧类型片质感。"
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "手绘幻想冒险",
+          "description": "通透的手绘世界、环境叙事，以及轻柔且符合物理逻辑的运动。"
+        },
+        "classicCelAnimation": {
+          "name": "经典赛璐璐动画",
+          "description": "以清晰线稿、手绘背景和可读的关键姿态，构建经典二维角色动画。"
+        },
+        "stopMotionClayCinema": {
+          "name": "黏土定格动画",
+          "description": "使用手工黏土角色、微缩布景、实景灯光和逐帧动作营造触感。"
+        },
+        "inkWashCinema": {
+          "name": "水墨电影美学",
+          "description": "用克制笔触、氛围留白和受控的朱砂色点缀组织电影画面。"
+        },
+        "retroAnimeKeyVisual": {
+          "name": "复古动画主视觉",
+          "description": "结合赛璐璐背景、清晰角色轮廓与模拟胶片时代的戏剧化配色。"
+        },
+        "cinematicShotLanguage": {
+          "name": "电影镜头语言",
+          "description": "把故事意图转成制作可读的景别、镜头、光线、运动与连续性方案。"
+        },
+        "scriptToStoryboard": {
+          "name": "剧本转分镜",
+          "description": "把剧本拆分为叙事节拍、镜头覆盖与可直接生成的分镜镜头。"
+        },
+        "visualContinuityGuardian": {
+          "name": "视觉连续性守护",
+          "description": "保持角色、服装、场景、道具与视线方向前后一致。"
+        },
+        "imageToVideoMotionDirector": {
+          "name": "图生视频运动导演",
+          "description": "把静帧转成有时序的动作节拍、镜头运动与稳定的结束状态。"
+        },
+        "promptPreflightQa": {
+          "name": "提示词预检与生成质检",
+          "description": "提交前检查缺失引用、冲突指令与可能导致生成失败的问题。"
+        },
+        "productEditorialPhotography": {
+          "name": "产品编辑摄影",
+          "description": "建立清晰的产品层级、受控材质与光线，以及可用于营销的构图。"
+        },
+        "moviePosterKeyArt": {
+          "name": "电影海报与主视觉",
+          "description": "生成图像统一、预留标题空间且层级明确的电影海报概念。"
+        },
+        "pixelArtAdventure": {
+          "name": "像素艺术冒险",
+          "description": "以清晰剪影、有限色板和电影化光线构建细腻的像素场景。"
+        },
+        "postImpressionistNightPainting": {
+          "name": "梵高星夜油画",
+          "description": "以旋涡夜空、厚涂笔触和钴蓝金黄的色彩节奏增强画面表现力。"
+        },
+        "surrealCollageDreamscape": {
+          "name": "超现实拼贴梦境",
+          "description": "通过纸张肌理、反常尺度和诗意影像拼贴构建梦境空间。"
+        },
+        "rhythmicMontageEditor": {
+          "name": "节奏蒙太奇剪辑",
+          "description": "通过镜头对比、视觉押韵、节奏和有动机的切换组织叙事意义。"
+        },
+        "aspectRatioReframing": {
+          "name": "横竖屏重构导演",
+          "description": "在 16:9、1:1 与 9:16 之间安全重构画面，保护主体、动作、视线与构图可读性。"
+        },
+        "viralVideoReconstruction": {
+          "name": "爆款结构复刻",
+          "description": "提取参考视频可迁移的钩子、节拍与回报结构，不复制受保护的具体内容。"
+        },
+        "portraitCookingShort": {
+          "name": "人物烹饪短片",
+          "description": "把一道关键料理动作组织成有触感、连续且以美食揭晓收尾的竖屏短片。"
+        },
+        "multiPanelSequenceDirector": {
+          "name": "多宫格拼版导演",
+          "description": "以不同镜头目的、连续性和可剪辑顺序，设计清晰的多宫格镜头覆盖。"
+        },
+        "shortVideoDiagnostic": {
+          "name": "短视频诊断分析师",
+          "description": "基于证据诊断短视频的钩子、清晰度、留存节拍、连续性与回报，并给出精确修改。"
+        },
+        "microExpressionPerformance": {
+          "name": "微表情表演导演",
+          "description": "通过眼神、呼吸与细微肌肉变化指导克制表演，避免夸张情绪。"
+        },
+        "cinematicShotOrchestrator": {
+          "name": "影视镜头调度导演",
+          "description": "根据戏剧意图、空间关系与连续性，自动选择并组织制作可读的镜头。"
+        },
+        "realisticPerformanceCoach": {
+          "name": "写实表演指导",
+          "description": "以目标、倾听、身体重量和具体处境替代通用的 AI 式表演。"
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "动作分镜预演",
+          "description": "使用简单人物、清晰调度、安全空间和可编辑节拍预演动作场面。"
+        },
+        "subjectStyleExtractor": {
+          "name": "主体风格提取",
+          "description": "从参考中分离可迁移的视觉系统与主体身份，在不复制内容的前提下应用风格。"
+        },
+        "intelligentSubtitleDirector": {
+          "name": "智能字幕导演",
+          "description": "生成保护原意、阅读节奏、安全区与视觉层级的确定性字幕方案。"
+        },
+        "brandVisualConsistency": {
+          "name": "品牌视觉一致性",
+          "description": "在项目生成内容中统一应用品牌色彩、字体、产品与语气规则。"
+        }
+      }
+    },
     "sections": {
       "defaultTitle": "第 1 章",
       "title": "章节",

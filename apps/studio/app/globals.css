@@ -37,6 +37,9 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-brand-red: var(--brand-red);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-blue: var(--brand-blue);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -56,14 +59,13 @@
  * `dark:` variants from registry components still apply.
  */
 /*
- * Monochrome palette: pure-neutral near-black surfaces — and ONE chromatic
- * token, the brand red, as the primary action color (2026-08-04).
+ * Monochrome palette: pure-neutral near-black surfaces. Brand red is the
+ * primary action color; clean yellow and blue are supporting semantic accents.
  *
  * This reverses the earlier "red is never a token" rule: FizzDragon's brand
  * colour IS the red, and the primary action is the place a brand asserts
- * itself. `primary` is the only token carrying chroma; every SURFACE stays
- * zero-chroma, so the rule that still holds is the one that mattered — red
- * never tints a surface, it only fills the thing you are meant to press.
+ * itself. Every SURFACE stays zero-chroma: support colors identify capability
+ * and interaction states, but never become decorative page backgrounds.
  */
 :root {
   color-scheme: dark;
@@ -86,6 +88,9 @@
      on red. */
   --primary: oklch(0.5914 0.225 26.83); /* #E52227 */
   --primary-foreground: oklch(1 0 0);
+  --brand-red: #e52227;
+  --brand-yellow: #ffd84d;
+  --brand-blue: #4d8dff;
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.25 0 0);

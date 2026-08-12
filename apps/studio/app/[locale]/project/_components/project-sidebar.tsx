@@ -58,6 +58,7 @@ export function ProjectSidebar({
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
+  const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const openAssets = useProjectUIStore((s) => s.openAssets);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
   const openNodes = useProjectUIStore((s) => s.openNodes);
@@ -65,6 +66,7 @@ export function ProjectSidebar({
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const toggleHistory = useProjectUIStore((s) => s.toggleHistory);
   const toggleSections = useProjectUIStore((s) => s.toggleSections);
+  const toggleSkills = useProjectUIStore((s) => s.toggleSkills);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const { connectionStatus, rtt } = useCanvasConnection();
   const { canEdit, canManage, openShare } = useProjectContext();
@@ -105,6 +107,7 @@ export function ProjectSidebar({
   const items = [
     {
       icon: IconBook2,
+      iconClassName: undefined,
       label: t("sidebar.chapters"),
       active: sectionsOpen,
       disabledReason: undefined,
@@ -112,6 +115,7 @@ export function ProjectSidebar({
     },
     {
       icon: IconBlocks,
+      iconClassName: undefined,
       label: t("sidebar.nodes"),
       active: nodesOpen && !nodesDisabledReason,
       disabledReason: nodesDisabledReason,
@@ -119,6 +123,7 @@ export function ProjectSidebar({
     },
     {
       icon: IconLibraryPhoto,
+      iconClassName: undefined,
       label: t("sidebar.assets"),
       active: assetsOpen,
       disabledReason: undefined,
@@ -126,15 +131,17 @@ export function ProjectSidebar({
     },
     {
       icon: IconPuzzle,
+      iconClassName: "text-brand-yellow",
       label: t("sidebar.skills"),
-      active: false,
-      disabledReason: t("sidebar.skillsComingSoon"),
-      onClick: () => undefined,
+      active: skillsOpen,
+      disabledReason: undefined,
+      onClick: toggleSkills,
     },
     ...(canEdit
       ? [
           {
             icon: IconHistory,
+            iconClassName: undefined,
             label: t("sidebar.activity"),
             active: historyOpen,
             disabledReason: undefined,
@@ -168,7 +175,7 @@ export function ProjectSidebar({
           aria-label={t("sidebar.navigation")}
           className="flex min-h-0 flex-1 flex-col items-center gap-2 px-1.5 py-2"
         >
-          {items.map(({ icon: Icon, label, active, disabledReason, onClick }) => (
+          {items.map(({ icon: Icon, iconClassName, label, active, disabledReason, onClick }) => (
             <Tooltip key={label}>
               <TooltipTrigger asChild>
                 <button
@@ -192,7 +199,7 @@ export function ProjectSidebar({
                         : "text-white/90 hover:bg-white/[0.07] hover:text-white"
                   )}
                 >
-                  <Icon className="size-[19px] shrink-0" stroke={1.45} />
+                  <Icon className={cn("size-[19px] shrink-0", iconClassName)} stroke={1.45} />
                   <span className="whitespace-nowrap text-[10px] leading-4 font-medium tracking-[-0.01em]">
                     {label}
                   </span>

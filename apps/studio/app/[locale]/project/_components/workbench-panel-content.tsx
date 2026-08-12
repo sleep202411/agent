@@ -9,6 +9,7 @@ import {
 import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
 import { NodesPanel } from "@/components/canvas/nodes-panel";
 import { CanvasHistory } from "@/app/[locale]/canvas/_components/canvas-history";
+import { ProjectSkillsPanel } from "./project-skills-panel";
 import { useCanvasConnection } from "./canvas-connection-context";
 import { useProjectUIStore } from "../_stores/project-ui-store";
 import { useStoryboard } from "../_modes/storyboard/use-storyboard";
@@ -51,6 +52,7 @@ export function WorkbenchPanelContent({
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
+  const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const requestNodeInsert = useProjectUIStore((s) => s.requestNodeInsert);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
@@ -85,9 +87,11 @@ export function WorkbenchPanelContent({
           ? "activity"
           : sectionsOpen && sectionsPanel
             ? "sections"
-            : selectedShotId && selectedRow
-              ? "shot"
-              : null;
+            : skillsOpen
+              ? "skills"
+              : selectedShotId && selectedRow
+                ? "shot"
+                : null;
 
   // Keep the previous body mounted during the rail's close animation.
   const [lastPanel, setLastPanel] = useState(activePanel);
@@ -123,6 +127,7 @@ export function WorkbenchPanelContent({
     return <CanvasHistory documentId={documentId} provider={provider} onClose={closeHistory} />;
   }
   if (renderedPanel === "sections") return sectionsPanel ?? null;
+  if (renderedPanel === "skills") return <ProjectSkillsPanel />;
   if (renderedPanel === "shot" && renderedRow) {
     return selectedSlot === "video" ? (
       <ShotVideoDrawer

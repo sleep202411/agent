@@ -1,10 +1,19 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { ProjectRole } from "@/lib/collab/projects-api";
+import { SkillsLaunchAnnouncement } from "@/components/project-skills/skills-launch-announcement";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import type { FizzAiCatalog } from "@/lib/canvas-authoring/generation-api";
 import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
+import {
+  listProjectSkillCatalog,
+  listProjectSkillInstallations,
+  type ProjectSkillCatalogResponse,
+  type ProjectSkillInstallationsResponse,
+  type ProjectSkillOwnerKind,
+} from "@/lib/project-skills-api";
 
 export type StudioWorkbenchOwner =
   | { kind: "platform_project"; projectId: string }
@@ -36,6 +45,18 @@ interface ProjectContextValue {
    * empty list and letting the two look like "there are no models".
    */
   catalog: ProjectCatalog;
+  projectSkills: {
+    data: ProjectSkillInstallationsResponse | undefined;
+    loading: boolean;
+    error: boolean;
+    retry: () => void;
+  };
+  projectSkillCatalog: {
+    data: ProjectSkillCatalogResponse | undefined;
+    loading: boolean;
+    error: boolean;
+    retry: () => void;
+  };
 }
 
 export interface ProjectCatalog {
@@ -91,6 +112,54 @@ export function ProjectProvider({
     }),
     [data, isPending, isError, refetch]
   );
+  const skillOwnerKind: ProjectSkillOwnerKind =
+    resolvedOwner.kind === "platform_project" ? "platform" : "story";
+  const projectSkillsQuery = useQuery({
+    queryKey: ["project-skills", "installations", skillOwnerKind, resolvedOwner.projectId],
+    queryFn: () => listProjectSkillInstallations(skillOwnerKind, resolvedOwner.projectId),
+    staleTime: 10_000,
+  });
+  const projectSkillCatalogQuery = useQuery({
+    queryKey: ["project-skills", "catalog", skillOwnerKind, resolvedOwner.projectId],
+    queryFn: () =>
+      listProjectSkillCatalog({ ownerKind: skillOwnerKind, projectId: resolvedOwner.projectId }),
+    staleTime: 10_000,
+  });
+  const {
+    data: projectSkillsData,
+    isPending: projectSkillsPending,
+    isError: projectSkillsError,
+    refetch: refetchProjectSkills,
+  } = projectSkillsQuery;
+  const {
+    data: projectSkillCatalogData,
+    isPending: projectSkillCatalogPending,
+    isError: projectSkillCatalogError,
+    refetch: refetchProjectSkillCatalog,
+  } = projectSkillCatalogQuery;
+  const projectSkills = useMemo(
+    () => ({
+      data: projectSkillsData,
+      loading: projectSkillsPending,
+      error: projectSkillsError,
+      retry: () => void refetchProjectSkills(),
+    }),
+    [projectSkillsData, projectSkillsError, projectSkillsPending, refetchProjectSkills]
+  );
+  const projectSkillCatalog = useMemo(
+    () => ({
+      data: projectSkillCatalogData,
+      loading: projectSkillCatalogPending,
+      error: projectSkillCatalogError,
+      retry: () => void refetchProjectSkillCatalog(),
+    }),
+    [
+      projectSkillCatalogData,
+      projectSkillCatalogError,
+      projectSkillCatalogPending,
+      refetchProjectSkillCatalog,
+    ]
+  );
 
   const value = useMemo<ProjectContextValue>(() => {
     const canEdit = role == null ? true : role !== "viewer";
@@ -105,10 +174,27 @@ export function ProjectProvider({
       openShare,
       setShellInset: setShellInset ?? noopShellInset,
       catalog,
+      projectSkills,
+      projectSkillCatalog,
     };
-  }, [projectId, resolvedOwner, uploadKinds, role, openShare, setShellInset, catalog]);
+  }, [
+    projectId,
+    resolvedOwner,
+    uploadKinds,
+    role,
+    openShare,
+    setShellInset,
+    catalog,
+    projectSkills,
+    projectSkillCatalog,
+  ]);
 
-  return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
+  return (
+    <ProjectContext.Provider value={value}>
+      {children}
+      <SkillsLaunchAnnouncement catalog={projectSkillCatalog.data} />
+    </ProjectContext.Provider>
+  );
 }
 
 function noopShellInset(_inset: ShellInset) {

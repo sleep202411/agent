@@ -50,6 +50,15 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
    table and the code ever differ, the code wins. (`primary` is the brand red
    per rule 3, not the white it carried before that reversal.)
 
+   **Supporting semantic accents.** Neutral black/white still establishes the
+   overall visual tone. Brand red `#E52227` remains the primary action color;
+   capability yellow `#FFD84D` identifies Skills and capability enhancement;
+   interaction blue `#4D8DFF` identifies selection, linking, and system
+   interaction feedback. Yellow and blue may color icons, text, outlines, and
+   compact status signals. They must not tint panels, cards, page backgrounds,
+   or compete with a red primary CTA. The authoritative CSS tokens are
+   `--brand-red`, `--brand-yellow`, and `--brand-blue` in `app/globals.css`.
+
    **Canvas elevation tiers.** Every authoring canvas uses the shared fixed
    screen-space dot field (`CanvasBackdrop`) over `oklch(0.18)`, one quiet tone
    step above the page. Its 20px dot spacing does not pan or scale with React
@@ -59,9 +68,12 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
    panels opened over the composer (model picker / settings) `oklch(0.24)`.
    All zero-chroma; no borders.
 
-   Three deliberate exceptions, all for **functional color that encodes data,
+   Four deliberate exceptions, all for **functional color that encodes data,
    not decoration**:
    - `destructive` keeps standard shadcn chroma — error semantics need color.
+   - **Supporting semantic accents** use capability yellow for Skills and
+     interaction blue for selection/link feedback. Their surfaces remain
+     transparent or neutral; color is confined to foregrounds and outlines.
    - **Canvas connectors** (port handles, their labels, and the edges between
      them) are colored by data type: text/prompt = blue `#5b9dff`, image =
      amber `#e0a45c`, video = brand red `#E52227` (see
@@ -92,9 +104,9 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
 
 3. **Brand red IS `primary`** (decided 2026-08-04, reversing "red is not a
    token"). The FizzDragon red `#E52227` (`oklch(0.5914 0.225 26.83)`) is
-   the value of `--primary`, with `--primary-foreground` white. It is the
-   ONE chromatic token in the set; the brand's colour belongs on the thing
-   you are meant to press.
+   the value of `--primary`, with `--primary-foreground` white. It is the only
+   chromatic token allowed to fill a primary action; supporting yellow and blue
+   remain semantic foreground/outline signals.
 
    What the old rule was really protecting still stands, and is now the
    whole of it: **red never tints a SURFACE.** Every background token stays

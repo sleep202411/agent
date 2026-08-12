@@ -44,7 +44,7 @@ export function DrawerPanel({
           : "min-h-0 shrink-0 bg-popover/95",
         placement === "flush" && "absolute top-0 left-0 z-30 h-full",
         placement === "inline" && "h-full rounded-none",
-        className,
+        className
       )}
       style={floating ? { left: DRAWER_LEFT, width } : { width }}
     >
@@ -109,23 +109,23 @@ DrawerPanel.Body = function DrawerPanelBody({
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", className)}>
-      {children}
-    </div>
+    <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", className)}>{children}</div>
   );
 };
 
-/** Pinned bottom bar — outside the body's scroll. Renders a hairline + padding. */
+/** Pinned bottom bar — outside the body's scroll. Divider is optional. */
 DrawerPanel.Footer = function DrawerPanelFooter({
   children,
   className,
+  divider = true,
 }: {
   children: ReactNode;
   className?: string;
+  divider?: boolean;
 }) {
   return (
     <div className="shrink-0">
-      <div className="mx-4 h-px bg-white/[0.07]" />
+      {divider ? <div className="mx-4 h-px bg-white/[0.07]" /> : null}
       <div className={cn("px-4 pt-3 pb-4", className)}>{children}</div>
     </div>
   );

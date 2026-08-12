@@ -65,6 +65,7 @@ export default function ProjectLayout({
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
+  const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
 
   const dirtyRef = useRef(false);
@@ -94,6 +95,7 @@ export default function ProjectLayout({
     assetsOpen ||
     historyOpen ||
     sectionsOpen ||
+    skillsOpen ||
     Boolean(selectedShotId);
   const projectShellLeftInset = 64 + (leftDrawerOpen ? PROJECT_PANEL_WIDTH : 0);
   const projectShellInsetTransition = leftDrawerOpen

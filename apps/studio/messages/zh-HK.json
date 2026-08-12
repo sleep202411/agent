@@ -1812,6 +1812,270 @@
       "activity": "動態",
       "members": "成員"
     },
+    "skills": {
+      "title": "技能",
+      "launchAnnouncement": {
+        "title": "專案 Skill 正式上線",
+        "leadStrong": "沉澱團隊的創作方法，",
+        "leadRest": "統一視覺風格與創作標準，減少重複溝通和調參，更快產出穩定的圖片與影片。",
+        "supportingText": "設為專案預設後，團隊每次生成都會自動套用，也可以按需調整。",
+        "cta": "探索專案 Skill",
+        "close": "關閉 Skill 上線介紹",
+        "mute": "關閉預覽聲音",
+        "unmute": "開啟預覽聲音",
+        "mediaAlt": "FizzDragon 專案 Skill 電影創作能力預覽"
+      },
+      "mockNotice": "目錄預覽 · 專案安裝即將推出",
+      "catalogDescription": "為目前專案安裝 Skill，並設定預設生效範圍",
+      "loadFailed": "Skill 載入失敗，點擊重試。",
+      "generationUnavailable": "專案 Skill 尚未就緒，請開啟技能面板重試後再生成。",
+      "filterLabel": "篩選技能",
+      "filters": {
+        "all": "全部",
+        "general": "通用",
+        "image": "圖片",
+        "video": "影片"
+      },
+      "recommended": "推薦",
+      "all": "全部技能",
+      "searchPlaceholder": "搜尋技能",
+      "noMatches": "沒有符合的技能。",
+      "install": "安裝",
+      "installComingSoon": "安裝到專案 · 即將推出",
+      "close": "關閉技能",
+      "errors": {
+        "install": "Skill 安裝失敗。",
+        "upload": "Skill 套件匯入失敗。",
+        "uninstall": "Skill 解除安裝失敗。",
+        "defaults": "專案預設設定更新失敗。",
+        "notInstalled": "此 Skill 尚未安裝到目前專案。"
+      },
+      "ownership": {
+        "project": "僅目前專案",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "上傳 Skill",
+        "title": "上傳私人 Skill",
+        "description": "匯入標準 SKILL.md 或 ZIP 套件。上傳的指令只在所選專案或 Workspace 範圍內可見，且不能加入可執行工具。",
+        "fileLabel": "Skill 套件",
+        "chooseFile": "選擇 SKILL.md 或 ZIP 套件",
+        "fileHint": "UTF-8 · 最大 1 MB · ZIP 可包含 Markdown 參考資料",
+        "downloadTemplate": "下載範本",
+        "zipSafety": "ZIP 僅接受一個 SKILL.md 與 references/ 下的 Markdown；指令碼、二進位檔、連結、加密套件和不安全路徑都會被拒絕。",
+        "fileRequired": "請先選擇一個 Skill 套件。",
+        "fileTooLarge": "Skill 套件不能超過 1 MB。",
+        "scopeLabel": "可見範圍",
+        "scopes": {
+          "project": "目前專案",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "只有目前專案成員可以發現和使用。",
+          "workspace": "同一 Workspace 的其他專案可以發現並安裝。"
+        },
+        "kindLabel": "生成類型",
+        "cancel": "取消",
+        "confirm": "上傳並安裝",
+        "success": "{name} 已上傳並安裝。"
+      },
+      "uninstall": {
+        "title": "移除這個 Skill？",
+        "description": "將從目前專案移除 {name}，並清除它的所有預設生效範圍。Skill 來源不會被刪除。",
+        "cancel": "保留 Skill",
+        "confirm": "移除",
+        "success": "已從專案移除 Skill。"
+      },
+      "categories": {
+        "style": "視覺風格",
+        "production": "製作流程",
+        "commercial": "商業創意"
+      },
+      "detail": {
+        "dialogTitle": "Skill 詳情",
+        "loading": "正在載入最新的 Skill 詳情…",
+        "loadFailed": "無法載入最新的 Skill 詳情。",
+        "activeForGeneration": "本次生成已啟用",
+        "projectDefaults": "專案預設",
+        "noProjectDefaults": "此 Skill 僅在本次生成中啟用。",
+        "manageSkill": "管理 Skill",
+        "open": "查看{name}詳情",
+        "back": "返回技能列表",
+        "curatedBy": "FizzDragon 精選",
+        "addSkill": "添加 Skill",
+        "addComingSoon": "專案安裝即將推出",
+        "installed": "已安裝",
+        "remove": "移除",
+        "uninstall": "解除安裝 Skill",
+        "managePermission": "只有專案擁有者和管理員可以管理 Skill。",
+        "defaultsTitle": "預設使用",
+        "defaultsDescription": "預設 Skill 會顯示在每次符合的生成中，也可以在單次生成中手動移除。",
+        "effectPreview": "效果預覽",
+        "about": "關於此 Skill",
+        "introduction": "簡介",
+        "category": "類型",
+        "appliesToLabel": "適用範圍",
+        "howToUseLabel": "如何使用",
+        "outputLabel": "加入生成",
+        "appliesTo": {
+          "general": "提示詞、生圖與生影片",
+          "image": "生圖與圖片提示詞創作",
+          "video": "生影片、運動設計與鏡頭規劃"
+        },
+        "howToUse": {
+          "general": "安裝後可設為專案預設，也可以在單次生成中暫時關閉。",
+          "image": "在圖片生成請求中選擇它，套用對應的視覺規則與提示詞指引。",
+          "video": "在影片生成請求中選擇它，套用對應的運動、時序與連續性指引。"
+        },
+        "output": {
+          "general": "結構化提示詞指引，以及面向不同生成能力的約束。",
+          "image": "優化後的圖片提示詞、視覺方向與生成約束。",
+          "video": "優化後的影片提示詞、動作節拍、鏡頭方向與連續性約束。"
+        }
+      },
+      "scopes": {
+        "image_generation": "生圖",
+        "video_generation": "生影片",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "提示詞",
+        "image": "生圖",
+        "video": "生影片",
+        "agent": "Agent",
+        "qa": "品質檢查"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "韋斯·安德森電影美學",
+          "description": "置中式繪本構圖、克制表演、實體佈景與精準的橫向鏡頭運動。"
+        },
+        "kubrickOnePointTension": {
+          "name": "寇比力克單點透視張力",
+          "description": "單點透視、幾何調度、緩慢推進，以及持續受控的心理壓迫感。"
+        },
+        "wongKarWaiNeonTime": {
+          "name": "王家衛霓虹時間",
+          "description": "霓虹色彩分離、抽幀運動、親密取景與懸置的情緒時間。"
+        },
+        "grindhouseChapterCinema": {
+          "name": "磨坊電影章節敘事",
+          "description": "章節卡結構、大膽取景、硬切與做舊類型片質感。"
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "手繪幻想冒險",
+          "description": "通透的手繪世界、環境敘事，以及輕柔且符合物理邏輯的運動。"
+        },
+        "classicCelAnimation": {
+          "name": "經典賽璐璐動畫",
+          "description": "以清晰線稿、手繪背景和可讀的關鍵姿態，構建經典二維角色動畫。"
+        },
+        "stopMotionClayCinema": {
+          "name": "黏土定格動畫",
+          "description": "使用手工黏土角色、微縮佈景、實景燈光和逐格動作營造觸感。"
+        },
+        "inkWashCinema": {
+          "name": "水墨電影美學",
+          "description": "用克制筆觸、氛圍留白和受控的朱砂色點綴組織電影畫面。"
+        },
+        "retroAnimeKeyVisual": {
+          "name": "復古動畫主視覺",
+          "description": "結合賽璐璐背景、清晰角色輪廓與模擬膠片時代的戲劇化配色。"
+        },
+        "cinematicShotLanguage": {
+          "name": "電影鏡頭語言",
+          "description": "把故事意圖轉成製作可讀的景別、鏡頭、光線、運動與連續性方案。"
+        },
+        "scriptToStoryboard": {
+          "name": "劇本轉分鏡",
+          "description": "把劇本拆分為敘事節拍、鏡頭覆蓋與可直接生成的分鏡鏡頭。"
+        },
+        "visualContinuityGuardian": {
+          "name": "視覺連續性守護",
+          "description": "保持角色、服裝、場景、道具與視線方向前後一致。"
+        },
+        "imageToVideoMotionDirector": {
+          "name": "圖生影片運動導演",
+          "description": "把靜幀轉成有時序的動作節拍、鏡頭運動與穩定的結束狀態。"
+        },
+        "promptPreflightQa": {
+          "name": "提示詞預檢與生成質檢",
+          "description": "提交前檢查缺少引用、衝突指令與可能導致生成失敗的問題。"
+        },
+        "productEditorialPhotography": {
+          "name": "產品編輯攝影",
+          "description": "建立清晰的產品層級、受控材質與光線，以及可用於營銷的構圖。"
+        },
+        "moviePosterKeyArt": {
+          "name": "電影海報與主視覺",
+          "description": "生成圖像統一、預留標題空間且層級明確的電影海報概念。"
+        },
+        "pixelArtAdventure": {
+          "name": "像素藝術冒險",
+          "description": "以清晰剪影、有限色板和電影化光線構建細膩的像素場景。"
+        },
+        "postImpressionistNightPainting": {
+          "name": "梵高星夜油畫",
+          "description": "以旋渦夜空、厚塗筆觸和鈷藍金黃的色彩節奏增強畫面表現力。"
+        },
+        "surrealCollageDreamscape": {
+          "name": "超現實拼貼夢境",
+          "description": "透過紙張肌理、反常尺度和詩意影像拼貼構建夢境空間。"
+        },
+        "rhythmicMontageEditor": {
+          "name": "節奏蒙太奇剪輯",
+          "description": "透過鏡頭對比、視覺押韻、節奏和有動機的切換組織敘事意義。"
+        },
+        "aspectRatioReframing": {
+          "name": "橫直屏重構導演",
+          "description": "在 16:9、1:1 與 9:16 之間安全重構畫面，保護主體、動作、視線與構圖可讀性。"
+        },
+        "viralVideoReconstruction": {
+          "name": "爆款結構復刻",
+          "description": "提取參考影片可遷移的鉤子、節拍與回報結構，不複製受保護的具體內容。"
+        },
+        "portraitCookingShort": {
+          "name": "人物烹飪短片",
+          "description": "把一道關鍵料理動作組織成有觸感、連續且以美食揭曉收尾的直屏短片。"
+        },
+        "multiPanelSequenceDirector": {
+          "name": "多宮格拼版導演",
+          "description": "以不同鏡頭目的、連續性和可剪輯順序，設計清晰的多宮格鏡頭覆蓋。"
+        },
+        "shortVideoDiagnostic": {
+          "name": "短影片診斷分析師",
+          "description": "基於證據診斷短影片的鉤子、清晰度、留存節拍、連續性與回報，並給出精確修改。"
+        },
+        "microExpressionPerformance": {
+          "name": "微表情表演導演",
+          "description": "透過眼神、呼吸與細微肌肉變化指導克制表演，避免誇張情緒。"
+        },
+        "cinematicShotOrchestrator": {
+          "name": "影視鏡頭調度導演",
+          "description": "根據戲劇意圖、空間關係與連續性，自動選擇並組織製作可讀的鏡頭。"
+        },
+        "realisticPerformanceCoach": {
+          "name": "寫實表演指導",
+          "description": "以目標、傾聽、身體重量和具體處境取代通用的 AI 式表演。"
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "動作分鏡預演",
+          "description": "使用簡單人物、清晰調度、安全空間和可編輯節拍預演動作場面。"
+        },
+        "subjectStyleExtractor": {
+          "name": "主體風格提取",
+          "description": "從參考中分離可遷移的視覺系統與主體身份，在不複製內容的前提下應用風格。"
+        },
+        "intelligentSubtitleDirector": {
+          "name": "智能字幕導演",
+          "description": "生成保護原意、閱讀節奏、安全區與視覺層級的確定性字幕方案。"
+        },
+        "brandVisualConsistency": {
+          "name": "品牌視覺一致性",
+          "description": "在專案生成內容中統一應用品牌色彩、字體、產品與語氣規則。"
+        }
+      }
+    },
     "sections": {
       "defaultTitle": "第 1 章",
       "title": "章節",
