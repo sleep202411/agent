@@ -127,7 +127,7 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#" "$TMP_DIR/apps/web/.env.production.cn"
   # macOS bsdtar otherwise attaches AppleDouble/provenance xattrs to every
   # archived file, producing thousands of irrelevant warnings on Linux tar.
-  COPYFILE_DISABLE=1 tar -czf /tmp/cn-src.tar.gz -C "$TMP_DIR" .
+  COPYFILE_DISABLE=1 tar --no-xattrs -czf /tmp/cn-src.tar.gz -C "$TMP_DIR" .
   archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
   chunk_dir="$TMP_DIR/chunks"
   mkdir -p "$chunk_dir"
