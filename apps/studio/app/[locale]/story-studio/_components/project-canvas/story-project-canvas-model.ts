@@ -1,11 +1,11 @@
 import type { Edge, Node } from "@xyflow/react";
-import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../../../../components/canvas/canvas-interaction-policy";
 import type {
   StoryClipVideoSummary,
   InteractiveStoryDraftContent,
   StoryFrameProfile,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
 type StoryCanvasNodeKind = "clip" | "decision" | "character";
 type StoryCanvasExitKind = "auto" | "choice";
@@ -200,7 +200,6 @@ export function buildStoryCanvasModel(
       // Every projected element can be deleted from the canvas; characters may
       // also use their inspector's guarded delete.
       deletable: true,
-      dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       data: projection.data,
     }));
 
@@ -385,15 +384,7 @@ function normalizeZero(value: number): number {
  * slightly too big only looks airy, while one that is too small overlaps.
  */
 export function estimateStoryNodeHeight(data: StoryCanvasNodeData): number {
-  switch (data.kind) {
-    case "decision":
-      // Prompt + one row per option + the "add option" affordance.
-      return 168 + (data.choices?.length ?? 0) * 54 + 56;
-    case "character":
-      return 120;
-    default:
-      return 236;
-  }
+  return canvasNodeGeometry({ type: "storyCanvas", data }).estimatedHeight;
 }
 
 function indexClips(

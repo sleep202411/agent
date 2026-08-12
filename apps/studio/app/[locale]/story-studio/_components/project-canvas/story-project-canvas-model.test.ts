@@ -25,6 +25,7 @@ describe("film-only story canvas projection", () => {
       "clip",
       "character",
     ]);
+    expect(model.nodes.every((node) => node.dragHandle === undefined)).toBe(true);
   });
 
   it("projects choice flow through the synthetic decision card", () => {

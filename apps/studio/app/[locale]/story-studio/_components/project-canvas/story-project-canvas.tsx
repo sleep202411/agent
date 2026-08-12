@@ -61,14 +61,12 @@ import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
 import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
 import { CanvasReactFlow, type CanvasReactFlowProps } from "@/components/canvas/canvas-react-flow";
 import { CanvasBackdrop } from "@/components/canvas/canvas-backdrop";
-import {
-  CANVAS_DELETE_KEY_CODES,
-  CANVAS_NODE_DRAG_HANDLE_CLASS,
-} from "@/components/canvas/canvas-interaction-policy";
+import { CANVAS_DELETE_KEY_CODES } from "@/components/canvas/canvas-interaction-policy";
 import {
   canActivateCanvasMediaPreview,
   canClaimCanvasManualPlayback,
@@ -3551,12 +3549,12 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       : isCharacter
         ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
         : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
+  const geometry = canvasNodeGeometry({ type: "storyCanvas", data });
   return (
     <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
         rim={false}
         className={cn(
-          CANVAS_NODE_DRAG_HANDLE_CLASS,
           "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
         )}
         style={{ backgroundColor: chipStyle.background }}
@@ -3574,11 +3572,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       <article
         {...mediaPreview.hoverProps}
         className={cn(
-          "relative w-[310px] overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
-          isDecision && "w-[340px]",
-          isCharacter && "w-[236px]",
+          "relative overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
           selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]"
         )}
+        style={{ width: geometry.width, minHeight: geometry.minHeight }}
       >
         <GlassRim width="1px" />
         {!isCharacter ? (
@@ -3643,12 +3640,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           {data.kind === "clip" ? (
             <>
               {data.title ? (
-                <h2
-                  className={cn(
-                    CANVAS_NODE_DRAG_HANDLE_CLASS,
-                    "-mx-1 truncate rounded px-1 text-[15px] font-semibold text-white/90"
-                  )}
-                >
+                <h2 className="-mx-1 truncate rounded px-1 text-[15px] font-semibold text-white/90">
                   {data.title}
                 </h2>
               ) : null}
@@ -3669,12 +3661,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               ) : null}
             </>
           ) : (
-            <div
-              className={cn(
-                CANVAS_NODE_DRAG_HANDLE_CLASS,
-                "-mx-1 flex items-start justify-between gap-3 rounded px-1"
-              )}
-            >
+            <div className="-mx-1 flex items-start justify-between gap-3 rounded px-1">
               <div className="min-w-0 flex-1">
                 {isDecision && decisionSourceNodeId ? (
                   <textarea

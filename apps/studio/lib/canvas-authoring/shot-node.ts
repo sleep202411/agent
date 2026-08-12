@@ -1,6 +1,7 @@
 import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
 import { compareByOrder, orderBetween } from "@repo/shared";
 import type { FizzAiReferenceKind } from "./generation-api";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
 /**
  * The `shot` node contract — a storyboard shot as a first-class canvas node.
@@ -18,9 +19,11 @@ export const SHOT_NODE_TYPE = "shot";
 
 /** Card geometry — kept with the contract so layout code needn't import the
  *  component (and its React/i18n dependencies) just to reserve space. */
-export const SHOT_NODE_WIDTH = 280;
+export const SHOT_NODE_WIDTH = canvasNodeGeometry({ type: SHOT_NODE_TYPE }).width;
 /** Frame + header + chips + dialogue: what tidy reserves before measuring. */
-export const SHOT_NODE_ESTIMATED_HEIGHT = 272;
+export const SHOT_NODE_ESTIMATED_HEIGHT = canvasNodeGeometry({
+  type: SHOT_NODE_TYPE,
+}).estimatedHeight;
 
 /** Picture slot fed by an image source (still frame / storyboard panel). */
 export const SHOT_FRAME_FIELD = "frame";

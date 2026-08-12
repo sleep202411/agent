@@ -138,7 +138,7 @@ export function CanvasNodeToolbar({
       align="center"
       offset={10}
       className={cn(
-        "flex min-h-12 max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl px-2 py-2",
+        "nodrag nopan nowheel flex min-h-12 max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl px-2 py-2",
         FLOATING_PANEL
       )}
     >

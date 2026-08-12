@@ -6,11 +6,11 @@ import { type Node, type NodeProps } from "@xyflow/react";
 import { IconLayoutList, IconPhoto, IconTable } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "@/i18n/navigation";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useOptionalProjectSections } from "@/app/[locale]/project/_components/project-sections-context";
 import { useTextDraft } from "@/lib/use-text-draft";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import {
   SHOT_NODE_TYPE,
   shotReferences,
@@ -61,7 +61,7 @@ function ShotNodeComponent({ id, data, selected }: NodeProps<ShotNodeType>) {
   ].filter((chip): chip is string => Boolean(chip));
 
   return (
-    <div className="relative w-70">
+    <div className="relative" style={{ width: canvasNodeGeometry({ type: SHOT_NODE_TYPE }).width }}>
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
         {project ? (
           <ToolbarButton
@@ -78,12 +78,7 @@ function ShotNodeComponent({ id, data, selected }: NodeProps<ShotNodeType>) {
         ) : null}
       </CanvasNodeToolbar>
 
-      <div
-        className={cn(
-          CANVAS_NODE_DRAG_HANDLE_CLASS,
-          "flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80"
-        )}
-      >
+      <div className="flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80">
         <IconLayoutList className="size-3.5 shrink-0" stroke={1.8} />
         <span className="truncate">
           {data.label?.trim() || t("node.title", { index: index >= 0 ? index + 1 : 1 })}

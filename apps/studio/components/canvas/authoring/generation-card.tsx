@@ -24,10 +24,10 @@ import {
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { removeEdgeById } from "@/lib/canvas-authoring/canvas-wiring";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
@@ -849,19 +849,17 @@ function GenerationCard({
 
       <div
         className={cn(
-          "relative w-[360px] overflow-hidden rounded-2xl bg-card",
+          "relative overflow-hidden rounded-2xl bg-card",
           selected && "ring-2 ring-ring",
           busy && "generating-beam"
         )}
+        style={{
+          width: canvasNodeGeometry({ type: modality === "video" ? "video" : "prompt" }).width,
+        }}
       >
         {/* Header: node name left, model used right — a lighter frosted strip
             distinct from the preview well below. */}
-        <div
-          className={cn(
-            CANVAS_NODE_DRAG_HANDLE_CLASS,
-            "flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs"
-          )}
-        >
+        <div className="flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs">
           <span className="flex min-w-0 items-center gap-1.5 text-white/80">
             <Icon className="size-3.5 shrink-0" stroke={1.8} />
             {renaming ? (
@@ -983,7 +981,7 @@ function GenerationCard({
                 disabled={!canEdit || !generationCanSubmit}
                 title={!generationCanSubmit ? (generationDisabledReason ?? undefined) : undefined}
                 onClick={() => submit(id)}
-                className="flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white disabled:opacity-45"
+                className="nodrag flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white disabled:opacity-45"
               >
                 <IconRefresh className="size-3.5" stroke={1.8} />
                 {tc("retry")}
@@ -997,7 +995,7 @@ function GenerationCard({
                     type="button"
                     aria-label={t("copyTaskId")}
                     onClick={() => void copyTaskId(generation.jobId as string)}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.1] hover:text-white"
+                    className="nodrag flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.1] hover:text-white"
                   >
                     <IconCopy className="size-3.5" stroke={1.8} />
                   </button>

@@ -10,8 +10,6 @@ export interface CanvasNodeShape {
   type: string;
   position: { x: number; y: number };
   data: Record<string, unknown>;
-  width?: number;
-  height?: number;
 }
 
 export interface CanvasEdgeShape {

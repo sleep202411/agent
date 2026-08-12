@@ -77,8 +77,9 @@ describe("computeCanvasTidyLayout", () => {
     const flat = computeCanvasTidyLayout(nodes, []);
     const estimated = computeCanvasTidyLayout(nodes, [], (n) => (n.id === "tall" ? 400 : 120));
 
-    // Without an estimate both advance by the same fallback.
-    expect(flat[1]!.position.y - flat[0]!.position.y).toBe(248);
+    // Without a caller estimate, the shared node geometry still reserves a
+    // deterministic per-type height rather than one arbitrary global box.
+    expect(flat[1]!.position.y - flat[0]!.position.y).toBe(288);
     // With one, the short card clears the tall card's full height.
     expect(estimated[1]!.position.y - estimated[0]!.position.y).toBe(448);
   });

@@ -31,8 +31,6 @@ function toNodeShape(node: Node): CanvasNodeShape {
     type: node.type ?? "note",
     position: node.position,
     data: (node.data ?? {}) as Record<string, unknown>,
-    ...(node.measured?.width != null ? { width: node.measured.width } : {}),
-    ...(node.measured?.height != null ? { height: node.measured.height } : {}),
   };
 }
 

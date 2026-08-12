@@ -9,7 +9,6 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "./canvas-interaction-policy";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
 import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
 
@@ -51,17 +50,12 @@ const HISTORY_LIMIT = 80;
 const EDGE_TYPE = "gradient";
 
 function shapeToNode(shape: CanvasNodeShape): Node {
-  const node: Node = {
+  return {
     id: shape.id,
     type: shape.type,
     position: shape.position,
     data: shape.data,
-    dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
   };
-  if (shape.width != null && shape.height != null) {
-    node.measured = { width: shape.width, height: shape.height };
-  }
-  return node;
 }
 
 function nodeToShape(node: Node): CanvasNodeShape {
@@ -70,8 +64,6 @@ function nodeToShape(node: Node): CanvasNodeShape {
     type: node.type ?? "note",
     position: node.position,
     data: (node.data ?? {}) as Record<string, unknown>,
-    ...(node.measured?.width != null ? { width: node.measured.width } : {}),
-    ...(node.measured?.height != null ? { height: node.measured.height } : {}),
   };
 }
 
@@ -326,7 +318,7 @@ export function usePersistedCanvasGraph<
       setNodes(next);
 
       const durable = changes.some((change) => {
-        if (change.type === "select") return false;
+        if (change.type === "select" || change.type === "dimensions") return false;
         if (change.type === "position") return change.dragging !== true;
         return true;
       });
@@ -334,10 +326,7 @@ export function usePersistedCanvasGraph<
 
       const historyBase = dragBase.current ?? before;
       dragBase.current = null;
-      const onlyDimensions = changes.every(
-        (change) => change.type === "dimensions" || change.type === "select"
-      );
-      if (!onlyDimensions) pushUndo(historyBase);
+      pushUndo(historyBase);
       scheduleSave();
     },
     [canEdit, currentSnapshot, pushUndo, scheduleSave]

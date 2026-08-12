@@ -23,15 +23,15 @@ export type {
  *   nodes: Y.Map<nodeId, Y.Map>  — each node:
  *            { id: string, type: string,
  *              position: Y.Map<{x,y}>,   // distinct nodes merge; same-node x/y is LWW
- *              data: Y.Map<field, json>, // field-level merge (prompt vs settings)
- *              width?: number, height?: number }
+ *              data: Y.Map<field, json> } // field-level merge (prompt vs settings)
  *   edges: Y.Map<edgeId, Y.Map>  — { id, source, target, sourceHandle?, targetHandle? }
  *   groups: Y.Map<groupId, CanvasGroup> — visual grouping metadata; bounds stay derived
  *
  * Node `data` field VALUES are stored as plain JSON (settings/generation/etc are
  * coarse last-write-wins within a field); positions and per-field data edits
  * merge. This is the v1 granularity — deeper nesting can come later without a
- * wire change (it's all inside the opaque CRDT).
+ * wire change (it's all inside the opaque CRDT). Legacy width/height fields
+ * are ignored and removed when a node is next rewritten.
  */
 
 export function nodesMap(doc: Y.Doc): Y.Map<Y.Map<unknown>> {
@@ -66,12 +66,10 @@ export function readNode(yNode: Y.Map<unknown>): CanvasNodeShape | null {
   const dataY = yNode.get("data");
   const data = dataY instanceof Y.Map ? (dataY.toJSON() as Record<string, unknown>) : {};
 
-  const node: CanvasNodeShape = { id, type, position, data };
-  const width = yNode.get("width");
-  const height = yNode.get("height");
-  if (typeof width === "number") node.width = width;
-  if (typeof height === "number") node.height = height;
-  return node;
+  // Legacy documents can contain client-measured width/height. They are
+  // intentionally ignored: geometry is a render/layout concern derived from
+  // the shared node spec, never durable project content.
+  return { id, type, position, data };
 }
 
 export function readEdge(yEdge: Y.Map<unknown>): CanvasEdgeShape | null {
@@ -136,8 +134,8 @@ export function readAllGroups(doc: Y.Doc): CanvasGroup[] {
  * (preserving their CRDT identity) rather than swapping in fresh ones, so a
  * peer's concurrent field-level edit merges per-field instead of being orphaned
  * on an unreachable old Y.Map — matching the position/data field-merge design
- * and making restore reconcile cleanly. The result equals `node` exactly
- * (fields/dimensions absent from `node` are removed).
+ * and making restore reconcile cleanly. The result equals `node` exactly;
+ * client-measured dimensions are runtime state and are always removed.
  */
 export function writeNode(doc: Y.Doc, node: CanvasNodeShape): void {
   const nm = nodesMap(doc);
@@ -168,10 +166,9 @@ export function writeNode(doc: Y.Doc, node: CanvasNodeShape): void {
   for (const key of [...data.keys()]) if (!keep.has(key)) data.delete(key);
   for (const [key, value] of Object.entries(fields)) data.set(key, value);
 
-  if (typeof node.width === "number") yNode.set("width", node.width);
-  else yNode.delete("width");
-  if (typeof node.height === "number") yNode.set("height", node.height);
-  else yNode.delete("height");
+  // Clean historical measurement cache whenever a node is rewritten.
+  yNode.delete("width");
+  yNode.delete("height");
 }
 
 /** Move a node (granular — only the position sub-map changes). */
@@ -189,13 +186,6 @@ export function updateNodePosition(
   }
   (pos as Y.Map<number>).set("x", position.x);
   (pos as Y.Map<number>).set("y", position.y);
-}
-
-export function updateNodeDimensions(doc: Y.Doc, id: string, width: number, height: number): void {
-  const yNode = nodesMap(doc).get(id);
-  if (!(yNode instanceof Y.Map)) return;
-  yNode.set("width", width);
-  yNode.set("height", height);
 }
 
 /** Merge fields into a node's data (field-level; absent fields untouched). */

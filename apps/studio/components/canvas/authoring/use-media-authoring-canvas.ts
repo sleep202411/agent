@@ -16,6 +16,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
 import type { CanvasAsset, CanvasNodeShape } from "@/lib/canvas-core/types";
+import { canvasNodeLayoutSize } from "@/lib/canvas-core/node-geometry";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
@@ -838,8 +839,7 @@ export function useMediaAuthoringCanvas({
         handleType: state.fromHandle.type,
       };
       const hit = getNodes().find((node) => {
-        const width = node.measured?.width ?? 0;
-        const height = node.measured?.height ?? 0;
+        const { width, height } = canvasNodeLayoutSize(node);
         return (
           flowPoint.x >= node.position.x &&
           flowPoint.x <= node.position.x + width &&

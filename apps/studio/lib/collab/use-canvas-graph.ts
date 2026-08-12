@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import type { Awareness } from "y-protocols/awareness";
-import { CANVAS_NODE_DRAG_HANDLE_SELECTOR } from "../../components/canvas/canvas-interaction-policy";
 import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
 import type {
   CanvasAsset,
@@ -42,7 +41,6 @@ import {
   removeAssetsByMediaAssetId as yRemoveAssetsByMediaAssetId,
   removeEdge as yRemoveEdge,
   removeNode as yRemoveNode,
-  updateNodeDimensions,
   updateNodePosition,
   writeCanvasGroups,
   writeEdge,
@@ -193,9 +191,7 @@ export function useCanvasGraph(
       const localDrag = dragPositions.current.get(n.id);
       const pdrag = peerDrag.get(n.id);
       const position = localDrag ?? (pdrag ? { x: pdrag.x, y: pdrag.y } : n.position);
-      const dims =
-        measured.current.get(n.id) ??
-        (n.width != null && n.height != null ? { width: n.width, height: n.height } : null);
+      const dims = measured.current.get(n.id) ?? null;
       const selected = selectedNodes.current.has(n.id);
       // A teammate's ring — never on a node this client is itself dragging.
       const ring = localDrag ? undefined : (peerRing.get(n.id) ?? pdrag?.color);
@@ -210,7 +206,6 @@ export function useCanvasGraph(
         type: n.type,
         position,
         data: n.data,
-        dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       };
       if (dims) node.measured = dims;
       node.selected = selected;
@@ -226,11 +221,7 @@ export function useCanvasGraph(
       seenNodes.add(id);
       const localDrag = dragPositions.current.get(id);
       const position = localDrag ?? shape.position;
-      const dims =
-        measured.current.get(id) ??
-        (shape.width != null && shape.height != null
-          ? { width: shape.width, height: shape.height }
-          : null);
+      const dims = measured.current.get(id) ?? null;
       const selected = selectedNodes.current.has(id);
       const sig = stableSig([
         shape.type,
@@ -251,7 +242,6 @@ export function useCanvasGraph(
         type: shape.type,
         position,
         data: shape.data,
-        dragHandle: CANVAS_NODE_DRAG_HANDLE_SELECTOR,
       };
       if (dims) node.measured = dims;
       node.selected = selected;
@@ -396,7 +386,6 @@ export function useCanvasGraph(
         return yn instanceof Y.Map ? readNode(yn) : null;
       };
       const positionCommits: { id: string; pos: { x: number; y: number } }[] = [];
-      const dimensionCommits: { id: string; w: number; h: number }[] = [];
       const removals: string[] = [];
       const writes: CanvasNodeShape[] = [];
       let overlayOnly = false;
@@ -446,17 +435,6 @@ export function useCanvasGraph(
           if (change.dimensions) {
             measured.current.set(change.id, change.dimensions);
             overlayOnly = true;
-            // Persist measured size so peers / reloads anchor edges without
-            // waiting for their own ResizeObserver (RF needs `measured` to
-            // initialize handle bounds) — but only for doc nodes; a local-only
-            // node has no doc row to write to (promotion carries its size over).
-            if (!localOnlyNodes.current.has(change.id)) {
-              const cur = current(change.id);
-              const { width, height } = change.dimensions;
-              if (!cur || cur.width !== width || cur.height !== height) {
-                dimensionCommits.push({ id: change.id, w: width, h: height });
-              }
-            }
           }
         } else if (change.type === "remove") {
           // A local-only node isn't in the doc, so drop it from the overlay
@@ -479,24 +457,17 @@ export function useCanvasGraph(
             type: item.type ?? "default",
             position: item.position,
             data: (item.data ?? {}) as Record<string, unknown>,
-            width: item.measured?.width,
-            height: item.measured?.height,
           });
         }
       }
 
-      const committed =
-        positionCommits.length > 0 ||
-        dimensionCommits.length > 0 ||
-        removals.length > 0 ||
-        writes.length > 0;
+      const committed = positionCommits.length > 0 || removals.length > 0 || writes.length > 0;
       // Viewers (canEdit=false) still update local overlays (selection,
       // measured dims, drag) above so the graph renders + measures correctly,
       // but never commit to the doc — the read-only chokepoint.
       if (committed && canEdit) {
         doc.transact(() => {
           for (const c of positionCommits) updateNodePosition(doc, c.id, c.pos);
-          for (const c of dimensionCommits) updateNodeDimensions(doc, c.id, c.w, c.h);
           for (const id of removals) yRemoveNode(doc, id);
           for (const n of writes) writeNode(doc, n);
         }, LOCAL_ORIGIN);
@@ -666,13 +637,11 @@ export function useCanvasGraph(
       const local = localOnlyNodes.current.get(id);
       if (!local) return;
       const position = dragPositions.current.get(id) ?? local.position;
-      const dims = measured.current.get(id);
       const node: CanvasNodeShape = {
         id,
         type: local.type,
         position,
         data,
-        ...(dims ? { width: dims.width, height: dims.height } : {}),
       };
       // Drop the local copy first, then write to the doc: observeDeep → rebuild
       // renders it from the CRDT and the seenNodes guard suppresses the (now

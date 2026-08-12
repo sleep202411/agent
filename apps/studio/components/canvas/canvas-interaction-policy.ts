@@ -1,7 +1,5 @@
 import type { Viewport } from "@xyflow/react";
 
-export const CANVAS_NODE_DRAG_HANDLE_CLASS = "canvas-node-drag-handle";
-export const CANVAS_NODE_DRAG_HANDLE_SELECTOR = `.${CANVAS_NODE_DRAG_HANDLE_CLASS}`;
 export const CANVAS_MANAGED_WHEEL_CLASS = "canvas-managed-wheel";
 export const CANVAS_SCROLL_OWNER_SELECTOR = "[data-canvas-scroll-owner]";
 export const CANVAS_NATIVE_WHEEL_OWNER_SELECTOR = "[data-canvas-native-wheel]";
