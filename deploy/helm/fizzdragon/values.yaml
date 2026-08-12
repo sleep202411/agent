@@ -25,6 +25,12 @@ azure:
 image:
   registry: acrfizzdragoncom.azurecr.io
   pullPolicy: IfNotPresent
+
+# Written by the CN deployment script. A selective release is refused when the
+# live fingerprint differs, because Helm upgrades the whole release even when
+# only one image tag changes.
+cnRelease:
+  chartFingerprint: unset
 # ---------------------------------------------------------------------------
 # Ingress — only `web` is internet-facing. server/agent stay ClusterIP.
 # ---------------------------------------------------------------------------
@@ -381,6 +387,11 @@ server:
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
   migrateOnStart: true
+  migrationJob:
+    enabled: false
+    revision: ""
+    backupId: ""
+    ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
     tag: bb04c6a4faf8f9d799e0335d58538c7651191e75
@@ -616,85 +627,6 @@ agentWorker:
     queues:
       - bull:storyos-workflows:wait
       - bull:asset-images:wait
-# ---------------------------------------------------------------------------
-# Temporal — self-hosted, one cluster per region, in the application namespace.
-#
-# Self-hosted rather than Temporal Cloud because .cn runs in mainland China:
-# the worker<->frontend link is a continuous long-polling gRPC connection that
-# would cross the border, and workflow histories carry user story content, so
-# routing them offshore is a data-export problem. Running Cloud for .com and
-# self-hosting for .cn would mean two operational models for one feature.
-#
-# Persistence is a DEDICATED Postgres server, never the application database:
-# Temporal's officially tested versions top out at PostgreSQL 16 while the
-# application server runs 18, and its write load has no business sharing IOPS
-# with user-facing queries.
-# ---------------------------------------------------------------------------
-temporal:
-  image:
-    # Upstream images, mirrored into each region's own registry rather than
-    # pulled from Docker Hub: .cn cannot reach it at all, and prod should not
-    # depend on a public registry staying up. Carried under the platform
-    # registry prefix like every other component, so a region overrides
-    # image.registry once and these follow.
-    #
-    #   az acr import --name acrfizzdragoncom \
-    #     --source docker.io/temporalio/server:1.31.2 \
-    #     --image temporalio-server:1.31.2
-    repository: temporalio-server
-    tag: 1.31.2
-    adminToolsRepository: temporalio-admin-tools
-    adminToolsTag: 1.31.2
-    pullPolicy: IfNotPresent
-  # All four roles in one process. The split into separate Deployments buys
-  # per-role tuning and a smaller blast radius, neither of which pays for
-  # itself at this volume; two anti-affine replicas already survive a pod or
-  # node loss. Splitting later is a config change, not a data migration.
-  services: history,matching,frontend,worker
-  replicaCount: 2
-  frontendPort: 7233
-  membershipPort: 6933
-  # IMMUTABLE once the first server boots — the shard count is baked into the
-  # persistence layout, so changing it later means migrating all data. 512 is
-  # the standard production value; the docker-compose default of 4 is a
-  # development convenience that permanently caps throughput.
-  numHistoryShards: 512
-  namespace: fizzdragon
-  # Workflow history retention. History is the dominant storage consumer, and
-  # it grows with turn volume until this bound.
-  retention: 168h
-  database:
-    # Dedicated server, PostgreSQL 16. Empty by default: the chart refuses to
-    # render rather than invent an endpoint.
-    host: fizzdragon-temporal-pg.postgres.database.azure.com
-    port: 5432
-    user: temporal
-    name: temporal
-    visibilityName: temporal_visibility
-    # Azure and Alibaba both require TLS on managed Postgres.
-    tlsEnabled: true
-    # Deliberately small. Temporal's defaults are sized for a database it owns
-    # exclusively; these are per-replica and this server is modest.
-    maxConns: 20
-    maxIdleConns: 10
-    maxConnLifetime: 1h
-  resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits: { cpu: 1000m, memory: 2Gi }
-  nodeSelector:
-    pool: worker
-  tolerations:
-    - key: workload
-      value: worker
-      operator: Equal
-      effect: NoSchedule
-# Temporal server database credentials. The password never enters git; .com
-# projects it from Key Vault, .cn creates the Secret out-of-band with kubectl.
-temporalDatabaseSecrets:
-  projectedName: fizzdragon-temporal-db-secrets
-  mapping:
-    - kv: temporal-db-password
-      env: POSTGRES_PWD
 # ---------------------------------------------------------------------------
 # Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
 # No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`

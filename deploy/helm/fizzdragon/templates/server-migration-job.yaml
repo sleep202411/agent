@@ -1,0 +1,84 @@
+{{- if .Values.server.migrationJob.enabled -}}
+{{- $component := "db-migrate" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+{{- $revision := required "server.migrationJob.revision is required" .Values.server.migrationJob.revision | toString -}}
+{{- $backupId := required "server.migrationJob.backupId is required" .Values.server.migrationJob.backupId | toString -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-db-migrate-%s" .Release.Name $revision | lower | replace "_" "-" | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+    fizzdragon.com/revision: {{ $revision | quote }}
+  annotations:
+    fizzdragon.com/rds-backup-id: {{ $backupId | quote }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ .Values.server.migrationJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        fizzdragon.com/revision: {{ $revision | quote }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- if .Values.azure.enabled }}
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: db-migrate
+          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["npm", "run", "db:deploy"]
+          env:
+            {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
+            {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.projectedName }}
+            {{- if .Values.serverSecrets.mapping }}
+            - secretRef:
+                name: {{ .Values.serverSecrets.projectedName }}
+            {{- end }}
+          {{- if .Values.azure.enabled }}
+          volumeMounts:
+            - name: kv-secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+            {{- if .Values.serverSecrets.mapping }}
+            - name: server-kv-secrets
+              mountPath: /mnt/server-secrets
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+      {{- if .Values.azure.enabled }}
+      volumes:
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-kv
+        {{- if .Values.serverSecrets.mapping }}
+        - name: server-kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-server-kv
+        {{- end }}
+      {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
