@@ -573,11 +573,12 @@ function EpisodeManager({
       ) : null}
 
       <div className="space-y-2">
-        {episodes.map((episode) => (
+        {episodes.map((episode, index) => (
           <EpisodeCard
             key={episode.id}
             ip={ip}
             episode={episode}
+            displayNumber={index + 1}
             t={t}
             onEdit={() => setEditingEpisodeId(episode.id)}
           />
@@ -1161,11 +1162,14 @@ function EpisodeUpsertDialog({
 function EpisodeCard({
   ip,
   episode,
+  displayNumber,
   t,
   onEdit,
 }: {
   ip: IpCreatorIp;
   episode: StudioEpisode;
+  /** 1-based position in the live list (not raw episodeNo). */
+  displayNumber: number;
   t: Translate;
   onEdit: () => void;
 }) {
@@ -1213,7 +1217,7 @@ function EpisodeCard({
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-                EP {String(episode.episodeNo).padStart(2, "0")}
+                EP {String(displayNumber).padStart(2, "0")}
               </span>
               {episode.isFreePreview ? (
                 <StatusPill>{t("episodesPanel.form.freePreview")}</StatusPill>
@@ -1624,8 +1628,14 @@ function EpisodePricingList({
 
   return (
     <div className="space-y-2">
-      {episodes.map((episode) => (
-        <EpisodePriceEditor key={episode.id} ip={ip} episode={episode} t={t} />
+      {episodes.map((episode, index) => (
+        <EpisodePriceEditor
+          key={episode.id}
+          ip={ip}
+          episode={episode}
+          displayNumber={index + 1}
+          t={t}
+        />
       ))}
     </div>
   );
@@ -1813,10 +1823,13 @@ function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
 function EpisodePriceEditor({
   ip,
   episode,
+  displayNumber,
   t,
 }: {
   ip: IpCreatorIp;
   episode: StudioEpisode;
+  /** 1-based position in the live list (not raw episodeNo). */
+  displayNumber: number;
   t: Translate;
 }) {
   // Price (amount/compare-at/schedule) round-trips through the price-rule
@@ -1926,7 +1939,7 @@ function EpisodePriceEditor({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-              EP {String(episode.episodeNo).padStart(2, "0")}
+              EP {String(displayNumber).padStart(2, "0")}
             </span>
             <EpisodeStatePill state={serverState} t={t} />
           </div>

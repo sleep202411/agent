@@ -383,7 +383,10 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
             <section className="mt-4">
               {selectedEpisode ? (
                 <div className="mb-2 text-sm font-semibold text-primary">
-                  {t("episodes.number", { number: selectedEpisode.episodeNo })}
+                  {t("episodes.number", {
+                    number:
+                      detailIp.episodes.findIndex((item) => item.id === selectedEpisode.id) + 1,
+                  })}
                 </div>
               ) : null}
               <h1 className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
@@ -999,10 +1002,11 @@ function EpisodePlaylist({
               </div>
             </button>
           ) : null}
-          {episodes.map((episode) => (
+          {episodes.map((episode, index) => (
             <EpisodePlaylistItem
               key={episode.id}
               episode={episode}
+              displayNumber={index + 1}
               active={episode.id === activeEpisodeId}
               access={accessItems.find((item) => item.id === episode.id)?.access}
               locale={locale}
@@ -1024,6 +1028,7 @@ function EpisodePlaylist({
 
 function EpisodePlaylistItem({
   episode,
+  displayNumber,
   active,
   access,
   locale,
@@ -1031,6 +1036,8 @@ function EpisodePlaylistItem({
   onSelect,
 }: {
   episode: IpCommerceEpisode;
+  /** 1-based position in the live playlist (not raw episodeNo). */
+  displayNumber: number;
   active: boolean;
   access?: IpCommerceAccess;
   locale: Locale;
@@ -1076,7 +1083,7 @@ function EpisodePlaylistItem({
           {episode.title}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {t("episodes.number", { number: episode.episodeNo })}
+          {t("episodes.number", { number: displayNumber })}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           {formatDate(episode.publishedAt ?? episode.scheduledAt, locale, t)}
