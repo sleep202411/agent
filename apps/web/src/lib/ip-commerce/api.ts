@@ -965,11 +965,17 @@ export function deleteIpCommerceAsset(input: DeleteIpAssetInput) {
   );
 }
 
+// Episode mutations return the full creator IP detail (heavy include). Under
+// load / slow aurora the write can finish well before the response arrives;
+// the default 30s client abort then shows a false "Request timed out" while
+// refresh still shows the saved episode. Wait longer than the write path.
+const IP_EPISODE_MUTATION_TIMEOUT_MS = 120_000;
+
 export function createIpCommerceEpisode(input: CreateIpEpisodeInput) {
   const { ipId, ...data } = input;
   return api.post<{ ip: IpCreatorIp }>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/episodes`,
-    { data }
+    { data, timeout: IP_EPISODE_MUTATION_TIMEOUT_MS }
   );
 }
 
@@ -979,7 +985,7 @@ export function updateIpCommerceEpisode(input: UpdateIpEpisodeInput) {
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/episodes/${encodeURIComponent(
       episodeId
     )}`,
-    { data }
+    { data, timeout: IP_EPISODE_MUTATION_TIMEOUT_MS }
   );
 }
 
@@ -987,7 +993,8 @@ export function deleteIpCommerceEpisode(input: DeleteIpEpisodeInput) {
   return api.delete<{ ip: IpCreatorIp }>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/episodes/${encodeURIComponent(
       input.episodeId
-    )}`
+    )}`,
+    { timeout: IP_EPISODE_MUTATION_TIMEOUT_MS }
   );
 }
 
