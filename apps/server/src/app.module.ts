@@ -23,6 +23,7 @@ import { CreatorServicesModule } from './creator-services/creator-services.modul
 import { DocumentsModule } from './documents';
 import { OrdersModule } from './orders/orders.module';
 import { ProjectSectionsModule } from './project-sections';
+import { ProjectSkillsModule } from './project-skills';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { LegacyMysqlModule } from './infra/legacy-mysql';
@@ -89,6 +90,7 @@ import { WorkspacesModule } from './workspaces';
     ConversationsModule,
     OrdersModule,
     ProjectSectionsModule,
+    ProjectSkillsModule,
     HealthModule,
   ],
   providers: [

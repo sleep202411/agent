@@ -105,6 +105,52 @@ enum ProjectVisibility {
   public
 }
 
+enum SkillKind {
+  general
+  image
+  video
+}
+
+enum SkillCatalogVisibility {
+  public
+  unlisted
+  private
+}
+
+enum SkillCatalogStatus {
+  draft
+  published
+  retired
+}
+
+enum SkillVersionStatus {
+  draft
+  published
+  deprecated
+}
+
+enum ProjectSkillInstallationStatus {
+  active
+  disabled
+}
+
+enum ProjectSkillScope {
+  agent_prompt
+  prompt_authoring
+  image_generation
+  video_generation
+  preflight
+  qa
+}
+
+enum ProjectSkillAuditAction {
+  install
+  update
+  uninstall
+  defaults_update
+  turn_override
+}
+
 enum CharacterKind {
   virtual
   real_person
@@ -873,21 +919,26 @@ model Workspace {
   updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
-  members                  WorkspaceMember[]
-  invites                  WorkspaceInvite[]
-  projects                 PlatformProject[]
-  auditLogs                PlatformAuditLog[]
-  projectAssets            ProjectAsset[]
-  aiJobs                   AiJob[]
-  mediaAssets              MediaAsset[]
-  storyVideoUploadSessions StoryVideoUploadSession[]
-  storyProjects            StoryProject[]
-  studioCharacters         StudioCharacter[]
-  mediaAssetUsages         MediaAssetUsage[]
-  documents                StudioDocument[]
-  billingOrders            BillingOrder[]
-  subscriptions            BillingSubscription[]
-  crew                     Crew?                     @relation("CrewWorkspace")
+  members                   WorkspaceMember[]
+  invites                   WorkspaceInvite[]
+  projects                  PlatformProject[]
+  auditLogs                 PlatformAuditLog[]
+  projectAssets             ProjectAsset[]
+  aiJobs                    AiJob[]
+  mediaAssets               MediaAsset[]
+  storyVideoUploadSessions  StoryVideoUploadSession[]
+  storyProjects             StoryProject[]
+  studioCharacters          StudioCharacter[]
+  mediaAssetUsages          MediaAssetUsage[]
+  documents                 StudioDocument[]
+  projectSkillStates        ProjectSkillState[]
+  projectSkillInstallations ProjectSkillInstallation[]
+  projectSkillAudits        ProjectSkillAudit[]
+  projectSkillMutations     ProjectSkillMutation[]
+  skillCatalogItems         SkillCatalogItem[]         @relation("SkillCatalogWorkspace")
+  billingOrders             BillingOrder[]
+  subscriptions             BillingSubscription[]
+  crew                      Crew?                      @relation("CrewWorkspace")
 
   /// Active personal uniqueness is enforced by partial unique SQL:
   /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
@@ -960,7 +1011,7 @@ model PlatformProject {
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  workspace          Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace          Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members            ProjectMember[]
   invites            ProjectInvite[]
   sections           PlatformProjectSection[]
@@ -972,11 +1023,15 @@ model PlatformProject {
   characterCast      CharacterProjectCast[]
   characterGrants    CharacterProjectGrant[]
   castingInvites     CharacterCastingInvite[]
-  productionCrew     Crew?                    @relation("CrewProductionProject")
-  studioCrew         Crew?                    @relation("CrewStudioProject")
-  crewTaskCanvas     CrewTask?                @relation("CrewTaskCanvasProject")
+  productionCrew     Crew?                      @relation("CrewProductionProject")
+  studioCrew         Crew?                      @relation("CrewStudioProject")
+  crewTaskCanvas     CrewTask?                  @relation("CrewTaskCanvasProject")
   agentOsState       AgentOsProjectState?
   agentOsAttachments AgentOsAttachment[]
+  skillState         ProjectSkillState?
+  skillInstallations ProjectSkillInstallation[]
+  skillAudits        ProjectSkillAudit[]
+  skillCatalogItems  SkillCatalogItem[]         @relation("SkillCatalogPlatformProject")
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -1021,8 +1076,6 @@ model AgentOsProjectState {
   revision        Int      @default(0)
   characters      Json     @default("[]") @db.JsonB
   scriptSections  Json     @default("[]") @map("script_sections") @db.JsonB
-  /// Project default skill ids (admin). Mounted every turn when registered.
-  defaultSkillIds Json     @default("[]") @map("default_skill_ids") @db.JsonB
   updatedByUserId String?  @map("updated_by_user_id") @db.VarChar(64)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1031,6 +1084,195 @@ model AgentOsProjectState {
 
   @@index([workspaceId, updatedAt(sort: Desc)], map: "agent_os_project_states_workspace_recent_idx")
   @@map("agent_os_project_states")
+}
+
+/// Marketplace identity. Published behavior lives in immutable SkillVersion
+/// rows; catalog metadata can evolve without changing a project installation.
+model SkillCatalogItem {
+  id                       String                 @id @default(uuid(7)) @db.Uuid
+  workspaceId              String?                @map("workspace_id") @db.Uuid
+  platformProjectId        String?                @map("platform_project_id") @db.Uuid
+  storyProjectId           String?                @map("story_project_id") @db.Uuid
+  createdByUserId          String?                @map("created_by_user_id") @db.VarChar(64)
+  slug                     String                 @unique @db.VarChar(128)
+  name                     String                 @db.VarChar(160)
+  description              String                 @db.Text
+  localizedMetadata        Json                   @default("{}") @map("localized_metadata") @db.JsonB
+  publisherName            String                 @map("publisher_name") @db.VarChar(160)
+  category                 String                 @db.VarChar(64)
+  kind                     SkillKind
+  visibility               SkillCatalogVisibility @default(public)
+  status                   SkillCatalogStatus     @default(draft)
+  previewUrl               String?                @map("preview_url") @db.VarChar(1024)
+  previewVideoUrl          String?                @map("preview_video_url") @db.VarChar(1024)
+  latestPublishedVersionId String?                @unique @map("latest_published_version_id") @db.Uuid
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions               SkillVersion[]             @relation("SkillVersions")
+  latestPublishedVersion SkillVersion?              @relation("SkillLatestPublishedVersion", fields: [latestPublishedVersionId], references: [id], onDelete: Restrict)
+  workspace              Workspace?                 @relation("SkillCatalogWorkspace", fields: [workspaceId], references: [id], onDelete: Restrict)
+  platformProject        PlatformProject?           @relation("SkillCatalogPlatformProject", fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  storyProject           StoryProject?              @relation("SkillCatalogStoryProject", fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  installations          ProjectSkillInstallation[]
+  audits                 ProjectSkillAudit[]
+
+  @@index([status, visibility, category, updatedAt(sort: Desc)], map: "skill_catalog_discovery_idx")
+  @@index([kind, status, updatedAt(sort: Desc)], map: "skill_catalog_kind_idx")
+  @@index([workspaceId, visibility, status, updatedAt(sort: Desc)], map: "skill_catalog_workspace_scope_idx")
+  @@index([platformProjectId, status, updatedAt(sort: Desc)], map: "skill_catalog_platform_scope_idx")
+  @@index([storyProjectId, status, updatedAt(sort: Desc)], map: "skill_catalog_story_scope_idx")
+  @@map("skill_catalog_items")
+}
+
+/// A published version is immutable. The migration installs a database trigger
+/// that rejects UPDATE/DELETE for published rows, so an old job/run can always
+/// reproduce the exact instructions and policy it originally mounted.
+model SkillVersion {
+  id                    String             @id @default(uuid(7)) @db.Uuid
+  skillId               String             @map("skill_id") @db.Uuid
+  version               String             @db.VarChar(32)
+  status                SkillVersionStatus @default(draft)
+  manifestSchemaVersion String             @map("manifest_schema_version") @db.VarChar(32)
+  instructions          String             @db.Text
+  generationPolicy      Json               @default("{}") @map("generation_policy") @db.JsonB
+  configSchema          Json               @default("{}") @map("config_schema") @db.JsonB
+  capabilities          Json               @default("[]") @db.JsonB
+  projectKinds          Json               @default("[]") @map("project_kinds") @db.JsonB
+  workbenchModes        Json               @default("[]") @map("workbench_modes") @db.JsonB
+  toolIds               Json               @default("[]") @map("tool_ids") @db.JsonB
+  riskPolicy            Json               @default("{}") @map("risk_policy") @db.JsonB
+  evalSuite             String?            @map("eval_suite") @db.VarChar(240)
+  checksum              String             @db.VarChar(64)
+  publishedAt           DateTime?          @map("published_at") @db.Timestamptz(6)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  skill                 SkillCatalogItem           @relation("SkillVersions", fields: [skillId], references: [id], onDelete: Restrict)
+  latestForCatalogItems SkillCatalogItem[]         @relation("SkillLatestPublishedVersion")
+  pinnedInstallations   ProjectSkillInstallation[]
+  audits                ProjectSkillAudit[]
+
+  @@unique([skillId, version], map: "skill_versions_skill_version_unique")
+  @@unique([id, skillId], map: "skill_versions_id_skill_unique")
+  @@index([skillId, status, publishedAt(sort: Desc)], map: "skill_versions_published_idx")
+  @@map("skill_versions")
+}
+
+/// Monotonic project-level revision and serialization row for Skill mutations.
+/// Exactly one project owner is enforced by SQL, matching StudioDocument.
+model ProjectSkillState {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  platformProjectId String?  @unique @map("platform_project_id") @db.Uuid
+  storyProjectId    String?  @unique @map("story_project_id") @db.Uuid
+  revision          Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  platformProject PlatformProject? @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyProject    StoryProject?    @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@unique([platformProjectId, workspaceId], map: "project_skill_states_platform_workspace_unique")
+  @@unique([storyProjectId, workspaceId], map: "project_skill_states_story_workspace_unique")
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "project_skill_states_workspace_recent_idx")
+  @@map("project_skill_states")
+}
+
+/// Installation grants one project a pinned immutable Skill version. Defaults
+/// are separate ProjectSkillActivation rows so one Skill can be default for
+/// image generation without silently affecting video or Agent behavior.
+model ProjectSkillInstallation {
+  id                String                         @id @default(uuid(7)) @db.Uuid
+  workspaceId       String                         @map("workspace_id") @db.Uuid
+  platformProjectId String?                        @map("platform_project_id") @db.Uuid
+  storyProjectId    String?                        @map("story_project_id") @db.Uuid
+  skillId           String                         @map("skill_id") @db.Uuid
+  pinnedVersionId   String                         @map("pinned_version_id") @db.Uuid
+  config            Json                           @default("{}") @db.JsonB
+  status            ProjectSkillInstallationStatus @default(active)
+  revision          Int                            @default(0)
+  installedByUserId String                         @map("installed_by_user_id") @db.VarChar(64)
+  updatedByUserId   String                         @map("updated_by_user_id") @db.VarChar(64)
+  createdAt         DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace       Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  platformProject PlatformProject?         @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyProject    StoryProject?            @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  skill           SkillCatalogItem         @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  pinnedVersion   SkillVersion             @relation(fields: [pinnedVersionId, skillId], references: [id, skillId], onDelete: Restrict)
+  activations     ProjectSkillActivation[]
+  audits          ProjectSkillAudit[]
+
+  @@index([platformProjectId, status, updatedAt(sort: Desc)], map: "project_skill_installations_platform_recent_idx")
+  @@index([storyProjectId, status, updatedAt(sort: Desc)], map: "project_skill_installations_story_recent_idx")
+  @@index([skillId, pinnedVersionId], map: "project_skill_installations_version_idx")
+  @@map("project_skill_installations")
+}
+
+model ProjectSkillActivation {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  installationId String            @map("installation_id") @db.Uuid
+  scope          ProjectSkillScope
+  workbenchMode  String            @default("") @map("workbench_mode") @db.VarChar(64)
+  sourceSurface  String            @default("") @map("source_surface") @db.VarChar(64)
+  defaultEnabled Boolean           @default(true) @map("default_enabled")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  installation ProjectSkillInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([installationId, scope, workbenchMode, sourceSurface], map: "project_skill_activations_scope_unique")
+  @@index([scope, workbenchMode, sourceSurface, defaultEnabled], map: "project_skill_activations_resolve_idx")
+  @@map("project_skill_activations")
+}
+
+model ProjectSkillAudit {
+  id                String                  @id @default(uuid(7)) @db.Uuid
+  workspaceId       String                  @map("workspace_id") @db.Uuid
+  platformProjectId String?                 @map("platform_project_id") @db.Uuid
+  storyProjectId    String?                 @map("story_project_id") @db.Uuid
+  installationId    String?                 @map("installation_id") @db.Uuid
+  skillId           String                  @map("skill_id") @db.Uuid
+  versionId         String?                 @map("version_id") @db.Uuid
+  action            ProjectSkillAuditAction
+  actorUserId       String                  @map("actor_user_id") @db.VarChar(64)
+  requestId         String?                 @map("request_id") @db.VarChar(128)
+  before            Json?                   @db.JsonB
+  after             Json?                   @db.JsonB
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace       Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  platformProject PlatformProject?          @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyProject    StoryProject?             @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  installation    ProjectSkillInstallation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  skill           SkillCatalogItem          @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  version         SkillVersion?             @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@index([platformProjectId, createdAt(sort: Desc)], map: "project_skill_audits_platform_recent_idx")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "project_skill_audits_story_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "project_skill_audits_actor_recent_idx")
+  @@map("project_skill_audits")
+}
+
+/// Workspace-scoped mutation replay ledger. A repeated key with a different
+/// request hash is rejected; an identical retry returns the recorded response.
+model ProjectSkillMutation {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(240)
+  operation      String   @db.VarChar(64)
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  actorUserId    String   @map("actor_user_id") @db.VarChar(64)
+  response       Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, idempotencyKey], map: "project_skill_mutations_workspace_key_unique")
+  @@index([createdAt], map: "project_skill_mutations_created_idx")
+  @@map("project_skill_mutations")
 }
 
 /// User-uploaded files for Agent OS (scripts, notes, refs). Tools read by attachmentId.
@@ -1065,18 +1307,22 @@ model AgentOsAttachment {
 
 /// Agent OS run event journal (reconnect / audit). Sequence is per-run monotonic.
 model AgentOsRun {
-  id              String   @id @db.Uuid
-  projectId       String   @map("project_id") @db.Uuid
-  conversationId  String   @map("conversation_id") @db.Uuid
-  actorId         String   @map("actor_id") @db.VarChar(64)
-  modelProfileId  String   @map("model_profile_id") @db.VarChar(64)
-  status          String   @db.VarChar(32)
-  lastSequence    Int      @default(0) @map("last_sequence")
-  events          Json     @default("[]") @db.JsonB
-  pendingApproval Json?    @map("pending_approval") @db.JsonB
-  assistantText   String?  @map("assistant_text") @db.Text
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String   @id @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  actorId          String   @map("actor_id") @db.VarChar(64)
+  modelProfileId   String   @map("model_profile_id") @db.VarChar(64)
+  status           String   @db.VarChar(32)
+  lastSequence     Int      @default(0) @map("last_sequence")
+  events           Json     @default("[]") @db.JsonB
+  pendingApproval  Json?    @map("pending_approval") @db.JsonB
+  assistantText    String?  @map("assistant_text") @db.Text
+  projectKind      String?  @map("project_kind") @db.VarChar(32)
+  workbenchMode    String?  @map("workbench_mode") @db.VarChar(64)
+  workbenchContext Json?    @map("workbench_context") @db.JsonB
+  skillSnapshot    Json?    @map("skill_snapshot") @db.JsonB
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([projectId, createdAt(sort: Desc)], map: "agent_os_runs_project_recent_idx")
   @@index([actorId, createdAt(sort: Desc)], map: "agent_os_runs_actor_recent_idx")
@@ -5947,6 +6193,9 @@ model AiJob {
   /// The order is immutable and matches the provider image payload order.
   referenceSnapshot     Json?                 @map("reference_snapshot")
   styleSnapshot         Json?                 @map("style_snapshot")
+  /// Immutable effective project Skill resolution used to compile this job.
+  /// Retries reuse it unless the caller explicitly requests a fresh resolve.
+  skillSnapshot         Json?                 @map("skill_snapshot") @db.JsonB
   idempotencyKey        String                @map("idempotency_key")
   /// External trace id (X-Request-Id header), nullable until UI sends one.
   requestId             String?               @map("request_id")
@@ -7718,6 +7967,10 @@ model StoryProject {
   videoUploadSessions     StoryVideoUploadSession[]
   agentOsAttachments      AgentOsAttachment[]
   aiJobs                  AiJob[]
+  skillState              ProjectSkillState?
+  skillInstallations      ProjectSkillInstallation[]
+  skillAudits             ProjectSkillAudit[]
+  skillCatalogItems       SkillCatalogItem[]            @relation("SkillCatalogStoryProject")
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, status, updatedAt(sort: Desc)], map: "story_projects_workspace_recent_idx")

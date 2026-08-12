@@ -396,6 +396,8 @@ server:
   extraSecretRefs:
     - fizzdragon-r2
   env:
+    # Public, versioned preview media for the Git-governed Project Skill catalog.
+    PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"
     # BoldSign is intentionally OFF until the production API key, production
     # template ID, and webhook HMAC secret have all been provisioned in Key

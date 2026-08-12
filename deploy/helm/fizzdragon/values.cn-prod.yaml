@@ -202,6 +202,8 @@ server:
     tag: set-at-deploy
   env:
     NEXT_PUBLIC_SITE_REGION: cn
+    # CN-local CDN mirror for the Git-governed Project Skill preview media.
+    PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
     # BytePlus ModelArk ASSETS plane — same intl BytePlus account as .com (verified
