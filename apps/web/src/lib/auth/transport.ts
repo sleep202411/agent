@@ -17,12 +17,29 @@
 
 import { createFetchTransport, type AuthTransport } from "@repo/auth-flow";
 
+const SIGN_IN_CODE_PATH = "/user/new/getCode";
+
 export function createWebAuthTransport(locale: string): AuthTransport {
-  return createFetchTransport({
+  const transport = createFetchTransport({
     resolvePath: (path) => `${process.env.NEXT_PUBLIC_API_CONTENT_PREFIX ?? ""}${path}`,
     // Java localizes its `msg` strings off this header, and unmapped
     // failures are shown verbatim — so the header is what decides
     // whether the user reads an error in their own language.
     headers: () => ({ "accept-language": locale }),
   });
+
+  return {
+    request(input) {
+      // The verification-email service selects its localized template from
+      // this query parameter. `locale` is the active website path locale
+      // (`en-US`, `zh-CN` or `zh-HK`) supplied by AuthDialogProvider.
+      if (input.path === SIGN_IN_CODE_PATH) {
+        return transport.request({
+          ...input,
+          query: { ...input.query, locale },
+        });
+      }
+      return transport.request(input);
+    },
+  };
 }

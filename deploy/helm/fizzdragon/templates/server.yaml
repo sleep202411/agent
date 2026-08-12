@@ -64,10 +64,14 @@ spec:
           env:
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+            - name: AGENT_OS_ENABLED
+              value: {{ .Values.agentOs.enabled | quote }}
+            {{- if .Values.agentOs.enabled }}
             {{- /* Derived from the rendered Service, never a literal — the
                    gateway's default is 127.0.0.1:4301, which in a pod is itself. */}}
             - name: AGENT_OS_WORKER_URL
               value: {{ printf "http://%s:%v" (include "fizzdragon.componentName" (merge (dict "component" "agent-os") .)) .Values.agentOs.containerPort | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
@@ -84,19 +88,21 @@ spec:
                 name: {{ . }}
                 optional: true
             {{- end }}
-            {{- /* The gateway<->worker token, checked in both directions.
-                   Unconditional: the module loads regardless, and the config
-                   service throws in its constructor without it. */}}
+            {{- if .Values.agentOs.enabled }}
+            {{- /* The gateway<->worker token, checked in both directions. */}}
             - secretRef:
                 name: {{ .Values.agentOsServerSecrets.projectedName }}
+            {{- end }}
           {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
+            {{- if .Values.agentOs.enabled }}
             - name: agent-os-server-secrets
               mountPath: /mnt/agent-os-server-secrets
               readOnly: true
+            {{- end }}
             {{- if .Values.serverSecrets.mapping }}
             - name: server-kv-secrets
               mountPath: /mnt/server-secrets
@@ -136,12 +142,14 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-kv
+        {{- if .Values.agentOs.enabled }}
         - name: agent-os-server-secrets
           csi:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-agent-os-server-kv
+        {{- end }}
         {{- if .Values.serverSecrets.mapping }}
         - name: server-kv-secrets
           csi:

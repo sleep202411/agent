@@ -137,6 +137,11 @@ serverSecrets:
     # Must be present in the out-of-band fizzdragon-server-secrets (kubectl).
     - kv: realtime-ws-secret
       env: REALTIME_WS_SECRET
+    # Conversations and notification fan-out still use Ably REST even though
+    # asset/entity realtime is self-hosted. Provision a CN-approved key before
+    # deploying the current server; preflight checks the key without printing it.
+    - kv: ably-api-key
+      env: ABLY_API_KEY
 
 web:
   replicaCount: 1
@@ -198,14 +203,33 @@ studio:
 
 server:
   replicaCount: 1
+  # CN migrations are an explicit, separately approved Job. Never couple
+  # irreversible schema/data changes to an ordinary pod rollout.
+  migrateOnStart: false
   image:
     tag: set-at-deploy
+  # R2 is .com-only. CN has always written to Alibaba OSS and must not inherit
+  # even an optional reference to the .com credential Secret.
+  extraSecretRefs: []
   env:
     NEXT_PUBLIC_SITE_REGION: cn
     # CN-local CDN mirror for the Git-governed Project Skill preview media.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
+    # No MiniMax credential is provisioned in the CN cell. Keep the provider
+    # explicitly off instead of inheriting the .com=true flag and presenting a
+    # model binding that can only fail at runtime.
+    MINIMAX_ENABLED: "false"
+    # Remove .com-only storage endpoints and analytics identifiers. Existing CN
+    # rows live in the separate CN database and are OSS-backed.
+    S3_ENDPOINT: null
+    S3_BUCKET: null
+    S3_REGION: null
+    S3_FORCE_PATH_STYLE: null
+    MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: null
+    MEDIA_PUBLIC_BASE_URL_AZURE_BLOB: null
+    AXON_PIXEL_ID: null
     # BytePlus ModelArk ASSETS plane — same intl BytePlus account as .com (verified
     # same inference key). AK/SK live in the out-of-band fizzdragon-server-secrets
     # (added via kubectl, NOT Key Vault — azure.enabled=false here). ACR expiry +
@@ -245,14 +269,19 @@ server:
 agent:
   replicaCount: 1
   image:
-    tag: set-at-deploy
+    # Legacy StoryOS is frozen. 7b94af76's API image crashes during Mastra
+    # bootstrap; this is the last verified CN API image and is deliberately not
+    # advanced by the normal platform release path.
+    tag: 9b0ebfba
   nodeSelector: null
   tolerations: null
 
 agentWorker:
   replicaCount: 1
   image:
-    tag: set-at-deploy
+    # The worker from the current CN release is healthy. It stays independently
+    # pinned because API and worker health diverged despite sharing one image.
+    tag: 7b94af76
   env:
     # Mirrors prod-cn .env (2026-06-10): same throughput as the compose stack.
     WORKER_CONCURRENCY: "8"

@@ -35,16 +35,20 @@ app.kubernetes.io/component: {{ .component }}
 {{/* sharedEnv as a list of `name: VALUE` env entries. */}}
 {{- define "fizzdragon.sharedEnv" -}}
 {{- range $k, $v := .Values.sharedEnv }}
+{{- if ne $v nil }}
 - name: {{ $k }}
   value: {{ $v | quote }}
+{{- end }}
 {{- end }}
 {{- end -}}
 
 {{/* Per-component env list. Call with $.component dict containing .env. */}}
 {{- define "fizzdragon.componentEnv" -}}
 {{- range $k, $v := .env }}
+{{- if ne $v nil }}
 - name: {{ $k }}
   value: {{ $v | quote }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

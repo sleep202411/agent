@@ -42,6 +42,13 @@ import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 
+const agentOsGatewayEnabled = (() => {
+  const raw = (process.env.AGENT_OS_ENABLED ?? 'false').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error('AGENT_OS_ENABLED must be either "true" or "false".');
+})();
+
 @Module({
   imports: [
     // Infra modules first — global, others can inject PrismaService / REDIS.
@@ -58,7 +65,7 @@ import { WorkspacesModule } from './workspaces';
     AuthModule,
     AdminAuthModule,
     AgentUsersModule,
-    AgentOsGatewayModule,
+    ...(agentOsGatewayEnabled ? [AgentOsGatewayModule] : []),
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,

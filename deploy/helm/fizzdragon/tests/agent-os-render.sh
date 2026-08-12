@@ -81,12 +81,9 @@ if [ -f "$CN_VALUES" ]; then
     fail "CN overlay must render"
   ok "CN overlay renders"
 
-  # CN must either disable agent-os or clear .com's node placement —
-  # inheriting `pool: worker` leaves the pod Pending on CN's single untainted
-  # node, with a perfectly green chart.
-  # Scope this to the agent-os template. Matching the whole render is a false
-  # positive: server.yaml carries `fizzdragon-agent-os-server-secrets` and the
-  # worker URL whether or not the workload itself is enabled.
+  # Scope this to the worker template: CN either omits Agent OS entirely or
+  # must clear .com's worker-pool placement. Server-side conditional wiring is
+  # covered separately by cn-render-contract.sh.
   cn_agent_os="$(helm template fizzdragon "$CHART" -f "$CN_VALUES" \
     -s templates/agent-os.yaml 2>/dev/null || true)"
   if grep -q '^kind: Deployment' <<<"$cn_agent_os"; then

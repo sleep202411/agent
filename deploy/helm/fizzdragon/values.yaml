@@ -25,6 +25,12 @@ azure:
 image:
   registry: acrfizzdragoncom.azurecr.io
   pullPolicy: IfNotPresent
+
+# Written by the CN deployment script. A selective release is refused when the
+# live fingerprint differs, because Helm upgrades the whole release even when
+# only one image tag changes.
+cnRelease:
+  chartFingerprint: unset
 # ---------------------------------------------------------------------------
 # Ingress — only `web` is internet-facing. server/agent stay ClusterIP.
 # ---------------------------------------------------------------------------
@@ -386,6 +392,11 @@ server:
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
   migrateOnStart: true
+  migrationJob:
+    enabled: false
+    revision: ""
+    backupId: ""
+    ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
     tag: a3d488c06f4ce566e346e65a149b5d6baa4ed7fb
