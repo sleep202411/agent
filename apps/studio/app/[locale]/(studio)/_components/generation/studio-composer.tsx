@@ -44,7 +44,7 @@ import { useAuth } from "@/app/_components/auth-provider";
 /**
  * Bottom-docked composer for the image / video studio pages: prompt as the
  * hero, references fanned at its left, parameters in popover pills
- * (mode · model · settings), live credit cost next to Create.
+ * (model · mode · settings), live credit cost next to Create.
  * Cmd/Ctrl+Enter submits; `@` mentions reference uploads.
  */
 export function StudioComposer({
@@ -310,6 +310,25 @@ export function StudioComposer({
 
       {/* Controls row */}
       <div className="mt-3 flex items-center gap-1.5">
+        <div className="relative" data-popover-zone>
+          <button
+            type="button"
+            onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
+            className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
+          >
+            {model?.name ?? t("chooseModel")}
+          </button>
+          {panel === "model" && (
+            <ModelPicker
+              catalog={catalog}
+              modality={modality}
+              selectedId={model?.id}
+              onSelect={onSelectModel}
+              onClose={() => setPanel(null)}
+            />
+          )}
+        </div>
+
         {/* Mode pill: always shown when the model exposes a mode (so the
               current mode is visible); interactive only when there's >1. */}
         {modes.length >= 1 && mode && (
@@ -341,25 +360,6 @@ export function StudioComposer({
             )}
           </div>
         )}
-
-        <div className="relative" data-popover-zone>
-          <button
-            type="button"
-            onClick={() => setPanel((p) => (p === "model" ? null : "model"))}
-            className="flex h-10 items-center rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
-          >
-            {model?.name ?? t("chooseModel")}
-          </button>
-          {panel === "model" && (
-            <ModelPicker
-              catalog={catalog}
-              modality={modality}
-              selectedId={model?.id}
-              onSelect={onSelectModel}
-              onClose={() => setPanel(null)}
-            />
-          )}
-        </div>
 
         <ComposerQuickSettings model={model} settings={settings} onChange={onSettingsChange} />
 
