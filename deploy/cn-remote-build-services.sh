@@ -42,7 +42,11 @@ build() {
     --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" .
   echo "=== [$(date +%T)] PUSH $name ==="
   docker push "$image"
-  docker manifest inspect "$image" >/dev/null
+  # Podman 4.9's `docker manifest inspect` treats a single-image OCI manifest
+  # as a manifest list and exits 125 even after a successful push. A pull by
+  # tag resolves the remote manifest through ACR and supports both media types;
+  # already-present layers are reused from the local store.
+  docker pull --quiet "$image" >/dev/null
   echo "=== [$(date +%T)] VERIFIED $image ==="
 }
 
