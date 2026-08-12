@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:24.18.1-alpine AS base
 
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner

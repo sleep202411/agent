@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS base
+FROM node:24.18.1-bookworm-slim AS base
 
 FROM base AS pruner
 RUN npm install -g turbo@^2
