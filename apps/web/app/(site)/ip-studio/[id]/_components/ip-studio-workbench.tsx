@@ -797,7 +797,7 @@ function EpisodeUpsertDialog({
       toast.error(oldT("epCoverNotImage"));
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       toast.error(oldT("epCoverTooLarge"));
       return;
     }
