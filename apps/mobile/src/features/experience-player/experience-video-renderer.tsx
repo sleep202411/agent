@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import type { VideoContentFit } from "expo-video";
@@ -9,9 +9,12 @@ import {
   type ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
 
+import { useScreenActive } from "@/hooks/use-app-active";
+
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { resolvePlaybackUri } from "./experience-media-cache";
 import {
+  invalidatePlayableMediaUrl,
   resolveVideoMedia,
   sequenceTimelineOffsetMs,
   EXPERIENCE_PLAY_ORIENTATION,
@@ -51,20 +54,32 @@ async function loadAndPlayClip(
     isLooping: boolean;
     clipStartTime?: number;
     shouldAutoplay: boolean;
+    /**
+     * Read *after* the loads resolve, never snapshotted: the app can background
+     * or the screen can be left during the URL resolve / `replaceAsync` round
+     * trip, and starting playback then would run a clip nobody can see.
+     */
+    isPresenting: () => boolean;
+    onDeferredAutoplay: () => void;
+    onPlayableResolved: (playableUri: string) => void;
     signal: AbortSignal;
   }
 ): Promise<void> {
   player.loop = options.isLooping;
   const playable = await resolvePlaybackUri(options.sourceUri, options.signal);
   if (options.signal.aborted) return;
+  options.onPlayableResolved(playable);
   await player.replaceAsync(playable);
   if (options.signal.aborted) return;
   if (options.clipStartTime !== undefined) {
     player.currentTime = options.clipStartTime;
   }
-  if (options.shouldAutoplay) {
-    player.play();
+  if (!options.shouldAutoplay) return;
+  if (!options.isPresenting()) {
+    options.onDeferredAutoplay();
+    return;
   }
+  player.play();
 }
 
 function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
@@ -104,6 +119,14 @@ export function ExperienceVideoRenderer({
   const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completedRendererIdRef = useRef<string | null>(null);
   const missingAssetRef = useRef<string | null>(null);
+  /** Resume playback when the screen is presentable again if we paused for it. */
+  const resumeWhenPresentingRef = useRef(false);
+  /** What the player was actually handed: local file or signed remote URL. */
+  const playableUriRef = useRef<string | null>(null);
+  const retriedIdentityRef = useRef<string | null>(null);
+  /** Where a re-signed reload should pick the shot back up. */
+  const resumeAtSecondsRef = useRef<number | null>(null);
+  const [reloadEpoch, setReloadEpoch] = useState(0);
 
   const clip = config.sequence[sequenceIndex];
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
@@ -132,7 +155,49 @@ export function ExperienceVideoRenderer({
   const player = useVideoPlayer(null, (instance) => {
     instance.timeUpdateEventInterval = 0.25;
     instance.loop = false;
+    instance.staysActiveInBackground = false;
   });
+
+  const presenting = useScreenActive();
+  const presentingRef = useRef(presenting);
+  useEffect(() => {
+    presentingRef.current = presenting;
+  }, [presenting]);
+
+  useEffect(() => {
+    if (!presenting) {
+      if (player.playing) {
+        resumeWhenPresentingRef.current = true;
+        player.pause();
+      }
+      return;
+    }
+    if (!resumeWhenPresentingRef.current) return;
+    resumeWhenPresentingRef.current = false;
+    player.play();
+  }, [player, presenting]);
+
+  /**
+   * Silence the player before it is released. `useVideoPlayer` releases on
+   * unmount, but iOS only tears the `AVPlayer` down once its last native
+   * reference drops — until then the clip keeps feeding the audio session, so
+   * leaving the page is audible for as long as that takes. The layout-effect
+   * cleanup is deliberate: it runs ahead of the passive cleanup that releases
+   * the player, which is the only window where `pause()` is still valid. Clearing
+   * the presenting ref here closes the same window from the other side: a clip
+   * load that resolves between this cleanup and the passive one would otherwise
+   * still see "presenting" and call `play()` on a player nobody is watching.
+   */
+  useLayoutEffect(() => {
+    return () => {
+      presentingRef.current = false;
+      try {
+        player.pause();
+      } catch {
+        // Player already released — nothing left to silence.
+      }
+    };
+  }, [player]);
 
   useEffect(() => {
     completedRendererIdRef.current = null;
@@ -213,7 +278,22 @@ export function ExperienceVideoRenderer({
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
   });
 
+  /**
+   * A streamed clip plays through a signed URL that can die between resolve and
+   * the player's next range request, which surfaces as a generic playback error.
+   * Re-sign and reload once before blaming the film — locally cached clips have
+   * no signature to refresh, so those fail straight through.
+   */
   const reportPlaybackError = useEffectEvent((message: string) => {
+    const streamedRemotely =
+      playableUriRef.current !== null && !playableUriRef.current.startsWith("file://");
+    if (streamedRemotely && retriedIdentityRef.current !== playbackIdentity && sourceUri) {
+      retriedIdentityRef.current = playbackIdentity;
+      resumeAtSecondsRef.current = player.currentTime;
+      invalidatePlayableMediaUrl(sourceUri);
+      setReloadEpoch((value) => value + 1);
+      return;
+    }
     onRuntimeError(message);
   });
 
@@ -228,11 +308,22 @@ export function ExperienceVideoRenderer({
   useEffect(() => {
     if (!sourceUri) return;
     const abort = new AbortController();
+    resumeWhenPresentingRef.current = false;
+    playableUriRef.current = null;
+    const resumeAtSeconds = resumeAtSecondsRef.current;
+    resumeAtSecondsRef.current = null;
     void loadAndPlayClip(player, {
       sourceUri,
       isLooping,
-      clipStartTime,
+      clipStartTime: resumeAtSeconds ?? clipStartTime,
       shouldAutoplay,
+      isPresenting: () => presentingRef.current,
+      onDeferredAutoplay: () => {
+        resumeWhenPresentingRef.current = true;
+      },
+      onPlayableResolved: (playableUri) => {
+        playableUriRef.current = playableUri;
+      },
       signal: abort.signal,
     }).catch((error: unknown) => {
       if (abort.signal.aborted) return;
@@ -252,6 +343,7 @@ export function ExperienceVideoRenderer({
     isLooping,
     playbackIdentity,
     player,
+    reloadEpoch,
     shouldAutoplay,
     sourceUri,
   ]);

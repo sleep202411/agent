@@ -1,6 +1,6 @@
-import { Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
@@ -12,8 +12,15 @@ import {
   type PublishedInteractiveFilm,
 } from "@/data/interactive-film-api";
 import {
+  ExperienceChapterButton,
+  ExperienceChapterPicker,
   ExperiencePlayer,
+  ExperienceShareButton,
   ExperienceStartShell,
+  buildExperiencePlayShareUrl,
+  chapterDisplayTitle,
+  findChapter,
+  nextChapterAfter,
   type ExperiencePlayerCopy,
 } from "@/features/experience-player";
 import { usePlayScreenOrientation } from "@/hooks/use-screen-orientation";
@@ -26,16 +33,16 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Play route boot: black gate while lockAsync rotates to landscape on enter,
- * and again while restoring portrait on leave (usePreventRemove) before pop.
- * Orientation is lockAsync-only — Stack orientation does not drive iOS rotation
- * reliably with react-native-screens / Dev Client.
+ * Play session shell: orientation + chapter session stay mounted across chapter
+ * switches. Changing `?chapter=` reloads only the active Runtime Manifest;
+ * the stack does not pop back to the catalogue.
  */
 export default function PlayGameScreen() {
   const t = useTranslations();
   const locale = useLocale();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { landscapeReady, exiting } = usePlayScreenOrientation();
+  const { landscapeReady, exiting, onStageLayout } = usePlayScreenOrientation();
   const params = useLocalSearchParams<{
     gameId?: string | string[];
     chapter?: string | string[];
@@ -53,6 +60,9 @@ export default function PlayGameScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [reloadToken, setReloadToken] = useState(0);
+  const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  /** Prevents a second fetch when we only canonicalize `?chapter=` onto the URL. */
+  const loadedSessionKeyRef = useRef<string | null>(null);
 
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
@@ -70,6 +80,7 @@ export default function PlayGameScreen() {
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
       emptySequence: t("play.emptySequence"),
+      nextChapter: t("play.nextChapter"),
       mediaError: (assetId: string) => t("play.mediaError").replace("{assetId}", assetId),
     }),
     [t]
@@ -78,6 +89,16 @@ export default function PlayGameScreen() {
   const retry = useCallback(() => {
     setReloadToken((value) => value + 1);
   }, []);
+
+  const selectChapter = useCallback(
+    (nextChapterId: string) => {
+      setChapterPickerOpen(false);
+      if (nextChapterId === chapterId) return;
+      // Same play route — only the chapter search param changes.
+      router.setParams({ chapter: nextChapterId });
+    },
+    [chapterId, router]
+  );
 
   useEffect(() => {
     // Wait for landscape lock before fetch — orientation mid-request can
@@ -91,6 +112,13 @@ export default function PlayGameScreen() {
         setError(t("play.missingGameId"));
         setLoading(false);
         setPublished(undefined);
+        loadedSessionKeyRef.current = null;
+        return;
+      }
+      const requestedKey = `${gameId}:${chapterId ?? ""}:${reloadToken}`;
+      if (loadedSessionKeyRef.current === requestedKey) {
+        setLoading(false);
+        setError(undefined);
         return;
       }
       setLoading(true);
@@ -101,10 +129,17 @@ export default function PlayGameScreen() {
         });
         if (cancelled) return;
         setPublished(next);
+        const resolvedId = next.activeChapterId ?? chapterId ?? "";
+        loadedSessionKeyRef.current = `${gameId}:${resolvedId}:${reloadToken}`;
+        // Canonicalize the URL so share / reload land on the same chapter that
+        // actually loaded (default chapters[0] when the param was omitted).
+        if (next.activeChapterId && next.activeChapterId !== chapterId) {
+          router.setParams({ chapter: next.activeChapterId });
+        }
       } catch (loadError) {
         if (cancelled) return;
         setError(playLoadErrorMessage(loadError, t("play.loadError")));
-        setPublished(undefined);
+        // Keep the previous chapter mounted when a switch fails.
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -114,14 +149,48 @@ export default function PlayGameScreen() {
     return () => {
       cancelled = true;
     };
-  }, [chapterId, gameId, landscapeReady, reloadToken, t]);
+  }, [chapterId, gameId, landscapeReady, reloadToken, router, t]);
 
   const bootTitle = previewTitle || published?.game.title || t("play.interactiveFilm");
   const bootSummary = previewSummary;
   const bootCover = previewCoverUrl || published?.game.coverUrl || undefined;
+  const chapters = published?.chapters ?? [];
+  const activeChapterId = published?.activeChapterId ?? chapterId ?? null;
+  const multiChapter = chapters.length > 1;
+  const activeChapter = findChapter(chapters, activeChapterId);
+  const nextChapter = nextChapterAfter(chapters, activeChapterId);
+  const chapterButtonLabel = activeChapter
+    ? chapterDisplayTitle(activeChapter, locale)
+    : t("play.chapters");
+
+  const playerKey = published
+    ? `${published.game.gameId}:${published.activeChapterId ?? "solo"}:${published.manifest.buildId}`
+    : "boot";
+
+  // Share the site link for whatever chapter is open, same as web. The recipient
+  // almost never has the app, so a web URL is the only payload that plays on tap.
+  const shareUrl = useMemo(
+    () =>
+      gameId ? buildExperiencePlayShareUrl({ gameId, locale, chapterId: activeChapterId }) : "",
+    [activeChapterId, gameId, locale]
+  );
+  // Only once a chapter is actually on stage — nothing to share from the boot
+  // shell or an error state, and the black orientation gate owns the screen.
+  const shareReady =
+    Boolean(shareUrl) && Boolean(published) && !error && landscapeReady && !exiting;
+  const headerRight = useCallback(
+    () => (
+      <ExperienceShareButton
+        label={t("play.share")}
+        failedLabel={t("play.shareFailed")}
+        shareUrl={shareUrl}
+      />
+    ),
+    [shareUrl, t]
+  );
 
   return (
-    <ThemedView style={[styles.screen, { backgroundColor: "#000000" }]}>
+    <ThemedView style={[styles.screen, { backgroundColor: "#000000" }]} onLayout={onStageLayout}>
       <Stack.Screen
         options={{
           headerShown: true,
@@ -133,6 +202,9 @@ export default function PlayGameScreen() {
           headerBackButtonMenuEnabled: false,
           gestureEnabled: false,
           fullScreenGestureEnabled: false,
+          // Explicit undefined, not an omitted key: options merge, so a missing
+          // `headerRight` would leave the previous one mounted.
+          headerRight: shareReady ? headerRight : undefined,
         }}
       />
 
@@ -142,13 +214,48 @@ export default function PlayGameScreen() {
       ) : published && !error ? (
         <View style={styles.body}>
           <ExperiencePlayer
+            key={playerKey}
             runtime={published.manifest}
             locale={locale}
             copy={copy}
             coverUrl={published.game.coverUrl || previewCoverUrl || undefined}
+            onNextChapter={nextChapter ? () => selectChapter(nextChapter.chapterId) : undefined}
+            nextChapterLabel={
+              nextChapter
+                ? `${t("play.nextChapter")}: ${chapterDisplayTitle(nextChapter, locale)}`
+                : undefined
+            }
           />
+          {multiChapter ? (
+            <ExperienceChapterButton
+              label={chapterButtonLabel}
+              onPress={() => setChapterPickerOpen(true)}
+              top={insets.top + 8}
+              left={Math.max(insets.left, Spacing.two) + 44}
+            />
+          ) : null}
+          {multiChapter ? (
+            <ExperienceChapterPicker
+              visible={chapterPickerOpen}
+              chapters={chapters}
+              activeChapterId={activeChapterId}
+              locale={locale}
+              title={t("play.chapters")}
+              closeLabel={t("report.close")}
+              onSelect={selectChapter}
+              onClose={() => setChapterPickerOpen(false)}
+            />
+          ) : null}
+          {loading ? (
+            <View pointerEvents="auto" style={styles.switchOverlay}>
+              <ActivityIndicator color="#FFFFFF" />
+              <ThemedText type="small" style={styles.switchLabel}>
+                {t("play.loadingChapter")}
+              </ThemedText>
+            </View>
+          ) : null}
         </View>
-      ) : error ? (
+      ) : error && !published ? (
         <View style={styles.body}>
           <ExperienceStartShell
             eyebrow={copy.interactiveFilm}
@@ -211,6 +318,21 @@ const styles = StyleSheet.create({
   blackGate: {
     flex: 1,
     backgroundColor: "#000000",
+  },
+  switchOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.two,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    zIndex: 30,
+  },
+  switchLabel: {
+    color: "rgba(255,255,255,0.72)",
   },
   errorBanner: {
     position: "absolute",

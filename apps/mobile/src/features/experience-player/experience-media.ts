@@ -17,8 +17,20 @@ import { resolveExperienceAssetUrl } from "@/config";
 /** Cinematic interactive films play in landscape on mobile. */
 export const EXPERIENCE_PLAY_ORIENTATION: ExperienceOrientation = "landscape";
 
-const PLAYABLE_URL_CACHE = new Map<string, string>();
+type PlayableUrl = { url: string; reusableUntilMs: number };
+
+const PLAYABLE_URL_CACHE = new Map<string, PlayableUrl>();
+const RESOLVE_IN_FLIGHT = new Map<string, Promise<string>>();
 const RESOLVE_TIMEOUT_MS = 15_000;
+/**
+ * Signed URLs are short-lived (the Aurora blob SAS runs ~6 minutes), and a
+ * cached one that outlives its signature fails as `-1102 no permission` inside
+ * AVPlayer. Stop reusing a signature this long before it dies so the clip it is
+ * handed to can still start and buffer.
+ */
+const SIGNATURE_SAFETY_MARGIN_MS = 60_000;
+/** Reuse window for URLs whose expiry cannot be read off the query string. */
+const OPAQUE_URL_TTL_MS = 5 * 60_000;
 
 export function absolutizeExperienceMediaUri(uri: string): string | undefined {
   const resolved = resolveExperienceAssetUrl(uri.trim());
@@ -28,7 +40,8 @@ export function absolutizeExperienceMediaUri(uri: string): string | undefined {
 /**
  * Aurora `/story-projects/.../content` returns 302 → signed OSS.
  * Browsers follow that for `<video>`; AVPlayer often hangs/times out on the
- * API hop. Resolve to the final URL once, then cache.
+ * API hop. Resolve to the final URL and reuse it for as long as its signature
+ * is good for.
  */
 export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal): Promise<string> {
   const absolute = absolutizeExperienceMediaUri(uri);
@@ -40,8 +53,27 @@ export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal)
   }
 
   const cached = PLAYABLE_URL_CACHE.get(absolute);
-  if (cached) return cached;
+  if (cached && cached.reusableUntilMs > Date.now()) return cached.url;
+  PLAYABLE_URL_CACHE.delete(absolute);
 
+  // A second caller for the same clip joins the resolve in flight rather than
+  // signing a competing URL — and so inherits the first caller's abort signal.
+  const pending = RESOLVE_IN_FLIGHT.get(absolute);
+  if (pending) return pending;
+  const task = signPlayableUrl(absolute, signal).finally(() => {
+    RESOLVE_IN_FLIGHT.delete(absolute);
+  });
+  RESOLVE_IN_FLIGHT.set(absolute, task);
+  return task;
+}
+
+/** Forget a signature that playback rejected, so the next attempt signs afresh. */
+export function invalidatePlayableMediaUrl(uri: string): void {
+  const absolute = absolutizeExperienceMediaUri(uri);
+  if (absolute) PLAYABLE_URL_CACHE.delete(absolute);
+}
+
+async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
   const onAbort = () => controller.abort();
@@ -59,7 +91,10 @@ export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal)
     }
 
     const playable = (response.url || absolute).trim();
-    PLAYABLE_URL_CACHE.set(absolute, playable);
+    const reusableUntilMs = signatureReusableUntilMs(playable);
+    if (reusableUntilMs > Date.now()) {
+      PLAYABLE_URL_CACHE.set(absolute, { url: playable, reusableUntilMs });
+    }
 
     // Drop the probe body — we only needed the redirected Location / final URL.
     try {
@@ -78,6 +113,55 @@ export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal)
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
   }
+}
+
+/**
+ * How long a freshly signed URL stays reusable. Read from the signature itself
+ * where the provider exposes it — Azure blob SAS (`se`), OSS / classic S3
+ * (`Expires`), SigV4 (`X-Amz-Date` + `X-Amz-Expires`) — minus a safety margin.
+ */
+function signatureReusableUntilMs(url: string): number {
+  const expiresAtMs = signatureExpiresAtMs(url);
+  if (expiresAtMs === null) return Date.now() + OPAQUE_URL_TTL_MS;
+  return expiresAtMs - SIGNATURE_SAFETY_MARGIN_MS;
+}
+
+function signatureExpiresAtMs(url: string): number | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(url).searchParams;
+  } catch {
+    return null;
+  }
+
+  const iso = params.get("se");
+  if (iso) {
+    const parsed = Date.parse(iso);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  const epochSeconds = params.get("Expires") ?? params.get("x-oss-expires");
+  if (epochSeconds) {
+    const parsed = Number(epochSeconds);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed * 1_000;
+  }
+
+  const signedAt = parseAmzDate(params.get("X-Amz-Date"));
+  const lifetimeSeconds = Number(params.get("X-Amz-Expires"));
+  if (signedAt !== null && Number.isFinite(lifetimeSeconds) && lifetimeSeconds > 0) {
+    return signedAt + lifetimeSeconds * 1_000;
+  }
+
+  return null;
+}
+
+/** SigV4 basic ISO-8601 (`20260811T095254Z`) — `Date.parse` does not take it. */
+function parseAmzDate(value: string | null): number | null {
+  const match = value?.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  const parsed = Date.parse(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function isAuroraBuildContentUrl(url: string): boolean {
@@ -139,36 +223,28 @@ export function sequenceTimelineOffsetMs(
 }
 
 /**
- * Clips Start waits for: the one that plays first plus its successor, so the
- * opening cut is on disk and the next is already there when it ends. Anything
- * beyond that has the whole runtime of those clips to arrive.
- */
-const START_GATE_CLIP_COUNT = 2;
-
-export type ExperienceClipPlan = {
-  /** Start waits on these and nothing else. */
-  critical: readonly string[];
-  /** The rest of the chapter, in play order, warmed behind playback. */
-  deferred: readonly string[];
-};
-
-/**
- * Split the chapter's core-video clips into what Start must wait for and what
- * can keep downloading behind playback.
+ * Every clip in the chapter, ordered by graph distance from `startSceneId`.
  *
- * Web can afford to gate Start on the whole catalogue because a clip there only
- * needs to reach `canplaythrough`; here a clip means a completed file download,
- * so waiting on branches the viewer may never take is a wait for nothing.
- * Ordering is play order — sequence order within a scene, graph distance from
- * the entry scene across scenes — so the clip needed next is fetched next.
+ * Start waits for this whole list: on a phone a clip means a completed file
+ * download, and anything short of the full chapter leaves a scene transition
+ * mid-film waiting on the network with a black screen up. Ordering still matters
+ * even though the gate needs all of it — it decides what the viewer's progress
+ * bar is spending its first bytes on, and which clips are already there if the
+ * gate has to open early.
+ *
+ * Prefetch re-asks for this whenever the viewer changes scene: the static walk
+ * from the entry scene is only a guess at the route, and once a choice is made
+ * the clips one hop from *here* matter more than the ones the guess put first.
  */
-export function planCatalogueVideoUris(
+export function orderVideoUrisFromScene(
   manifest: ExperienceRuntimeManifest,
+  startSceneId: string,
   orientation: ExperienceOrientation = EXPERIENCE_PLAY_ORIENTATION
-): ExperienceClipPlan {
+): string[] {
   const nodesById = new Map(manifest.graph.nodes.map((node) => [node.sceneId, node]));
+  const start = nodesById.has(startSceneId) ? startSceneId : manifest.graph.entrySceneId;
   const visited = new Set<string>();
-  const queue: string[] = [manifest.graph.entrySceneId];
+  const queue: string[] = [start];
   const ordered: string[] = [];
 
   const push = (node: ExperienceGraphNode) => {
@@ -193,11 +269,7 @@ export function planCatalogueVideoUris(
     push(node);
   }
 
-  const unique = [...new Set(ordered)];
-  return {
-    critical: unique.slice(0, START_GATE_CLIP_COUNT),
-    deferred: unique.slice(START_GATE_CLIP_COUNT),
-  };
+  return [...new Set(ordered)];
 }
 
 function sceneVideoUris(
@@ -206,13 +278,20 @@ function sceneVideoUris(
   orientation: ExperienceOrientation
 ): string[] {
   const uris: string[] = [];
+  const pushAsset = (assetId: string) => {
+    const media = resolveVideoMedia(assets, assetId, orientation);
+    if (media) uris.push(media.variant.uri);
+  };
   for (const renderer of scene.renderers) {
     if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) continue;
     const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
     if (!parsed.success) continue;
     for (const clip of parsed.data.sequence) {
-      const media = resolveVideoMedia(assets, clip.assetId, orientation);
-      if (media) uris.push(media.variant.uri);
+      pushAsset(clip.assetId);
+      // A `loop` end behaviour plays a second asset that the sequence itself
+      // never lists — it is what the scene sits on while it waits for a choice,
+      // so leaving it out means the wait is where the film stalls.
+      if (clip.endBehavior.behavior === "loop") pushAsset(clip.endBehavior.assetId);
     }
   }
   return uris;

@@ -13,5 +13,6 @@ export interface ExperiencePlayerCopy {
   noVisibleChoices: string;
   continue: string;
   emptySequence: string;
+  nextChapter: string;
   mediaError: (assetId: string) => string;
 }

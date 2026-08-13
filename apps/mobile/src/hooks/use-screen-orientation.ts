@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { Dimensions, Platform } from "react-native";
+import { Dimensions, Platform, type LayoutChangeEvent } from "react-native";
 
 /**
  * Grace window for the rotation iOS is already running. `getOrientationAsync`
@@ -189,16 +189,32 @@ function remountTabs() {
  */
 export function usePlayScreenOrientation() {
   const navigation = useNavigation();
-  const [landscapeReady, setLandscapeReady] = useState(Platform.OS === "web");
+  const [rotationSettled, setRotationSettled] = useState(Platform.OS === "web");
+  /**
+   * The device rotates before the render tree resizes: iOS pushes new window
+   * metrics as the rotation animation starts, while the root view keeps its
+   * portrait frame until the animation commits. Unblocking on `Dimensions`
+   * therefore still reveals one portrait-width frame — content squeezed into a
+   * strip with the rest of the screen black. The stage's own layout pass is the
+   * only signal that reports the size we are actually rendering at.
+   */
+  const [awaitStageLandscape, setAwaitStageLandscape] = useState(false);
+  const [stageLandscape, setStageLandscape] = useState(false);
   const [exiting, setExiting] = useState(false);
   const allowLeaveRef = useRef(Platform.OS === "web");
   const exitInFlightRef = useRef(false);
   /** Only a real rotation leaves the tabs below with a stale layout. */
   const rotatedRef = useRef(false);
 
+  const onStageLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setStageLandscape(width > height);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      let layoutFallback: ReturnType<typeof setTimeout> | undefined;
       // An exit cancels the landscape attempt too — otherwise its retry would
       // re-lock landscape on top of the portrait restore.
       const isActive = () => active && !exitInFlightRef.current;
@@ -207,20 +223,34 @@ export function usePlayScreenOrientation() {
       exitInFlightRef.current = false;
       rotatedRef.current = false;
       setExiting(false);
-      setLandscapeReady(Platform.OS === "web");
+      setRotationSettled(Platform.OS === "web");
+      setAwaitStageLandscape(false);
+      // `stageLandscape` is a standing fact about the root view, not per-focus
+      // state — clearing it would strand the gate when layout never changes.
       exitCoverStore.set(false);
 
       void (async () => {
         if (Platform.OS === "web") return;
-        if (await applyOrientation("landscape", "play landscape", isActive)) {
-          rotatedRef.current = true;
+        const rotated = await applyOrientation("landscape", "play landscape", isActive);
+        if (rotated) rotatedRef.current = true;
+        if (!isActive()) return;
+        // Only hold for the layout pass when a rotation actually happened —
+        // with rotation disabled (Simulator) it would never report landscape.
+        setAwaitStageLandscape(rotated);
+        setRotationSettled(true);
+        if (rotated) {
+          layoutFallback = setTimeout(
+            () => setAwaitStageLandscape(false),
+            ORIENTATION_WAIT_TIMEOUT_MS
+          );
         }
-        if (isActive()) setLandscapeReady(true);
       })();
 
       return () => {
         active = false;
-        setLandscapeReady(false);
+        if (layoutFallback) clearTimeout(layoutFallback);
+        setRotationSettled(false);
+        setAwaitStageLandscape(false);
         // Safety net for leaves that bypass prevent-remove (replace / reset).
         if (allowLeaveRef.current) return;
         const shouldRemount = rotatedRef.current;
@@ -259,7 +289,9 @@ export function usePlayScreenOrientation() {
     })();
   });
 
-  return { landscapeReady, exiting };
+  const landscapeReady = rotationSettled && (!awaitStageLandscape || stageLandscape);
+
+  return { landscapeReady, exiting, onStageLayout };
 }
 
 /** App shell default — portrait everywhere except play. */

@@ -28,6 +28,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { resolveExperienceAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
+import { useScreenActive } from "@/hooks/use-app-active";
 
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
@@ -37,9 +38,9 @@ import {
 } from "./experience-theme-loader";
 import { createExperienceRuntime } from "./experience-runtime-host";
 import { ExperienceVideoRenderer } from "./experience-video-renderer";
-import { localize } from "./localize";
+import { localize, resolvePlaybackLocale } from "./localize";
+import { useExperienceAudioHost } from "./use-experience-audio-host";
 import { useExperiencePreload } from "./use-experience-preload";
-
 const START_ACCENT = EXPERIENCE_START_ACCENT;
 export interface ExperiencePlayerProps {
   runtime: ExperienceRuntimeManifest;
@@ -47,11 +48,14 @@ export interface ExperiencePlayerProps {
   copy: ExperiencePlayerCopy;
   randomSeed?: string;
   coverUrl?: string;
+  /** Serial works: jump to the next chapter without leaving the play shell. */
+  onNextChapter?: () => void;
+  nextChapterLabel?: string;
   loadTheme?: ExperienceThemeLoader;
 }
 
 /**
- * Native experience host: engine + cinematic start + expo-video playback.
+ * Native experience host: engine + cinematic start + expo-video + expo-audio.
  */
 export function ExperiencePlayer({
   runtime,
@@ -59,6 +63,8 @@ export function ExperiencePlayer({
   copy,
   randomSeed: initialRandomSeed,
   coverUrl,
+  onNextChapter,
+  nextChapterLabel,
   loadTheme = defaultLoadExperienceTheme,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -115,6 +121,8 @@ export function ExperiencePlayer({
       locale={locale}
       copy={copy}
       coverUrl={coverUrl}
+      onNextChapter={onNextChapter}
+      nextChapterLabel={nextChapterLabel}
       loadTheme={loadTheme}
       onRestart={() => {
         setRandomSeed(
@@ -132,6 +140,8 @@ function ActiveExperienceRuntimePlayer({
   locale,
   copy,
   coverUrl,
+  onNextChapter,
+  nextChapterLabel,
   loadTheme,
   onRestart,
 }: {
@@ -140,6 +150,8 @@ function ActiveExperienceRuntimePlayer({
   locale: string;
   copy: ExperiencePlayerCopy;
   coverUrl?: string;
+  onNextChapter?: () => void;
+  nextChapterLabel?: string;
   loadTheme: ExperienceThemeLoader;
   onRestart: () => void;
 }) {
@@ -151,6 +163,12 @@ function ActiveExperienceRuntimePlayer({
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const preload = useExperiencePreload(manifest);
+  const playbackLocale = resolvePlaybackLocale(manifest, locale);
+  const {
+    unlock: unlockAudio,
+    suspend: suspendAudio,
+    applyEffects: applyAudioEffects,
+  } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
@@ -174,31 +192,35 @@ function ActiveExperienceRuntimePlayer({
   const activeCoverUri =
     coverIndex < coverCandidates.length ? coverCandidates[coverIndex] : undefined;
 
-  const applyResult = useCallback((result: ExperienceEventQueueResult) => {
-    setRuntimeState(result.state);
-    let sceneChangeCount = 0;
-    let latestSceneId: string | null = null;
-    setOpenRendererIds((current) => {
-      let next = new Set(current);
-      result.effects.forEach((effect) => {
-        if (effect.kind === "scene.changed") {
-          next = new Set();
-          sceneChangeCount += 1;
-          latestSceneId = effect.toSceneId;
-        }
-        if (effect.kind === "renderer.command" && effect.commandType === "open") {
-          next.add(effect.instanceId);
-        }
+  const applyResult = useCallback(
+    (result: ExperienceEventQueueResult) => {
+      setRuntimeState(result.state);
+      applyAudioEffects(result.effects);
+      let sceneChangeCount = 0;
+      let latestSceneId: string | null = null;
+      setOpenRendererIds((current) => {
+        let next = new Set(current);
+        result.effects.forEach((effect) => {
+          if (effect.kind === "scene.changed") {
+            next = new Set();
+            sceneChangeCount += 1;
+            latestSceneId = effect.toSceneId;
+          }
+          if (effect.kind === "renderer.command" && effect.commandType === "open") {
+            next.add(effect.instanceId);
+          }
+        });
+        return next;
       });
-      return next;
-    });
-    if (sceneChangeCount > 0) {
-      setSceneEpoch((value) => value + sceneChangeCount);
-      timelineCursorRef.current = createExperienceTimelineCursor(
-        latestSceneId ?? result.state.currentSceneId
-      );
-    }
-  }, []);
+      if (sceneChangeCount > 0) {
+        setSceneEpoch((value) => value + sceneChangeCount);
+        timelineCursorRef.current = createExperienceTimelineCursor(
+          latestSceneId ?? result.state.currentSceneId
+        );
+      }
+    },
+    [applyAudioEffects]
+  );
 
   const run = useCallback(
     (operation: () => ExperienceEventQueueResult) => {
@@ -264,16 +286,34 @@ function ActiveExperienceRuntimePlayer({
       .sort((left, right) => left.layer - right.layer);
   }, [manifest, runtimeState, scene]);
 
-  // Fixed scene clock (same path as web player).
+  /**
+   * One gate for everything that runs: video, audio cues, and the scene clock
+   * all stop when the app leaves the foreground or the viewer leaves the page.
+   */
+  const presenting = useScreenActive();
+  const presentingRef = useRef(presenting);
+  useEffect(() => {
+    presentingRef.current = presenting;
+  }, [presenting]);
+  /** Pause / resume hook published by the scene-clock effect while it runs. */
+  const clockGateRef = useRef<((active: boolean) => void) | null>(null);
+
+  // Fixed scene clock (same path as web player). Pause wall-clock accrual while
+  // away so resume does not skip ahead of the frozen video.
   const clockScene = scene?.clock.kind === "fixed" ? scene : null;
   const clockDurationMs = clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : null;
   useEffect(() => {
     if (!clockScene || clockDurationMs === null || !started || endingId) return;
-    let frame = 0;
+    let frame: number | null = null;
     let ended = false;
     const startedAt = performance.now();
+    let pausedTotal = 0;
+    let pausedAt: number | null = presentingRef.current ? null : performance.now();
+
     const tick = () => {
-      const elapsed = Math.min(performance.now() - startedAt, clockDurationMs);
+      frame = null;
+      if (pausedAt !== null) return;
+      const elapsed = Math.min(performance.now() - startedAt - pausedTotal, clockDurationMs);
       advanceTimeline(elapsed);
       if (elapsed < clockDurationMs) {
         frame = requestAnimationFrame(tick);
@@ -283,8 +323,28 @@ function ActiveExperienceRuntimePlayer({
       ended = true;
       run(() => controller.dispatch([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]));
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+
+    clockGateRef.current = (active) => {
+      if (active) {
+        if (pausedAt !== null) {
+          pausedTotal += performance.now() - pausedAt;
+          pausedAt = null;
+        }
+        if (!ended && frame === null) frame = requestAnimationFrame(tick);
+        return;
+      }
+      if (pausedAt === null) pausedAt = performance.now();
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+        frame = null;
+      }
+    };
+
+    if (pausedAt === null) frame = requestAnimationFrame(tick);
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      clockGateRef.current = null;
+    };
   }, [
     advanceTimeline,
     clockDurationMs,
@@ -296,16 +356,43 @@ function ActiveExperienceRuntimePlayer({
     started,
   ]);
 
+  // Registered above while a fixed clock is running; the gate below is declared
+  // after it so the running clock is always the one being paused or resumed.
+  useEffect(() => {
+    clockGateRef.current?.(presenting);
+  }, [presenting]);
+
+  useEffect(() => {
+    if (!started) return;
+    if (presenting) {
+      // A resume that cannot reclaim the audio session leaves every later cue
+      // silent, which is worth telling the viewer about.
+      unlockAudio().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+      return;
+    }
+    // Failing to hand the session back on the way out costs the viewer nothing.
+    suspendAudio().catch(() => undefined);
+  }, [presenting, started, suspendAudio, unlockAudio]);
+
   const handleStart = () => {
     if (starting || started) return;
     setStarting(true);
     setRuntimeError(null);
-    if (!run(() => controller.start())) {
-      setStarting(false);
-      return;
-    }
-    setStarted(true);
-    setStarting(false);
+    void (async () => {
+      try {
+        await unlockAudio();
+        if (!run(() => controller.start())) {
+          await suspendAudio();
+          return;
+        }
+        setStarted(true);
+      } catch (error) {
+        await suspendAudio();
+        setRuntimeError(runtimeErrorMessage(error));
+      } finally {
+        setStarting(false);
+      }
+    })();
   };
 
   if (runtimeError) {
@@ -323,15 +410,32 @@ function ActiveExperienceRuntimePlayer({
   }
 
   if (endingId) {
+    const endingTitle = ending ? localize(ending.title, locale, defaultLocale) : copy.unknownEnding;
+    const endingSummary = ending?.summary ? localize(ending.summary, locale, defaultLocale) : null;
+
     return (
-      <View style={styles.centerPad}>
-        <ThemedText type="code" style={styles.lightMuted}>
+      <View style={styles.endingPad}>
+        <ThemedText type="code" style={styles.endingEyebrow}>
           {copy.endingEyebrow}
         </ThemedText>
-        <ThemedText type="subtitle" style={styles.lightText}>
-          {ending ? localize(ending.title, locale, defaultLocale) : copy.unknownEnding}
+        <ThemedText type="subtitle" style={styles.endingTitle}>
+          {endingTitle}
         </ThemedText>
-        <PrimaryButton label={copy.playAgain} accent={accent} onPress={onRestart} />
+        {endingSummary ? (
+          <ThemedText type="small" style={styles.endingSummary}>
+            {endingSummary}
+          </ThemedText>
+        ) : null}
+        <View style={styles.endingActions}>
+          {onNextChapter && nextChapterLabel ? (
+            <PrimaryButton label={nextChapterLabel} accent={accent} onPress={onNextChapter} />
+          ) : null}
+          <PrimaryButton
+            label={copy.playAgain}
+            accent={onNextChapter ? "rgba(255,255,255,0.16)" : accent}
+            onPress={onRestart}
+          />
+        </View>
       </View>
     );
   }
@@ -340,9 +444,8 @@ function ActiveExperienceRuntimePlayer({
     const summary = manifest.metadata.summary
       ? localize(manifest.metadata.summary, locale, defaultLocale)
       : null;
-    // Floor percent so 100% never shows while a clip is still loading (same as web).
-    const mediaLoading = preload.total > 0 && !preload.done;
-    const loadingPercent = mediaLoading ? Math.floor((preload.loaded / preload.total) * 100) : null;
+    const mediaLoading = !preload.done;
+    const loadingPercent = mediaLoading ? preload.percent : null;
     const loadingMediaLabel =
       loadingPercent != null ? `${copy.loadingMedia} ${loadingPercent}%` : null;
     return (
@@ -608,6 +711,32 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     justifyContent: "center",
     gap: Spacing.three,
+  },
+  endingPad: {
+    flex: 1,
+    padding: Spacing.four,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: Spacing.three,
+  },
+  endingEyebrow: {
+    color: "rgba(255,255,255,0.65)",
+    textAlign: "center",
+  },
+  endingTitle: {
+    color: "#FFFFFF",
+    textAlign: "center",
+    maxWidth: 640,
+  },
+  endingSummary: {
+    color: "rgba(255,255,255,0.62)",
+    textAlign: "center",
+    maxWidth: 520,
+  },
+  endingActions: {
+    gap: Spacing.two,
+    maxWidth: 420,
+    width: "100%",
   },
   stage: {
     flex: 1,

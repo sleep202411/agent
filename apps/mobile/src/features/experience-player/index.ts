@@ -4,3 +4,7 @@ export { ExperienceStartShell } from "./experience-start-shell";
 export { navigateToPlay, playGameHref } from "./play-game-href";
 export { loadExperienceTheme, type ExperienceThemeLoader } from "./experience-theme-loader";
 export { createExperienceRuntime } from "./experience-runtime-host";
+export { ExperienceChapterButton, ExperienceChapterPicker } from "./experience-chapter-picker";
+export { ExperienceShareButton } from "./experience-share-button";
+export { buildExperiencePlayShareUrl } from "./experience-share";
+export { chapterDisplayTitle, findChapter, nextChapterAfter } from "./experience-session";
