@@ -1,17 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/app/_components/auth-provider";
+import { useMyEntitlement } from "@/app/_components/entitlement-context";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { useActiveWorkspace } from "@/app/_components/workspace-context";
-import { getMyEntitlement } from "@/lib/billing";
 import { PageHeader, Panel } from "../_components/settings-ui";
-import { CurrentPlanPanel, myEntitlementQueryKey } from "../_components/current-plan-panel";
+import { CurrentPlanPanel } from "../_components/current-plan-panel";
 
 /**
  * Usage — plan + compute credits + the plan's generation limits, in one place.
@@ -26,17 +25,11 @@ export default function UsageSettingsPage() {
   const t = useTranslations("settings");
   const { user } = useAuth();
   const workspace = useActiveWorkspace();
-  const workspaceId = workspace?.id ?? null;
   const canManageBilling =
     workspace?.role === "owner" || workspace?.role === "admin" || workspace?.role === "billing";
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const { data: credits } = useComputeWalletBalance(Boolean(user));
-  const { data } = useQuery({
-    queryKey: myEntitlementQueryKey(workspaceId),
-    queryFn: () => getMyEntitlement(workspaceId),
-    enabled: Boolean(user),
-    staleTime: 30_000,
-  });
+  const { data } = useMyEntitlement();
 
   const limits = data?.entitlement.limits;
   const available = credits?.available ?? null;

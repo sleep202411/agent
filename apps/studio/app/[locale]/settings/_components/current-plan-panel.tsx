@@ -1,18 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconReceipt } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { cancelSubscription, getMyEntitlement } from "@/lib/billing";
-import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { cancelSubscription } from "@/lib/billing";
+import {
+  formatEntitlementPlanName,
+  useMyEntitlement,
+} from "@/app/_components/entitlement-context";
 import { Panel } from "./settings-ui";
-
-export const myEntitlementQueryKey = (workspaceId: string | null) =>
-  ["billing", "my-entitlement", workspaceId ?? "personal"] as const;
 
 /**
  * The signed-in user's current plan + renews-on/cancel affordance. Replaces the
@@ -31,29 +30,7 @@ export function CurrentPlanPanel({
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const workspaceId = useActiveWorkspaceId();
-  const queryKey = useMemo(() => myEntitlementQueryKey(workspaceId), [workspaceId]);
-
-  const { data, isLoading } = useQuery({
-    queryKey,
-    queryFn: () => getMyEntitlement(workspaceId),
-    staleTime: 30_000,
-  });
-
-  // Realtime: refresh the plan when the entitlement changes server-side (order
-  // fulfilled, refund revoke/restore, expiry) — personal or workspace scope.
-  useEffect(() => {
-    const sub = getAssetsRealtimeKernel({
-      workspaceId: workspaceId ?? undefined,
-    }).subscribe({
-      onEvent: (event) => {
-        if (event.kind === "entitlement_changed") {
-          void queryClient.invalidateQueries({ queryKey });
-        }
-      },
-    });
-    return () => sub.close();
-  }, [workspaceId, queryClient, queryKey]);
+  const { data, isLoading, isError, error, queryKey } = useMyEntitlement();
 
   const cancel = useMutation({
     mutationFn: (id: string) => cancelSubscription(id),
@@ -69,8 +46,13 @@ export function CurrentPlanPanel({
   });
 
   const subscription = data?.subscription ?? null;
-  const planKey = data?.entitlement.planKey ?? "free";
-  const planName = planKey === "free" ? t("freePlanName") : titleCase(planKey);
+  const planKey = data?.entitlement.planKey ?? null;
+  const planName =
+    planKey === "free"
+      ? t("freePlanName")
+      : planKey
+        ? formatEntitlementPlanName(planKey)
+        : null;
   const periodEnd = subscription?.currentPeriodEnd
     ? formatDate(subscription.currentPeriodEnd)
     : null;
@@ -97,6 +79,10 @@ export function CurrentPlanPanel({
     >
       {isLoading ? (
         <div className="h-10 w-40 animate-pulse rounded-md bg-white/[0.06]" />
+      ) : isError || !planName ? (
+        <p className="text-[13px] text-destructive">
+          {error?.message || t("planLoadError")}
+        </p>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
@@ -175,8 +161,4 @@ function formatMoneyMinor(amountMinor: string, currency: string): string {
   const amount = Number(amountMinor) / 100;
   if (Number.isNaN(amount)) return `${currency} —`;
   return `${currency} ${amount.toFixed(2)}`;
-}
-
-function titleCase(value: string): string {
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
