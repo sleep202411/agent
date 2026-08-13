@@ -7,6 +7,7 @@ import {
   JAVA_STUDIO_URL,
   JAVA_REQUEST_TIMEOUT_MS,
 } from '../integrations/java/java-config';
+import { LegacyProjectsConfigService } from './legacy-projects.config';
 
 /**
  * Read the user's legacy Java projects via the Java studio HTTP API
@@ -65,25 +66,11 @@ const toIso = (v: string | null | undefined): string | null => {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 };
 
-// Legacy project covers are object keys in the Java OSS bucket (e.g.
-// `WORLD/20260129/x.jpg`, `history/img/72/.../y.jpeg`), public-read. Mirror
-// apps/web's resolveAssetUrl: pass through already-absolute URLs, else prefix
-// the OSS base. Env-overridable per region; defaults to the .com SG bucket.
-const OSS_BASE = (
-  process.env.LEGACY_OSS_BASE_URL ||
-  'https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com'
-).replace(/\/+$/, '');
-
-function resolveCover(path: string | null | undefined): string | null {
-  const p = path?.trim();
-  if (!p) return null;
-  if (/^https?:\/\//i.test(p)) return p;
-  return `${OSS_BASE}/${p.replace(/^\/+/, '')}`;
-}
-
 @Injectable()
 export class LegacyProjectsService {
   private readonly logger = new Logger(LegacyProjectsService.name);
+
+  constructor(private readonly config: LegacyProjectsConfigService) {}
 
   /**
    * List the viewer's legacy projects. `cookie` is the viewer's raw cookie
@@ -156,11 +143,23 @@ export class LegacyProjectsService {
     return list.map((r) => ({
       id: String(r.id),
       name: r.name?.trim() || 'Untitled',
-      cover: resolveCover(r.imagePath),
+      cover: this.resolveCover(r.imagePath),
       aspectRatio: r.aspectRatio?.trim() || null,
       status: Number(r.status ?? 0),
       createdAt: toIso(r.createTime),
       updatedAt: toIso(r.updateTime),
     }));
+  }
+
+  /**
+   * Java stores legacy covers as object keys (for example `WORLD/...`).
+   * Absolute historical URLs remain authoritative; relative keys resolve only
+   * against this deployment cell's explicitly configured bucket.
+   */
+  private resolveCover(path: string | null | undefined): string | null {
+    const value = path?.trim();
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    return `${this.config.ossBaseUrl}/${value.replace(/^\/+/, '')}`;
   }
 }

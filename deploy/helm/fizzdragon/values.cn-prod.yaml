@@ -213,6 +213,10 @@ server:
   extraSecretRefs: []
   env:
     NEXT_PUBLIC_SITE_REGION: cn
+    # Legacy Java stores project covers as relative keys in the CN `shotive`
+    # bucket. This explicit override prevents the CN cell from ever inheriting
+    # the .com Singapore bucket when resolving those keys.
+    LEGACY_OSS_BASE_URL: https://shotive.oss-cn-hangzhou.aliyuncs.com
     # CN-local CDN mirror for the Git-governed Project Skill preview media.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).

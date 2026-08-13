@@ -38,6 +38,10 @@ grep -q 'name: MEDIA_PUBLIC_BASE_URL_AZURE_BLOB' <<<"$server" && fail "CN server
 grep -q 'name: AXON_PIXEL_ID' <<<"$server" && fail "CN server must not inherit the .com Axon pixel"
 ok ".com-only storage and analytics configuration is absent from CN"
 
+grep -A 1 'name: LEGACY_OSS_BASE_URL' <<<"$server" | grep -q 'value: "https://shotive.oss-cn-hangzhou.aliyuncs.com"' || fail "CN server must use the CN legacy project-cover bucket"
+grep -q 'fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com' <<<"$server" && fail "CN server must not inherit the .com legacy project-cover bucket"
+ok "legacy project covers are pinned to the CN bucket"
+
 grep -q 'fizzdragon-agent:9b0ebfba' <<<"$render" || fail "legacy Agent API pin changed"
 grep -q 'fizzdragon-agent:7b94af76' <<<"$render" || fail "legacy Agent worker pin changed"
 ok "legacy Agent API and worker remain independently pinned"
