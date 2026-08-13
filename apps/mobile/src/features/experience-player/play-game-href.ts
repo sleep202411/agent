@@ -4,8 +4,9 @@ import type { ExperienceGameSummary } from "@/data/interactive-film-api";
 import { toHref } from "@/lib/navigation";
 
 /**
- * Open the play route with list-card preview fields so the cinematic start
- * shell can paint once the black boot gate lifts (landscape + manifest).
+ * Open the interactive-film play route with list-card preview fields so the
+ * cinematic start shell can paint once the black boot gate lifts (landscape +
+ * manifest).
  */
 export function playGameHref(
   game: Pick<ExperienceGameSummary, "gameId" | "title" | "subtitle" | "coverUrl">,
@@ -17,7 +18,7 @@ export function playGameHref(
   if (game.coverUrl?.trim()) params.set("coverUrl", game.coverUrl.trim());
   if (options?.chapterId?.trim()) params.set("chapter", options.chapterId.trim());
   const query = params.toString();
-  return toHref(`/play/${game.gameId}${query ? `?${query}` : ""}`);
+  return toHref(`/play/interactive-film/${game.gameId}${query ? `?${query}` : ""}`);
 }
 
 type PlayRouter = {

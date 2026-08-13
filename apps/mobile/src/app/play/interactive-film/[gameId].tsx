@@ -80,7 +80,6 @@ export default function PlayGameScreen() {
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
       emptySequence: t("play.emptySequence"),
-      nextChapter: t("play.nextChapter"),
       mediaError: (assetId: string) => t("play.mediaError").replace("{assetId}", assetId),
     }),
     [t]

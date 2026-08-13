@@ -60,7 +60,7 @@ export default function RootLayout() {
               <Stack.Screen name="ips" options={detailHeader} />
               <Stack.Screen name="games" options={detailHeader} />
               <Stack.Screen
-                name="play/[gameId]"
+                name="play/interactive-film/[gameId]"
                 options={{
                   ...detailHeader,
                   animation: "fade",

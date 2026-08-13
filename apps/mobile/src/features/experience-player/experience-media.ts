@@ -1,7 +1,6 @@
 import type {
   ExperienceCoreVideoRendererConfig,
   ExperienceGraphNode,
-  ExperienceImageAsset,
   ExperienceOrientation,
   ExperienceRuntimeAsset,
   ExperienceRuntimeManifest,
@@ -192,22 +191,6 @@ export function resolveVideoMedia(
     asset,
     variant: { ...variant, uri: absoluteUri },
   };
-}
-
-export function resolveImageUri(
-  assets: readonly ExperienceRuntimeAsset[],
-  assetId: string,
-  orientation: ExperienceOrientation = EXPERIENCE_PLAY_ORIENTATION
-): string | undefined {
-  const asset = assets.find(
-    (candidate): candidate is ExperienceImageAsset =>
-      candidate.assetId === assetId && candidate.kind === "image"
-  );
-  if (!asset) return undefined;
-  const raw =
-    asset.variants.find((candidate) => candidate.orientation === orientation)?.uri ??
-    asset.variants[0]?.uri;
-  return raw ? absolutizeExperienceMediaUri(raw) : undefined;
 }
 
 export function sequenceTimelineOffsetMs(

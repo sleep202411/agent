@@ -697,7 +697,6 @@ function isDiscardableLateInput(error: unknown): boolean {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   alert: {
     flex: 1,
     padding: Spacing.four,
