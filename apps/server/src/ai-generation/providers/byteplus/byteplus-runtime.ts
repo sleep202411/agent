@@ -12,10 +12,10 @@ import type {
   AiQueueName,
   AiQueuePolicy,
   AiRequiredPlan,
-  FoundryCatalogSource,
+  AiCatalogSource,
 } from '../../types';
 
-export const BYTEPLUS_IMAGE_SCHEMA_VERSION = '2026-06-08';
+export const BYTEPLUS_IMAGE_SCHEMA_VERSION = '2026-08-10';
 
 export interface BytePlusImageRuntimeConfig {
   provider: 'byteplus-modelark';
@@ -167,7 +167,7 @@ export function createBytePlusVideoRuntimeConfig(
 export function toBytePlusImageModelDefinition(args: {
   config: BytePlusImageRuntimeConfig;
   modelId: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   ops: AiModelDefinition['ops'];
 }): AiModelDefinition {
   const { config } = args;
@@ -247,7 +247,7 @@ export function toBytePlusImageModelDefinition(args: {
       ? {
           textToVideo: config.generationModes.includes('text_to_video'),
           imageToVideo: config.generationModes.includes('image_to_video'),
-          supportsSeed: true,
+          supportsSeed: Boolean(config.inputSchema.properties.seed),
           supportsCancel: true,
           maxOutputs: 1,
         }
@@ -467,6 +467,10 @@ function videoInputSchemaFor(
     parameterPolicy,
     'supportedAspectRatios',
   );
+  const outputFormatOptions = stringArrayFromPolicy(
+    parameterPolicy,
+    'outputFormatOptions',
+  );
 
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -521,11 +525,11 @@ function videoInputSchemaFor(
           group: 'references',
           order: 22,
           importance: 'primary',
-          accept: 'image/jpeg,image/png,image/webp',
+          accept: mimeAcceptFor(referenceInputs.images.acceptFormats, 'image'),
           ...({
             mediaKind: 'image',
-            acceptFormats: ['jpeg', 'png', 'webp'],
-            maxFileSizeMb: 30,
+            acceptFormats: referenceInputs.images.acceptFormats,
+            maxFileSizeMb: referenceInputs.images.maxFileSizeMb,
             promptRefPrefix: '@Image',
             maxTotalFiles,
           } as Record<string, unknown>),
@@ -544,14 +548,21 @@ function videoInputSchemaFor(
           group: 'references',
           order: 23,
           importance: 'primary',
-          accept: 'video/mp4,video/quicktime',
+          accept: mimeAcceptFor(referenceInputs.videos.acceptFormats, 'video'),
           ...({
             mediaKind: 'video',
-            acceptFormats: ['mp4', 'mov'],
-            maxCombinedFileSizeMb: 50,
-            minCombinedDurationSeconds: 2,
-            maxCombinedDurationSeconds: 15,
-            resolutionBand: '480p-720p',
+            acceptFormats: referenceInputs.videos.acceptFormats,
+            maxFileSizeMb: referenceInputs.videos.maxFileSizeMb,
+            maxCombinedFileSizeMb: referenceInputs.videos.maxCombinedFileSizeMb,
+            minItemDurationSeconds:
+              referenceInputs.videos.minItemDurationSeconds,
+            maxItemDurationSeconds:
+              referenceInputs.videos.maxItemDurationSeconds,
+            minCombinedDurationSeconds:
+              referenceInputs.videos.minCombinedDurationSeconds,
+            maxCombinedDurationSeconds:
+              referenceInputs.videos.maxCombinedDurationSeconds,
+            resolutionBand: referenceInputs.videos.resolutionBand,
             promptRefPrefix: '@Video',
             maxTotalFiles,
           } as Record<string, unknown>),
@@ -570,14 +581,21 @@ function videoInputSchemaFor(
           group: 'references',
           order: 24,
           importance: 'primary',
-          accept: 'audio/mpeg,audio/wav',
+          accept: mimeAcceptFor(referenceInputs.audios.acceptFormats, 'audio'),
           ...({
             mediaKind: 'audio',
-            acceptFormats: ['mp3', 'wav'],
-            maxFileSizeMb: 15,
-            maxCombinedDurationSeconds: 15,
-            // Audio cannot be sent without ≥1 image or video reference.
-            audioRequiresVisual: true,
+            acceptFormats: referenceInputs.audios.acceptFormats,
+            maxFileSizeMb: referenceInputs.audios.maxFileSizeMb,
+            maxCombinedFileSizeMb: referenceInputs.audios.maxCombinedFileSizeMb,
+            minItemDurationSeconds:
+              referenceInputs.audios.minItemDurationSeconds,
+            maxItemDurationSeconds:
+              referenceInputs.audios.maxItemDurationSeconds,
+            minCombinedDurationSeconds:
+              referenceInputs.audios.minCombinedDurationSeconds,
+            maxCombinedDurationSeconds:
+              referenceInputs.audios.maxCombinedDurationSeconds,
+            audioRequiresVisual: referenceInputs.audioRequiresVisual,
             promptRefPrefix: '@Audio',
             maxTotalFiles,
           } as Record<string, unknown>),
@@ -663,6 +681,22 @@ function videoInputSchemaFor(
       },
     };
   }
+  if (outputFormatOptions.length > 0) {
+    properties.outputFormat = {
+      type: 'string',
+      title: 'Output format',
+      default:
+        stringFromPolicy(parameterPolicy, 'defaultOutputFormat') ??
+        outputFormatOptions[0],
+      enum: outputFormatOptions,
+      'x-ui': {
+        control: 'select',
+        group: 'advanced',
+        order: 57,
+        importance: 'secondary',
+      },
+    };
+  }
   // Seed is policy-gated: the Seedance 2.0 series does NOT support `seed`
   // (1.x only), so its policy disables it and the field never reaches the
   // schema (additionalProperties:false then strips it from normalized input).
@@ -684,15 +718,31 @@ function videoInputSchemaFor(
   return {
     type: 'object',
     properties,
-    required: ['prompt'],
+    required: [],
     additionalProperties: false,
-    // ModelArk Seedance 2.0 rejects these content[] combinations upfront
-    // (doc 1520757): the three image scenarios are mutually exclusive, and
-    // reference audio cannot be sent without a visual reference. Enforced on
+    // ModelArk rejects mixed frame/reference scenarios. Some older Seedance
+    // contracts additionally require reference audio to have a visual; 2.5
+    // explicitly permits audio-only input, so that rule is policy-gated. Enforced on
     // the character-EXPANDED input (normalizeInput runs after expansion,
     // before any wallet hold) so both the manual and character-mention paths
     // fail loud with a typed 400 instead of a provider-side rejection.
     'x-rules': [
+      {
+        id: 'seedance-prompt-or-media',
+        when: {
+          all: [
+            { field: 'prompt', operator: 'empty' },
+            { field: 'startFrame', operator: 'empty' },
+            { field: 'endFrame', operator: 'empty' },
+            { field: 'referenceImages', operator: 'empty' },
+            { field: 'referenceVideos', operator: 'empty' },
+            { field: 'referenceAudios', operator: 'empty' },
+          ],
+        },
+        fields: ['prompt'],
+        effect: 'require',
+        message: 'Add a prompt or at least one media reference.',
+      },
       {
         id: 'seedance-frames-xor-references',
         when: {
@@ -707,19 +757,24 @@ function videoInputSchemaFor(
         message:
           'Start/end frames cannot be combined with reference media — use one or the other.',
       },
-      {
-        id: 'seedance-audio-needs-visual',
-        when: {
-          all: [
-            { field: 'referenceAudios', operator: 'exists' },
-            { field: 'referenceImages', operator: 'empty' },
-            { field: 'referenceVideos', operator: 'empty' },
-          ],
-        },
-        fields: ['referenceImages'],
-        effect: 'require',
-        message: 'Reference audio needs at least one image or video reference.',
-      },
+      ...(referenceInputs?.audioRequiresVisual
+        ? [
+            {
+              id: 'seedance-audio-needs-visual',
+              when: {
+                all: [
+                  { field: 'referenceAudios', operator: 'exists' as const },
+                  { field: 'referenceImages', operator: 'empty' as const },
+                  { field: 'referenceVideos', operator: 'empty' as const },
+                ],
+              },
+              fields: ['referenceImages'],
+              effect: 'require' as const,
+              message:
+                'Reference audio needs at least one image or video reference.',
+            },
+          ]
+        : []),
     ],
     'x-ui': {
       groups: [
@@ -773,9 +828,25 @@ function capabilityMatrixFor(
       generationModes.includes('first_last_frame_to_video') ||
       generationModes.includes('multimodal_to_video')
     : generationModes.includes('image_to_image');
+  const inputModalities: Array<'text' | 'image' | 'video' | 'audio'> = ['text'];
+  if (hasImageInput) inputModalities.push('image');
+  if (
+    isVideo &&
+    generationModes.includes('multimodal_to_video') &&
+    inputSchema.properties.referenceVideos
+  ) {
+    inputModalities.push('video');
+  }
+  if (
+    isVideo &&
+    generationModes.includes('multimodal_to_video') &&
+    inputSchema.properties.referenceAudios
+  ) {
+    inputModalities.push('audio');
+  }
   return {
     source: 'internal',
-    inputModalities: hasImageInput ? ['text', 'image'] : ['text'],
+    inputModalities,
     outputModalities: isVideo ? ['video'] : ['image'],
     generationModes,
     supportedParameters: Object.keys(inputSchema.properties),
@@ -795,6 +866,25 @@ function capabilityMatrixFor(
 function documentationFor(
   endpointId: string,
 ): Array<{ title: string; url: string; scope: string }> {
+  if (endpointId === 'dreamina-seedance-2-5-260628') {
+    return [
+      {
+        title: 'Seedance 2.5 integration guide',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/2607688',
+        scope: 'guide',
+      },
+      {
+        title: 'Create a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1520757',
+        scope: 'api_reference',
+      },
+      {
+        title: 'Retrieve a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1521309',
+        scope: 'api_reference',
+      },
+    ];
+  }
   return [
     {
       title: `BytePlus ModelArk ${endpointId}`,
@@ -844,18 +934,44 @@ function numberFromPolicy(
  * policy drives both providers' schemas identically.
  */
 function referenceInputsFor(policy: AiJsonValue | undefined): {
-  images: { min: number; max: number };
-  videos: { min: number; max: number };
-  audios: { min: number; max: number };
+  images: ReferenceMediaPolicy;
+  videos: ReferenceMediaPolicy;
+  audios: ReferenceMediaPolicy;
   maxTotalFiles?: number;
+  audioRequiresVisual: boolean;
 } | null {
   const references = recordValue(recordValue(policy)?.referenceInputs);
   if (!references || references.enabled === false) return null;
-  const range = (key: string): { min: number; max: number } => {
+  const range = (key: string): ReferenceMediaPolicy => {
     const value = recordValue(references[key]);
     const min = typeof value?.min === 'number' ? Math.max(0, value.min) : 0;
     const max = typeof value?.max === 'number' ? Math.max(0, value.max) : 0;
-    return { min, max };
+    const number = (field: string): number | undefined => {
+      const candidate = value?.[field];
+      return typeof candidate === 'number' && Number.isFinite(candidate)
+        ? candidate
+        : undefined;
+    };
+    const acceptFormats = Array.isArray(value?.acceptFormats)
+      ? value.acceptFormats.filter(
+          (item): item is string => typeof item === 'string',
+        )
+      : [];
+    return {
+      min,
+      max,
+      acceptFormats,
+      maxFileSizeMb: number('maxFileSizeMb'),
+      maxCombinedFileSizeMb: number('maxCombinedFileSizeMb'),
+      minItemDurationSeconds: number('minItemDurationSeconds'),
+      maxItemDurationSeconds: number('maxItemDurationSeconds'),
+      minCombinedDurationSeconds: number('minCombinedDurationSeconds'),
+      maxCombinedDurationSeconds: number('maxCombinedDurationSeconds'),
+      resolutionBand:
+        typeof value?.resolutionBand === 'string'
+          ? value.resolutionBand
+          : undefined,
+    };
   };
   const maxTotalFiles =
     typeof references.maxTotalFiles === 'number'
@@ -865,11 +981,46 @@ function referenceInputsFor(policy: AiJsonValue | undefined): {
     images: range('images'),
     videos: range('videos'),
     audios: range('audios'),
+    audioRequiresVisual: references.audioRequiresVisual === true,
     ...(maxTotalFiles != null ? { maxTotalFiles } : {}),
   };
   return parsed.images.max > 0 || parsed.videos.max > 0 || parsed.audios.max > 0
     ? parsed
     : null;
+}
+
+interface ReferenceMediaPolicy {
+  min: number;
+  max: number;
+  acceptFormats: string[];
+  maxFileSizeMb?: number;
+  maxCombinedFileSizeMb?: number;
+  minItemDurationSeconds?: number;
+  maxItemDurationSeconds?: number;
+  minCombinedDurationSeconds?: number;
+  maxCombinedDurationSeconds?: number;
+  resolutionBand?: string;
+}
+
+function mimeAcceptFor(
+  formats: string[],
+  kind: 'image' | 'video' | 'audio',
+): string {
+  const mime: Record<string, string> = {
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+  };
+  const resolved = formats.map((format) => mime[format]).filter(Boolean);
+  if (resolved.length > 0) return [...new Set(resolved)].join(',');
+  if (kind === 'video') return 'video/mp4,video/quicktime';
+  if (kind === 'audio') return 'audio/mpeg,audio/wav';
+  return 'image/jpeg,image/png,image/webp';
 }
 
 /** `generateAudio` policy block — emitted only when enabled === true. */

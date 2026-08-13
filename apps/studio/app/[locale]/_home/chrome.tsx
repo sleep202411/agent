@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Home-page chrome: the footer. The header moved to the shared
- * `LandingHeader` (app/_components/landing-header.tsx), mounted by the
- * (landing) layout; navigation is the app's shared `StudioSidebar`.
+ * Home-page chrome: the footer. The canonical `StudioHeader` is mounted by
+ * the (landing) layout; navigation is the app's shared `StudioSidebar`.
  */
 
 import {

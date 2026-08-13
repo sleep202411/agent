@@ -43,7 +43,7 @@ interface ModalityConfig {
   outputType: OutputType;
   models: ImageModelSeed[];
   /** Overrides forwarded to `buildQueuePolicy`. */
-  queueOverrides: Parameters<typeof buildQueuePolicy>[1];
+  queueOverrides: NonNullable<Parameters<typeof buildQueuePolicy>[0]>;
   label: string;
 }
 
@@ -59,10 +59,19 @@ const VIDEO_CONFIG: ModalityConfig = {
   modality: 'video',
   outputType: 'video',
   models: VIDEO_MODELS,
+  // Video capacity, raised from globalConcurrency 4 / perUserRunning 1 on the
+  // evidence in 5,689 jobs: per-user concurrency peaked at exactly 1 and
+  // platform concurrency on the busiest model at exactly 4 — both sat ON their
+  // ceilings, so the ceilings were the constraint rather than demand. Against
+  // that, only 6 of 818 failures carried a provider 429, and none of the
+  // BytePlus/Bailian endpoints declares a capacity limit at all, so there is
+  // room. 3 of 8 keeps one user off more than half the pool while finally
+  // letting a plan upgrade be felt — at 1, `team`'s 28 concurrent jobs were
+  // indistinguishable from the free tier.
   queueOverrides: {
     queueName: VIDEO_QUEUE_NAME,
-    globalConcurrency: 4,
-    perUserRunning: 1,
+    globalConcurrency: 8,
+    perUserRunning: 3,
     maxProviderRuntimeSeconds: 2700,
   },
   label: 'video',
@@ -83,14 +92,22 @@ function buildCanonicalPayload(
     displayName: model.displayName,
     modality: cfg.modality,
     family: model.family,
+    vendor: model.vendor,
     generationModes: model.modes as Prisma.InputJsonValue,
     status: 'active',
     description: model.description,
     parameterPolicy: model.parameterPolicy,
     outputPolicy: buildOutputPolicy(model.productPricing, cfg.outputType),
-    entitlementPolicy: buildEntitlementPolicy(model.tier),
+    entitlementPolicy: buildEntitlementPolicy(model.requiredPlan),
     billingPolicy: buildBillingPolicy(model.cost, model.productPricing),
-    queuePolicy: buildQueuePolicy(model.tier, cfg.queueOverrides),
+    // Capacity, NOT entitlement. These two used to share `model.tier`: the
+    // per-user caps were `gated ? 2 : 1` off the very same value that decided
+    // who may call the model. So "make this model free" also halved its
+    // concurrency, "give it more concurrency" also paywalled it, and a
+    // migration that merely re-mapped a legacy plan name took the entire
+    // catalogue offline. Who may call a model and how much of it one user may
+    // occupy are unrelated questions; they now have unrelated inputs.
+    queuePolicy: buildQueuePolicy(cfg.queueOverrides),
     uiPolicy: buildUiPolicy({
       group: model.group,
       recommended: model.recommended ?? false,
@@ -193,7 +210,7 @@ function buildBindingPayload(args: {
 interface SeedSummaryRow {
   slug: string;
   status: string;
-  tier: string;
+  requiredPlan: string;
   cost: number;
   providers: string;
   bindings: number;
@@ -251,17 +268,22 @@ async function seedModalityCatalog(
     },
   });
 
-  const accountCache = new Map<string, { id: string; provider: string }>();
+  const accountCache = new Map<
+    string,
+    { id: string; provider: string; status: string }
+  >();
   const resolveAccount = async (
     provider: string,
-  ): Promise<{ id: string; provider: string }> => {
+  ): Promise<{ id: string; provider: string; status: string }> => {
     const cached = accountCache.get(provider);
     if (cached) return cached;
+    // Never re-activate ops-disabled accounts. Draft → active only inside
+    // bindProviderEntry when binding a seed entry.
     const account = await prisma.aiProviderAccount.upsert({
       where: { provider },
       create: { provider, status: 'active' },
-      update: { status: 'active', archivedAt: null },
-      select: { id: true, provider: true },
+      update: {},
+      select: { id: true, provider: true, status: true },
     });
     accountCache.set(provider, account);
     return account;
@@ -298,7 +320,7 @@ async function seedModalityCatalog(
     summary.push({
       slug: canonical.slug,
       status: canonical.status,
-      tier: model.tier ?? 'free',
+      requiredPlan: model.requiredPlan ?? 'open',
       cost: model.cost,
       providers: boundProviders.join(', ') || '(canonical-only)',
       bindings: bindingCount,
@@ -322,24 +344,101 @@ export async function seedAiVideoCatalog(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Activate the account, then upsert the endpoint and binding for one provider
- * entry. Account promotion is required: the reconciler leaves accounts `draft`,
- * but the runtime only reads bindings whose account is `active`.
+ * Surgical upsert of a single video canonical + its provider bindings.
+ * - Does NOT prune any rows
+ * - Does NOT touch other slugs / modalities
+ * Safe for production "add one model" when used deliberately.
+ */
+export async function seedSingleVideoModel(
+  prisma: PrismaClient,
+  slug: string,
+): Promise<{
+  slug: string;
+  status: string;
+  providers: string[];
+  createdCanonical: boolean;
+}> {
+  const model = VIDEO_MODELS.find((entry) => entry.slug === slug);
+  if (!model) {
+    throw new Error(
+      `Unknown video model slug "${slug}". Not present in VIDEO_MODELS.`,
+    );
+  }
+
+  const seededAt = new Date().toISOString();
+  const existing = await prisma.aiCanonicalModel.findUnique({
+    where: { slug: model.slug },
+    select: { id: true },
+  });
+
+  const canonicalPayload = buildCanonicalPayload(model, seededAt, VIDEO_CONFIG);
+  const canonical = await prisma.aiCanonicalModel.upsert({
+    where: { slug: model.slug },
+    create: canonicalPayload,
+    update: canonicalPayload,
+    select: { id: true, slug: true, status: true },
+  });
+
+  const providers: string[] = [];
+  for (const entry of model.providers) {
+    // Never force a disabled/draft account back to active — ops may have
+    // deliberately deactivated the provider. Create only if missing; leave
+    // existing status untouched. bindProviderEntry will no-op-activate only
+    // when the account is draft (never active if ops set disabled).
+    const account = await prisma.aiProviderAccount.upsert({
+      where: { provider: entry.provider },
+      create: { provider: entry.provider, status: 'active' },
+      update: {},
+      select: { id: true, provider: true, status: true },
+    });
+    await bindProviderEntry({
+      prisma,
+      model,
+      canonicalModelId: canonical.id,
+      account,
+      entry,
+      modality: VIDEO_CONFIG.modality,
+    });
+    providers.push(`${entry.provider}:${entry.endpointId}`);
+  }
+
+  return {
+    slug: canonical.slug,
+    status: canonical.status,
+    providers,
+    createdCanonical: !existing,
+  };
+}
+
+/**
+ * Upsert endpoint + binding for one provider entry.
+ * Only promotes **draft** accounts to active (reconciler default). Never
+ * re-activates an ops-disabled / archived account.
  */
 async function bindProviderEntry(args: {
   prisma: PrismaClient;
   model: ImageModelSeed;
   canonicalModelId: string;
-  account: { id: string; provider: string };
+  account: { id: string; provider: string; status?: string };
   entry: ProviderEntry;
   modality: AiJobType;
 }): Promise<void> {
   const { prisma, model, canonicalModelId, account, entry, modality } = args;
 
-  await prisma.aiProviderAccount.update({
-    where: { provider: account.provider },
-    data: { status: 'active' },
-  });
+  const current =
+    account.status ??
+    (
+      await prisma.aiProviderAccount.findUnique({
+        where: { provider: account.provider },
+        select: { status: true },
+      })
+    )?.status;
+  if (current === 'draft') {
+    await prisma.aiProviderAccount.update({
+      where: { provider: account.provider },
+      data: { status: 'active' },
+    });
+  }
 
   const endpointPayload = buildEndpointPayload({
     providerAccountId: account.id,

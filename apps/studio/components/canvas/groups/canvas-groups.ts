@@ -1,5 +1,6 @@
 import type { Node, NodeChange } from "@xyflow/react";
 import type { CanvasGroup } from "@/lib/canvas-core/types";
+import { canvasNodeLayoutSize } from "@/lib/canvas-core/node-geometry";
 export {
   addNodesToCanvasGroup,
   canvasGroupingAction,
@@ -21,8 +22,6 @@ export interface CanvasGroupBounds {
 
 const GROUP_PADDING_X = 36;
 const GROUP_PADDING_Y = 36;
-const FALLBACK_NODE_WIDTH = 320;
-const FALLBACK_NODE_HEIGHT = 240;
 
 export function canvasGroupBounds(
   nodes: readonly Node[],
@@ -37,8 +36,7 @@ export function canvasGroupBounds(
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   groupedNodes.forEach((node) => {
-    const width = node.measured?.width ?? node.width ?? FALLBACK_NODE_WIDTH;
-    const height = node.measured?.height ?? node.height ?? FALLBACK_NODE_HEIGHT;
+    const { width, height } = canvasNodeLayoutSize(node);
     minX = Math.min(minX, node.position.x);
     minY = Math.min(minY, node.position.y);
     maxX = Math.max(maxX, node.position.x + width);
@@ -96,8 +94,7 @@ export function canvasGroupDropTarget(
 }
 
 export function canvasNodeOverlapRatio(node: Node, bounds: CanvasGroupBounds): number {
-  const nodeWidth = node.measured?.width ?? node.width ?? FALLBACK_NODE_WIDTH;
-  const nodeHeight = node.measured?.height ?? node.height ?? FALLBACK_NODE_HEIGHT;
+  const { width: nodeWidth, height: nodeHeight } = canvasNodeLayoutSize(node);
   const nodeArea = nodeWidth * nodeHeight;
   if (nodeArea <= 0) return 0;
   const overlapWidth = Math.max(
@@ -135,11 +132,7 @@ export function canvasGroupPositionChanges(
 
 export function nextCanvasGroupCenter(nodes: readonly Node[]): { x: number; y: number } {
   if (nodes.length === 0) return { x: 160, y: 120 };
-  const maxX = Math.max(
-    ...nodes.map(
-      (node) => node.position.x + (node.measured?.width ?? node.width ?? FALLBACK_NODE_WIDTH)
-    )
-  );
+  const maxX = Math.max(...nodes.map((node) => node.position.x + canvasNodeLayoutSize(node).width));
   const minY = Math.min(...nodes.map((node) => node.position.y));
   return { x: maxX + 360, y: minY + 180 };
 }

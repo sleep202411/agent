@@ -5,14 +5,14 @@
  */
 
 import type {
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryCostEstimate,
-  FoundryDocumentationLink,
-  FoundryObjectSchema,
-  FoundryObservabilityContract,
-  FoundryPreflightEstimator,
-  FoundryProviderBinding,
+  AiAvailability,
+  AiCapabilityMatrix,
+  AiCostEstimate,
+  AiDocumentationLink,
+  AiObjectSchema,
+  AiObservabilityContract,
+  AiPreflightEstimator,
+  AiProviderBinding,
 } from "@repo/shared";
 
 /** Mirror of AiAccessDecision from the server. */
@@ -31,15 +31,15 @@ export interface AiModel {
   disabledReason?: string;
   schemaDialect: string;
   schemaVersion: string;
-  documentation: FoundryDocumentationLink[];
-  capability_matrix: FoundryCapabilityMatrix;
-  availability: FoundryAvailability;
-  cost_estimate: FoundryCostEstimate;
-  preflight_estimator?: FoundryPreflightEstimator;
-  observability: FoundryObservabilityContract;
-  input_schema: FoundryObjectSchema;
-  output_schema: FoundryObjectSchema;
-  provider_binding?: FoundryProviderBinding;
+  documentation: AiDocumentationLink[];
+  capability_matrix: AiCapabilityMatrix;
+  availability: AiAvailability;
+  cost_estimate: AiCostEstimate;
+  preflight_estimator?: AiPreflightEstimator;
+  observability: AiObservabilityContract;
+  input_schema: AiObjectSchema;
+  output_schema: AiObjectSchema;
+  provider_binding?: AiProviderBinding;
   /**
    * Server-resolved entitlement gating decision for the current user. Server
    * is the source of truth; UI only mirrors it for lock badges and to
@@ -49,7 +49,7 @@ export interface AiModel {
   access?: AiAccess;
 }
 
-function mediaReferenceSchema(title: string): FoundryObjectSchema {
+function mediaReferenceSchema(title: string): AiObjectSchema {
   return {
     type: "object",
     title,
@@ -82,7 +82,7 @@ function mediaReferenceSchema(title: string): FoundryObjectSchema {
   };
 }
 
-const GPT_IMAGE_2_DOCS: FoundryDocumentationLink[] = [
+const GPT_IMAGE_2_DOCS: AiDocumentationLink[] = [
   {
     title: "GPT Image 2 model",
     url: "https://developers.openai.com/api/docs/models/gpt-image-2",
@@ -106,7 +106,7 @@ const GPT_IMAGE_2_DOCS: FoundryDocumentationLink[] = [
   },
 ];
 
-const GPT_IMAGE_2_MATRIX: FoundryCapabilityMatrix = {
+const GPT_IMAGE_2_MATRIX: AiCapabilityMatrix = {
   source: "official",
   inputModalities: ["text", "image"],
   outputModalities: ["image"],
@@ -148,7 +148,7 @@ const GPT_IMAGE_2_MATRIX: FoundryCapabilityMatrix = {
   },
 };
 
-const GPT_IMAGE_2_INPUT: FoundryObjectSchema = {
+const GPT_IMAGE_2_INPUT: AiObjectSchema = {
   type: "object",
   required: ["prompt"],
   additionalProperties: false,
@@ -423,7 +423,7 @@ const GPT_IMAGE_2_INPUT: FoundryObjectSchema = {
   },
 };
 
-const GPT_IMAGE_2_ESTIMATOR: FoundryPreflightEstimator = {
+const GPT_IMAGE_2_ESTIMATOR: AiPreflightEstimator = {
   kind: "token_heuristic",
   label: "Estimated credits",
   labelKey: "foundry.schema.preflight.estimatedCredits",
@@ -453,14 +453,15 @@ const GPT_IMAGE_2_ESTIMATOR: FoundryPreflightEstimator = {
   ],
 };
 
+/** Local UI fixture only — not an active catalog / provider model id. */
 export const MOCK_AI_MODEL: AiModel = {
-  id: "foundry/gpt-image-2",
+  id: "preview/image-compose",
   type: "image",
   name: "GPT Image 2",
   description: "High-fidelity image generation and reference-guided editing.",
   enabled: true,
-  schemaDialect: "https://fizzdragon.com/schemas/foundry/model/v1",
-  schemaVersion: "2026-05-16",
+  schemaDialect: "https://fizzdragon.com/schemas/ai/model/v1",
+  schemaVersion: "preview-2026-05-16",
   documentation: GPT_IMAGE_2_DOCS,
   capability_matrix: GPT_IMAGE_2_MATRIX,
   availability: {

@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
  * Server-backed project + collaborative-document resolution.
  *
  * A studio "project" is a server PlatformProject (under the user's personal
- * workspace); its canvas is the project's primary `canvas` PlatformDocument.
+ * workspace); each project section owns one `canvas` StudioDocument.
  * These wrap the NestJS `/aurora/*` routes (satoken cookie auth, `{code,data}`
  * envelope unwrapped by `api`).
  */
@@ -45,8 +45,13 @@ export interface ProjectRef {
 
 export interface ModeDocumentRef {
   id: string;
-  projectId: string;
+  owner:
+    | { kind: "platform_project"; projectId: string }
+    | { kind: "story_project"; projectId: string };
+  platformProjectId: string | null;
+  storyProjectId: string | null;
   workspaceId: string;
+  sectionId: string | null;
   type: string;
   title: string;
   collaborationRoomId: string | null;
@@ -63,9 +68,26 @@ export interface ModeDocumentRef {
 
 export interface CreateProjectInput {
   name: string;
+  initialSectionTitle: string;
   projectType?: string;
   visibility?: "private" | "workspace" | "public";
   description?: string;
+}
+
+export interface ProjectSectionRef {
+  id: string;
+  projectId: string;
+  title: string;
+  rank: number;
+  version: number;
+  canvasDocumentId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectSectionsCollection {
+  projectVersion: number;
+  sections: ProjectSectionRef[];
 }
 
 /** Idempotent — the user's personal workspace, created on first call. */
@@ -127,6 +149,50 @@ export async function getProject(projectId: string): Promise<ProjectRef> {
   return data.project;
 }
 
+export async function listProjectSections(projectId: string): Promise<ProjectSectionsCollection> {
+  return api.get<ProjectSectionsCollection>(`/aurora/projects/${projectId}/sections`);
+}
+
+export async function createProjectSection(
+  projectId: string,
+  input: { title: string; expectedProjectVersion: number }
+): Promise<ProjectSectionsCollection> {
+  return api.post<ProjectSectionsCollection>(`/aurora/projects/${projectId}/sections`, {
+    data: input,
+  });
+}
+
+export async function updateProjectSection(
+  projectId: string,
+  sectionId: string,
+  input: { title: string; expectedVersion: number }
+): Promise<ProjectSectionsCollection> {
+  return api.patch<ProjectSectionsCollection>(
+    `/aurora/projects/${projectId}/sections/${sectionId}`,
+    { data: input }
+  );
+}
+
+export async function reorderProjectSections(
+  projectId: string,
+  input: { sectionIds: string[]; expectedProjectVersion: number }
+): Promise<ProjectSectionsCollection> {
+  return api.put<ProjectSectionsCollection>(`/aurora/projects/${projectId}/sections/order`, {
+    data: input,
+  });
+}
+
+export async function archiveProjectSection(
+  projectId: string,
+  sectionId: string,
+  input: { expectedProjectVersion: number; expectedSectionVersion: number }
+): Promise<ProjectSectionsCollection> {
+  return api.post<ProjectSectionsCollection>(
+    `/aurora/projects/${projectId}/sections/${sectionId}/archive`,
+    { data: input }
+  );
+}
+
 export async function renameProject(projectId: string, name: string): Promise<ProjectRef> {
   const data = await api.patch<{ project: ProjectRef }>(`/aurora/projects/${projectId}`, {
     data: { name },
@@ -139,11 +205,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   await api.delete(`/aurora/projects/${projectId}`, { data: {} });
 }
 
-/**
- * Idempotent — the project's primary document of a given mode (`type`), created
- * on first open. This is the multi-mode resolution primitive; each mode resolves
- * its own document this way.
- */
+/** Resolves a project-wide document for non-section-managed modes. */
 export async function ensureModeDocument(
   projectId: string,
   type: string
@@ -154,9 +216,12 @@ export async function ensureModeDocument(
   return data.document;
 }
 
-/** Idempotent — the project's primary `canvas` document. */
-export function ensureCanvasDocument(projectId: string): Promise<ModeDocumentRef> {
-  return ensureModeDocument(projectId, "canvas");
+/** Story's canvas and storyboard are two projections of this same document. */
+export async function ensureStoryCanvasDocument(storyProjectId: string): Promise<ModeDocumentRef> {
+  const data = await api.post<{ document: ModeDocumentRef }>(
+    `/aurora/story-projects/${storyProjectId}/documents/canvas/ensure`
+  );
+  return data.document;
 }
 
 export async function getDocument(documentId: string): Promise<ModeDocumentRef> {

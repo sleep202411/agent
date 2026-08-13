@@ -2,7 +2,7 @@ import { api } from "@/lib/api";
 
 /**
  * Document version checkpoints. Backed by the documents platform's version
- * routes (PlatformDocumentVersion) under `/aurora/documents/:id/versions`.
+ * routes (StudioDocumentVersion) under `/aurora/documents/:id/versions`.
  * Versions are still written (autosave + manual checkpoints) and are the
  * source for the read-only canvas activity log.
  */

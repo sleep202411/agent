@@ -19,6 +19,7 @@ import {
   ProjectMemberStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
 import {
   PlatformAuditLogService,
@@ -26,6 +27,12 @@ import {
 } from '../workspaces';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
+import { ensureProjectOnlyWorkspaceMembership } from './project-workspace-membership';
+import {
+  acquireSeatLock,
+  assertCreatorSeatAvailable,
+  projectRoleConsumesCreatorSeat,
+} from './seat-guard';
 import {
   toProjectInviteDTO,
   type InvitePreviewDTO,
@@ -47,6 +54,7 @@ export class ProjectInvitesService {
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
     private readonly audit: PlatformAuditLogService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async create(projectId: string, actor: AuthUser, input: CreateInviteInput) {
@@ -174,6 +182,9 @@ export class ProjectInvitesService {
     let created = false;
     try {
       await this.prisma.$transaction(async (tx) => {
+        if (projectRoleConsumesCreatorSeat(current.role)) {
+          await acquireSeatLock(tx, project.workspaceId);
+        }
         const locked = await tx.$queryRaw<
           { status: ProjectInviteStatus; expires_at: Date }[]
         >`SELECT status, expires_at FROM project_invites WHERE id = ${invite.id}::uuid FOR UPDATE`;
@@ -213,6 +224,21 @@ export class ProjectInvitesService {
             msg: 'You were removed from this project. Ask an admin to re-invite you.',
           });
         }
+
+        if (projectRoleConsumesCreatorSeat(current.role)) {
+          await assertCreatorSeatAvailable(
+            tx,
+            project.workspaceId,
+            user.userId,
+            this.entitlements,
+          );
+        }
+        await ensureProjectOnlyWorkspaceMembership(tx, {
+          workspaceId: project.workspaceId,
+          userId: user.userId,
+          actorUserId: current.invitedById,
+          allowReactivatingRemoved: false,
+        });
 
         await tx.projectMember.create({
           data: {

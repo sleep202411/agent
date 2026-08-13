@@ -1,7 +1,20 @@
 "use client";
 
-import { estimateProductModelPoints, type AiProductPricingPolicy } from "@repo/shared";
+import {
+  estimateProductModelPoints,
+  firstBlockingValidationMessage,
+  hasBlockingValidationIssues,
+  validateGenerationInput,
+  withAttachedUiOptions,
+  type AiObjectSchema,
+  type AiProductPricingPolicy,
+  type MediaRefSnapshot,
+  type ValidationIssue,
+} from "@repo/shared";
 import { api } from "@/lib/api";
+import type { ProjectSkillSelection } from "@/lib/project-skills-api";
+
+export type { MediaRefSnapshot, ValidationIssue };
 
 export type FizzAiJobType = "image" | "video";
 export type FizzAiGenerationMode =
@@ -44,6 +57,15 @@ type FizzAiSchemaProperty = {
     order?: number;
     unit?: string;
     importance?: string;
+    /**
+     * Explicit option list (preferred). `value` is stored/submitted; `label` /
+     * `labelKey` is display-only. When absent, UI falls back to bare `enum`.
+     */
+    options?: Array<{
+      value: string | number | boolean;
+      label?: string;
+      labelKey?: string;
+    }>;
     /** Upload constraint metadata (reference upload fields). */
     accept?: string;
     mediaKind?: FizzAiReferenceKind;
@@ -52,6 +74,8 @@ type FizzAiSchemaProperty = {
     maxCombinedFileSizeMb?: number;
     minCombinedDurationSeconds?: number;
     maxCombinedDurationSeconds?: number;
+    minItemDurationSeconds?: number;
+    maxItemDurationSeconds?: number;
     resolutionBand?: string;
     audioRequiresVisual?: boolean;
     promptRefPrefix?: string;
@@ -73,6 +97,8 @@ export interface FizzAiModel {
   description?: string;
   provider?: string;
   family?: string;
+  /** The company that makes the model (ByteDance / Google / …). "Providers" filter axis. */
+  vendor?: string;
   enabled: boolean;
   disabledReason?: string;
   schemaVersion: string;
@@ -87,6 +113,12 @@ export interface FizzAiModel {
   access?: {
     allowed?: boolean;
     reason?: string;
+    /**
+     * Minimum plan this model needs, stamped per-user by the server
+     * (`authz.service.ts#decideModelAccess`). `null`/absent = open to everyone.
+     * Present on both verdicts, so it labels a lock without a second lookup.
+     */
+    requiredPlan?: string | null;
   };
   input_schema: FizzAiInputSchema;
   parameter_policy?: Record<string, unknown>;
@@ -141,6 +173,11 @@ export type FizzAiPromptDocumentNode =
       type: "style_ref";
       refId: string;
       label?: string;
+    }
+  | {
+      type: "skill_ref";
+      refId: string;
+      label?: string;
     };
 
 export interface FizzAiPromptDocument {
@@ -173,6 +210,7 @@ export interface FizzAiJobView {
   type: FizzAiJobType;
   workspaceId?: string | null;
   projectId?: string | null;
+  storyProjectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;
@@ -235,6 +273,7 @@ export interface FizzAiSubmitJobInput {
     // projectId/documentId are validated for access on submit — only send them
     // once projects are server-backed entities. A local canvas id 404s.
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     documentBlockId: string;
     sourceSurface: FizzAiSourceSurface;
@@ -244,6 +283,7 @@ export interface FizzAiSubmitJobInput {
   promptDocument?: FizzAiPromptDocument;
   referenceBindings?: FizzAiReferenceBinding[];
   styleBindings?: FizzAiStyleBinding[];
+  skillSelection?: ProjectSkillSelection;
   modelId: string;
   schemaVersion: string;
 }
@@ -287,6 +327,8 @@ export interface GenerationState {
     accessUrl?: string;
     width?: number;
     height?: number;
+    durationSeconds?: number;
+    bytes?: number;
   }[];
   errorCode?: string;
   error?: string;
@@ -325,6 +367,8 @@ export function generationStateFromJob(job: {
     accessUrl?: string;
     width?: number;
     height?: number;
+    durationSeconds?: number;
+    bytes?: number;
   }>;
   error?: { code?: string; userMessage?: string; message?: string };
 }): GenerationState {
@@ -342,6 +386,8 @@ export function generationStateFromJob(job: {
       accessUrl: output.accessUrl,
       width: output.width,
       height: output.height,
+      durationSeconds: output.durationSeconds,
+      bytes: output.bytes,
     })),
     errorCode: job.error?.code,
     error: safeGenerationErrorMessage(rawError),
@@ -499,6 +545,8 @@ export interface FizzAiReferenceFieldConstraints {
   maxCombinedFileSizeMb?: number;
   minCombinedDurationSeconds?: number;
   maxCombinedDurationSeconds?: number;
+  minItemDurationSeconds?: number;
+  maxItemDurationSeconds?: number;
   resolutionBand?: string;
   audioRequiresVisual: boolean;
   /** e.g. "@Image" — uploads are cited in the prompt as `@Image1`, `@Image2`… */
@@ -558,6 +606,10 @@ export function referenceFieldConstraints(
       typeof ui?.maxCombinedDurationSeconds === "number"
         ? ui.maxCombinedDurationSeconds
         : undefined,
+    minItemDurationSeconds:
+      typeof ui?.minItemDurationSeconds === "number" ? ui.minItemDurationSeconds : undefined,
+    maxItemDurationSeconds:
+      typeof ui?.maxItemDurationSeconds === "number" ? ui.maxItemDurationSeconds : undefined,
     resolutionBand: typeof ui?.resolutionBand === "string" ? ui.resolutionBand : undefined,
     audioRequiresVisual: ui?.audioRequiresVisual === true,
     promptRefPrefix: typeof ui?.promptRefPrefix === "string" ? ui.promptRefPrefix : undefined,
@@ -644,7 +696,7 @@ const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerat
  * falls through to the capability-based policy below.
  */
 const CANVAS_PREFERRED_MODEL_ID: Partial<Record<FizzAiJobType, string>> = {
-  video: "seedance-2-0",
+  video: "seedance-2-5",
 };
 
 /** New blank canvas cards should start in reference-friendly modes. */
@@ -744,10 +796,82 @@ export type ReferenceRowLike = {
   id: string;
   url: string;
   assetId?: string;
+  /** Exact media duration when known (video/audio). Required by catalog duration rules. */
+  durationSeconds?: number | null;
+  bytes?: number | null;
+  kind?: FizzAiReferenceKind;
+  uploading?: boolean;
 };
 
-function referenceEntry(row: ReferenceRowLike): string | Record<string, string> {
-  return row.assetId ? { url: row.url, assetId: row.assetId, refId: row.id } : row.url;
+function referenceEntry(row: ReferenceRowLike): string | Record<string, string | number> {
+  const duration =
+    typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)
+      ? row.durationSeconds
+      : undefined;
+  const bytes = typeof row.bytes === "number" && Number.isFinite(row.bytes) ? row.bytes : undefined;
+  // Prefer object form whenever we have metadata the server kernel needs.
+  if (row.assetId || duration != null || bytes != null) {
+    return {
+      url: row.url,
+      ...(row.assetId ? { assetId: row.assetId, refId: row.id } : {}),
+      ...(duration != null ? { durationSeconds: duration } : {}),
+      ...(bytes != null ? { bytes } : {}),
+    };
+  }
+  return row.url;
+}
+
+/**
+ * Catalog-driven preflight (same pure kernel as the server). Call before submit;
+ * surface blocking issues with Alert — never add model-specific ifs here.
+ */
+export function validateModelGenerationInput(
+  model: FizzAiModel,
+  input: Record<string, unknown>,
+  media?: readonly MediaRefSnapshot[]
+): ValidationIssue[] {
+  return validateGenerationInput({
+    inputSchema: model.input_schema ?? {},
+    input,
+    media,
+  });
+}
+
+export function generationInputHasBlockingIssues(issues: readonly ValidationIssue[]): boolean {
+  return hasBlockingValidationIssues(issues);
+}
+
+export function firstGenerationValidationMessage(
+  issues: readonly ValidationIssue[]
+): string | undefined {
+  return firstBlockingValidationMessage(issues);
+}
+
+/** Build MediaRefSnapshot[] from canvas reference rows for the active mode. */
+export function mediaSnapshotsForMode(
+  model: FizzAiModel,
+  mode: string | undefined,
+  references: Record<string, ReferenceRowLike[] | undefined> | undefined
+): MediaRefSnapshot[] {
+  const snapshots: MediaRefSnapshot[] = [];
+  for (const field of referenceFieldsForMode(model, mode)) {
+    for (const row of references?.[field.field] ?? []) {
+      if (!/^https?:/i.test(row.url) && !row.url.startsWith("blob:")) continue;
+      if (row.uploading) continue;
+      snapshots.push({
+        field: field.field,
+        kind: row.kind ?? field.kind,
+        url: row.url,
+        assetId: row.assetId,
+        durationSeconds:
+          typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)
+            ? row.durationSeconds
+            : null,
+        bytes: typeof row.bytes === "number" && Number.isFinite(row.bytes) ? row.bytes : null,
+      });
+    }
+  }
+  return snapshots;
 }
 
 export type PromptReferenceRowLike = ReferenceRowLike & {
@@ -853,6 +977,15 @@ export type SchemaControl =
   | "image_upload"
   | (string & {});
 
+/** One selectable option: value is settings/wire; label is UI-only. */
+export interface SchemaFieldOption {
+  value: string | number | boolean;
+  /** Plain display string when no i18n key. */
+  label?: string;
+  /** i18n key under canvasControls (e.g. sizePresets.auto). */
+  labelKey?: string;
+}
+
 export interface SchemaFieldDescriptor {
   name: string;
   control: SchemaControl;
@@ -860,6 +993,8 @@ export interface SchemaFieldDescriptor {
   order: number;
   type: string;
   enum: (string | number)[] | null;
+  /** Prefer over bare enum for labels (protocol x-ui.options). */
+  options: SchemaFieldOption[] | null;
   default: string | number | boolean | undefined;
   min?: number;
   max?: number;
@@ -896,18 +1031,46 @@ export function schemaFields(model: FizzAiModel | undefined): SchemaFieldDescrip
     // The main prompt (composer-owned) + reference/upload fields are NOT panel
     // settings. Other text fields (e.g. negativePrompt) ARE rendered here.
     if (name === "prompt" || control === "image_upload" || group === "references") continue;
+    const enumValues = Array.isArray(prop.enum)
+      ? prop.enum.filter(
+          (value): value is string | number =>
+            typeof value === "string" || typeof value === "number"
+        )
+      : null;
+    const rawOptions = Array.isArray(ui.options) ? ui.options : null;
+    const options: SchemaFieldOption[] | null = rawOptions
+      ? rawOptions
+          .filter(
+            (opt) =>
+              opt &&
+              (typeof opt.value === "string" ||
+                typeof opt.value === "number" ||
+                typeof opt.value === "boolean")
+          )
+          .map((opt) => ({
+            value: opt.value,
+            label: typeof opt.label === "string" ? opt.label : undefined,
+            labelKey: typeof opt.labelKey === "string" ? opt.labelKey : undefined,
+          }))
+      : null;
+
     fields.push({
       name,
       control,
       group,
       order: typeof ui.order === "number" ? ui.order : 999,
       type: prop.type ?? "string",
-      enum: Array.isArray(prop.enum)
-        ? prop.enum.filter(
-            (value): value is string | number =>
-              typeof value === "string" || typeof value === "number"
-          )
-        : null,
+      // Prefer option values as the enum source when catalog shipped options.
+      enum:
+        options && options.length > 0
+          ? options
+              .map((opt) => opt.value)
+              .filter(
+                (value): value is string | number =>
+                  typeof value === "string" || typeof value === "number"
+              )
+          : enumValues,
+      options,
       default: prop.default as string | number | boolean | undefined,
       min: typeof prop.minimum === "number" ? prop.minimum : undefined,
       max: typeof prop.maximum === "number" ? prop.maximum : undefined,
@@ -942,6 +1105,18 @@ export function defaultSettingsForModel(model: FizzAiModel | undefined): ModelSe
  * Wan's `"720P"`, or `aspect: "auto"`) from carrying over and making the request
  * unroutable for the new model.
  */
+/**
+ * Map Seedance-style `auto` ↔ MiniMax-style `adaptive` when the new model only
+ * accepts the other token. Wire values stay provider-native; UI labels both as Auto.
+ */
+function coerceAspectRatioEnumValue(value: string, enumValues: string[]): string | undefined {
+  if (enumValues.includes(value)) return value;
+  const lower = value.toLowerCase();
+  if (lower === "auto" && enumValues.includes("adaptive")) return "adaptive";
+  if (lower === "adaptive" && enumValues.includes("auto")) return "auto";
+  return undefined;
+}
+
 export function mergeCompatibleSettings(
   model: FizzAiModel | undefined,
   prev: ModelSettings
@@ -951,7 +1126,22 @@ export function mergeCompatibleSettings(
     const value = prev[field.name];
     if (value === undefined || Array.isArray(value)) continue;
     if (field.enum && field.enum.length > 0) {
-      if (field.enum.map(String).includes(String(value))) next[field.name] = value;
+      const enumStrings = field.enum.map(String);
+      const raw = String(value);
+      if (enumStrings.includes(raw)) {
+        next[field.name] = value;
+        continue;
+      }
+      // Aspect-ratio fields: auto ↔ adaptive across providers.
+      if (
+        field.name === "aspectRatio" ||
+        field.name === "aspect_ratio" ||
+        field.name === "imageSize" ||
+        field.name === "size"
+      ) {
+        const coerced = coerceAspectRatioEnumValue(raw, enumStrings);
+        if (coerced !== undefined) next[field.name] = coerced;
+      }
     } else {
       next[field.name] = value;
     }
@@ -959,8 +1149,49 @@ export function mergeCompatibleSettings(
   return next;
 }
 
+/**
+ * Can this user actually submit to the model? Use for anything that picks a
+ * model *on the user's behalf* — defaults, auto-select, presets, copilot.
+ */
 export function isFizzAiModelUsable(model: FizzAiModel): boolean {
   return model.enabled && model.access?.allowed !== false;
+}
+
+/**
+ * Does the model belong in a picker at all? Operator kill-switch only.
+ *
+ * These two used to be one function, so a plan gate didn't lock a model — it
+ * DELETED it from every list. That is how the catalogue vanished when a
+ * migration moved all 32 models to a paid plan: nothing errored, the models
+ * were simply gone. A gate now shows the model and disables the row, which is
+ * also the only honest way to advertise what an upgrade buys.
+ */
+export function isFizzAiModelVisible(model: FizzAiModel): boolean {
+  return model.enabled;
+}
+
+/**
+ * Why a visible model can't be run, or `null` when it can.
+ *
+ * `expired` is its own case on purpose: the server denies EVERY model to a
+ * lapsed member, so telling them to upgrade would be wrong — they already
+ * bought the tier, they need to renew it. A `null` requiredPlan on a denial
+ * that isn't expiry (the emergency denylist) still shows a lock, just without
+ * naming a tier to buy.
+ */
+export function fizzAiModelLock(
+  model: FizzAiModel
+): { requiredPlan: string | null; expired: boolean } | null {
+  if (!isFizzAiModelVisible(model) || isFizzAiModelUsable(model)) return null;
+  return {
+    requiredPlan: model.access?.requiredPlan ?? null,
+    expired: model.access?.reason === "membership_expired",
+  };
+}
+
+/** "pro" → "Pro". Plan keys are `free | basic | standard | pro | team`. */
+export function fizzAiPlanLabel(planKey: string): string {
+  return planKey.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function canvasDefaultModel(
@@ -1033,9 +1264,18 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
   const response = await api.get<FizzAiCatalog>("/aurora/ai/models", {
     timeout: 15_000,
   });
+  const models = Array.isArray(response.models) ? response.models : [];
+  // Catalog boundary should already attach options; client re-applies so older
+  // caches / non-canonical catalog paths still get label/value-first enums.
   return {
     ...response,
-    models: Array.isArray(response.models) ? response.models : [],
+    models: models.map((model) => {
+      if (!model.input_schema) return model;
+      return withAttachedUiOptions({
+        ...model,
+        input_schema: model.input_schema as AiObjectSchema,
+      }) as FizzAiModel;
+    }),
   };
 }
 
@@ -1048,6 +1288,8 @@ export interface FizzAiPointEstimateInput {
   numOutputs?: number;
   quality?: string;
   referenceImageCount?: number;
+  /** Combined duration of all attached reference videos. */
+  referenceVideoSeconds?: number;
   resolution?: string;
 }
 
@@ -1066,6 +1308,7 @@ export function estimateModelSellPoints(
       duration: input.duration,
       durationSeconds: input.durationSeconds,
       referenceImageCount: input.referenceImageCount,
+      referenceVideoSeconds: input.referenceVideoSeconds,
       resolution: input.resolution,
       hasMask: input.hasMask,
     });
@@ -1132,6 +1375,7 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
         promptDocument: input.promptDocument,
         referenceBindings: input.referenceBindings,
         styleBindings: input.styleBindings,
+        skillSelection: input.skillSelection,
         modelId: input.modelId,
         schemaVersion: input.schemaVersion,
       },
@@ -1160,15 +1404,16 @@ export async function retryFizzAiJob(id: string): Promise<FizzAiSubmitResponse> 
 
 /* ── prompt document builders (shared by the image + video studios) ───────── */
 
-/** Minimal mention source `buildPromptDocument` needs to bind `@Label` tokens. */
+/** Minimal mention source `buildPromptDocument` needs to bind inline entity tokens. */
 export interface FizzAiPromptMentionSource {
   refId: string;
   label: string;
+  nodeType?: "asset_ref" | "skill_ref";
 }
 
 /**
  * Build the structured prompt document from the raw prompt text plus the
- * reference bindings whose `@Label` tokens appear in it. Falls back to a
+ * reference bindings whose `@Label` or `/Skill` tokens appear in it. Falls back to a
  * single text node when nothing is mentioned.
  */
 export function buildPromptDocument(
@@ -1190,7 +1435,7 @@ function promptDocumentNodesFromMentions(
 
   const matches: Array<{ binding: FizzAiPromptMentionSource; end: number; start: number }> = [];
   for (const binding of references) {
-    const token = `@${binding.label}`;
+    const token = `${binding.nodeType === "skill_ref" ? "/" : "@"}${binding.label}`;
     let cursor = 0;
     while (cursor < prompt.length) {
       const start = prompt.indexOf(token, cursor);
@@ -1216,7 +1461,7 @@ function promptDocumentNodesFromMentions(
       nodes.push({ type: "text", text: prompt.slice(cursor, match.start) });
     }
     nodes.push({
-      type: "asset_ref",
+      type: match.binding.nodeType ?? "asset_ref",
       refId: match.binding.refId,
       label: match.binding.label,
     });

@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useProject } from "../../../_hooks/use-project";
-import { usePrimaryStoryboard } from "../../../_hooks/use-document";
+import { useFirstSectionCanvas } from "../../../_hooks/use-document";
 import { type ViewMode } from "../_data/view-modes";
 import { StoryboardCanvas } from "./canvas/storyboard-canvas";
 
@@ -23,7 +23,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     data: storyboard,
     isLoading: loadingDoc,
     isError: docError,
-  } = usePrimaryStoryboard(projectId);
+  } = useFirstSectionCanvas(projectId);
 
   if (projectError || docError) {
     return (

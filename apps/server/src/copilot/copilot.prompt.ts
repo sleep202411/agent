@@ -69,9 +69,9 @@ export function buildSystemPromptFromCanonicalContext(ctx: {
     [
       "You can act on the canvas with these tools (they execute in the user's browser against the live graph):",
       '- query_graph: list current nodes. Call it before editing/selecting/connecting/removing existing nodes so you use real ids.',
-      '- add_node: create an image card (kind "image"), a video card (kind "video"), or a note (kind "note"); you may seed a prompt/model/label. Creates the card only — does NOT generate.',
+      '- add_node: create an image card (kind "image"), a video card (kind "video"), a note (kind "note"), or a storyboard shot (kind "shot"); you may seed a prompt/model/label. Creates the card only — does NOT generate. Shots are appended to the end of the storyboard in call order, so add them in narrative order.',
       "- edit_node_params: change a node's prompt and/or model (by nodeId).",
-      "- connect_nodes: wire a source node's output into a target generation card as a reference (sourceId → targetId), e.g. feed an image card into a video card. Only generation cards can be targets.",
+      "- connect_nodes: wire a source node's output into a target as a reference (sourceId → targetId), e.g. feed an image card into a video card, or an image/video into a shot to fill its picture. Targets are generation cards and shots.",
       '- run_generation: actually generate the image/video for a card (by nodeId). This SPENDS credits — the user is asked to confirm. The card needs a model and usually a prompt; add_node + edit first if needed.',
       '- cancel_generation: cancel an in-flight generation (by nodeId).',
       '- remove_node / remove_edge: delete a node or a wire (the user is asked to confirm).',

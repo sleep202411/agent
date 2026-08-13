@@ -4,6 +4,7 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/app/_components/auth-provider";
 import { WorkspaceProvider } from "@/app/_components/workspace-context";
+import { StudioSidebarProvider } from "@/app/_components/studio-sidebar-context";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -16,7 +17,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {/* App-wide so the active workspace (and its compute pot) is known on
             every surface — including the canvas chrome, which lives outside the
             studio/settings layouts. */}
-        <WorkspaceProvider>{children}</WorkspaceProvider>
+        <WorkspaceProvider>
+          <StudioSidebarProvider>{children}</StudioSidebarProvider>
+        </WorkspaceProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -16,9 +16,18 @@ npm run dev -w admin-ui
 ```bash
 ADMIN_GLOBAL_API_BASE_URL=https://api.fizzdragon.com/admin
 ADMIN_CN_API_BASE_URL=https://fizzdragon.fizzspace.cn/admin
+TEXT_GAME_API_BASE_URL=https://java.fizzdragon.com/studio
+JAVA_ADMIN_API_TOKEN=<Java api.admin.api-token>
 ```
 
 兼容单站本地开发时也可以只设置 `ADMIN_API_BASE_URL=http://localhost:4399/admin`。
+
+`TEXT_GAME_API_BASE_URL` 指向当前站点的 Java Studio 服务；新闻和文游共用的
+`JAVA_ADMIN_API_TOKEN` 必须与 Java 的 `api.admin.api-token` 一致。文游读取只在
+Admin UI 服务端发起；审核动作先经过同源 `/api/admin/text-games/{gameId}` 的
+后台会话和 `ip.moderate` 权限校验，再携带 `X-Admin-Api-Token` 访问 Java
+`/api/admin/text-game/**`。如果 Java 修改了 token header 名，可额外设置
+`JAVA_ADMIN_API_TOKEN_HEADER`。
 
 ## 登录
 

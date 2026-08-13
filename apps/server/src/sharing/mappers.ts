@@ -19,6 +19,7 @@ export interface SharingMemberDTO {
   avatar: string | null;
   role: string;
   status: string;
+  accessScope?: 'workspace' | 'project_only';
   joinedAt: string | null;
   /** The immutable owner (creator) — cannot be removed or re-roled. */
   isOwner: boolean;
@@ -38,6 +39,7 @@ export function toWorkspaceMemberDTO(
     avatar: identity?.avatar ?? null,
     role: member.role,
     status: member.status,
+    accessScope: member.accessScope,
     joinedAt: member.joinedAt ? member.joinedAt.toISOString() : null,
     isOwner: member.role === 'owner',
     isSelf: member.userId === viewerId,

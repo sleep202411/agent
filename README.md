@@ -139,12 +139,26 @@ Java 仅作外部 HTTPS API 调用。无托管构建、无 GitOps：在**境内 
 → push CN ACR → 直接 `helm upgrade`。
 
 ```bash
-deploy/deploy-cn.sh            # 增量（默认，日常小改）：只补丁 git diff 到 ECS 已有 tarball → build → helm
-deploy/deploy-cn.sh --full     # 全量冷启动：源码 tarball → 分块跨境同步 → build → helm → StopInstance（首次/ECS 停机久/大 diff）
+# 1. main + clean worktree；只读检查构建链路
+deploy/cn-preflight.sh --phase build server studio web admin-ui
+
+# 2. 全量跨境同步，在杭州 ECS build，并 push CN ACR；不改 ACK
+deploy/deploy-cn.sh --full --build-only
+
+# 3. 手工确认 RDS 临时恢复演练 + 即时备份后，显式运行 migration Job
+CN_RDS_BACKUP_ID=<backup-id> CONFIRM_CN_PROD_MIGRATION=YES \
+  deploy/run-cn-migrations.sh
+
+# 4. 原子 Helm upgrade；chart/config 变化必须显式确认
+deploy/deploy-cn.sh --deploy-only --allow-chart-update
 ```
 
-- 全量的跨境源码同步是瓶颈（~72MB 分块 scp，~30-40 分钟）；日常小改用增量脚本，只传改动文件、秒级。
-  增量补丁 tarball 本身而非 `/root/src`——`cn-remote-build.sh` 每次构建会 `rm -rf /root/src` 重解压 tarball。
+- **CN 只允许全量源码同步**。旧增量 SCP 在 OpenSSH/SFTP 下会把远端引号当成文件名，可能返回成功却构建旧代码，已从入口移除。
+- `--build-only` 与 `--deploy-only` 刻意分离：镜像必须先在境内构建、推送并验证，数据库迁移完成后才允许滚动 ACK。
+- Helm 管理的是整套 release，不是真正的单服务资源。当前 chart/config 指纹与线上不一致时，即使只改一个镜像也必须审阅并传 `--allow-chart-update`。
+- CN 普通 Server rollout 不再自动执行 Prisma migration；迁移只走带即时备份编号和显式确认的 `run-cn-migrations.sh` Job。
+- Legacy StoryOS 已冻结：CN API 固定最后可用镜像，worker 独立固定当前健康镜像；普通 platform release 不构建或推进 legacy agent。
+- Agent OS、MiniMax 在 CN 尚未完成区域基础设施/密钥前显式关闭；已经从生产 chart 退休的 Temporal 不会被旧 develop 配置重新带回。
 - `cn-remote-build.sh` 构建前 `docker image prune -f` 清 dangling 层（防磁盘满）；不用 `-af`，会删被墙的 base 镜像。
 - 密钥（WeChat Pay 等）改 live secret `fizzdragon-server-secrets` 后必须 `kubectl rollout restart deploy/fizzdragon-server`
   （envFrom 只在 pod 启动时读）。配置一律落声明式源头（values / 代码 / secret），别用运行时 `kubectl set env`——helm 升级会冲掉。

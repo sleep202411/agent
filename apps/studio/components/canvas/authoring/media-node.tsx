@@ -15,7 +15,7 @@ import {
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
@@ -59,6 +59,8 @@ function MediaAssetNodeComponent({
   const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(src);
   const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
   const title = data.label ?? t(`media.${kind}.title`);
+  const nodeType = kind === "video" ? "videoAsset" : "audioAsset";
+  const geometry = canvasNodeGeometry({ type: nodeType });
 
   const onDownload = useCallback(() => {
     downloadMedia(src, title);
@@ -75,13 +77,8 @@ function MediaAssetNodeComponent({
   );
 
   return (
-    <div className="relative">
-      <div
-        className={cn(
-          CANVAS_NODE_DRAG_HANDLE_CLASS,
-          "mb-1.5 flex max-w-[240px] items-center gap-1.5 rounded px-0.5 text-xs text-white/50"
-        )}
-      >
+    <div className="relative" style={{ width: geometry.width }}>
+      <div className="mb-1.5 flex max-w-full items-center gap-1.5 rounded px-0.5 text-xs text-white/50">
         <IconUpload className="size-3.5 shrink-0" stroke={1.8} />
         {renaming ? (
           <input
@@ -144,12 +141,15 @@ function MediaAssetNodeComponent({
                 event.stopPropagation();
                 setViewerOpen(true);
               }}
-              className="block h-[136px] w-[240px] rounded-xl object-cover select-none"
+              className="nodrag nowheel block aspect-video w-full rounded-xl object-cover select-none"
             />
             {videoFailed && <VideoPlaybackFallback compact className="rounded-xl" />}
           </>
         ) : (
-          <div className="flex h-[112px] w-[240px] flex-col justify-center gap-3 rounded-xl bg-card px-4">
+          <div
+            className="flex w-full flex-col justify-center gap-3 rounded-xl bg-card px-4"
+            style={{ minHeight: geometry.minHeight - 26 }}
+          >
             <div className="flex min-w-0 items-center gap-2 text-white/70">
               <IconMusic className="size-5 shrink-0" stroke={1.7} />
               <span className="truncate text-sm">{title}</span>

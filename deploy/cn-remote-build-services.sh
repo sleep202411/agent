@@ -2,10 +2,11 @@
 # ECS-side selective build — used by deploy-cn-services.sh.
 # SERVICES env: space-separated subset of: server agent admin-ui web studio
 # Does NOT replace cn-remote-build.sh (full five-service builds stay there).
-set -uo pipefail
+set -euo pipefail
 REG=fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com
 NS=fizzdragon
 TAG="${TAG:?TAG env required}"
+EXPECTED_REVISION="${EXPECTED_REVISION:?EXPECTED_REVISION env required}"
 SERVICES="${SERVICES:?SERVICES env required (e.g. 'web' or 'web studio')}"
 
 echo "=== extract source ==="
@@ -13,26 +14,40 @@ rm -rf /root/src && mkdir -p /root/src
 tar -xzf /root/src.tar.gz -C /root/src
 cd /root/src || { echo "FATAL: no source"; exit 1; }
 [ -f apps/web/.env.production.cn ] || { echo "FATAL: bad source tree"; exit 1; }
+[ "$(cat .fizzdragon-source-revision 2>/dev/null || true)" = "$EXPECTED_REVISION" ] || {
+  echo "FATAL: source revision does not match requested image tag" >&2
+  exit 1
+}
 
 echo "=== disk free before prune: $(df -h / | awk 'NR==2{print $4}') ==="
 docker image prune -f >/dev/null 2>&1 || true
 echo "=== disk free after prune:  $(df -h / | awk 'NR==2{print $4}') ==="
 
-echo "$(cat /root/.acr_token)" | docker login "$REG" -u "$(cat /root/.acr_user)" --password-stdin \
-  || { echo "FATAL: ACR login"; exit 1; }
-rm -f /root/.acr_user /root/.acr_token
+trap 'rm -f /root/.acr_user /root/.acr_token' EXIT
+docker login "$REG" -u "$(cat /root/.acr_user)" --password-stdin < /root/.acr_token
 export DOCKER_BUILDKIT=1
+
+# Hangzhou ECS cannot reliably reach registry.npmjs.org (ECONNRESET). Use the
+# npmmirror via Dockerfile NPM_REGISTRY build-arg — never a context-root .npmrc
+# (breaks turbo prune lockfile emission).
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
 
 set -a; source apps/web/.env.production.cn; set +a
 SERVER_URL=http://fizzdragon-server:3001
-RESULT=""
 build() {
   local name=$1 df=$2; shift 2
-  echo "=== [$(date +%T)] BUILD $name ==="
-  if docker build -f "$df" -t "$REG/$NS/fizzdragon-$name:$TAG" "$@" . ; then
-    echo "=== [$(date +%T)] PUSH $name ==="
-    docker push "$REG/$NS/fizzdragon-$name:$TAG" && RESULT="$RESULT $name:OK" || RESULT="$RESULT $name:PUSHFAIL"
-  else RESULT="$RESULT $name:BUILDFAIL"; fi
+  local image="$REG/$NS/fizzdragon-$name:$TAG"
+  echo "=== [$(date +%T)] BUILD $name (npm=$NPM_REGISTRY) ==="
+  docker build -f "$df" -t "$image" \
+    --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" .
+  echo "=== [$(date +%T)] PUSH $name ==="
+  docker push "$image"
+  # Podman 4.9's `docker manifest inspect` treats a single-image OCI manifest
+  # as a manifest list and exits 125 even after a successful push. A pull by
+  # tag resolves the remote manifest through ACR and supports both media types;
+  # already-present layers are reused from the local store.
+  docker pull --quiet "$image" >/dev/null
+  echo "=== [$(date +%T)] VERIFIED $image ==="
 }
 
 want() {
@@ -41,6 +56,13 @@ want() {
     *) return 1 ;;
   esac
 }
+
+for service in $SERVICES; do
+  case "$service" in
+    server|agent|admin-ui|web|studio) ;;
+    *) echo "FATAL: unsupported service $service" >&2; exit 2 ;;
+  esac
+done
 
 want server && build server apps/server/Dockerfile
 want agent && build agent apps/agent/Dockerfile
@@ -67,4 +89,4 @@ want studio && build studio apps/studio/Dockerfile \
   --build-arg JAVA_CONTENT_URL="$JAVA_CONTENT_URL" \
   --build-arg NEXT_PUBLIC_SITE_REGION="$NEXT_PUBLIC_SITE_REGION"
 
-echo "=== REMOTE BUILD DONE @ $(date +%T):${RESULT} ==="
+echo "=== REMOTE BUILD DONE @ $(date +%T): $SERVICES ==="

@@ -37,6 +37,9 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-brand-red: var(--brand-red);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-blue: var(--brand-blue);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -56,9 +59,13 @@
  * `dark:` variants from registry components still apply.
  */
 /*
- * Monochrome palette: pure-neutral near-black surfaces, white primary.
- * Brand red #E52227 is reserved for deliberate, case-by-case accents
- * (e.g. a hero CTA), never applied globally via tokens.
+ * Monochrome palette: pure-neutral near-black surfaces. Brand red is the
+ * primary action color; clean yellow and blue are supporting semantic accents.
+ *
+ * This reverses the earlier "red is never a token" rule: FizzDragon's brand
+ * colour IS the red, and the primary action is the place a brand asserts
+ * itself. Every SURFACE stays zero-chroma: support colors identify capability
+ * and interaction states, but never become decorative page backgrounds.
  */
 :root {
   color-scheme: dark;
@@ -66,13 +73,24 @@
      Was 0.178 (a lighter, out-of-spec ladder) which made studio pages read lighter
      than the home. This is the darkest tier; surfaces (card/popover/secondary) lift above it. */
   --background: oklch(0.17 0 0); /* #0F0F0F — zero-chroma page background */
+  /* Authoring canvases share one fixed, screen-space dot field. These values
+     are consumed by CanvasBackdrop; React Flow never transforms this layer. */
+  --canvas-background: oklch(0.18 0 0);
+  --canvas-dot-color: rgb(255 255 255 / 0.13);
+  --canvas-dot-spacing: 20px;
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.215 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.235 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  /* Brand red #E52227. The foreground flips to white with it — the old
+     near-black foreground was sized for a white primary and is unreadable
+     on red. */
+  --primary: oklch(0.5914 0.225 26.83); /* #E52227 */
+  --primary-foreground: oklch(1 0 0);
+  --brand-red: #e52227;
+  --brand-yellow: #ffd84d;
+  --brand-blue: #4d8dff;
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.25 0 0);
@@ -325,6 +343,22 @@ button:disabled,
   }
 }
 
+/* Primary-CTA button — flat brand red, darkens on hover/press. Applied by the
+   `primary-cta` Button variant. The 3D candy treatment (radial fill, bevel,
+   gloss, sheen) was removed 2026-08-05 — it read as a dirty black edge on the
+   brand red. */
+.cta-candy {
+  background: var(--primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: background 0.15s ease;
+}
+.cta-candy:hover {
+  background: color-mix(in oklab, var(--primary), black 10%);
+}
+.cta-candy:active {
+  background: color-mix(in oklab, var(--primary), black 16%);
+}
+
 /* Audio mention previews start with immediate visual feedback, then follow the
    hidden player's media events so the waveform stops when playback finishes. */
 @keyframes prompt-audio-wave {
@@ -351,6 +385,49 @@ button:disabled,
 @media (prefers-reduced-motion: reduce) {
   .prompt-audio-wave-bar {
     animation: none;
+  }
+}
+
+/* New-surface menu labels stay white at rest. Each surface selects one accent
+   token, shared by its focused title highlight and static NEW badge. */
+.sidebar-menu-shimmer {
+  --sidebar-shimmer-accent: #5b9dff;
+  --sidebar-shimmer-muted: #dce9ff;
+
+  display: inline-block;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    #fff 0%,
+    #fff 42%,
+    var(--sidebar-shimmer-muted) 46%,
+    var(--sidebar-shimmer-accent) 51%,
+    var(--sidebar-shimmer-muted) 56%,
+    #fff 60%,
+    #fff 100%
+  );
+  background-position: 100% 50%;
+  background-size: 280% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  will-change: background-position;
+}
+
+.sidebar-menu-shimmer[data-accent="yellow"] {
+  --sidebar-shimmer-accent: #ffd166;
+  --sidebar-shimmer-muted: #fff0c2;
+}
+
+.sidebar-menu-shimmer[data-accent="red"] {
+  --sidebar-shimmer-accent: #e52227;
+  --sidebar-shimmer-muted: #ffc3c5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-menu-shimmer {
+    color: #fff;
+    background-image: none;
+    will-change: auto;
   }
 }
 

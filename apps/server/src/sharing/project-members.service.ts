@@ -19,6 +19,7 @@ import { ProjectMemberRole, ProjectMemberStatus } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { CharacterGrantService } from '../characters/character-grant.service';
 import { DocumentsGateway } from '../documents/documents.gateway';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { UsersService } from '../users/users.service';
@@ -32,6 +33,15 @@ import type {
   UpdateMemberRoleInput,
 } from './dto';
 import { toProjectMemberDTO } from './mappers';
+import {
+  ensureProjectOnlyWorkspaceMembership,
+  removeUnusedProjectOnlyWorkspaceMembership,
+} from './project-workspace-membership';
+import {
+  acquireSeatLock,
+  assertCreatorSeatAvailable,
+  projectRoleConsumesCreatorSeat,
+} from './seat-guard';
 import { isUniqueViolation } from './util';
 
 const ROLE_MAP: Record<AssignableRole, ProjectMemberRole> = {
@@ -50,6 +60,7 @@ export class ProjectMembersService {
     private readonly audit: PlatformAuditLogService,
     private readonly docs: DocumentsGateway,
     private readonly characterGrants: CharacterGrantService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async list(projectId: string, viewer: AuthUser, cookie: string) {
@@ -112,6 +123,21 @@ export class ProjectMembersService {
     const role = ROLE_MAP[input.role];
     try {
       const member = await this.prisma.$transaction(async (tx) => {
+        if (projectRoleConsumesCreatorSeat(role)) {
+          await acquireSeatLock(tx, project.workspaceId);
+          await assertCreatorSeatAvailable(
+            tx,
+            project.workspaceId,
+            target.userId,
+            this.entitlements,
+          );
+        }
+        await ensureProjectOnlyWorkspaceMembership(tx, {
+          workspaceId: project.workspaceId,
+          userId: target.userId,
+          actorUserId: actor.userId,
+          allowReactivatingRemoved: true,
+        });
         const m = await tx.projectMember.create({
           data: {
             projectId,
@@ -181,9 +207,24 @@ export class ProjectMembersService {
         msg: 'The project owner role cannot be changed.',
       });
     }
-    const updated = await this.prisma.projectMember.update({
-      where: { id: memberId },
-      data: { role: ROLE_MAP[input.role] },
+    const nextRole = ROLE_MAP[input.role];
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        projectRoleConsumesCreatorSeat(nextRole) &&
+        !projectRoleConsumesCreatorSeat(member.role)
+      ) {
+        await acquireSeatLock(tx, project.workspaceId);
+        await assertCreatorSeatAvailable(
+          tx,
+          project.workspaceId,
+          member.userId,
+          this.entitlements,
+        );
+      }
+      return tx.projectMember.update({
+        where: { id: memberId },
+        data: { role: nextRole },
+      });
     });
     await this.audit.record({
       workspaceId: project.workspaceId,
@@ -224,6 +265,11 @@ export class ProjectMembersService {
         where: { id: memberId },
         data: { removedAt: new Date(), status: ProjectMemberStatus.removed },
       });
+      await removeUnusedProjectOnlyWorkspaceMembership(
+        tx,
+        project.workspaceId,
+        member.userId,
+      );
       await this.notifications.send(
         {
           userId: member.userId,
@@ -249,8 +295,8 @@ export class ProjectMembersService {
     // Drop the user's live sockets on this project's documents (the gateway
     // keeps any they still reach via a workspace-level role). Best-effort.
     try {
-      const documents = await this.prisma.platformDocument.findMany({
-        where: { projectId, deletedAt: null },
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { platformProjectId: projectId, deletedAt: null },
         select: { id: true },
       });
       await this.docs.revokeUserFromDocuments(

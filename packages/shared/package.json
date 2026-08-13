@@ -94,18 +94,6 @@
       "types": "./dist/zod-serialized-size.d.ts",
       "default": "./dist/zod-serialized-size.js"
     },
-    "./studio-agent": {
-      "types": "./dist/studio-agent.d.ts",
-      "default": "./dist/studio-agent.js"
-    },
-    "./studio-agent-transport": {
-      "types": "./dist/studio-agent-transport.d.ts",
-      "default": "./dist/studio-agent-transport.js"
-    },
-    "./studio-agent-api": {
-      "types": "./dist/studio-agent-api.d.ts",
-      "default": "./dist/studio-agent-api.js"
-    },
     "./story-authoring-pipeline": {
       "types": "./dist/story-authoring-pipeline.d.ts",
       "default": "./dist/story-authoring-pipeline.js"
@@ -114,13 +102,9 @@
       "types": "./dist/copilot-documents.d.ts",
       "default": "./dist/copilot-documents.js"
     },
-    "./studio-agent-tools": {
-      "types": "./dist/studio-agent-tools.d.ts",
-      "default": "./dist/studio-agent-tools.js"
-    },
-    "./agent-platform": {
-      "types": "./dist/agent-platform.d.ts",
-      "default": "./dist/agent-platform.js"
+    "./text-game": {
+      "types": "./dist/text-game.d.ts",
+      "default": "./dist/text-game.js"
     }
   },
   "scripts": {

@@ -31,6 +31,7 @@ function canvasAsset(node: ProjectCrewAssetNode): CanvasAsset | null {
     height: media.height ?? undefined,
     name: node.name,
     createdAt: 0,
+    category: "general",
   };
 }
 
@@ -173,7 +174,7 @@ export function ProjectCrewAssetLibrary({
       ) : (
         <div
           className={cn(
-            "grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto",
+            "grid auto-rows-max grid-cols-3 gap-1.5 overflow-y-auto",
             floating ? "min-h-0 flex-1 px-4 pb-4" : "p-4 pt-1"
           )}
         >
@@ -192,7 +193,7 @@ export function ProjectCrewAssetLibrary({
               type="button"
               disabled={listing.isFetchingNextPage}
               onClick={() => void listing.fetchNextPage()}
-              className="col-span-2 h-8 rounded-xl text-[11px] text-white/42 transition-colors hover:bg-white/[0.05] hover:text-white/70"
+              className="col-span-3 h-8 rounded-xl text-[11px] text-white/42 transition-colors hover:bg-white/[0.05] hover:text-white/70"
             >
               {listing.isFetchingNextPage ? t("loadingMore") : t("loadMore")}
             </button>

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   archiveDocument,
   createDocument,
-  ensurePrimaryStoryboard,
+  getFirstSectionCanvas,
   getDocument,
   listDocuments,
   updateDocument,
@@ -40,15 +40,11 @@ export function useDocument(documentId: string) {
   });
 }
 
-/**
- * Resolve a project's primary storyboard document, creating it on first
- * open. Idempotent — the editor calls this on mount; the user never sees
- * the underlying "document".
- */
-export function usePrimaryStoryboard(projectId: string) {
+/** Resolve the first chapter's canvas for this legacy single-chapter surface. */
+export function useFirstSectionCanvas(projectId: string) {
   return useQuery({
-    queryKey: [...documentKeys.all, "primary-storyboard", projectId],
-    queryFn: () => ensurePrimaryStoryboard(projectId),
+    queryKey: [...documentKeys.all, "first-section-canvas", projectId],
+    queryFn: () => getFirstSectionCanvas(projectId),
     enabled: !!projectId,
     staleTime: 30_000,
   });

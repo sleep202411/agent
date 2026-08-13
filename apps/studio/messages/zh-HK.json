@@ -271,6 +271,20 @@
     "etaApprox": "約 {duration}",
     "failed": "失敗",
     "generationFailed": "生成失敗",
+    "validationBlockedTitle": "暫時無法生成",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 項。",
+      "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 項。",
+      "MEDIA_DURATION_UNKNOWN": "提交前需要為 {field} 中每個{kind}提供時長。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每個{kind}最少需要 {min} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每個{kind}最多允許 {max} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合計時長為 {actual} 秒，最少 {min} 秒。",
+      "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合計時長為 {actual} 秒，最多 {max} 秒。",
+      "MEDIA_MAX_TOTAL_FILES": "參考檔案最多 {max} 個，目前 {actual} 個。",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "加入音訊參考時，至少還需要一張圖片或一段影片。",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "{field} 合計檔案大小超過 {maxMb} MB。",
+      "MEDIA_FILE_SIZE_EXCEEDED": "{field} 中有檔案超過 {maxMb} MB 限制。"
+    },
     "contentPolicyBlocked": "內容未通過審核。請避免使用受版權保護的角色、真人或敏感內容，調整提示詞後重試。",
     "download": "下載",
     "fullscreen": "全螢幕",
@@ -290,6 +304,17 @@
     "addReference": "新增參考",
     "removeReference": "移除 {label}",
     "uploadReferenceFirst": "請先上傳一個參考。",
+    "noSkillMatches": "沒有符合的 Skill。",
+    "showAllSkills": "查看全部 {count} 個 Skill",
+    "chooseSkill": "選擇 Skill",
+    "searchSkills": "搜尋已安裝的 Skill",
+    "searchSkillMarket": "搜尋 Skill 市場",
+    "skillBrowserDescription": "直接使用已安裝的 Skill，或為目前專案探索更多能力。",
+    "skillBrowserTabs": "Skill 來源",
+    "installedSkillsTab": "已安裝",
+    "skillMarketTab": "Skill 市場",
+    "skillMarketLoadFailed": "Skill 市場載入失敗，點擊重試。",
+    "installedBadge": "已安裝",
     "promptPlaceholder": "描述你想創作的內容…",
     "mode": "模式",
     "chooseModel": "選擇模型",
@@ -683,6 +708,166 @@
     "castingErrorNotYours": "This casting invitation was sent to someone else.",
     "castingErrorNotPending": "This casting invitation can no longer be accepted."
   },
+  "textAdventures": {
+    "library": {
+      "eyebrow": "互動小說",
+      "title": "文遊工作室",
+      "subtitle": "把一份世界觀文件變成讀者可以進入、影響並持續遊玩的故事。",
+      "create": "創作文遊",
+      "loadFailed": "無法載入你的文遊作品",
+      "emptyTitle": "建立你的第一個故事世界",
+      "emptyBody": "從唯一設定來源開始。上傳 DOCX 後，氣泡龍會提取角色並建立可編輯草稿。",
+      "uploadFirst": "上傳世界觀 DOCX",
+      "untitled": "未命名文遊",
+      "noSynopsis": "提交審核前請補充作品簡介。",
+      "noRating": "暫無評分",
+      "lastEdited": "最後編輯於 {date}"
+    },
+    "actions": {
+      "retry": "重試",
+      "backToLibrary": "返回文遊工作室",
+      "save": "儲存",
+      "cancel": "取消",
+      "unknownError": "操作失敗，請稍後再試。"
+    },
+    "status": {
+      "draft": "草稿",
+      "reviewing": "審核中",
+      "published": "已發佈",
+      "offline": "已下架"
+    },
+    "create": {
+      "body": "上傳定義世界設定、人物、規則和故事邊界的 DOCX。它會成為每次遊玩的唯一事實來源。",
+      "dropTitle": "拖入 DOCX，或選擇檔案",
+      "dropHint": "僅支援 DOCX · 最大 10 MB",
+      "uploading": "上傳中 · {progress}%",
+      "analyzingTitle": "正在建立故事世界",
+      "analyzingBody": "氣泡龍正在閱讀文件、梳理設定並識別角色，可能需要一分鐘。",
+      "failed": "無法解析這份文件",
+      "uploadFailed": "無法上傳這份文件",
+      "docxOnly": "請選擇 DOCX 文件。",
+      "tooLarge": "DOCX 不能超過 10 MB。",
+      "reuploadTitle": "重新上傳文件",
+      "reuploadingTitle": "正在重新上傳文件",
+      "reuploadBody": "請選擇另一份 DOCX，再次嘗試建立這個故事世界。",
+      "privacy": "原始文件僅創作者可見，不會在玩家頁面公開。"
+    },
+    "preview": {
+      "eyebrow": "草稿預覽",
+      "posterAlt": "《{name}》封面",
+      "synopsisFallback": "補充作品簡介後，可在這裡預覽讀者進入故事世界時看到的介紹。",
+      "castEyebrow": "來自世界觀文件",
+      "castTitle": "角色",
+      "castCount": "{count} 個角色",
+      "noCast": "世界觀文件解析完成後，提取到的角色會顯示在這裡。",
+      "stillsTitle": "故事場景圖",
+      "stillAlt": "故事場景圖 {index}",
+      "notice": "編輯時可以預覽封面、簡介、角色和故事場景圖。作品發佈後，可從玩家頁面開始正式遊玩。"
+    },
+    "playtest": {
+      "title": "玩家體驗",
+      "liveVersion": "線上玩家版本",
+      "draftNotice": "中央對話使用目前線上版本；草稿修改需審核通過後才會在這裡生效。",
+      "opening": "正在進入線上故事…",
+      "unavailableTitle": "發佈後即可試玩",
+      "unavailableBody": "作品首次審核通過並發佈後，這裡會開啟真實的玩家對話。",
+      "loadFailed": "無法開啟玩家體驗",
+      "newSession": "新的遊玩工作階段",
+      "resumedSession": "繼續上次遊玩",
+      "emptyTitle": "故事已經準備好",
+      "emptyBody": "在下方輸入行動即可開始。",
+      "actionPlaceholder": "接下來，你要做甚麼？",
+      "send": "傳送行動",
+      "composerHint": "按 Enter 傳送 · Shift + Enter 換行",
+      "yourAction": "你的行動",
+      "responding": "故事正在回應…",
+      "restart": "重新開始",
+      "restartTitle": "重新開始這次遊玩？",
+      "restartBody": "目前對話將被新的玩家工作階段取代。",
+      "restartConfirm": "重新開始",
+      "restarting": "正在重新開始…",
+      "restartComplete": "已開始新的遊玩",
+      "sendFailed": "無法傳送這次行動",
+      "restartFailed": "無法開始新的遊玩"
+    },
+    "editor": {
+      "loadFailed": "無法載入這個草稿",
+      "saved": "已儲存",
+      "unsaved": "有未儲存修改",
+      "version": "版本 {version}",
+      "inspectorTitle": "作品資料",
+      "backToOverview": "返回作品資料",
+      "openSection": "開啟{section}",
+      "edit": "編輯",
+      "replace": "替換",
+      "upload": "上傳",
+      "attached": "已新增",
+      "notAdded": "未新增",
+      "stillsCount": "{count} 張圖片",
+      "workUpdatedAt": "作品更新於 {date}",
+      "worldviewFileFallback": "世界觀.docx",
+      "musicFileFallback": "背景音樂",
+      "reviewLockedTitle": "審核期間暫停編輯",
+      "reviewLockedBody": "你可以將作品下架以退出審核隊列，或等待平台審核結果。",
+      "name": "名稱",
+      "synopsis": "簡介",
+      "sections": {
+        "basics": "基本資料",
+        "poster": "封面",
+        "worldview": "世界觀文件",
+        "characters": "角色",
+        "stills": "故事場景圖",
+        "music": "背景音樂"
+      },
+      "uploadPoster": "上傳封面",
+      "replacePoster": "更換封面",
+      "posterHint": "以 2:3 直向顯示 · 建議 1200 × 1800 · JPG、PNG 或 WebP",
+      "posterImageOnly": "請選擇 JPG、PNG 或 WebP 圖片。",
+      "worldviewAttached": "已關聯世界觀 DOCX",
+      "uploadDocument": "上傳文件",
+      "charactersFound": "已提取 {count} 個角色",
+      "replaceDocument": "替換並重新解析",
+      "reanalyzing": "正在重新解析文件…",
+      "replaceDocumentHint": "替換 DOCX 會重新提取並覆蓋目前角色列表。",
+      "documentReparsed": "世界觀與角色已更新",
+      "noCharacters": "這份文件沒有解析出角色。",
+      "charactersReadOnly": "角色由 Java 根據目前 DOCX 自動生成，現有介面暫不支援手動編輯角色。",
+      "removeStill": "移除圖片 {index}",
+      "noStills": "還沒有故事場景圖。",
+      "addStills": "新增圖片",
+      "uploadProgress": "上傳中 · {progress}%",
+      "noMusic": "還沒有背景音樂。",
+      "uploadMusic": "上傳音樂",
+      "replaceMusic": "更換音樂",
+      "removeMusic": "移除音樂",
+      "stillsImageOnly": "請選擇 JPG、PNG 或 WebP 圖片。",
+      "musicAudioOnly": "請選擇 MP3 或 WAV 音訊檔案。"
+    },
+    "publish": {
+      "rejected": "審核回饋",
+      "requirements": {
+        "name": "名稱",
+        "poster": "封面",
+        "synopsis": "簡介",
+        "document": "世界觀 DOCX"
+      },
+      "validationTitle": "請先補全必填資料",
+      "validationBody": "提交審核前，還需要完成以下內容：",
+      "validationAction": "繼續編輯",
+      "viewLive": "查看線上作品",
+      "submit": "提交審核",
+      "submitUpdate": "提交更新版本",
+      "takeOffline": "下架作品",
+      "submitConfirmTitle": "提交這部文遊進行審核？",
+      "submitConfirmBody": "平台審核文件、封面、簡介和故事場景圖期間，目前草稿將暫停編輯。",
+      "submitConfirm": "提交審核",
+      "offlineConfirmTitle": "下架這部文遊？",
+      "offlineConfirmBody": "作品會從玩家列表消失，並停止建立新工作階段；已有工作階段仍可繼續。",
+      "offlineConfirm": "確認下架",
+      "submitted": "已提交審核",
+      "offlined": "作品已下架"
+    }
+  },
   "shell": {
     "credits": {
       "tooltip": "算力積分",
@@ -691,20 +876,29 @@
       "teamTag": "團隊"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首頁",
       "fizzDragonHomeAriaLabel": "FizzDragon 首頁"
     },
     "nav": {
       "home": "首頁",
-      "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
+      "creativeStudio": "創意工作室",
+      "storyStudio": "影遊工作室",
+      "textAdventures": "文遊工作室",
       "image": "圖像",
       "video": "影片",
       "characters": "角色",
       "audio": "音訊",
       "settings": "設定",
+      "tools": "工具",
+      "discord": "Discord",
+      "downloadApp": "下載 App",
+      "downloadDesktop": "下載桌面版",
+      "help": "幫助",
+      "newBadge": "New",
+      "appDownloadUnavailable": "目前平台暫時沒有可用的流動版安裝檔。",
       "studioNavigation": "工作室導覽",
       "main": "主導覽",
+      "collapseSidebar": "收起側邊欄",
+      "expandSidebar": "展開側邊欄",
       "comingSoonLabel": "{label} · 即將推出"
     },
     "notifications": {
@@ -813,6 +1007,7 @@
     "youSuffix": "(你)",
     "memberActions": "成員操作",
     "memberFallback": "成員",
+    "projectOnlyMember": "僅專案成員",
     "addedMember": "已新增 {name}",
     "addMemberFailed": "無法新增成員",
     "changeRoleFailed": "無法變更角色",
@@ -889,21 +1084,21 @@
       "includedInPlan": "方案包含",
       "computeCreditsAmount": "{amount} 算力積分",
       "customCreditsAmount": "客製算力積分額度",
-      "seats": "{count, plural, other {# 個席位}}",
+      "seats": "{count, plural, other {# 個創作者席位}}",
       "seatsUpTo": " · 最多 {max} 個",
       "perMonth": "/月",
       "perYear": "/年",
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerMonth": "每月最多 {count} 次圖像生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "進階工作流程",
-      "prioritySupport": "優先支援",
+      "imagesPerDay": "每天 {count} 次圖像生成",
+      "imagesUnlimited": "不限次數的圖像生成",
+      "videosPerDay": "每天 {count} 次影片生成",
+      "videosUnlimited": "不限次數的影片生成",
       "sharedCredits": "團隊共享算力積分",
+      "seatScope": "創作者席位在所有專案間共享；Viewer 和 Reviewer 不佔席位",
       "concurrentJobs": "{count, plural, other {# 個並行任務}}",
-      "queuedJobs": "{count, plural, other {# 個排隊任務}}",
-      "topupDiscount": "增值算力積分 {percent}% 折扣"
+      "queuedJobs": "{count, plural, other {# 個排隊任務}}"
     },
     "toast": {
       "plansLoadFailed": "會員方案載入失敗",
@@ -946,7 +1141,7 @@
       },
       "subscriptionVsTopups": {
         "question": "訂閱與算力積分增值有甚麼分別？",
-        "answer": "訂閱會提供週期性的算力積分額度，並附帶佇列優先、更高並行及支援等方案權益。增值是一次性購買算力積分——而付費方案在增值時享有折扣。"
+        "answer": "訂閱會提供週期性的算力積分額度，以及佇列優先、更高並行等方案權益。增值則是單獨的一次性算力積分購買。"
       },
       "teamShareCredits": {
         "question": "團隊方案如何共享算力積分？",
@@ -954,7 +1149,7 @@
       },
       "cancelOrChange": {
         "question": "如何取消或變更我的方案？",
-        "answer": "在帳戶選單的「帳單與訂閱」中管理你的訂閱。方案變更會在目前計費週期結束時生效。"
+        "answer": "在「帳單與訂閱」中管理訂閱。取消後，權益會保留到目前週期結束；週期結束後可選擇其他方案。"
       },
       "commercialUse": {
         "question": "我可以將生成內容用於商業用途嗎？",
@@ -983,7 +1178,8 @@
       "upload": "上載",
       "image": "圖像",
       "video": "影片",
-      "note": "便箋"
+      "note": "便箋",
+      "shot": "分鏡"
     },
     "guest": "訪客",
     "uploadFailed": "上載失敗",
@@ -998,6 +1194,23 @@
     "openError": "無法開啟此畫布 — 請檢查連結或你的存取權限。",
     "emptyReadOnly": "此畫布為空。",
     "activityLog": "動態",
+    "connection": {
+      "kind": {
+        "image": "圖片",
+        "video": "影片",
+        "audio": "音訊"
+      },
+      "sourceMissing": "來源節點已不存在。",
+      "targetMissing": "目標節點已不存在。",
+      "selfConnection": "節點不能連接到自身。",
+      "sourceNotConnectable": "此節點沒有可連接的圖片、影片或音訊輸出。",
+      "targetNotConnectable": "此節點不接受參考素材連接。",
+      "modelUnavailable": "請先選擇一個可用模型，再連接參考素材。",
+      "currentModeUnsupported": "目前模式不支援{kind}參考。請先手動切換模式。",
+      "unsupportedKind": "此模型不支援{kind}參考。",
+      "referenceLimit": "目前模式最多支援 {limit} 個{kind}參考。",
+      "duplicateReference": "此{kind}已連接到該節點。"
+    },
     "groups": {
       "group": "打組",
       "label": "群組",
@@ -1030,8 +1243,14 @@
       "image": "圖像",
       "video": "影片",
       "note": "便箋",
+      "shot": "分鏡",
       "searchPlaceholder": "搜尋節點",
       "noMatches": "沒有符合的節點"
+    },
+    "nodes": {
+      "title": "節點",
+      "add": "新增",
+      "close": "關閉節點面板"
     },
     "emptyState": {
       "clickToAdd": "按此新增節點",
@@ -1060,7 +1279,10 @@
         "cinematicVideo": "音畫電影成片",
         "stableMotionVideo": "動作穩定成片",
         "creativeVideo": "創意靈活成片"
-      }
+      },
+      "requiresPlan": "需要 {plan} 方案",
+      "locked": "目前方案不可用",
+      "membershipExpired": "會員已過期，續費後可用"
     },
     "sizePresets": {
       "squareHd": "正方形 HD",
@@ -1068,7 +1290,8 @@
       "portrait43": "直向 4:3",
       "portrait169": "直向 16:9",
       "landscape43": "橫向 4:3",
-      "landscape169": "橫向 16:9"
+      "landscape169": "橫向 16:9",
+      "auto": "自動"
     },
     "stepper": {
       "decrease": "減少",
@@ -1154,6 +1377,9 @@
       "alt": "參考",
       "audio": "音訊",
       "linkedFromNode": "來自已連接的節點",
+      "duration": "時長",
+      "dimensions": "尺寸",
+      "fileSize": "檔案大小",
       "add": "新增{field}"
     },
     "asset": {
@@ -1234,6 +1460,20 @@
     "assetUnavailable": "此素材已不再可用。",
     "chooseModelFirst": "請先選擇模型",
     "writePromptFirst": "請先輸入提示詞",
+    "validationBlockedTitle": "暫時無法生成",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 項。",
+      "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 項。",
+      "MEDIA_DURATION_UNKNOWN": "提交前需要為 {field} 中每個{kind}提供時長。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每個{kind}最少需要 {min} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每個{kind}最多允許 {max} 秒，目前為 {actual} 秒。",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合計時長為 {actual} 秒，最少 {min} 秒。",
+      "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合計時長為 {actual} 秒，最多 {max} 秒。",
+      "MEDIA_MAX_TOTAL_FILES": "參考檔案最多 {max} 個，目前 {actual} 個。",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "加入音訊參考時，至少還需要一張圖片或一段影片。",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "{field} 合計檔案大小超過 {maxMb} MB。",
+      "MEDIA_FILE_SIZE_EXCEEDED": "{field} 中有檔案超過 {maxMb} MB 限制。"
+    },
     "copyTaskId": "複製任務 ID",
     "taskIdCopied": "任務 ID 已複製",
     "taskIdCopyFailed": "無法複製任務 ID",
@@ -1253,7 +1493,13 @@
     "opExpand": "擴展畫面",
     "opMotion": "運動",
     "opGeneratePanorama": "生成全景",
-    "opPanorama": "全景"
+    "opPanorama": "全景",
+    "lockedForOpPlan": "{op} 需要 {plan} 方案",
+    "lockedForOp": "目前方案無法使用 {op}",
+    "requiresPlan": "需要 {plan} 方案",
+    "unavailableOnPlan": "目前方案不可用",
+    "lockedForOpExpired": "會員已過期，續費後可使用 {op}",
+    "membershipExpired": "會員已過期"
   },
   "canvasEditors": {
     "reset": "重設",
@@ -1497,12 +1743,12 @@
     "yourSubscription": "你的訂閱",
     "subscriptionDescription": "管理個人方案、購買算力積分包並查看定價。",
     "managePlan": "管理方案",
+    "keepPlan": "保留方案",
     "currentPlan": "目前方案",
     "freePlanName": "免費版",
     "planRenewsOn": "{date} 續期",
     "planAccessUntil": "可用至 {date}",
     "planCanceledBadge": "已取消",
-    "changePlan": "更換方案",
     "cancelPlan": "取消訂閱",
     "cancelPlanConfirm": "確定取消訂閱？目前計費週期結束前仍可使用，之後將不再續期。",
     "cancelPlanSuccess": "訂閱已取消 —— 可用至 {date}。",
@@ -1567,14 +1813,494 @@
     "untitled": "未命名",
     "viewOnly": "僅檢視",
     "share": "分享",
+    "aiAssistant": "AI 助手",
+    "sidebar": {
+      "navigation": "專案導覽",
+      "chapters": "章節",
+      "nodes": "節點",
+      "nodesModeUnavailable": "說明模式下無法使用節點",
+      "nodesEditRequired": "需要編輯權限才能新增節點",
+      "assets": "資產",
+      "skills": "技能",
+      "skillsComingSoon": "技能 · 即將推出",
+      "activity": "動態",
+      "members": "成員"
+    },
+    "skills": {
+      "title": "技能",
+      "launchAnnouncement": {
+        "title": "專案 Skill 正式上線",
+        "leadStrong": "沉澱團隊的創作方法，",
+        "leadRest": "統一視覺風格與創作標準，減少重複溝通和調參，更快產出穩定的圖片與影片。",
+        "supportingText": "設為專案預設後，團隊每次生成都會自動套用，也可以按需調整。",
+        "cta": "探索專案 Skill",
+        "close": "關閉 Skill 上線介紹",
+        "mute": "關閉預覽聲音",
+        "unmute": "開啟預覽聲音",
+        "mediaAlt": "FizzDragon 專案 Skill 電影創作能力預覽"
+      },
+      "mockNotice": "目錄預覽 · 專案安裝即將推出",
+      "catalogDescription": "為目前專案安裝 Skill，並設定預設生效範圍",
+      "loadFailed": "Skill 載入失敗，點擊重試。",
+      "generationUnavailable": "專案 Skill 尚未就緒，請開啟技能面板重試後再生成。",
+      "filterLabel": "篩選技能",
+      "filters": {
+        "all": "全部",
+        "general": "通用",
+        "image": "圖片",
+        "video": "影片"
+      },
+      "recommended": "推薦",
+      "all": "全部技能",
+      "searchPlaceholder": "搜尋技能",
+      "noMatches": "沒有符合的技能。",
+      "install": "安裝",
+      "installComingSoon": "安裝到專案 · 即將推出",
+      "close": "關閉技能",
+      "errors": {
+        "install": "Skill 安裝失敗。",
+        "upload": "Skill 套件匯入失敗。",
+        "uninstall": "Skill 解除安裝失敗。",
+        "defaults": "專案預設設定更新失敗。",
+        "notInstalled": "此 Skill 尚未安裝到目前專案。"
+      },
+      "ownership": {
+        "project": "僅目前專案",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "上傳 Skill",
+        "title": "上傳私人 Skill",
+        "description": "匯入標準 SKILL.md 或 ZIP 套件。上傳的指令只在所選專案或 Workspace 範圍內可見，且不能加入可執行工具。",
+        "fileLabel": "Skill 套件",
+        "chooseFile": "選擇 SKILL.md 或 ZIP 套件",
+        "fileHint": "UTF-8 · 最大 1 MB · ZIP 可包含 Markdown 參考資料",
+        "downloadTemplate": "下載範本",
+        "zipSafety": "ZIP 僅接受一個 SKILL.md 與 references/ 下的 Markdown；指令碼、二進位檔、連結、加密套件和不安全路徑都會被拒絕。",
+        "fileRequired": "請先選擇一個 Skill 套件。",
+        "fileTooLarge": "Skill 套件不能超過 1 MB。",
+        "scopeLabel": "可見範圍",
+        "scopes": {
+          "project": "目前專案",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "只有目前專案成員可以發現和使用。",
+          "workspace": "同一 Workspace 的其他專案可以發現並安裝。"
+        },
+        "kindLabel": "生成類型",
+        "cancel": "取消",
+        "confirm": "上傳並安裝",
+        "success": "{name} 已上傳並安裝。"
+      },
+      "uninstall": {
+        "title": "移除這個 Skill？",
+        "description": "將從目前專案移除 {name}，並清除它的所有預設生效範圍。Skill 來源不會被刪除。",
+        "cancel": "保留 Skill",
+        "confirm": "移除",
+        "success": "已從專案移除 Skill。"
+      },
+      "categories": {
+        "style": "視覺風格",
+        "production": "製作流程",
+        "commercial": "商業創意"
+      },
+      "detail": {
+        "dialogTitle": "Skill 詳情",
+        "loading": "正在載入最新的 Skill 詳情…",
+        "loadFailed": "無法載入最新的 Skill 詳情。",
+        "activeForGeneration": "本次生成已啟用",
+        "projectDefaults": "專案預設",
+        "noProjectDefaults": "此 Skill 僅在本次生成中啟用。",
+        "manageSkill": "管理 Skill",
+        "useSkill": "用於本次生成",
+        "installAndUse": "安裝並使用",
+        "installAndUseSuccess": "{name} 已安裝並用於本次生成。",
+        "installToUse": "安裝後可用於本次生成，也可以設為專案預設。",
+        "open": "查看{name}詳情",
+        "back": "返回技能列表",
+        "curatedBy": "FizzDragon 精選",
+        "addSkill": "添加 Skill",
+        "addComingSoon": "專案安裝即將推出",
+        "installed": "已安裝",
+        "remove": "移除",
+        "uninstall": "解除安裝 Skill",
+        "managePermission": "只有專案擁有者和管理員可以管理 Skill。",
+        "defaultsTitle": "預設使用",
+        "defaultsDescription": "預設 Skill 會顯示在每次符合的生成中，也可以在單次生成中手動移除。",
+        "effectPreview": "效果預覽",
+        "about": "關於此 Skill",
+        "introduction": "簡介",
+        "category": "類型",
+        "appliesToLabel": "適用範圍",
+        "howToUseLabel": "如何使用",
+        "outputLabel": "加入生成",
+        "appliesTo": {
+          "general": "提示詞、生圖與生影片",
+          "image": "生圖與圖片提示詞創作",
+          "video": "生影片、運動設計與鏡頭規劃"
+        },
+        "howToUse": {
+          "general": "安裝後可設為專案預設，也可以在單次生成中暫時關閉。",
+          "image": "在圖片生成請求中選擇它，套用對應的視覺規則與提示詞指引。",
+          "video": "在影片生成請求中選擇它，套用對應的運動、時序與連續性指引。"
+        },
+        "output": {
+          "general": "結構化提示詞指引，以及面向不同生成能力的約束。",
+          "image": "優化後的圖片提示詞、視覺方向與生成約束。",
+          "video": "優化後的影片提示詞、動作節拍、鏡頭方向與連續性約束。"
+        }
+      },
+      "scopes": {
+        "image_generation": "生圖",
+        "video_generation": "生影片",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "提示詞",
+        "image": "生圖",
+        "video": "生影片",
+        "agent": "Agent",
+        "qa": "品質檢查"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "韋斯·安德森電影美學",
+          "description": "置中式繪本構圖、克制表演、實體佈景與精準的橫向鏡頭運動。"
+        },
+        "kubrickOnePointTension": {
+          "name": "寇比力克單點透視張力",
+          "description": "單點透視、幾何調度、緩慢推進，以及持續受控的心理壓迫感。"
+        },
+        "wongKarWaiNeonTime": {
+          "name": "王家衛霓虹時間",
+          "description": "霓虹色彩分離、抽幀運動、親密取景與懸置的情緒時間。"
+        },
+        "grindhouseChapterCinema": {
+          "name": "磨坊電影章節敘事",
+          "description": "章節卡結構、大膽取景、硬切與做舊類型片質感。"
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "手繪幻想冒險",
+          "description": "通透的手繪世界、環境敘事，以及輕柔且符合物理邏輯的運動。"
+        },
+        "classicCelAnimation": {
+          "name": "經典賽璐璐動畫",
+          "description": "以清晰線稿、手繪背景和可讀的關鍵姿態，構建經典二維角色動畫。"
+        },
+        "stopMotionClayCinema": {
+          "name": "黏土定格動畫",
+          "description": "使用手工黏土角色、微縮佈景、實景燈光和逐格動作營造觸感。"
+        },
+        "inkWashCinema": {
+          "name": "水墨電影美學",
+          "description": "用克制筆觸、氛圍留白和受控的朱砂色點綴組織電影畫面。"
+        },
+        "retroAnimeKeyVisual": {
+          "name": "復古動畫主視覺",
+          "description": "結合賽璐璐背景、清晰角色輪廓與模擬膠片時代的戲劇化配色。"
+        },
+        "cinematicShotLanguage": {
+          "name": "電影鏡頭語言",
+          "description": "把故事意圖轉成製作可讀的景別、鏡頭、光線、運動與連續性方案。"
+        },
+        "scriptToStoryboard": {
+          "name": "劇本轉分鏡",
+          "description": "把劇本拆分為敘事節拍、鏡頭覆蓋與可直接生成的分鏡鏡頭。"
+        },
+        "visualContinuityGuardian": {
+          "name": "視覺連續性守護",
+          "description": "保持角色、服裝、場景、道具與視線方向前後一致。"
+        },
+        "imageToVideoMotionDirector": {
+          "name": "圖生影片運動導演",
+          "description": "把靜幀轉成有時序的動作節拍、鏡頭運動與穩定的結束狀態。"
+        },
+        "promptPreflightQa": {
+          "name": "提示詞預檢與生成質檢",
+          "description": "提交前檢查缺少引用、衝突指令與可能導致生成失敗的問題。"
+        },
+        "productEditorialPhotography": {
+          "name": "產品編輯攝影",
+          "description": "建立清晰的產品層級、受控材質與光線，以及可用於營銷的構圖。"
+        },
+        "moviePosterKeyArt": {
+          "name": "電影海報與主視覺",
+          "description": "生成圖像統一、預留標題空間且層級明確的電影海報概念。"
+        },
+        "pixelArtAdventure": {
+          "name": "像素藝術冒險",
+          "description": "以清晰剪影、有限色板和電影化光線構建細膩的像素場景。"
+        },
+        "postImpressionistNightPainting": {
+          "name": "梵高星夜油畫",
+          "description": "以旋渦夜空、厚塗筆觸和鈷藍金黃的色彩節奏增強畫面表現力。"
+        },
+        "surrealCollageDreamscape": {
+          "name": "超現實拼貼夢境",
+          "description": "透過紙張肌理、反常尺度和詩意影像拼貼構建夢境空間。"
+        },
+        "rhythmicMontageEditor": {
+          "name": "節奏蒙太奇剪輯",
+          "description": "透過鏡頭對比、視覺押韻、節奏和有動機的切換組織敘事意義。"
+        },
+        "aspectRatioReframing": {
+          "name": "橫直屏重構導演",
+          "description": "在 16:9、1:1 與 9:16 之間安全重構畫面，保護主體、動作、視線與構圖可讀性。"
+        },
+        "viralVideoReconstruction": {
+          "name": "爆款結構復刻",
+          "description": "提取參考影片可遷移的鉤子、節拍與回報結構，不複製受保護的具體內容。"
+        },
+        "portraitCookingShort": {
+          "name": "人物烹飪短片",
+          "description": "把一道關鍵料理動作組織成有觸感、連續且以美食揭曉收尾的直屏短片。"
+        },
+        "multiPanelSequenceDirector": {
+          "name": "多宮格拼版導演",
+          "description": "以不同鏡頭目的、連續性和可剪輯順序，設計清晰的多宮格鏡頭覆蓋。"
+        },
+        "shortVideoDiagnostic": {
+          "name": "短影片診斷分析師",
+          "description": "基於證據診斷短影片的鉤子、清晰度、留存節拍、連續性與回報，並給出精確修改。"
+        },
+        "microExpressionPerformance": {
+          "name": "微表情表演導演",
+          "description": "透過眼神、呼吸與細微肌肉變化指導克制表演，避免誇張情緒。"
+        },
+        "cinematicShotOrchestrator": {
+          "name": "影視鏡頭調度導演",
+          "description": "根據戲劇意圖、空間關係與連續性，自動選擇並組織製作可讀的鏡頭。"
+        },
+        "realisticPerformanceCoach": {
+          "name": "寫實表演指導",
+          "description": "以目標、傾聽、身體重量和具體處境取代通用的 AI 式表演。"
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "動作分鏡預演",
+          "description": "使用簡單人物、清晰調度、安全空間和可編輯節拍預演動作場面。"
+        },
+        "subjectStyleExtractor": {
+          "name": "主體風格提取",
+          "description": "從參考中分離可遷移的視覺系統與主體身份，在不複製內容的前提下應用風格。"
+        },
+        "intelligentSubtitleDirector": {
+          "name": "智能字幕導演",
+          "description": "生成保護原意、閱讀節奏、安全區與視覺層級的確定性字幕方案。"
+        },
+        "brandVisualConsistency": {
+          "name": "品牌視覺一致性",
+          "description": "在專案生成內容中統一應用品牌色彩、字體、產品與語氣規則。"
+        }
+      }
+    },
+    "sections": {
+      "defaultTitle": "第 1 章",
+      "title": "章節",
+      "loading": "正在載入章節…",
+      "count": "{count} 個章節",
+      "add": "新增章節",
+      "createTitle": "新增章節",
+      "createDescription": "每個章節擁有獨立的畫布和分鏡表。",
+      "nameLabel": "章節名稱",
+      "namePlaceholder": "輸入章節名稱",
+      "create": "新增章節",
+      "rename": "重新命名",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "archive": "封存",
+      "archiveTitle": "封存章節？",
+      "archiveDescription": "「{title}」將從目前章節列表中移除，其畫布和歷史版本會繼續保留。",
+      "archiveLast": "項目必須至少保留一個有效章節。",
+      "menu": "{title} 的更多操作",
+      "close": "關閉章節",
+      "loadError": "無法載入章節。",
+      "invalid": "該章節不屬於目前項目或已被封存。",
+      "createError": "無法建立章節。",
+      "updateError": "無法更新章節。",
+      "reorderError": "無法儲存章節順序。",
+      "archiveError": "無法封存章節。"
+    },
     "thisProject": "此專案",
     "documentOpenError": "無法開啟此文件——請檢查連結或你的存取權限。",
-    "briefPlaceholder": "撰寫簡介…",
+    "briefPlaceholder": "撰寫說明…",
     "offlineSaved": "離線——變更已儲存至本機",
     "connecting": "連線中…",
     "modes": {
       "canvas": "畫布",
-      "brief": "簡報"
+      "storyboard": "分鏡表",
+      "brief": "說明"
+    }
+  },
+  "storyboard": {
+    "title": "分鏡表",
+    "openError": "無法開啟此項目的畫布——請檢查連結或存取權限。",
+    "loading": "正在開啟分鏡表…",
+    "addShot": "新增分鏡",
+    "shotCount": "{count, plural, =0 {尚無分鏡} other {# 個分鏡}}",
+    "emptyTitle": "尚未有分鏡",
+    "emptyBody": "新增一個分鏡開始創作。每個分鏡同時也是畫布上的一張卡片。",
+    "emptyReadOnly": "此項目尚未有分鏡。",
+    "node": {
+      "title": "分鏡 {index}",
+      "emptyHint": "連入圖像或影片",
+      "pictureAlt": "分鏡畫面",
+      "openInStoryboard": "在分鏡表中檢視"
+    },
+    "column": {
+      "number": "鏡號",
+      "id": "鏡號ID",
+      "frame": "分鏡圖",
+      "clip": "分鏡影片",
+      "size": "景別",
+      "angle": "視角",
+      "movement": "運鏡",
+      "duration": "時長",
+      "dialogue": "對白",
+      "notes": "備註",
+      "description": "畫面描述",
+      "imagePrompt": "圖片提示詞",
+      "videoPrompt": "影片提示詞",
+      "actions": "分鏡操作"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "大遠景",
+        "wide": "遠景",
+        "full": "全景",
+        "medium": "中景",
+        "closeUp": "近景",
+        "extremeCloseUp": "特寫"
+      },
+      "angle": {
+        "eyeLevel": "平視",
+        "high": "俯視",
+        "low": "仰視",
+        "birdsEye": "鳥瞰",
+        "overShoulder": "過肩",
+        "pov": "主觀視角",
+        "dutch": "傾斜"
+      },
+      "movement": {
+        "static": "固定",
+        "pan": "橫搖",
+        "tilt": "直搖",
+        "dolly": "推拉",
+        "tracking": "跟拍",
+        "zoom": "變焦",
+        "handheld": "手持",
+        "crane": "升降"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds} 秒",
+      "durationUnit": "秒",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "對白或旁白…",
+      "notesPlaceholder": "備註…",
+      "descriptionPlaceholder": "描述畫面——構圖、光影、氛圍…",
+      "imagePromptPlaceholder": "圖片生成提示詞…",
+      "videoPromptPlaceholder": "影片生成提示詞…"
+    },
+    "frame": {
+      "add": "新增畫面",
+      "generateImage": "生成圖像",
+      "generateVideo": "生成影片",
+      "pickFromCanvas": "從畫布選擇",
+      "noSources": "畫布上尚未有可選素材",
+      "unlink": "中斷連結",
+      "viewOnCanvas": "在畫布中檢視",
+      "generating": "生成中…",
+      "failed": "生成失敗",
+      "waiting": "等待畫面"
+    },
+    "row": {
+      "reorder": "拖曳排序",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "insertAbove": "在上方插入分鏡",
+      "insertBelow": "在下方插入分鏡",
+      "delete": "刪除分鏡",
+      "actions": "分鏡操作",
+      "copyId": "複製鏡號ID",
+      "copiedId": "已複製鏡號ID"
+    },
+    "drawer": {
+      "title": "分鏡 {index} · {slot}",
+      "close": "關閉",
+      "slotFrame": "分鏡圖",
+      "slotClip": "分鏡影片",
+      "emptySlot": "這裡尚未有畫面",
+      "generate": "生成",
+      "upload": "上載",
+      "pick": "從畫布選擇",
+      "uploading": "上載中 · {progress}%",
+      "uploadFailed": "上載失敗",
+      "openViewer": "檢視大圖",
+      "sourceHeading": "這張畫面怎麼來的",
+      "sourceModel": "模型",
+      "sourceMade": "由畫布上的生成卡產出",
+      "sourceUploaded": "上載",
+      "sourcePicked": "取自畫布素材",
+      "noPrompt": "沒有記錄提示詞",
+      "candidates": "候選",
+      "candidatesSoon": "多候選與定稿將於後續版本提供。",
+      "promptLabel": "提示詞",
+      "promptPlaceholder": "描述這個鏡頭——構圖、主體、光線、氛圍。",
+      "modelLabel": "模型",
+      "selectModelTitle": "選擇模型",
+      "modelUnset": "選擇模型",
+      "settingsLabel": "模型參數",
+      "generating": "生成中…",
+      "modelLoading": "正在載入模型…",
+      "modelLoadFailed": "模型載入失敗，點擊重試",
+      "effectLabel": "效果",
+      "selectEffect": "選擇效果",
+      "effectComingSoon": "效果即將推出",
+      "change": "更換",
+      "startFrameLabel": "起始幀",
+      "startFrameHint": "先生成分鏡圖——影片會基於它動起來。",
+      "uploadLabel": "上傳",
+      "optional": "可選",
+      "dropFiles": "將檔案拖到這裡",
+      "or": "或",
+      "select": "選擇",
+      "library": "從畫布選取",
+      "gallery": "圖冊",
+      "galleryTitle": "分鏡圖",
+      "clipGalleryTitle": "分鏡影片",
+      "clipGalleryCount": "{count} 個影片",
+      "galleryCount": "{count} 張",
+      "galleryEmpty": "還沒有圖——上傳或生成一張。",
+      "back": "返回",
+      "finalized": "定稿",
+      "candidate": "候選",
+      "markFinalized": "設為定稿",
+      "delete": "刪除"
+    },
+    "delete": {
+      "title": "刪除這個分鏡？",
+      "description": "第 {number} 個分鏡連同它的連線會被移除。為它供圖的素材仍留在畫布上。",
+      "dontAskAgain": "不再提示"
+    },
+    "assetDialog": {
+      "title": "選擇資產",
+      "description": "選擇畫布上的資產進行引用，或上傳新檔案。",
+      "close": "關閉",
+      "upload": "上傳",
+      "uploading": "上傳中…",
+      "uploadFailed": "上傳失敗",
+      "unsupportedType": "僅支援 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
+      "empty": "還沒有資產——先生成或上傳一個。",
+      "filter": {
+        "all": "全部",
+        "aiGenerated": "AI 生成",
+        "uploaded": "已上傳",
+        "crew": "劇組資產",
+        "character": "角色",
+        "scene": "場景"
+      }
     }
   },
   "invite": {
@@ -1665,10 +2391,10 @@
     "confirmRemoveEdge": "刪除這條連線？"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "影遊工作室",
     "metaDescription": "創作、製作、審核並發佈電影化互動故事。",
     "eyebrow": "互動故事製作",
-    "title": "Story Studio",
+    "title": "影遊工作室",
     "subtitle": "在一個可追溯版本的工作台內設計分支影像場景並完成發佈。",
     "newProject": "新增故事專案",
     "projects": {
@@ -1752,7 +2478,7 @@
       "switching": "正在切換到該故事所屬的工作區…"
     },
     "canvas": {
-      "back": "返回 Story Studio",
+      "back": "返回影遊工作室",
       "mode": "故事畫布",
       "chapters": {
         "action": "章節",
@@ -1844,7 +2570,7 @@
       },
       "workingPreview": {
         "action": "預覽試玩",
-        "pageTitle": "故事試玩 · Story Studio",
+        "pageTitle": "故事試玩 · 影遊工作室",
         "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
         "loading": "正在準備試玩…",
@@ -1860,197 +2586,6 @@
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
       "loading": "正在開啟故事畫布…",
-      "assistant": {
-        "action": "StoryOS"
-      },
-      "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS 助手",
-        "close": "關閉 StoryOS",
-        "newConversation": "新增對話",
-        "retry": "重試",
-        "dismissError": "關閉",
-        "timeline": {
-          "log": "StoryOS 對話",
-          "empty": "描述你想完善的故事、抉擇或玩家體驗。",
-          "loading": "正在載入對話……",
-          "scrollToLatest": "捲動到最新進展",
-          "loadEarlier": "載入更早的對話",
-          "loadingEarlier": "正在載入更早的對話……",
-          "thinking": "正在思考……",
-          "attachments": {
-            "unknownSize": "大小未知",
-            "status": {
-              "processing": "處理中",
-              "ready": "已就緒",
-              "failed": "失敗"
-            }
-          },
-          "roles": {
-            "user": "你",
-            "assistant": "StoryOS"
-          }
-        },
-        "attachmentAnalysis": {
-          "region": "文件分析",
-          "queued": "文件分析已排隊",
-          "mapping": "正在分析文件 · {progress}%",
-          "reducing": "正在歸納分析結果 · {progress}%",
-          "succeeded": "文件分析已完成",
-          "failed": "文件分析失敗",
-          "cancelled": "文件分析已取消"
-        },
-        "activity": {
-          "expand": "展開活動詳情",
-          "collapse": "收起活動詳情",
-          "labels": {
-            "generatingResponse": "正在生成回覆",
-            "readingStory": "正在讀取目前故事",
-            "reviewingSource": "正在查閱來源素材",
-            "applyingChanges": "正在套用故事改動"
-          },
-          "status": {
-            "running": "進行中",
-            "succeeded": "已完成",
-            "failed": "失敗",
-            "cancelled": "已取消"
-          }
-        },
-        "runStatus": {
-          "queued": "等候中",
-          "running": "正在處理",
-          "waiting_for_approval": "等待批准",
-          "waiting_for_input": "等待輸入",
-          "cancelling": "正在停止",
-          "succeeded": "已完成",
-          "failed": "失敗",
-          "cancelled": "已取消"
-        },
-        "turnFailure": {
-          "region": "StoryOS 本輪失敗",
-          "title": {
-            "inputRejected": "StoryOS 發出的請求被本故事拒絕",
-            "notRecorded": "改動已執行，但未能記錄",
-            "failed": "本輪失敗"
-          },
-          "explanation": {
-            "inputRejected": "StoryOS 建立了無效的工具呼叫，因此沒有任何改動生效。重新傳送請求可讓它再試一次。",
-            "notRecorded": "該操作已到達你的故事，但伺服器未能記錄結果，因此你的故事沒有任何改動。伺服器已將這次故障標記為重發也無法解決，請編輯這條請求，換一種方式描述你要的改動。",
-            "failed": "本輪在完成前中止，因此它承諾的改動均未生效。"
-          },
-          "issues": "伺服器拒絕的內容",
-          "code": "錯誤碼",
-          "diagnosticId": "診斷編號",
-          "details": "詳情",
-          "dismiss": "關閉",
-          "retry": "重新傳送該請求",
-          "reword": "編輯這條請求",
-          "openSurface": "開啟 StoryOS"
-        },
-        "stall": {
-          "region": "本輪無回應",
-          "title": "本輪已停止回報進度",
-          "explanation": "對話頻道已超過兩分鐘沒有任何訊息。本輪可能仍在執行，也可能是處理它的工作行程已經結束。可以繼續等待，或停止後重試。",
-          "stop": "停止本輪"
-        },
-        "childRuns": {
-          "group": "委派任務"
-        },
-        "composer": {
-          "input": "向 StoryOS 傳送訊息",
-          "placeholder": "讓 StoryOS 分析、規劃或修改這個故事……",
-          "stop": "停止目前任務",
-          "stopping": "正在停止目前執行…",
-          "cancelReason": "創作者已取消目前任務。",
-          "queued": "{count} 則訊息等待處理",
-          "deliveryModeMenu": "選擇訊息處理方式",
-          "attachments": {
-            "add": "加入參考檔案",
-            "drop": "將圖片、TXT、Markdown、DOCX 或 PDF 檔案拖到這裡",
-            "remove": "移除 {fileName}",
-            "retry": "重試 {fileName}",
-            "uploading": "正在上載 · {progress}%",
-            "processing": "正在擷取文字 · {progress}%",
-            "ready": "已就緒",
-            "failed": "上載失敗",
-            "emptyFile": "無法上載空白檔案。",
-            "unsupportedType": "只支援 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 檔案。",
-            "tooLarge": "此檔案大小不能超過 {maxSize}。",
-            "fileNameTooLong": "檔案名稱不能超過 255 個字元。"
-          },
-          "delivery": {
-            "send": {
-              "label": "傳送",
-              "description": "開始一輪新的 StoryOS 對話。"
-            },
-            "steer": {
-              "label": "立即調整",
-              "description": "在下一個安全節點為目前任務補充方向。"
-            },
-            "enqueue": {
-              "label": "排到下一則",
-              "description": "繼續目前任務，完成後再處理這則訊息。"
-            },
-            "stopAndSend": {
-              "label": "停止並傳送",
-              "description": "取消目前任務，然後用這則訊息開始新一輪。"
-            }
-          }
-        },
-        "permission": {
-          "menu": "StoryOS 操作權限",
-          "options": {
-            "ask": {
-              "label": "每次詢問",
-              "description": "執行任何會改動你資料的操作前都先請求批准。"
-            },
-            "smart": {
-              "label": "自動批准",
-              "description": "除刪除外，其餘操作都自動執行。"
-            },
-            "full": {
-              "label": "完全授權",
-              "description": "包括刪除在內的操作都自動執行；平台安全規則仍然生效。"
-            }
-          }
-        },
-        "toolApproval": {
-          "title": "StoryOS 要求執行 {toolName}。",
-          "approve": "允許",
-          "deny": "拒絕",
-          "showInput": "查看執行參數",
-          "hideInput": "隱藏執行參數",
-          "preparing": "正在準備安全審批節點……",
-          "resuming": "正在繼續本輪",
-          "decision": {
-            "approved": "已允許",
-            "denied": "已拒絕"
-          }
-        }
-      },
-      "firstOpen": {
-        "title": "讓每個選擇，改寫故事",
-        "description": "把你想創作的故事告訴 StoryOS，或選擇一種導演 Skill，由它草擬第一版。",
-        "start": "描述你自己的故事",
-        "skillsTitle": "或從一種導演 Skill 開始",
-        "connecting": "正在連接 StoryOS……",
-        "unavailable": "StoryOS 暫時無法使用，目前無法草擬任何內容。畫布仍然可以手動搭建。",
-        "retry": "重試",
-        "skills": {
-          "halftoneCollage": {
-            "title": "半調紙拼貼",
-            "description": "純色紙底、半調剪貼與卡紙點綴，每個選擇拼裝成一個視覺隱喻。",
-            "prompt": "創作一個互動短篇：一隻裝滿舊車票與照片的手提箱在午夜自動打開，每個剪貼物件都是一段被摺疊的記憶。主人公整理遺物時，逐漸拼出母親隱瞞一生的旅程。使用 10-14 個影視片段，開場 2 個片段內拋出懸念，之後每 2-3 個片段一次關鍵選擇，讓每條路線自然結束於最後一個片段。",
-            "styleBrief": "美術方向：純色紙底、黑白半調剪貼與卡紙點綴，每個節點用三至六件物件拼出一個視覺隱喻。不要文字排版、不要 3D、不要寫實照片感。"
-          },
-          "symmetricalStorybook": {
-            "title": "對稱童話電影",
-            "description": "對稱構圖、章節旁白與復古色彩，營造克制又荒誕的童話感。",
-            "prompt": "創作一個互動短篇：粉色山間旅館迎來一位從不摘帽的神秘住客，門童奉命查明緣由。按影視章節推進，每章一次關鍵選擇，讓旅館秩序更荒誕一分、真相更近一步。使用約 12 個影視片段和三幕結構，每幕收在一個視覺反轉，讓每條路線自然結束於最後一個片段。",
-            "styleBrief": "美術方向：刻意對稱的置中構圖，每一幕一個章節母題，克制的復古配色，揭示時機精準而收斂。"
-          }
-        }
-      },
       "saveState": {
         "idle": "可編輯草稿 · 修訂 {revision}",
         "dirty": "有未儲存修改 · 修訂 {revision}",
@@ -2223,23 +2758,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "創作畫布",
-        "identity": "Story Studio · 內容創作",
-        "groupDropHint": "放開以加入此分組",
-        "workspaceLabel": "項目素材創作空間",
-        "backToChapter": "返回章節畫布",
-        "closeSaveError": "無法儲存最新的畫布修改，請重試後再離開。",
-        "loadError": "無法開啟創作畫布。",
-        "retry": "重試",
-        "assets": {
-          "description": "瀏覽項目素材，並將可重用媒體拖入畫布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候選素材",
-          "description": "整理可供故事節點直接重用的媒體。",
-          "open": "開啟候選素材",
-          "close": "關閉候選素材",
           "add": "加入候選素材",
           "remove": "從候選素材移除",
           "filterLabel": "篩選候選素材",
@@ -2251,7 +2772,7 @@
           },
           "empty": "尚未有候選素材",
           "emptyFilter": "此分類暫無素材",
-          "emptyDescription": "選取已完成的媒體節點，透過浮動工具列加入。",
+          "emptyDescription": "選取已完成的媒體節點，透過節點工具列加入。",
           "loadError": "無法載入候選素材。",
           "actionError": "無法更新候選素材。",
           "retry": "重試",
@@ -2262,10 +2783,7 @@
           }
         },
         "status": {
-          "loading": "正在載入",
-          "saving": "正在儲存…",
-          "saved": "已儲存",
-          "error": "儲存失敗"
+          "loading": "正在載入"
         }
       },
       "candidatePicker": {
@@ -2290,7 +2808,7 @@
         "loading": "正在載入候選素材…",
         "retry": "重試",
         "empty": "沒有符合條件的候選素材",
-        "emptyDescription": "請先在創作畫布中將完成的圖片或影片加入候選素材。",
+        "emptyDescription": "請先在創意工作台中將完成的圖片或影片加入候選素材。",
         "assetLabel": {
           "image": "圖片 {index}",
           "video": "影片 {index}"
@@ -2399,7 +2917,7 @@
       "share": "共創"
     },
     "workbench": {
-      "back": "返回 Story Studio",
+      "back": "返回影遊工作室",
       "draftHead": "可編輯草稿 · 修訂 {revision}",
       "stageNav": "專案階段",
       "stages": {
@@ -2589,5 +3107,143 @@
     },
     "emptySequence": "暫無影片",
     "loadingMedia": "正在載入影片"
+  },
+  "agentOs": {
+    "title": "FizzAgent",
+    "subtitle": "對話式執行智能體 — 工具會真正寫入項目",
+    "close": "關閉 FizzAgent",
+    "open": "打開 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想創作甚麼？",
+      "ask": "我是 FizzAgent，隨時向我提問。",
+      "help": "我可以幫你完善故事和畫布。"
+    },
+    "emptyHint": "上傳劇本檔案，告訴 FizzAgent 要完成的任務，批准寫入後繼續追問。",
+    "emptyHintStory": "加入參考資料，或告訴 FizzAgent 如何推進目前章節，然後繼續打磨故事。",
+    "modelProfile": "模型",
+    "permissionMode": "權限模式",
+    "permAsk": "每次詢問",
+    "permSmart": "智能",
+    "permFull": "完全存取",
+    "permHint_ask": "每次寫入前都需批准",
+    "permHint_smart": "安全操作自動執行，敏感寫入才詢問",
+    "permHint_full": "寫入自動執行，僅 critical 操作攔截",
+    "scriptOptional": "新增附件",
+    "scriptPlaceholder": "",
+    "scriptAttached": "附件 · {chars} 字",
+    "attachFile": "新增附件",
+    "uploading": "上傳中…",
+    "removeAttachment": "移除附件",
+    "attachmentReady": "已附加 {count} 個檔案",
+    "attachmentFailed": "無法處理 {name}",
+    "attachmentFailedGeneric": "上傳失敗",
+    "attachmentTooMany": "每則訊息最多可加入 {count} 個檔案",
+    "attachmentTooLarge": "{name} 超過 {size} MB",
+    "attachmentEmpty": "{name} 是空白檔案",
+    "serviceUnavailable": "FizzAgent 服務暫時無法使用，請稍後再試。",
+    "dismissIssue": "關閉錯誤提示",
+    "message": "訊息",
+    "composerPlaceholder": "向 FizzAgent 傳送訊息… 需要時附加劇本檔案",
+    "composerPlaceholderStory": "傳送訊息給 FizzAgent… 需要時加入參考資料",
+    "skillsLabel": "技能",
+    "projectSkillsLabel": "專案 Skill",
+    "chooseProjectSkills": "選擇本則訊息使用的 Skill",
+    "catalogLoadFailed": "FizzAgent 模型與 Skill 載入失敗。",
+    "skillCatalogFailed": "專案 Skill 載入失敗。",
+    "skillDefaultBadge": "預設",
+    "skillToggleTurn": "本則訊息啟用",
+    "send": "傳送",
+    "stop": "停止",
+    "stopped": "已停止接收本輪輸出",
+    "newChat": "新對話",
+    "newConversationDialog": {
+      "title": "開始新對話？",
+      "description": "這會清空目前會話內容，且無法復原；已寫入項目的內容不受影響。",
+      "cancel": "保留目前對話",
+      "confirm": "清空並新增"
+    },
+    "runDetails": {
+      "open": "運行詳情",
+      "title": "運行詳情",
+      "description": "目前 FizzAgent 會話的診斷資訊。",
+      "status": "運行狀態",
+      "conversationId": "會話 ID",
+      "latestIssue": "最近問題",
+      "technicalDetail": "技術詳情",
+      "notAvailable": "暫無",
+      "close": "知道了",
+      "statusValue": {
+        "idle": "空閒",
+        "running": "運行中",
+        "waiting_for_approval": "等待審批",
+        "completed": "已完成",
+        "failed": "失敗",
+        "cancelled": "已取消"
+      }
+    },
+    "thinking": "處理中…",
+    "transcriptLabel": "FizzAgent 對話",
+    "scrollToLatest": "滾到最新",
+    "roleUser": "你",
+    "roleAssistant": "FizzAgent",
+    "roleSystem": "系統",
+    "roleTool": "工具",
+    "suggestCharacters": "根據劇本提取角色並寫入",
+    "suggestShots": "把劇本拆成 10 個分鏡鏡頭",
+    "suggestBoth": "先存劇本，再寫角色和分鏡",
+    "suggestStoryContinue": "為當前故事續寫一個新場景",
+    "suggestStoryBranch": "新增一個關鍵選擇和兩條分支",
+    "suggestStoryPolish": "檢查並潤色當前章節",
+    "run": "傳送",
+    "reset": "新對話",
+    "approve": "批准寫入",
+    "reject": "拒絕",
+    "approved": "已批准寫入",
+    "rejected": "已拒絕寫入",
+    "runFailed": "Agent 失敗",
+    "sendFailed": "傳送失敗",
+    "approvalFailed": "審批失敗",
+    "approvalStoryBible": "故事設定",
+    "approvalStoryEntry": "故事入口",
+    "approvalSceneOrder": "場景順序",
+    "approvalStoryScene": "故事場景",
+    "approvalNotReady": "審批資訊還在準備中，請稍後再點",
+    "event": {
+      "RunStarted": "開始運行",
+      "PlanCreated": "計劃",
+      "ToolProposed": "提議工具",
+      "ToolStarted": "工具開始",
+      "ToolCompleted": "工具完成",
+      "ToolFailed": "工具失敗",
+      "ApprovalRequired": "需要審批",
+      "ApprovalResolved": "審批已處理",
+      "MessageCompleted": "回覆",
+      "RunPaused": "已暫停",
+      "RunCompleted": "已完成",
+      "RunFailed": "失敗",
+      "RunCancelled": "已取消",
+      "ProjectPatchApplied": "項目已更新"
+    },
+    "projectArtifacts": "項目產物",
+    "characters": "角色",
+    "shots": "分鏡鏡頭",
+    "refreshArtifacts": "重新整理",
+    "artifactsEmpty": "尚未寫入角色或分鏡。在對話中提出任務並批准寫入。",
+    "artifactsLoadFailed": "無法載入項目產物",
+    "workerOnline": "Worker 在線",
+    "workerOffline": "目前無法使用——正在自動重試",
+    "shotsSynced": "分鏡已同步 · 新增 {created} · 更新 {updated}",
+    "charactersWritten": "已寫入項目 {count} 個角色",
+    "approvalCreates": "新增 {count} 項",
+    "approvalUpdates": "修改 {count} 項",
+    "approvalDeletes": "刪除 {count} 項",
+    "approvalAndMore": "尚有 {count} 項",
+    "approvalShowDetails": "查看完整請求",
+    "approvalHideDetails": "收起完整請求",
+    "approvalUntitled": "未命名",
+    "pollLost": "與伺服器失去聯繫，已停止追蹤今次對話。它可能仍在執行——重新傳送或重新開啟面板即可查看。",
+    "showOnCanvas": "在畫布中查看",
+    "pollTimeout": "已停止追蹤今次對話（超過 10 分鐘）。它可能仍在執行——重新開啟面板即可查看。",
+    "runOrphaned": "今次對話在完成前被中斷——agent 程序重新啟動了。重新傳送訊息即可重試。"
   }
 }

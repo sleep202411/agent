@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconCloudUpload,
+  IconLayoutList,
   IconNote,
   IconPhoto,
   IconSearch,
@@ -12,7 +13,50 @@ import {
 } from "@tabler/icons-react";
 
 /** Product-neutral creation actions shared by every media-authoring canvas. */
-export type AddNodeAction = "upload" | "generate-image" | "generate-video" | "note";
+export type AddNodeAction = "upload" | "generate-image" | "generate-video" | "note" | "shot";
+
+/** What a canvas offers when the product doesn't narrow it. */
+export const DEFAULT_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
+  "upload",
+  "generate-image",
+  "generate-video",
+  "note",
+];
+
+/** Complete node catalog used by the project canvas and its sidebar panel. */
+export const PROJECT_CANVAS_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
+  ...DEFAULT_ADD_NODE_ACTIONS,
+  "shot",
+];
+
+/** Storyboard projects the canvas's shot nodes as rows, so this is its only creation action. */
+export const STORYBOARD_ADD_NODE_ACTIONS: readonly AddNodeAction[] = ["shot"];
+
+/** Keyboard shortcut per creation action (single key, no modifier). */
+export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
+  upload: "u",
+  "generate-image": "i",
+  "generate-video": "v",
+  note: "n",
+  shot: "s",
+};
+
+export const ADD_NODE_ICONS: Record<AddNodeAction, Icon> = {
+  upload: IconCloudUpload,
+  "generate-image": IconPhoto,
+  "generate-video": IconVideo,
+  note: IconNote,
+  shot: IconLayoutList,
+};
+
+/** Translation key under `canvasControls.addNode` / `canvas.dock`. */
+export const ADD_NODE_LABEL_KEYS: Record<AddNodeAction, string> = {
+  upload: "upload",
+  "generate-image": "image",
+  "generate-video": "video",
+  note: "note",
+  shot: "shot",
+};
 
 type MenuItem = { label: string; icon: Icon; shortcut: string; action: AddNodeAction };
 
@@ -20,12 +64,15 @@ export function AddNodeMenu({
   left,
   top,
   state = "open",
+  actions = DEFAULT_ADD_NODE_ACTIONS,
   onAction,
   disabledActions,
 }: {
   left: number;
   top: number;
   state?: "open" | "closed";
+  /** Creation actions this canvas offers, in display order. */
+  actions?: readonly AddNodeAction[];
   onAction: (action: AddNodeAction) => void;
   /**
    * Actions that can't accept the dragged source's output type — shown greyed
@@ -37,15 +84,15 @@ export function AddNodeMenu({
   const t = useTranslations("canvasControls");
   const [query, setQuery] = useState("");
 
-  // Only the node types the studio actually supports today.
   const ITEMS: MenuItem[] = useMemo(
-    () => [
-      { label: t("addNode.upload"), icon: IconCloudUpload, shortcut: "U", action: "upload" },
-      { label: t("addNode.image"), icon: IconPhoto, shortcut: "I", action: "generate-image" },
-      { label: t("addNode.video"), icon: IconVideo, shortcut: "V", action: "generate-video" },
-      { label: t("addNode.note"), icon: IconNote, shortcut: "N", action: "note" },
-    ],
-    [t]
+    () =>
+      actions.map((action) => ({
+        label: t(`addNode.${ADD_NODE_LABEL_KEYS[action]}`),
+        icon: ADD_NODE_ICONS[action],
+        shortcut: ADD_NODE_SHORTCUTS[action].toUpperCase(),
+        action,
+      })),
+    [actions, t]
   );
 
   const items = useMemo(() => {

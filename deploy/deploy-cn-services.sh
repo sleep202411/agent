@@ -1,165 +1,226 @@
-#!/bin/bash
-# .cn 按服务选择性部署 —— 不改 deploy-cn.sh / cn-remote-build.sh。
-#
-#   ./deploy/deploy-cn-services.sh [--full] <service...>
-#   ./deploy/deploy-cn-services.sh web
-#   ./deploy/deploy-cn-services.sh --full web studio
-#   ./deploy/deploy-cn-services.sh all          # 等同 deploy-cn.sh（五服务）
-#
-# 服务名：web studio admin-ui server agent
-# helm 用 --reuse-values，只改所选服务的 image.tag。
-# 前置与 deploy-cn.sh 相同：main、干净工作区、aliyun/helm/SSH/ACR 凭据。
+#!/usr/bin/env bash
+# Mainland-China release path:
+#   full git archive -> cn-hangzhou build ECS -> CN ACR -> ACK Helm release.
+# Helm owns the whole release, so a chart/config change requires the explicit
+# --allow-chart-update acknowledgement even for a one-service image release.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 
-MODE=incremental
-ARGS=()
-for a in "$@"; do
-  if [ "$a" = "--full" ]; then
-    MODE=full
-  else
-    ARGS+=("$a")
-  fi
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+PHASE=all
+FULL=0
+ALLOW_CHART_UPDATE=0
+REQUESTED=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --full) FULL=1; shift ;;
+    --build-only) PHASE=build; shift ;;
+    --deploy-only) PHASE=deploy; shift ;;
+    --allow-chart-update) ALLOW_CHART_UPDATE=1; shift ;;
+    -h|--help)
+      echo "Usage: $0 [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
+      echo "Services: web studio admin-ui server; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
+      exit 0
+      ;;
+    -*) echo "Unknown option: $1" >&2; exit 2 ;;
+    *) REQUESTED+=("$1"); shift ;;
+  esac
 done
 
-if [ "${#ARGS[@]}" -eq 0 ]; then
-  echo "用法: $0 [--full] <service...> | all" >&2
-  echo "服务: web studio admin-ui server agent" >&2
+[ "${#REQUESTED[@]}" -gt 0 ] || { echo "No services selected" >&2; exit 2; }
+if [ "${REQUESTED[0]}" = platform ] || [ "${REQUESTED[0]}" = all ]; then
+  SERVICES=(server studio web admin-ui)
+else
+  SERVICES=("${REQUESTED[@]}")
+fi
+
+for service in "${SERVICES[@]}"; do
+  case "$service" in
+    web|studio|admin-ui|server) ;;
+    agent)
+      [ "${ALLOW_LEGACY_AGENT_DEPLOY:-0}" = 1 ] || {
+        echo "FATAL: legacy agent is frozen/quarantined; set ALLOW_LEGACY_AGENT_DEPLOY=1 only after its image passes a real boot test" >&2
+        exit 2
+      }
+      ;;
+    *) echo "Unknown service: $service" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$PHASE" != deploy ] && [ "$FULL" -ne 1 ]; then
+  echo "FATAL: CN source transfer is full-only. Pass --full." >&2
   exit 2
 fi
 
-if [ "${ARGS[0]}" = "all" ]; then
-  SERVICES=(web studio admin-ui server agent)
-else
-  SERVICES=("${ARGS[@]}")
-fi
-
-for s in "${SERVICES[@]}"; do
-  case "$s" in
-    web|studio|admin-ui|server|agent) ;;
-    *) echo "未知服务: $s（允许: web studio admin-ui server agent all）" >&2; exit 2 ;;
-  esac
-done
-
-TAG="$(git rev-parse --short HEAD)"
-ECS_ID=i-bp11r90r4g91u39iimnx
+TAG="$(git rev-parse HEAD)"
+ECS_ID="${CN_BUILD_ECS_ID:-i-bp11r90r4g91u39iimnx}"
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
-SSH="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
-SCP="scp -i $DEPLOY_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+NAMESPACE="${CN_NAMESPACE:-fizzdragon}"
+RELEASE="${CN_RELEASE:-fizzdragon}"
+CHART="$ROOT/deploy/helm/fizzdragon"
+CN_VALUES="$CHART/values.cn-prod.yaml"
 LIVE_ORIGIN="https://fizzstudio.fizzspace.cn"
-SERVICES_STR="${SERVICES[*]}"
+SSH=(ssh -i "$DEPLOY_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
+SCP=(scp -i "$DEPLOY_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [ "$BRANCH" != "main" ] && [ "${FORCE:-0}" != "1" ]; then
-  echo "✋ 当前分支 '$BRANCH'——生产只从 main 部署。先 merge develop→main，或 FORCE=1 覆盖。" >&2
-  exit 1
+contains_service() {
+  local wanted="$1" service
+  for service in "${SERVICES[@]}"; do [ "$service" = "$wanted" ] && return 0; done
+  return 1
+}
+
+chart_fingerprint() {
+  (
+    cd "$CHART"
+    find Chart.yaml values.yaml values.cn-prod.yaml templates -type f -print0 \
+      | sort -z \
+      | xargs -0 shasum -a 256
+  ) | shasum -a 256 | awk '{print $1}'
+}
+
+if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
+  "$ROOT/deploy/cn-preflight.sh" --phase build "${SERVICES[@]}"
 fi
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "✋ 工作区有未提交改动——部署的是已提交的 HEAD，先 commit/stash 以免和你看到的不一致。" >&2
-  exit 1
+if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
+  "$ROOT/deploy/cn-preflight.sh" --phase deploy "${SERVICES[@]}"
 fi
 
-echo "==> [1/6] ensure build ECS up  (mode=$MODE, tag=$TAG, services=[$SERVICES_STR])"
-aliyun ecs StartInstance --InstanceId $ECS_ID --profile default >/dev/null 2>&1 || true
-for i in $(seq 1 40); do
-  s=$(aliyun ecs DescribeInstanceStatus --InstanceId.1 $ECS_ID --RegionId cn-hangzhou --profile default 2>/dev/null \
-        | python3 -c "import sys,json;a=json.load(sys.stdin).get('InstanceStatuses',{}).get('InstanceStatus',[]);print(a[0]['Status'] if a else '?')")
-  [ "$s" = "Running" ] && break; sleep 5
-done
-ECS_IP=$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
-  | python3 -c "import sys,json;i=json.load(sys.stdin)['Instances']['Instance'][0];eip=i.get('EipAddress',{}).get('IpAddress','');pub=i.get('PublicIpAddress',{}).get('IpAddress',[]);print(eip or (pub[0] if pub else ''))")
-[ -n "$ECS_IP" ] || { echo "FATAL: could not resolve build ECS public IP" >&2; exit 1; }
-for i in $(seq 1 12); do nc -z -G 5 "$ECS_IP" 22 2>/dev/null && break; sleep 5; done
-echo "  build ECS IP: $ECS_IP"
+TMP_DIR=""
+ECS_IP=""
+MANIFEST_FILE=""
+cleanup() {
+  [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
+  [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
+  rm -f /tmp/cn-src.tar.gz /tmp/cn-build-services.log
+  if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
+    echo "==> stopping CN build ECS"
+    aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
 
-if [ "$MODE" = full ]; then
-  echo "==> [2/6] full: secret-free 源码 tarball @ $TAG → 分块跨境同步"
-  TMP=$(mktemp -d); trap 'rm -rf "$TMP" /tmp/cn-src.tar.gz' EXIT
-  git archive HEAD | tar -x -C "$TMP"
-  find "$TMP" -type f -name ".env*" ! -path "*/apps/web/.env.production.cn" -delete
-  sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#" "$TMP/apps/web/.env.production.cn"
-  tar -czf /tmp/cn-src.tar.gz -C "$TMP" .
-  SZ=$(stat -f%z /tmp/cn-src.tar.gz 2>/dev/null || stat -c%s /tmp/cn-src.tar.gz)
-  CHUNK_DIR="$TMP/chunks"; mkdir -p "$CHUNK_DIR"
-  ( cd "$CHUNK_DIR" && split -b 4m /tmp/cn-src.tar.gz part- )
-  $SSH root@$ECS_IP "rm -rf /root/src-chunks && mkdir -p /root/src-chunks"
-  for f in "$CHUNK_DIR"/part-*; do
-    name=$(basename "$f"); want=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f")
-    for i in $(seq 1 6); do
-      $SCP "$f" root@$ECS_IP:/root/src-chunks/"$name" 2>/dev/null || true
-      got=$($SSH root@$ECS_IP "stat -c%s /root/src-chunks/$name 2>/dev/null" 2>/dev/null || true)
-      [ "$got" = "$want" ] && break
-      echo "  $name attempt $i: $got/$want — retry"
+if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
+  echo "==> start CN build ECS (tag=$TAG services=${SERVICES[*]})"
+  aliyun ecs StartInstance --InstanceId "$ECS_ID" --profile default >/dev/null 2>&1 || true
+  for _ in $(seq 1 40); do
+    state="$(aliyun ecs DescribeInstanceStatus --InstanceId.1 "$ECS_ID" --RegionId cn-hangzhou --profile default 2>/dev/null \
+      | python3 -c 'import json,sys; a=json.load(sys.stdin).get("InstanceStatuses",{}).get("InstanceStatus",[]); print(a[0]["Status"] if a else "")')"
+    [ "$state" = Running ] && break
+    sleep 5
+  done
+  [ "${state:-}" = Running ] || { echo "FATAL: build ECS did not become Running" >&2; exit 1; }
+  ECS_IP="$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
+    | python3 -c 'import json,sys; i=json.load(sys.stdin)["Instances"]["Instance"][0]; e=i.get("EipAddress",{}).get("IpAddress",""); p=i.get("PublicIpAddress",{}).get("IpAddress",[]); print(e or (p[0] if p else ""))')"
+  [ -n "$ECS_IP" ] || { echo "FATAL: no build ECS public IP" >&2; exit 1; }
+  for _ in $(seq 1 12); do
+    "${SSH[@]}" "root@$ECS_IP" true >/dev/null 2>&1 && break
+    sleep 5
+  done
+  "${SSH[@]}" "root@$ECS_IP" true >/dev/null
+
+  echo "==> full secret-free source sync"
+  TMP_DIR="$(mktemp -d)"
+  git archive HEAD | tar -x -C "$TMP_DIR"
+  printf '%s\n' "$TAG" > "$TMP_DIR/.fizzdragon-source-revision"
+  find "$TMP_DIR" -type f -name '.env*' ! -path '*/apps/web/.env.production.cn' -delete
+  sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#" "$TMP_DIR/apps/web/.env.production.cn"
+  # macOS bsdtar otherwise attaches AppleDouble/provenance xattrs to every
+  # archived file, producing thousands of irrelevant warnings on Linux tar.
+  COPYFILE_DISABLE=1 tar --no-xattrs -czf /tmp/cn-src.tar.gz -C "$TMP_DIR" .
+  archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
+  chunk_dir="$TMP_DIR/chunks"
+  mkdir -p "$chunk_dir"
+  (cd "$chunk_dir" && split -b 4m /tmp/cn-src.tar.gz part-)
+  "${SSH[@]}" "root@$ECS_IP" 'rm -rf /root/src-chunks && mkdir -p /root/src-chunks'
+  for chunk in "$chunk_dir"/part-*; do
+    name="$(basename "$chunk")"
+    wanted="$(stat -f%z "$chunk" 2>/dev/null || stat -c%s "$chunk")"
+    got=""
+    for attempt in $(seq 1 6); do
+      "${SCP[@]}" "$chunk" "root@$ECS_IP:/root/src-chunks/$name" >/dev/null 2>&1 || true
+      got="$("${SSH[@]}" "root@$ECS_IP" "stat -c%s /root/src-chunks/$name 2>/dev/null" 2>/dev/null || true)"
+      [ "$got" = "$wanted" ] && break
+      echo "  $name attempt $attempt: ${got:-0}/$wanted"
     done
-    [ "$got" = "$want" ] || { echo "FATAL: chunk $name failed"; exit 1; }
+    [ "$got" = "$wanted" ] || { echo "FATAL: failed to transfer $name" >&2; exit 1; }
   done
-  $SSH root@$ECS_IP "cat /root/src-chunks/part-* > /root/src.tar.gz && rm -rf /root/src-chunks"
-  R=$($SSH root@$ECS_IP "stat -c%s /root/src.tar.gz 2>/dev/null" 2>/dev/null || true)
-  [ "$R" = "$SZ" ] && echo "  synced ($SZ bytes)" || { echo "FATAL: reassembled size $R != $SZ"; exit 1; }
-else
-  BASE="$($SSH root@$ECS_IP 'cat /root/.deployed-tag 2>/dev/null' 2>/dev/null || true)"
-  [ -n "$BASE" ] || { echo "FATAL: ECS 无 /root/.deployed-tag —— 先跑一次 --full。" >&2; exit 1; }
-  echo "==> [2/6] incremental: patch diff ${BASE}..${TAG} 进 ECS tarball"
-  $SSH root@$ECS_IP 'rm -rf /root/stage && mkdir -p /root/stage && tar -xzf /root/src.tar.gz -C /root/stage'
-  CHANGED="$(git diff --name-only --no-renames "$BASE"..HEAD || true)"
-  [ -n "$CHANGED" ] || { echo "  no changes vs $BASE — nothing to deploy"; exit 0; }
-  for f in $CHANGED; do
-    if [ -f "$f" ]; then
-      $SSH root@$ECS_IP "mkdir -p '/root/stage/$(dirname "$f")'"
-      $SCP "$f" "root@$ECS_IP:'/root/stage/$f'" >/dev/null && echo "  + $f"
-    else
-      $SSH root@$ECS_IP "rm -f '/root/stage/$f'" && echo "  - $f (deleted)"
-    fi
-  done
-  $SSH root@$ECS_IP "sed -i 's#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#' /root/stage/apps/web/.env.production.cn"
-  $SSH root@$ECS_IP 'cd /root/stage && tar -czf /root/src.tar.gz .'
-  $SSH root@$ECS_IP 'rm -rf /root/vrfy && mkdir /root/vrfy && tar -xzf /root/src.tar.gz -C /root/vrfy && [ -f /root/vrfy/apps/web/.env.production.cn ]' \
-    || { echo "FATAL: re-tarred tarball failed verification"; exit 1; }
+  "${SSH[@]}" "root@$ECS_IP" 'cat /root/src-chunks/part-* > /root/src.tar.gz && rm -rf /root/src-chunks'
+  remote_sha="$("${SSH[@]}" "root@$ECS_IP" 'sha256sum /root/src.tar.gz | awk '\''{print $1}'\''' 2>/dev/null)"
+  [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
+
+  echo "==> in-region build and push"
+  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
+  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
+  "${SCP[@]}" "$ROOT/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
+  "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
+    | tee /tmp/cn-build-services.log
+  echo "==> images built and pushed; no ACK workload changed"
 fi
 
-echo "==> [3/6] in-region build + push [$SERVICES_STR]"
-$SCP ~/.fizzdragon-cn/acr-username.txt root@$ECS_IP:/root/.acr_user
-$SCP ~/.fizzdragon-cn/acr-password.txt root@$ECS_IP:/root/.acr_token
-$SCP "$ROOT/deploy/cn-remote-build-services.sh" root@$ECS_IP:/root/cn-remote-build-services.sh
-$SSH root@$ECS_IP "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG=$TAG SERVICES='$SERVICES_STR' bash /root/cn-remote-build-services.sh" \
-  | tee /tmp/cn-build-services.log
-grep -q "BUILDFAIL\|PUSHFAIL" /tmp/cn-build-services.log && { echo "FATAL: a selected service failed to build/push"; exit 1; }
+if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
+  export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-fizzdragon-cn}"
+  fingerprint="$(chart_fingerprint)"
+  live_fingerprint="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("cnRelease",{}).get("chartFingerprint",""))' 2>/dev/null || true)"
 
-HELM_SETS=()
-ROLLOUTS=()
-for s in "${SERVICES[@]}"; do
-  case "$s" in
-    web)      HELM_SETS+=(--set "web.image.tag=$TAG"); ROLLOUTS+=(deploy/fizzdragon-web) ;;
-    studio)   HELM_SETS+=(--set "studio.image.tag=$TAG"); ROLLOUTS+=(deploy/fizzdragon-studio) ;;
-    admin-ui) HELM_SETS+=(--set "adminUi.image.tag=$TAG"); ROLLOUTS+=(deploy/fizzdragon-admin-ui) ;;
-    server)   HELM_SETS+=(--set "server.image.tag=$TAG"); ROLLOUTS+=(deploy/fizzdragon-server) ;;
-    agent)
-      HELM_SETS+=(--set "agent.image.tag=$TAG" --set "agentWorker.image.tag=$TAG")
-      ROLLOUTS+=(deploy/fizzdragon-agent deploy/fizzdragon-agent-worker)
-      ;;
-  esac
-done
+  live_tag() {
+    local deployment="$1" image
+    image="$(kubectl get deploy "$deployment" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    printf '%s\n' "${image##*:}"
+  }
+  web_tag="$(contains_service web && printf '%s' "$TAG" || live_tag fizzdragon-web)"
+  studio_tag="$(contains_service studio && printf '%s' "$TAG" || live_tag fizzdragon-studio)"
+  admin_tag="$(contains_service admin-ui && printf '%s' "$TAG" || live_tag fizzdragon-admin-ui)"
+  server_tag="$(contains_service server && printf '%s' "$TAG" || live_tag fizzdragon-server)"
 
-echo "==> [4/6] helm upgrade [$SERVICES_STR] -> $TAG (reuse other service tags)"
-export KUBECONFIG=$HOME/.kube/config-fizzdragon-cn
-# --reuse-values: keep unselected services' tags from the last CN release.
-# Re-applying values.cn-prod.yaml would reset them to "set-at-deploy".
-helm upgrade fizzdragon "$ROOT/deploy/helm/fizzdragon" \
-  --reuse-values \
-  "${HELM_SETS[@]}" \
-  --force-conflicts --namespace fizzdragon
-for r in "${ROLLOUTS[@]}"; do
-  kubectl rollout status "$r" -n fizzdragon --timeout=180s || true
-done
+  helm_sets=(
+    --set-string "cnRelease.chartFingerprint=$fingerprint"
+    --set-string "web.image.tag=$web_tag"
+    --set-string "studio.image.tag=$studio_tag"
+    --set-string "adminUi.image.tag=$admin_tag"
+    --set-string "server.image.tag=$server_tag"
+    --set 'server.migrationJob.enabled=false'
+  )
+  if contains_service agent; then
+    helm_sets+=(--set-string "agent.image.tag=$TAG" --set-string "agentWorker.image.tag=$TAG")
+  fi
 
-echo "==> [5/6] record deployed tag"
-$SSH root@$ECS_IP "echo $TAG > /root/.deployed-tag"
+  echo "==> server-side manifest diff (read-only)"
+  MANIFEST_FILE="$(mktemp)"
+  helm template "$RELEASE" "$CHART" \
+    -f "$CHART/values.yaml" \
+    -f "$CN_VALUES" \
+    "${helm_sets[@]}" \
+    --namespace "$NAMESPACE" > "$MANIFEST_FILE"
+  if kubectl diff -n "$NAMESPACE" -f "$MANIFEST_FILE"; then
+    diff_status=0
+  else
+    diff_status=$?
+  fi
+  [ "$diff_status" -le 1 ] || { echo "FATAL: kubectl diff failed" >&2; exit 1; }
 
-if [ "$MODE" = full ]; then
-  echo "==> [6/6] stop build ECS"
-  aliyun ecs StopInstance --InstanceId $ECS_ID --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true
-else
-  echo "==> [6/6] ECS 留运行以便下次增量；用完手动停:"
-  echo "   aliyun ecs StopInstance --InstanceId $ECS_ID --StoppedMode StopCharging --profile default"
+  if [ "$live_fingerprint" != "$fingerprint" ] && [ "$ALLOW_CHART_UPDATE" -ne 1 ]; then
+    echo "FATAL: live CN chart/config fingerprint differs from this checkout." >&2
+    echo "Review the manifest diff above and rerun with --allow-chart-update; Helm updates the whole release." >&2
+    exit 1
+  fi
+
+  echo "==> atomic ACK Helm upgrade (services=${SERVICES[*]} tag=$TAG)"
+  helm upgrade "$RELEASE" "$CHART" \
+    -f "$CHART/values.yaml" \
+    -f "$CN_VALUES" \
+    "${helm_sets[@]}" \
+    --namespace "$NAMESPACE" \
+    --atomic --wait --timeout 15m --history-max 20 --force-conflicts
+
+  for service in "${SERVICES[@]}"; do
+    case "$service" in
+      admin-ui) deployment=fizzdragon-admin-ui ;;
+      *) deployment="fizzdragon-$service" ;;
+    esac
+    kubectl rollout status "deploy/$deployment" -n "$NAMESPACE" --timeout=5m
+  done
+  curl --fail --silent --show-error --max-time 20 https://fizzstudio.fizzspace.cn/aurora/ready >/dev/null
+  echo "DONE: CN release is healthy at $TAG"
 fi
-echo "DONE: $MODE deploy [$SERVICES_STR] $TAG -> fizzstudio.fizzspace.cn"

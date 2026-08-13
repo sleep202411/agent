@@ -209,10 +209,12 @@ function mapPeople(dto: IpDto): Person[] {
 }
 
 function mapDetail(dto: IpDto): IpDetail {
+  // Display index is 1-based list position (not raw episodeNo) so soft-deleted
+  // gaps don't show as missing EP numbers — same rule as web public/studio UI.
   const episodes: IpEpisode[] = (dto.episodes ?? []).map((episode, index) => ({
     id: episode.id,
-    index: episode.episodeNo ?? index + 1,
-    title: episode.title ?? `Episode ${episode.episodeNo ?? index + 1}`,
+    index: index + 1,
+    title: episode.title?.trim() || `Episode ${index + 1}`,
     durationLabel: durationLabel(episode.durationSeconds),
     thumbnailUrl: assetUrl(episode.coverAsset),
     // The episode's playable video is `mediaAsset`; fall back to a trailer preview.

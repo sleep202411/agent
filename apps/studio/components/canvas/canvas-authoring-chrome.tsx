@@ -6,6 +6,7 @@ import { useReactFlow, useViewport, type FitViewOptions } from "@xyflow/react";
 import {
   IconApps,
   IconCloudUpload,
+  IconLayoutList,
   IconMagnet,
   IconMap,
   IconMaximize,
@@ -18,7 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvasToolButtons } from "./canvas-controls";
-import type { AddNodeAction } from "./add-node-menu";
+import { ADD_NODE_LABEL_KEYS, DEFAULT_ADD_NODE_ACTIONS, type AddNodeAction } from "./add-node-menu";
 import { cn } from "@/lib/utils";
 
 export const CANVAS_FLOATING_PANEL =
@@ -63,7 +64,9 @@ export function CanvasAuthoringControls({
   return (
     <div
       className="nodrag nopan nowheel absolute bottom-4 z-20 flex h-[42px] items-center gap-0.5 rounded-full bg-popover/90 px-2 shadow-md backdrop-blur-xl transition-[left] duration-200 ease-out"
-      style={{ left: 16 + leftInset }}
+      style={{
+        left: `calc(var(--project-canvas-left-overlay-inset, 0px) + ${16 + leftInset}px)`,
+      }}
     >
       <CanvasToolButtons
         buttonClassName={controlClass}
@@ -143,18 +146,21 @@ export function CanvasAuthoringControls({
   );
 }
 
-const DOCK_ITEMS: {
-  action: AddNodeAction;
-  labelKey: "upload" | "image" | "video" | "note";
-  Icon: Icon;
-}[] = [
-  { action: "upload", labelKey: "upload", Icon: IconCloudUpload },
-  { action: "generate-image", labelKey: "image", Icon: IconPhoto },
-  { action: "generate-video", labelKey: "video", Icon: IconVideo },
-  { action: "note", labelKey: "note", Icon: IconNote },
-];
+const DOCK_ICONS: Record<AddNodeAction, Icon> = {
+  upload: IconCloudUpload,
+  "generate-image": IconPhoto,
+  "generate-video": IconVideo,
+  note: IconNote,
+  shot: IconLayoutList,
+};
 
-export function CanvasAuthoringDock({ onAdd }: { onAdd: (action: AddNodeAction) => void }) {
+export function CanvasAuthoringDock({
+  actions = DEFAULT_ADD_NODE_ACTIONS,
+  onAdd,
+}: {
+  actions?: readonly AddNodeAction[];
+  onAdd: (action: AddNodeAction) => void;
+}) {
   const t = useTranslations("canvas");
   return (
     <div
@@ -163,8 +169,9 @@ export function CanvasAuthoringDock({ onAdd }: { onAdd: (action: AddNodeAction) 
         CANVAS_FLOATING_PANEL
       )}
     >
-      {DOCK_ITEMS.map(({ action, labelKey, Icon }) => {
-        const label = t(`dock.${labelKey}`);
+      {actions.map((action) => {
+        const Icon = DOCK_ICONS[action];
+        const label = t(`dock.${ADD_NODE_LABEL_KEYS[action]}`);
         return (
           <button
             key={action}

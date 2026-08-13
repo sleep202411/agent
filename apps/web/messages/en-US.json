@@ -644,9 +644,9 @@
     "epDropzoneHint": "MP4 / WebM up to 2 GB",
     "epCoverLabel": "Cover",
     "epCoverDropzoneTitle": "Drop or click",
-    "epCoverHint": "JPG / PNG up to 5 MB",
+    "epCoverHint": "JPG / PNG up to 10 MB",
     "epCoverNotImage": "Please choose an image file",
-    "epCoverTooLarge": "Cover exceeds 5 MB",
+    "epCoverTooLarge": "Cover exceeds 10 MB",
     "epCoverRequired": "Please upload a cover image",
     "epProbing": "Reading video metadata…",
     "epLoadingPreview": "Loading preview…",
@@ -1113,7 +1113,6 @@
       "accessAlreadyEditor": "This user already has edit access.",
       "accessUserId": "ID: {id}",
       "accessGrantedLine": "ID: {id} · granted {date}",
-      "creatorShareLine": "Creators earn {pct} of each sale (set by platform).",
       "splitPrompt": "Split that pool among your team:",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "Anything left unallocated, plus rounding, goes to the IP owner.",
@@ -6013,11 +6012,7 @@
   },
   "payment": {
     "upgrade": "Upgrade Plan",
-    "vipPlans": "VIP Plans",
     "credits": "Buy Credits",
-    "perMonth": "/mo",
-    "days": "days",
-    "selectPlan": "Select Plan",
     "wechatPay": "WeChat Pay",
     "payNow": "Pay Now",
     "noPackages": "No top-up packages available yet.",
@@ -6036,9 +6031,7 @@
     "orderNo": "Order No",
     "backToCreatorCenter": "Back to Creator Center",
     "changePlan": "Change Plan",
-    "popular": "Popular",
     "creditsUnit": "credits",
-    "originalPrice": "Original",
     "creditsRechargeDesc": "Select a credits package to top up",
     "communityRechargeTitle": "Top Up Community Points",
     "communityRechargeDesc": "Select a package or enter a custom amount to top up community points",
@@ -6065,65 +6058,14 @@
     "pointsTypeLabel": "Community points",
     "customGetLabel": "You get",
     "unlockMore": "Unlock more AI creative power and boost your productivity",
-    "billingPeriod": "Billed per {days} {unit}",
-    "disclaimer": "By subscribing, you agree to our Terms of Service. Subscription benefits renew by billing cycle; included credits are issued after successful payment and follow the plan rules shown at checkout.",
     "plans": {
       "basic": "Basic",
       "standard": "Standard",
       "pro": "Pro",
       "team": "Team"
     },
-    "benefits": {
-      "bonusCredits": "Includes {value} credits",
-      "creditDiscount": "{percent}% off credit top-ups",
-      "freeCourses": "Exclusive course benefits",
-      "outputTitle": "Estimated Creative Output",
-      "outputImagesVideos": "Up to {images} images or {videos} videos",
-      "outputTime": "About {min}–{max} min creation time",
-      "outputAgents": "{count} pro agent breakdowns",
-      "storyosCore": "Core access",
-      "storyosFull": "Full access",
-      "storyosMessages": "{count} messages per conversation",
-      "storyosRetention": "{days}-day conversation history",
-      "storyosUnlimited": "Unlimited AI assistant access",
-      "storyosPriority": "Priority task queue"
-    },
     "membership": {
-      "subscriptionLabel": "FizzDragon Membership",
-      "headline": "Choose your creative plan",
-      "subheadline": "Scale image, video, and StoryOS production with monthly compute credits, priority access, and team-ready workflows.",
-      "planAudience": "Plan type",
-      "billingCycle": "Billing",
-      "annualSavings": "Save 25%",
-      "currencyNote": "{currency} pricing",
-      "contactSales": "Contact Sales",
-      "includedInPlan": "Included in plan",
-      "getStarted": "Get Started",
-      "perMonth": "/month",
-      "perYear": "/year",
-      "secureCheckout": "Secure checkout. Currency is selected from your request region.",
-      "individual": "Individual",
-      "teams": "Teams",
-      "monthly": "Monthly",
-      "yearly": "Yearly",
-      "oneTime": "One-time",
-      "loadFailed": "Membership plans failed to load.",
-      "emptyTitle": "No membership plans available",
-      "emptyBody": "Create membership plans and provider-bound prices in Admin Billing first.",
-      "defaultDescription": "Membership access for AI creative workflows.",
-      "computeCredits": "compute credits",
-      "seats": "seats",
-      "maxSeats": "up to {count}",
-      "approxImages": "Up to {count} image generations per month",
-      "privateGenerations": "Private generations",
-      "advancedWorkflows": "Advanced workflows",
-      "prioritySupport": "Priority support",
-      "sharedCredits": "Shared team credits",
-      "concurrentJobs": "{count} concurrent jobs",
-      "queuedJobs": "{count} queued jobs",
-      "customPrice": "Custom",
-      "priceUnavailable": "Price not configured",
-      "workspaceRequired": "Enter a team workspace before buying a team plan."
+      "getStarted": "Get Started"
     }
   },
   "guide": {
@@ -6532,7 +6474,7 @@
   },
   "home": {
     "hero": {
-      "statusPill": "Happy Horse · now available",
+      "statusPill": "Seedance 2.5 · now available",
       "headlineLine1": "The universe's most exciting",
       "headlineLine2": "AI story series",
       "subtitle": "Bringing together world-class creators from every corner of the globe to fuse history, literature, comics, philosophy, heroes, and legends into heart-driven global hits—beyond templates, unstoppable staying power.",
@@ -6975,6 +6917,10 @@
         "accenture": {
           "title": "Accenture",
           "body": "Qualified AI solution partner"
+        },
+        "auba": {
+          "title": "AUBA for Global",
+          "body": "International Open Innovation Platform"
         }
       }
     }
@@ -7528,7 +7474,7 @@
       "upload": " MB"
     },
     "badge": {
-      "unlimited": "VIP · priority queue",
+      "unlimited": "Unlimited · priority queue",
       "tooltipUsed": "{used}/{limit}{unit} used today · resets in {resetIn}"
     },
     "blocker": {
@@ -7544,7 +7490,7 @@
       "nextTierPriority": "Upgrade to {tier} · priority queue",
       "nextTierBody": "Unlocks {limit}{unit}/day",
       "nextTierBodyUnlimited": "Unlocks unlimited usage (no daily cap)",
-      "vip3Body": "You're already on VIP3 — the queue is busy right now, please try again in a moment.",
+      "topTierBody": "You're already on the highest plan. The queue is busy right now; please try again in a moment.",
       "later": "Later",
       "upgradeNow": "Upgrade now"
     }
@@ -8495,6 +8441,7 @@
     "createProjectDescLabel": "Description",
     "createProjectDescPlaceholder": "What is this project about? (optional)",
     "createProjectSubmit": "Create project",
+    "defaultSectionTitle": "Chapter 1",
     "createTeamWorkspace": "Create team",
     "createTeamWorkspaceTitle": "Create team workspace",
     "workspaceNameLabel": "Team name",
@@ -9081,18 +9028,96 @@
   },
   "games": {
     "back": "Back to IP plaza",
-    "eyebrow": "Interactive films",
-    "title": "Interactive films",
-    "subtitle": "A home for every published interactive film built with FizzDragon.",
-    "catalogue": {
-      "playableStory": "Interactive film",
-      "currentVersion": "Current release",
+    "eyebrow": "Playable stories",
+    "title": "Enter a story that listens.",
+    "subtitle": "Read at your own pace, choose what happens next, and return whenever you want. Every action becomes part of your story.",
+    "textGames": {
+      "title": "Text adventures",
+      "description": "Long-form worlds shaped by your decisions.",
+      "count": "{count} published worlds",
+      "label": "Text adventure",
+      "untitled": "Untitled world",
+      "empty": "No text adventures have been published yet.",
+      "unavailable": "The text-adventure catalogue is unavailable"
+    },
+    "films": {
+      "title": "Interactive films",
+      "description": "Cinematic stories with playable choices.",
+      "label": "Interactive film",
+      "currentVersion": "Release {version}",
       "open": "Play",
       "empty": "No interactive films have been published yet.",
       "unavailable": "The interactive-film catalogue is unavailable"
-    },
-    "status": {
-      "published": "Published"
+    }
+  },
+  "textGame": {
+    "metadataFallbackTitle": "Text adventure",
+    "metadataDescription": "A playable story on FizzDragon.",
+    "player": {
+      "untitled": "Untitled world",
+      "backToLibrary": "All stories",
+      "libraryTitle": "Text adventures",
+      "libraryDescription": "Choose another world",
+      "currentWork": "Currently reading",
+      "noOtherWorks": "There are no other published worlds yet.",
+      "openLibrary": "Open story library",
+      "resumedSession": "Progress restored",
+      "newSession": "A new story",
+      "pauseSoundtrack": "Pause soundtrack",
+      "playSoundtrack": "Play soundtrack",
+      "enableSoundtrack": "Enable sound",
+      "soundUnavailable": "The soundtrack could not be played.",
+      "restart": "Restart",
+      "restartTitle": "Restart this story?",
+      "restartDescription": "Your current progress will end and a new opening will be created.",
+      "cancel": "Cancel",
+      "restartComplete": "A new story has begun.",
+      "restartFailed": "The story could not be restarted.",
+      "restartingStory": "Starting a new story…",
+      "openInfo": "Open story information",
+      "characterCount": "Characters: {count}",
+      "openingStory": "Opening the world…",
+      "loadFailed": "The story could not be opened",
+      "loadFailedDescription": "Try again to restore your progress.",
+      "retry": "Try again",
+      "yourAction": "Your action",
+      "storyResponding": "The story is unfolding…",
+      "actionPlaceholder": "What do you do next?",
+      "sendAction": "Send action",
+      "sendFailed": "Your action could not be sent.",
+      "composerHint": "Enter to act · Shift + Enter for a new line",
+      "workInformation": "About this world",
+      "interactiveFiction": "Interactive fiction",
+      "share": "Share story",
+      "shareDescription": "Enter this playable story on FizzDragon.",
+      "linkCopied": "Story link copied.",
+      "shareFailed": "The story could not be shared.",
+      "like": "Like",
+      "dislike": "Dislike",
+      "report": "Report",
+      "comingSoon": "Coming soon",
+      "newStoryAction": "Restart story",
+      "storyControls": "Story controls",
+      "voice": "Voice",
+      "history": "History",
+      "customize": "Customize",
+      "model": "Model",
+      "models": {
+        "qwen": "Qwen",
+        "kimi": "Kimi",
+        "deepseek": "DeepSeek",
+        "glm": "GLM"
+      },
+      "currentScene": "Current scene",
+      "soundtrack": "Background soundtrack",
+      "soundtrackPlaying": "Playing in a loop",
+      "soundtrackPaused": "Paused",
+      "soundtrackNeedsActivation": "Click to play",
+      "cast": "Characters",
+      "progressSaved": "Your progress is saved automatically",
+      "stillAlt": "Story image {index}",
+      "previousStill": "Previous image",
+      "nextStill": "Next image"
     }
   },
   "notifications": {

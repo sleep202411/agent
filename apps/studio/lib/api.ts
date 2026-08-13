@@ -89,6 +89,7 @@ function responseErrorDetail(body: Record<string, unknown>): {
   const codeCandidate = nested?.code ?? body.code;
   const messageCandidate =
     (typeof nested?.message === "string" ? nested.message : undefined) ??
+    (typeof nested?.msg === "string" ? nested.msg : undefined) ??
     (typeof body.message === "string" ? body.message : undefined) ??
     (typeof body.msg === "string" ? body.msg : undefined) ??
     (typeof body.error === "string" ? body.error : undefined);
@@ -114,8 +115,9 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const url = buildUrl(path, params);
 
   const workspaceId = resolveWorkspaceId();
+  const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     "accept-language": resolveRequestLocale(),
     // Default workspace scope; an explicit per-call header still wins.
     ...(workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
@@ -123,7 +125,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   };
 
   const init: RequestInit = { method, headers, credentials: "include", ...rest };
-  if (data !== undefined) init.body = JSON.stringify(data);
+  if (data !== undefined) init.body = isFormData ? data : JSON.stringify(data);
 
   const controller = new AbortController();
   let timedOut = false;

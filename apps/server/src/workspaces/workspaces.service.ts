@@ -9,8 +9,8 @@ import {
   BillingOrderStatus,
   BillingSubjectType,
   BillingSubscriptionStatus,
-  PlatformDocumentStatus,
-  PlatformDocumentType,
+  StudioDocumentStatus,
+  StudioDocumentType,
   PlatformProjectStatus,
   ProjectMemberRole,
   ProjectMemberStatus,
@@ -40,6 +40,7 @@ import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
 import { enqueueProjectChanged } from './project-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
+import { createProjectSectionWithCanvas } from '../project-sections/project-section.persistence';
 
 type ProjectWithCanvasPreview = PlatformProject & {
   documents?: Array<{ contentSnapshot: unknown }>;
@@ -110,7 +111,6 @@ export class WorkspacesService {
               userId: user.userId,
               role: WorkspaceMemberRole.owner,
               status: WorkspaceMemberStatus.active,
-              seatAssigned: true,
             },
           });
         } else {
@@ -128,7 +128,6 @@ export class WorkspacesService {
                 userId: user.userId,
                 role: WorkspaceMemberRole.owner,
                 status: WorkspaceMemberStatus.active,
-                seatAssigned: true,
               },
             });
           }
@@ -168,7 +167,6 @@ export class WorkspacesService {
           userId: user.userId,
           role: WorkspaceMemberRole.owner,
           status: WorkspaceMemberStatus.active,
-          seatAssigned: true,
         },
       });
       return created;
@@ -191,10 +189,9 @@ export class WorkspacesService {
   }
 
   async getWorkspace(user: AuthUser, workspaceId: string) {
-    const membership = await this.permissions.requireWorkspaceRole(
+    const membership = await this.permissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
@@ -275,33 +272,32 @@ export class WorkspacesService {
   }
 
   async listProjects(user: AuthUser, workspaceId: string) {
-    await this.permissions.requireWorkspaceRole(
+    const membership = await this.permissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
     const projects = await this.prisma.platformProject.findMany({
       where: {
         deletedAt: null,
         status: PlatformProjectStatus.active,
-        OR: [
-          { workspaceId },
-          {
-            members: {
-              some: {
-                userId: user.userId,
-                status: ProjectMemberStatus.active,
-                removedAt: null,
+        workspaceId,
+        ...(membership.accessScope === 'project_only'
+          ? {
+              members: {
+                some: {
+                  userId: user.userId,
+                  status: ProjectMemberStatus.active,
+                  removedAt: null,
+                },
               },
-            },
-          },
-        ],
+            }
+          : {}),
       },
       include: {
         documents: {
           where: {
-            type: PlatformDocumentType.canvas,
-            status: PlatformDocumentStatus.active,
+            type: StudioDocumentType.canvas,
+            status: StudioDocumentStatus.active,
             deletedAt: null,
           },
           orderBy: [{ createdAt: 'asc' }],
@@ -355,6 +351,13 @@ export class WorkspacesService {
           role: ProjectMemberRole.owner,
           grantedById: user.userId,
         },
+      });
+      await createProjectSectionWithCanvas(tx, {
+        workspaceId,
+        projectId: created.id,
+        title: input.initialSectionTitle,
+        rank: 0,
+        actorId: user.userId,
       });
       await tx.workspace.updateMany({
         where: { id: workspaceId, defaultProjectId: null },

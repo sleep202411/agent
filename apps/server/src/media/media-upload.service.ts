@@ -81,6 +81,7 @@ import type {
 } from './dto';
 import type { UploadKind } from './dto';
 import {
+  EPISODE_VIDEO_MAX_BYTES,
   STORY_CLIP_VIDEO_CONTENT_TYPE,
   STORY_CLIP_VIDEO_MAX_BYTES,
 } from './media-upload.policy';
@@ -90,6 +91,7 @@ import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
 } from './uploaded-image-probe.service';
+import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaAssetReadinessService } from './media-asset-readiness.service';
 
 /**
@@ -117,7 +119,6 @@ interface UploadKindPolicy {
 }
 
 const MiB = 1024 * 1024;
-const GiB = 1024 * MiB;
 
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
@@ -137,7 +138,7 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/webp': 'webp',
 };
 
-const STUDIO_AGENT_DOCUMENT_CONTENT_TYPES: Record<string, string> = {
+const AGENT_DOCUMENT_CONTENT_TYPES: Record<string, string> = {
   'text/plain': 'txt',
   'text/markdown': 'md',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -158,7 +159,7 @@ const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
 const CREW_ASSET_CONTENT_TYPES: Record<string, string> = {
   ...IMAGE_CONTENT_TYPES,
   ...VIDEO_CONTENT_TYPES,
-  ...STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+  ...AGENT_DOCUMENT_CONTENT_TYPES,
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
@@ -209,7 +210,7 @@ const REFERENCE_AUDIO_CONTENT_TYPES: Record<string, string> = {
 const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   episode_video: {
     contentTypes: VIDEO_CONTENT_TYPES,
-    maxBytes: 2 * GiB,
+    maxBytes: EPISODE_VIDEO_MAX_BYTES,
     assetKind: MediaAssetKind.video,
     ttlSeconds: 3600, // 60 min — large video can be slow on the PUT
     keySegment: 'episode-video',
@@ -263,34 +264,17 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     verifiedImageFinalKeySegment: 'agent-attachment-image-final',
   },
   agent_attachment_document: {
-    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
+    contentTypes: AGENT_DOCUMENT_CONTENT_TYPES,
     maxBytes: 10 * MiB,
     assetKind: MediaAssetKind.document,
     ttlSeconds: 900,
     keySegment: 'agent-attachment-document',
   },
-  studio_agent_image: {
-    contentTypes: IMAGE_CONTENT_TYPES,
-    // Studio Agent accepts only server-decoded JPEG/PNG/WebP images. The cap
-    // bounds provider context and memory use during the streaming byte probe.
-    maxBytes: 30 * MiB,
-    assetKind: MediaAssetKind.image,
-    ttlSeconds: 900,
-    keySegment: 'studio-agent-image-staging',
-    verifiedImageFinalKeySegment: 'studio-agent-image-final',
-  },
-  studio_agent_document: {
-    contentTypes: STUDIO_AGENT_DOCUMENT_CONTENT_TYPES,
-    maxBytes: 10 * MiB,
-    assetKind: MediaAssetKind.document,
-    ttlSeconds: 900,
-    keySegment: 'studio-agent-document',
-  },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
-    // The catalog caps COMBINED reference-video size at 50 MB, so 50 MiB is
-    // also the per-file ceiling.
-    maxBytes: 50 * MiB,
+    // Seedance 2.5 accepts each MP4/MOV reference up to 200 MB. Older models
+    // retain their smaller catalog-driven per-file/combined limits at submit.
+    maxBytes: 200 * MiB,
     assetKind: MediaAssetKind.video,
     ttlSeconds: 900,
     keySegment: 'ai-reference-video',
@@ -346,6 +330,7 @@ export class MediaUploadService {
     private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
+    private readonly mediaFacts: MediaAssetFactsService,
     private readonly storageRegistry: StorageProviderRegistry,
   ) {}
 
@@ -620,7 +605,7 @@ export class MediaUploadService {
       };
     }
 
-    const truth = policy.verifiedImageFinalKeySegment
+    let truth = policy.verifiedImageFinalKeySegment
       ? await this.finalizeVerifiedImage(
           userId,
           storageKey,
@@ -639,6 +624,25 @@ export class MediaUploadService {
       input.kind === 'crew_asset_file'
         ? mediaKindFromContentType(truth.contentType)
         : policy.assetKind;
+
+    // Video/audio: measure duration from stored bytes before the ledger write.
+    // Client duration is never authority — generation validation reads this.
+    if (
+      confirmedAssetKind === MediaAssetKind.video ||
+      confirmedAssetKind === MediaAssetKind.audio
+    ) {
+      const durationSeconds = await this.mediaFacts.probeObjectDuration({
+        kind: confirmedAssetKind,
+        storageProvider: truth.storageProvider,
+        bucket: truth.bucket,
+        region: truth.region,
+        objectKey: truth.objectKey,
+        externalUrl: null,
+        contentType: truth.contentType,
+        sizeBytes: truth.sizeBytes,
+      });
+      truth = { ...truth, durationSeconds };
+    }
 
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
@@ -697,6 +701,7 @@ export class MediaUploadService {
             sizeBytes: truth.sizeBytes,
             width: truth.width,
             height: truth.height,
+            durationSeconds: truth.durationSeconds,
             checksumSha256: truth.checksumSha256,
             // Direct-to-storage uploads are private until a save links them to
             // a public feature row; the read-side resolves URLs from identity
@@ -819,6 +824,7 @@ export class MediaUploadService {
       sizeBytes: head.sizeBytes == null ? null : BigInt(head.sizeBytes),
       width: null,
       height: null,
+      durationSeconds: null,
       checksumSha256: null,
     };
   }
@@ -922,6 +928,7 @@ export class MediaUploadService {
       sizeBytes: technical.sizeBytes,
       width: technical.width,
       height: technical.height,
+      durationSeconds: null,
       checksumSha256: technical.checksumSha256,
     };
   }
@@ -1123,6 +1130,8 @@ interface ConfirmedUploadTruth {
   sizeBytes: bigint | null;
   width: number | null;
   height: number | null;
+  /** Server-measured duration for video/audio; null for images. */
+  durationSeconds: number | null;
   checksumSha256: string | null;
 }
 

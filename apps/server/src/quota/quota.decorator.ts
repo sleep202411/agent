@@ -24,7 +24,7 @@ export interface QuotaRequirement {
   reason?: string;
   /**
    * Run the per-minute rate-limit check (e.g. for chat — 60/min even
-   * on VIP3 to prevent script abuse). Failure returns HTTP 429 with
+   * on the highest paid plan to prevent script abuse). Failure returns HTTP 429 with
    * `error: 'rate_limited'` rather than `quota_exceeded`, so the
    * UI can render "slow down" toast instead of the upgrade dialog.
    */

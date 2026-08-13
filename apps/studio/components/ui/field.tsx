@@ -15,6 +15,7 @@ import { RequiredMark } from "@/components/ui/required-mark";
  */
 export function Field({
   label,
+  action,
   htmlFor,
   hint,
   error,
@@ -24,6 +25,8 @@ export function Field({
   children,
 }: {
   label: React.ReactNode;
+  /** Optional control aligned with the label, e.g. a template download. */
+  action?: React.ReactNode;
   htmlFor?: string;
   /** Muted suffix after the label, e.g. "(optional)". */
   hint?: React.ReactNode;
@@ -37,14 +40,17 @@ export function Field({
 }) {
   return (
     <div className={cn("space-y-2", className)}>
-      <label
-        htmlFor={htmlFor}
-        className={cn("block font-medium", dense ? "text-xs text-white/58" : "text-sm")}
-      >
-        {label}
-        {required ? <RequiredMark /> : null}
-        {hint ? <span className="ml-1 font-normal text-muted-foreground">{hint}</span> : null}
-      </label>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <label
+          htmlFor={htmlFor}
+          className={cn("block min-w-0 font-medium", dense ? "text-xs text-white/58" : "text-sm")}
+        >
+          {label}
+          {required ? <RequiredMark /> : null}
+          {hint ? <span className="ml-1 font-normal text-muted-foreground">{hint}</span> : null}
+        </label>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
       {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

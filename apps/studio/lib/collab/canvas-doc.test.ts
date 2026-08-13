@@ -21,6 +21,30 @@ function addNode(doc: Y.Doc, id: string) {
 }
 
 describe("collaborative canvas groups", () => {
+  it("ignores and cleans legacy client-measured node dimensions", () => {
+    const doc = new Y.Doc();
+    const legacy = new Y.Map<unknown>();
+    legacy.set("id", "legacy-sized");
+    legacy.set("type", "note");
+    const position = new Y.Map<number>();
+    position.set("x", 0);
+    position.set("y", 0);
+    legacy.set("position", position);
+    legacy.set("data", new Y.Map<unknown>());
+    legacy.set("width", 240);
+    legacy.set("height", 120);
+    doc.getMap<Y.Map<unknown>>("nodes").set("legacy-sized", legacy);
+
+    expect(readAllNodes(doc)).toEqual([
+      { id: "legacy-sized", type: "note", position: { x: 0, y: 0 }, data: {} },
+    ]);
+
+    writeNode(doc, readAllNodes(doc)[0]!);
+    expect(legacy.has("width")).toBe(false);
+    expect(legacy.has("height")).toBe(false);
+    doc.destroy();
+  });
+
   it("round-trips group metadata and removes memberships with deleted nodes", () => {
     const doc = new Y.Doc();
     addNode(doc, "a");

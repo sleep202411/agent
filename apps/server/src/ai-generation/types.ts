@@ -26,6 +26,8 @@ import type {
   AiPromptStyleBinding,
   AiSubmitReferenceBinding,
 } from './prompt-document.types';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
+import type { ProjectSkillSelection } from '../project-skills';
 
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
@@ -57,12 +59,13 @@ export type {
 
 export type AiJobType = 'image' | 'video';
 
-export type FoundryModelCapability =
+/** Runtime capability bucket used by catalog adapters (incl. unsupported). */
+export type AiRuntimeModelCapability =
   | 'image_generation'
   | 'video_generation'
   | 'unsupported';
 
-export type FoundryCatalogSource =
+export type AiCatalogSource =
   | 'foundry-project'
   | 'openai-models'
   | 'env-override'
@@ -71,6 +74,7 @@ export type FoundryCatalogSource =
   | 'bailian-config'
   | 'replicate-config'
   | 'agnes-config'
+  | 'minimax-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
@@ -102,8 +106,9 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
  * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Known values today: 'microsoft-foundry', 'fal-ai',
- * 'aliyun-bailian'. Planned: 'replicate', 'stability-self-hosted'.
+ * Active generation adapters: fal-ai, byteplus-modelark, aliyun-bailian,
+ * agnes-ai, minimax. Older job rows may still store removed vendor strings
+ * as free-form provider column values (read-only history).
  */
 export type AiProvider = string;
 export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
@@ -183,7 +188,7 @@ export type AiRequiredPlan = EntitlementPlanKey;
 /**
  * Per-model entitlement gating. `requiredPlan: null` = anyone.
  * Anything else is checked against the resolved product entitlement
- * snapshot, not the Java auth claim.
+ * snapshot, not external profile claims.
  *
  * Deliberately tier-only (no per-day / per-month quota) until a credits
  * system exists. Schema is forward-compatible: add `quotas` here when
@@ -197,26 +202,7 @@ export type AiInputSchema = AiObjectSchema;
 export type AiOutputSchema = AiObjectSchema;
 export type AiJsonSchemaProperty = AiJsonSchema;
 
-export type FoundryAvailability = AiAvailability;
-export type FoundryCapabilityMatrix = AiCapabilityMatrix;
-export type FoundryCostEstimate = AiCostEstimate;
-export type FoundryDocumentationLink = AiDocumentationLink;
-export type FoundryConditionExpression = AiConditionExpression;
-export type FoundryFieldConstraint = AiFieldConstraint;
-export type FoundryFieldUi = AiFieldUi;
-export type FoundryInputControl = AiInputControl;
-export type FoundryInputSchema = AiInputSchema;
-export type FoundryOutputSchema = AiOutputSchema;
-export type FoundryJsonSchemaProperty = AiJsonSchemaProperty;
-export type FoundryObservabilityContract = AiObservabilityContract;
-export type FoundryObjectSchema = AiObjectSchema;
-export type FoundryOutputUi = AiOutputUi;
-export type FoundryPreflightEstimator = AiPreflightEstimator;
-export type FoundryProviderBinding = AiProviderBinding;
-export type FoundrySchemaRule = AiSchemaRule;
-export type FoundryUiSchema = AiUiSchema;
-
-export interface FoundryDeploymentRecord {
+export interface AiDeploymentRecord {
   id: string;
   deployment: string;
   modelName: string;
@@ -224,7 +210,7 @@ export interface FoundryDeploymentRecord {
   publisher?: string;
   displayName?: string;
   description?: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   raw?: unknown;
 }
 
@@ -272,10 +258,10 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   modelName: string;
   modelVersion?: string;
   publisher?: string;
-  source: FoundryCatalogSource;
+  source: AiCatalogSource;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
-  capability: Exclude<FoundryModelCapability, 'unsupported'>;
+  capability: Exclude<AiRuntimeModelCapability, 'unsupported'>;
   type: AiJobType;
   name: string;
   description: string;
@@ -283,12 +269,12 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
   disabledReason?: string;
   schemaDialect: string;
   schemaVersion: string;
-  documentation: FoundryDocumentationLink[];
-  capability_matrix: FoundryCapabilityMatrix;
-  availability: FoundryAvailability;
-  cost_estimate: FoundryCostEstimate;
-  preflight_estimator?: FoundryPreflightEstimator;
-  observability: FoundryObservabilityContract;
+  documentation: AiDocumentationLink[];
+  capability_matrix: AiCapabilityMatrix;
+  availability: AiAvailability;
+  cost_estimate: AiCostEstimate;
+  preflight_estimator?: AiPreflightEstimator;
+  observability: AiObservabilityContract;
   capabilities: {
     textToImage?: boolean;
     imageToImage?: boolean;
@@ -305,15 +291,13 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
     perUserQueued: number;
   };
   entitlement: AiModelEntitlement;
-  input_schema: FoundryInputSchema;
-  output_schema: FoundryOutputSchema;
-  provider_output_schema?: FoundryOutputSchema;
-  stream_event_schema?: FoundryOutputSchema;
-  provider_binding: FoundryProviderBinding;
+  input_schema: AiInputSchema;
+  output_schema: AiOutputSchema;
+  provider_output_schema?: AiOutputSchema;
+  stream_event_schema?: AiOutputSchema;
+  provider_binding: AiProviderBinding;
   ops?: AiModelOpsMetadata;
 }
-
-export type FoundryModelDefinition = AiModelDefinition;
 
 export interface AiJobOutput {
   id: string;
@@ -394,6 +378,7 @@ export interface AiJob {
   schemaVersion: string;
   workspaceId?: string | null;
   projectId?: string | null;
+  storyProjectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;
@@ -421,6 +406,8 @@ export interface AiJob {
    */
   referenceSnapshot?: AiSubmitReferenceBinding[] | null;
   styleSnapshot?: AiPromptStyleBinding[] | null;
+  /** Immutable, server-resolved project Skill versions used for this job. */
+  skillSnapshot?: ProjectSkillResolutionSnapshot | null;
   idempotencyKey: string;
   providerJobId?: string;
   providerRequest?: Record<string, unknown>;
@@ -458,12 +445,14 @@ export interface AiSubmitJobBody {
   schemaVersion?: string;
   workspaceId?: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
   context?: {
     workspaceId?: string;
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     documentBlockId?: string;
     sourceSurface?: string;
@@ -472,6 +461,11 @@ export interface AiSubmitJobBody {
   promptDocument?: AiPromptDocument;
   referenceBindings?: AiSubmitReferenceBinding[];
   styleBindings?: AiPromptStyleBinding[];
+  /**
+   * Per-generation override of installed project Skills. IDs are installation
+   * IDs and are re-authorized against the trusted project context server-side.
+   */
+  skillSelection?: ProjectSkillSelection;
   idempotencyKey?: string;
   routing?: {
     presetId?: string;
@@ -483,6 +477,7 @@ export interface AiJobListQuery {
   scope?: string;
   workspaceId?: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   sourceSurface?: string;
   type?: AiJobType;
@@ -494,6 +489,7 @@ export interface AiStatusResponse {
   request_id: string;
   workspace_id: string | null;
   project_id: string | null;
+  story_project_id: string | null;
   document_id: string | null;
   document_block_id: string | null;
   source_surface: string | null;

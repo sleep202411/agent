@@ -12,7 +12,6 @@
  * P2b will add connect_nodes / run_generation / remove_* (with confirmations).
  */
 import { useCallback } from "react";
-import { useReactFlow, type Node } from "@xyflow/react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
@@ -28,7 +27,9 @@ import {
   mergeCompatibleSettings,
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
+import { SHOT_NODE_TYPE, nextShotOrder } from "@/lib/canvas-authoring/shot-node";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
+import type { CanvasNodeShape } from "@/lib/canvas-core/types";
 
 const MAX_DIGEST_NODES = 40;
 const MAX_DIGEST_MODELS = 60;
@@ -36,33 +37,34 @@ const MAX_DIGEST_MODELS = 60;
 /** Tools that must be user-confirmed before they run (spending / destructive). */
 export const CONFIRM_TOOLS = new Set(["run_generation", "remove_node", "remove_edge"]);
 
-function nodeLabel(node: Node): string | undefined {
+function nodeLabel(node: CanvasNodeShape): string | undefined {
   const data = node.data as Record<string, unknown> | undefined;
   if (!data) return undefined;
   if (typeof data.name === "string" && data.name) return data.name;
   if (typeof data.prompt === "string" && data.prompt) return data.prompt.slice(0, 80);
   if (typeof data.text === "string" && data.text) return data.text.slice(0, 80);
+  // A shot reads by its name, else by the line it carries.
+  if (typeof data.label === "string" && data.label) return data.label.slice(0, 80);
+  if (typeof data.dialogue === "string" && data.dialogue) return data.dialogue.slice(0, 80);
   return undefined;
 }
 
 export function useCopilotTools() {
   const graph = useCanvasGraphContext();
-  const rf = useReactFlow();
   const { data: catalog } = useAiCatalog();
   const generation = useGeneration();
 
   const buildGraphDigest = useCallback((): string => {
-    const all = rf.getNodes();
+    const all = graph.getNodes();
     const nodes = all.slice(0, MAX_DIGEST_NODES).map((n) => ({
       id: n.id,
       type: n.type ?? "",
       label: nodeLabel(n),
-      selected: n.selected || undefined,
     }));
     return JSON.stringify(
       all.length > MAX_DIGEST_NODES ? { nodes, more: all.length - MAX_DIGEST_NODES } : { nodes }
     );
-  }, [rf]);
+  }, [graph]);
 
   const buildModelsDigest = useCallback((): string => {
     const models = [
@@ -83,7 +85,7 @@ export function useCopilotTools() {
 
       switch (name) {
         case "query_graph": {
-          const nodes = rf
+          const nodes = graph
             .getNodes()
             .slice(0, MAX_DIGEST_NODES)
             .map((n) => ({ id: n.id, type: n.type ?? "", label: nodeLabel(n) }));
@@ -93,27 +95,47 @@ export function useCopilotTools() {
         case "add_node": {
           if (!graph.canEdit) throw new Error("The canvas is read-only.");
           const kind = input.kind;
-          if (kind !== "image" && kind !== "video" && kind !== "note") {
-            throw new Error('kind must be "image", "video", or "note"');
+          if (kind !== "image" && kind !== "video" && kind !== "note" && kind !== "shot") {
+            throw new Error('kind must be "image", "video", "note", or "shot"');
           }
           const prompt = typeof input.prompt === "string" ? input.prompt : "";
           const label = typeof input.label === "string" ? input.label : undefined;
           const modelId = typeof input.modelId === "string" ? input.modelId : undefined;
 
           const id = crypto.randomUUID();
-          const count = rf.getNodes().length;
-          // Center in the canvas area NOT covered by the open copilot panel (380px, right).
-          const COPILOT_PANEL_WIDTH = 380;
-          const position = rf.screenToFlowPosition({
-            x: Math.max(0, window.innerWidth - COPILOT_PANEL_WIDTH) / 2,
-            y: window.innerHeight / 2,
-          });
-          const nudge = (count % 6) * 26;
-          position.x += nudge;
-          position.y += nudge;
+          const count = graph.getNodes().length;
+          // Place new nodes near the centroid of existing ones (avoids ReactFlow's
+          // screenToFlowPosition, which needs a ReactFlow instance the shell-level
+          // copilot doesn't have). Falls back to the origin on an empty board.
+          const existing = graph.getNodes();
+          const position = existing.length
+            ? {
+                x:
+                  existing.reduce((s, n) => s + n.position.x, 0) / existing.length +
+                  (count % 6) * 26,
+                y:
+                  existing.reduce((s, n) => s + n.position.y, 0) / existing.length +
+                  (count % 6) * 26,
+              }
+            : { x: 0, y: 0 };
 
           if (kind === "note") {
             graph.addNode({ id, type: "note", position, data: { text: prompt } });
+          } else if (kind === "shot") {
+            // Appends to the end of the storyboard. The order key comes from
+            // the LIVE document (not React Flow's store, which is a render
+            // behind), so a run of shots added across one turn keeps the
+            // sequence the copilot created them in.
+            graph.addNode({
+              id,
+              type: SHOT_NODE_TYPE,
+              position,
+              data: {
+                order: nextShotOrder(graph.getNodes()),
+                ...(label ? { label } : {}),
+                ...(prompt ? { dialogue: prompt } : {}),
+              },
+            });
           } else {
             const data: Record<string, unknown> = { prompt };
             if (label) data.name = label;
@@ -176,7 +198,7 @@ export function useCopilotTools() {
           const sourceId = typeof input.sourceId === "string" ? input.sourceId : "";
           const targetId = typeof input.targetId === "string" ? input.targetId : "";
           const { edgeId } = connectNodes(
-            { getNode: graph.getNode, catalog, graph },
+            { getNode: graph.getNode, getEdges: graph.getEdges, catalog, graph },
             sourceId,
             targetId
           );
@@ -221,7 +243,7 @@ export function useCopilotTools() {
           // Cancel any in-flight job first so a deleted card doesn't keep spending.
           if ((node.data as GenerationNodeData).generation?.jobId) generation.cancel(nodeId);
           // Cascade: remove touching edges + strip the references they bound.
-          removeNodeCascade({ getEdges: rf.getEdges, graph }, nodeId);
+          removeNodeCascade({ getEdges: graph.getEdges, graph }, nodeId);
           return { ok: true };
         }
 
@@ -230,7 +252,7 @@ export function useCopilotTools() {
           const edgeId = typeof input.edgeId === "string" ? input.edgeId : "";
           if (!edgeId) throw new Error("edgeId is required.");
           // Also strip the reference this wire bound on its target card.
-          removeEdgeById({ getEdges: rf.getEdges, graph }, edgeId);
+          removeEdgeById({ getEdges: graph.getEdges, graph }, edgeId);
           return { ok: true };
         }
 
@@ -238,7 +260,7 @@ export function useCopilotTools() {
           throw new Error(`Unknown tool: ${name}`);
       }
     },
-    [graph, rf, catalog, generation]
+    [graph, catalog, generation]
   );
 
   return { runTool, buildGraphDigest, buildModelsDigest };

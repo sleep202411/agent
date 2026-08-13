@@ -817,13 +817,27 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
     };
     const arrayInput = (
       field: string
-    ): Array<{ assetId?: string; refId: string; url: string }> | undefined => {
+    ):
+      | Array<{
+          assetId?: string;
+          refId: string;
+          url: string;
+          durationSeconds?: number;
+          bytes?: number;
+        }>
+      | undefined => {
       const items = ready(field);
       if (items.length === 0) return undefined;
       return items.map((item) => ({
         url: item.url!,
         refId: item.id,
         ...(item.assetId ? { assetId: item.assetId } : {}),
+        ...(typeof item.durationSeconds === "number" && Number.isFinite(item.durationSeconds)
+          ? { durationSeconds: item.durationSeconds }
+          : {}),
+        ...(typeof item.sizeBytes === "number" && Number.isFinite(item.sizeBytes)
+          ? { bytes: item.sizeBytes }
+          : {}),
       }));
     };
 

@@ -11,22 +11,23 @@ import { OutputStorageService } from './storage.types';
 
 /**
  * Storage provider selection: `OUTPUT_STORAGE_PROVIDER` env wins when set
- * (azure_blob | aliyun_oss | s3_compatible — the planned R2 cutover is a
- * pure env flip for NEW writes), otherwise keyed on the deployment cell:
+ * (azure_blob | aliyun_oss | s3_compatible), otherwise keyed on the cell:
  *
- *   cn          → Alibaba OSS  (keep CN media in-region)
- *   com/global  → Azure Blob   (intl, matches the Azure migration; local
- *                               dev is `global` → Azure per the build env)
+ *   cn          → Alibaba OSS          (keep CN media in-region)
+ *   com/global  → s3_compatible (R2)   (intl default; Azure Blob is legacy
+ *                                       read-only for existing MediaAsset rows)
+ *
+ * Roll back new writes to Azure with `OUTPUT_STORAGE_PROVIDER=azure_blob`
+ * without redeploying code. Local MinIO is the same `s3_compatible` slot
+ * (see server README).
  *
  * All impls are instantiated as Nest providers so the factory can pick;
  * only the chosen one is bound to the OutputStorageService token. Every
  * existing injection of OutputStorageService (AI-gen worker, certificates,
  * ip-commerce, /ready) resolves the same token and keeps working unchanged.
  * A single write path may override the token per unit of work by resolving
- * {@link StorageProviderRegistry} instead — the AI-gen worker does this for
- * the provider frozen on `AiJob.outputStorageProvider`, which is how Story
- * Studio footage reaches R2 without the env flip moving anything else.
- * EXISTING rows are unaffected by the flip — reads resolve per-row via
+ * {@link StorageProviderRegistry} (e.g. AiJob.outputStorageProvider).
+ * EXISTING rows are unaffected — reads resolve per-row via
  * `MediaAsset.storageProvider` (url-resolver / access service / registry),
  * which is what makes a gradual new-writes-only migration safe.
  * CURRENT_CELL and the env are read once at boot — zero per-request cost.
@@ -52,7 +53,10 @@ import { OutputStorageService } from './storage.types';
             `Unknown OUTPUT_STORAGE_PROVIDER "${override}" (expected azure_blob | aliyun_oss | s3_compatible)`,
           );
         }
-        return CURRENT_CELL === 'cn' ? oss : azure;
+        // cn stays OSS; every other cell (com / global / local) writes to R2
+        // (or MinIO when S3_* points at local). Azure remains available for
+        // reads of legacy rows and for emergency env override.
+        return CURRENT_CELL === 'cn' ? oss : s3;
       },
       inject: [
         AzureBlobStorageService,

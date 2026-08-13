@@ -6,8 +6,8 @@ import type { Node, NodeProps } from "@xyflow/react";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
@@ -20,8 +20,8 @@ export type PanoramaNodeType = Node<
 
 /** A panorama asset on the canvas — renders the equirectangular image as a live
  *  inline 360 view (drag to look around), with a fullscreen 720° viewer. The
- *  header is the drag handle; the canvas body is `nodrag` so dragging looks
- *  around instead of moving the node. */
+ *  live view becomes `nodrag` only while entered, so looking around does not
+ *  move the node. */
 function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeType>) {
   const t = useTranslations("canvasNodes");
   const [full, setFull] = useState(false);
@@ -50,7 +50,7 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
   );
 
   return (
-    <div className="relative w-[360px]">
+    <div className="relative" style={{ width: canvasNodeGeometry({ type: "panorama" }).width }}>
       <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
         <ToolbarButton label={t("panorama.view720")} onClick={() => setFull(true)}>
           <Icon720 className="size-4" />
@@ -63,13 +63,7 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
         </ToolbarButton>
       </CanvasNodeToolbar>
 
-      {/* Header = drag handle */}
-      <div
-        className={cn(
-          CANVAS_NODE_DRAG_HANDLE_CLASS,
-          "flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80"
-        )}
-      >
+      <div className="flex items-center gap-1.5 rounded px-1 pb-1.5 text-xs text-white/80">
         <Icon720 className="size-3.5" />
         {renaming ? (
           <input

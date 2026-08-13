@@ -17,10 +17,14 @@ import {
   StoryProjectMemberStatus,
   StoryProjectStatus,
   StoryRevisionSource,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
+import { encodeDocumentSnapshot } from '../documents/document-crdt';
+import { rootSchemaFor } from '../documents/document-modes';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -31,12 +35,9 @@ import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
-  EMPTY_STORY_PRODUCTION_CANVAS_CONTENT,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
   StoryCanvasNodePositionsSchema,
-  StoryProductionCanvasContentSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
   type CreateStoryChapterInput,
@@ -51,12 +52,10 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
-  type PutStoryProductionCanvasInput,
   type StoryCapability,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryCandidateAssetDto,
-  type StoryProductionCanvasDto,
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
@@ -84,6 +83,13 @@ const PROJECT_NOT_FOUND = {
   code: 'STORY_PROJECT_NOT_FOUND',
   message: 'Story project not found.',
 } as const;
+
+/** Media a story can hold as a candidate. Typed wide so `includes` accepts any kind. */
+const CANDIDATE_ASSET_KINDS: MediaAssetKind[] = [
+  MediaAssetKind.image,
+  MediaAssetKind.video,
+  MediaAssetKind.audio,
+];
 
 const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
   cover: {
@@ -220,6 +226,10 @@ export class StoryProjectsService {
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
     );
+    const initialCanvasState = encodeDocumentSnapshot(
+      {},
+      rootSchemaFor(StudioDocumentType.canvas)!,
+    );
     const { project, chapter } = await this.prisma.$transaction(async (tx) => {
       const project = await tx.storyProject.create({
         data: {
@@ -249,16 +259,39 @@ export class StoryProjectsService {
               updatedByUserId: user.userId,
             },
           },
-          productionCanvas: {
-            create: {
-              schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-              content:
-                EMPTY_STORY_PRODUCTION_CANVAS_CONTENT as Prisma.InputJsonObject,
-              updatedByUserId: user.userId,
-            },
-          },
           writeState: { create: {} },
         },
+      });
+      const studioDocument = await tx.studioDocument.create({
+        data: {
+          workspaceId,
+          storyProjectId: project.id,
+          type: StudioDocumentType.canvas,
+          title: project.title,
+          contentSnapshot: {
+            ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+          },
+          crdtState: Buffer.from(initialCanvasState.state),
+          createdById: user.userId,
+        },
+      });
+      const studioDocumentVersion = await tx.studioDocumentVersion.create({
+        data: {
+          documentId: studioDocument.id,
+          versionNumber: 1,
+          schemaVersion: studioDocument.schemaVersion,
+          sequence: 0,
+          title: studioDocument.title,
+          source: StudioDocumentVersionSource.system,
+          snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: studioDocument.crdtState,
+          metadata: { reason: 'initial_story_canvas' },
+          createdById: user.userId,
+        },
+      });
+      await tx.studioDocument.update({
+        where: { id: studioDocument.id },
+        data: { currentVersionId: studioDocumentVersion.id },
       });
       const chapter = await tx.storyChapter.create({
         data: {
@@ -312,10 +345,9 @@ export class StoryProjectsService {
     workspaceId: string,
     query: StoryProjectListQuery,
   ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
-    await this.workspacePermissions.requireWorkspaceRole(
+    await this.workspacePermissions.requireWorkspacePresence(
       user.userId,
       workspaceId,
-      WorkspaceMemberRole.viewer,
     );
 
     const cursor = query.cursor
@@ -477,10 +509,12 @@ export class StoryProjectsService {
         // og:image. A video could only ever have appeared on the studio's own
         // library card, so accepting one meant a creator could set a cover that
         // no player and no catalogue would ever show.
+        // No workspaceId here either — same reasoning as addCandidateAsset: the
+        // caller's right to edit this project is already settled, and uploads
+        // carry no workspace, so scoping by it only blocked legitimate covers.
         const cover = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,
-            workspaceId,
             status: MediaAssetStatus.ready,
             moderationStatus: {
               not: MediaAssetModerationStatus.blocked,
@@ -1023,54 +1057,6 @@ export class StoryProjectsService {
     return this.toCanvasLayout(layout);
   }
 
-  async getProductionCanvas(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-  ): Promise<StoryProductionCanvasDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
-    const canvas = await this.prisma.storyProductionCanvas.findUnique({
-      where: { storyProjectId: projectId },
-    });
-    if (!canvas) throwProductionCanvasNotFound();
-    return this.toProductionCanvas(canvas);
-  }
-
-  async putProductionCanvas(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    input: PutStoryProductionCanvasInput,
-  ): Promise<StoryProductionCanvasDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
-
-    const canvas = await this.prisma.$transaction(async (tx) => {
-      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const updated = await tx.storyProductionCanvas.update({
-        where: { storyProjectId: projectId },
-        data: {
-          schemaVersion: input.schemaVersion,
-          content: input.content as Prisma.InputJsonObject,
-          updatedByUserId: user.userId,
-          updatedBySessionId: input.sessionId,
-        },
-      });
-      await tx.storyProject.update({
-        where: { id: projectId },
-        data: { updatedAt: new Date() },
-      });
-      return updated;
-    });
-
-    return this.toProductionCanvas(canvas);
-  }
-
   async listCandidateAssets(
     user: AuthUser,
     workspaceId: string,
@@ -1117,28 +1103,52 @@ export class StoryProjectsService {
 
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const asset = await tx.mediaAsset.findFirst({
-        where: {
-          id: mediaAssetId,
-          workspaceId,
-          status: MediaAssetStatus.ready,
-          moderationStatus: { not: MediaAssetModerationStatus.blocked },
-          deletedAt: null,
-          kind: {
-            in: [
-              MediaAssetKind.image,
-              MediaAssetKind.video,
-              MediaAssetKind.audio,
-            ],
-          },
+      // Deliberately NOT scoped by workspaceId. The id can only reach here from
+      // the project's own canvas, and `requireScopedProject` above already
+      // decided whether the caller may edit that project — re-checking the
+      // asset's workspace is a second lock on a door that is already shut.
+      //
+      // What it did instead was break real work: uploads never recorded a
+      // workspace (the client omits `x-fizz-workspace-id`, so the server stores
+      // null), which equality can never match, so 4,210 uploaded assets could
+      // not be used as candidates and the creator was told their media "must be
+      // ready" — a message about a condition that was already satisfied.
+      //
+      // Recording the workspace on upload is worth fixing on its own terms; it
+      // is not a reason to keep this check.
+      const asset = await tx.mediaAsset.findUnique({
+        where: { id: mediaAssetId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          moderationStatus: true,
+          deletedAt: true,
         },
       });
-      if (!asset) {
+      // One reason per rejection. These used to be a single `findFirst` whose
+      // miss said "must be a ready … asset", which reads as "wait for the
+      // upload" no matter which condition actually failed.
+      const invalid = (message: string): never => {
         throw new UnprocessableEntityException({
           code: 'STORY_CANDIDATE_ASSET_INVALID',
-          message:
-            'Candidate media must be a ready image, video, or audio asset in this project workspace.',
+          message,
         });
+      };
+      if (!asset || asset.deletedAt) {
+        invalid('That media no longer exists.');
+      } else if (!CANDIDATE_ASSET_KINDS.includes(asset.kind)) {
+        invalid(
+          `Candidate media must be an image, video, or audio file — this one is ${asset.kind}.`,
+        );
+      } else if (asset.status !== MediaAssetStatus.ready) {
+        invalid(
+          `That media is still ${asset.status}. Wait for it to finish, then add it again.`,
+        );
+      } else if (
+        asset.moderationStatus === MediaAssetModerationStatus.blocked
+      ) {
+        invalid('That media was blocked by moderation and cannot be used.');
       }
       await tx.storyCandidateAsset.upsert({
         where: {
@@ -1844,36 +1854,6 @@ export class StoryProjectsService {
     };
   }
 
-  private toProductionCanvas(row: {
-    storyProjectId: string;
-    schemaVersion: string;
-    content: Prisma.JsonValue;
-    updatedByUserId: string;
-    updatedBySessionId: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): StoryProductionCanvasDto {
-    if (row.schemaVersion !== STORY_PRODUCTION_CANVAS_SCHEMA_VERSION) {
-      throw corruptData(
-        'STORY_PRODUCTION_CANVAS_SCHEMA_UNSUPPORTED',
-        'production canvas schema',
-      );
-    }
-    const content = StoryProductionCanvasContentSchema.safeParse(row.content);
-    if (!content.success) {
-      throw corruptData('STORY_PRODUCTION_CANVAS_CORRUPT', 'production canvas');
-    }
-    return {
-      projectId: row.storyProjectId,
-      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-      content: content.data,
-      updatedByUserId: row.updatedByUserId,
-      updatedBySessionId: row.updatedBySessionId,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
   private toRevisionSummary(row: {
     id: string;
     number: number;
@@ -2053,13 +2033,6 @@ function throwCanvasLayoutNotFound(): never {
   throw new NotFoundException({
     code: 'STORY_CANVAS_LAYOUT_NOT_FOUND',
     message: 'Story canvas layout not found.',
-  });
-}
-
-function throwProductionCanvasNotFound(): never {
-  throw new NotFoundException({
-    code: 'STORY_PRODUCTION_CANVAS_NOT_FOUND',
-    message: 'Story production canvas not found.',
   });
 }
 

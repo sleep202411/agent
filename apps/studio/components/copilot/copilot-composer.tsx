@@ -19,7 +19,10 @@ export function CopilotComposer({
   inlineTokens,
   attachmentBar,
   leadingAction,
+  /** Sits immediately left of the send/stop button (e.g. model / permission selects). */
+  beforeSend,
   autoFocus = false,
+  appearance = "default",
   className,
 }: {
   value: string;
@@ -37,9 +40,12 @@ export function CopilotComposer({
   inlineTokens?: ReactNode;
   /** Rendered above the input row (attachment chips, errors). */
   attachmentBar?: ReactNode;
-  /** Rendered before the input (e.g. an attach button). */
+  /** Bottom toolbar, leading side (e.g. attach). Stacked layout only. */
   leadingAction?: ReactNode;
+  /** Bottom toolbar, immediately left of send/stop (mode / model). */
+  beforeSend?: ReactNode;
   autoFocus?: boolean;
+  appearance?: "default" | "fizz-agent";
   className?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -73,7 +79,12 @@ export function CopilotComposer({
   }, [inlineTokens, tokenIndent, value]);
 
   const canSend = (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
-  const enhanced = Boolean(inlineTokens);
+  /**
+   * Stacked layout (prompt on top, toolbar bottom) when there are toolbar
+   * affordances — attach / mode / model / inline chips. A bare composer
+   * (canvas copilot with only send) stays a compact single row.
+   */
+  const stacked = Boolean(inlineTokens || leadingAction || beforeSend);
 
   const textarea = (className?: string, style?: React.CSSProperties) => (
     <textarea
@@ -92,7 +103,8 @@ export function CopilotComposer({
       placeholder={placeholder}
       style={style}
       className={cn(
-        "min-h-10 resize-none bg-transparent py-2 text-sm leading-5 text-white/88 outline-none placeholder:text-white/28",
+        "w-full resize-none bg-transparent py-2 text-sm text-white/88 outline-none placeholder:text-white/28",
+        appearance === "fizz-agent" ? "min-h-14 leading-relaxed" : "min-h-10 leading-5",
         className
       )}
     />
@@ -103,7 +115,12 @@ export function CopilotComposer({
       type="button"
       onClick={onStop}
       aria-label={stopLabel}
-      className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/[0.1] text-white transition hover:bg-white/[0.15] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+      className={cn(
+        "grid shrink-0 place-items-center text-white transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+        appearance === "fizz-agent"
+          ? "size-9 rounded-full bg-primary shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:scale-[1.03] hover:bg-primary/90 active:scale-95"
+          : "size-10 rounded-2xl bg-white/[0.1] hover:bg-white/[0.15]"
+      )}
     >
       <IconPlayerStopFilled className="size-4" />
     </button>
@@ -113,17 +130,44 @@ export function CopilotComposer({
       disabled={!canSend}
       aria-label={sendLabel}
       className={cn(
-        "grid size-10 shrink-0 place-items-center rounded-2xl transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-        canSend ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.06] text-white/24"
+        "grid shrink-0 place-items-center transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+        appearance === "fizz-agent" ? "size-9 rounded-full" : "size-10 rounded-2xl",
+        canSend
+          ? appearance === "fizz-agent"
+            ? "bg-primary text-primary-foreground shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:scale-[1.03] hover:bg-primary/90 active:scale-95"
+            : "bg-white text-black hover:bg-white/90"
+          : appearance === "fizz-agent"
+            ? "bg-primary text-primary-foreground opacity-30"
+            : "bg-white/[0.06] text-white/24"
       )}
     >
       <IconArrowUp className="size-4.5" stroke={2} />
     </button>
   );
 
+  const toolbar = (
+    <div
+      className={cn(
+        "flex items-center",
+        appearance === "fizz-agent" ? "min-h-9 gap-1" : "min-h-10 gap-1.5"
+      )}
+    >
+      {leadingAction}
+      <div className="min-w-0 flex-1" />
+      {beforeSend}
+      {action}
+    </div>
+  );
+
   return (
     <form
-      className={cn("rounded-[20px] bg-white/[0.06] p-2.5", className)}
+      data-appearance={appearance}
+      className={cn(
+        appearance === "fizz-agent"
+          ? "liquid-rim relative rounded-[22px] bg-white/[0.055] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_16px_48px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
+          : "rounded-[20px] bg-white/[0.06] p-2.5",
+        className
+      )}
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) onSubmit();
@@ -134,31 +178,27 @@ export function CopilotComposer({
         {inputLabel}
       </label>
       {attachmentBar ? <div className="px-2 pb-1.5">{attachmentBar}</div> : null}
-      {enhanced ? (
-        <>
+      {stacked ? (
+        <div className="flex flex-col gap-0.5">
           <div className="relative min-w-0 px-2">
-            <span
-              ref={tokensRef}
-              className="absolute top-[9px] left-2 z-10 inline-flex max-w-[70%]"
-            >
-              {inlineTokens}
-            </span>
-            {textarea("w-full px-0", tokenIndent ? { textIndent: `${tokenIndent}px` } : undefined)}
-          </div>
-          <div
-            className={cn(
-              "mt-0.5 flex min-h-10 items-center",
-              leadingAction ? "justify-between" : "justify-end"
+            {inlineTokens ? (
+              <span
+                ref={tokensRef}
+                className="absolute top-[9px] left-2 z-10 inline-flex max-w-[70%]"
+              >
+                {inlineTokens}
+              </span>
+            ) : null}
+            {textarea(
+              inlineTokens ? "px-0" : undefined,
+              tokenIndent ? { textIndent: `${tokenIndent}px` } : undefined
             )}
-          >
-            {leadingAction}
-            {action}
           </div>
-        </>
+          {toolbar}
+        </div>
       ) : (
-        <div className="flex items-end gap-2">
-          {leadingAction}
-          {textarea("flex-1 px-2")}
+        <div className="flex items-end gap-1.5">
+          {textarea("min-w-0 flex-1 px-2")}
           {action}
         </div>
       )}

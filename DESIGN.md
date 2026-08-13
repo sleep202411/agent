@@ -29,6 +29,11 @@ language likewise stays inside `apps/studio`.
 - Product name in English copy: `FizzDragon`.
 - Chinese transliteration for zh-CN / zh-HK locales only: `气泡龙`.
 - Primary brand accent: `#E52227`.
+- Supporting signal colors: capability yellow `#FFD84D` and interaction blue
+  `#4D8DFF`. They communicate meaning on neutral chrome; they are not surface
+  colors or competing primary actions.
+- Black, near-black, white, and neutral gray establish the product's overall
+  visual tone.
 - The brand accent is a signal color, not a page background. Use it for
   primary actions, selected states, focus accents, destructive confirmation,
   and important operational indicators.

@@ -9,11 +9,15 @@ import {
   defaultSettingsForModel,
   estimateModelSellPoints,
   filterFizzAiInput,
+  generationInputHasBlockingIssues,
   referenceFieldsForMode,
+  validateModelGenerationInput,
   type FizzAiModel,
   type FizzAiReferenceBinding,
   type ModelSettings,
+  type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
+import { formatValidationIssue } from "@/lib/canvas-authoring/format-validation-issue";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGenerationFeed } from "./use-generation-feed";
 import { useReferenceUploads, type ReferenceUpload } from "./use-reference-uploads";
@@ -35,7 +39,7 @@ type ModeInputReasonKey = "needStartImage" | "needFirstLastFrame" | "needVisualW
 /** Whether the active mode's required inputs are satisfied. */
 function modeInputsSatisfied(
   mode: string | undefined,
-  fields: { field: string }[],
+  fields: { field: string; kind?: string; audioRequiresVisual?: boolean }[],
   ready: ReferenceUpload[]
 ): { ok: boolean; reasonKey?: ModeInputReasonKey } {
   const has = (name: string) => ready.some((item) => item.field === name);
@@ -49,7 +53,11 @@ function modeInputsSatisfied(
       return { ok: false, reasonKey: "needFirstLastFrame" };
     }
   }
-  if (mode === "multimodal_to_video" && ready.length > 0) {
+  if (
+    mode === "multimodal_to_video" &&
+    ready.length > 0 &&
+    fields.some((field) => field.kind === "audio" && field.audioRequiresVisual)
+  ) {
     const hasVisual = ready.some((item) => item.kind !== "audio");
     if (!hasVisual) return { ok: false, reasonKey: "needVisualWithAudio" };
   }
@@ -63,6 +71,7 @@ function modeInputsSatisfied(
  */
 export function useVideoGeneration() {
   const t = useTranslations("studioModes");
+  const tv = useTranslations("generation");
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("video", "fizzstudio-video-studio");
   const { data: wallet } = useComputeWalletBalance();
@@ -74,6 +83,7 @@ export function useVideoGeneration() {
   const [mode, setMode] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
   useEffect(() => {
     if (model || !catalog) return;
@@ -122,19 +132,35 @@ export function useVideoGeneration() {
       durationSeconds: typeof duration === "number" ? duration : undefined,
       resolution: typeof settings.resolution === "string" ? settings.resolution : undefined,
       numOutputs: 1,
+      referenceImageCount: readyUploads.filter((item) => item.kind === "image").length || undefined,
+      referenceVideoSeconds:
+        readyUploads
+          .filter((item) => item.kind === "video")
+          .reduce(
+            (seconds, item) =>
+              seconds +
+              (typeof item.durationSeconds === "number" && Number.isFinite(item.durationSeconds)
+                ? item.durationSeconds
+                : 0),
+            0
+          ) || undefined,
     });
     return estimate?.sellPoints ?? null;
-  }, [model, settings]);
+  }, [model, readyUploads, settings]);
 
   const uploadsPending = activeUploads.some((item) => item.uploading);
   const inputsCheck = modeInputsSatisfied(mode, referenceFields, readyUploads);
   const canSubmit =
-    Boolean(model && prompt.trim()) && !submitting && !uploadsPending && inputsCheck.ok;
+    Boolean(model && (prompt.trim() || readyUploads.length > 0)) &&
+    !submitting &&
+    !uploadsPending &&
+    inputsCheck.ok;
 
   const submit = async (): Promise<{ ok: boolean }> => {
     if (!model || !canSubmit) return { ok: false };
     setSubmitting(true);
     setSubmitError(null);
+    setValidationIssues([]);
     if (cost != null && wallet && wallet.available < BigInt(Math.ceil(cost))) {
       setSubmitError(t("error.insufficientCredits"));
       setSubmitting(false);
@@ -147,13 +173,18 @@ export function useVideoGeneration() {
     for (const field of referenceFields) {
       const items = readyUploads.filter((item) => item.field === field.field);
       if (items.length === 0) continue;
+      const toEntry = (item: ReferenceUpload) => ({
+        url: item.url!,
+        refId: item.id,
+        assetId: item.mediaAssetId,
+        ...(typeof item.durationSeconds === "number"
+          ? { durationSeconds: item.durationSeconds }
+          : {}),
+        ...(typeof item.bytes === "number" ? { bytes: item.bytes } : {}),
+      });
       referenceInput[field.field] = SINGLE_FIELDS.has(field.field)
-        ? { url: items[0].url!, assetId: items[0].mediaAssetId }
-        : items.map((item) => ({
-            url: item.url!,
-            refId: item.id,
-            assetId: item.mediaAssetId,
-          }));
+        ? toEntry(items[0])
+        : items.map(toEntry);
     }
     const bindings: FizzAiReferenceBinding[] = readyUploads.map((item, order) => ({
       refId: item.id,
@@ -166,6 +197,16 @@ export function useVideoGeneration() {
     const input = compactFizzAiInput(
       filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
     );
+    // Catalog-driven preflight (same kernel as canvas + server). No model ifs.
+    const preflight = validateModelGenerationInput(model, input);
+    if (generationInputHasBlockingIssues(preflight)) {
+      setValidationIssues(preflight);
+      const first = preflight.find((issue) => issue.severity === "error");
+      setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+      setSubmitting(false);
+      return { ok: false };
+    }
+    setValidationIssues([]);
     const result = await feed.submit({
       prompt,
       modelId: model.id,
@@ -208,6 +249,11 @@ export function useVideoGeneration() {
     canSubmit,
     submitting,
     error,
+    validationIssues,
+    clearValidation: () => {
+      setValidationIssues([]);
+      setSubmitError(null);
+    },
     submit,
   };
 }

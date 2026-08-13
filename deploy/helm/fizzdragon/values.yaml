@@ -25,6 +25,12 @@ azure:
 image:
   registry: acrfizzdragoncom.azurecr.io
   pullPolicy: IfNotPresent
+
+# Written by the CN deployment script. A selective release is refused when the
+# live fingerprint differs, because Helm upgrades the whole release even when
+# only one image tag changes.
+cnRelease:
+  chartFingerprint: unset
 # ---------------------------------------------------------------------------
 # Ingress — only `web` is internet-facing. server/agent stay ClusterIP.
 # ---------------------------------------------------------------------------
@@ -89,13 +95,14 @@ sharedEnv:
   JAVA_STUDIO_URL: https://java.fizzdragon.com/studio
   JAVA_CONTENT_URL: https://java.fizzdragon.com/content
   USER_AVATAR_BASE_URL: https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
-  ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  # Bailian's workspace-scoped domain, which Alibaba recommends over the shared
+  # dashscope-intl gateway for latency and stability. Same key, same catalogue —
+  # verified: both serve the identical 156 models.
+  ALIBABA_BASE_URL: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+  # Agent LLM (StoryOS / personas). Blob container name is historical.
   AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
-  AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
   AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
   AZURE_BLOB_CONTAINER: foundry-outputs
-  FOUNDRY_MODEL_ALLOWLIST: gpt-image-2
-  FOUNDRY_EXECUTION_ENABLED: "true"
   STORYOS_ROUTER_PROVIDER: anthropic
   STORYOS_ROUTER_MODEL: claude-sonnet-4-5
   STORYOS_PERSONA_PROVIDER: deepseek
@@ -117,16 +124,24 @@ secrets:
       env: DEEPSEEK_API_KEY
     - kv: anthropic-api-key
       env: ANTHROPIC_API_KEY
+    # Agent chat models (not AI Job generation).
     - kv: azure-openai-api-key
       env: AZURE_OPENAI_API_KEY
+    # Agent project-cover Flux calls only — AI Job gen does not use Replicate.
     - kv: image-cover-key
       env: REPLICATE_API_TOKEN
     - kv: fal-api-key
       env: FAL_API_KEY
-    - kv: dashscope-api-key
-      env: DASHSCOPE_API_KEY
+    # Bailian (Model Studio) — one key serves Qwen, DeepSeek, GLM and Kimi in the
+    # workspace. Named for the product, not for the SDK that used to read it.
+    - kv: bailian-api-key
+      env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
+    # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
+    # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
+    - kv: minimax-api-key
+      env: MINIMAX_API_KEY
     # ModelArk ASSETS plane (character likeness / liveness) — separate AK/SK
     # from the inference Bearer key; worker pods run the sync queues so these
     # live in the shared mapping. UNCOMMENT ONLY AFTER the KV secrets exist —
@@ -193,8 +208,7 @@ serverSecrets:
     # Conversations delivery. Nest signs least-privilege browser credentials,
     # publishes ordinary Conversations frames with Ably REST, and publishes
     # committed crew messages to Ably Chat REST. It opens no Ably Realtime
-    # socket. Studio Agent model-turn delivery is still published exclusively
-    # by the activity worker from its own scoped projection below.
+    # socket. Agent OS live events use the same server-owned credential.
     # PREREQUISITE: `ably-api-key` must exist in Key Vault BEFORE this ships.
     # The CSI projection is fail-closed — a mapping to a missing entry breaks
     # the WHOLE fizzdragon-server-secrets Secret, taking every other env var in
@@ -219,101 +233,57 @@ serverSecrets:
     #   env: BOLDSIGN_CREW_AGREEMENT_TEMPLATE_ID
     # - kv: boldsign-webhook-secret
     #   env: BOLDSIGN_WEBHOOK_SECRET
-# New Agent Platform keys are isolated from the legacy server projection so an
-# unprovisioned migration cannot break billing/auth/server startup. This
-# projection is mounted only when agentPlatform.enabled=true.
-agentPlatformServerSecrets:
-  projectedName: fizzdragon-agent-platform-server-secrets
+# Agent OS worker credentials — its OWN projection, deliberately not
+# fizzdragon-server-secrets. CSI is fail-closed, so one bad entry breaks a whole
+# projected Secret; keeping these apart means an unprovisioned Agent OS cannot
+# take billing, auth and the legacy-MySQL bridge down with it.
+agentOsSecrets:
+  projectedName: fizzdragon-agent-os-secrets
   mapping:
-    - kv: agent-platform-server-private-key
-      env: AGENT_PLATFORM_JWT_PRIVATE_KEY_B64
-    - kv: agent-platform-domain-jwks
-      env: AGENT_DOMAIN_JWKS_B64
-# The admission API cannot invoke a model. Its projection therefore contains no
-# model-provider credential.
-agentPlatformApiSecrets:
-  projectedName: fizzdragon-agent-platform-api-secrets
-  mapping:
-    - kv: agent-memory-api-database-url
-      env: AGENT_MEMORY_DATABASE_URL
-    - kv: agent-platform-api-domain-private-key
-      env: DOMAIN_GATEWAY_JWT_PRIVATE_KEY_B64
-# Only the Worker receives realtime and business-command credentials. Vertex
-# identity is supplied through ADC/Workload Identity, never an API key.
-agentPlatformWorkerSecrets:
-  projectedName: fizzdragon-agent-platform-worker-secrets
-  mapping:
+    # The gateway<->worker boundary, checked in BOTH directions. The worker
+    # refuses to boot without it, and the server rejects the .env.example value.
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+    # Bailian's key. The vault entry names the vendor; the variable names the
+    # protocol, because the endpoint is OpenAI-compatible and need not be Bailian.
+    - kv: bailian-api-key
+      env: AGENT_OS_OPENAI_API_KEY
+    # Live event delivery. Optional at runtime — the UI falls back to the Nest
+    # poll — but a missing vault entry breaks this WHOLE projection, taking the
+    # internal token with it and stopping the worker from booting.
     - kv: ably-api-key
       env: ABLY_API_KEY
-    - kv: agent-memory-worker-database-url
-      env: AGENT_MEMORY_DATABASE_URL
-    - kv: agent-platform-worker-domain-private-key
-      env: DOMAIN_GATEWAY_JWT_PRIVATE_KEY_B64
-# DDL capability is held by a one-shot release Job, never either runtime.
-agentPlatformMigrationSecrets:
-  projectedName: fizzdragon-agent-platform-migration-secrets
+    # Durable LangGraph checkpoints. Create the vault entry first, then
+    # uncomment: the saver runs CREATE SCHEMA / CREATE TABLE on first use, so
+    # that role needs DDL on schema `agent_os`. No migrator Job owns it.
+    # - kv: agent-os-checkpoint-database-url
+    #   env: AGENT_OS_CHECKPOINT_DATABASE_URL
+# The same vault entry projected a second time, for the Nest pod. Separate group
+# for the same fail-closed reason: the server must not lose its own secrets
+# because an Agent OS entry is missing.
+agentOsServerSecrets:
+  projectedName: fizzdragon-agent-os-server-secrets
   mapping:
-    - kv: agent-memory-migration-database-url
-      env: AGENT_MEMORY_MIGRATION_DATABASE_URL
-# Insert-only ClickHouse identity for the Agent observability Collector. Agent
-# API and Worker pods never receive these values.
-agentObservabilitySecrets:
-  projectedName: fizzdragon-agent-observability-secrets
-  mapping:
-    - kv: agent-observability-clickhouse-endpoint
-      env: CLICKHOUSE_ENDPOINT
-    - kv: agent-observability-clickhouse-username
-      env: CLICKHOUSE_USERNAME
-    - kv: agent-observability-clickhouse-password
-      env: CLICKHOUSE_PASSWORD
-    - kv: agent-observability-clickhouse-database
-      env: CLICKHOUSE_DATABASE
-# Studio Agent's durable runtime uses three least-privilege projections.
-# Provision every
-# referenced Key Vault secret before enabling; CSI projection is fail-closed.
-studioAgentTemporalSecrets:
-  projectedName: fizzdragon-studio-agent-temporal-secrets
-  mapping:
-    - kv: temporal-client-ca
-      env: TEMPORAL_TLS_CA
-    - kv: temporal-client-cert
-      env: TEMPORAL_TLS_CERT
-    - kv: temporal-client-key
-      env: TEMPORAL_TLS_KEY
-studioAgentGatewaySecrets:
-  projectedName: fizzdragon-studio-agent-gateway-secrets
-  mapping:
-    - kv: studio-agent-runtime-token
-      env: STUDIO_AGENT_RUNTIME_TOKEN
-studioAgentModelSecrets:
-  projectedName: fizzdragon-studio-agent-model-secrets
-  mapping:
-    - kv: alibaba-api-key
-      env: ALIBABA_API_KEY
-# Studio Agent DELIVERY credential, projected for the ACTIVITY worker only.
-# That worker is the single publisher: it opens an `@ably/ai-transport`
-# AgentSession on the thread's channel and streams the turn onto it. The CONTROL
-# worker runs workflows, which are deterministic and never touch the network, so
-# it is deliberately not given the key.
-# PREREQUISITE: create `ably-api-key` in Key Vault BEFORE deploying. CSI is
-# fail-closed; its own projection is small on purpose, so a missing entry costs
-# delivery rather than also taking the model key and the gateway token down.
-studioAgentDeliverySecrets:
-  projectedName: fizzdragon-studio-agent-delivery-secrets
-  mapping:
-    - kv: ably-api-key
-      env: ABLY_API_KEY
+    - kv: agent-os-internal-token
+      env: AGENT_OS_INTERNAL_TOKEN
+
 # admin-ui-only secret (least-privilege). The internet-facing ops console needs
-# exactly ONE secret — the Java 资讯 X-Admin-Api-Token — so it gets its OWN scoped
+# exactly ONE secret — the Java admin X-Admin-Api-Token used by news and text
+# games — so it gets its OWN scoped
 # projection, NOT the shared fizzdragon-secrets (which holds DB/Redis/LLM/blob
 # creds — never pour those into a public-facing admin console).
-# PREREQUISITE: create `news-api-token` in Key Vault BEFORE deploying (CSI is
-# fail-closed). On non-Azure clusters (CN/ACK) azure.enabled=false → inert.
+# PREREQUISITE: create `java-admin-api-token` in Key Vault BEFORE deploying (CSI
+# is fail-closed). On non-Azure clusters (CN/ACK) azure.enabled=false → inert.
 adminUiSecrets:
   projectedName: fizzdragon-adminui-secrets
   mapping:
-    - kv: news-api-token
-      env: NEWS_API_TOKEN
+    # One token authenticates every Java admin call — 资讯 and 文游审核 both send
+    # it as X-Admin-Api-Token. It was once named for the news module alone; the
+    # Key Vault entry now carries the neutral name so nobody retires it while
+    # decommissioning news. CSI is fail-closed: this key must exist in the vault
+    # before this file references it, or admin-ui pods hang in ContainerCreating.
+    - kv: java-admin-api-token
+      env: JAVA_ADMIN_API_TOKEN
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -322,7 +292,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
+    tag: e5e3540cf35c837db269541386431b4d4e2a5958
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -348,7 +318,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
+    tag: 4053d33960935f5f8c0c9bc97ece976ce421233f
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -374,7 +344,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 4e9aaf02663832258cb8fdb2ac766ffaaeb6f0c8
+    tag: 2984e3b8862c73830f7396ed5304eb539f155e61
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -396,6 +366,8 @@ adminUi:
     # 资讯 (news) admin module → Java backend; the /content prefix is essential
     # (apex without it 302s to a different Sa-Token service).
     NEWS_API_BASE_URL: https://java.fizzdragon.com/content
+    # 文游审核 → Java Studio。仅由 admin-ui 服务端调用，浏览器不直接访问。
+    TEXT_GAME_API_BASE_URL: https://java.fizzdragon.com/studio
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 1000m, memory: 1Gi }
@@ -420,9 +392,14 @@ server:
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
   migrateOnStart: true
+  migrationJob:
+    enabled: false
+    revision: ""
+    backupId: ""
+    ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
+    tag: a3d488c06f4ce566e346e65a149b5d6baa4ed7fb
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -430,6 +407,8 @@ server:
   extraSecretRefs:
     - fizzdragon-r2
   env:
+    # Public, versioned preview media for the Git-governed Project Skill catalog.
+    PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"
     # BoldSign is intentionally OFF until the production API key, production
     # template ID, and webhook HMAC secret have all been provisioned in Key
@@ -443,9 +422,9 @@ server:
     # Cloudflare R2 over the S3-compatible API. `auto` is R2's only region and
     # path-style is required; the bucket is APAC-placed to sit beside the cluster.
     # Credentials (S3_ACCESS_KEY_ID / S3_ACCESS_KEY_SECRET) come from the
-    # fizzdragon-r2 secret above. Only jobs that pin s3_compatible write here —
-    # OUTPUT_STORAGE_PROVIDER stays unset so every other surface keeps its cell
-    # default of azure_blob.
+    # fizzdragon-r2 secret above. Cell default for com/global is s3_compatible
+    # (R2); set OUTPUT_STORAGE_PROVIDER=azure_blob only to roll NEW writes back.
+    # Existing MediaAsset rows keep reading from whatever provider they store.
     S3_ENDPOINT: https://c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com
     S3_BUCKET: fizzdragon-media
     S3_REGION: auto
@@ -457,6 +436,8 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
+    MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
     # AK/SK come from KV (serverSecrets mapping). ACR = the paid capacity-reservation
     # subscription; its expiry is not queryable via API, so it's declared here and
@@ -518,148 +499,34 @@ server:
       value: worker
       effect: NoSchedule
 # ---------------------------------------------------------------------------
-# agent-platform — replacement unified Agent system.
-#
-# Deliberately disabled until the three immutable target images and all scoped
-# Key Vault entries are provisioned. Enabling is atomic: Helm renders the API,
-# Worker, memory migration Job, Service, PDBs, and HPA, while the server mounts
-# the matching gateway/domain keys and exposes the new product boundary.
+# agent-os — the Agent OS worker (LangGraph interactive runtime, apps/agent-os).
+# A plain long-lived HTTP service on ClusterIP; the Nest server pod is its only
+# caller. Every /v1 route checks x-agent-os-internal-token; /health is open so
+# the kubelet can probe it.
 # ---------------------------------------------------------------------------
-agentPlatform:
+agentOs:
   enabled: true
-  memory:
-    # Both existing roles are non-owners. The API role is read-only; the Worker
-    # role has DML. Each process verifies current_user during readiness.
-    apiDatabaseRole: fizzdragon_agent_api
-    workerDatabaseRole: fizzdragon_agent_worker
-  api:
-    replicaCount: 3
-    image:
-      repository: fizzdragon-agent-platform-api
-      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
-    port: 4111
-    terminationGracePeriodSeconds: 45
-    memoryPoolMax: 10
-    resources:
-      requests: { cpu: 250m, memory: 512Mi }
-      limits: { cpu: 2000m, memory: 2Gi }
-    autoscaling:
-      enabled: true
-      minReplicas: 3
-      maxReplicas: 12
-      cpuUtilization: 65
-  worker:
-    replicaCount: 3
-    image:
-      repository: fizzdragon-agent-platform-worker
-      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
-    healthPort: 3010
-    metricsPort: 9464
-    terminationGracePeriodSeconds: 240
-    memoryPoolMax: 20
-    maxConcurrentWorkflows: 128
-    maxConcurrentDocumentWorkflows: 16
-    activityConcurrency:
-      control: 16
-      inference: 16
-      tool: 32
-      lifecycle: 8
-      cleanup: 8
-      # Map wall clock is sections/lane rounded up; the document lane has its
-      # own Worker and task queue, so it never takes a slot from an interactive
-      # turn. Kept level with `inference` so one large document can claim at
-      # most one interactive lane's worth of provider concurrency.
-      document: 16
-    resources:
-      requests: { cpu: 1000m, memory: 2Gi }
-      limits: { cpu: 4000m, memory: 8Gi }
-  migrator:
-    image:
-      repository: fizzdragon-agent-memory-migrator
-      tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
-    activeDeadlineSeconds: 600
-    resources:
-      # Schema migration is latency-insensitive and single-threaded. Keep the
-      # request small enough to schedule on a saturated worker pool; the CPU
-      # limit still lets it burst while the memory safety envelope is unchanged.
-      requests: { cpu: 50m, memory: 512Mi }
-      limits: { cpu: 1000m, memory: 2Gi }
+  # MUST remain 1, and the template refuses anything else. Run snapshots, the
+  # live event journal and pending approvals live in the worker PROCESS, so a
+  # second replica answers /events and /cancel for runs it never started — and
+  # the gateway silently falls back to the Postgres journal, so the symptom is
+  # "chat feels laggy", not an error anyone would report.
+  replicaCount: 1
+  image:
+    repository: fizzdragon-agent-os
+    tag: f12f63f1bc2c53a74ed385d22cdf80061273767b
+  containerPort: 4301
+  # Covers the preStop drain only — the process installs no SIGTERM handler, so
+  # a longer window buys nothing.
+  terminationGracePeriodSeconds: 30
   model:
-    provider: google-vertex
-    project: glass-proxy-501907-d2
-    location: global
-    # Keyless AKS→GCP workload identity federation. The Worker's projected
-    # K8s token is exchanged at this provider for short-lived credentials
-    # impersonating serviceAccountEmail; no Google key file exists anywhere.
-    workloadIdentityFederation:
-      projectNumber: "553701186007"
-      pool: fizzdragon-aks
-      provider: aks-com
-      serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
-    interactiveId: gemini-2.5-flash
-    reasoningId: gemini-2.5-pro
-    observerId: gemini-2.5-flash
-  temporal:
-    address: fizzdragon-temporal:7233
-    namespace: fizzdragon
-    taskQueue: fizzdragon-agent-platform-v1
-    workerDeploymentName: fizzdragon-agent-platform
-  observability:
-    endpoint: http://fizzdragon-otel-collector:4318/v1/traces
-    collectorHealthUrl: http://fizzdragon-otel-collector:13133/
-    collector:
-      enabled: true
-      replicaCount: 3
-      image:
-        registry: docker.io
-        repository: otel/opentelemetry-collector-contrib
-        tag: 0.157.0
-        digest: sha256:f2f01157055a9b2aab9df7118e1f1c9abf345e99b23bc7a2bc791db374a7d0f6
-      otlpHttpPort: 4318
-      healthPort: 13133
-      metricsPort: 8888
-      goMemLimit: 820MiB
-      storage:
-        storageClassName: managed-csi-premium
-        size: 30Gi
-      terminationGracePeriodSeconds: 60
-      resources:
-        requests: { cpu: 250m, memory: 512Mi }
-        limits: { cpu: 2000m, memory: 1Gi }
-  gateway:
-    domainUrl: http://fizzdragon-server:3001
-    jwksUrl: http://fizzdragon-server:3001/agent-platform/.well-known/jwks.json
-    jwtIssuer: https://fizzdragon.com/agent-platform
-    jwtAudience: fizzdragon-agent-platform
-    domainJwtIssuer: fizzdragon-agent-platform
-    domainJwtAudience: fizzdragon-domain-gateway
-    apiDomainSigningKeyId: agent-platform-api-domain-v1
-    workerDomainSigningKeyId: agent-platform-worker-domain-v1
-    serverSigningKeyId: agent-platform-server-v1
-  admission:
-    providerLane: gemini
-    retryAfterSeconds: 5
-    reservation:
-      tokenUnitsPerRun: 131072
-      costMicrousdPerRun: 500000
-    maxActive:
-      global: 64
-      perWorkspace: 8
-      perActor: 2
-      perProviderLane: 32
-    maxReservedTokenUnits:
-      global: 8388608
-      perWorkspace: 1048576
-      perActor: 262144
-      perProviderLane: 4194304
-    maxReservedCostMicrousd:
-      global: 32000000
-      perWorkspace: 4000000
-      perActor: 1000000
-      perProviderLane: 16000000
-  # Egress containment for the API and Worker. See
-  # templates/agent-platform-networkpolicy.yaml for why the external rule is a
-  # subtraction rather than an endpoint allow-list.
+    # Bailian's workspace domain. The key is a Key Vault value, never here.
+    baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+  checkpoint:
+    schema: agent_os
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 2Gi }
   networkPolicy:
     enabled: true
     dns:
@@ -668,20 +535,13 @@ agentPlatform:
       podSelector:
         k8s-app: kube-dns
       port: 53
-    # This cluster's own private space, subtracted from the external rule. Both
-    # values are AKS install-time properties: 10.0.0.0/16 is the serviceCidr and
-    # 10.244.0.0/16 the pod CIDR (the same two ranges the studio-agent-runtime
-    # CIDR floor was widened to catch). Verify after any cluster rebuild:
-    #   az aks show -n <cluster> -g <rg> --query networkProfile
+    # The "except" list of the external rule. Without these the 0.0.0.0/0 rule
+    # is an in-cluster allow-all.
     clusterCidrs:
       - 10.0.0.0/16
       - 10.244.0.0/16
-    # agent_memory sits on a managed Postgres endpoint whose address Azure does
-    # not contract; the ports are what the two processes may speak once they are
-    # outside the cluster, not who they may speak to.
-    databasePort: 5432
     httpsPort: 443
-  maxModelSteps: 48
+    databasePort: 5432
   nodeSelector:
     pool: worker
   tolerations:
@@ -689,6 +549,7 @@ agentPlatform:
       operator: Equal
       value: worker
       effect: NoSchedule
+
 # ---------------------------------------------------------------------------
 # agent — Mastra API. Internal. Storage in PG schema `mastra` (no PVC).
 # ---------------------------------------------------------------------------
@@ -773,236 +634,6 @@ agentWorker:
     queues:
       - bull:storyos-workflows:wait
       - bull:asset-images:wait
-# ---------------------------------------------------------------------------
-# Temporal — self-hosted, one cluster per region, in the application namespace.
-#
-# Self-hosted rather than Temporal Cloud because .cn runs in mainland China:
-# the worker<->frontend link is a continuous long-polling gRPC connection that
-# would cross the border, and workflow histories carry user story content, so
-# routing them offshore is a data-export problem. Running Cloud for .com and
-# self-hosting for .cn would mean two operational models for one feature.
-#
-# Persistence is a DEDICATED Postgres server, never the application database:
-# Temporal's officially tested versions top out at PostgreSQL 16 while the
-# application server runs 18, and its write load has no business sharing IOPS
-# with user-facing queries.
-# ---------------------------------------------------------------------------
-temporal:
-  image:
-    # Upstream images, mirrored into each region's own registry rather than
-    # pulled from Docker Hub: .cn cannot reach it at all, and prod should not
-    # depend on a public registry staying up. Carried under the platform
-    # registry prefix like every other component, so a region overrides
-    # image.registry once and these follow.
-    #
-    #   az acr import --name acrfizzdragoncom \
-    #     --source docker.io/temporalio/server:1.31.2 \
-    #     --image temporalio-server:1.31.2
-    repository: temporalio-server
-    tag: 1.31.2
-    adminToolsRepository: temporalio-admin-tools
-    adminToolsTag: 1.31.2
-    pullPolicy: IfNotPresent
-  # All four roles in one process. The split into separate Deployments buys
-  # per-role tuning and a smaller blast radius, neither of which pays for
-  # itself at this volume; two anti-affine replicas already survive a pod or
-  # node loss. Splitting later is a config change, not a data migration.
-  services: history,matching,frontend,worker
-  replicaCount: 2
-  frontendPort: 7233
-  membershipPort: 6933
-  # IMMUTABLE once the first server boots — the shard count is baked into the
-  # persistence layout, so changing it later means migrating all data. 512 is
-  # the standard production value; the docker-compose default of 4 is a
-  # development convenience that permanently caps throughput.
-  numHistoryShards: 512
-  namespace: fizzdragon
-  # Workflow history retention. History is the dominant storage consumer, and
-  # it grows with turn volume until this bound.
-  retention: 168h
-  database:
-    # Dedicated server, PostgreSQL 16. Empty by default: the chart refuses to
-    # render rather than invent an endpoint.
-    host: fizzdragon-temporal-pg.postgres.database.azure.com
-    port: 5432
-    user: temporal
-    name: temporal
-    visibilityName: temporal_visibility
-    # Azure and Alibaba both require TLS on managed Postgres.
-    tlsEnabled: true
-    # Deliberately small. Temporal's defaults are sized for a database it owns
-    # exclusively; these are per-replica and this server is modest.
-    maxConns: 20
-    maxIdleConns: 10
-    maxConnLifetime: 1h
-  resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits: { cpu: 1000m, memory: 2Gi }
-  nodeSelector:
-    pool: worker
-  tolerations:
-    - key: workload
-      value: worker
-      operator: Equal
-      effect: NoSchedule
-# Temporal server database credentials. The password never enters git; .com
-# projects it from Key Vault, .cn creates the Secret out-of-band with kubectl.
-temporalDatabaseSecrets:
-  projectedName: fizzdragon-temporal-db-secrets
-  mapping:
-    - kv: temporal-db-password
-      env: POSTGRES_PWD
-# ---------------------------------------------------------------------------
-# studio-agent-runtime — provider-independent Temporal execution plane.
-#
-# The temporal.address below must match the in-cluster Temporal Service for
-# plaintext to be permitted; any other endpoint forces mTLS. See
-# templates/studio-agent-runtime.yaml.
-# ---------------------------------------------------------------------------
-studioAgentRuntime:
-  image:
-    repository: fizzdragon-studio-agent-runtime
-    tag: 987caa08d24d2a28fb4bda21ba13b1df5757809a
-  internalBaseUrl: http://fizzdragon-server:3001
-  temporal:
-    # The in-cluster Temporal Service this chart renders. Kept in values rather
-    # than hardcoded so a future external endpoint is a values change — but see
-    # tlsMode: pointing this anywhere else makes mTLS mandatory.
-    address: fizzdragon-temporal:7233
-    namespace: fizzdragon
-    # Stable Worker Deployment name. Immutable releases are build IDs within
-    # this deployment; changing it strands pinned workflow histories.
-    workerDeploymentName: fizzdragon-studio-agent
-    # Optional TLS hostname override. Leave empty when the endpoint certificate
-    # already matches the hostname in address.
-    serverName: ""
-    # Plaintext is permitted for exactly one address: the in-cluster Temporal
-    # Service this chart owns, whose traffic never leaves the node network.
-    # The template compares the address against the rendered Service name, so
-    # repointing at any external endpoint fails the render until this is mtls.
-    # Issuing and rotating a CA plus client certs for a ClusterIP hop buys
-    # nothing that the cluster boundary does not already provide.
-    tlsMode: disabled
-    connectTimeoutMs: 5000
-    healthProbeIntervalMs: 5000
-    reconnectMinDelayMs: 500
-    reconnectMaxDelayMs: 30000
-    pollerStaleMs: 30000
-  model:
-    baseUrl: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-    textId: qwen3-max
-    visionId: qwen3-vl-plus
-    # Total timeout on one streaming model call. Bounded by the model
-    # activity's 16-minute startToClose; see apps/studio-agent-runtime/src/config.ts.
-    timeoutMs: 600000
-    maxOutputTokens: 8192
-  # Runtime egress is default-denied. Kubernetes NetworkPolicy cannot select a
-  # public dependency by DNS name, so operators must provide the exact
-  # environment-specific destination CIDRs. The template rejects missing or
-  # intentionally broad catch-all ranges.
-  networkPolicy:
-    enabled: true
-    dns:
-      namespaceSelector:
-        kubernetes.io/metadata.name: kube-system
-      podSelector:
-        k8s-app: kube-dns
-      port: 53
-    # Temporal needs no CIDRs: it is in-cluster, so the workers reach it by pod
-    # selection and the port comes from temporal.frontendPort.
-    # dashscope-intl.aliyuncs.com sits behind an Alibaba NLB whose addresses
-    # rotate, so this rule is structurally weak: enumerating a public provider's
-    # IPs is either stale or a maintenance treadmill. It is the best a
-    # CIDR-based policy can do — an FQDN-aware engine (Cilium) is the real fix
-    # if egress enforcement is ever turned on. Re-resolve after provider changes:
-    #   dig +short dashscope-intl.aliyuncs.com
-    model:
-      port: 443
-      cidrs:
-        - 47.236.0.0/16
-        - 47.245.0.0/16
-    # The managed Postgres endpoint the Temporal server may reach. A /24 floor
-    # is enforced — this is one endpoint, not a range.
-    #
-    # fizzdragon-temporal-pg resolves into 20.205.236.0/24 today. Azure does not
-    # contract a stable address for a managed Postgres endpoint, so a failover
-    # that moves it out of this /24 breaks Temporal's egress. Re-resolve after
-    # any maintenance event:
-    #   dig +short fizzdragon-temporal-pg.postgres.database.azure.com
-    database:
-      port: 5432
-      cidrs:
-        - 20.205.236.0/24
-    gateway:
-      port: 3001
-  # Immutable per-root-turn envelope. The server snapshots these values when
-  # it creates or promotes a turn; child tasks share that one durable budget.
-  # `maxCapabilityInputRejectionsPerRoot` is the exception: it bounds how many
-  # malformed tool inputs one turn tree may be told to correct, charges nothing,
-  # and is read live at each gate rather than snapshotted.
-  budget:
-    maxChildDepth: 4
-    maxChildRuns: 24
-    maxConcurrentChildRuns: 8
-    maxModelStepsPerRun: 32
-    maxModelStepsPerRoot: 128
-    maxCapabilityInputRejectionsPerRoot: 3
-    maxTotalTokenUnits: 1000000
-    maxContextBytesPerStep: 2000000
-    imageTokenReserveUnits: 8192
-    minOutputTokenUnitsPerStep: 256
-    wallTimeMs: 3600000
-  # Server-side, cross-replica admission. Every accepted root reserves one
-  # complete root budget until its canonical terminal transaction.
-  admission:
-    leaseMs: 120000
-    reconcileIntervalMs: 5000
-    reconcileBatchSize: 50
-    maxActiveRootRuns:
-      global: 512
-      perWorkspace: 64
-      perUser: 4
-    maxReservedTokenUnits:
-      global: 512000000
-      perWorkspace: 64000000
-      perUser: 4000000
-  attachmentCleanup:
-    ttlMs: 86400000
-    pollIntervalMs: 30000
-    batchSize: 25
-    discoveryBatchSize: 500
-    leaseMs: 60000
-    maxAttempts: 12
-    retryBaseMs: 10000
-    retryMaxMs: 1800000
-  gatewayTimeoutMs: 30000
-  healthPort: 3010
-  metricsPort: 9464
-  shutdownGraceMs: 30000
-  shutdownForceMs: 120000
-  # Kubernetes must outlive Temporal's force-shutdown deadline.
-  terminationGracePeriodSeconds: 150
-  control:
-    replicaCount: 2
-    maxConcurrentWorkflowTasks: 64
-    maxConcurrentWorkflowPolls: 16
-    resources:
-      requests: { cpu: 100m, memory: 256Mi }
-      limits: { cpu: 1000m, memory: 1Gi }
-  activities:
-    replicaCount: 2
-    maxConcurrentTasks: 16
-    maxConcurrentPolls: 8
-    resources:
-      requests: { cpu: 250m, memory: 512Mi }
-      limits: { cpu: 2000m, memory: 2Gi }
-  nodeSelector:
-    pool: worker
-  tolerations:
-    - key: workload
-      operator: Equal
-      value: worker
-      effect: NoSchedule
 # ---------------------------------------------------------------------------
 # Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
 # No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`

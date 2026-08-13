@@ -30,6 +30,7 @@ export interface BytePlusVideoTaskResponse {
   duration?: number;
   resolution?: string;
   ratio?: string;
+  output_format?: 'mp4' | 'mov';
   seed?: number;
   error?: { code?: string; message?: string } | null;
   [key: string]: unknown;

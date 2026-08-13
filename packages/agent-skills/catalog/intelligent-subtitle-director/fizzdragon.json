@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000028",
+  "catalogOrder": 28,
+  "displayDescription": "Create timed subtitle direction that protects meaning, reading rhythm, safe areas and visual hierarchy.",
+  "translationKey": "intelligentSubtitleDirector",
+  "publisherName": "FizzDragon",
+  "category": "production",
+  "kind": "video",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "intelligent-subtitle-director.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000028",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "qa"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/intelligent-subtitle-director/v1"
+  }
+}

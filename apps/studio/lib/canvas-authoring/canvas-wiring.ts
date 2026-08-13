@@ -4,19 +4,22 @@
  * The copilot's `connect_nodes` tool uses these to wire nodes EXACTLY like the
  * human drag path (canvas-view.tsx `onConnect` → `bindEdgeReference`): derive
  * the source output kind, route it to a target reference field (reusing the
- * shared `routeReferenceField` brain), add the edge with the real handle ids,
- * and bind the source as a reference on the target (with mode switch).
- *
- * NOTE: the drag path in canvas-view.tsx still has its own inline copy of the
- * kind/url derivation + bindEdgeReference. This module mirrors it; a follow-up
- * should make canvas-view delegate here so there's a single source of truth.
- * The routing rule itself (`routeReferenceField`) is already shared, so the
- * only duplicated logic is the small, stable node-type → kind/url maps.
+ * shared current-mode routing brain), add the edge with the real handle ids,
+ * and bind the source as a reference on the target. Validation is performed
+ * before either mutation so a rejected connection cannot leave an orphan edge.
  */
 import type { Edge } from "@xyflow/react";
-import { routeReferenceField } from "@/lib/canvas-authoring/reference-routing";
+import {
+  evaluateReferenceField,
+  type ReferenceRoutingIssue,
+} from "@/lib/canvas-authoring/reference-routing";
+import {
+  SHOT_REFERENCE_FIELDS,
+  SHOT_NODE_TYPE,
+  type ShotNodeData,
+} from "@/lib/canvas-authoring/shot-node";
 import type { FizzAiModel, FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
-import type { CardReference } from "@/components/canvas/authoring/reference-stack";
+import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
 
@@ -26,8 +29,56 @@ type GetNode = (id: string) => { type?: string | null; data?: unknown } | null |
 
 export interface WiringCtx {
   getNode: GetNode;
+  /** Immediate document read, used to reserve slots for not-yet-generated wires. */
+  getEdges?: () => readonly Pick<Edge, "id" | "source" | "target">[];
   catalog: { models: FizzAiModel[] } | undefined;
-  graph: Pick<CanvasGraph, "addEdge" | "patchNodeData">;
+  graph: Pick<CanvasGraph, "addEdge" | "patchNodeData" | "removeEdge">;
+}
+
+export type CanvasConnectionIssue =
+  | ReferenceRoutingIssue
+  | { code: "source_missing" }
+  | { code: "target_missing" }
+  | { code: "self_connection" }
+  | { code: "source_not_connectable" }
+  | { code: "target_not_connectable" }
+  | { code: "duplicate_reference"; kind: FizzAiReferenceKind };
+
+export type CanvasConnectionValidation =
+  | { ok: true; kind: FizzAiReferenceKind; field: string }
+  | { ok: false; issue: CanvasConnectionIssue };
+
+const KIND_LABEL: Record<FizzAiReferenceKind, string> = {
+  image: "image",
+  video: "video",
+  audio: "audio",
+};
+
+/** Stable English fallback for agents and non-React callers. UI callers map
+ * the same issue codes through i18n. */
+export function canvasConnectionIssueMessage(issue: CanvasConnectionIssue): string {
+  switch (issue.code) {
+    case "source_missing":
+      return "The source node no longer exists.";
+    case "target_missing":
+      return "The target node no longer exists.";
+    case "self_connection":
+      return "A node can't be connected to itself.";
+    case "source_not_connectable":
+      return "This node has no image, video, or audio output to connect.";
+    case "target_not_connectable":
+      return "This node does not accept reference connections.";
+    case "model_unavailable":
+      return "Choose an available model before connecting a reference.";
+    case "current_mode_unsupported":
+      return `The current mode does not accept ${KIND_LABEL[issue.kind]} references. Switch modes manually first.`;
+    case "unsupported_kind":
+      return `This model does not accept ${KIND_LABEL[issue.kind]} references.`;
+    case "reference_limit":
+      return `The current mode accepts at most ${issue.limit} ${KIND_LABEL[issue.kind]} reference${issue.limit === 1 ? "" : "s"}.`;
+    case "duplicate_reference":
+      return `This ${KIND_LABEL[issue.kind]} is already connected to the node.`;
+  }
 }
 
 /** Node type → the kind exposed on its 'output' handle (notes have none). */
@@ -75,13 +126,167 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   return undefined;
 }
 
-/** Route a source kind to a reference field on a target generation card. */
-function routeForCard(ctx: WiringCtx, cardId: string, kind: string) {
-  const node = ctx.getNode(cardId);
-  if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
-  const data = node.data as GenerationNodeData;
-  const model = ctx.catalog?.models.find((m) => m.id === data.modelId);
-  return routeReferenceField(model, data.mode, data.references, kind);
+export function sourceMediaMetadata(
+  getNode: GetNode,
+  nodeId: string
+): Pick<CardReference, "bytes" | "durationSeconds" | "height" | "name" | "width"> {
+  const node = getNode(nodeId);
+  if (!node) return {};
+  const source =
+    node.type === "prompt" || node.type === "video"
+      ? (node.data as GenerationNodeData).generation?.outputs?.[0]
+      : (node.data as {
+          bytes?: number | null;
+          durationSeconds?: number | null;
+          height?: number | null;
+          width?: number | null;
+        });
+  if (!source) return {};
+  const sourceName =
+    node.type === "prompt" || node.type === "video"
+      ? (node.data as GenerationNodeData).prompt
+      : ((node.data as { label?: string; name?: string }).label ??
+        (node.data as { label?: string; name?: string }).name);
+  const positiveFinite = (value: number | null | undefined): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0;
+  return {
+    ...(sourceName?.trim() ? { name: sourceName.trim() } : {}),
+    ...(positiveFinite(source.durationSeconds) ? { durationSeconds: source.durationSeconds } : {}),
+    ...(positiveFinite(source.bytes) ? { bytes: source.bytes } : {}),
+    ...(positiveFinite(source.width) ? { width: source.width } : {}),
+    ...(positiveFinite(source.height) ? { height: source.height } : {}),
+  };
+}
+
+function withoutEdgeReference(
+  references: CardReferences | undefined,
+  edgeId: string
+): CardReferences | undefined {
+  if (!references) return references;
+  const next: CardReferences = {};
+  for (const [field, list] of Object.entries(references)) {
+    next[field] = (list ?? []).filter((reference) => reference.edgeId !== edgeId);
+  }
+  return next;
+}
+
+/**
+ * Which reference field an incoming `kind` binds to on a target — the single
+ * routing brain for every node type that takes pictures: a generation card
+ * (fields declared by its model + mode) or a shot (fixed frame / clip slots).
+ * Anything else (a note, an image) takes nothing.
+ *
+ * `excludeEdgeId` is the wire being (re)bound: its own current reference must
+ * not count against a full slot, or a source that regenerates would be turned
+ * away from the slot it already owns.
+ */
+export function evaluateTargetReferenceField(
+  target: { type?: string | null; data?: unknown } | null | undefined,
+  catalog: { models: FizzAiModel[] } | undefined,
+  kind: FizzAiReferenceKind,
+  excludeEdgeId?: string,
+  reservedCount = 0
+): { ok: true; field: string } | { ok: false; issue: CanvasConnectionIssue } {
+  if (!target) return { ok: false, issue: { code: "target_missing" } };
+  if (target.type === SHOT_NODE_TYPE) {
+    const data = target.data as ShotNodeData;
+    const constraint = SHOT_REFERENCE_FIELDS.find((candidate) => candidate.kind === kind);
+    if (!constraint) return { ok: false, issue: { code: "unsupported_kind", kind } };
+    const boundCount = (data.references?.[constraint.field] ?? []).filter(
+      (reference) => !excludeEdgeId || reference.edgeId !== excludeEdgeId
+    ).length;
+    return boundCount + reservedCount < constraint.maxItems
+      ? { ok: true, field: constraint.field }
+      : {
+          ok: false,
+          issue: { code: "reference_limit", kind, limit: constraint.maxItems },
+        };
+  }
+  if (target.type !== "prompt" && target.type !== "video") {
+    return { ok: false, issue: { code: "target_not_connectable" } };
+  }
+  const data = target.data as GenerationNodeData;
+  const model = catalog?.models.find((m) => m.id === data.modelId);
+  const references = excludeEdgeId
+    ? withoutEdgeReference(data.references, excludeEdgeId)
+    : data.references;
+  return evaluateReferenceField(model, data.mode, references, kind, reservedCount);
+}
+
+export function routeTargetReferenceField(
+  target: { type?: string | null; data?: unknown } | null | undefined,
+  catalog: { models: FizzAiModel[] } | undefined,
+  kind: FizzAiReferenceKind,
+  excludeEdgeId?: string,
+  reservedCount = 0
+): { field: string } | undefined {
+  const result = evaluateTargetReferenceField(target, catalog, kind, excludeEdgeId, reservedCount);
+  return result.ok ? { field: result.field } : undefined;
+}
+
+function targetReferences(target: ReturnType<GetNode>): CardReferences {
+  return ((target?.data as { references?: CardReferences } | undefined)?.references ??
+    {}) as CardReferences;
+}
+
+function boundEdgeIds(references: CardReferences): Set<string> {
+  return new Set(
+    Object.values(references)
+      .flat()
+      .flatMap((reference) => (reference.edgeId ? [reference.edgeId] : []))
+  );
+}
+
+/** Validate source → target without mutating the graph. */
+export function validateCanvasConnection(
+  ctx: Pick<WiringCtx, "getNode" | "getEdges" | "catalog">,
+  source: string,
+  target: string,
+  excludeEdgeId?: string
+): CanvasConnectionValidation {
+  if (source === target) return { ok: false, issue: { code: "self_connection" } };
+  const sourceNode = ctx.getNode(source);
+  if (!sourceNode) return { ok: false, issue: { code: "source_missing" } };
+  const targetNode = ctx.getNode(target);
+  if (!targetNode) return { ok: false, issue: { code: "target_missing" } };
+
+  const kind = sourceOutputKind(ctx.getNode, source);
+  if (!kind) return { ok: false, issue: { code: "source_not_connectable" } };
+
+  const references = targetReferences(targetNode);
+  const duplicateReference = Object.values(references)
+    .flat()
+    .some(
+      (reference) =>
+        reference.sourceNodeId === source && (!excludeEdgeId || reference.edgeId !== excludeEdgeId)
+    );
+  const existingEdges = ctx.getEdges?.() ?? [];
+  const duplicateEdge = existingEdges.some(
+    (edge) =>
+      edge.source === source &&
+      edge.target === target &&
+      (!excludeEdgeId || edge.id !== excludeEdgeId)
+  );
+  if (duplicateReference || duplicateEdge) {
+    return { ok: false, issue: { code: "duplicate_reference", kind } };
+  }
+
+  const boundIds = boundEdgeIds(references);
+  const reservedCount = existingEdges.filter(
+    (edge) =>
+      edge.target === target &&
+      edge.id !== excludeEdgeId &&
+      !boundIds.has(edge.id) &&
+      sourceOutputKind(ctx.getNode, edge.source) === kind
+  ).length;
+  const routed = evaluateTargetReferenceField(
+    targetNode,
+    ctx.catalog,
+    kind,
+    excludeEdgeId,
+    reservedCount
+  );
+  return routed.ok ? { ok: true, kind, field: routed.field } : { ok: false, issue: routed.issue };
 }
 
 /** Bind source → target as a reference. The single source of truth for this
@@ -91,14 +296,16 @@ export function bindEdgeReference(
   edgeId: string,
   source: string,
   target: string
-): void {
-  const kind = sourceOutputKind(ctx.getNode, source);
+): { status: "bound" | "pending" } | { status: "rejected"; issue: CanvasConnectionIssue } {
+  const validation = validateCanvasConnection(ctx, source, target, edgeId);
+  if (!validation.ok) return { status: "rejected", issue: validation.issue };
+  const kind = validation.kind;
   const url = sourceMediaUrl(ctx.getNode, source);
   const assetId = sourceMediaAssetId(ctx.getNode, source);
-  const routed = kind ? routeForCard(ctx, target, kind) : undefined;
+  const metadata = sourceMediaMetadata(ctx.getNode, source);
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
-  if (!kind || !url || url.startsWith("blob:") || !routed) return;
+  if (!url || url.startsWith("blob:")) return { status: "pending" };
   const reference: CardReference = {
     id: edgeId,
     edgeId,
@@ -106,16 +313,16 @@ export function bindEdgeReference(
     url,
     kind,
     ...(assetId ? { assetId } : {}),
+    ...metadata,
   };
   ctx.graph.patchNodeData(target, (node) => {
-    const refs = (node.data as GenerationNodeData).references ?? {};
-    const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-    const patch: Record<string, unknown> = {
-      references: { ...refs, [routed.field]: [...list, reference] },
+    const refs = (node.data as { references?: CardReferences }).references ?? {};
+    const list = (refs[validation.field] ?? []).filter((r) => r.edgeId !== edgeId);
+    return {
+      references: { ...refs, [validation.field]: [...list, reference] },
     };
-    if (routed.mode) patch.mode = routed.mode;
-    return patch;
   });
+  return { status: "bound" };
 }
 
 /**
@@ -127,20 +334,10 @@ export function connectNodes(
   sourceId: string,
   targetId: string
 ): { edgeId: string } {
-  if (!sourceId || !targetId) throw new Error("Both a source and a target node are required.");
-  if (sourceId === targetId) throw new Error("A node can't be connected to itself.");
-  if (!ctx.getNode(sourceId)) throw new Error(`No source node with id ${sourceId}.`);
-  if (!ctx.getNode(targetId)) throw new Error(`No target node with id ${targetId}.`);
-
-  const kind = sourceOutputKind(ctx.getNode, sourceId);
-  if (!kind) throw new Error("The source node has no connectable output (notes can't be wired).");
-
-  const routed = routeForCard(ctx, targetId, kind);
-  if (!routed) {
-    throw new Error(
-      "The target can't accept this connection — it must be a generation card whose model accepts this input, with a free reference slot."
-    );
-  }
+  if (!sourceId) throw new Error("A source node is required.");
+  if (!targetId) throw new Error("A target node is required.");
+  const validation = validateCanvasConnection(ctx, sourceId, targetId);
+  if (!validation.ok) throw new Error(canvasConnectionIssueMessage(validation.issue));
 
   const edgeId = crypto.randomUUID();
   ctx.graph.addEdge({
@@ -152,7 +349,13 @@ export function connectNodes(
   });
   // Bind now if the source already has a durable URL; otherwise the canvas
   // reconciler back-fills the binding when the URL resolves.
-  bindEdgeReference(ctx, edgeId, sourceId, targetId);
+  const binding = bindEdgeReference(ctx, edgeId, sourceId, targetId);
+  if (binding.status === "rejected") {
+    // Collaborative state changed between validation and binding. Roll back the
+    // just-created edge so a rejected connection is still an atomic no-op.
+    ctx.graph.removeEdge(edgeId);
+    throw new Error(canvasConnectionIssueMessage(binding.issue));
+  }
   return { edgeId };
 }
 
@@ -176,7 +379,7 @@ export function stripEdgeRef(
   edgeId: string
 ): void {
   patchNodeData(targetId, (node) => {
-    const refs = (node.data as GenerationNodeData).references ?? {};
+    const refs = (node.data as { references?: CardReferences }).references ?? {};
     const next: Record<string, CardReference[]> = {};
     for (const [field, list] of Object.entries(refs)) {
       next[field] = list.filter((r) => r.edgeId !== edgeId);

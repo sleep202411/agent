@@ -573,11 +573,12 @@ function EpisodeManager({
       ) : null}
 
       <div className="space-y-2">
-        {episodes.map((episode) => (
+        {episodes.map((episode, index) => (
           <EpisodeCard
             key={episode.id}
             ip={ip}
             episode={episode}
+            displayNumber={index + 1}
             t={t}
             onEdit={() => setEditingEpisodeId(episode.id)}
           />
@@ -797,7 +798,7 @@ function EpisodeUpsertDialog({
       toast.error(oldT("epCoverNotImage"));
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       toast.error(oldT("epCoverTooLarge"));
       return;
     }
@@ -1161,11 +1162,14 @@ function EpisodeUpsertDialog({
 function EpisodeCard({
   ip,
   episode,
+  displayNumber,
   t,
   onEdit,
 }: {
   ip: IpCreatorIp;
   episode: StudioEpisode;
+  /** 1-based position in the live list (not raw episodeNo). */
+  displayNumber: number;
   t: Translate;
   onEdit: () => void;
 }) {
@@ -1213,7 +1217,7 @@ function EpisodeCard({
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-                EP {String(episode.episodeNo).padStart(2, "0")}
+                EP {String(displayNumber).padStart(2, "0")}
               </span>
               {episode.isFreePreview ? (
                 <StatusPill>{t("episodesPanel.form.freePreview")}</StatusPill>
@@ -1624,8 +1628,14 @@ function EpisodePricingList({
 
   return (
     <div className="space-y-2">
-      {episodes.map((episode) => (
-        <EpisodePriceEditor key={episode.id} ip={ip} episode={episode} t={t} />
+      {episodes.map((episode, index) => (
+        <EpisodePriceEditor
+          key={episode.id}
+          ip={ip}
+          episode={episode}
+          displayNumber={index + 1}
+          t={t}
+        />
       ))}
     </div>
   );
@@ -1813,10 +1823,13 @@ function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
 function EpisodePriceEditor({
   ip,
   episode,
+  displayNumber,
   t,
 }: {
   ip: IpCreatorIp;
   episode: StudioEpisode;
+  /** 1-based position in the live list (not raw episodeNo). */
+  displayNumber: number;
   t: Translate;
 }) {
   // Price (amount/compare-at/schedule) round-trips through the price-rule
@@ -1926,7 +1939,7 @@ function EpisodePriceEditor({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-              EP {String(episode.episodeNo).padStart(2, "0")}
+              EP {String(displayNumber).padStart(2, "0")}
             </span>
             <EpisodeStatePill state={serverState} t={t} />
           </div>
@@ -2162,7 +2175,6 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
     );
   }
 
-  const creatorPct = formatBpsPercent(data.creatorShareBps, locale);
   const allocatedPct = formatBpsPercent(data.poolAllocatedBps, locale);
   const overAllocated = data.poolAllocatedBps > BPS_FULL;
 
@@ -2173,10 +2185,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
         <div className="rounded-xl bg-card p-4 ring-1 ring-border/65">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-medium text-foreground">
-                {t("membersPanel.creatorShareLine", { pct: creatorPct })}
-              </p>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">{t("membersPanel.splitPrompt")}</p>
             </div>
             <div className="text-right">

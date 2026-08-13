@@ -37,7 +37,6 @@ export interface LegacyUser {
   email: string | null;
   nickName: string | null;
   scoreBalance: number;
-  userLevel: string | null;
 }
 
 export interface MemberSummary {
@@ -46,7 +45,6 @@ export interface MemberSummary {
   email: string | null;
   nickName: string | null;
   scoreBalance: number;
-  userLevel: string | null;
   accountStatus: number | null;
   createTime: string | null;
 }
@@ -129,7 +127,7 @@ export class LegacyPointsService {
     const total = Number(countRow?.total ?? 0);
 
     const rows = await this.mysql.query<RowDataPacket>(
-      `SELECT id, phone, email, nick_name, score_balance, user_level,
+      `SELECT id, phone, email, nick_name, score_balance,
               account_status, create_time
          FROM client_user ${where}
         ORDER BY id DESC
@@ -144,7 +142,6 @@ export class LegacyPointsService {
         email: r.email ?? null,
         nickName: r.nick_name ?? null,
         scoreBalance: Number(r.score_balance ?? 0),
-        userLevel: r.user_level ?? null,
         accountStatus:
           r.account_status == null ? null : Number(r.account_status),
         createTime: r.create_time ? String(r.create_time) : null,
@@ -155,10 +152,31 @@ export class LegacyPointsService {
     };
   }
 
+  /**
+   * Resolve legacy user ids to their display identity, in one round trip.
+   *
+   * Workspaces carry only an external `ownerUserId` (no user table on our side
+   * — see the Workspace model), so any surface that lists workspaces owned by
+   * other people has ids and nothing else. This turns a batch of them into
+   * names without N queries. Unknown ids are simply absent from the result.
+   */
+  async findUsersByIds(ids: string[]): Promise<LegacyUser[]> {
+    const numeric = [...new Set(ids)].filter((id) => /^\d{1,18}$/.test(id));
+    if (numeric.length === 0) return [];
+    const placeholders = numeric.map(() => '?').join(',');
+    const rows = await this.mysql.query<RowDataPacket>(
+      `SELECT id, phone, email, nick_name, score_balance
+         FROM client_user
+        WHERE id IN (${placeholders})`,
+      numeric,
+    );
+    return rows.map((row) => this.mapUser(row));
+  }
+
   /** Resolve a phone/email to a legacy user, or null if not found. */
   async findUser(identifier: string): Promise<LegacyUser | null> {
     const row = await this.mysql.queryOne<RowDataPacket>(
-      `SELECT id, phone, email, nick_name, score_balance, user_level
+      `SELECT id, phone, email, nick_name, score_balance
          FROM client_user
         WHERE phone = ? OR email = ?
         LIMIT 1`,
@@ -350,7 +368,6 @@ export class LegacyPointsService {
       email: row.email ?? null,
       nickName: row.nick_name ?? null,
       scoreBalance: Number(row.score_balance ?? 0),
-      userLevel: row.user_level ?? null,
     };
   }
 }

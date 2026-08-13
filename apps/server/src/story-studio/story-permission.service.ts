@@ -126,10 +126,9 @@ export class StoryPermissionService {
     }
 
     // Story membership never grants access outside the owning tenant.
-    await this.workspacePermissions.requireWorkspaceRole(
+    await this.workspacePermissions.requireWorkspacePresence(
       userId,
       project.workspaceId,
-      WorkspaceMemberRole.viewer,
     );
 
     const role = members[0].role;

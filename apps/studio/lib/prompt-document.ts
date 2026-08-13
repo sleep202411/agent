@@ -2,16 +2,30 @@ import type { JSONContent } from "@tiptap/core";
 
 export const PROMPT_MENTION_NODE_NAME = "promptMention";
 
-export type PromptMentionKind = "image" | "video" | "audio";
+export type PromptMentionKind = "image" | "video" | "audio" | "skill";
 
 export type PromptMentionItem = {
   id: string;
-  /** Token shown after the `@`, e.g. "Image1". */
+  /** Token label shown after its kind-specific trigger, e.g. "Image1" or a Skill name. */
   label: string;
   name?: string;
   kind: PromptMentionKind;
   previewUrl?: string;
+  previewVideoUrl?: string;
+  assetId?: string;
+  durationSeconds?: number | null;
+  bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
 };
+
+export function promptMentionPrefix(kind: PromptMentionKind): "@" | "/" {
+  return kind === "skill" ? "/" : "@";
+}
+
+export function promptMentionToken(mention: Pick<PromptMentionItem, "kind" | "label">): string {
+  return `${promptMentionPrefix(mention.kind)}${mention.label}`;
+}
 
 export type PromptMentionPart = {
   end: number;
@@ -30,11 +44,11 @@ function mentionAt(
   offset: number,
   mentions: readonly PromptMentionItem[]
 ): PromptMentionItem | undefined {
-  if (value[offset] !== "@") return undefined;
+  if (value[offset] !== "@" && value[offset] !== "/") return undefined;
   return [...mentions]
     .sort((a, b) => b.label.length - a.label.length)
     .find((mention) => {
-      const token = `@${mention.label}`;
+      const token = promptMentionToken(mention);
       const end = offset + token.length;
       return value.startsWith(token, offset) && isMentionTokenEnd(value, end);
     });
@@ -50,12 +64,20 @@ export function promptMentionParts(
   while (offset < value.length) {
     const mention = mentionAt(value, offset, mentions);
     if (mention) {
-      const end = offset + mention.label.length + 1;
-      parts.push({ end, mention, start: offset, text: `@${mention.label}` });
+      const token = promptMentionToken(mention);
+      const end = offset + token.length;
+      parts.push({ end, mention, start: offset, text: token });
       offset = end;
       continue;
     }
-    const nextMentionOffset = value.indexOf("@", offset + 1);
+    const nextReferenceOffset = value.indexOf("@", offset + 1);
+    const nextSkillOffset = value.indexOf("/", offset + 1);
+    const nextMentionOffset =
+      nextReferenceOffset === -1
+        ? nextSkillOffset
+        : nextSkillOffset === -1
+          ? nextReferenceOffset
+          : Math.min(nextReferenceOffset, nextSkillOffset);
     const end = nextMentionOffset === -1 ? value.length : nextMentionOffset;
     parts.push({ end, start: offset, text: value.slice(offset, end) });
     offset = end;
@@ -72,6 +94,12 @@ function mentionNode(item: PromptMentionItem): JSONContent {
       label: item.label,
       name: item.name ?? "",
       previewUrl: item.previewUrl ?? "",
+      previewVideoUrl: item.previewVideoUrl ?? "",
+      assetId: item.assetId ?? "",
+      durationSeconds: item.durationSeconds ?? null,
+      bytes: item.bytes ?? null,
+      width: item.width ?? null,
+      height: item.height ?? null,
     },
   };
 }
@@ -103,7 +131,13 @@ function inlineNodeText(node: JSONContent): string {
   if (node.type === "text") return node.text ?? "";
   if (node.type === PROMPT_MENTION_NODE_NAME) {
     const label = node.attrs?.label;
-    return typeof label === "string" && label ? `@${label}` : "";
+    const kind = node.attrs?.kind;
+    return typeof label === "string" && label
+      ? promptMentionToken({
+          kind: kind === "video" || kind === "audio" || kind === "skill" ? kind : "image",
+          label,
+        })
+      : "";
   }
   if (node.type === "hardBreak") return "\n";
   return (node.content ?? []).map(inlineNodeText).join("");

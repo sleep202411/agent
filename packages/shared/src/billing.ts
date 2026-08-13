@@ -66,6 +66,17 @@ export interface AiPerSecondMatrixPricingPolicy extends AiProductPricingBase {
   defaultSeconds: number;
   /** Seconds quoted when duration is 'auto'/absent — always the ceiling. */
   autoQuoteSeconds: number;
+  /**
+   * Optional alternate meter for providers that bill video-reference jobs on
+   * `(input video seconds + output video seconds)` at a different rate from
+   * ordinary text/image/audio-input jobs (Seedance 2.5).
+   *
+   * When at least one reference-video second is present, this matrix replaces
+   * `pointsPerSecond` for the output duration and is also charged for the
+   * combined reference-video duration. Keeping this declarative lets the
+   * catalog, server preflight and clients quote the exact same contract.
+   */
+  referenceVideoPointsPerSecond?: Record<string, number>;
 }
 
 export type AiProductPricingPolicy =
@@ -86,6 +97,8 @@ export interface EstimateProductModelPointsInput {
   /** Legacy numeric duration field (integer-slider video models). */
   durationSeconds?: number;
   referenceImageCount?: number;
+  /** Combined duration of all reference videos supplied to the job. */
+  referenceVideoSeconds?: number;
   hasMask?: boolean;
 }
 
@@ -95,6 +108,7 @@ export interface EstimateProductModelPointsResult {
   basePoints: number;
   referenceSurchargePoints: number;
   extraReferencePoints: number;
+  referenceVideoSurchargePoints: number;
   maskSurchargePoints: number;
   outputCount: number;
   pricingVersion: string;
@@ -116,6 +130,7 @@ export function estimateProductModelPoints(
 
   const selection: EstimateProductModelPointsResult["selection"] = {};
   let pointsPerOutput: number;
+  let referenceVideoSurchargePoints = 0;
 
   const requestedDuration = input.duration ?? input.durationSeconds;
 
@@ -124,9 +139,19 @@ export function estimateProductModelPoints(
   } else if (policy.mode === "per_second_matrix") {
     const resolution = selectPerSecondResolution(policy, input.resolution);
     const seconds = selectBilledSeconds(policy, requestedDuration);
+    const referenceVideoSeconds = finiteNonNegative(input.referenceVideoSeconds) ?? 0;
+    const referenceVideoRate = positiveNumber(policy.referenceVideoPointsPerSecond?.[resolution]);
+    const perSecond =
+      referenceVideoSeconds > 0 && referenceVideoRate !== undefined
+        ? referenceVideoRate
+        : (positiveNumber(policy.pointsPerSecond[resolution]) ?? 0);
     selection.resolution = resolution;
     selection.seconds = seconds;
-    pointsPerOutput = (positiveNumber(policy.pointsPerSecond[resolution]) ?? 0) * seconds;
+    pointsPerOutput = perSecond * seconds;
+    referenceVideoSurchargePoints =
+      referenceVideoSeconds > 0 && referenceVideoRate !== undefined
+        ? referenceVideoRate * referenceVideoSeconds
+        : 0;
   } else {
     const resolution = selectMatrixResolution(policy, input.resolution);
     const quality = selectMatrixQuality(policy, resolution, input.quality, requestedDuration);
@@ -150,7 +175,11 @@ export function estimateProductModelPoints(
   const minimumPoints = positiveNumber(policy.minimumPoints) ?? 0;
   const rawTotal = Math.max(
     minimumPoints,
-    basePoints + referenceSurchargePoints + extraReferencePoints + maskSurchargePoints
+    basePoints +
+      referenceSurchargePoints +
+      extraReferencePoints +
+      referenceVideoSurchargePoints +
+      maskSurchargePoints
   );
 
   return {
@@ -159,6 +188,7 @@ export function estimateProductModelPoints(
     basePoints,
     referenceSurchargePoints,
     extraReferencePoints,
+    referenceVideoSurchargePoints,
     maskSurchargePoints,
     outputCount,
     pricingVersion: policy.version,
@@ -270,6 +300,10 @@ function positiveNumber(value: unknown): number | undefined {
 
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function finiteNonNegative(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function roundUp(value: number, increment: number): number {

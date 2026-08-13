@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import {
   useReactFlow,
   type Connection,
@@ -11,8 +13,10 @@ import {
   type OnConnectStart,
 } from "@xyflow/react";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
 import type { CanvasAsset, CanvasNodeShape } from "@/lib/canvas-core/types";
+import { canvasNodeLayoutSize } from "@/lib/canvas-core/node-geometry";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
@@ -31,17 +35,21 @@ import {
 } from "@/lib/canvas-authoring/generation-api";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
-  modelAcceptsKind,
-  routeReferenceField as routeReferenceFieldFor,
-} from "@/lib/canvas-authoring/reference-routing";
-import {
   bindEdgeReference,
+  routeTargetReferenceField,
   sourceMediaUrl,
   sourceOutputKind,
   stripEdgeRef,
+  validateCanvasConnection,
+  type CanvasConnectionIssue,
 } from "@/lib/canvas-authoring/canvas-wiring";
-import type { AddNodeAction } from "@/components/canvas/add-node-menu";
-import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
+import {
+  SHOT_NODE_ESTIMATED_HEIGHT,
+  SHOT_NODE_TYPE,
+  nextShotOrder,
+} from "@/lib/canvas-authoring/shot-node";
+import { DEFAULT_ADD_NODE_ACTIONS, type AddNodeAction } from "@/components/canvas/add-node-menu";
+import type { CardReferences } from "@/components/canvas/authoring/reference-stack";
 
 export type UploadMediaKind = "image" | "video" | "audio";
 
@@ -63,6 +71,14 @@ const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly UploadMe
   "generate-image": ["image"],
   "generate-video": ["image", "video", "audio"],
 };
+
+/** A shot takes pictures — a still for its frame, a clip for its motion. */
+const SHOT_ACCEPTS: readonly UploadMediaKind[] = ["image", "video"];
+
+/** Tidy reserves a shot's full frame height; the 200px default would overlap. */
+function estimateCanvasNodeHeight(node: Node): number | undefined {
+  return node.type === SHOT_NODE_TYPE ? SHOT_NODE_ESTIMATED_HEIGHT : undefined;
+}
 
 const UPLOAD_CONTENT_TYPES: Record<UploadMediaKind, readonly string[]> = {
   image: ["image/jpeg", "image/png", "image/webp"],
@@ -126,6 +142,8 @@ export function useMediaAuthoringCanvas({
   workspaceId,
   scopeKey,
   uploadKinds,
+  addNodeActions = DEFAULT_ADD_NODE_ACTIONS,
+  initialFocusNodeId,
   fitEmptyCanvas = false,
   tidySelection = false,
 }: {
@@ -136,6 +154,13 @@ export function useMediaAuthoringCanvas({
   /** Cancels transient uploads when the owning canvas document changes. */
   scopeKey?: string | null;
   uploadKinds: readonly UploadMediaKind[];
+  /** Creation actions this canvas offers (dock, add-menu, shortcuts). */
+  addNodeActions?: readonly AddNodeAction[];
+  /**
+   * Node to select and frame instead of fitting the whole canvas on open —
+   * how another mode hands a specific node over ("show me this shot").
+   */
+  initialFocusNodeId?: string | null;
   fitEmptyCanvas?: boolean;
   tidySelection?: boolean;
 }) {
@@ -160,11 +185,28 @@ export function useMediaAuthoringCanvas({
     undo,
     redo,
     getNode,
+    // Aliased: React Flow's own `getNodes` (below) is the rendered store, this
+    // one is the document — the order key of a new shot must come from the
+    // document, or two shots created in the same frame collide.
+    getNodes: getDocumentNodes,
+    getEdges: getDocumentEdges,
   } = graph;
   const { screenToFlowPosition, fitView, getNodes, setCenter } = useReactFlow();
   const acceptedKinds = useMemo(() => new Set(uploadKinds), [uploadKinds]);
   const [addMenu, setAddMenu] = useState<CanvasAddMenuState | null>(null);
-  const [assetsOpen, setAssetsOpen] = useState(false);
+  // assetsOpen is shell-owned via Zustand when inside the project shell;
+  // fall back to local state for canvases outside the shell.
+  const projectCtx = useOptionalProjectContext();
+  const storeAssetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const storeCloseAssets = useProjectUIStore((s) => s.closeAssets);
+  const storeOpenAssets = useProjectUIStore((s) => s.openAssets);
+  const nodeInsertRequest = useProjectUIStore((s) => s.nodeInsertRequest);
+  const clearNodeInsertRequest = useProjectUIStore((s) => s.clearNodeInsertRequest);
+  const [localAssetsOpen, setLocalAssetsOpen] = useState(false);
+  const assetsOpen = projectCtx ? storeAssetsOpen : localAssetsOpen;
+  const setAssetsOpen = projectCtx
+    ? (open: boolean) => (open ? storeOpenAssets() : storeCloseAssets())
+    : setLocalAssetsOpen;
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,7 +214,9 @@ export function useMediaAuthoringCanvas({
   const pendingUploadFlowPos = useRef<{ x: number; y: number } | null>(null);
   const pendingUploadConnection = useRef<PendingConnection | null>(null);
   const pendingWires = useRef(new Map<string, () => void>());
+  const handledNodeInsertRequest = useRef<number | null>(null);
   const reconnectDone = useRef(true);
+  const reconnectIssue = useRef<CanvasConnectionIssue | null>(null);
   const lastConnectEndAt = useRef(0);
   const connectStartRef = useRef<{ x: number; y: number; color: string } | null>(null);
   const fittedRef = useRef(false);
@@ -191,14 +235,22 @@ export function useMediaAuthoringCanvas({
     fittedRef.current = true;
     const timer = window.setTimeout(() => {
       const canvasNodes = getNodes();
-      if (canvasNodes.length > 0) {
+      // One owner for the opening frame: a handed-over node wins over fit-all,
+      // otherwise the two would animate against each other.
+      const focused = initialFocusNodeId
+        ? canvasNodes.find((node) => node.id === initialFocusNodeId)
+        : undefined;
+      if (focused) {
+        selectNodes([focused.id]);
+        void fitView({ nodes: [focused], padding: 0.6, maxZoom: 1, duration: 320 });
+      } else if (canvasNodes.length > 0) {
         void fitView({ nodes: canvasNodes, padding: 0.4, duration: 280 });
       } else if (fitEmptyCanvas) {
         void setCenter(0, 0, { zoom: 0.76, duration: 280 });
       }
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [fitEmptyCanvas, fitView, getNodes, nodes, ready, setCenter]);
+  }, [fitEmptyCanvas, fitView, getNodes, initialFocusNodeId, nodes, ready, selectNodes, setCenter]);
 
   const outputKind = useCallback(
     (nodeId: string | null | undefined) => (nodeId ? sourceOutputKind(getNode, nodeId) : undefined),
@@ -208,34 +260,69 @@ export function useMediaAuthoringCanvas({
     (nodeId: string | null | undefined) => (nodeId ? sourceMediaUrl(getNode, nodeId) : undefined),
     [getNode]
   );
-  const routeReferenceField = useCallback(
-    (nodeId: string | null | undefined, kind: string) => {
-      if (!nodeId) return undefined;
-      const node = getNode(nodeId);
-      if (!node || (node.type !== "prompt" && node.type !== "video")) return undefined;
-      const data = node.data as GenerationNodeData;
-      const model = catalog?.models.find((candidate) => candidate.id === data.modelId);
-      return routeReferenceFieldFor(model, data.mode, data.references, kind);
-    },
-    [catalog, getNode]
+  const validateConnection = useCallback(
+    (source: string, target: string, excludeEdgeId?: string) =>
+      validateCanvasConnection(
+        { getNode, getEdges: getDocumentEdges, catalog },
+        source,
+        target,
+        excludeEdgeId
+      ),
+    [catalog, getDocumentEdges, getNode]
   );
-  const canConnect = useCallback(
-    (source: string | null | undefined, target: string | null | undefined) => {
-      if (!source || !target || source === target) return false;
-      if (!catalog) return true;
-      const kind = outputKind(source);
-      return Boolean(kind && routeReferenceField(target, kind));
+  const connectionIssueMessage = useCallback(
+    (issue: CanvasConnectionIssue) => {
+      const kind =
+        "kind" in issue
+          ? issue.kind === "image"
+            ? t("connection.kind.image")
+            : issue.kind === "video"
+              ? t("connection.kind.video")
+              : t("connection.kind.audio")
+          : "";
+      switch (issue.code) {
+        case "source_missing":
+          return t("connection.sourceMissing");
+        case "target_missing":
+          return t("connection.targetMissing");
+        case "self_connection":
+          return t("connection.selfConnection");
+        case "source_not_connectable":
+          return t("connection.sourceNotConnectable");
+        case "target_not_connectable":
+          return t("connection.targetNotConnectable");
+        case "model_unavailable":
+          return t("connection.modelUnavailable");
+        case "current_mode_unsupported":
+          return t("connection.currentModeUnsupported", { kind });
+        case "unsupported_kind":
+          return t("connection.unsupportedKind", { kind });
+        case "reference_limit":
+          return t("connection.referenceLimit", { kind, limit: issue.limit });
+        case "duplicate_reference":
+          return t("connection.duplicateReference", { kind });
+      }
     },
-    [catalog, outputKind, routeReferenceField]
+    [t]
+  );
+  const showConnectionIssue = useCallback(
+    (issue: CanvasConnectionIssue) => toast.error(connectionIssueMessage(issue)),
+    [connectionIssueMessage]
   );
   const isValidConnection = useCallback<IsValidConnection<Edge>>(
-    (connection) =>
-      connection.targetHandle === "input" && canConnect(connection.source, connection.target),
-    [canConnect]
+    (connection) => {
+      if (connection.targetHandle !== "input" || !connection.source || !connection.target) {
+        return false;
+      }
+      const validation = validateConnection(connection.source, connection.target);
+      if (!validation.ok && !reconnectDone.current) reconnectIssue.current = validation.issue;
+      return validation.ok;
+    },
+    [validateConnection]
   );
   const connectionForPending = useCallback(
     (pending: PendingConnection, otherNodeId: string): Connection | null => {
-      if (pending.handleType === "target" && canConnect(otherNodeId, pending.nodeId)) {
+      if (pending.handleType === "target") {
         return {
           source: otherNodeId,
           sourceHandle: "output",
@@ -243,7 +330,7 @@ export function useMediaAuthoringCanvas({
           targetHandle: pending.handleId,
         };
       }
-      if (pending.handleType === "source" && canConnect(pending.nodeId, otherNodeId)) {
+      if (pending.handleType === "source") {
         return {
           source: pending.nodeId,
           sourceHandle: pending.handleId,
@@ -253,7 +340,15 @@ export function useMediaAuthoringCanvas({
       }
       return null;
     },
-    [canConnect]
+    []
+  );
+  /** Can a new source of `kind` bind to the target's current mode now? */
+  const targetAcceptsKind = useCallback(
+    (nodeId: string, kind: UploadMediaKind) => {
+      const node = getNode(nodeId);
+      return Boolean(node && routeTargetReferenceField(node, catalog, kind));
+    },
+    [catalog, getNode]
   );
   const menuDisabledActions = useMemo<ReadonlySet<AddNodeAction>>(() => {
     const disabled = new Set<AddNodeAction>();
@@ -264,35 +359,42 @@ export function useMediaAuthoringCanvas({
       if (kind) {
         if (!GEN_ACCEPTS["generate-image"].includes(kind)) disabled.add("generate-image");
         if (!GEN_ACCEPTS["generate-video"].includes(kind)) disabled.add("generate-video");
+        if (!SHOT_ACCEPTS.includes(kind)) disabled.add("shot");
       }
     } else {
-      const node = getNode(pending.nodeId);
-      const model = node
-        ? catalog?.models.find(
-            (candidate) => candidate.id === (node.data as GenerationNodeData).modelId
-          )
-        : undefined;
-      if (!modelAcceptsKind(model, "image")) disabled.add("generate-image");
-      if (!modelAcceptsKind(model, "video")) disabled.add("generate-video");
+      // Dragging from an INPUT: the new node has to feed the pending one, and a
+      // shot has no output — it can never be that source.
+      disabled.add("shot");
+      if (!targetAcceptsKind(pending.nodeId, "image")) disabled.add("generate-image");
+      if (!targetAcceptsKind(pending.nodeId, "video")) disabled.add("generate-video");
     }
     return disabled;
-  }, [addMenu?.pending, catalog, getNode, outputKind]);
+  }, [addMenu?.pending, outputKind, targetAcceptsKind]);
 
   const bindReference = useCallback(
-    (edgeId: string, source: string | null, target: string | null) => {
-      if (!source || !target) return;
+    (edgeId: string, source: string, target: string) =>
       bindEdgeReference(
-        { getNode, catalog, graph: { addEdge: graphAddEdge, patchNodeData } },
+        {
+          getNode,
+          getEdges: getDocumentEdges,
+          catalog,
+          graph: { addEdge: graphAddEdge, patchNodeData, removeEdge: graphRemoveEdge },
+        },
         edgeId,
         source,
         target
-      );
-    },
-    [catalog, getNode, graphAddEdge, patchNodeData]
+      ),
+    [catalog, getDocumentEdges, getNode, graphAddEdge, graphRemoveEdge, patchNodeData]
   );
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
+      if (connection.targetHandle !== "input") return;
+      const validation = validateConnection(connection.source, connection.target);
+      if (!validation.ok) {
+        showConnectionIssue(validation.issue);
+        return;
+      }
       const edgeId = crypto.randomUUID();
       graphAddEdge({
         id: edgeId,
@@ -301,19 +403,25 @@ export function useMediaAuthoringCanvas({
         sourceHandle: connection.sourceHandle,
         targetHandle: connection.targetHandle,
       });
-      if (connection.targetHandle === "input") {
-        bindReference(edgeId, connection.source, connection.target);
+      const binding = bindReference(edgeId, connection.source, connection.target);
+      if (binding.status === "rejected") {
+        graphRemoveEdge(edgeId);
+        showConnectionIssue(binding.issue);
       }
     },
-    [bindReference, graphAddEdge]
+    [bindReference, graphAddEdge, graphRemoveEdge, showConnectionIssue, validateConnection]
   );
 
+  // Keep every wire's bound reference honest: bind one that never bound (wired
+  // before its source had an output) and refresh one whose source has since
+  // produced a new URL. Runs for EVERY reference-holding target (generation
+  // card or shot) — a target that takes none simply routes to nothing.
   useEffect(() => {
     if (!catalog) return;
     edges.forEach((edge) => {
       const target = getNode(edge.target);
-      if (!target || (target.type !== "prompt" && target.type !== "video")) return;
-      const references = (target.data as GenerationNodeData).references ?? {};
+      if (!target) return;
+      const references = (target.data as { references?: CardReferences }).references ?? {};
       let boundField: string | undefined;
       let boundUrl: string | undefined;
       Object.entries(references).some(([field, list]) => {
@@ -324,14 +432,18 @@ export function useMediaAuthoringCanvas({
         return true;
       });
       if (!boundField) {
-        bindReference(edge.id, edge.source, edge.target);
+        const binding = bindReference(edge.id, edge.source, edge.target);
+        if (binding.status === "rejected") {
+          graphRemoveEdge(edge.id);
+          showConnectionIssue(binding.issue);
+        }
         return;
       }
       const url = outputUrl(edge.source);
       if (!url || url.startsWith("blob:") || url === boundUrl) return;
       const field = boundField;
       patchNodeData(edge.target, (node) => {
-        const current = (node.data as GenerationNodeData).references ?? {};
+        const current = (node.data as { references?: CardReferences }).references ?? {};
         return {
           references: {
             ...current,
@@ -342,7 +454,17 @@ export function useMediaAuthoringCanvas({
         };
       });
     });
-  }, [bindReference, catalog, edges, getNode, nodes, outputUrl, patchNodeData]);
+  }, [
+    bindReference,
+    catalog,
+    edges,
+    getNode,
+    graphRemoveEdge,
+    nodes,
+    outputUrl,
+    patchNodeData,
+    showConnectionIssue,
+  ]);
 
   const onEdgesDelete = useCallback(
     (deleted: Edge[]) => {
@@ -377,6 +499,7 @@ export function useMediaAuthoringCanvas({
               url: uploaded.url,
               name: file.name,
               createdAt: Date.now(),
+              category: "general",
             },
           ]);
           uploadStore.succeed(id);
@@ -492,8 +615,21 @@ export function useMediaAuthoringCanvas({
       }
       const id = crypto.randomUUID();
       const nodeType =
-        action === "generate-image" ? "prompt" : action === "generate-video" ? "video" : "note";
-      if (nodeType === "prompt") {
+        action === "generate-image"
+          ? "prompt"
+          : action === "generate-video"
+            ? "video"
+            : action === "shot"
+              ? SHOT_NODE_TYPE
+              : "note";
+      if (nodeType === SHOT_NODE_TYPE) {
+        addNode({
+          id,
+          type: SHOT_NODE_TYPE,
+          position: flow,
+          data: { order: nextShotOrder(getDocumentNodes()) },
+        });
+      } else if (nodeType === "prompt") {
         addNode({
           id,
           type: nodeType,
@@ -522,7 +658,21 @@ export function useMediaAuthoringCanvas({
       } else {
         addNode({ id, type: "note", position: flow, data: { text: "" } });
       }
-      if (pending && (nodeType === "prompt" || nodeType === "video")) {
+      if (!pending) return;
+      // A shot only ever takes the pending wire as its INPUT (it has no output),
+      // so a drag started from some card's input can't be closed with one.
+      if (nodeType === SHOT_NODE_TYPE) {
+        if (pending.handleType === "source") {
+          onConnect({
+            source: pending.nodeId,
+            sourceHandle: "output",
+            target: id,
+            targetHandle: "input",
+          });
+        }
+        return;
+      }
+      if (nodeType === "prompt" || nodeType === "video") {
         onConnect(
           pending.handleType === "source"
             ? {
@@ -540,7 +690,7 @@ export function useMediaAuthoringCanvas({
         );
       }
     },
-    [addNode, generationDefaults, nodes, onConnect, t]
+    [addNode, generationDefaults, getDocumentNodes, nodes, onConnect, t]
   );
   const addNodeFromDock = useCallback(
     (action: AddNodeAction) => {
@@ -556,6 +706,24 @@ export function useMediaAuthoringCanvas({
     [addNodeOfType, nodes.length, screenToFlowPosition]
   );
 
+  useEffect(() => {
+    if (!projectCtx || !nodeInsertRequest) return;
+    if (handledNodeInsertRequest.current === nodeInsertRequest.id) return;
+
+    handledNodeInsertRequest.current = nodeInsertRequest.id;
+    if (canEdit && addNodeActions.includes(nodeInsertRequest.action)) {
+      addNodeFromDock(nodeInsertRequest.action);
+    }
+    clearNodeInsertRequest(nodeInsertRequest.id);
+  }, [
+    addNodeActions,
+    addNodeFromDock,
+    canEdit,
+    clearNodeInsertRequest,
+    nodeInsertRequest,
+    projectCtx,
+  ]);
+
   useCanvasAuthoringShortcuts({
     enabled: canEdit,
     edges,
@@ -563,6 +731,7 @@ export function useMediaAuthoringCanvas({
     addNodesAndEdges: graphAddNodesAndEdges,
     selectNodes,
     addNode: addNodeFromDock,
+    addNodeActions,
   });
 
   const addAssetToCanvas = useCallback(
@@ -670,10 +839,8 @@ export function useMediaAuthoringCanvas({
         handleType: state.fromHandle.type,
       };
       const hit = getNodes().find((node) => {
-        const width = node.measured?.width ?? 0;
-        const height = node.measured?.height ?? 0;
+        const { width, height } = canvasNodeLayoutSize(node);
         return (
-          node.id !== pending.nodeId &&
           flowPoint.x >= node.position.x &&
           flowPoint.x <= node.position.x + width &&
           flowPoint.y >= node.position.y &&
@@ -703,10 +870,20 @@ export function useMediaAuthoringCanvas({
   );
   const onReconnectStart = useCallback(() => {
     reconnectDone.current = false;
+    reconnectIssue.current = null;
   }, []);
   const onReconnect = useCallback(
     (oldEdge: Edge, connection: Connection) => {
+      if (!connection.source || !connection.target || connection.targetHandle !== "input") return;
+      const validation = validateConnection(connection.source, connection.target, oldEdge.id);
+      if (!validation.ok) {
+        reconnectDone.current = true;
+        reconnectIssue.current = null;
+        showConnectionIssue(validation.issue);
+        return;
+      }
       reconnectDone.current = true;
+      reconnectIssue.current = null;
       if (oldEdge.target !== connection.target) {
         stripEdgeRef(patchNodeData, oldEdge.target, oldEdge.id);
       }
@@ -717,23 +894,36 @@ export function useMediaAuthoringCanvas({
         sourceHandle: connection.sourceHandle,
         targetHandle: connection.targetHandle,
       });
-      if (connection.targetHandle === "input") {
-        bindReference(oldEdge.id, connection.source, connection.target);
+      const binding = bindReference(oldEdge.id, connection.source, connection.target);
+      if (binding.status === "rejected") {
+        // The graph changed concurrently after validation. Restore the old edge;
+        // its old reference is reconciled from the source on the next pass.
+        graphAddEdge({
+          id: oldEdge.id,
+          source: oldEdge.source,
+          target: oldEdge.target,
+          sourceHandle: oldEdge.sourceHandle,
+          targetHandle: oldEdge.targetHandle,
+        });
+        bindReference(oldEdge.id, oldEdge.source, oldEdge.target);
+        showConnectionIssue(binding.issue);
       }
     },
-    [bindReference, graphAddEdge, patchNodeData]
+    [bindReference, graphAddEdge, patchNodeData, showConnectionIssue, validateConnection]
   );
-  const onReconnectEnd = useCallback(
-    (_event: unknown, edge: Edge) => {
-      if (!reconnectDone.current) {
-        stripEdgeRef(patchNodeData, edge.target, edge.id);
-        graphRemoveEdge(edge.id);
-      }
-      reconnectDone.current = true;
-    },
-    [graphRemoveEdge, patchNodeData]
-  );
-  const tidyCanvas = useCanvasTidy({ edges, onNodesChange, tidySelection });
+  const onReconnectEnd = useCallback(() => {
+    if (!reconnectDone.current) {
+      if (reconnectIssue.current) showConnectionIssue(reconnectIssue.current);
+    }
+    reconnectDone.current = true;
+    reconnectIssue.current = null;
+  }, [showConnectionIssue]);
+  const tidyCanvas = useCanvasTidy({
+    edges,
+    onNodesChange,
+    tidySelection,
+    estimateHeight: estimateCanvasNodeHeight,
+  });
   const onDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       if (!(event.target as HTMLElement).classList.contains("react-flow__pane")) return;

@@ -1,0 +1,28 @@
+{
+  "name": "@repo/agent-capabilities",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent OS project-kind and workbench-mode capability declarations.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@repo/agent-tools": "*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vitest": "^4.1.4"
+  }
+}

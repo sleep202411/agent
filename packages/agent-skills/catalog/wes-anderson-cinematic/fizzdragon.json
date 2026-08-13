@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000001",
+  "catalogOrder": 1,
+  "displayDescription": "Create image prompts, video prompts, storyboards, shot descriptions, and visual direction using a centered symmetrical storybook-cinema grammar associated with Wes Anderson: frontal tableaux, controlled lateral movement, restrained deadpan performance, tactile production design, and curated retro palettes. Use when the user explicitly requests Wes Anderson, symmetrical retro cinema, storybook theatrical staging, dollhouse composition, meticulously centered frames, or a related visual treatment for image generation, video generation, prompt writing, or Agent-assisted creative planning.",
+  "translationKey": "wesAndersonCinematic",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "general",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "wes-anderson-cinematic.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000001",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/wes-anderson-cinematic/v1"
+  }
+}

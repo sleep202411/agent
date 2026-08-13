@@ -1,4 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  firstBlockingValidationMessage,
+  hasBlockingValidationIssues,
+  validateGenerationInput,
+  type MediaRefSnapshot,
+  type ValidationIssue,
+} from '@repo/shared';
+import {
+  MediaAssetFactsService,
+  type MediaAssetFacts,
+} from '../media/media-asset-facts.service';
 import type {
   AiConditionExpression,
   AiFieldConstraint,
@@ -10,13 +21,107 @@ import type {
 
 @Injectable()
 export class AiGenerationValidatorService {
+  constructor(private readonly mediaFacts: MediaAssetFactsService) {}
+
+  /**
+   * Overwrite client-claimed media facts with server-resolved ones.
+   *
+   * Every fact the MediaAsset row can answer for wins over whatever the client
+   * sent — duration is measured, byte size is read off the row. What the server
+   * cannot answer for is left alone on purpose: a reference without an
+   * `assetId` (a wired canvas output, an external URL) has no durable row to
+   * verify against, and the catalog duration rules fail closed, so discarding
+   * the client's value there would reject a legitimate submit outright.
+   */
+  async applyTrustedMediaFacts(
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const assetIds = new Set<string>();
+    for (const value of Object.values(input)) {
+      for (const item of this.asItemList(value)) {
+        if (!this.isRecord(item)) continue;
+        const assetId = item.assetId;
+        if (typeof assetId !== 'string' || !assetId.trim()) continue;
+        assetIds.add(assetId.trim());
+      }
+    }
+
+    const factsById = assetIds.size
+      ? await this.mediaFacts.ensureFacts([...assetIds])
+      : new Map<string, MediaAssetFacts>();
+
+    const next: Record<string, unknown> = { ...input };
+    for (const [key, value] of Object.entries(input)) {
+      if (Array.isArray(value)) {
+        next[key] = value.map((item) => this.withTrustedFacts(item, factsById));
+      } else if (this.isRecord(value)) {
+        next[key] = this.withTrustedFacts(value, factsById);
+      }
+    }
+    return next;
+  }
+
   normalizeInput(
     schema: AiInputSchema,
     input: Record<string, unknown>,
   ): Record<string, unknown> {
     const normalized = this.normalizeObject(schema, input);
     this.applyRules(schema['x-rules'] ?? [], normalized);
+    // Catalog-driven media aggregate rules (duration sums, total files, …).
+    // Same pure kernel as studio — no per-model branches on either side.
+    this.assertCatalogMediaRules(schema, normalized);
     return normalized;
+  }
+
+  /**
+   * Evaluate catalog `x-ui` media constraints against the normalized input.
+   * Throws the first blocking issue as VALIDATION_ERROR (400).
+   */
+  assertCatalogMediaRules(
+    schema: AiInputSchema,
+    input: Record<string, unknown>,
+    media?: readonly MediaRefSnapshot[],
+  ): ValidationIssue[] {
+    // Catalog schemas are a superset of the validation surface; cast keeps the
+    // pure kernel decoupled from full object-schema nesting.
+    const issues = validateGenerationInput({
+      inputSchema: schema as Parameters<
+        typeof validateGenerationInput
+      >[0]['inputSchema'],
+      input,
+      media,
+    });
+    if (hasBlockingValidationIssues(issues)) {
+      throw this.validationError(
+        firstBlockingValidationMessage(issues) ??
+          'Generation input failed catalog validation.',
+        issues,
+      );
+    }
+    return issues;
+  }
+
+  private withTrustedFacts(
+    item: unknown,
+    factsById: Map<string, MediaAssetFacts>,
+  ): unknown {
+    if (!this.isRecord(item)) return item;
+
+    const assetId = typeof item.assetId === 'string' ? item.assetId.trim() : '';
+    const facts = assetId ? factsById.get(assetId) : undefined;
+    if (!facts) return item;
+
+    const trusted: Record<string, unknown> = { ...item };
+    if (facts.durationSeconds != null) {
+      trusted.durationSeconds = facts.durationSeconds;
+    }
+    if (facts.bytes != null) trusted.bytes = facts.bytes;
+    return trusted;
+  }
+
+  private asItemList(value: unknown): unknown[] {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
   }
 
   private normalizeObject(
@@ -55,8 +160,18 @@ export class AiGenerationValidatorService {
   ): unknown {
     switch (field.type) {
       case 'string': {
-        const value = String(raw).trim();
         const label = this.fieldTitle(field, key);
+        // Only primitives may be coerced. `String({})` is "[object Object]" —
+        // a bogus value that passes every downstream check and fails only at
+        // the provider, after the call is paid for. Fail fast instead.
+        if (
+          typeof raw !== 'string' &&
+          typeof raw !== 'number' &&
+          typeof raw !== 'boolean'
+        ) {
+          throw this.validationError(`${label} must be a text value.`);
+        }
+        const value = String(raw).trim();
         if (field.minLength != null && value.length < field.minLength) {
           throw this.validationError(
             `${label} must be at least ${field.minLength} characters.`,
@@ -389,10 +504,14 @@ export class AiGenerationValidatorService {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
-  private validationError(message: string): BadRequestException {
+  private validationError(
+    message: string,
+    issues?: readonly ValidationIssue[],
+  ): BadRequestException {
     return new BadRequestException({
       code: 'VALIDATION_ERROR',
       msg: message,
+      ...(issues?.length ? { issues } : {}),
     });
   }
 }

@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000014",
+  "catalogOrder": 14,
+  "displayDescription": "Swirling night skies, energetic impasto and expressive cobalt-and-gold color rhythm.",
+  "translationKey": "postImpressionistNightPainting",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "image",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "post-impressionist-night-painting-v2.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000014",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["prompt_authoring", "image_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/post-impressionist-night-painting/v1"
+  }
+}

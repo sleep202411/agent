@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PlatformDocumentVersionSource, Prisma } from '@prisma/client';
+import { StudioDocumentVersionSource, Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import type { MergedDocumentState } from './document-crdt';
 import {
@@ -42,8 +42,8 @@ export class DocumentAutosaveService {
   ): Promise<void> {
     if (!this.config.enabled) return;
     // Cheap pre-check outside the lock so we don't take it on every compaction.
-    const last = await this.prisma.platformDocumentVersion.findFirst({
-      where: { documentId, source: PlatformDocumentVersionSource.autosave },
+    const last = await this.prisma.studioDocumentVersion.findFirst({
+      where: { documentId, source: StudioDocumentVersionSource.autosave },
       orderBy: { createdAt: 'desc' },
       select: { sequence: true, createdAt: true },
     });
@@ -55,14 +55,14 @@ export class DocumentAutosaveService {
           SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
         `;
         // Re-check under the lock so concurrent compactors don't double-stamp.
-        const fresh = await tx.platformDocumentVersion.findFirst({
-          where: { documentId, source: PlatformDocumentVersionSource.autosave },
+        const fresh = await tx.studioDocumentVersion.findFirst({
+          where: { documentId, source: StudioDocumentVersionSource.autosave },
           orderBy: { createdAt: 'desc' },
           select: { sequence: true, createdAt: true },
         });
         if (!this.shouldStamp(fresh, sequence, Date.now())) return;
 
-        const doc = await tx.platformDocument.findFirst({
+        const doc = await tx.studioDocument.findFirst({
           where: { id: documentId, deletedAt: null },
           select: {
             title: true,
@@ -73,19 +73,19 @@ export class DocumentAutosaveService {
         });
         if (!doc) return;
 
-        const lastNumber = await tx.platformDocumentVersion.findFirst({
+        const lastNumber = await tx.studioDocumentVersion.findFirst({
           where: { documentId },
           orderBy: { versionNumber: 'desc' },
           select: { versionNumber: true },
         });
-        await tx.platformDocumentVersion.create({
+        await tx.studioDocumentVersion.create({
           data: {
             documentId,
             versionNumber: (lastNumber?.versionNumber ?? 0) + 1,
             schemaVersion: doc.schemaVersion,
             sequence,
             title: doc.title,
-            source: PlatformDocumentVersionSource.autosave,
+            source: StudioDocumentVersionSource.autosave,
             snapshot: merged.snapshot as unknown as Prisma.InputJsonValue,
             crdtState: Buffer.from(merged.state),
             metadata: { reason: 'autosave' },
@@ -119,12 +119,12 @@ export class DocumentAutosaveService {
   /** Thin old autosaves near-dense/far-sparse (manual/system versions untouched). */
   private async prune(documentId: string): Promise<void> {
     const [autosaves, doc] = await Promise.all([
-      this.prisma.platformDocumentVersion.findMany({
-        where: { documentId, source: PlatformDocumentVersionSource.autosave },
+      this.prisma.studioDocumentVersion.findMany({
+        where: { documentId, source: StudioDocumentVersionSource.autosave },
         select: { id: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.platformDocument.findUnique({
+      this.prisma.studioDocument.findUnique({
         where: { id: documentId },
         select: { currentVersionId: true },
       }),
@@ -137,10 +137,10 @@ export class DocumentAutosaveService {
     if (toDelete.length === 0) return;
     // Constrain to source=autosave too, so prune can NEVER touch a manual /
     // system / restore checkpoint even if the id set were ever wrong.
-    const deleted = await this.prisma.platformDocumentVersion.deleteMany({
+    const deleted = await this.prisma.studioDocumentVersion.deleteMany({
       where: {
         id: { in: toDelete },
-        source: PlatformDocumentVersionSource.autosave,
+        source: StudioDocumentVersionSource.autosave,
       },
     });
     if (deleted.count > 0) {

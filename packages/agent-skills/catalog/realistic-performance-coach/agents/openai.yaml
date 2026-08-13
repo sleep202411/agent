@@ -1,0 +1,4 @@
+interface:
+  display_name: "Realistic Performance Coach"
+  short_description: "Replace generic AI acting with intention, listening, physical we"
+  default_prompt: "Use $realistic-performance-coach to apply this creative direction to my request."

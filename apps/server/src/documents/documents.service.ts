@@ -1,29 +1,34 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
-  PlatformDocumentCommentStatus,
-  PlatformDocumentOperationType,
-  PlatformDocumentStatus,
-  PlatformDocumentType,
-  PlatformDocumentVersionSource,
+  StudioDocumentCommentStatus,
+  StudioDocumentOperationType,
+  StudioDocumentStatus,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   ProjectMemberRole,
-  type PlatformDocument,
-  type PlatformDocumentComment,
-  type PlatformDocumentCommentThread,
-  type PlatformDocumentOperation,
-  type PlatformDocumentPresence,
-  type PlatformDocumentVersion,
+  type StudioDocument,
+  type StudioDocumentComment,
+  type StudioDocumentCommentThread,
+  type StudioDocumentOperation,
+  type StudioDocumentPresence,
+  type StudioDocumentVersion,
 } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { PlatformAuditLogService } from '../workspaces/audit-log.service';
 import { WorkspacePermissionService } from '../workspaces';
 import { DocumentCompactionService } from './document-compaction.service';
+import { encodeDocumentSnapshot } from './document-crdt';
+import { rootSchemaFor } from './document-modes';
 import { resolveSyncWindow } from './document-sync';
+import { StudioDocumentAccessService } from './studio-document-access.service';
 import type {
   AddCommentInput,
   AppendDocumentOperationInput,
@@ -41,6 +46,8 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
+    private readonly documentAccess: StudioDocumentAccessService,
+    private readonly storyPermissions: StoryPermissionService,
     private readonly audit: PlatformAuditLogService,
     private readonly compaction: DocumentCompactionService,
   ) {}
@@ -55,9 +62,9 @@ export class DocumentsService {
       projectId,
       ProjectMemberRole.viewer,
     );
-    const documents = await this.prisma.platformDocument.findMany({
+    const documents = await this.prisma.studioDocument.findMany({
       where: {
-        projectId,
+        platformProjectId: projectId,
         deletedAt: null,
         ...(query.type ? { type: query.type } : {}),
       },
@@ -74,40 +81,55 @@ export class DocumentsService {
     projectId: string,
     input: CreateDocumentInput,
   ) {
+    if (
+      input.type === StudioDocumentType.canvas ||
+      input.type === StudioDocumentType.storyboard
+    ) {
+      throw new BadRequestException({
+        code: 'SECTION_DOCUMENT_MANAGED',
+        msg: 'Canvas and storyboard content are managed through project chapters.',
+      });
+    }
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
       ProjectMemberRole.editor,
     );
+    const initialState = encodeInitialState(input.type, input.contentSnapshot);
 
     const document = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.platformDocument.create({
+      const created = await tx.studioDocument.create({
         data: {
           workspaceId: project.workspaceId,
-          projectId,
+          platformProjectId: projectId,
           type: input.type,
           title: input.title,
           slug: input.slug,
           schemaVersion: input.schemaVersion,
           collaborationDialect: input.collaborationDialect,
-          contentSnapshot: input.contentSnapshot as Prisma.InputJsonValue,
+          contentSnapshot:
+            initialState.snapshot as unknown as Prisma.InputJsonValue,
+          crdtState: initialState.state
+            ? Buffer.from(initialState.state)
+            : null,
           createdById: user.userId,
         },
       });
-      const version = await tx.platformDocumentVersion.create({
+      const version = await tx.studioDocumentVersion.create({
         data: {
           documentId: created.id,
           versionNumber: 1,
           schemaVersion: created.schemaVersion,
           sequence: 0,
           title: created.title,
-          source: PlatformDocumentVersionSource.system,
+          source: StudioDocumentVersionSource.system,
           snapshot: created.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: created.crdtState,
           createdById: user.userId,
           metadata: { reason: 'initial_document_version' },
         },
       });
-      return tx.platformDocument.update({
+      return tx.studioDocument.update({
         where: { id: created.id },
         data: { currentVersionId: version.id },
       });
@@ -115,7 +137,7 @@ export class DocumentsService {
 
     await this.audit.record({
       workspaceId: document.workspaceId,
-      projectId: document.projectId,
+      projectId: document.platformProjectId,
       actorUserId: user.userId,
       action: 'document.created',
       entityType: 'document',
@@ -127,30 +149,36 @@ export class DocumentsService {
   }
 
   /**
-   * Idempotent — returns the project's primary document of a given mode
-   * (`type`), creating it if absent. This is the multi-mode ensure-on-open
-   * primitive: a project=entity has at most one primary document per mode
-   * (canvas / storyboard / timeline / script …), lazily created when the
-   * user first opens that mode. Concurrency-safe via a pg advisory lock
-   * keyed on (project, type).
+   * Idempotent project-level document bootstrap for modes such as brief or
+   * script. Section-owned canvas/storyboard content is deliberately rejected.
+   * Concurrency-safe via a pg advisory lock keyed on (project, type).
    */
   async ensurePrimaryDocument(
     user: AuthUser,
     projectId: string,
-    type: PlatformDocumentType,
+    type: StudioDocumentType,
   ) {
+    if (
+      type === StudioDocumentType.canvas ||
+      type === StudioDocumentType.storyboard
+    ) {
+      throw new BadRequestException({
+        code: 'SECTION_DOCUMENT_MANAGED',
+        msg: 'Canvas and storyboard content are resolved from the active chapter.',
+      });
+    }
     const project = await this.permissions.requireProjectRole(
       user.userId,
       projectId,
       ProjectMemberRole.viewer,
     );
 
-    const existing = await this.prisma.platformDocument.findFirst({
+    const existing = await this.prisma.studioDocument.findFirst({
       where: {
-        projectId,
+        platformProjectId: projectId,
         type,
         deletedAt: null,
-        status: PlatformDocumentStatus.active,
+        status: StudioDocumentStatus.active,
       },
       orderBy: [{ createdAt: 'asc' }],
     });
@@ -163,46 +191,53 @@ export class DocumentsService {
       projectId,
       ProjectMemberRole.editor,
     );
+    const initialState = encodeInitialState(type, {});
 
     const document = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`document:primary-${type}:${projectId}`})::bigint)
       `;
       // Re-check inside the lock to avoid a race creating two docs.
-      const found = await tx.platformDocument.findFirst({
+      const found = await tx.studioDocument.findFirst({
         where: {
-          projectId,
+          platformProjectId: projectId,
           type,
           deletedAt: null,
-          status: PlatformDocumentStatus.active,
+          status: StudioDocumentStatus.active,
         },
         orderBy: [{ createdAt: 'asc' }],
       });
       if (found) return found;
 
-      const created = await tx.platformDocument.create({
+      const created = await tx.studioDocument.create({
         data: {
           workspaceId: project.workspaceId,
-          projectId,
+          platformProjectId: projectId,
           type,
           title: project.name,
+          contentSnapshot:
+            initialState.snapshot as unknown as Prisma.InputJsonValue,
+          crdtState: initialState.state
+            ? Buffer.from(initialState.state)
+            : null,
           createdById: user.userId,
         },
       });
-      const version = await tx.platformDocumentVersion.create({
+      const version = await tx.studioDocumentVersion.create({
         data: {
           documentId: created.id,
           versionNumber: 1,
           schemaVersion: created.schemaVersion,
           sequence: 0,
           title: created.title,
-          source: PlatformDocumentVersionSource.system,
+          source: StudioDocumentVersionSource.system,
           snapshot: created.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: created.crdtState,
           createdById: user.userId,
           metadata: { reason: `initial_${type}` },
         },
       });
-      return tx.platformDocument.update({
+      return tx.studioDocument.update({
         where: { id: created.id },
         data: { currentVersionId: version.id },
       });
@@ -210,7 +245,7 @@ export class DocumentsService {
 
     await this.audit.record({
       workspaceId: document.workspaceId,
-      projectId: document.projectId,
+      projectId: document.platformProjectId,
       actorUserId: user.userId,
       action: 'document.created',
       entityType: 'document',
@@ -221,21 +256,102 @@ export class DocumentsService {
     return { document: this.documentDto(document, { detail: true }) };
   }
 
-  /** Back-compat wrapper for the existing storyboard ensure route. */
-  async ensurePrimaryStoryboard(user: AuthUser, projectId: string) {
-    return this.ensurePrimaryDocument(
-      user,
-      projectId,
-      PlatformDocumentType.storyboard,
-    );
-  }
-
   async getDocument(user: AuthUser, documentId: string) {
-    const document = await this.permissions.requireDocumentRole(
+    const document = await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.viewer,
+      'read',
     );
+    return { document: this.documentDto(document, { detail: true }) };
+  }
+
+  /** Idempotent bootstrap for Story's shared canvas/storyboard document. */
+  async ensureStoryCanvasDocument(user: AuthUser, storyProjectId: string) {
+    // An archived Story project still opens read-only (the same contract
+    // `StoryProjectsService.workbench` honours), so an existing canvas has to
+    // resolve here. Creating one below stays behind the un-widened
+    // `story.edit` gate, which keeps archived projects unwritable.
+    const { project } = await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    const existing = await this.prisma.studioDocument.findFirst({
+      where: {
+        storyProjectId,
+        type: StudioDocumentType.canvas,
+        status: StudioDocumentStatus.active,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) {
+      return { document: this.documentDto(existing, { detail: true }) };
+    }
+
+    await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.edit',
+    );
+    const initialState = encodeInitialState(StudioDocumentType.canvas, {});
+    const document = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`studio-document:story-canvas:${storyProjectId}`})::bigint)
+      `;
+      const found = await tx.studioDocument.findFirst({
+        where: {
+          storyProjectId,
+          type: StudioDocumentType.canvas,
+          status: StudioDocumentStatus.active,
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (found) return found;
+      const created = await tx.studioDocument.create({
+        data: {
+          workspaceId: project.workspaceId,
+          storyProjectId,
+          type: StudioDocumentType.canvas,
+          title: project.title,
+          contentSnapshot:
+            initialState.snapshot as unknown as Prisma.InputJsonValue,
+          crdtState: Buffer.from(initialState.state!),
+          createdById: user.userId,
+        },
+      });
+      const version = await tx.studioDocumentVersion.create({
+        data: {
+          documentId: created.id,
+          versionNumber: 1,
+          schemaVersion: created.schemaVersion,
+          sequence: 0,
+          title: created.title,
+          source: StudioDocumentVersionSource.system,
+          snapshot: created.contentSnapshot as Prisma.InputJsonValue,
+          crdtState: created.crdtState,
+          metadata: { reason: 'initial_story_canvas' },
+          createdById: user.userId,
+        },
+      });
+      return tx.studioDocument.update({
+        where: { id: created.id },
+        data: { currentVersionId: version.id },
+      });
+    });
+
+    await this.audit.record({
+      workspaceId: document.workspaceId,
+      projectId: null,
+      actorUserId: user.userId,
+      action: 'studio_document.created',
+      entityType: 'studio_document',
+      entityId: document.id,
+      after: document,
+      metadata: { ownerKind: 'story_project', storyProjectId },
+    });
     return { document: this.documentDto(document, { detail: true }) };
   }
 
@@ -244,12 +360,12 @@ export class DocumentsService {
     documentId: string,
     input: UpdateDocumentInput,
   ) {
-    const before = await this.permissions.requireDocumentRole(
+    const before = await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.editor,
+      'edit',
     );
-    const result = await this.prisma.platformDocument.updateMany({
+    const result = await this.prisma.studioDocument.updateMany({
       where: {
         id: documentId,
         deletedAt: null,
@@ -263,7 +379,7 @@ export class DocumentsService {
         status:
           input.status === undefined
             ? undefined
-            : (input.status as PlatformDocumentStatus),
+            : (input.status as StudioDocumentStatus),
         contentSnapshot:
           input.contentSnapshot === undefined
             ? undefined
@@ -285,12 +401,12 @@ export class DocumentsService {
       });
     }
 
-    const document = await this.prisma.platformDocument.findUniqueOrThrow({
+    const document = await this.prisma.studioDocument.findUniqueOrThrow({
       where: { id: documentId },
     });
     await this.audit.record({
       workspaceId: document.workspaceId,
-      projectId: document.projectId,
+      projectId: document.platformProjectId,
       actorUserId: user.userId,
       action: 'document.updated',
       entityType: 'document',
@@ -307,12 +423,8 @@ export class DocumentsService {
     documentId: string,
     query: ListDocumentOperationsQuery,
   ) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.viewer,
-    );
-    const operations = await this.prisma.platformDocumentOperation.findMany({
+    await this.documentAccess.requireDocument(user.userId, documentId, 'read');
+    const operations = await this.prisma.studioDocumentOperation.findMany({
       where: {
         documentId,
         sequence: { gt: query.afterSequence },
@@ -335,13 +447,13 @@ export class DocumentsService {
     afterSequence: number,
     limit: number,
   ) {
-    const document = await this.permissions.requireDocumentRole(
+    const document = await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.viewer,
+      'read',
     );
     const window = resolveSyncWindow(afterSequence, document.snapshotSequence);
-    const operations = await this.prisma.platformDocumentOperation.findMany({
+    const operations = await this.prisma.studioDocumentOperation.findMany({
       where: { documentId, sequence: { gt: window.fromSequence } },
       orderBy: { sequence: 'asc' },
       take: Math.min(Math.max(limit, 1), 1000),
@@ -379,13 +491,9 @@ export class DocumentsService {
     documentId: string,
     input: AppendDocumentOperationInput,
   ) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.editor,
-    );
+    await this.documentAccess.requireDocument(user.userId, documentId, 'edit');
 
-    const operationType = input.operationType as PlatformDocumentOperationType;
+    const operationType = input.operationType as StudioDocumentOperationType;
     // Two collaboration models share this op log:
     //  • patch/snapshot — NOT a CRDT. The client ships the authoritative
     //    materialized view, persisted inline so the next reader sees it at once,
@@ -394,7 +502,7 @@ export class DocumentsService {
     //    contentSnapshot and crdtState are derived server-side from the merged op
     //    stream by DocumentCompactionService (the sole crdtState writer) and are
     //    NEVER trusted from the client nor written per-op on the hot path.
-    const isCrdt = operationType === PlatformDocumentOperationType.yjs_update;
+    const isCrdt = operationType === StudioDocumentOperationType.yjs_update;
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Serialize sequence assignment per document. The body is intentionally
@@ -404,10 +512,10 @@ export class DocumentsService {
         SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
       `;
 
-      const document = await tx.platformDocument.findFirst({
+      const document = await tx.studioDocument.findFirst({
         where: {
           id: documentId,
-          status: PlatformDocumentStatus.active,
+          status: StudioDocumentStatus.active,
           deletedAt: null,
         },
       });
@@ -419,7 +527,7 @@ export class DocumentsService {
       }
 
       if (input.idempotencyKey) {
-        const existing = await tx.platformDocumentOperation.findFirst({
+        const existing = await tx.studioDocumentOperation.findFirst({
           where: { documentId, idempotencyKey: input.idempotencyKey },
         });
         if (existing) return { operation: existing, scheduleCompaction: false };
@@ -427,8 +535,8 @@ export class DocumentsService {
 
       if (
         !isCrdt &&
-        (operationType === PlatformDocumentOperationType.patch ||
-          operationType === PlatformDocumentOperationType.snapshot) &&
+        (operationType === StudioDocumentOperationType.patch ||
+          operationType === StudioDocumentOperationType.snapshot) &&
         input.baseSequence != null &&
         input.baseSequence !== document.currentSequence
       ) {
@@ -440,7 +548,7 @@ export class DocumentsService {
       }
 
       const sequence = document.currentSequence + 1;
-      const created = await tx.platformDocumentOperation.create({
+      const created = await tx.studioDocumentOperation.create({
         data: {
           documentId,
           sequence,
@@ -462,7 +570,7 @@ export class DocumentsService {
         ? undefined
         : (input.materializedContent ?? input.snapshot);
 
-      await tx.platformDocument.update({
+      await tx.studioDocument.update({
         where: { id: documentId },
         data: {
           currentSequence: sequence,
@@ -493,16 +601,12 @@ export class DocumentsService {
     documentId: string,
     input: CreateDocumentVersionInput,
   ) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.editor,
-    );
+    await this.documentAccess.requireDocument(user.userId, documentId, 'edit');
     const version = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
       `;
-      const document = await tx.platformDocument.findFirst({
+      const document = await tx.studioDocument.findFirst({
         where: { id: documentId, deletedAt: null },
       });
       if (!document) {
@@ -511,11 +615,11 @@ export class DocumentsService {
           msg: 'Document not found.',
         });
       }
-      const last = await tx.platformDocumentVersion.findFirst({
+      const last = await tx.studioDocumentVersion.findFirst({
         where: { documentId },
         orderBy: { versionNumber: 'desc' },
       });
-      const created = await tx.platformDocumentVersion.create({
+      const created = await tx.studioDocumentVersion.create({
         data: {
           documentId,
           versionNumber: (last?.versionNumber ?? 0) + 1,
@@ -523,7 +627,7 @@ export class DocumentsService {
           sequence: document.currentSequence,
           title: document.title,
           label: input.label,
-          source: input.source as PlatformDocumentVersionSource,
+          source: input.source as StudioDocumentVersionSource,
           sourceId: input.sourceId,
           snapshot:
             (input.snapshot as Prisma.InputJsonValue | undefined) ??
@@ -535,7 +639,7 @@ export class DocumentsService {
           createdById: user.userId,
         },
       });
-      await tx.platformDocument.update({
+      await tx.studioDocument.update({
         where: { id: documentId },
         data: {
           currentVersionId: created.id,
@@ -559,7 +663,7 @@ export class DocumentsService {
   async createSystemVersion(
     documentId: string,
     input: {
-      source: PlatformDocumentVersionSource;
+      source: StudioDocumentVersionSource;
       label?: string | null;
       sourceId?: string | null;
       createdById: string;
@@ -569,17 +673,17 @@ export class DocumentsService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
       `;
-      const document = await tx.platformDocument.findFirst({
+      const document = await tx.studioDocument.findFirst({
         where: { id: documentId, deletedAt: null },
         select: { schemaVersion: true, currentSequence: true, title: true },
       });
       if (!document) return null;
-      const last = await tx.platformDocumentVersion.findFirst({
+      const last = await tx.studioDocumentVersion.findFirst({
         where: { documentId },
         orderBy: { versionNumber: 'desc' },
         select: { versionNumber: true },
       });
-      const created = await tx.platformDocumentVersion.create({
+      const created = await tx.studioDocumentVersion.create({
         data: {
           documentId,
           versionNumber: (last?.versionNumber ?? 0) + 1,
@@ -601,12 +705,8 @@ export class DocumentsService {
   }
 
   async listVersions(user: AuthUser, documentId: string) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.viewer,
-    );
-    const versions = await this.prisma.platformDocumentVersion.findMany({
+    await this.documentAccess.requireDocument(user.userId, documentId, 'read');
+    const versions = await this.prisma.studioDocumentVersion.findMany({
       where: { documentId },
       orderBy: { versionNumber: 'desc' },
       take: 100,
@@ -619,14 +719,10 @@ export class DocumentsService {
     documentId: string,
     input: UpsertDocumentPresenceInput,
   ) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.viewer,
-    );
+    await this.documentAccess.requireDocument(user.userId, documentId, 'read');
     const now = new Date();
     const expiresAt = new Date(now.getTime() + input.ttlSeconds * 1000);
-    const presence = await this.prisma.platformDocumentPresence.upsert({
+    const presence = await this.prisma.studioDocumentPresence.upsert({
       where: {
         documentId_userId_connectionId: {
           documentId,
@@ -660,7 +756,7 @@ export class DocumentsService {
     documentId: string,
     connectionId: string,
   ) {
-    await this.prisma.platformDocumentPresence.deleteMany({
+    await this.prisma.studioDocumentPresence.deleteMany({
       where: { documentId, userId: user.userId, connectionId },
     });
     return {
@@ -673,16 +769,12 @@ export class DocumentsService {
   }
 
   async listPresence(user: AuthUser, documentId: string) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.viewer,
-    );
+    await this.documentAccess.requireDocument(user.userId, documentId, 'read');
     const now = new Date();
-    await this.prisma.platformDocumentPresence.deleteMany({
+    await this.prisma.studioDocumentPresence.deleteMany({
       where: { documentId, expiresAt: { lt: now } },
     });
-    const presences = await this.prisma.platformDocumentPresence.findMany({
+    const presences = await this.prisma.studioDocumentPresence.findMany({
       where: { documentId, expiresAt: { gte: now } },
       orderBy: { lastSeenAt: 'desc' },
     });
@@ -692,12 +784,8 @@ export class DocumentsService {
   }
 
   async listCommentThreads(user: AuthUser, documentId: string) {
-    await this.permissions.requireDocumentRole(
-      user.userId,
-      documentId,
-      ProjectMemberRole.viewer,
-    );
-    const threads = await this.prisma.platformDocumentCommentThread.findMany({
+    await this.documentAccess.requireDocument(user.userId, documentId, 'read');
+    const threads = await this.prisma.studioDocumentCommentThread.findMany({
       where: { documentId, deletedAt: null },
       include: {
         comments: {
@@ -717,12 +805,12 @@ export class DocumentsService {
     documentId: string,
     input: CreateCommentThreadInput,
   ) {
-    await this.permissions.requireDocumentRole(
+    await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.editor,
+      'comment',
     );
-    const thread = await this.prisma.platformDocumentCommentThread.create({
+    const thread = await this.prisma.studioDocumentCommentThread.create({
       data: {
         documentId,
         blockId: input.blockId,
@@ -748,12 +836,12 @@ export class DocumentsService {
     threadId: string,
     input: AddCommentInput,
   ) {
-    await this.permissions.requireDocumentRole(
+    await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.editor,
+      'comment',
     );
-    const thread = await this.prisma.platformDocumentCommentThread.findFirst({
+    const thread = await this.prisma.studioDocumentCommentThread.findFirst({
       where: { id: threadId, documentId, deletedAt: null },
     });
     if (!thread) {
@@ -762,7 +850,7 @@ export class DocumentsService {
         msg: 'Comment thread not found.',
       });
     }
-    const comment = await this.prisma.platformDocumentComment.create({
+    const comment = await this.prisma.studioDocumentComment.create({
       data: {
         threadId,
         documentId,
@@ -770,7 +858,7 @@ export class DocumentsService {
         createdById: user.userId,
       },
     });
-    await this.prisma.platformDocumentCommentThread.update({
+    await this.prisma.studioDocumentCommentThread.update({
       where: { id: threadId },
       data: { updatedAt: new Date() },
     });
@@ -782,12 +870,12 @@ export class DocumentsService {
     documentId: string,
     threadId: string,
   ) {
-    await this.permissions.requireDocumentRole(
+    await this.documentAccess.requireDocument(
       user.userId,
       documentId,
-      ProjectMemberRole.editor,
+      'comment',
     );
-    const existing = await this.prisma.platformDocumentCommentThread.findFirst({
+    const existing = await this.prisma.studioDocumentCommentThread.findFirst({
       where: { id: threadId, documentId, deletedAt: null },
       select: { id: true },
     });
@@ -797,10 +885,10 @@ export class DocumentsService {
         msg: 'Comment thread not found.',
       });
     }
-    const thread = await this.prisma.platformDocumentCommentThread.update({
+    const thread = await this.prisma.studioDocumentCommentThread.update({
       where: { id: existing.id },
       data: {
-        status: PlatformDocumentCommentStatus.resolved,
+        status: StudioDocumentCommentStatus.resolved,
         resolvedById: user.userId,
         resolvedAt: new Date(),
       },
@@ -814,11 +902,22 @@ export class DocumentsService {
     return { thread: this.commentThreadDto(thread) };
   }
 
-  private documentDto(document: PlatformDocument, opts?: { detail?: boolean }) {
+  private documentDto(document: StudioDocument, opts?: { detail?: boolean }) {
     return {
       id: document.id,
       workspaceId: document.workspaceId,
-      projectId: document.projectId,
+      owner: document.platformProjectId
+        ? {
+            kind: 'platform_project' as const,
+            projectId: document.platformProjectId,
+          }
+        : {
+            kind: 'story_project' as const,
+            projectId: document.storyProjectId!,
+          },
+      platformProjectId: document.platformProjectId,
+      storyProjectId: document.storyProjectId,
+      sectionId: document.sectionId,
       type: document.type,
       status: document.status,
       title: document.title,
@@ -848,7 +947,7 @@ export class DocumentsService {
     };
   }
 
-  private operationDto(operation: PlatformDocumentOperation) {
+  private operationDto(operation: StudioDocumentOperation) {
     return {
       id: operation.id,
       documentId: operation.documentId,
@@ -867,7 +966,7 @@ export class DocumentsService {
     };
   }
 
-  private versionDto(version: PlatformDocumentVersion) {
+  private versionDto(version: StudioDocumentVersion) {
     return {
       id: version.id,
       documentId: version.documentId,
@@ -888,7 +987,7 @@ export class DocumentsService {
     };
   }
 
-  private presenceDto(presence: PlatformDocumentPresence) {
+  private presenceDto(presence: StudioDocumentPresence) {
     return {
       id: presence.id,
       documentId: presence.documentId,
@@ -903,8 +1002,8 @@ export class DocumentsService {
   }
 
   private commentThreadDto(
-    thread: PlatformDocumentCommentThread & {
-      comments?: PlatformDocumentComment[];
+    thread: StudioDocumentCommentThread & {
+      comments?: StudioDocumentComment[];
     },
   ) {
     return {
@@ -924,7 +1023,7 @@ export class DocumentsService {
     };
   }
 
-  private commentDto(comment: PlatformDocumentComment) {
+  private commentDto(comment: StudioDocumentComment) {
     return {
       id: comment.id,
       threadId: comment.threadId,
@@ -941,4 +1040,21 @@ function jsonOrNull(
   value: Record<string, unknown> | undefined,
 ): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return value === undefined ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
+
+function encodeInitialState(
+  type: StudioDocumentType,
+  snapshot: unknown,
+): { state: Uint8Array | null; snapshot: Record<string, unknown> } {
+  const schema = rootSchemaFor(type);
+  if (!schema) {
+    return {
+      state: null,
+      snapshot:
+        snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+          ? (snapshot as Record<string, unknown>)
+          : {},
+    };
+  }
+  return encodeDocumentSnapshot(snapshot, schema);
 }

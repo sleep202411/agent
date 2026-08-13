@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fizzdragon.com/schemas/fizzdragon-catalog-skill-v1.json",
+  "title": "FizzDragon bundled Skill source manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "skillId",
+    "catalogOrder",
+    "displayDescription",
+    "translationKey",
+    "publisherName",
+    "category",
+    "kind",
+    "visibility",
+    "status",
+    "preview",
+    "version"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": "fizzdragon.catalog-source/v1" },
+    "skillId": { "type": "string", "format": "uuid" },
+    "catalogOrder": { "type": "integer", "minimum": 1 },
+    "displayDescription": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "translationKey": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$" },
+    "publisherName": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "category": { "enum": ["style", "production", "commercial"] },
+    "kind": { "enum": ["general", "image", "video"] },
+    "visibility": { "const": "public" },
+    "status": { "const": "published" },
+    "preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "video"],
+      "properties": {
+        "image": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "video": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9._-]*$" }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "manifestSchemaVersion",
+        "publishedAt",
+        "capabilities",
+        "projectKinds",
+        "workbenchModes",
+        "toolIds",
+        "configSchema",
+        "riskPolicy",
+        "evalSuite"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "manifestSchemaVersion": { "const": "fizzdragon.skill/v1" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "agent_prompt",
+              "prompt_authoring",
+              "image_generation",
+              "video_generation",
+              "preflight",
+              "qa"
+            ]
+          }
+        },
+        "projectKinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["platform", "story"] }
+        },
+        "workbenchModes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "toolIds": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "configSchema": { "type": "object" },
+        "riskPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowsWrite", "allowsPaidGeneration"],
+          "properties": {
+            "allowsWrite": { "type": "boolean" },
+            "allowsPaidGeneration": { "type": "boolean" }
+          }
+        },
+        "evalSuite": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}

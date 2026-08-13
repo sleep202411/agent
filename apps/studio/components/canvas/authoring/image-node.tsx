@@ -20,8 +20,8 @@ import {
   IconUpload,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   EXPAND_OP,
@@ -50,7 +50,7 @@ export type ImageNodeType = Node<
   "image"
 >;
 
-export const IMAGE_NODE_WIDTH = 280;
+export const IMAGE_NODE_WIDTH = canvasNodeGeometry({ type: "image" }).width;
 
 function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   const t = useTranslations("canvasNodes");
@@ -88,15 +88,10 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   );
 
   return (
-    <div className="relative">
+    <div className="relative" style={{ width: canvasNodeGeometry({ type: "image" }).width }}>
       {/* Filename header above the card (imagine.art pattern): an uploaded image
           reads at a glance without a heavy title bar. */}
-      <div
-        className={cn(
-          CANVAS_NODE_DRAG_HANDLE_CLASS,
-          "mb-1.5 flex max-w-[280px] items-center gap-1.5 rounded px-0.5 text-xs text-white/50"
-        )}
-      >
+      <div className="mb-1.5 flex max-w-full items-center gap-1.5 rounded px-0.5 text-xs text-white/50">
         <IconUpload className="size-3.5 shrink-0" stroke={1.8} />
         {renaming ? (
           <input
@@ -196,7 +191,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
             event.stopPropagation();
             setViewerOpen(true);
           }}
-          className="block max-h-[480px] w-[280px] rounded-xl object-cover select-none"
+          className="block max-h-[520px] w-full rounded-xl object-cover select-none"
         />
         {!upload && (
           <MediaAssetReadinessControlForAsset

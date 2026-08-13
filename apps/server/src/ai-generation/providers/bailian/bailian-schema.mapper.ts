@@ -11,6 +11,7 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
+  AiRequiredPlan,
 } from '../../types';
 import type {
   BailianModelRuntimeConfig,
@@ -28,7 +29,7 @@ interface CreateBailianModelConfigArgs {
   name?: string;
   description?: string;
   generationModes?: string[];
-  requiredPlan: string | null;
+  requiredPlan: AiRequiredPlan | null;
   enabled: boolean;
   disabledReason?: string;
   queueName: AiQueueName;
@@ -817,7 +818,7 @@ export function toAiModelDefinition(
           reason: config.disabledReason,
           endpointEnvVars: [
             'BAILIAN_ENABLED',
-            'DASHSCOPE_API_KEY',
+            'BAILIAN_API_KEY',
             'BAILIAN_REGION',
             'BAILIAN_WORKSPACE_ID',
           ],

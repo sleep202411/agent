@@ -33,11 +33,6 @@ coverage
 # Turbo
 .turbo
 
-# Agent Platform local runtime and generated bundles
-/apps/agent-platform/.local/
-/apps/agent-platform/.mastra/
-/apps/agent-platform/.temporal/
-
 # Vercel
 .vercel
 
@@ -107,3 +102,6 @@ apps/server/outputs/
 
 # Local registry authentication tokens
 /.npmrc
+
+# ZCode client local state
+.zcode/

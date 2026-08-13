@@ -27,13 +27,6 @@ describe('MembershipBenefitsSchema', () => {
   it.each([
     ['unknown top-level key', { ...DEFAULT_FREE_BENEFITS, bonus: 1 }],
     [
-      'unknown feature key',
-      {
-        ...DEFAULT_FREE_BENEFITS,
-        features: { ...DEFAULT_FREE_BENEFITS.features, vip: true },
-      },
-    ],
-    [
       'missing field',
       (() => {
         const clone: Record<string, unknown> = { ...DEFAULT_FREE_BENEFITS };
@@ -43,7 +36,7 @@ describe('MembershipBenefitsSchema', () => {
     ],
     ['non-integer daily cap', { ...DEFAULT_FREE_BENEFITS, chatDaily: 1.5 }],
     ['negative cap', { ...DEFAULT_FREE_BENEFITS, uploadMB: -1 }],
-    ['bad tier label', { ...DEFAULT_FREE_BENEFITS, quotaTier: 'VIP9' }],
+    ['removed policy field', { ...DEFAULT_FREE_BENEFITS, quotaTier: 'old' }],
     [
       'bare Infinity number is not JSON-safe',
       {
@@ -56,8 +49,8 @@ describe('MembershipBenefitsSchema', () => {
   });
 
   it('parseMembershipBenefits throws with the plan key in the message', () => {
-    expect(() => parseMembershipBenefits('studio', { nope: true })).toThrow(
-      /Membership plan "studio" has invalid benefits/,
+    expect(() => parseMembershipBenefits('basic', { nope: true })).toThrow(
+      /Membership plan "basic" has invalid benefits/,
     );
   });
 

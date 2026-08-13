@@ -1,0 +1,43 @@
+{
+  "name": "agent-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FizzDragon Agent OS — LangGraph interactive runtime worker.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "dev": "tsx watch --env-file=.env src/main.ts",
+    "start": "node --env-file=.env dist/main.js",
+    "smoke:qwen": "tsx --env-file=.env scripts/smoke-qwen.mts",
+    "live:golden": "tsx --env-file=.env scripts/live-golden-qwen.mts",
+    "test": "vitest run",
+    "lint": "echo \"agent-os lint: pending eslint wiring\"",
+    "probe:models": "tsx --env-file=.env scripts/probe-models.mts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.5",
+    "@langchain/langgraph": "^1.4.9",
+    "@langchain/langgraph-checkpoint": "^1.1.3",
+    "@langchain/langgraph-checkpoint-postgres": "^1.0.4",
+    "@langchain/openai": "^1.2.5",
+    "@repo/agent-capabilities": "*",
+    "@repo/agent-policy": "*",
+    "@repo/agent-protocol": "*",
+    "@repo/agent-skills": "*",
+    "@repo/agent-tools": "*",
+    "@repo/model-router": "*",
+    "@repo/shared": "*",
+    "ably": "^2.26.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=24.18.1"
+  }
+}

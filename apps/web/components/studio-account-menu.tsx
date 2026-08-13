@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   IconBell,
@@ -40,9 +41,9 @@ import {
   setCreditsLoading,
   setIntegralRecords,
   setIntegralRecordsLoading,
-  touchCredits,
 } from "@/src/store/slices/userSlice";
 import type { IntegralRecord } from "@/src/types/workspace";
+import { getMyEntitlement } from "@/src/lib/billing/api";
 
 type StudioAccountMenuProps = {
   className?: string;
@@ -95,14 +96,6 @@ function maskAccount(value: string) {
   return `${clean.slice(0, 3)}****${clean.slice(-4)}`;
 }
 
-function isPaidMember(level: string | undefined) {
-  if (!level) return false;
-  const normalized = level.toLowerCase();
-  return (
-    normalized.includes("vip") || normalized.includes("member") || normalized.includes("creator")
-  );
-}
-
 export function StudioAccountMenu({
   className,
   showStoreButton = true,
@@ -111,10 +104,17 @@ export function StudioAccountMenu({
   triggerMode = "full",
 }: StudioAccountMenuProps) {
   const tc = useTranslations("common");
+  const tp = useTranslations("payment");
   const locale = useLocale() as Locale;
   const logout = useLogout();
   const dispatch = useAppDispatch();
   const { user } = useCurrentUser();
+  const entitlement = useQuery({
+    queryKey: ["billing", "my-entitlement"],
+    queryFn: getMyEntitlement,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
   const credits = useAppSelector((state) => state.user.credits);
   const isCreditsLoading = useAppSelector((state) => state.user.isCreditsLoading);
   const creditsVersion = useAppSelector((state) => state.user.creditsVersion);
@@ -130,9 +130,9 @@ export function StudioAccountMenu({
   const accountLabel =
     maskAccount(String(raw?.phone ?? raw?.contact ?? user?.email ?? user?.id ?? displayName)) ||
     displayName;
-  const level = user?.userLevel?.trim();
-  const paidMember = isPaidMember(level);
-  const membershipLabel = paidMember ? level : tc("accountMenuFreeUser");
+  const planKey = entitlement.data?.entitlement.planKey ?? "free";
+  const paidMember = planKey !== "free";
+  const membershipLabel = paidMember ? tp(`plans.${planKey}`) : tc("accountMenuFreeUser");
   const displayCredits = Number.isFinite(credits) ? credits : 0;
   const publicUserId = encodeUserId(user?.id);
   const publicUserIdLabel =
@@ -189,11 +189,6 @@ export function StudioAccountMenu({
   };
 
   const comingSoon = (label: string) => toast.info(tc("accountMenuComingSoon", { label }));
-
-  const handleSuccessPayment = () => {
-    dispatch(touchCredits());
-    void refreshCredits();
-  };
 
   const openUpgradeDialog = () => {
     setOpen(false);
@@ -319,9 +314,13 @@ export function StudioAccountMenu({
                 <div className="flex items-center justify-between px-4 py-3">
                   <div>
                     <div className="text-base font-semibold text-white">{membershipLabel}</div>
-                    {paidMember && raw?.expireTime ? (
+                    {paidMember && entitlement.data?.entitlement.expiresAt ? (
                       <div className="mt-1 text-xs text-white/46">
-                        {tc("accountMenuExpiresAt", { value: String(raw.expireTime) })}
+                        {tc("accountMenuExpiresAt", {
+                          value: new Date(
+                            entitlement.data.entitlement.expiresAt
+                          ).toLocaleDateString(locale),
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -490,11 +489,7 @@ export function StudioAccountMenu({
         </DropdownMenu>
       </div>
 
-      <UpgradeDialog
-        open={upgradeOpen}
-        onOpenChange={setUpgradeOpen}
-        onSuccess={handleSuccessPayment}
-      />
+      <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
     </>
   );
 }

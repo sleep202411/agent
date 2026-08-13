@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ink-wash Cinema"
+  short_description: "Expressive brush economy, atmospheric negative space and control"
+  default_prompt: "Use $ink-wash-cinema to apply this creative direction to my request."

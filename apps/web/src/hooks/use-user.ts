@@ -44,7 +44,6 @@ export interface CurrentUser {
   nickname: string;
   avatar?: string;
   cover?: string;
-  userLevel?: string;
   /** Escape hatch for fields not in the normalized projection. */
   raw: UserInfoResolved;
 }
@@ -65,7 +64,6 @@ export function useCurrentUser(): {
       nickname: data.nickName ?? data.userName ?? data.name ?? "",
       avatar: data.headImgUrl,
       cover: data.bannerUrl,
-      userLevel: data.userLevel,
       raw: data,
     };
   }, [data]);

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Portrait Cooking Short"
+  short_description: "Turn one recipe action into a tactile portrait-format cooking st"
+  default_prompt: "Use $portrait-cooking-short to apply this creative direction to my request."

@@ -19,7 +19,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { WorkspaceMemberRole, WorkspaceMemberStatus } from '@prisma/client';
+import {
+  ProjectMemberStatus,
+  StoryProjectMemberStatus,
+  WorkspaceMemberAccessScope,
+  WorkspaceMemberRole,
+  WorkspaceMemberStatus,
+} from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { DocumentsGateway } from '../documents/documents.gateway';
 import { EntitlementService } from '../entitlements/entitlement.service';
@@ -28,7 +34,11 @@ import { NotificationService } from '../notification';
 import { UsersService } from '../users/users.service';
 import { PlatformAuditLogService } from '../workspaces';
 import { WorkspacePermissionService } from '../workspaces';
-import { acquireSeatLock, assertSeatAvailable } from './seat-guard';
+import {
+  acquireSeatLock,
+  assertCreatorSeatAvailable,
+  workspaceRoleConsumesCreatorSeat,
+} from './seat-guard';
 import { enqueueTeamMemberChanged } from './team-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
 import type {
@@ -108,9 +118,9 @@ export class WorkspaceMembersService {
     }
     const existing = await this.prisma.workspaceMember.findFirst({
       where: { workspaceId, userId: target.userId, removedAt: null },
-      select: { id: true },
+      select: { id: true, accessScope: true },
     });
-    if (existing) {
+    if (existing?.accessScope === WorkspaceMemberAccessScope.workspace) {
       throw new BadRequestException({
         code: 'ALREADY_MEMBER',
         msg: 'That user is already a member of this workspace.',
@@ -120,21 +130,34 @@ export class WorkspaceMembersService {
     const role = ROLE_MAP[input.role];
     try {
       const member = await this.prisma.$transaction(async (tx) => {
-        // Seat lock first, then assert (policy + count resolved on this tx so
-        // they share one locked snapshot — see seat-guard).
-        await acquireSeatLock(tx, workspaceId);
-        await assertSeatAvailable(tx, workspaceId, this.entitlements);
-        const m = await tx.workspaceMember.create({
-          data: {
+        if (workspaceRoleConsumesCreatorSeat(role)) {
+          await acquireSeatLock(tx, workspaceId);
+          await assertCreatorSeatAvailable(
+            tx,
             workspaceId,
-            userId: target.userId,
-            role,
-            status: WorkspaceMemberStatus.active,
-            seatAssigned: true,
-            invitedById: actor.userId,
-            joinedAt: new Date(),
-          },
-        });
+            target.userId,
+            this.entitlements,
+          );
+        }
+        const memberData = {
+          role,
+          status: WorkspaceMemberStatus.active,
+          accessScope: WorkspaceMemberAccessScope.workspace,
+          invitedById: actor.userId,
+          joinedAt: new Date(),
+        } as const;
+        const m = existing
+          ? await tx.workspaceMember.update({
+              where: { id: existing.id },
+              data: memberData,
+            })
+          : await tx.workspaceMember.create({
+              data: {
+                workspaceId,
+                userId: target.userId,
+                ...memberData,
+              },
+            });
         await this.notifications.send(
           {
             userId: target.userId,
@@ -205,10 +228,26 @@ export class WorkspaceMembersService {
         msg: 'The workspace owner role cannot be changed.',
       });
     }
+    const nextRole = ROLE_MAP[input.role];
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        workspaceRoleConsumesCreatorSeat(nextRole) &&
+        !workspaceRoleConsumesCreatorSeat(member.role)
+      ) {
+        await acquireSeatLock(tx, workspaceId);
+        await assertCreatorSeatAvailable(
+          tx,
+          workspaceId,
+          member.userId,
+          this.entitlements,
+        );
+      }
       const u = await tx.workspaceMember.update({
         where: { id: memberId },
-        data: { role: ROLE_MAP[input.role] },
+        data: {
+          role: nextRole,
+          accessScope: WorkspaceMemberAccessScope.workspace,
+        },
       });
       // Atomic with the role write so the roster push can't diverge from state.
       await enqueueTeamMemberChanged(tx, {
@@ -253,36 +292,88 @@ export class WorkspaceMembersService {
         msg: 'The workspace owner cannot be removed.',
       });
     }
-    await this.prisma.$transaction(async (tx) => {
-      await tx.workspaceMember.update({
+    if (member.accessScope === WorkspaceMemberAccessScope.project_only) {
+      throw new BadRequestException({
+        code: 'PROJECT_ONLY_MEMBER',
+        msg: 'Remove this person from their projects instead of the workspace roster.',
+      });
+    }
+    const removal = await this.prisma.$transaction(async (tx) => {
+      const [projectAccess, storyAccess] = await Promise.all([
+        tx.projectMember.findFirst({
+          where: {
+            userId: member.userId,
+            removedAt: null,
+            status: ProjectMemberStatus.active,
+            project: { workspaceId, deletedAt: null },
+          },
+          select: { id: true },
+        }),
+        tx.storyProjectMember.findFirst({
+          where: {
+            userId: member.userId,
+            removedAt: null,
+            status: StoryProjectMemberStatus.active,
+            project: { workspaceId },
+          },
+          select: { id: true },
+        }),
+      ]);
+      const keepRosterPresence = Boolean(projectAccess || storyAccess);
+      const updatedMember = await tx.workspaceMember.update({
         where: { id: memberId },
-        data: { removedAt: new Date(), status: WorkspaceMemberStatus.removed },
+        data: keepRosterPresence
+          ? {
+              role: WorkspaceMemberRole.viewer,
+              accessScope: WorkspaceMemberAccessScope.project_only,
+            }
+          : {
+              removedAt: new Date(),
+              status: WorkspaceMemberStatus.removed,
+            },
       });
       await this.notifications.send(
         {
           userId: member.userId,
           type: 'workspace.member.removed',
-          title: `Removed from "${workspace.name}"`,
-          body: 'You no longer have access to this team.',
+          title: keepRosterPresence
+            ? `Workspace access changed for "${workspace.name}"`
+            : `Removed from "${workspace.name}"`,
+          body: keepRosterPresence
+            ? 'Your workspace-wide access was removed. Your existing project access remains.'
+            : 'You no longer have access to this team.',
           meta: { deeplink: `/canvas`, workspaceId },
-          idempotencyKey: `workspace.member.removed:${memberId}`,
+          idempotencyKey: keepRosterPresence
+            ? `workspace.member.workspace_access_removed:${memberId}`
+            : `workspace.member.removed:${memberId}`,
         },
         tx,
       );
       await enqueueTeamMemberChanged(tx, {
         workspaceId,
-        action: 'removed',
-        member: { id: member.id, userId: member.userId, role: member.role },
+        action: keepRosterPresence ? 'role_changed' : 'removed',
+        member: {
+          id: updatedMember.id,
+          userId: updatedMember.userId,
+          role: updatedMember.role,
+          status: updatedMember.status,
+        },
         actorUserId: actor.userId,
       });
+      return keepRosterPresence;
     });
     await this.audit.record({
       workspaceId,
       actorUserId: actor.userId,
-      action: 'workspace.member.removed',
+      action: removal
+        ? 'workspace.member.workspace_access_removed'
+        : 'workspace.member.removed',
       entityType: 'workspace_member',
       entityId: memberId,
       before: { userId: member.userId, role: member.role },
+      after: removal
+        ? { role: WorkspaceMemberRole.viewer, accessScope: 'project_only' }
+        : undefined,
     });
     // Kick the removed user's live sockets off the workspace channels NOW (don't
     // wait for their token to expire). Best-effort; the token TTL is the backstop.
@@ -292,8 +383,8 @@ export class WorkspaceMembersService {
     // re-checks per document and keeps any they still reach via a direct
     // project grant). Best-effort — writes are already blocked server-side.
     try {
-      const documents = await this.prisma.platformDocument.findMany({
-        where: { deletedAt: null, project: { workspaceId, deletedAt: null } },
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { workspaceId, deletedAt: null },
         select: { id: true },
       });
       await this.docs.revokeUserFromDocuments(

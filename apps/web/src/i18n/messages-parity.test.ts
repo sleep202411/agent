@@ -19,9 +19,8 @@ import zhHK from "@/messages/zh-HK.json";
  *
  *   - Placeholder equality. Interpolation is single-brace (`{percent}`
  *     — see i18n.ts, which overrides i18next's `{{…}}` default) and
- *     some call sites supply a superset on purpose:
- *     `payment.benefits.creditDiscount` passes both `percent` (English
- *     "20% off") and `discount` (Chinese "8 折").
+ *     some call sites supply a superset on purpose so locales can choose
+ *     different interpolation values for natural phrasing.
  *   - Non-empty values. `quota.unit.image` and friends are blank in
  *     en-US by design — English pluralises the noun ("12 images")
  *     where Chinese appends a measure word ("12 张").

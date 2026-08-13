@@ -15,7 +15,7 @@
 # 用法：
 #   deploy/deploy-com-aks.sh <service...>     # 只部指定服务（推荐，外科手术式）
 #   deploy/deploy-com-aks.sh all              # 全部 5 个
-#   服务名：web studio admin-ui server agent agent-platform
+#   服务名：web studio admin-ui server agent agent-os
 #
 # 前提：① 已 az login 到 fizzdragon-ai-prod ② 工作区干净 ③ 在 main 分支
 #       （prod 只从 main 出；ArgoCD 盯 main）。覆盖：FORCE=1 跳过分支检查。
@@ -40,21 +40,15 @@ svc_spec() {
     admin-ui) echo "fizzdragon-admin-ui:apps/admin-ui/Dockerfile:.adminUi" ;;
     server)   echo "fizzdragon-server:apps/server/Dockerfile:.server" ;;
     agent)    echo "fizzdragon-agent:apps/agent/Dockerfile:.agent,.agentWorker" ;;
-    # Temporal execution plane (control + activities workers share one image).
-    # Not in `all`: built explicitly (`$0 studio-agent-runtime`) when the runtime
-    # needs a new revision. The tag is also the Temporal build ID, so bumping it
-    # is what moves pinned workflow histories onto the new worker.
-    studio-agent-runtime) echo "fizzdragon-studio-agent-runtime:apps/studio-agent-runtime/Dockerfile:.studioAgentRuntime.image" ;;
-    # Atomic three-image release. All targets share the same immutable tag;
-    # Helm rejects a mixed API/Worker/migrator revision.
-    agent-platform) echo "__agent_platform_bundle__" ;;
+    # Agent OS worker (LangGraph runtime). Not in `all`: build it explicitly.
+    agent-os) echo "fizzdragon-agent-os:apps/agent-os/Dockerfile:.agentOs" ;;
     *)        return 1 ;;
   esac
 }
 
 # --- args -----------------------------------------------------------------
 if [ "$#" -eq 0 ]; then
-  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent studio-agent-runtime agent-platform)" >&2
+  echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent agent-os)" >&2
   exit 2
 fi
 if [ "$1" = "all" ]; then
@@ -197,73 +191,24 @@ bump_tag() {  # $1=镜像名(repository)  $2=新tag
 }
 
 for s in "${SERVICES[@]}"; do
-  if [ "$s" = "agent-platform" ]; then
-    build_one agent-platform-api fizzdragon-agent-platform-api apps/agent-platform/Dockerfile api
-    build_one agent-platform-worker fizzdragon-agent-platform-worker apps/agent-platform/Dockerfile worker
-    build_one agent-memory-migrator fizzdragon-agent-memory-migrator apps/agent-platform/Dockerfile migrator
-  else
-    IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
-    build_one "$s" "$image" "$dockerfile"
-  fi
+  IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
+  build_one "$s" "$image" "$dockerfile"
 done
 
 # --- bump values.yaml (只动本次构建的服务) --------------------------------
 echo "▶ 更新 $VALUES 的 tag → $SHA"
 for s in "${SERVICES[@]}"; do
-  if [ "$s" = "agent-platform" ]; then
-    bump_tag fizzdragon-agent-platform-api "$SHA"
-    bump_tag fizzdragon-agent-platform-worker "$SHA"
-    bump_tag fizzdragon-agent-memory-migrator "$SHA"
-  else
-    IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
-    bump_tag "$image" "$SHA"
-  fi
+  IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
+  bump_tag "$image" "$SHA"
 done
 git --no-pager diff -- "$VALUES" || true
 
 # --- commit + push (ArgoCD 自动收敛) --------------------------------------
 if git diff --quiet -- "$VALUES"; then
-  echo "ℹ tag 未变化（已是 $SHORT），无需提交。"
+  echo "ℹ tag 未变化（已是 ${SHORT}），无需提交。"
   exit 0
 fi
 git add "$VALUES"
 git commit -m "deploy(com): ${SERVICES[*]} -> ${SHORT}"
 git push origin "$BRANCH"
 echo "✅ 已推送。ArgoCD 将自动同步（约几分钟）。查看：kubectl -n fizzdragon-com get deploy"
-
-# --- agent-platform: Temporal Worker Deployment 路由 -----------------------
-# 新 Worker 注册的 build 不会自动成为"当前版本"；没有这一步，所有新工作流
-# 任务无处投递，update-with-start 全部超时，网关报 AGENT_ADMISSION_EXHAUSTED
-# （2026-08-01 上线事故）。本地 start-local-stack 每次起服都做同样的事。
-for s in "${SERVICES[@]}"; do
-  if [ "$s" = "agent-platform" ]; then
-    echo "▶ 等待新 worker 在 Temporal 注册后设置路由（build ${SHA}）…"
-    kubectl -n fizzdragon-com port-forward svc/fizzdragon-temporal 17233:7233 >/dev/null 2>&1 &
-    pf_pid=$!
-    sleep 3
-    # 等"Temporal 里出现该 build"，不是等 K8s deploy 就绪：worker 的
-    # Deployment 对象名带发布哈希，新镜像=新对象，按名抓 READY 会命中
-    # 旧对象并提前放行（2026-08-01 首跑即中）。
-    registered=""
-    for _i in $(seq 1 90); do
-      if temporal worker deployment describe \
-        --address 127.0.0.1:17233 --namespace fizzdragon \
-        --name fizzdragon-agent-platform 2>/dev/null | grep -q "$SHA"; then
-        registered=1
-        break
-      fi
-      sleep 10
-    done
-    if [ -z "$registered" ]; then
-      kill "$pf_pid" 2>/dev/null || true
-      echo "✗ 新 build 未在 15 分钟内注册；路由未切换，旧版本继续服务。" >&2
-      exit 1
-    fi
-    temporal worker deployment set-current-version \
-      --address 127.0.0.1:17233 --namespace fizzdragon \
-      --deployment-name fizzdragon-agent-platform \
-      --build-id "$SHA" --yes
-    kill "$pf_pid" 2>/dev/null || true
-    echo "✅ Temporal Worker Deployment 当前版本 -> ${SHORT}"
-  fi
-done

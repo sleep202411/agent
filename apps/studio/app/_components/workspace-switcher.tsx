@@ -65,19 +65,7 @@ function WsAvatar({
   );
 }
 
-export function WorkspaceSwitcher({
-  triggerClassName,
-  avatarSize = "size-7",
-  avatarFallbackClassName,
-  nameClassName,
-  chevronClassName,
-}: {
-  triggerClassName?: string;
-  avatarSize?: string;
-  avatarFallbackClassName?: string;
-  nameClassName?: string;
-  chevronClassName?: string;
-} = {}) {
+export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const roleLabel = (r: string) =>
@@ -97,7 +85,14 @@ export function WorkspaceSwitcher({
   const [busy, setBusy] = useState(false);
 
   if (!activeWorkspace) {
-    return <div className="h-10 w-32 animate-pulse rounded-full bg-white/[0.06]" />;
+    return (
+      <div
+        className={cn(
+          "animate-pulse rounded-[14px] bg-white/[0.08]",
+          collapsed ? "size-10" : "h-10 w-full"
+        )}
+      />
+    );
   }
 
   const resetCreate = () => {
@@ -130,24 +125,31 @@ export function WorkspaceSwitcher({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
+          aria-label={collapsed ? t("switchTeams") : undefined}
           className={cn(
-            "relative flex h-10 items-center gap-2 rounded-full bg-white/[0.06] py-1 pr-3 pl-1.5 backdrop-blur-md backdrop-saturate-150 transition-colors outline-none hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-white/[0.1]",
-            triggerClassName
+            "relative flex items-center rounded-[14px] bg-white/[0.09] backdrop-blur-xl backdrop-saturate-150 outline-none transition-[background-color,box-shadow] hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 data-[state=open]:bg-white/[0.14]",
+            collapsed
+              ? "size-10 justify-center"
+              : "h-10 w-full gap-2 py-1.5 pr-3 pl-1.5 shadow-[0_10px_30px_rgb(0_0_0/0.18)]"
           )}
         >
           <GlassRim />
           <WsAvatar
             ws={activeWorkspace}
-            size={avatarSize}
-            fallbackClassName={avatarFallbackClassName}
+            size={collapsed ? "size-7" : "size-6"}
+            fallbackClassName="bg-[#744717] text-[12px] text-white"
           />
-          <span className={cn("max-w-[12rem] truncate text-sm font-medium", nameClassName)}>
-            {activeWorkspace.name}
-          </span>
-          <IconChevronDown className={cn("size-4 text-white/55", chevronClassName)} stroke={2} />
+          {collapsed ? null : (
+            <>
+              <span className="min-w-0 flex-1 truncate text-left text-[14px] leading-5 font-semibold text-white">
+                {activeWorkspace.name}
+              </span>
+              <IconChevronDown className="size-4 shrink-0 text-white/80" stroke={2} />
+            </>
+          )}
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" sideOffset={8} className="w-80">
+        <DropdownMenuContent align="start" sideOffset={8} className="w-80">
           <DropdownMenuLabel className="text-muted-foreground">
             {t("switchTeams")}
           </DropdownMenuLabel>
@@ -167,9 +169,18 @@ export function WorkspaceSwitcher({
                     <span className="text-muted-foreground"> ·&nbsp;{t("current")}</span>
                   )}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {roleLabel(ws.role ?? "member")} ·{" "}
-                  {ws.type === "team" ? t("teamType") : t("personalType")}
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{roleLabel(ws.role ?? "member")}</span>
+                  <span
+                    className={cn(
+                      "rounded-md px-1.5 py-0.5 text-[10px] leading-none font-semibold tracking-wide uppercase",
+                      ws.type === "team"
+                        ? "bg-[#5b9dff]/15 text-[#8fbcff]"
+                        : "bg-[#e0a45c]/15 text-[#f2c98d]"
+                    )}
+                  >
+                    {ws.type === "team" ? t("teamType") : t("personalType")}
+                  </span>
                 </span>
               </span>
               {ws.type === "team" && canManage(ws) && (

@@ -26,6 +26,12 @@ import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { isUniqueViolation } from '../sharing/util';
+import { removeUnusedProjectOnlyWorkspaceMembership } from '../sharing/project-workspace-membership';
+import {
+  acquireSeatLock,
+  assertCreatorSeatAvailable,
+  storyRoleConsumesCreatorSeat,
+} from '../sharing/seat-guard';
 import { UsersService } from '../users/users.service';
 import { PlatformAuditLogService } from '../workspaces';
 import { ensureWorkspaceMembershipForStory } from './story-project-membership';
@@ -114,6 +120,7 @@ export class StoryProjectMembersService {
           workspaceId: project.workspaceId,
           userId: target.userId,
           actorUserId: actor.userId,
+          role,
           entitlements: this.entitlements,
           allowReactivatingRemoved: true,
         });
@@ -151,7 +158,7 @@ export class StoryProjectMembersService {
             userId: target.userId,
             type: 'story-project.member.added',
             title: `You were added to "${project.title}"`,
-            body: 'You can now open this story in Story Studio.',
+            body: 'You can now open this story in Interactive Film Studio.',
             meta: {
               deeplink: `/story-studio/projects/${storyProjectId}/canvas`,
               storyProjectId,
@@ -200,9 +207,24 @@ export class StoryProjectMembersService {
         msg: 'The story owner role cannot be changed.',
       });
     }
-    const updated = await this.prisma.storyProjectMember.update({
-      where: { id: memberId },
-      data: { role: STORY_ROLE_MAP[input.role] },
+    const nextRole = STORY_ROLE_MAP[input.role];
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        storyRoleConsumesCreatorSeat(nextRole) &&
+        !storyRoleConsumesCreatorSeat(member.role)
+      ) {
+        await acquireSeatLock(tx, project.workspaceId);
+        await assertCreatorSeatAvailable(
+          tx,
+          project.workspaceId,
+          member.userId,
+          this.entitlements,
+        );
+      }
+      return tx.storyProjectMember.update({
+        where: { id: memberId },
+        data: { role: nextRole },
+      });
     });
     await this.audit.record({
       workspaceId: project.workspaceId,
@@ -241,6 +263,11 @@ export class StoryProjectMembersService {
           status: StoryProjectMemberStatus.removed,
         },
       });
+      await removeUnusedProjectOnlyWorkspaceMembership(
+        tx,
+        project.workspaceId,
+        member.userId,
+      );
       await this.notifications.send(
         {
           userId: member.userId,
@@ -253,9 +280,6 @@ export class StoryProjectMembersService {
         tx,
       );
     });
-    // The workspace seat is intentionally left alone: it may predate this story
-    // or back other work. Losing the story member row is enough — every story
-    // read re-checks it, so access is gone on the next request.
     await this.audit.record({
       workspaceId: project.workspaceId,
       actorUserId: actor.userId,

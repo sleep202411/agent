@@ -26,10 +26,8 @@ export interface UserInfo {
   headImg?: string;
   description?: string;
   other?: string;
-  userLevel?: string;
   authStatus?: number;
   scoreBalance?: number;
-  expireTime?: string;
   createTime?: string;
   /** Cover/banner image. Wire field is `banner` (Java side). Persisted
    *  via `updateUserInfo({ banner })`; uploaded via `uploadBanner()`. */

@@ -1,0 +1,87 @@
+import { createHash } from 'node:crypto';
+import { HttpException, Injectable } from '@nestjs/common';
+import { AgentOsProjectContextService } from './agent-os-project-context.service';
+import type {
+  AgentOsCapabilityExecuteInput,
+  AgentOsCapabilityHandler,
+} from './capabilities/capability-handler';
+import { AttachmentAgentCapabilityHandler } from './capabilities/attachment.handler';
+import { PlatformAgentCapabilityHandler } from './capabilities/platform.handler';
+import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
+
+export type AgentOsDomainResult =
+  | { ok: true; data: unknown }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      retryable: boolean;
+      details?: Record<string, unknown>;
+    };
+
+/** Resolve the trusted project kind, then delegate to its compiled handler. */
+@Injectable()
+export class AgentOsDomainService {
+  private readonly handlers: ReadonlyMap<string, AgentOsCapabilityHandler>;
+
+  constructor(
+    private readonly projects: AgentOsProjectContextService,
+    private readonly attachmentHandler: AttachmentAgentCapabilityHandler,
+    platformHandler: PlatformAgentCapabilityHandler,
+    storyHandler: StoryAgentCapabilityHandler,
+  ) {
+    this.handlers = new Map<string, AgentOsCapabilityHandler>([
+      [platformHandler.projectKind, platformHandler],
+      [storyHandler.projectKind, storyHandler],
+    ]);
+  }
+
+  async execute(
+    input: AgentOsCapabilityExecuteInput,
+  ): Promise<AgentOsDomainResult> {
+    try {
+      const project = await this.projects.resolve(input.projectId);
+      if (this.attachmentHandler.supports(input.toolId)) {
+        return {
+          ok: true,
+          data: await this.attachmentHandler.execute(input, project),
+        };
+      }
+      const handler = this.handlers.get(project.projectKind);
+      if (!handler || !handler.supports(input.toolId)) {
+        return unsupportedTool(input.toolId);
+      }
+      return { ok: true, data: await handler.execute(input) };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        const response = error.getResponse();
+        const body =
+          typeof response === 'object' && response !== null
+            ? (response as Record<string, unknown>)
+            : {};
+        return {
+          ok: false,
+          code: typeof body.code === 'string' ? body.code : error.name,
+          message:
+            typeof body.message === 'string' ? body.message : error.message,
+          retryable: [409, 423, 429, 502, 503, 504].includes(error.getStatus()),
+          details: body,
+        };
+      }
+      throw error;
+    }
+  }
+}
+
+function unsupportedTool(toolId: string): AgentOsDomainResult {
+  return {
+    ok: false,
+    code: 'TOOL_NOT_SUPPORTED',
+    message: `Agent OS domain does not implement ${toolId}`,
+    retryable: false,
+  };
+}
+
+export function agentOsDomainRequestHash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}

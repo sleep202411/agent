@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   EntitlementService,
+  isKnownEntitlementPlanKey,
   type EntitlementPlanKey,
   type EntitlementSnapshot,
 } from '../entitlements';
@@ -8,14 +9,20 @@ import type { AiModelDefinition } from './types';
 
 function parseDeniedPlans(): Set<EntitlementPlanKey> {
   // Backstop denylist for emergency lockouts. Product access is plan-based;
-  // Java auth claims are adapted before this service runs.
+  // unknown configuration must fail closed instead of becoming a dead entry.
   const raw = process.env.AI_GENERATION_DENIED_PLANS ?? '';
-  return new Set(
-    raw
-      .split(',')
-      .map((plan) => plan.trim().toLowerCase())
-      .filter((plan): plan is EntitlementPlanKey => Boolean(plan)),
-  );
+  const plans = raw
+    .split(',')
+    .map((plan) => plan.trim().toLowerCase())
+    .filter(Boolean);
+  const denied = new Set<EntitlementPlanKey>();
+  for (const plan of plans) {
+    if (!isKnownEntitlementPlanKey(plan)) {
+      throw new Error(`Unknown AI_GENERATION_DENIED_PLANS key: ${plan}`);
+    }
+    denied.add(plan);
+  }
+  return denied;
 }
 
 export type AiAccessReason =
@@ -92,7 +99,7 @@ export class AiGenerationAuthzService {
 
   /**
    * Walk the input and reject any field value that maps to a schema
-   * option whose `tier` exceeds the user's. UI also gates these, but
+   * option whose required plan exceeds the user's. UI also gates these, but
    * we never trust the client.
    */
   assertCanUseOptions(

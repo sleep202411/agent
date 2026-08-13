@@ -1,8 +1,9 @@
 import { StudioHeader } from "@/app/_components/studio-header";
 import { StudioSidebar } from "@/app/_components/studio-sidebar";
+import { StudioSidebarInset } from "@/app/_components/studio-sidebar-context";
 
 /**
- * Studio chrome (nav rail + header) for the main app surfaces.
+ * Studio chrome (fixed sidebar + the canonical product header) for app surfaces.
  * Immersive surfaces (e.g. /canvas/[id]) live outside this group and
  * render without chrome. The active-workspace context is provided app-wide
  * (app/providers.tsx), so the header switcher + projects grid are scoped to
@@ -11,11 +12,11 @@ import { StudioSidebar } from "@/app/_components/studio-sidebar";
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* Header spans the full viewport width (logo at the browser edge);
-          only the page content offsets for the nav rail. */}
-      <StudioHeader />
       <StudioSidebar />
-      <div className="flex min-w-0 flex-1 flex-col pl-20 lg:pl-[104px]">{children}</div>
+      <StudioSidebarInset className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <StudioHeader />
+        {children}
+      </StudioSidebarInset>
     </>
   );
 }

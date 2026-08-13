@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
+import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 
 /** One reference upload (in flight or landed) bound to a schema field. */
@@ -15,6 +16,9 @@ export interface ReferenceUpload {
   /** Durable storage URL once confirmed. */
   url?: string;
   mediaAssetId?: string;
+  /** Exact seconds when known (video/audio) — required by catalog duration rules. */
+  durationSeconds?: number | null;
+  bytes?: number | null;
   uploading: boolean;
   progress: number;
   error?: string;
@@ -78,15 +82,20 @@ export function useReferenceUploads() {
           },
         ];
       });
-      void uploadFileViaSignedUrl(file, {
-        kind: UPLOAD_KIND_BY_REFERENCE[kind],
-        signal: controller.signal,
-        onProgress: (percent) =>
-          setItems((prev) =>
-            prev.map((item) => (item.id === id ? { ...item, progress: percent } : item))
-          ),
-      })
-        .then((result) =>
+      void Promise.all([
+        uploadFileViaSignedUrl(file, {
+          kind: UPLOAD_KIND_BY_REFERENCE[kind],
+          signal: controller.signal,
+          onProgress: (percent) =>
+            setItems((prev) =>
+              prev.map((item) => (item.id === id ? { ...item, progress: percent } : item))
+            ),
+        }),
+        kind === "video" || kind === "audio"
+          ? probeMediaDurationSeconds(file, kind)
+          : Promise.resolve(null as number | null),
+      ])
+        .then(([result, durationSeconds]) =>
           setItems((prev) =>
             prev.map((item) =>
               item.id === id
@@ -96,6 +105,8 @@ export function useReferenceUploads() {
                     progress: 100,
                     url: result.url,
                     mediaAssetId: result.mediaAssetId,
+                    bytes: file.size,
+                    ...(durationSeconds != null ? { durationSeconds } : {}),
                   }
                 : item
             )

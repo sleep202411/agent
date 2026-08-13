@@ -28,7 +28,6 @@ interface LegacyUser {
   email: string | null;
   nickName: string | null;
   scoreBalance: number;
-  userLevel: string | null;
 }
 
 // POST /billing/wallets/user-credits → admin wallet account detail. We only read
@@ -279,7 +278,6 @@ export function GrantPointsDialog({
               <span>ID {user.userId}</span>
               {user.phone ? <span>手机 {user.phone}</span> : null}
               {user.email ? <span>邮箱 {user.email}</span> : null}
-              {user.userLevel ? <span>等级 {user.userLevel}</span> : null}
               <span>
                 当前算力积分 <span className="font-semibold text-slate-950">{balance ?? "—"}</span>
               </span>

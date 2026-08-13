@@ -16,6 +16,8 @@ import {
   HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING,
   KLING_MOTION_PARAMETER_POLICY,
   KLING_MOTION_PRODUCT_PRICING,
+  MINIMAX_H3_PARAMETER_POLICY,
+  MINIMAX_H3_PRODUCT_PRICING,
   QUICK_VIDEO_PARAMETER_POLICY,
   QUICK_VIDEO_PRODUCT_PRICING,
   SEEDANCE_2_0_FAST_PRODUCT_PRICING,
@@ -23,6 +25,8 @@ import {
   SEEDANCE_2_0_PARAMETER_POLICY,
   SEEDANCE_2_0_PRODUCT_PRICING,
   SEEDANCE_2_0_SD_PARAMETER_POLICY,
+  SEEDANCE_2_5_PARAMETER_POLICY,
+  SEEDANCE_2_5_PRODUCT_PRICING,
   WAN_2_7_VIDEO_PARAMETER_POLICY,
   WAN_2_7_VIDEO_PRODUCT_PRICING,
 } from './defaults';
@@ -90,6 +94,53 @@ const bytePlusSeedanceProvider: ProviderEntry = {
   },
 };
 
+/** Dreamina Seedance 2.5 — official public ModelArk model id. */
+const bytePlusSeedance25Provider: ProviderEntry = {
+  provider: 'byteplus-modelark',
+  endpointId: 'dreamina-seedance-2-5-260628',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  // No maxConcurrentRequests / maxRequestsPerMinute on purpose, matching every
+  // other BytePlus endpoint. Setting either one is what flips
+  // `hasRuntimeCapacity` true, which routes the job through the Redis-backed
+  // provider capacity gate — a path no endpoint in production currently takes,
+  // and one that fails CLOSED: it requeues when Redis is slow or absent. The
+  // canonical queuePolicy.globalConcurrency is the binding limit anyway
+  // (min(8, 10) = 8), so the gate would buy nothing and would make the studio's
+  // default video model the one model a Redis blip can stop.
+  priority: 60,
+  catalogSnapshot: {
+    docs: [
+      {
+        title: 'Seedance 2.5 integration guide',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/2607688',
+      },
+      {
+        title: 'Create a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1520757',
+      },
+      {
+        title: 'Retrieve a video generation task',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1521309',
+      },
+      {
+        title: 'Model pricing',
+        url: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      },
+    ],
+    model: 'dreamina-seedance-2-5-260628',
+    api: {
+      create: 'POST /api/v3/contents/generations/tasks',
+      query: 'GET /api/v3/contents/generations/tasks/{task_id}',
+    },
+    pricing: { source: 'provider_usage', unit: 'completion_token' },
+    limits: {
+      maxConcurrentRequests: 10,
+      maxRequestsPerMinute: 600,
+    },
+  },
+};
+
 /** Official fast variant (480p/720p only, no 1080p/4k tier). */
 const bytePlusSeedanceFastProvider: ProviderEntry = {
   provider: 'byteplus-modelark',
@@ -108,15 +159,62 @@ const bytePlusSeedanceMiniProvider: ProviderEntry = {
   priority: 50,
 };
 
+/** MiniMax-H3 — single V2 endpoint serves t2v / i2v / flf2v / r2v via content[]. */
+const miniMaxH3Provider: ProviderEntry = {
+  provider: 'minimax',
+  endpointId: 'MiniMax-H3',
+  modes: SEEDANCE_MODES,
+  requestTimeoutSeconds: 1800,
+  priority: 50,
+  catalogSnapshot: {
+    docs: [
+      {
+        title: 'MiniMax H3 Video Generation',
+        url: 'https://platform.minimax.io/docs/guides/video-generation',
+      },
+      {
+        title: 'Create Video Generation Task (V2)',
+        url: 'https://platform.minimax.io/docs/api-reference/video-generation-v2-create',
+      },
+    ],
+    model: 'MiniMax-H3',
+    api: {
+      create: 'POST /v2/video_generation',
+      query: 'GET /v2/query/video_generation/{task_id}',
+    },
+    pricing: { source: 'provider_usage', unit: 'second' },
+  },
+};
+
 export const VIDEO_MODELS: VideoModelSeed[] = [
+  {
+    slug: 'seedance-2-5',
+    displayName: 'Seedance 2.5',
+    family: 'seedance',
+    vendor: 'ByteDance',
+    description:
+      'ByteDance Seedance 2.5 — native 30-second cinematic video with synced audio, multimodal references, precise editing and extension.',
+    modes: SEEDANCE_MODES,
+    requiredPlan: null,
+    // Auto-duration + maximum 30s of reference video: 60s × 23 points/s.
+    cost: 1380,
+    parameterPolicy: SEEDANCE_2_5_PARAMETER_POLICY,
+    productPricing: SEEDANCE_2_5_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 5,
+    recommended: true,
+    providers: [bytePlusSeedance25Provider],
+    providerAliases: ['bytedance/seedance-2.5', 'dreamina-seedance-2-5-260628'],
+  },
   {
     slug: 'quick-video-1-0',
     displayName: 'Agnes Video 2.0',
     family: 'quick-video',
+    vendor: 'Agnes AI',
     description:
       'Agnes AI lightweight text-to-video and multi-image-to-video model for draft motion clips and local generation tests.',
     modes: [T2V, MM2V],
-    tier: 'vip',
+    requiredPlan: null,
     // Default 5s × 480p points(6).
     cost: 30,
     parameterPolicy: QUICK_VIDEO_PARAMETER_POLICY,
@@ -154,10 +252,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0',
     displayName: 'Seedance 2.0',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 video — text/image/first-last-frame and omni reference, with native synced audio.',
     modes: SEEDANCE_MODES,
-    tier: 'vip',
+    requiredPlan: null,
     // billingPolicy.preflightCost — display metadata only; the real wallet
     // hold is quoted per job from productPricing (4k tops out at 15s × 180
     // = 2700). Kept at the 15s × 720p default-lane ceiling.
@@ -166,7 +265,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     productPricing: SEEDANCE_2_0_PRODUCT_PRICING,
     group: 'video',
     sortOrder: 10,
-    recommended: true,
+    recommended: false,
     providers: [bytePlusSeedanceProvider],
     // 'bytedance/seedance-2.0' kept as a lookup alias for pre-cutover job
     // rows / presets that referenced the retired fal endpoint family.
@@ -180,10 +279,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0-fast',
     displayName: 'Seedance 2.0 Fast',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 Fast — same modes at a lower cost / faster turnaround (720p).',
     modes: SEEDANCE_MODES,
-    tier: 'vip',
+    requiredPlan: null,
     // Preflight hold = 15s × 720p @ 20/s. v3 reprice.
     cost: 300,
     parameterPolicy: SEEDANCE_2_0_SD_PARAMETER_POLICY,
@@ -201,10 +301,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'seedance-2-0-mini',
     displayName: 'Seedance 2.0 Mini',
     family: 'seedance',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedance 2.0 Mini — cost-effective budget tier (~50% cheaper) for high-volume video generation; 480p/720p.',
     modes: SEEDANCE_MODES,
-    tier: 'vip',
+    requiredPlan: null,
     // Preflight hold = 15s × 720p @ 12/s.
     cost: 180,
     parameterPolicy: SEEDANCE_2_0_SD_PARAMETER_POLICY,
@@ -222,6 +323,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'wan-2-7',
     displayName: 'Wan 2.7',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba Tongyi Wanxiang 2.7 video — text-to-video and image-to-video (with first/last-frame control), on Alibaba Model Studio. Native 720P/1080P, 2–15s.',
     // One canonical, three upstream model ids. wan2.7-t2v serves text_to_video;
@@ -230,7 +332,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     // reference (参考生视频) multimodal_to_video mode. The Bailian catalog merges
     // the bindings into one model with a per-mode endpoint map.
     modes: [T2V, I2V, FLF2V, MM2V],
-    tier: 'vip',
+    requiredPlan: null,
     // Display floor ≈ maxSeconds(15) × 720P points(20).
     cost: 300,
     parameterPolicy: WAN_2_7_VIDEO_PARAMETER_POLICY,
@@ -291,6 +393,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'happyhorse-1-0',
     displayName: 'HappyHorse 1.0',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba HappyHorse 1.0 video — top-ranked text-to-video / image-to-video / omni-reference with native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
     // One canonical, three upstream model ids: happyhorse-1.0-t2v (text),
@@ -299,7 +402,7 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     // account. The Bailian catalog merges the bindings with a per-mode endpoint
     // map.
     modes: [T2V, I2V, MM2V],
-    tier: 'vip',
+    requiredPlan: null,
     // Display floor ≈ maxSeconds(15) × 720P points(20).
     cost: 300,
     parameterPolicy: HAPPYHORSE_VIDEO_PARAMETER_POLICY,
@@ -363,13 +466,14 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'happyhorse-1-1',
     displayName: 'HappyHorse 1.1',
     family: 'wan',
+    vendor: 'Alibaba',
     description:
       'Alibaba HappyHorse 1.1 video — upgrade of 1.0 with stronger motion, higher consistency and multi-image reference, native synced audio and multi-language lip-sync. 720P/1080P, 2–15s.',
     // Same shape as happyhorse-1-0: one canonical, three upstream ids
     // (happyhorse-1.1-t2v / -i2v / -r2v). ⚠️ confirm the exact 1.1 model ids +
     // param set against a live DashScope probe before deploying (see defaults.ts).
     modes: [T2V, I2V, MM2V],
-    tier: 'vip',
+    requiredPlan: null,
     // Display floor ≈ maxSeconds(15) × 720P points(20).
     cost: 300,
     parameterPolicy: HAPPYHORSE_1_1_VIDEO_PARAMETER_POLICY,
@@ -433,10 +537,11 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
     slug: 'kling-motion',
     displayName: 'Kling Motion',
     family: 'kling',
+    vendor: 'Kuaishou',
     description:
       'Kling v1 image-to-video with the motion brush — paint a region and draw a path, and that region follows the trajectory. The only Kling tier with trajectory control. Reached via the studio Motion action.',
     modes: [I2V],
-    tier: 'vip',
+    requiredPlan: null,
     // Display floor ≈ maxSeconds(10) × 720p points(12).
     cost: 120,
     parameterPolicy: KLING_MOTION_PARAMETER_POLICY,
@@ -455,5 +560,24 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       },
     ],
     providerAliases: ['fal/fal-ai/kling-video/v1/standard/image-to-video'],
+  },
+  {
+    slug: 'minimax-h3',
+    displayName: 'MiniMax H3',
+    family: 'minimax',
+    vendor: 'MiniMax',
+    description:
+      'MiniMax-H3 multimodal video — text / first-last frame / reference media. Async create + poll; 720p (768P) or 1080p (2K), 4–15s.',
+    modes: SEEDANCE_MODES,
+    requiredPlan: null,
+    // Preflight hold = 15s × 1080p @ 25/s.
+    cost: 375,
+    parameterPolicy: MINIMAX_H3_PARAMETER_POLICY,
+    productPricing: MINIMAX_H3_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 15,
+    recommended: true,
+    providers: [miniMaxH3Provider],
+    providerAliases: ['minimax/MiniMax-H3', 'MiniMax-H3', 'minimax-h3'],
   },
 ];

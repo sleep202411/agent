@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   BillingMembershipPlanStatus,
   BillingSubjectType,
@@ -12,12 +12,12 @@ import {
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
-  ENTITLEMENT_PLAN_RANK,
   ENTITLEMENT_POLICY_VERSION,
+  isKnownEntitlementPlanKey,
+  rankForEntitlementPlanKey,
   type EntitlementPlanKey,
   type EntitlementSnapshot,
   type EntitlementSource,
-  type KnownEntitlementPlanKey,
 } from './entitlement.types';
 import {
   DEFAULT_FREE_BENEFITS,
@@ -29,13 +29,15 @@ import {
 import type { QuotaPlanProfile, QuotaProfile } from '../quota/quota.types';
 import {
   DEFAULT_TEAM_SEAT_POLICY,
+  LEGACY_PERSONAL_WORKSPACE_CUTOFF,
+  LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY,
   PERSONAL_WORKSPACE_SEAT_POLICY,
   type SeatPolicy,
 } from './seat-policy';
 
 /**
  * Plan key for the community membership (社区会员) — a SEPARATE access axis from
- * the studio/VIP compute tiers. Gate community/IP features on this plan key,
+ * the compute membership ladder. Gate community/IP features on this plan key,
  * never on the compute-tier `rank` (avoids cross-contaminating studio gates).
  * Community grants are therefore EXCLUDED from compute entitlement resolution:
  * they must never outrank (or downgrade) a compute plan.
@@ -62,9 +64,7 @@ type ActiveGrant = EntitlementGrant & {
 
 @Injectable()
 export class EntitlementService {
-  private readonly logger = new Logger(EntitlementService.name);
   private planCache: PlanCache | null = null;
-  private readonly warnedMissingPlanRows = new Set<string>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -102,9 +102,8 @@ export class EntitlementService {
     if (grace) return grace;
 
     // No PG grant and no grace window: the runtime default plan applies.
-    // There is deliberately NO auth-claim fallback — the Java `userLevel`
-    // claim is fully retired; PostgreSQL entitlements are the only
-    // membership truth.
+    // There is deliberately no authentication-claim fallback. PostgreSQL
+    // entitlements and canonical plan rows are the only membership truth.
     const planKey = this.defaultPlanForRuntime();
     const plan =
       planKey === 'free' ? null : await this.activePlanByKey(planKey);
@@ -114,7 +113,7 @@ export class EntitlementService {
         id: options?.workspaceId ?? user.userId,
       },
       planKey,
-      rank: plan?.rank ?? rankForPlanKey(planKey),
+      rank: plan?.rank ?? rankForEntitlementPlanKey(planKey),
       source: 'system_default',
       benefits: this.benefitsForPlanKey(planKey, plan),
       effectiveAt: nowDate.toISOString(),
@@ -184,21 +183,30 @@ export class EntitlementService {
   ): Promise<SeatPolicy> {
     const workspace = await db.workspace.findUnique({
       where: { id: workspaceId },
-      select: { type: true },
+      select: { type: true, createdAt: true },
     });
-    return workspace?.type === WorkspaceType.personal
-      ? PERSONAL_WORKSPACE_SEAT_POLICY
-      : DEFAULT_TEAM_SEAT_POLICY;
+    if (workspace?.type !== WorkspaceType.personal) {
+      return DEFAULT_TEAM_SEAT_POLICY;
+    }
+    // Personal workspaces from before teams were usable keep collaborating —
+    // see LEGACY_PERSONAL_WORKSPACE_CUTOFF for why this exists and why it is a
+    // fixed instant rather than a rolling window.
+    return workspace.createdAt < LEGACY_PERSONAL_WORKSPACE_CUTOFF
+      ? LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY
+      : PERSONAL_WORKSPACE_SEAT_POLICY;
   }
 
   requiredPlan(input: string | null | undefined): EntitlementPlanKey | null {
     if (input == null) return null;
     const raw = String(input).trim();
     const normalized = raw.toLowerCase();
-    if (!normalized || normalized === 'none' || normalized === 'free') {
+    if (!normalized || normalized === 'free') {
       return null;
     }
-    return isKnownPlanKey(normalized) ? normalized : null;
+    if (!isKnownEntitlementPlanKey(normalized)) {
+      throw new Error(`Unknown compute membership plan key: ${raw}`);
+    }
+    return normalized;
   }
 
   hasPlan(
@@ -206,7 +214,7 @@ export class EntitlementService {
     required: EntitlementPlanKey | null | undefined,
   ): boolean {
     if (!required) return true;
-    return entitlement.rank >= rankForPlanKey(required);
+    return entitlement.rank >= rankForEntitlementPlanKey(required);
   }
 
   queuePriorityFor(
@@ -252,7 +260,7 @@ export class EntitlementService {
 
   /**
    * Whether a user holds an active community membership (社区会员). A SEPARATE
-   * axis from the studio/VIP compute tiers resolved by resolveForUser — callers
+   * axis from the compute plans resolved by resolveForUser — callers
    * gate community/IP features on THIS, never on `rank`.
    *
    * Primary signal: an active EntitlementGrant for the community plan. Grace
@@ -448,29 +456,19 @@ export class EntitlementService {
 
   /**
    * Benefits for a plan key that may have no active row. `free` is the only
-   * plan legitimately without a row (DEFAULT_FREE_BENEFITS). Any other key
-   * without an active row resolves to free benefits with a loud warning —
-   * PG plan rows are the single benefits source of truth.
-   *
-   * No grant path can reach this any more (assertGrantablePlan +
-   * activeMembershipPlanForKeyTx both refuse such a key). It stays a read-path
-   * fallback for ONE case: a plan archived/deactivated while its grants are
-   * still live. Throwing there would 500 every request that resolves an
-   * entitlement — the whole product for that member — over an admin's plan-table
-   * edit, so the read path degrades and stays available instead.
+   * plan legitimately without a row (DEFAULT_FREE_BENEFITS). Every paid key
+   * requires an active row; silently inheriting Free limits would make billing
+   * configuration errors indistinguishable from real entitlements.
    */
   private benefitsForPlanKey(
     planKey: string,
     plan: BillingMembershipPlan | null,
   ): MembershipBenefits {
     if (plan) return this.planBenefits(plan);
-    if (planKey !== 'free' && !this.warnedMissingPlanRows.has(planKey)) {
-      this.warnedMissingPlanRows.add(planKey);
-      this.logger.warn(
-        `entitlement.plan_row_missing planKey=${planKey} — no active billing_membership_plans row; resolving free benefits`,
-      );
-    }
-    return DEFAULT_FREE_BENEFITS;
+    if (planKey === 'free') return DEFAULT_FREE_BENEFITS;
+    throw new Error(
+      `Active compute membership plan row is missing for key: ${planKey}`,
+    );
   }
 
   /**
@@ -521,7 +519,6 @@ export class EntitlementService {
       status: 'active',
       effectiveAt: input.effectiveAt,
       expiresAt: input.expiresAt,
-      features: input.benefits.features,
       limits: benefitsToSnapshotLimits(input.benefits),
     };
   }
@@ -623,7 +620,7 @@ export class EntitlementService {
     return this.buildSnapshot({
       subject: { type: sub.subjectType, id: sub.subjectId },
       planKey,
-      rank: plan?.rank ?? rankForPlanKey(planKey),
+      rank: plan?.rank ?? rankForEntitlementPlanKey(planKey),
       source: 'subscription_grace',
       benefits: this.benefitsForPlanKey(planKey, plan),
       effectiveAt: input.now.toISOString(),
@@ -642,7 +639,7 @@ export class EntitlementService {
         id: grant.subjectId,
       },
       planKey,
-      rank: grant.membershipPlan?.rank ?? rankForPlanKey(planKey),
+      rank: grant.membershipPlan?.rank ?? rankForEntitlementPlanKey(planKey),
       source:
         grant.subjectType === BillingSubjectType.workspace
           ? 'workspace_subscription'
@@ -659,8 +656,12 @@ export class EntitlementService {
     return process.env.AUTH_DISABLED === 'true' ? 'pro' : 'free';
   }
 
-  private normalizePlanKey(value: string): string {
-    return value.trim().toLowerCase();
+  private normalizePlanKey(value: string): EntitlementPlanKey {
+    const normalized = value.trim().toLowerCase();
+    if (!isKnownEntitlementPlanKey(normalized)) {
+      throw new Error(`Unknown compute membership plan key: ${value}`);
+    }
+    return normalized;
   }
 }
 
@@ -672,16 +673,5 @@ function parseNow(value: string | undefined): Date {
 
 function rankForGrant(grant: ActiveGrant): number {
   const normalized = grant.planKey.trim().toLowerCase();
-  return grant.membershipPlan?.rank ?? rankForPlanKey(normalized);
-}
-
-function rankForPlanKey(planKey: string): number {
-  return (
-    ENTITLEMENT_PLAN_RANK[planKey as KnownEntitlementPlanKey] ??
-    ENTITLEMENT_PLAN_RANK.free
-  );
-}
-
-function isKnownPlanKey(value: string): value is KnownEntitlementPlanKey {
-  return value in ENTITLEMENT_PLAN_RANK;
+  return grant.membershipPlan?.rank ?? rankForEntitlementPlanKey(normalized);
 }

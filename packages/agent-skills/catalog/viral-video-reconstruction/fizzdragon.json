@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000019",
+  "catalogOrder": 19,
+  "displayDescription": "Rebuild the transferable hook, beat structure and payoff of a reference without copying its protected content.",
+  "translationKey": "viralVideoReconstruction",
+  "publisherName": "FizzDragon",
+  "category": "production",
+  "kind": "video",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "viral-video-reconstruction.jpg",
+    "video": "viral-video-reconstruction.mp4"
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000019",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/viral-video-reconstruction/v1"
+  }
+}

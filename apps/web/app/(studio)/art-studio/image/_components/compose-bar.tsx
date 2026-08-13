@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { IconAdjustments, IconChevronDown, IconLock, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import type {
-  FoundryConditionExpression,
-  FoundryFieldUi,
-  FoundryJsonPrimitive,
-  FoundryJsonSchema,
-  FoundryUiOption,
+  AiConditionExpression,
+  AiFieldUi,
+  AiJsonPrimitive,
+  AiJsonSchema,
+  AiUiOption,
 } from "@repo/shared";
 import type { AiModel } from "../_data/mock-model";
 import { ReferenceImageStack } from "./reference-image-stack";
@@ -501,14 +501,14 @@ export function ComposeBar(props: ComposeBarProps) {
 // enforcement. The compose bar renders secondary fields from that same
 // contract so new provider parameters can ship without hand-editing
 // page state for every field.
-type SchemaOption = Pick<FoundryUiOption, "label" | "labelKey" | "requiredPlan"> & {
-  value: Exclude<FoundryJsonPrimitive, null>;
+type SchemaOption = Pick<AiUiOption, "label" | "labelKey" | "requiredPlan"> & {
+  value: Exclude<AiJsonPrimitive, null>;
 };
 
 type AdvancedField = {
   name: string;
-  field: FoundryJsonSchema;
-  ui: FoundryFieldUi;
+  field: AiJsonSchema;
+  ui: AiFieldUi;
   enabled: boolean;
   required: boolean;
 };
@@ -679,7 +679,7 @@ function NumberField({
   onChange,
   disabled,
 }: {
-  field: FoundryJsonSchema;
+  field: AiJsonSchema;
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
@@ -755,16 +755,16 @@ function getAdvancedFields(model: AiModel, formData: Record<string, unknown>): A
     .sort((a, b) => (a.ui.order ?? 999) - (b.ui.order ?? 999));
 }
 
-function fieldUi(field: FoundryJsonSchema): FoundryFieldUi {
+function fieldUi(field: AiJsonSchema): AiFieldUi {
   const ui = field["x-ui"];
   return ui && !("groups" in ui) ? ui : {};
 }
 
-function fieldOptions(field: FoundryJsonSchema, ui: FoundryFieldUi): SchemaOption[] {
+function fieldOptions(field: AiJsonSchema, ui: AiFieldUi): SchemaOption[] {
   const raw = ui.options ?? field.enum?.map((value) => ({ value, label: String(value) }));
   if (!raw) return [];
   return raw
-    .filter((option): option is FoundryUiOption => option != null && option.value !== null)
+    .filter((option): option is AiUiOption => option != null && option.value !== null)
     .map((option) => ({
       value: option.value as SchemaOption["value"],
       label: option.label ?? String(option.value),
@@ -775,8 +775,8 @@ function fieldOptions(field: FoundryJsonSchema, ui: FoundryFieldUi): SchemaOptio
 
 function fieldLabel(
   name: string,
-  field: FoundryJsonSchema,
-  ui: FoundryFieldUi,
+  field: AiJsonSchema,
+  ui: AiFieldUi,
   t: ComposeBarProps["t"]
 ): string {
   const fallback = ui.label ?? field.title ?? name.replaceAll("_", " ");
@@ -788,8 +788,8 @@ function fieldLabel(
 }
 
 function fieldDescription(
-  field: FoundryJsonSchema,
-  ui: FoundryFieldUi,
+  field: AiJsonSchema,
+  ui: AiFieldUi,
   t: ComposeBarProps["t"]
 ): string | null {
   const fallback = ui.hint ?? field.description;
@@ -798,7 +798,7 @@ function fieldDescription(
 }
 
 function matchesCondition(
-  condition: FoundryConditionExpression,
+  condition: AiConditionExpression,
   formData: Record<string, unknown>
 ): boolean {
   if ("all" in condition && condition.all) {

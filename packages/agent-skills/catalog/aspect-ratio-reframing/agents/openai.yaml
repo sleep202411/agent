@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aspect-Ratio Reframing Director"
+  short_description: "Plan identity-safe 16:9, 1:1 and 9:16 reframes with protected ac"
+  default_prompt: "Use $aspect-ratio-reframing to apply this creative direction to my request."

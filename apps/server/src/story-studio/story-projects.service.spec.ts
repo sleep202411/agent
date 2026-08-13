@@ -18,7 +18,6 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-  STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
   type InteractiveStoryDraftContent,
 } from './dto';
 import { StoryPermissionService } from './story-permission.service';
@@ -143,19 +142,6 @@ function canvasLayoutRow(overrides: Record<string, unknown> = {}) {
     revision: 2,
     updatedByUserId: USER.userId,
     updatedBySessionId: 'canvas-session',
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
-}
-
-function productionCanvasRow(overrides: Record<string, unknown> = {}) {
-  return {
-    storyProjectId: PROJECT_ID,
-    schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-    content: { nodes: [], edges: [], assets: [], groups: [] },
-    updatedByUserId: USER.userId,
-    updatedBySessionId: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -458,7 +444,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.mediaAsset.findFirst).toHaveBeenCalledWith({
       where: {
         id: MEDIA_ASSET_ID,
-        workspaceId: WORKSPACE_ID,
         status: MediaAssetStatus.ready,
         moderationStatus: {
           not: MediaAssetModerationStatus.blocked,
@@ -591,19 +576,12 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       (input: {
         data: {
           draft: { create: { schemaVersion: string; content: unknown } };
-          productionCanvas: {
-            create: { schemaVersion: string; content: unknown };
-          };
           writeState: { create: Record<string, never> };
         };
       }) => {
         expect(input.data.draft.create).toMatchObject({
           schemaVersion: 'interactive-story-draft-v1',
           content: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
-        });
-        expect(input.data.productionCanvas.create).toMatchObject({
-          schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-          content: { nodes: [], edges: [], assets: [], groups: [] },
         });
         expect(input.data.writeState).toEqual({ create: {} });
         return Promise.resolve(project);
@@ -618,6 +596,21 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       storyChapter: { create: jest.fn().mockResolvedValue(chapter) },
       storyCanvasLayout: {
         create: jest.fn().mockResolvedValue(canvasLayoutRow()),
+      },
+      studioDocument: {
+        create: jest.fn().mockResolvedValue({
+          id: '0197f4a2-0800-7000-8000-000000000099',
+          schemaVersion: '2026-05-27',
+          title: project.title,
+          contentSnapshot: {},
+          crdtState: Buffer.from([]),
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      studioDocumentVersion: {
+        create: jest.fn().mockResolvedValue({
+          id: '0197f4a2-0800-7000-8000-000000000098',
+        }),
       },
     };
     const prisma = { $transaction: transactionMock(tx) };
@@ -674,99 +667,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ]);
   });
 
-  it('loads the one project-owned production canvas with read permission', async () => {
-    const row = productionCanvasRow();
-    const findUnique = jest.fn().mockResolvedValue(row);
-    const { service, permissions } = serviceWith({
-      storyProductionCanvas: { findUnique },
-    });
-
-    await expect(
-      service.getProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID),
-    ).resolves.toEqual({
-      projectId: PROJECT_ID,
-      schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-      content: { nodes: [], edges: [], assets: [], groups: [] },
-      updatedByUserId: USER.userId,
-      updatedBySessionId: null,
-      createdAt: NOW.toISOString(),
-      updatedAt: NOW.toISOString(),
-    });
-    expect(permissions.requireProject).toHaveBeenCalledWith(
-      USER.userId,
-      PROJECT_ID,
-      'story.read',
-      { allowArchived: true },
-    );
-    expect(findUnique).toHaveBeenCalledWith({
-      where: { storyProjectId: PROJECT_ID },
-    });
-  });
-
-  it('persists production canvas content with last-write-wins semantics', async () => {
-    const content = {
-      nodes: [
-        {
-          id: 'note-1',
-          type: 'note' as const,
-          position: { x: 10, y: 20 },
-          data: { text: 'continuity notes' },
-        },
-        {
-          id: 'note-2',
-          type: 'note' as const,
-          position: { x: 360, y: 20 },
-          data: { text: 'camera notes' },
-        },
-      ],
-      edges: [],
-      assets: [],
-      groups: [
-        {
-          id: 'group-1',
-          nodeIds: ['note-1', 'note-2'],
-          color: 'blue' as const,
-        },
-      ],
-    };
-    const updated = productionCanvasRow({
-      content,
-      updatedBySessionId: 'canvas-session',
-    });
-    const tx = {
-      storyProductionCanvas: {
-        update: jest.fn().mockResolvedValue(updated),
-      },
-      storyProject: {
-        update: jest.fn().mockResolvedValue({}),
-      },
-    };
-    const { service, writeGuard } = serviceWith({
-      $transaction: transactionMock(tx),
-    });
-
-    await expect(
-      service.putProductionCanvas(USER as never, WORKSPACE_ID, PROJECT_ID, {
-        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-        content,
-        sessionId: 'canvas-session',
-      }),
-    ).resolves.toMatchObject({ projectId: PROJECT_ID, content });
-    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
-      tx,
-      PROJECT_ID,
-    );
-    expect(tx.storyProductionCanvas.update).toHaveBeenCalledWith({
-      where: { storyProjectId: PROJECT_ID },
-      data: {
-        schemaVersion: STORY_PRODUCTION_CANVAS_SCHEMA_VERSION,
-        content,
-        updatedByUserId: USER.userId,
-        updatedBySessionId: 'canvas-session',
-      },
-    });
-  });
-
   it('curates durable workspace media independently from canvas layout', async () => {
     const candidate = candidateAssetRow();
     const listFindMany = jest.fn().mockResolvedValue([candidate]);
@@ -816,7 +716,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     const tx = {
       mediaAsset: {
-        findFirst: jest.fn().mockResolvedValue(candidate.asset),
+        findUnique: jest.fn().mockResolvedValue({
+          ...candidate.asset,
+          deletedAt: null,
+          moderationStatus: MediaAssetModerationStatus.unreviewed,
+        }),
       },
       storyCandidateAsset: {
         upsert: jest.fn().mockResolvedValue({}),
@@ -867,6 +771,58 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         mediaAssetId: MEDIA_ASSET_ID,
       },
     });
+  });
+
+  /**
+   * These six conditions used to be one `findFirst` whose miss always said the
+   * media "must be a ready image, video, or audio asset in this project
+   * workspace" — so a creator whose upload was merely still transcoding, and a
+   * creator whose file was blocked by moderation, were told the same thing and
+   * both concluded they should wait. Each rejection now names its own cause.
+   */
+  it('names the specific reason a candidate is rejected', async () => {
+    const attempt = async (asset: unknown) => {
+      const harness = serviceWith({
+        $transaction: transactionMock({
+          mediaAsset: { findUnique: jest.fn().mockResolvedValue(asset) },
+        }),
+      });
+      return harness.service
+        .addCandidateAsset(
+          USER as never,
+          WORKSPACE_ID,
+          PROJECT_ID,
+          MEDIA_ASSET_ID,
+        )
+        .then(() => 'resolved')
+        .catch((error: { response?: { message?: string } }) =>
+          String(error.response?.message ?? error),
+        );
+    };
+    const base = {
+      id: MEDIA_ASSET_ID,
+      kind: MediaAssetKind.video,
+      status: MediaAssetStatus.ready,
+      moderationStatus: MediaAssetModerationStatus.unreviewed,
+      deletedAt: null,
+    };
+
+    expect(await attempt(null)).toContain('no longer exists');
+    expect(await attempt({ ...base, deletedAt: new Date() })).toContain(
+      'no longer exists',
+    );
+    expect(await attempt({ ...base, kind: MediaAssetKind.other })).toContain(
+      'image, video, or audio',
+    );
+    expect(
+      await attempt({ ...base, status: MediaAssetStatus.uploading }),
+    ).toContain('still uploading');
+    expect(
+      await attempt({
+        ...base,
+        moderationStatus: MediaAssetModerationStatus.blocked,
+      }),
+    ).toContain('blocked by moderation');
   });
 
   it('exposes a ready video variant even when advisory metadata is absent', async () => {

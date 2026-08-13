@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useReactFlow, useStore } from "@xyflow/react";
-import { IconArrowUp, IconBolt, IconChevronDown, IconX } from "@tabler/icons-react";
+import { IconArrowUp, IconBolt, IconChevronDown, IconLock, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { FLOATING_PANEL } from "./node-toolbar";
@@ -13,6 +13,8 @@ import { findPanoramaModel } from "@/lib/canvas-authoring/use-panorama";
 import {
   defaultSettingsForModel,
   estimateModelSellPoints,
+  fizzAiModelLock,
+  fizzAiPlanLabel,
   maxOutputs,
   referenceFieldsForMode,
   schemaFields,
@@ -106,6 +108,7 @@ const COUNT_FIELD: SchemaFieldDescriptor = {
   order: 999,
   type: "integer",
   enum: [1, 2, 3, 4],
+  options: null,
   default: 1,
 };
 
@@ -180,6 +183,23 @@ export function useSpawnComposedOperation() {
       const model = op.findModel(catalog);
       if (!model) {
         toast.error(t("noModelForOp", { op: t(op.labelKey) }));
+        return;
+      }
+      // Toolbar ops resolve their model by capability from the whole
+      // catalogue, so a plan-gated one would sail through and only fail at
+      // submit with a raw 403. Name the gate where the user clicked.
+      const locked = fizzAiModelLock(model);
+      if (locked) {
+        toast.error(
+          locked.expired
+            ? t("lockedForOpExpired", { op: t(op.labelKey) })
+            : locked.requiredPlan
+              ? t("lockedForOpPlan", {
+                  op: t(op.labelKey),
+                  plan: fizzAiPlanLabel(locked.requiredPlan),
+                })
+              : t("lockedForOp", { op: t(op.labelKey) })
+        );
         return;
       }
       const mode = op.resolveMode(model);
@@ -333,11 +353,17 @@ export function OperationConfirmBar({
     [model, settings]
   );
 
+  // Same gate as `useSpawnComposedOperation`: the model is found by capability
+  // across the whole catalogue, so entitlement has to be checked here rather
+  // than left to blow up as a 403 after the card is already on the canvas.
+  const lock = model ? fizzAiModelLock(model) : null;
+
   const onRun = () => {
     if (!model) {
       toast.error(t("noModelForOp", { op: t(op.labelKey) }));
       return;
     }
+    if (lock) return;
     spawnResult({ op, model, sourceNodeId, sourceUrl, settings });
     onClose();
   };
@@ -383,17 +409,33 @@ export function OperationConfirmBar({
           )}
         </div>
         <div className="flex items-center gap-1">
-          {cost != null && (
-            <span className="flex items-center gap-1 px-1.5 text-sm text-white/70 tabular-nums">
-              <IconBolt className="size-4" stroke={1.8} />
-              {cost}
+          {lock ? (
+            <span className="flex items-center gap-1 px-1.5 text-xs text-white/70">
+              <IconLock className="size-4" stroke={1.8} />
+              {lock.expired
+                ? t("membershipExpired")
+                : lock.requiredPlan
+                  ? t("requiresPlan", { plan: fizzAiPlanLabel(lock.requiredPlan) })
+                  : t("unavailableOnPlan")}
             </span>
+          ) : (
+            cost != null && (
+              <span className="flex items-center gap-1 px-1.5 text-sm text-white/70 tabular-nums">
+                <IconBolt className="size-4" stroke={1.8} />
+                {cost}
+              </span>
+            )
           )}
           <button
             type="button"
             aria-label={t("run")}
+            disabled={Boolean(lock)}
+            aria-disabled={Boolean(lock)}
             onClick={onRun}
-            className="flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-md shadow-[#E52227]/25 transition-colors hover:bg-[#c91e22]"
+            className={cn(
+              "flex size-8 items-center justify-center rounded-full bg-[#E52227] text-white shadow-md shadow-[#E52227]/25 transition-colors",
+              lock ? "opacity-40" : "hover:bg-[#c91e22]"
+            )}
           >
             <IconArrowUp className="size-4" stroke={2} />
           </button>

@@ -4,13 +4,11 @@
  * One clean entry per canonical model — NO policy boilerplate here (that lives
  * in `defaults.ts` and is merged by `seed-catalog.ts`). The `providers` array
  * lists ONLY provider entries that map to a reconciled `AiProviderAccount`
- * (`fal-ai`, `aliyun-bailian`, `microsoft-foundry`, `replicate`,
- * `agnes-ai`); each entry
- * seeds an `AiProviderEndpoint` + a runtime-valid
+ * (active: `fal-ai`, `aliyun-bailian`, `byteplus-modelark`, `agnes-ai`,
+ * `minimax`). Each entry seeds an `AiProviderEndpoint` + a runtime-valid
  * `AiProviderModelBinding`. A model whose only upstream providers have no
- * reconciled account (e.g. midjourney, raw minimax) carries `providers: []`
- * and is seeded as canonical-only (no binding — valid, just can't generate
- * yet).
+ * reconciled account carries `providers: []` and is seeded as
+ * canonical-only (no binding — valid, just can't generate yet).
  *
  * Every entry below is a reviewed product-facing ContainerModel. Provider
  * endpoints stay implementation details; user-visible controls and pricing are
@@ -67,14 +65,16 @@ import {
   type RequiredPlan,
 } from './defaults';
 
-/** The reconciled provider-account keys (see `AI_PROVIDER_KEYS`). */
+/**
+ * Provider keys allowed on seed bindings.
+ * Must match active generation providers (`AI_PROVIDER_KEYS` in @repo/shared).
+ */
 export type ProviderKey =
   | 'fal-ai'
   | 'byteplus-modelark'
   | 'aliyun-bailian'
-  | 'microsoft-foundry'
-  | 'replicate'
-  | 'agnes-ai';
+  | 'agnes-ai'
+  | 'minimax';
 
 /**
  * A provider that backs a canonical model and HAS a reconciled account.
@@ -112,10 +112,30 @@ export interface ImageModelSeed {
   slug: string;
   displayName: string;
   family: string;
+  /**
+   * The company that makes the model (ByteDance / Google / Black Forest Labs /
+   * Alibaba / OpenAI / …). Surfaced to the UI as the "Providers" filter axis.
+   * Distinct from the routing `providers[]` (fal-ai / byteplus-modelark / …),
+   * which is the API channel, not the vendor a user recognises.
+   */
+  vendor: string;
   description: string;
   modes: AiGenerationMode[];
-  /** Entitlement tier; `null` = free. Drives queue caps + priority too. */
-  tier: RequiredPlan;
+  /**
+   * Lowest plan allowed to CALL this model, or `null` for open to everyone.
+   * The check is rank-based, so 'basic' admits basic and everything above it.
+   *
+   * Required, and deliberately not optional: adding a model is exactly the
+   * moment to decide who may run it, and an omitted gate reads the same as a
+   * forgotten one.
+   *
+   * Says nothing about concurrency — that lives in `queuePolicy` and is a
+   * statement about provider capacity. The two shared one field until a plan
+   * rename ('vip' → 'basic') travelled down the entitlement path and paywalled
+   * all 32 models at once; locked models are not rendered as locked, so the
+   * whole catalogue simply disappeared from every picker.
+   */
+  requiredPlan: RequiredPlan;
   /** Default preflight cost in compute points. */
   cost: number;
   /** User-facing parameter contract for this ContainerModel. */
@@ -314,10 +334,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'gpt-image-2',
     displayName: 'GPT Image 2',
     family: 'gpt-image',
+    vendor: 'OpenAI',
     description:
       'OpenAI image generation and editing model for instruction-following, typography, layout, product mockups, and structured visual edits.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 60,
     parameterPolicy: GPT_IMAGE_2_PARAMETER_POLICY,
     productPricing: GPT_IMAGE_2_PRODUCT_PRICING,
@@ -338,10 +359,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'flux-2-pro',
     displayName: 'Flux 2 Pro',
     family: 'flux',
+    vendor: 'Black Forest Labs',
     description:
       'Black Forest Labs Flux 2 Pro for production photorealism, product marketing visuals, typography, color control, and multi-reference image editing up to 4 megapixels.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 30,
     parameterPolicy: FLUX_2_PRO_PARAMETER_POLICY,
     productPricing: FLUX_2_PRO_PRODUCT_PRICING,
@@ -377,10 +399,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'hunyuan-world',
     displayName: 'Hunyuan World',
     family: 'hunyuan',
+    vendor: 'Tencent',
     description:
       'Tencent Hunyuan World 1.0 — expands a single image into a 2:1 equirectangular 360° panorama. Reached via the studio panorama (720°) action, not the model picker.',
     modes: [I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 40,
     parameterPolicy: HUNYUAN_WORLD_PARAMETER_POLICY,
     productPricing: HUNYUAN_WORLD_PRODUCT_PRICING,
@@ -409,10 +432,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'topaz-upscale',
     displayName: 'Topaz Upscale',
     family: 'image-transform',
+    vendor: 'Topaz Labs',
     description:
       'Topaz image upscaler — increases resolution with detail recovery. Reached via the studio Upscale action, not the model picker.',
     modes: [UPSCALE],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 15,
     parameterPolicy: TOPAZ_UPSCALE_PARAMETER_POLICY,
     productPricing: TOPAZ_UPSCALE_PRODUCT_PRICING,
@@ -442,10 +466,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'bria-rmbg',
     displayName: 'Remove Background',
     family: 'image-transform',
+    vendor: 'Bria',
     description:
       'Bria background removal — mattes the subject out to a transparent image. Reached via the studio Remove BG action, not the model picker.',
     modes: [REMOVE_BG],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 10,
     parameterPolicy: BRIA_RMBG_PARAMETER_POLICY,
     productPricing: BRIA_RMBG_PRODUCT_PRICING,
@@ -475,10 +500,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'iclight-relight',
     displayName: 'Relight',
     family: 'image-transform',
+    vendor: 'IC-Light',
     description:
       'IC-Light V2 relighting — re-lights the subject to match a described scene/lighting. Reached via the studio Relight action, not the model picker.',
     modes: [RELIGHT],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 20,
     parameterPolicy: ICLIGHT_RELIGHT_PARAMETER_POLICY,
     productPricing: ICLIGHT_RELIGHT_PRODUCT_PRICING,
@@ -508,10 +534,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'qwen-multi-angle',
     displayName: 'Multi-Angle',
     family: 'image-transform',
+    vendor: 'Alibaba',
     description:
       'Qwen multiple-angles — re-shoots the subject from a new camera viewpoint (orbit / tilt / zoom). Reached via the studio Multi-Angle action, not the model picker.',
     modes: [MULTI_ANGLE],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 18,
     parameterPolicy: QWEN_MULTI_ANGLE_PARAMETER_POLICY,
     productPricing: QWEN_MULTI_ANGLE_PRODUCT_PRICING,
@@ -542,10 +569,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'bria-expand',
     displayName: 'Expand',
     family: 'image-transform',
+    vendor: 'Bria',
     description:
       'Bria image expand (outpainting) — grows the canvas and generatively fills the new area. Reached via the studio Expand action, not the model picker.',
     modes: [OUTPAINT],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 15,
     parameterPolicy: BRIA_EXPAND_PARAMETER_POLICY,
     productPricing: BRIA_EXPAND_PRODUCT_PRICING,
@@ -575,10 +603,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'flux-2-flex',
     displayName: 'Flux 2 Flex',
     family: 'flux',
+    vendor: 'Black Forest Labs',
     description:
       'Black Forest Labs Flux 2 Flex for typography-heavy production images and multi-reference editing with explicit guidance and inference-step controls.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 50,
     parameterPolicy: FLUX_2_FLEX_PARAMETER_POLICY,
     productPricing: FLUX_2_FLEX_PRODUCT_PRICING,
@@ -613,10 +642,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'flux-2-max',
     displayName: 'Flux 2 Max',
     family: 'flux',
+    vendor: 'Black Forest Labs',
     description:
       'Black Forest Labs Flux 2 Max — the highest-fidelity FLUX.2 tier for premium photorealism, typography, precise color control, and multi-reference image editing up to 4 megapixels.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 70,
     parameterPolicy: FLUX_2_MAX_PARAMETER_POLICY,
     productPricing: FLUX_2_MAX_PRODUCT_PRICING,
@@ -651,10 +681,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'flux-2-dev',
     displayName: 'Flux 2 Dev',
     family: 'flux',
+    vendor: 'Black Forest Labs',
     description:
       'Black Forest Labs Flux 2 Dev — the open-weight FLUX.2 base model for low-cost, configurable generation with adjustable guidance and inference steps, multi-image batches, and reference editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 12,
     parameterPolicy: FLUX_2_DEV_PARAMETER_POLICY,
     productPricing: FLUX_2_DEV_PRODUCT_PRICING,
@@ -689,10 +720,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'wan-image-2.7-pro',
     displayName: 'Wan Image 2.7 Pro',
     family: 'wan-image',
+    vendor: 'Alibaba',
     description:
       'Alibaba Wan Image 2.7 Pro for high-fidelity text-to-image, reference-guided generation, image editing, and inpainting up to 4K.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 45,
     parameterPolicy: WAN_IMAGE_27_PRO_PARAMETER_POLICY,
     productPricing: WAN_IMAGE_27_PRO_PRODUCT_PRICING,
@@ -726,10 +758,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'wan-image-2.7',
     displayName: 'Wan Image 2.7',
     family: 'wan-image',
+    vendor: 'Alibaba',
     description:
       'Alibaba Wan Image 2.7 for efficient text-to-image, reference-guided generation, image editing, and inpainting up to 2K.',
     modes: [T2I, I2I, INPAINT],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 20,
     parameterPolicy: WAN_IMAGE_27_PARAMETER_POLICY,
     productPricing: WAN_IMAGE_27_PRODUCT_PRICING,
@@ -763,10 +796,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'qwen-image-2.0-pro',
     displayName: 'Qwen Image 2.0 Pro',
     family: 'qwen-image',
+    vendor: 'Alibaba',
     description:
       'Alibaba Qwen Image 2.0 Pro for precise typography, semantic adherence, realistic text-to-image, and multi-image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 35,
     parameterPolicy: QWEN_IMAGE_20_PRO_PARAMETER_POLICY,
     productPricing: QWEN_IMAGE_20_PRO_PRODUCT_PRICING,
@@ -817,10 +851,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'qwen-image-2.0',
     displayName: 'Qwen Image 2.0',
     family: 'qwen-image',
+    vendor: 'Alibaba',
     description:
       'Alibaba Qwen Image 2.0 for balanced speed, text rendering, semantic adherence, and image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 20,
     parameterPolicy: QWEN_IMAGE_20_PARAMETER_POLICY,
     productPricing: QWEN_IMAGE_20_PRODUCT_PRICING,
@@ -870,10 +905,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'nano-banana',
     displayName: 'Nano Banana',
     family: 'nano-banana',
+    vendor: 'Google',
     description:
       'Fast, low-cost image generation and reference-guided editing model for everyday creative variations.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 10,
     parameterPolicy: NANO_BANANA_PARAMETER_POLICY,
     productPricing: NANO_BANANA_PRODUCT_PRICING,
@@ -894,10 +930,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'quick-image-1-0',
     displayName: 'Agnes Image 2.1 Flash',
     family: 'quick-image',
+    vendor: 'Agnes AI',
     description:
       'Agnes AI lightweight image model for text-to-image and single-reference image editing.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 6,
     parameterPolicy: QUICK_IMAGE_PARAMETER_POLICY,
     productPricing: QUICK_IMAGE_PRODUCT_PRICING,
@@ -933,10 +970,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'nano-banana-2',
     displayName: 'Nano Banana 2',
     family: 'nano-banana',
+    vendor: 'Google',
     description:
       'Balanced image generation and editing model with higher reference-image capacity and selectable output resolution.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 20,
     parameterPolicy: NANO_BANANA_2_PARAMETER_POLICY,
     productPricing: NANO_BANANA_2_PRODUCT_PRICING,
@@ -957,10 +995,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'nano-banana-pro',
     displayName: 'Nano Banana Pro',
     family: 'nano-banana',
+    vendor: 'Google',
     description:
       'Premium image generation and editing model for high-fidelity creative output at 2K and 4K resolutions.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 50,
     parameterPolicy: NANO_BANANA_PRO_PARAMETER_POLICY,
     productPricing: NANO_BANANA_PRO_PRODUCT_PRICING,
@@ -981,10 +1020,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'seedream-4.5',
     displayName: 'Seedream 4.5',
     family: 'seedream',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedream 4.5 image generation and editing model for higher-fidelity 2K and 4K creative output.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 12,
     parameterPolicy: SEEDREAM_45_PARAMETER_POLICY,
     productPricing: SEEDREAM_45_PRODUCT_PRICING,
@@ -1014,10 +1054,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'seedream-5-lite',
     displayName: 'Seedream 5.0 Lite',
     family: 'seedream',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedream 5.0 Lite image generation and reference-guided editing model optimized for efficient 2K, 3K, and 4K output.',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 10,
     parameterPolicy: SEEDREAM_5_LITE_PARAMETER_POLICY,
     productPricing: SEEDREAM_5_LITE_PRODUCT_PRICING,
@@ -1047,10 +1088,11 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     slug: 'seedream-5-pro',
     displayName: 'Seedream 5.0 Pro',
     family: 'seedream',
+    vendor: 'ByteDance',
     description:
       'ByteDance Seedream 5.0 Pro — newest flagship image generation and precise editing model with full layer control (2K output).',
     modes: [T2I, I2I],
-    tier: 'vip',
+    requiredPlan: null,
     cost: 15,
     parameterPolicy: SEEDREAM_5_PRO_PARAMETER_POLICY,
     productPricing: SEEDREAM_5_PRO_PRODUCT_PRICING,

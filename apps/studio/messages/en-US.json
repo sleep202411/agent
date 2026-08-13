@@ -271,6 +271,20 @@
     "etaApprox": "~{duration}",
     "failed": "Failed",
     "generationFailed": "Generation failed",
+    "validationBlockedTitle": "Can't generate yet",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} accepts at most {max} item(s).",
+      "FIELD_MIN_ITEMS": "{field} requires at least {min} item(s).",
+      "MEDIA_DURATION_UNKNOWN": "Duration is required for every {kind} in {field} before submit.",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "Each {kind} in {field} must be at least {min}s; got {actual}s.",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "Each {kind} in {field} must be at most {max}s; got {actual}s.",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "Combined {kind} duration in {field} is {actual}s; minimum is {min}s.",
+      "MEDIA_DURATION_SUM_EXCEEDED": "Combined {kind} duration in {field} is {actual}s; maximum is {max}s.",
+      "MEDIA_MAX_TOTAL_FILES": "At most {max} reference file(s) allowed; got {actual}.",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "Audio references require at least one image or video reference.",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "Combined file size in {field} exceeds {maxMb} MB.",
+      "MEDIA_FILE_SIZE_EXCEEDED": "A file in {field} exceeds the {maxMb} MB limit."
+    },
     "contentPolicyBlocked": "This request was blocked by content moderation. Avoid copyrighted characters, real people, or sensitive content, then adjust the prompt and try again.",
     "download": "Download",
     "fullscreen": "Fullscreen",
@@ -290,6 +304,17 @@
     "addReference": "Add reference",
     "removeReference": "Remove {label}",
     "uploadReferenceFirst": "Upload a reference first.",
+    "noSkillMatches": "No Skills match your search.",
+    "showAllSkills": "View all {count} Skills",
+    "chooseSkill": "Choose a Skill",
+    "searchSkills": "Search installed Skills",
+    "searchSkillMarket": "Search the Skill Market",
+    "skillBrowserDescription": "Use an installed Skill now, or discover more for this project.",
+    "skillBrowserTabs": "Skill sources",
+    "installedSkillsTab": "Installed",
+    "skillMarketTab": "Skill Market",
+    "skillMarketLoadFailed": "The Skill Market could not be loaded. Try again.",
+    "installedBadge": "Installed",
     "promptPlaceholder": "Describe what you want to create…",
     "mode": "Mode",
     "chooseModel": "Choose model",
@@ -683,6 +708,166 @@
     "castingErrorNotYours": "This casting invitation was sent to someone else.",
     "castingErrorNotPending": "This casting invitation can no longer be accepted."
   },
+  "textAdventures": {
+    "library": {
+      "eyebrow": "Interactive fiction",
+      "title": "Text Adventure Studio",
+      "subtitle": "Turn one worldview document into a story readers can enter, shape, and continue.",
+      "create": "Create text adventure",
+      "loadFailed": "Your text adventures could not be loaded",
+      "emptyTitle": "Create your first story world",
+      "emptyBody": "Start with the source of truth. Upload a DOCX and FizzDragon will extract its characters into an editable draft.",
+      "uploadFirst": "Upload worldview DOCX",
+      "untitled": "Untitled text adventure",
+      "noSynopsis": "Add a synopsis before submitting this work for review.",
+      "noRating": "No rating yet",
+      "lastEdited": "Last edited {date}"
+    },
+    "actions": {
+      "retry": "Retry",
+      "backToLibrary": "Back to Text Adventure Studio",
+      "save": "Save",
+      "cancel": "Cancel",
+      "unknownError": "Something went wrong."
+    },
+    "status": {
+      "draft": "Draft",
+      "reviewing": "In review",
+      "published": "Published",
+      "offline": "Offline"
+    },
+    "create": {
+      "body": "Upload the DOCX that defines the setting, characters, rules, and story boundaries. It remains the source of truth for every playthrough.",
+      "dropTitle": "Drop a DOCX here, or choose a file",
+      "dropHint": "DOCX only · up to 10 MB",
+      "uploading": "Uploading · {progress}%",
+      "analyzingTitle": "Building your story world",
+      "analyzingBody": "FizzDragon is reading the document, mapping the setting, and identifying the characters. This can take a minute.",
+      "failed": "The document could not be analyzed",
+      "uploadFailed": "The document could not be uploaded",
+      "docxOnly": "Choose a DOCX document.",
+      "tooLarge": "The DOCX must be 10 MB or smaller.",
+      "reuploadTitle": "Upload another document",
+      "reuploadingTitle": "Uploading another document",
+      "reuploadBody": "Choose another DOCX to try building this story world again.",
+      "privacy": "The source document stays private to the creator and is never exposed on the player page."
+    },
+    "preview": {
+      "eyebrow": "Draft preview",
+      "posterAlt": "Cover for {name}",
+      "synopsisFallback": "Add a synopsis to preview how readers will be introduced to this story world.",
+      "castEyebrow": "From the worldview document",
+      "castTitle": "Characters",
+      "castCount": "{count} characters",
+      "noCast": "Characters extracted from the worldview document will appear here after the document is analyzed.",
+      "stillsTitle": "Story images",
+      "stillAlt": "Story image {index}",
+      "notice": "Preview the cover, introduction, characters, and story images while you edit. Interactive play is available from the player page after the work is published."
+    },
+    "playtest": {
+      "title": "Player preview",
+      "liveVersion": "Published player version",
+      "draftNotice": "This conversation uses the current published version. Draft changes appear here after they are approved.",
+      "opening": "Opening the published story…",
+      "unavailableTitle": "Publish to start playtesting",
+      "unavailableBody": "A real player conversation becomes available here after this work is approved and published for the first time.",
+      "loadFailed": "The player preview could not be opened",
+      "newSession": "New play session",
+      "resumedSession": "Continuing play session",
+      "emptyTitle": "The story is ready",
+      "emptyBody": "Enter an action below to begin.",
+      "actionPlaceholder": "What do you do next?",
+      "send": "Send action",
+      "composerHint": "Enter to send · Shift + Enter for a new line",
+      "yourAction": "Your action",
+      "responding": "The story is responding…",
+      "restart": "Start over",
+      "restartTitle": "Start this playthrough over?",
+      "restartBody": "The current conversation will be replaced with a new player session.",
+      "restartConfirm": "Start over",
+      "restarting": "Starting over…",
+      "restartComplete": "New playthrough started",
+      "sendFailed": "Could not send this action",
+      "restartFailed": "Could not start a new playthrough"
+    },
+    "editor": {
+      "loadFailed": "This draft could not be loaded",
+      "saved": "Saved",
+      "unsaved": "Unsaved changes",
+      "version": "Version {version}",
+      "inspectorTitle": "Work information",
+      "backToOverview": "Back to work information",
+      "openSection": "Open {section}",
+      "edit": "Edit",
+      "replace": "Replace",
+      "upload": "Upload",
+      "attached": "Attached",
+      "notAdded": "Not added",
+      "stillsCount": "{count} images",
+      "workUpdatedAt": "Work updated {date}",
+      "worldviewFileFallback": "Worldview.docx",
+      "musicFileFallback": "Background music",
+      "reviewLockedTitle": "Editing is paused during review",
+      "reviewLockedBody": "Take the work offline to leave the review queue, or wait for the platform decision.",
+      "name": "Name",
+      "synopsis": "Synopsis",
+      "sections": {
+        "basics": "Basic information",
+        "poster": "Cover",
+        "worldview": "Worldview document",
+        "characters": "Characters",
+        "stills": "Story images",
+        "music": "Background music"
+      },
+      "uploadPoster": "Upload cover",
+      "replacePoster": "Replace cover",
+      "posterHint": "Displayed at 2:3 · recommended 1200 × 1800 · JPG, PNG, or WebP",
+      "posterImageOnly": "Choose a JPG, PNG, or WebP image.",
+      "worldviewAttached": "Worldview DOCX attached",
+      "uploadDocument": "Upload document",
+      "charactersFound": "{count} characters extracted",
+      "replaceDocument": "Replace and re-analyze",
+      "reanalyzing": "Re-analyzing document…",
+      "replaceDocumentHint": "Replacing the DOCX re-extracts and replaces the current character list.",
+      "documentReparsed": "Worldview and characters updated",
+      "noCharacters": "No characters were extracted from this document.",
+      "charactersReadOnly": "The characters are generated by Java from the current DOCX. Character editing is not part of the current API contract.",
+      "removeStill": "Remove image {index}",
+      "noStills": "No story images yet.",
+      "addStills": "Add images",
+      "uploadProgress": "Uploading · {progress}%",
+      "noMusic": "No background music attached.",
+      "uploadMusic": "Upload music",
+      "replaceMusic": "Replace music",
+      "removeMusic": "Remove music",
+      "stillsImageOnly": "Choose JPG, PNG, or WebP images.",
+      "musicAudioOnly": "Choose an MP3 or WAV audio file."
+    },
+    "publish": {
+      "rejected": "Review feedback",
+      "requirements": {
+        "name": "Name",
+        "poster": "Cover",
+        "synopsis": "Synopsis",
+        "document": "Worldview DOCX"
+      },
+      "validationTitle": "Complete the required information first",
+      "validationBody": "Before submitting for review, complete the following:",
+      "validationAction": "Continue editing",
+      "viewLive": "View published work",
+      "submit": "Submit for review",
+      "submitUpdate": "Submit updated version",
+      "takeOffline": "Take offline",
+      "submitConfirmTitle": "Submit this text adventure for review?",
+      "submitConfirmBody": "The current draft will be locked while the platform reviews its document, cover, synopsis, and story images.",
+      "submitConfirm": "Submit for review",
+      "offlineConfirmTitle": "Take this text adventure offline?",
+      "offlineConfirmBody": "It will disappear from player lists and new sessions will be blocked. Existing sessions can continue.",
+      "offlineConfirm": "Take offline",
+      "submitted": "Submitted for review",
+      "offlined": "Work taken offline"
+    }
+  },
   "shell": {
     "credits": {
       "tooltip": "Compute credits",
@@ -691,20 +876,29 @@
       "teamTag": "Team"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio home",
       "fizzDragonHomeAriaLabel": "FizzDragon home"
     },
     "nav": {
       "home": "Home",
       "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
+      "storyStudio": "Interactive Film Studio",
+      "textAdventures": "Text Adventure Studio",
       "image": "Image",
       "video": "Video",
       "characters": "Characters",
       "audio": "Audio",
       "settings": "Settings",
+      "tools": "Tools",
+      "discord": "Discord",
+      "downloadApp": "Download app",
+      "downloadDesktop": "Download desktop app",
+      "help": "Help",
+      "newBadge": "New",
+      "appDownloadUnavailable": "No mobile app download is available for this platform yet.",
       "studioNavigation": "Studio navigation",
       "main": "Main",
+      "collapseSidebar": "Collapse sidebar",
+      "expandSidebar": "Expand sidebar",
       "comingSoonLabel": "{label} · Coming soon"
     },
     "notifications": {
@@ -813,6 +1007,7 @@
     "youSuffix": "(you)",
     "memberActions": "Member actions",
     "memberFallback": "member",
+    "projectOnlyMember": "Project-only member",
     "addedMember": "Added {name}",
     "addMemberFailed": "Couldn't add member",
     "changeRoleFailed": "Couldn't change role",
@@ -889,21 +1084,21 @@
       "includedInPlan": "Included in plan",
       "computeCreditsAmount": "{amount} compute credits",
       "customCreditsAmount": "Custom compute credit amount",
-      "seats": "{count, plural, one {# seat} other {# seats}}",
+      "seats": "{count, plural, one {# creator seat} other {# creator seats}}",
       "seatsUpTo": " · up to {max}",
       "perMonth": "/month",
       "perYear": "/year",
       "oneTime": "one-time"
     },
     "features": {
-      "imagesPerMonth": "Up to {count} image generations per month",
-      "privateGenerations": "Private generations",
-      "advancedWorkflows": "Advanced workflows",
-      "prioritySupport": "Priority support",
+      "imagesPerDay": "{count} image generations per day",
+      "imagesUnlimited": "Unlimited image generations",
+      "videosPerDay": "{count} video generations per day",
+      "videosUnlimited": "Unlimited video generations",
       "sharedCredits": "Shared team compute credits",
+      "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
-      "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}",
-      "topupDiscount": "{percent}% off compute credit top-ups"
+      "queuedJobs": "{count, plural, one {# queued job} other {# queued jobs}}"
     },
     "toast": {
       "plansLoadFailed": "Membership plans failed to load",
@@ -946,7 +1141,7 @@
       },
       "subscriptionVsTopups": {
         "question": "What is the difference between a subscription and compute credit top-ups?",
-        "answer": "A subscription grants a recurring compute credit allowance plus plan perks like queue priority, higher concurrency, and support. Top-ups are one-time compute credit purchases — and paid plans get a discount on them."
+        "answer": "A subscription grants a recurring compute credit allowance plus plan benefits such as queue priority and higher concurrency. Top-ups are separate, one-time compute credit purchases."
       },
       "teamShareCredits": {
         "question": "How do team plans share compute credits?",
@@ -954,7 +1149,7 @@
       },
       "cancelOrChange": {
         "question": "How do I cancel or change my plan?",
-        "answer": "Manage your subscription from the account menu under Billing & Subscription. Plan changes take effect at the end of the current billing cycle."
+        "answer": "Manage your subscription under Billing & Subscription. Canceling keeps access until the current period ends; after that, you can choose another plan."
       },
       "commercialUse": {
         "question": "Can I use my generations commercially?",
@@ -983,7 +1178,8 @@
       "upload": "Upload",
       "image": "Image",
       "video": "Video",
-      "note": "Note"
+      "note": "Note",
+      "shot": "Shot"
     },
     "guest": "Guest",
     "uploadFailed": "Upload failed",
@@ -998,6 +1194,23 @@
     "openError": "Couldn't open this canvas — check the link or your access.",
     "emptyReadOnly": "This canvas is empty.",
     "activityLog": "Activity",
+    "connection": {
+      "kind": {
+        "image": "image",
+        "video": "video",
+        "audio": "audio"
+      },
+      "sourceMissing": "The source node no longer exists.",
+      "targetMissing": "The target node no longer exists.",
+      "selfConnection": "A node can't be connected to itself.",
+      "sourceNotConnectable": "This node has no image, video, or audio output to connect.",
+      "targetNotConnectable": "This node does not accept reference connections.",
+      "modelUnavailable": "Choose an available model before connecting a reference.",
+      "currentModeUnsupported": "The current mode does not accept {kind} references. Switch modes manually first.",
+      "unsupportedKind": "This model does not accept {kind} references.",
+      "referenceLimit": "The current mode allows up to {limit} {kind} references.",
+      "duplicateReference": "This {kind} is already connected to the node."
+    },
     "groups": {
       "group": "Group",
       "label": "Group",
@@ -1030,8 +1243,14 @@
       "image": "Image",
       "video": "Video",
       "note": "Note",
+      "shot": "Shot",
       "searchPlaceholder": "Search nodes",
       "noMatches": "No matching nodes"
+    },
+    "nodes": {
+      "title": "Nodes",
+      "add": "Add",
+      "close": "Close nodes"
     },
     "emptyState": {
       "clickToAdd": "Click to add a node",
@@ -1060,7 +1279,10 @@
         "cinematicVideo": "Makes cinematic videos with audio",
         "stableMotionVideo": "Makes stable motion videos",
         "creativeVideo": "Makes flexible creative videos"
-      }
+      },
+      "requiresPlan": "Available on the {plan} plan",
+      "locked": "Not available on your plan",
+      "membershipExpired": "Membership expired — renew to use"
     },
     "sizePresets": {
       "squareHd": "Square HD",
@@ -1068,7 +1290,8 @@
       "portrait43": "Portrait 4:3",
       "portrait169": "Portrait 16:9",
       "landscape43": "Landscape 4:3",
-      "landscape169": "Landscape 16:9"
+      "landscape169": "Landscape 16:9",
+      "auto": "Auto"
     },
     "stepper": {
       "decrease": "Decrease",
@@ -1154,6 +1377,9 @@
       "alt": "Reference",
       "audio": "Audio",
       "linkedFromNode": "Linked from a connected node",
+      "duration": "Duration",
+      "dimensions": "Dimensions",
+      "fileSize": "File size",
       "add": "Add {field}"
     },
     "asset": {
@@ -1234,6 +1460,20 @@
     "assetUnavailable": "This asset is no longer available.",
     "chooseModelFirst": "Choose a model first",
     "writePromptFirst": "Write a prompt first",
+    "validationBlockedTitle": "Can't generate yet",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} accepts at most {max} item(s).",
+      "FIELD_MIN_ITEMS": "{field} requires at least {min} item(s).",
+      "MEDIA_DURATION_UNKNOWN": "Duration is required for every {kind} in {field} before submit.",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "Each {kind} in {field} must be at least {min}s; got {actual}s.",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "Each {kind} in {field} must be at most {max}s; got {actual}s.",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "Combined {kind} duration in {field} is {actual}s; minimum is {min}s.",
+      "MEDIA_DURATION_SUM_EXCEEDED": "Combined {kind} duration in {field} is {actual}s; maximum is {max}s.",
+      "MEDIA_MAX_TOTAL_FILES": "At most {max} reference file(s) allowed; got {actual}.",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "Audio references require at least one image or video reference.",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "Combined file size in {field} exceeds {maxMb} MB.",
+      "MEDIA_FILE_SIZE_EXCEEDED": "A file in {field} exceeds the {maxMb} MB limit."
+    },
     "copyTaskId": "Copy task ID",
     "taskIdCopied": "Task ID copied",
     "taskIdCopyFailed": "Could not copy task ID",
@@ -1253,7 +1493,13 @@
     "opExpand": "Expand",
     "opMotion": "Motion",
     "opGeneratePanorama": "Generate Panorama",
-    "opPanorama": "Panorama"
+    "opPanorama": "Panorama",
+    "lockedForOpPlan": "{op} is available on the {plan} plan",
+    "lockedForOp": "{op} isn't available on your plan",
+    "requiresPlan": "{plan} plan",
+    "unavailableOnPlan": "Not on your plan",
+    "lockedForOpExpired": "Your membership expired — renew to use {op}",
+    "membershipExpired": "Membership expired"
   },
   "canvasEditors": {
     "reset": "Reset",
@@ -1497,12 +1743,12 @@
     "yourSubscription": "Your subscription",
     "subscriptionDescription": "Manage your personal plan, buy compute credit packs, and view pricing.",
     "managePlan": "Manage plan",
+    "keepPlan": "Keep plan",
     "currentPlan": "Current plan",
     "freePlanName": "Free",
     "planRenewsOn": "Renews on {date}",
     "planAccessUntil": "Access until {date}",
     "planCanceledBadge": "Canceled",
-    "changePlan": "Change plan",
     "cancelPlan": "Cancel plan",
     "cancelPlanConfirm": "Cancel your subscription? You'll keep access until the end of the current period, then it stops renewing.",
     "cancelPlanSuccess": "Subscription canceled — access continues until {date}.",
@@ -1567,6 +1813,314 @@
     "untitled": "Untitled",
     "viewOnly": "View only",
     "share": "Share",
+    "aiAssistant": "AI assistant",
+    "sidebar": {
+      "navigation": "Project navigation",
+      "chapters": "Chapters",
+      "nodes": "Nodes",
+      "nodesModeUnavailable": "Nodes aren't available in Brief mode",
+      "nodesEditRequired": "You need edit access to add nodes",
+      "assets": "Assets",
+      "skills": "Skills",
+      "skillsComingSoon": "Skills · Coming soon",
+      "activity": "Activity",
+      "members": "Members"
+    },
+    "skills": {
+      "title": "Skills",
+      "launchAnnouncement": {
+        "title": "Project Skills are here",
+        "leadStrong": "Capture your team's creative direction",
+        "leadRest": "to align visual standards, reduce repeated prompting and tuning, and produce consistent images and videos faster.",
+        "supportingText": "Set a project default so every generation starts aligned, then adjust it when needed.",
+        "cta": "Explore Project Skills",
+        "close": "Close Skill announcement",
+        "mute": "Mute preview",
+        "unmute": "Unmute preview",
+        "mediaAlt": "Preview of cinematic Project Skills in FizzDragon"
+      },
+      "mockNotice": "Preview catalog · Installation is coming soon",
+      "catalogDescription": "Install skills for this project and choose where they apply by default",
+      "loadFailed": "Skills could not be loaded. Select to try again.",
+      "generationUnavailable": "Project Skills are not ready. Open Skills to retry before generating.",
+      "filterLabel": "Filter skills",
+      "filters": {
+        "all": "All",
+        "general": "General",
+        "image": "Image",
+        "video": "Video"
+      },
+      "recommended": "Recommended",
+      "all": "All skills",
+      "searchPlaceholder": "Search skills",
+      "noMatches": "No skills match your search.",
+      "install": "Install",
+      "installComingSoon": "Project installation · Coming soon",
+      "close": "Close skills",
+      "errors": {
+        "install": "The Skill could not be installed.",
+        "upload": "The Skill package could not be imported.",
+        "uninstall": "The Skill could not be uninstalled.",
+        "defaults": "The project defaults could not be updated.",
+        "notInstalled": "This Skill is not installed in the project."
+      },
+      "ownership": {
+        "project": "Project only",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "Upload Skill",
+        "title": "Upload a private Skill",
+        "description": "Import a standards-based SKILL.md or ZIP package. Uploaded instructions stay inside the project or workspace scope you choose and cannot add executable tools.",
+        "fileLabel": "Skill package",
+        "chooseFile": "Choose SKILL.md or a ZIP package",
+        "fileHint": "UTF-8 · maximum 1 MB · ZIP may include Markdown references",
+        "downloadTemplate": "Download template",
+        "zipSafety": "ZIP accepts only one SKILL.md and Markdown files under references/. Scripts, binaries, links, encrypted archives, and unsafe paths are rejected.",
+        "fileRequired": "Choose a Skill package before uploading.",
+        "fileTooLarge": "Skill packages must be 1 MB or smaller.",
+        "scopeLabel": "Visibility",
+        "scopes": {
+          "project": "This project",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "Only members of this project can discover and use it.",
+          "workspace": "Other projects in this workspace can discover and install it."
+        },
+        "kindLabel": "Generation type",
+        "cancel": "Cancel",
+        "confirm": "Upload and install",
+        "success": "{name} was uploaded and installed."
+      },
+      "uninstall": {
+        "title": "Remove this Skill?",
+        "description": "{name} will be removed from this project and all of its default generation scopes will be cleared. The catalog source is not deleted.",
+        "cancel": "Keep Skill",
+        "confirm": "Remove",
+        "success": "Skill removed from the project."
+      },
+      "categories": {
+        "style": "Visual style",
+        "production": "Production",
+        "commercial": "Commercial"
+      },
+      "detail": {
+        "dialogTitle": "Skill details",
+        "loading": "Loading the latest Skill details…",
+        "loadFailed": "The latest Skill details could not be loaded.",
+        "activeForGeneration": "Active in this generation",
+        "projectDefaults": "Project defaults",
+        "noProjectDefaults": "This Skill is enabled only for this generation.",
+        "manageSkill": "Manage Skill",
+        "useSkill": "Use for this generation",
+        "installAndUse": "Install and use",
+        "installAndUseSuccess": "{name} is installed and ready for this generation.",
+        "installToUse": "Install this Skill to use it in the current generation or make it a project default.",
+        "open": "View {name} details",
+        "back": "Back to skills",
+        "curatedBy": "Curated by FizzDragon",
+        "addSkill": "Add Skill",
+        "addComingSoon": "Project installation is coming soon",
+        "installed": "Installed",
+        "remove": "Remove",
+        "uninstall": "Uninstall Skill",
+        "managePermission": "Only project owners and admins can manage Skills.",
+        "defaultsTitle": "Use by default",
+        "defaultsDescription": "Default Skills are shown in every matching generation and can still be removed for one request.",
+        "effectPreview": "Effect preview",
+        "about": "About this skill",
+        "introduction": "Introduction",
+        "category": "Type",
+        "appliesToLabel": "Works with",
+        "howToUseLabel": "How to use",
+        "outputLabel": "Adds to generation",
+        "appliesTo": {
+          "general": "Prompt authoring, image generation and video generation",
+          "image": "Image generation and image prompt authoring",
+          "video": "Video generation, motion design and shot planning"
+        },
+        "howToUse": {
+          "general": "After installation, enable it as a project default or turn it off for an individual generation.",
+          "image": "Select it in an image generation request to apply its visual rules and prompt guidance.",
+          "video": "Select it in a video generation request to apply its motion, timing and continuity guidance."
+        },
+        "output": {
+          "general": "Structured prompt guidance and capability-specific generation constraints.",
+          "image": "An optimized image prompt, visual direction and generation constraints.",
+          "video": "An optimized video prompt, motion beats, camera direction and continuity constraints."
+        }
+      },
+      "scopes": {
+        "image_generation": "Images",
+        "video_generation": "Videos",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "Prompt",
+        "image": "Image",
+        "video": "Video",
+        "agent": "Agent",
+        "qa": "QA"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "Wes Anderson Cinematic",
+          "description": "Centered storybook compositions, restrained performances, tactile sets and precise lateral movement."
+        },
+        "kubrickOnePointTension": {
+          "name": "Kubrick One-Point Tension",
+          "description": "One-point perspective, geometric staging, slow pushes and controlled psychological pressure."
+        },
+        "wongKarWaiNeonTime": {
+          "name": "Wong Kar-wai Neon Time",
+          "description": "Neon color separation, step-printed motion, intimate framing and suspended emotional time."
+        },
+        "grindhouseChapterCinema": {
+          "name": "Grindhouse Chapter Cinema",
+          "description": "Chapter-card structure, bold framing, hard cuts and worn genre-film texture."
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "Hand-painted Fantasy Adventure",
+          "description": "Airy hand-painted worlds, environmental storytelling and gentle, physically coherent motion."
+        },
+        "classicCelAnimation": {
+          "name": "Classic Cel Animation",
+          "description": "Hand-drawn character animation with crisp ink lines, painted backgrounds and readable pose-to-pose staging."
+        },
+        "stopMotionClayCinema": {
+          "name": "Stop-motion Clay Cinema",
+          "description": "Handcrafted clay characters, miniature sets, practical lighting and tactile frame-by-frame motion."
+        },
+        "inkWashCinema": {
+          "name": "Ink-wash Cinema",
+          "description": "Expressive brush economy, atmospheric negative space and controlled cinnabar accents."
+        },
+        "retroAnimeKeyVisual": {
+          "name": "Retro Anime Key Visual",
+          "description": "Painted cel backgrounds, crisp character silhouettes and dramatic analog-era color design."
+        },
+        "cinematicShotLanguage": {
+          "name": "Cinematic Shot Language",
+          "description": "Turn story intent into production-readable framing, lens, light, movement and continuity."
+        },
+        "scriptToStoryboard": {
+          "name": "Script to Storyboard",
+          "description": "Break scripts into narrative beats, coverage and generation-ready storyboard shots."
+        },
+        "visualContinuityGuardian": {
+          "name": "Visual Continuity Guardian",
+          "description": "Keep characters, wardrobe, locations, props and screen direction consistent."
+        },
+        "imageToVideoMotionDirector": {
+          "name": "Image-to-Video Motion Director",
+          "description": "Convert still frames into timed action beats, camera movement and stable end states."
+        },
+        "promptPreflightQa": {
+          "name": "Prompt Preflight & QA",
+          "description": "Check missing references, conflicting instructions and likely generation failures before submission."
+        },
+        "productEditorialPhotography": {
+          "name": "Product Editorial Photography",
+          "description": "Readable product hierarchy, controlled materials, lighting and campaign-ready compositions."
+        },
+        "moviePosterKeyArt": {
+          "name": "Movie Poster & Key Art",
+          "description": "Develop cinematic poster concepts with coherent imagery, title space and campaign hierarchy."
+        },
+        "pixelArtAdventure": {
+          "name": "Pixel Art Adventure",
+          "description": "Cinematic pixel environments, readable silhouettes and disciplined limited-palette lighting."
+        },
+        "postImpressionistNightPainting": {
+          "name": "Van Gogh Starry Night Painting",
+          "description": "Swirling night skies, energetic impasto and expressive cobalt-and-gold color rhythm."
+        },
+        "surrealCollageDreamscape": {
+          "name": "Surreal Collage Dreamscape",
+          "description": "Analog paper textures, unexpected scale and poetic photomontage composition."
+        },
+        "rhythmicMontageEditor": {
+          "name": "Rhythmic Montage Editor",
+          "description": "Build meaning through shot contrast, visual rhyme, tempo and precisely motivated cuts."
+        },
+        "aspectRatioReframing": {
+          "name": "Aspect-Ratio Reframing Director",
+          "description": "Plan identity-safe 16:9, 1:1 and 9:16 reframes with protected action, eyelines and readable composition."
+        },
+        "viralVideoReconstruction": {
+          "name": "Viral Video Reconstruction",
+          "description": "Rebuild a reference's transferable hook, beat structure and payoff without copying protected content."
+        },
+        "portraitCookingShort": {
+          "name": "Portrait Cooking Short",
+          "description": "Turn one recipe action into a tactile portrait-format cooking story with appetizing continuity and a clean payoff."
+        },
+        "multiPanelSequenceDirector": {
+          "name": "Multi-Panel Sequence Director",
+          "description": "Design readable multi-panel coverage with distinct shot purposes, continuity and an edit-ready progression."
+        },
+        "shortVideoDiagnostic": {
+          "name": "Short-Video Diagnostic",
+          "description": "Audit a short video's hook, clarity, retention beats, continuity and payoff with evidence-based revisions."
+        },
+        "microExpressionPerformance": {
+          "name": "Micro-Expression Performance",
+          "description": "Direct restrained facial acting through readable eye, breath and muscle changes instead of exaggerated emotion."
+        },
+        "cinematicShotOrchestrator": {
+          "name": "Cinematic Shot Orchestrator",
+          "description": "Choose and sequence production-readable shots from dramatic intent, geography and continuity."
+        },
+        "realisticPerformanceCoach": {
+          "name": "Realistic Performance Coach",
+          "description": "Replace generic AI acting with intention, listening, physical weight and behavior grounded in circumstance."
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "Action Storyboard Previsualizer",
+          "description": "Previsualize action with simple figures, legible staging, safe geography and editable beat progression."
+        },
+        "subjectStyleExtractor": {
+          "name": "Subject Style Extractor",
+          "description": "Separate a reference's transferable visual system from subject identity and apply it without copying content."
+        },
+        "intelligentSubtitleDirector": {
+          "name": "Intelligent Subtitle Director",
+          "description": "Create timed subtitle direction that protects meaning, reading rhythm, safe areas and visual hierarchy."
+        },
+        "brandVisualConsistency": {
+          "name": "Brand Visual Consistency",
+          "description": "Apply project color, typography, product and tone rules across every generated asset."
+        }
+      }
+    },
+    "sections": {
+      "defaultTitle": "Chapter 1",
+      "title": "Chapters",
+      "loading": "Loading chapter…",
+      "count": "{count, plural, one {# chapter} other {# chapters}}",
+      "add": "Add chapter",
+      "createTitle": "Add chapter",
+      "createDescription": "A chapter has its own canvas and storyboard.",
+      "nameLabel": "Chapter name",
+      "namePlaceholder": "Enter a chapter name",
+      "create": "Add chapter",
+      "rename": "Rename",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "archive": "Archive",
+      "archiveTitle": "Archive chapter?",
+      "archiveDescription": "“{title}” will be removed from the active chapter list. Its canvas and history remain preserved.",
+      "archiveLast": "A project must keep at least one active chapter.",
+      "menu": "More actions for {title}",
+      "close": "Close chapters",
+      "loadError": "The chapters could not be loaded.",
+      "invalid": "This chapter does not exist in the project.",
+      "createError": "The chapter could not be created.",
+      "updateError": "The chapter could not be updated.",
+      "reorderError": "The chapter order could not be saved.",
+      "archiveError": "The chapter could not be archived."
+    },
     "thisProject": "this project",
     "documentOpenError": "Couldn't open this document — check the link or your access.",
     "briefPlaceholder": "Write the brief…",
@@ -1574,7 +2128,179 @@
     "connecting": "Connecting…",
     "modes": {
       "canvas": "Canvas",
+      "storyboard": "Storyboard",
       "brief": "Brief"
+    }
+  },
+  "storyboard": {
+    "title": "Storyboard",
+    "openError": "Couldn't open this project's canvas — check the link or your access.",
+    "loading": "Opening the storyboard…",
+    "addShot": "Add shot",
+    "shotCount": "{count, plural, =0 {No shots} one {# shot} other {# shots}}",
+    "emptyTitle": "No shots yet",
+    "emptyBody": "Add a shot to start the board. Every shot is a card on the canvas too.",
+    "emptyReadOnly": "This project has no shots yet.",
+    "node": {
+      "title": "Shot {index}",
+      "emptyHint": "Wire an image or video in",
+      "pictureAlt": "Shot picture",
+      "openInStoryboard": "Open in storyboard"
+    },
+    "column": {
+      "number": "Shot number",
+      "id": "ID",
+      "frame": "Frame",
+      "clip": "Clip",
+      "size": "Size",
+      "angle": "Angle",
+      "movement": "Movement",
+      "duration": "Duration",
+      "dialogue": "Dialogue",
+      "notes": "Notes",
+      "description": "Description",
+      "imagePrompt": "Image Prompt",
+      "videoPrompt": "Video Prompt",
+      "actions": "Shot actions"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "Extreme wide",
+        "wide": "Wide",
+        "full": "Full",
+        "medium": "Medium",
+        "closeUp": "Close-up",
+        "extremeCloseUp": "Extreme close-up"
+      },
+      "angle": {
+        "eyeLevel": "Eye level",
+        "high": "High",
+        "low": "Low",
+        "birdsEye": "Bird's eye",
+        "overShoulder": "Over shoulder",
+        "pov": "POV",
+        "dutch": "Dutch"
+      },
+      "movement": {
+        "static": "Static",
+        "pan": "Pan",
+        "tilt": "Tilt",
+        "dolly": "Dolly",
+        "tracking": "Tracking",
+        "zoom": "Zoom",
+        "handheld": "Handheld",
+        "crane": "Crane"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds}s",
+      "durationUnit": "s",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "Dialogue or voice-over…",
+      "notesPlaceholder": "Notes…",
+      "descriptionPlaceholder": "Describe the scene — composition, lighting, mood…",
+      "imagePromptPlaceholder": "Image generation prompt…",
+      "videoPromptPlaceholder": "Video generation prompt…"
+    },
+    "frame": {
+      "add": "Add a picture",
+      "generateImage": "Generate image",
+      "generateVideo": "Generate video",
+      "pickFromCanvas": "Pick from canvas",
+      "noSources": "Nothing on the canvas to pick yet",
+      "unlink": "Unlink",
+      "viewOnCanvas": "View on canvas",
+      "generating": "Generating…",
+      "failed": "Generation failed",
+      "waiting": "Waiting for the picture"
+    },
+    "row": {
+      "reorder": "Drag to reorder",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "insertAbove": "Insert shot above",
+      "insertBelow": "Insert shot below",
+      "delete": "Delete shot",
+      "actions": "Shot actions",
+      "copyId": "Copy shot ID",
+      "copiedId": "Shot ID copied"
+    },
+    "drawer": {
+      "title": "Shot {index} · {slot}",
+      "close": "Close",
+      "slotFrame": "Frame",
+      "slotClip": "Clip",
+      "emptySlot": "Nothing here yet",
+      "generate": "Generate",
+      "upload": "Upload",
+      "pick": "From canvas",
+      "uploading": "Uploading · {progress}%",
+      "uploadFailed": "Upload failed",
+      "openViewer": "View full size",
+      "sourceHeading": "How this was made",
+      "sourceModel": "Model",
+      "sourceMade": "Made from a card on the canvas",
+      "sourceUploaded": "Uploaded",
+      "sourcePicked": "Taken from the canvas",
+      "noPrompt": "No prompt recorded",
+      "candidates": "Candidates",
+      "candidatesSoon": "Multiple takes and picking a winner land in a later version.",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Describe this shot — framing, subject, light, mood.",
+      "modelLabel": "Model",
+      "selectModelTitle": "Select model",
+      "modelUnset": "Pick a model",
+      "settingsLabel": "Parameters",
+      "generating": "Generating…",
+      "modelLoading": "Loading models…",
+      "modelLoadFailed": "Couldn't load models — retry",
+      "effectLabel": "Effect",
+      "selectEffect": "Select effect",
+      "effectComingSoon": "Effects are coming soon",
+      "change": "Change",
+      "startFrameLabel": "Start Frame",
+      "startFrameHint": "Generate a frame first — the video animates from it.",
+      "uploadLabel": "Upload",
+      "optional": "Optional",
+      "dropFiles": "Drop your files here",
+      "or": "or",
+      "select": "Select",
+      "library": "Pick from canvas",
+      "gallery": "Gallery",
+      "galleryTitle": "Pictures",
+      "clipGalleryTitle": "Clips",
+      "clipGalleryCount": "{count, plural, =0 {No clips} one {# clip} other {# clips}}",
+      "galleryCount": "{count, plural, =0 {No pictures} one {# picture} other {# pictures}}",
+      "galleryEmpty": "No pictures yet — upload or generate one.",
+      "back": "Back",
+      "finalized": "Finalized",
+      "candidate": "Candidate",
+      "markFinalized": "Mark as finalized",
+      "delete": "Delete"
+    },
+    "delete": {
+      "title": "Delete this shot?",
+      "description": "Shot {number} and its wiring are removed. The pictures feeding it stay on the canvas.",
+      "dontAskAgain": "Don't ask again"
+    },
+    "assetDialog": {
+      "title": "Select Asset",
+      "description": "Pick a canvas asset to reference, or upload a new one.",
+      "close": "Close",
+      "upload": "Upload",
+      "uploading": "Uploading…",
+      "uploadFailed": "Upload failed",
+      "unsupportedType": "Only JPEG, PNG, WebP, MP4, MOV, MP3, and WAV are supported.",
+      "empty": "No assets yet — generate or upload one first.",
+      "filter": {
+        "all": "All",
+        "aiGenerated": "AI Generated",
+        "uploaded": "Uploaded",
+        "crew": "Crew Assets",
+        "character": "Character",
+        "scene": "Scene"
+      }
     }
   },
   "invite": {
@@ -1665,10 +2391,10 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "Interactive Film Studio",
     "metaDescription": "Author, produce, review, and release cinematic interactive stories.",
     "eyebrow": "Interactive story production",
-    "title": "Story Studio",
+    "title": "Interactive Film Studio",
     "subtitle": "Design branching cinematic scenes and release from one versioned workspace.",
     "newProject": "New story project",
     "projects": {
@@ -1752,7 +2478,7 @@
       "switching": "Switching to the workspace this story belongs to…"
     },
     "canvas": {
-      "back": "Back to Story Studio",
+      "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
       "chapters": {
         "action": "Chapters",
@@ -1844,7 +2570,7 @@
       },
       "workingPreview": {
         "action": "Preview playtest",
-        "pageTitle": "Story Playtest · Story Studio",
+        "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
         "loading": "Preparing the playtest…",
@@ -1860,197 +2586,6 @@
       "readOnly": "Read only",
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
-      "assistant": {
-        "action": "StoryOS"
-      },
-      "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS assistant",
-        "close": "Close StoryOS",
-        "newConversation": "New conversation",
-        "retry": "Try again",
-        "dismissError": "Dismiss",
-        "timeline": {
-          "log": "StoryOS conversation",
-          "empty": "Describe the story, decision, or player experience you want to develop.",
-          "loading": "Loading this conversation…",
-          "scrollToLatest": "Scroll to the latest update",
-          "loadEarlier": "Load earlier turns",
-          "loadingEarlier": "Loading earlier turns…",
-          "thinking": "Thinking…",
-          "attachments": {
-            "unknownSize": "Size unavailable",
-            "status": {
-              "processing": "Processing",
-              "ready": "Ready",
-              "failed": "Failed"
-            }
-          },
-          "roles": {
-            "user": "You",
-            "assistant": "StoryOS"
-          }
-        },
-        "attachmentAnalysis": {
-          "region": "Document analysis",
-          "queued": "Document analysis queued",
-          "mapping": "Analyzing the document · {progress}%",
-          "reducing": "Synthesizing the analysis · {progress}%",
-          "succeeded": "Document analysis ready",
-          "failed": "Document analysis failed",
-          "cancelled": "Document analysis cancelled"
-        },
-        "activity": {
-          "expand": "Show activity details",
-          "collapse": "Hide activity details",
-          "labels": {
-            "generatingResponse": "Generating response",
-            "readingStory": "Reading the current story",
-            "reviewingSource": "Reviewing source material",
-            "applyingChanges": "Applying story changes"
-          },
-          "status": {
-            "running": "In progress",
-            "succeeded": "Completed",
-            "failed": "Failed",
-            "cancelled": "Cancelled"
-          }
-        },
-        "runStatus": {
-          "queued": "Queued",
-          "running": "Working",
-          "waiting_for_approval": "Waiting for approval",
-          "waiting_for_input": "Waiting for input",
-          "cancelling": "Stopping",
-          "succeeded": "Completed",
-          "failed": "Failed",
-          "cancelled": "Cancelled"
-        },
-        "turnFailure": {
-          "region": "StoryOS turn failed",
-          "title": {
-            "inputRejected": "StoryOS sent a request this story rejected",
-            "notRecorded": "The change ran but could not be recorded",
-            "failed": "This turn failed"
-          },
-          "explanation": {
-            "inputRejected": "StoryOS built an invalid tool call, so nothing was applied. Sending the request again gives it another attempt.",
-            "notRecorded": "The action reached your story but the server could not record its result, so nothing in your story changed. The server marked this failure as one that repeating will not fix — edit the request and describe the change a different way.",
-            "failed": "The turn stopped before it finished, so nothing it promised was applied."
-          },
-          "issues": "What the server rejected",
-          "code": "Code",
-          "diagnosticId": "Diagnostic",
-          "details": "Details",
-          "dismiss": "Dismiss",
-          "retry": "Send this request again",
-          "reword": "Edit this request",
-          "openSurface": "Open StoryOS"
-        },
-        "stall": {
-          "region": "Turn not responding",
-          "title": "This turn has not reported progress",
-          "explanation": "Nothing has arrived on the conversation channel for over two minutes. The turn may still be running — or the worker handling it may have died. Wait, or stop it and try again.",
-          "stop": "Stop this turn"
-        },
-        "childRuns": {
-          "group": "Delegated tasks"
-        },
-        "composer": {
-          "input": "Message StoryOS",
-          "placeholder": "Ask StoryOS to analyze, plan, or change this story…",
-          "stop": "Stop the current run",
-          "stopping": "Stopping the current run…",
-          "cancelReason": "Cancelled by the creator.",
-          "queued": "{count, plural, one {# queued message} other {# queued messages}}",
-          "deliveryModeMenu": "Choose how this message is delivered",
-          "attachments": {
-            "add": "Attach reference files",
-            "drop": "Drop images, TXT, Markdown, DOCX, or PDF files here",
-            "remove": "Remove {fileName}",
-            "retry": "Retry {fileName}",
-            "uploading": "Uploading · {progress}%",
-            "processing": "Extracting text · {progress}%",
-            "ready": "Ready",
-            "failed": "Upload failed",
-            "emptyFile": "Empty files cannot be uploaded.",
-            "unsupportedType": "Only JPEG, PNG, WebP, UTF-8 TXT, Markdown, DOCX, and PDF files are supported.",
-            "tooLarge": "This file must be {maxSize} or smaller.",
-            "fileNameTooLong": "The file name must be 255 characters or fewer."
-          },
-          "delivery": {
-            "send": {
-              "label": "Send",
-              "description": "Start a new StoryOS turn."
-            },
-            "steer": {
-              "label": "Steer now",
-              "description": "Give the active run new direction at its next safe boundary."
-            },
-            "enqueue": {
-              "label": "Queue next",
-              "description": "Keep the current run going and handle this message afterwards."
-            },
-            "stopAndSend": {
-              "label": "Stop and send",
-              "description": "Cancel the active run, then start a new turn with this message."
-            }
-          }
-        },
-        "permission": {
-          "menu": "StoryOS action permissions",
-          "options": {
-            "ask": {
-              "label": "Ask for approval",
-              "description": "Ask before every action that changes your data."
-            },
-            "smart": {
-              "label": "Approve for me",
-              "description": "Auto-run every action except deletions."
-            },
-            "full": {
-              "label": "Full authorization",
-              "description": "Auto-run every action, including deletions. Platform safety rules still apply."
-            }
-          }
-        },
-        "toolApproval": {
-          "title": "StoryOS wants to run {toolName}.",
-          "approve": "Approve",
-          "deny": "Deny",
-          "showInput": "Show what it will run with",
-          "hideInput": "Hide what it will run with",
-          "preparing": "Preparing a safe approval checkpoint…",
-          "resuming": "Resuming the turn",
-          "decision": {
-            "approved": "Approved",
-            "denied": "Denied"
-          }
-        }
-      },
-      "firstOpen": {
-        "title": "Every choice rewrites the story",
-        "description": "Tell StoryOS what you want to build, or start from a directing skill that shapes the first draft.",
-        "start": "Describe your own story",
-        "skillsTitle": "Or start from a directing skill",
-        "connecting": "Connecting to StoryOS…",
-        "unavailable": "StoryOS is unavailable, so it can’t draft anything yet. The canvas is still yours to build by hand.",
-        "retry": "Try again",
-        "skills": {
-          "halftoneCollage": {
-            "title": "Halftone collage",
-            "description": "Flat paper fields, halftone cutouts and cardstock accents — each choice assembles into one visual metaphor.",
-            "prompt": "Draft an interactive short: a suitcase of old tickets and photos springs open at midnight, each cutout a folded memory. Plot: sorting the estate, the owner pieces together a journey her mother hid for a lifetime. Use 10-14 cinematic clips, hook within the first 2, then a meaningful choice every 2-3 clips. Let each route finish naturally on its terminal clip according to which memories the player restores or tears up.",
-            "styleBrief": "Art direction: flat paper fields, black-and-white halftone cutouts and cardstock accents, one visual metaphor per beat assembled from a few objects. No typography, no 3D, no photoreal."
-          },
-          "symmetricalStorybook": {
-            "title": "Symmetrical storybook cinema",
-            "description": "Symmetrical framing, chapter narration, and vintage color create a restrained, absurd fairy-tale tone.",
-            "prompt": "Draft an interactive short: a pink mountain hotel receives a guest who never removes his hat, and the bellboy is ordered to learn why. Advance through cinematic clips, with one pivotal choice per chapter that makes the hotel more absurd and brings the truth closer. Use around 12 clips in three acts, each act closing on a visual reversal. Let each route finish naturally on its terminal clip.",
-            "styleBrief": "Art direction: deliberate symmetry and centered compositions, one chapter motif per act, a controlled vintage palette, and precise, restrained reveals."
-          }
-        }
-      },
       "saveState": {
         "idle": "Mutable draft · revision {revision}",
         "dirty": "Unsaved changes · revision {revision}",
@@ -2223,23 +2758,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "Creation canvas",
-        "identity": "Story Studio · Content creation",
-        "groupDropHint": "Release to add to this group",
-        "workspaceLabel": "Project media creation workspace",
-        "backToChapter": "Back to chapter canvas",
-        "closeSaveError": "Your latest canvas changes could not be saved. Try again before leaving.",
-        "loadError": "The creation canvas could not be opened.",
-        "retry": "Try again",
-        "assets": {
-          "description": "Browse and drag reusable project media onto the canvas."
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "Candidate assets",
-          "description": "Curate the media that Story nodes can reuse.",
-          "open": "Open candidate assets",
-          "close": "Close candidate assets",
           "add": "Add to candidate assets",
           "remove": "Remove from candidate assets",
           "filterLabel": "Filter candidate assets",
@@ -2251,7 +2772,7 @@
           },
           "empty": "No candidate assets",
           "emptyFilter": "Nothing in this category",
-          "emptyDescription": "Select a finished media node and add it from the floating toolbar.",
+          "emptyDescription": "Select a finished media node and add it from its canvas toolbar.",
           "loadError": "Candidate assets could not be loaded.",
           "actionError": "The candidate asset could not be updated.",
           "retry": "Try again",
@@ -2262,10 +2783,7 @@
           }
         },
         "status": {
-          "loading": "Loading",
-          "saving": "Saving…",
-          "saved": "Saved",
-          "error": "Save failed"
+          "loading": "Loading"
         }
       },
       "candidatePicker": {
@@ -2290,7 +2808,7 @@
         "loading": "Loading candidate media…",
         "retry": "Try again",
         "empty": "No matching candidate media",
-        "emptyDescription": "Add finished images or videos to Candidate assets on the creation canvas.",
+        "emptyDescription": "Add finished images or videos to Candidate assets in the creative workbench.",
         "assetLabel": {
           "image": "Image {index}",
           "video": "Video {index}"
@@ -2399,7 +2917,7 @@
       "share": "Share"
     },
     "workbench": {
-      "back": "Back to Story Studio",
+      "back": "Back to Interactive Film Studio",
       "draftHead": "Mutable draft · revision {revision}",
       "stageNav": "Project stages",
       "stages": {
@@ -2589,5 +3107,143 @@
     },
     "emptySequence": "No footage yet",
     "loadingMedia": "Loading footage"
+  },
+  "agentOs": {
+    "title": "FizzAgent",
+    "subtitle": "Chat with an execution agent — tools write to your project",
+    "close": "Close FizzAgent",
+    "open": "Open FizzAgent",
+    "launcherPrompts": {
+      "create": "What would you like to create?",
+      "ask": "I'm FizzAgent — ask me anything.",
+      "help": "I can help refine your story and canvas."
+    },
+    "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
+    "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
+    "modelProfile": "Model",
+    "permissionMode": "Permission mode",
+    "permAsk": "Ask every time",
+    "permSmart": "Smart",
+    "permFull": "Full access",
+    "permHint_ask": "Approve every write before it runs",
+    "permHint_smart": "Auto-run safe ops; ask only for sensitive writes",
+    "permHint_full": "Auto-run writes; still stop on critical actions",
+    "scriptOptional": "Attach file",
+    "scriptPlaceholder": "",
+    "scriptAttached": "Attachment · {chars} chars",
+    "attachFile": "Attach file",
+    "uploading": "Uploading…",
+    "removeAttachment": "Remove attachment",
+    "attachmentReady": "{count, plural, one {# file attached} other {# files attached}}",
+    "attachmentFailed": "Could not process {name}",
+    "attachmentFailedGeneric": "Upload failed",
+    "attachmentTooMany": "You can attach up to {count} files per message",
+    "attachmentTooLarge": "{name} is larger than {size} MB",
+    "attachmentEmpty": "{name} is empty",
+    "serviceUnavailable": "FizzAgent is temporarily unavailable. Try again shortly.",
+    "dismissIssue": "Dismiss issue",
+    "message": "Message",
+    "composerPlaceholder": "Message FizzAgent… attach a script file if needed",
+    "composerPlaceholderStory": "Message FizzAgent… attach source material if needed",
+    "skillsLabel": "Skills",
+    "projectSkillsLabel": "Project Skills",
+    "chooseProjectSkills": "Choose Skills for this message",
+    "catalogLoadFailed": "FizzAgent models and Skills could not be loaded.",
+    "skillCatalogFailed": "Project Skills could not be loaded.",
+    "skillDefaultBadge": "default",
+    "skillToggleTurn": "Use for this message",
+    "send": "Send",
+    "stop": "Stop",
+    "stopped": "Stopped listening to this turn",
+    "newChat": "New chat",
+    "newConversationDialog": {
+      "title": "Start a new conversation?",
+      "description": "This clears the current conversation and cannot be undone. Project content already written is not affected.",
+      "cancel": "Keep conversation",
+      "confirm": "Clear and start new"
+    },
+    "runDetails": {
+      "open": "Run details",
+      "title": "Run details",
+      "description": "Diagnostic information for this FizzAgent conversation.",
+      "status": "Run status",
+      "conversationId": "Conversation ID",
+      "latestIssue": "Latest issue",
+      "technicalDetail": "Technical detail",
+      "notAvailable": "Not available",
+      "close": "Done",
+      "statusValue": {
+        "idle": "Idle",
+        "running": "Running",
+        "waiting_for_approval": "Waiting for approval",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      }
+    },
+    "thinking": "Working…",
+    "transcriptLabel": "FizzAgent conversation",
+    "scrollToLatest": "Scroll to latest",
+    "roleUser": "You",
+    "roleAssistant": "FizzAgent",
+    "roleSystem": "System",
+    "roleTool": "Tool",
+    "suggestCharacters": "Extract characters from this script",
+    "suggestShots": "Break this script into 10 storyboard shots",
+    "suggestBoth": "Store script, then characters + shots",
+    "suggestStoryContinue": "Continue the story with a new scene",
+    "suggestStoryBranch": "Add a meaningful choice and two branches",
+    "suggestStoryPolish": "Review and polish the current chapter",
+    "run": "Send",
+    "reset": "New chat",
+    "approve": "Approve write",
+    "reject": "Reject",
+    "approved": "Write approved",
+    "rejected": "Write rejected",
+    "runFailed": "Agent failed",
+    "sendFailed": "Could not send message",
+    "approvalFailed": "Approval failed",
+    "approvalStoryBible": "Story bible",
+    "approvalStoryEntry": "Story entry",
+    "approvalSceneOrder": "Scene order",
+    "approvalStoryScene": "Story scene",
+    "approvalNotReady": "Approval is still preparing — wait a moment and try again",
+    "event": {
+      "RunStarted": "Run started",
+      "PlanCreated": "Plan",
+      "ToolProposed": "Tool proposed",
+      "ToolStarted": "Tool started",
+      "ToolCompleted": "Tool completed",
+      "ToolFailed": "Tool failed",
+      "ApprovalRequired": "Approval required",
+      "ApprovalResolved": "Approval resolved",
+      "MessageCompleted": "Message",
+      "RunPaused": "Paused",
+      "RunCompleted": "Completed",
+      "RunFailed": "Failed",
+      "RunCancelled": "Cancelled",
+      "ProjectPatchApplied": "Project updated"
+    },
+    "projectArtifacts": "Project artifacts",
+    "characters": "Characters",
+    "shots": "Storyboard shots",
+    "refreshArtifacts": "Refresh",
+    "artifactsEmpty": "No characters or shots written yet. Chat and approve writes.",
+    "artifactsLoadFailed": "Could not load project artifacts",
+    "workerOnline": "Worker online",
+    "workerOffline": "Unavailable right now — retrying automatically",
+    "shotsSynced": "Storyboard updated · {created} new · {updated} updated",
+    "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}",
+    "approvalCreates": "Creates {count}",
+    "approvalUpdates": "Updates {count}",
+    "approvalDeletes": "Deletes {count}",
+    "approvalAndMore": "+{count} more",
+    "approvalShowDetails": "Show full request",
+    "approvalHideDetails": "Hide full request",
+    "approvalUntitled": "Untitled",
+    "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
+    "showOnCanvas": "Show on canvas",
+    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check.",
+    "runOrphaned": "This turn was interrupted before it finished — the agent process restarted. Send your message again to retry."
   }
 }

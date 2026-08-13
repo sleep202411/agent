@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multi-Panel Sequence Director"
+  short_description: "Design readable multi-panel coverage with distinct shot purposes"
+  default_prompt: "Use $multi-panel-sequence-director to apply this creative direction to my request."

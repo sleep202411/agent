@@ -29,6 +29,14 @@ export type CardReference = {
   /** Present when the reference came from a wired source node (vs an upload). */
   edgeId?: string;
   sourceNodeId?: string;
+  /**
+   * Exact duration in seconds when known (video/audio). Catalog duration rules
+   * require this; missing values hard-fail preflight validation.
+   */
+  durationSeconds?: number | null;
+  bytes?: number | null;
+  width?: number | null;
+  height?: number | null;
   /** Transient: an uploaded reference still streaming to storage (local blob
    *  preview, NOT yet persisted to the doc). Shown with a spinner, no remove. */
   uploading?: boolean;
@@ -127,9 +135,20 @@ function ReferenceTile({
         <ReferenceMediaHoverPreview
           item={{
             kind: refItem.kind,
-            label: refItem.name ?? refItem.id,
+            label:
+              refItem.name ??
+              (refItem.kind === "video"
+                ? t("media.video.title")
+                : refItem.kind === "audio"
+                  ? t("media.audio.title")
+                  : t("reference.alt")),
             name: refItem.name,
             previewUrl: refItem.url,
+            assetId: refItem.assetId,
+            durationSeconds: refItem.durationSeconds,
+            bytes: refItem.bytes,
+            width: refItem.width,
+            height: refItem.height,
           }}
           style={previewStyle}
         />

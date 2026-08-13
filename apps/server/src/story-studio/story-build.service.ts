@@ -961,14 +961,13 @@ function prepareBuildVideo(
       ),
     );
   } else {
-    if (
-      asset.workspaceId !== project.workspaceId ||
-      asset.kind !== MediaAssetKind.video
-    ) {
+    // Workspace is deliberately not compared: uploads record none, so this
+    // rejected every uploaded cut. Kind still has to be video.
+    if (asset.kind !== MediaAssetKind.video) {
       diagnostics.push(
         buildDiagnostic(
           'STORY_BUILD_VIDEO_SCOPE_INVALID',
-          `Current video ${graphNodeId} is not a project-scoped video asset.`,
+          `Current video ${graphNodeId} is a ${asset.kind} asset, not a video.`,
           'asset',
           asset.id,
         ),

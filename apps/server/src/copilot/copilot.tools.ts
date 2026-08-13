@@ -30,9 +30,9 @@ export const canvasTools = {
 
   add_node: tool({
     description:
-      'Add a node to the canvas. kind "image" creates an image-generation card, "video" a video-generation card, "note" a sticky note. Optionally seed a prompt, a modelId (omit to use the studio default), and a short label. Returns the new node id. This does NOT run generation — it only creates the card.',
+      'Add a node to the canvas. kind "image" creates an image-generation card, "video" a video-generation card, "note" a sticky note, "shot" a storyboard shot (a numbered row of the project storyboard; seed its line of dialogue with `prompt` and its name with `label`). Optionally seed a prompt, a modelId (omit to use the studio default), and a short label. Returns the new node id. This does NOT run generation — it only creates the card.',
     inputSchema: z.object({
-      kind: z.enum(['image', 'video', 'note']),
+      kind: z.enum(['image', 'video', 'note', 'shot']),
       prompt: z.string().optional(),
       modelId: z.string().optional(),
       label: z.string().optional(),

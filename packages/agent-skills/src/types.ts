@@ -1,0 +1,148 @@
+import { z } from "zod";
+import { AGENT_PROJECT_KINDS, type AgentProjectKind } from "@repo/agent-capabilities";
+
+/**
+ * Agent Skill — one mountable specialization.
+ *
+ * Same shape for system / workbench base skills and future catalog/project skills.
+ * Installation UI is out of scope; Runtime must already accept any registered skill.
+ *
+ * Aligned with Agent Skills / LangChain progressive-disclosure pattern:
+ * metadata is always known; full instructions are composed only when mounted.
+ */
+export const AgentSkillSourceSchema = z.enum([
+  /** Product-built-in; not user-removable. */
+  "system",
+  /** Future: installed from catalog / marketplace. */
+  "catalog",
+  /** Future: project-authored or project-pinned. */
+  "project",
+]);
+export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
+
+export const PROJECT_SKILL_SCOPES = [
+  "agent_prompt",
+  "prompt_authoring",
+  "image_generation",
+  "video_generation",
+  "preflight",
+  "qa",
+] as const;
+export const ProjectSkillScopeSchema = z.enum(PROJECT_SKILL_SCOPES);
+export type ProjectSkillScope = z.infer<typeof ProjectSkillScopeSchema>;
+
+const PromptPolicySchema = z
+  .object({
+    promptSuffix: z.string().trim().min(1).max(20_000),
+  })
+  .strict();
+
+export const SkillGenerationPolicySchema = z
+  .object({
+    image: PromptPolicySchema.optional(),
+    video: PromptPolicySchema.optional(),
+    promptAuthoring: z
+      .object({ instructions: z.string().trim().min(1).max(20_000) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type SkillGenerationPolicy = z.infer<typeof SkillGenerationPolicySchema>;
+
+export const ResolvedProjectSkillSchema = z
+  .object({
+    installationId: z.string().uuid(),
+    skillId: z.string().uuid(),
+    slug: z.string().trim().min(1).max(128),
+    name: z.string().trim().min(1).max(160),
+    versionId: z.string().uuid(),
+    version: z.string().trim().min(1).max(32),
+    versionChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+    instructions: z.string().trim().min(1).max(50_000),
+    generationPolicy: SkillGenerationPolicySchema,
+    toolIds: z.array(z.string().trim().min(1).max(128)).max(64),
+    config: z.record(z.string(), z.unknown()),
+    source: z.enum(["project_default", "turn_selection"]),
+  })
+  .strict();
+export type ResolvedProjectSkill = z.infer<typeof ResolvedProjectSkillSchema>;
+
+export const ProjectSkillResolutionSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal("project-skill-resolution/v1"),
+    resolutionId: z.string().uuid(),
+    ownerKind: z.enum(["platform", "story"]),
+    projectId: z.string().uuid(),
+    projectRevision: z.number().int().nonnegative(),
+    scope: ProjectSkillScopeSchema,
+    workbenchMode: z.string().trim().min(1).max(64).nullable(),
+    sourceSurface: z.string().trim().min(1).max(64).nullable(),
+    resolvedAt: z.string().datetime({ offset: true }),
+    skills: z.array(ResolvedProjectSkillSchema).max(32),
+    checksum: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+export type ProjectSkillResolutionSnapshot = z.infer<typeof ProjectSkillResolutionSnapshotSchema>;
+
+export const AgentSkillDefinitionSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[a-z][a-z0-9._-]*$/),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(2_000),
+    /** Full operating instructions when this skill is mounted. */
+    instructions: z.string().trim().min(1).max(50_000),
+    /**
+     * Tool ids this skill may use. Mount composition unions tool ids.
+     * Empty = instructions only (no extra tools).
+     */
+    toolIds: z.array(z.string().min(1).max(128)).max(64).default([]),
+    /** Project kinds this skill is valid for. Empty = any project kind. */
+    projectKinds: z.array(z.enum(AGENT_PROJECT_KINDS)).max(AGENT_PROJECT_KINDS.length).default([]),
+    /** Workbench modes this skill is valid for. Empty = any mode. */
+    workbenchModes: z.array(z.string().min(1).max(64)).max(32).default([]),
+    source: AgentSkillSourceSchema,
+    /** Always composed when project kind and workbench mode match. */
+    alwaysOn: z.boolean().default(false),
+    /**
+     * Shown in composer / project default pickers.
+     * System always-on base skills are usually false; optional system skills true.
+     */
+    userInvocable: z.boolean().default(false),
+    /** Catalog/project skills may be removed; system skills never. */
+    removable: z.boolean().default(false),
+    /** Higher runs later in the composed prompt (overrides earlier guidance). */
+    priority: z.number().int().min(0).max(1_000).default(100),
+  })
+  .strict();
+
+export type AgentSkillDefinition = z.infer<typeof AgentSkillDefinitionSchema>;
+
+export interface SkillMountContext {
+  /** Trusted server-resolved project kind. */
+  projectKind: AgentProjectKind;
+  /** Trusted product workbench mode. */
+  workbenchMode: string;
+  /** Optional product line (e.g. interactive-film). Future system packs. */
+  product?: string;
+  /**
+   * Per-turn skill ids from the composer. Applied when registered.
+   * Target product path — not a temporary stub.
+   */
+  turnSkillIds?: readonly string[];
+}
+
+export interface SkillMountResult {
+  /** Ordered skills actually mounted (deduped). */
+  skills: readonly AgentSkillDefinition[];
+  /** Union of tool ids allowed by mounted skills. */
+  toolIds: readonly string[];
+  /** Composed system prompt for the model. */
+  instructions: string;
+  /** Skill ids that were requested but not registered / not allowed. */
+  skippedSkillIds: readonly string[];
+}

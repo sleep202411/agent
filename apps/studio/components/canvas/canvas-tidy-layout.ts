@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
 /**
  * Which nodes and edges one tidy pass should lay out: the selection when a
@@ -27,9 +28,8 @@ export function resolveCanvasTidyTargets<NodeType extends Node, EdgeType extends
  * roughly twice a clip card — must supply its own estimate, or every unmeasured
  * tall card overlaps the one beneath it.
  */
-export type CanvasNodeHeightEstimate = (node: Node) => number;
+export type CanvasNodeHeightEstimate = (node: Node) => number | undefined;
 
-const DEFAULT_UNMEASURED_HEIGHT = 200;
 const ROW_GAP = 48;
 
 /**
@@ -68,9 +68,17 @@ export function computeCanvasTidyLayout(
   let x = 0;
   for (const column of [...columns.keys()].sort((a, b) => a - b)) {
     const columnNodes = columns.get(column) ?? [];
-    const columnWidth = Math.max(...columnNodes.map((node) => node.measured?.width ?? 280));
+    const columnWidth = Math.max(
+      ...columnNodes.map(
+        (node) => node.measured?.width ?? node.width ?? canvasNodeGeometry(node).width
+      )
+    );
     const heights = columnNodes.map(
-      (node) => node.measured?.height ?? estimateHeight?.(node) ?? DEFAULT_UNMEASURED_HEIGHT
+      (node) =>
+        node.measured?.height ??
+        node.height ??
+        estimateHeight?.(node) ??
+        canvasNodeGeometry(node).estimatedHeight
     );
     // Columns share one horizontal centreline. Top-aligning them left a short
     // column stranded at the top of a tall neighbour, which reads as a mistake

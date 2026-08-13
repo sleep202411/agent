@@ -271,6 +271,20 @@
     "etaApprox": "约 {duration}",
     "failed": "失败",
     "generationFailed": "生成失败",
+    "validationBlockedTitle": "暂时无法生成",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 项。",
+      "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 项。",
+      "MEDIA_DURATION_UNKNOWN": "提交前需要为 {field} 中每个{kind}提供时长。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每个{kind}至少需要 {min} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每个{kind}最多允许 {max} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合计时长为 {actual} 秒，最少 {min} 秒。",
+      "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合计时长为 {actual} 秒，最多 {max} 秒。",
+      "MEDIA_MAX_TOTAL_FILES": "参考文件最多 {max} 个，当前 {actual} 个。",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "添加音频参考时，至少还需要一张图片或一段视频。",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "{field} 合计文件大小超过 {maxMb} MB。",
+      "MEDIA_FILE_SIZE_EXCEEDED": "{field} 中有文件超过 {maxMb} MB 限制。"
+    },
     "contentPolicyBlocked": "内容未通过审核。请避免使用受版权保护的角色、真人或敏感内容，调整提示词后重试。",
     "download": "下载",
     "fullscreen": "全屏",
@@ -290,6 +304,17 @@
     "addReference": "添加参考",
     "removeReference": "移除 {label}",
     "uploadReferenceFirst": "请先上传一个参考。",
+    "noSkillMatches": "没有匹配的 Skill。",
+    "showAllSkills": "查看全部 {count} 个 Skill",
+    "chooseSkill": "选择 Skill",
+    "searchSkills": "搜索已安装的 Skill",
+    "searchSkillMarket": "搜索 Skill 市场",
+    "skillBrowserDescription": "直接使用已安装的 Skill，或为当前项目发现更多能力。",
+    "skillBrowserTabs": "Skill 来源",
+    "installedSkillsTab": "已安装",
+    "skillMarketTab": "Skill 市场",
+    "skillMarketLoadFailed": "Skill 市场加载失败，点击重试。",
+    "installedBadge": "已安装",
     "promptPlaceholder": "描述你想创作的内容…",
     "mode": "模式",
     "chooseModel": "选择模型",
@@ -683,6 +708,166 @@
     "castingErrorNotYours": "This casting invitation was sent to someone else.",
     "castingErrorNotPending": "This casting invitation can no longer be accepted."
   },
+  "textAdventures": {
+    "library": {
+      "eyebrow": "互动小说",
+      "title": "文游工作室",
+      "subtitle": "把一份世界观文档变成读者可以进入、影响并持续游玩的故事。",
+      "create": "创作文游",
+      "loadFailed": "无法加载你的文游作品",
+      "emptyTitle": "创建你的第一个故事世界",
+      "emptyBody": "从唯一设定来源开始。上传 DOCX 后，气泡龙会提取角色并创建可编辑草稿。",
+      "uploadFirst": "上传世界观 DOCX",
+      "untitled": "未命名文游",
+      "noSynopsis": "提交审核前请补充作品简介。",
+      "noRating": "暂无评分",
+      "lastEdited": "最后编辑于 {date}"
+    },
+    "actions": {
+      "retry": "重试",
+      "backToLibrary": "返回文游工作室",
+      "save": "保存",
+      "cancel": "取消",
+      "unknownError": "操作失败，请稍后重试。"
+    },
+    "status": {
+      "draft": "草稿",
+      "reviewing": "审核中",
+      "published": "已发布",
+      "offline": "已下架"
+    },
+    "create": {
+      "body": "上传定义世界设定、人物、规则和故事边界的 DOCX。它会成为每次游玩的唯一事实来源。",
+      "dropTitle": "拖入 DOCX，或选择文件",
+      "dropHint": "仅支持 DOCX · 最大 10 MB",
+      "uploading": "上传中 · {progress}%",
+      "analyzingTitle": "正在构建故事世界",
+      "analyzingBody": "气泡龙正在阅读文档、梳理设定并识别角色，可能需要一分钟。",
+      "failed": "无法解析这份文档",
+      "uploadFailed": "无法上传这份文档",
+      "docxOnly": "请选择 DOCX 文档。",
+      "tooLarge": "DOCX 不能超过 10 MB。",
+      "reuploadTitle": "重新上传文档",
+      "reuploadingTitle": "正在重新上传文档",
+      "reuploadBody": "请选择另一份 DOCX，再次尝试构建这个故事世界。",
+      "privacy": "原始文档仅创作者可见，不会在玩家页面公开。"
+    },
+    "preview": {
+      "eyebrow": "草稿预览",
+      "posterAlt": "《{name}》封面",
+      "synopsisFallback": "补充作品简介后，可在这里预览读者进入故事世界时看到的介绍。",
+      "castEyebrow": "来自世界观文档",
+      "castTitle": "角色",
+      "castCount": "{count} 个角色",
+      "noCast": "世界观文档解析完成后，提取到的角色会显示在这里。",
+      "stillsTitle": "故事场景图",
+      "stillAlt": "故事场景图 {index}",
+      "notice": "编辑时可以预览封面、简介、角色和故事场景图。作品发布后，可从玩家页面开始正式游玩。"
+    },
+    "playtest": {
+      "title": "玩家体验",
+      "liveVersion": "线上玩家版本",
+      "draftNotice": "中央对话使用当前线上版本；草稿修改需审核通过后才会在这里生效。",
+      "opening": "正在进入线上故事…",
+      "unavailableTitle": "发布后即可试玩",
+      "unavailableBody": "作品首次审核通过并发布后，这里会开启真实的玩家对话。",
+      "loadFailed": "无法打开玩家体验",
+      "newSession": "新的游玩会话",
+      "resumedSession": "继续上次游玩",
+      "emptyTitle": "故事已经准备好",
+      "emptyBody": "在下方输入行动即可开始。",
+      "actionPlaceholder": "接下来，你要做什么？",
+      "send": "发送行动",
+      "composerHint": "按 Enter 发送 · Shift + Enter 换行",
+      "yourAction": "你的行动",
+      "responding": "故事正在回应…",
+      "restart": "重新开始",
+      "restartTitle": "重新开始这次游玩？",
+      "restartBody": "当前对话将被新的玩家会话替换。",
+      "restartConfirm": "重新开始",
+      "restarting": "正在重新开始…",
+      "restartComplete": "已开始新的游玩",
+      "sendFailed": "无法发送这次行动",
+      "restartFailed": "无法开始新的游玩"
+    },
+    "editor": {
+      "loadFailed": "无法加载这个草稿",
+      "saved": "已保存",
+      "unsaved": "有未保存修改",
+      "version": "版本 {version}",
+      "inspectorTitle": "作品信息",
+      "backToOverview": "返回作品信息",
+      "openSection": "打开{section}",
+      "edit": "编辑",
+      "replace": "替换",
+      "upload": "上传",
+      "attached": "已添加",
+      "notAdded": "未添加",
+      "stillsCount": "{count} 张图片",
+      "workUpdatedAt": "作品更新于 {date}",
+      "worldviewFileFallback": "世界观.docx",
+      "musicFileFallback": "背景音乐",
+      "reviewLockedTitle": "审核期间暂停编辑",
+      "reviewLockedBody": "你可以将作品下架以退出审核队列，或等待平台审核结果。",
+      "name": "名称",
+      "synopsis": "简介",
+      "sections": {
+        "basics": "基本信息",
+        "poster": "封面",
+        "worldview": "世界观文档",
+        "characters": "角色",
+        "stills": "故事场景图",
+        "music": "背景音乐"
+      },
+      "uploadPoster": "上传封面",
+      "replacePoster": "更换封面",
+      "posterHint": "以 2:3 竖版展示 · 建议 1200 × 1800 · JPG、PNG 或 WebP",
+      "posterImageOnly": "请选择 JPG、PNG 或 WebP 图片。",
+      "worldviewAttached": "已关联世界观 DOCX",
+      "uploadDocument": "上传文档",
+      "charactersFound": "已提取 {count} 个角色",
+      "replaceDocument": "替换并重新解析",
+      "reanalyzing": "正在重新解析文档…",
+      "replaceDocumentHint": "替换 DOCX 会重新提取并覆盖当前角色列表。",
+      "documentReparsed": "世界观与角色已更新",
+      "noCharacters": "这份文档没有解析出角色。",
+      "charactersReadOnly": "角色由 Java 根据当前 DOCX 自动生成，现有接口暂不支持手动编辑角色。",
+      "removeStill": "移除图片 {index}",
+      "noStills": "还没有故事场景图。",
+      "addStills": "添加图片",
+      "uploadProgress": "上传中 · {progress}%",
+      "noMusic": "还没有背景音乐。",
+      "uploadMusic": "上传音乐",
+      "replaceMusic": "更换音乐",
+      "removeMusic": "移除音乐",
+      "stillsImageOnly": "请选择 JPG、PNG 或 WebP 图片。",
+      "musicAudioOnly": "请选择 MP3 或 WAV 音频文件。"
+    },
+    "publish": {
+      "rejected": "审核反馈",
+      "requirements": {
+        "name": "名称",
+        "poster": "封面",
+        "synopsis": "简介",
+        "document": "世界观 DOCX"
+      },
+      "validationTitle": "请先补全必填信息",
+      "validationBody": "提交审核前，还需要完成以下内容：",
+      "validationAction": "继续编辑",
+      "viewLive": "查看线上作品",
+      "submit": "提交审核",
+      "submitUpdate": "提交更新版本",
+      "takeOffline": "下架作品",
+      "submitConfirmTitle": "提交这部文游进行审核？",
+      "submitConfirmBody": "平台审核文档、封面、简介和故事场景图期间，当前草稿将暂停编辑。",
+      "submitConfirm": "提交审核",
+      "offlineConfirmTitle": "下架这部文游？",
+      "offlineConfirmBody": "作品会从玩家列表消失，并停止创建新会话；已有会话仍可继续。",
+      "offlineConfirm": "确认下架",
+      "submitted": "已提交审核",
+      "offlined": "作品已下架"
+    }
+  },
   "shell": {
     "credits": {
       "tooltip": "算力积分",
@@ -691,20 +876,29 @@
       "teamTag": "团队"
     },
     "header": {
-      "homeAriaLabel": "FizzStudio 首页",
       "fizzDragonHomeAriaLabel": "FizzDragon 首页"
     },
     "nav": {
       "home": "首页",
-      "creativeStudio": "Creative Studio",
-      "storyStudio": "Story Studio",
+      "creativeStudio": "创意工作室",
+      "storyStudio": "影游工作室",
+      "textAdventures": "文游工作室",
       "image": "图像",
       "video": "视频",
       "characters": "角色",
       "audio": "音频",
       "settings": "设置",
+      "tools": "工具",
+      "discord": "Discord",
+      "downloadApp": "下载 App",
+      "downloadDesktop": "下载桌面版",
+      "help": "帮助",
+      "newBadge": "New",
+      "appDownloadUnavailable": "当前平台暂时没有可用的移动端安装包。",
       "studioNavigation": "工作室导航",
       "main": "主导航",
+      "collapseSidebar": "收起侧边栏",
+      "expandSidebar": "展开侧边栏",
       "comingSoonLabel": "{label} · 即将推出"
     },
     "notifications": {
@@ -813,6 +1007,7 @@
     "youSuffix": "(你)",
     "memberActions": "成员操作",
     "memberFallback": "成员",
+    "projectOnlyMember": "仅项目成员",
     "addedMember": "已添加 {name}",
     "addMemberFailed": "无法添加成员",
     "changeRoleFailed": "无法更改角色",
@@ -889,21 +1084,21 @@
       "includedInPlan": "方案包含",
       "computeCreditsAmount": "{amount} 算力积分",
       "customCreditsAmount": "定制算力积分额度",
-      "seats": "{count, plural, other {# 个席位}}",
+      "seats": "{count, plural, other {# 个创作者席位}}",
       "seatsUpTo": " · 最多 {max} 个",
       "perMonth": "/月",
       "perYear": "/年",
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerMonth": "每月最多 {count} 次图像生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "高级工作流",
-      "prioritySupport": "优先支持",
+      "imagesPerDay": "每天 {count} 次图像生成",
+      "imagesUnlimited": "不限次数的图像生成",
+      "videosPerDay": "每天 {count} 次视频生成",
+      "videosUnlimited": "不限次数的视频生成",
       "sharedCredits": "团队共享算力积分",
+      "seatScope": "创作者席位在所有项目间共享；Viewer 和 Reviewer 不占席位",
       "concurrentJobs": "{count, plural, other {# 个并发任务}}",
-      "queuedJobs": "{count, plural, other {# 个排队任务}}",
-      "topupDiscount": "充值算力积分 {percent}% 折扣"
+      "queuedJobs": "{count, plural, other {# 个排队任务}}"
     },
     "toast": {
       "plansLoadFailed": "会员方案加载失败",
@@ -946,7 +1141,7 @@
       },
       "subscriptionVsTopups": {
         "question": "订阅与算力积分充值有什么区别？",
-        "answer": "订阅会提供周期性的算力积分额度，外加队列优先、更高并发和支持等方案权益。充值是一次性购买算力积分——且付费方案在充值时享有折扣。"
+        "answer": "订阅会提供周期性的算力积分额度，以及队列优先、更高并发等方案权益。充值则是单独的一次性算力积分购买。"
       },
       "teamShareCredits": {
         "question": "团队方案如何共享算力积分？",
@@ -954,7 +1149,7 @@
       },
       "cancelOrChange": {
         "question": "如何取消或变更我的方案？",
-        "answer": "在账户菜单的“账单与订阅”中管理你的订阅。方案变更将在当前计费周期结束时生效。"
+        "answer": "在“账单与订阅”中管理订阅。取消后，权益会保留到当前周期结束；周期结束后可选择其他方案。"
       },
       "commercialUse": {
         "question": "我可以将生成内容用于商业用途吗？",
@@ -983,7 +1178,8 @@
       "upload": "上传",
       "image": "图像",
       "video": "视频",
-      "note": "便签"
+      "note": "便签",
+      "shot": "分镜"
     },
     "guest": "访客",
     "uploadFailed": "上传失败",
@@ -998,6 +1194,23 @@
     "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
     "emptyReadOnly": "此画布为空。",
     "activityLog": "动态",
+    "connection": {
+      "kind": {
+        "image": "图片",
+        "video": "视频",
+        "audio": "音频"
+      },
+      "sourceMissing": "源节点已不存在。",
+      "targetMissing": "目标节点已不存在。",
+      "selfConnection": "节点不能连接到自身。",
+      "sourceNotConnectable": "该节点没有可连接的图片、视频或音频输出。",
+      "targetNotConnectable": "该节点不接受参考素材连接。",
+      "modelUnavailable": "请先选择一个可用模型，再连接参考素材。",
+      "currentModeUnsupported": "当前模式不支持{kind}参考。请先手动切换模式。",
+      "unsupportedKind": "该模型不支持{kind}参考。",
+      "referenceLimit": "当前模式最多支持 {limit} 个{kind}参考。",
+      "duplicateReference": "该{kind}已连接到此节点。"
+    },
     "groups": {
       "group": "打组",
       "label": "分组",
@@ -1030,8 +1243,14 @@
       "image": "图像",
       "video": "视频",
       "note": "便签",
+      "shot": "分镜",
       "searchPlaceholder": "搜索节点",
       "noMatches": "没有匹配的节点"
+    },
+    "nodes": {
+      "title": "节点",
+      "add": "添加",
+      "close": "关闭节点面板"
     },
     "emptyState": {
       "clickToAdd": "点击添加节点",
@@ -1060,7 +1279,10 @@
         "cinematicVideo": "音画电影成片",
         "stableMotionVideo": "动作稳定成片",
         "creativeVideo": "创意灵活成片"
-      }
+      },
+      "requiresPlan": "需要 {plan} 套餐",
+      "locked": "当前套餐不可用",
+      "membershipExpired": "会员已过期，续费后可用"
     },
     "sizePresets": {
       "squareHd": "正方形 HD",
@@ -1068,7 +1290,8 @@
       "portrait43": "竖版 4:3",
       "portrait169": "竖版 16:9",
       "landscape43": "横版 4:3",
-      "landscape169": "横版 16:9"
+      "landscape169": "横版 16:9",
+      "auto": "自动"
     },
     "stepper": {
       "decrease": "减少",
@@ -1154,6 +1377,9 @@
       "alt": "参考",
       "audio": "音频",
       "linkedFromNode": "来自已连接的节点",
+      "duration": "时长",
+      "dimensions": "尺寸",
+      "fileSize": "文件大小",
       "add": "添加{field}"
     },
     "asset": {
@@ -1234,6 +1460,20 @@
     "assetUnavailable": "此素材已不可用。",
     "chooseModelFirst": "请先选择模型",
     "writePromptFirst": "请先输入提示词",
+    "validationBlockedTitle": "暂时无法生成",
+    "validation": {
+      "FIELD_MAX_ITEMS": "{field} 最多接受 {max} 项。",
+      "FIELD_MIN_ITEMS": "{field} 至少需要 {min} 项。",
+      "MEDIA_DURATION_UNKNOWN": "提交前需要为 {field} 中每个{kind}提供时长。",
+      "MEDIA_DURATION_ITEM_BELOW_MIN": "{field} 中每个{kind}至少需要 {min} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_ITEM_EXCEEDED": "{field} 中每个{kind}最多允许 {max} 秒，当前为 {actual} 秒。",
+      "MEDIA_DURATION_SUM_BELOW_MIN": "{field} 中{kind}合计时长为 {actual} 秒，最少 {min} 秒。",
+      "MEDIA_DURATION_SUM_EXCEEDED": "{field} 中{kind}合计时长为 {actual} 秒，最多 {max} 秒。",
+      "MEDIA_MAX_TOTAL_FILES": "参考文件最多 {max} 个，当前 {actual} 个。",
+      "MEDIA_AUDIO_REQUIRES_VISUAL": "添加音频参考时，至少还需要一张图片或一段视频。",
+      "MEDIA_COMBINED_FILE_SIZE_EXCEEDED": "{field} 合计文件大小超过 {maxMb} MB。",
+      "MEDIA_FILE_SIZE_EXCEEDED": "{field} 中有文件超过 {maxMb} MB 限制。"
+    },
     "copyTaskId": "复制任务 ID",
     "taskIdCopied": "任务 ID 已复制",
     "taskIdCopyFailed": "无法复制任务 ID",
@@ -1253,7 +1493,13 @@
     "opExpand": "扩展画面",
     "opMotion": "运动",
     "opGeneratePanorama": "生成全景",
-    "opPanorama": "全景"
+    "opPanorama": "全景",
+    "lockedForOpPlan": "{op} 需要 {plan} 套餐",
+    "lockedForOp": "当前套餐无法使用 {op}",
+    "requiresPlan": "需要 {plan} 套餐",
+    "unavailableOnPlan": "当前套餐不可用",
+    "lockedForOpExpired": "会员已过期，续费后可使用 {op}",
+    "membershipExpired": "会员已过期"
   },
   "canvasEditors": {
     "reset": "重置",
@@ -1497,12 +1743,12 @@
     "yourSubscription": "你的订阅",
     "subscriptionDescription": "管理个人套餐、购买算力积分包并查看定价。",
     "managePlan": "管理套餐",
+    "keepPlan": "保留套餐",
     "currentPlan": "当前套餐",
     "freePlanName": "免费版",
     "planRenewsOn": "{date} 续费",
     "planAccessUntil": "可用至 {date}",
     "planCanceledBadge": "已取消",
-    "changePlan": "更换套餐",
     "cancelPlan": "取消订阅",
     "cancelPlanConfirm": "确定取消订阅？当前计费周期结束前仍可使用，之后将不再续费。",
     "cancelPlanSuccess": "订阅已取消 —— 可用至 {date}。",
@@ -1567,14 +1813,494 @@
     "untitled": "未命名",
     "viewOnly": "仅查看",
     "share": "分享",
+    "aiAssistant": "AI 助手",
+    "sidebar": {
+      "navigation": "项目导航",
+      "chapters": "章节",
+      "nodes": "节点",
+      "nodesModeUnavailable": "说明模式下无法使用节点",
+      "nodesEditRequired": "需要编辑权限才能添加节点",
+      "assets": "资产",
+      "skills": "技能",
+      "skillsComingSoon": "技能 · 即将推出",
+      "activity": "动态",
+      "members": "成员"
+    },
+    "skills": {
+      "title": "技能",
+      "launchAnnouncement": {
+        "title": "项目 Skill 正式上线",
+        "leadStrong": "沉淀团队的创作方法，",
+        "leadRest": "统一视觉风格与创作标准，减少重复沟通和调参，更快产出稳定的图片与视频。",
+        "supportingText": "设为项目默认后，团队每次生成都会自动应用，也可以按需调整。",
+        "cta": "探索项目 Skill",
+        "close": "关闭 Skill 上线介绍",
+        "mute": "关闭预览声音",
+        "unmute": "打开预览声音",
+        "mediaAlt": "FizzDragon 项目 Skill 电影创作能力预览"
+      },
+      "mockNotice": "目录预览 · 项目安装即将推出",
+      "catalogDescription": "为当前项目安装 Skill，并设置默认生效范围",
+      "loadFailed": "Skill 加载失败，点击重试。",
+      "generationUnavailable": "项目 Skill 尚未就绪，请打开技能面板重试后再生成。",
+      "filterLabel": "筛选技能",
+      "filters": {
+        "all": "全部",
+        "general": "通用",
+        "image": "图片",
+        "video": "视频"
+      },
+      "recommended": "推荐",
+      "all": "全部技能",
+      "searchPlaceholder": "搜索技能",
+      "noMatches": "没有匹配的技能。",
+      "install": "安装",
+      "installComingSoon": "安装到项目 · 即将推出",
+      "close": "关闭技能",
+      "errors": {
+        "install": "Skill 安装失败。",
+        "upload": "Skill 包导入失败。",
+        "uninstall": "Skill 卸载失败。",
+        "defaults": "项目默认设置更新失败。",
+        "notInstalled": "该 Skill 尚未安装到当前项目。"
+      },
+      "ownership": {
+        "project": "仅当前项目",
+        "workspace": "Workspace"
+      },
+      "upload": {
+        "open": "上传 Skill",
+        "title": "上传私有 Skill",
+        "description": "导入标准 SKILL.md 或 ZIP 包。上传的指令只在所选项目或 Workspace 范围内可见，且不能加入可执行工具。",
+        "fileLabel": "Skill 包",
+        "chooseFile": "选择 SKILL.md 或 ZIP 包",
+        "fileHint": "UTF-8 · 最大 1 MB · ZIP 可包含 Markdown 参考资料",
+        "downloadTemplate": "下载模板",
+        "zipSafety": "ZIP 仅接受一个 SKILL.md 与 references/ 下的 Markdown；脚本、二进制、链接、加密包和不安全路径都会被拒绝。",
+        "fileRequired": "请先选择一个 Skill 包。",
+        "fileTooLarge": "Skill 包不能超过 1 MB。",
+        "scopeLabel": "可见范围",
+        "scopes": {
+          "project": "当前项目",
+          "workspace": "Workspace"
+        },
+        "scopeDescriptions": {
+          "project": "只有当前项目成员可以发现和使用。",
+          "workspace": "同一 Workspace 的其他项目可以发现并安装。"
+        },
+        "kindLabel": "生成类型",
+        "cancel": "取消",
+        "confirm": "上传并安装",
+        "success": "{name} 已上传并安装。"
+      },
+      "uninstall": {
+        "title": "移除这个 Skill？",
+        "description": "将从当前项目移除 {name}，并清除它的所有默认生效范围。Skill 来源不会被删除。",
+        "cancel": "保留 Skill",
+        "confirm": "移除",
+        "success": "已从项目移除 Skill。"
+      },
+      "categories": {
+        "style": "视觉风格",
+        "production": "制作流程",
+        "commercial": "商业创意"
+      },
+      "detail": {
+        "dialogTitle": "Skill 详情",
+        "loading": "正在加载最新的 Skill 详情…",
+        "loadFailed": "无法加载最新的 Skill 详情。",
+        "activeForGeneration": "本次生成已启用",
+        "projectDefaults": "项目默认",
+        "noProjectDefaults": "此 Skill 仅在本次生成中启用。",
+        "manageSkill": "管理 Skill",
+        "useSkill": "用于本次生成",
+        "installAndUse": "安装并使用",
+        "installAndUseSuccess": "{name} 已安装并用于本次生成。",
+        "installToUse": "安装后可用于本次生成，也可以设为项目默认。",
+        "open": "查看{name}详情",
+        "back": "返回技能列表",
+        "curatedBy": "FizzDragon 精选",
+        "addSkill": "添加 Skill",
+        "addComingSoon": "项目安装即将推出",
+        "installed": "已安装",
+        "remove": "移除",
+        "uninstall": "卸载 Skill",
+        "managePermission": "仅项目所有者和管理员可以管理 Skill。",
+        "defaultsTitle": "默认使用",
+        "defaultsDescription": "默认 Skill 会显示在每次匹配的生成中，也可以在单次生成里手动移除。",
+        "effectPreview": "效果预览",
+        "about": "关于此 Skill",
+        "introduction": "简介",
+        "category": "类型",
+        "appliesToLabel": "适用范围",
+        "howToUseLabel": "如何使用",
+        "outputLabel": "加入生成",
+        "appliesTo": {
+          "general": "提示词、生图与生视频",
+          "image": "生图与图片提示词创作",
+          "video": "生视频、运动设计与镜头规划"
+        },
+        "howToUse": {
+          "general": "安装后可设为项目默认，也可以在单次生成中临时关闭。",
+          "image": "在图片生成请求中选择它，应用对应的视觉规则与提示词指导。",
+          "video": "在视频生成请求中选择它，应用对应的运动、时序与连续性指导。"
+        },
+        "output": {
+          "general": "结构化提示词指导，以及面向不同生成能力的约束。",
+          "image": "优化后的图片提示词、视觉方向与生成约束。",
+          "video": "优化后的视频提示词、动作节拍、镜头方向与连续性约束。"
+        }
+      },
+      "scopes": {
+        "image_generation": "生图",
+        "video_generation": "生视频",
+        "agent_prompt": "FizzAgent"
+      },
+      "surfaces": {
+        "prompt": "提示词",
+        "image": "生图",
+        "video": "生视频",
+        "agent": "Agent",
+        "qa": "质检"
+      },
+      "items": {
+        "wesAndersonCinematic": {
+          "name": "韦斯·安德森电影美学",
+          "description": "居中式绘本构图、克制表演、实体布景与精准的横向镜头运动。"
+        },
+        "kubrickOnePointTension": {
+          "name": "库布里克单点透视张力",
+          "description": "单点透视、几何调度、缓慢推进，以及持续受控的心理压迫感。"
+        },
+        "wongKarWaiNeonTime": {
+          "name": "王家卫霓虹时间",
+          "description": "霓虹色彩分离、抽帧运动、亲密取景与悬置的情绪时间。"
+        },
+        "grindhouseChapterCinema": {
+          "name": "磨坊电影章节叙事",
+          "description": "章节卡结构、大胆取景、硬切与做旧类型片质感。"
+        },
+        "handPaintedFantasyAdventure": {
+          "name": "手绘幻想冒险",
+          "description": "通透的手绘世界、环境叙事，以及轻柔且符合物理逻辑的运动。"
+        },
+        "classicCelAnimation": {
+          "name": "经典赛璐璐动画",
+          "description": "以清晰线稿、手绘背景和可读的关键姿态，构建经典二维角色动画。"
+        },
+        "stopMotionClayCinema": {
+          "name": "黏土定格动画",
+          "description": "使用手工黏土角色、微缩布景、实景灯光和逐帧动作营造触感。"
+        },
+        "inkWashCinema": {
+          "name": "水墨电影美学",
+          "description": "用克制笔触、氛围留白和受控的朱砂色点缀组织电影画面。"
+        },
+        "retroAnimeKeyVisual": {
+          "name": "复古动画主视觉",
+          "description": "结合赛璐璐背景、清晰角色轮廓与模拟胶片时代的戏剧化配色。"
+        },
+        "cinematicShotLanguage": {
+          "name": "电影镜头语言",
+          "description": "把故事意图转成制作可读的景别、镜头、光线、运动与连续性方案。"
+        },
+        "scriptToStoryboard": {
+          "name": "剧本转分镜",
+          "description": "把剧本拆分为叙事节拍、镜头覆盖与可直接生成的分镜镜头。"
+        },
+        "visualContinuityGuardian": {
+          "name": "视觉连续性守护",
+          "description": "保持角色、服装、场景、道具与视线方向前后一致。"
+        },
+        "imageToVideoMotionDirector": {
+          "name": "图生视频运动导演",
+          "description": "把静帧转成有时序的动作节拍、镜头运动与稳定的结束状态。"
+        },
+        "promptPreflightQa": {
+          "name": "提示词预检与生成质检",
+          "description": "提交前检查缺失引用、冲突指令与可能导致生成失败的问题。"
+        },
+        "productEditorialPhotography": {
+          "name": "产品编辑摄影",
+          "description": "建立清晰的产品层级、受控材质与光线，以及可用于营销的构图。"
+        },
+        "moviePosterKeyArt": {
+          "name": "电影海报与主视觉",
+          "description": "生成图像统一、预留标题空间且层级明确的电影海报概念。"
+        },
+        "pixelArtAdventure": {
+          "name": "像素艺术冒险",
+          "description": "以清晰剪影、有限色板和电影化光线构建细腻的像素场景。"
+        },
+        "postImpressionistNightPainting": {
+          "name": "梵高星夜油画",
+          "description": "以旋涡夜空、厚涂笔触和钴蓝金黄的色彩节奏增强画面表现力。"
+        },
+        "surrealCollageDreamscape": {
+          "name": "超现实拼贴梦境",
+          "description": "通过纸张肌理、反常尺度和诗意影像拼贴构建梦境空间。"
+        },
+        "rhythmicMontageEditor": {
+          "name": "节奏蒙太奇剪辑",
+          "description": "通过镜头对比、视觉押韵、节奏和有动机的切换组织叙事意义。"
+        },
+        "aspectRatioReframing": {
+          "name": "横竖屏重构导演",
+          "description": "在 16:9、1:1 与 9:16 之间安全重构画面，保护主体、动作、视线与构图可读性。"
+        },
+        "viralVideoReconstruction": {
+          "name": "爆款结构复刻",
+          "description": "提取参考视频可迁移的钩子、节拍与回报结构，不复制受保护的具体内容。"
+        },
+        "portraitCookingShort": {
+          "name": "人物烹饪短片",
+          "description": "把一道关键料理动作组织成有触感、连续且以美食揭晓收尾的竖屏短片。"
+        },
+        "multiPanelSequenceDirector": {
+          "name": "多宫格拼版导演",
+          "description": "以不同镜头目的、连续性和可剪辑顺序，设计清晰的多宫格镜头覆盖。"
+        },
+        "shortVideoDiagnostic": {
+          "name": "短视频诊断分析师",
+          "description": "基于证据诊断短视频的钩子、清晰度、留存节拍、连续性与回报，并给出精确修改。"
+        },
+        "microExpressionPerformance": {
+          "name": "微表情表演导演",
+          "description": "通过眼神、呼吸与细微肌肉变化指导克制表演，避免夸张情绪。"
+        },
+        "cinematicShotOrchestrator": {
+          "name": "影视镜头调度导演",
+          "description": "根据戏剧意图、空间关系与连续性，自动选择并组织制作可读的镜头。"
+        },
+        "realisticPerformanceCoach": {
+          "name": "写实表演指导",
+          "description": "以目标、倾听、身体重量和具体处境替代通用的 AI 式表演。"
+        },
+        "actionStoryboardPrevisualizer": {
+          "name": "动作分镜预演",
+          "description": "使用简单人物、清晰调度、安全空间和可编辑节拍预演动作场面。"
+        },
+        "subjectStyleExtractor": {
+          "name": "主体风格提取",
+          "description": "从参考中分离可迁移的视觉系统与主体身份，在不复制内容的前提下应用风格。"
+        },
+        "intelligentSubtitleDirector": {
+          "name": "智能字幕导演",
+          "description": "生成保护原意、阅读节奏、安全区与视觉层级的确定性字幕方案。"
+        },
+        "brandVisualConsistency": {
+          "name": "品牌视觉一致性",
+          "description": "在项目生成内容中统一应用品牌色彩、字体、产品与语气规则。"
+        }
+      }
+    },
+    "sections": {
+      "defaultTitle": "第 1 章",
+      "title": "章节",
+      "loading": "正在加载章节…",
+      "count": "{count} 个章节",
+      "add": "新增章节",
+      "createTitle": "新增章节",
+      "createDescription": "每个章节拥有独立的画布和分镜表。",
+      "nameLabel": "章节名称",
+      "namePlaceholder": "输入章节名称",
+      "create": "新增章节",
+      "rename": "重命名",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "archive": "归档",
+      "archiveTitle": "归档章节？",
+      "archiveDescription": "“{title}”将从当前章节列表中移除，其画布和历史版本会继续保留。",
+      "archiveLast": "项目必须至少保留一个有效章节。",
+      "menu": "{title} 的更多操作",
+      "close": "关闭章节",
+      "loadError": "无法加载章节。",
+      "invalid": "该章节不属于当前项目或已被归档。",
+      "createError": "无法创建章节。",
+      "updateError": "无法更新章节。",
+      "reorderError": "无法保存章节顺序。",
+      "archiveError": "无法归档章节。"
+    },
     "thisProject": "此项目",
     "documentOpenError": "无法打开此文档——请检查链接或你的访问权限。",
-    "briefPlaceholder": "撰写简介…",
+    "briefPlaceholder": "撰写说明…",
     "offlineSaved": "离线——更改已保存到本地",
     "connecting": "连接中…",
     "modes": {
       "canvas": "画布",
-      "brief": "简报"
+      "storyboard": "分镜表",
+      "brief": "说明"
+    }
+  },
+  "storyboard": {
+    "title": "分镜表",
+    "openError": "无法打开该项目的画布——请检查链接或访问权限。",
+    "loading": "正在打开分镜表…",
+    "addShot": "添加分镜",
+    "shotCount": "{count, plural, =0 {暂无分镜} other {# 个分镜}}",
+    "emptyTitle": "还没有分镜",
+    "emptyBody": "添加一个分镜开始创作。每个分镜同时也是画布上的一张卡片。",
+    "emptyReadOnly": "该项目还没有分镜。",
+    "node": {
+      "title": "分镜 {index}",
+      "emptyHint": "连入图像或视频",
+      "pictureAlt": "分镜画面",
+      "openInStoryboard": "在分镜表中查看"
+    },
+    "column": {
+      "number": "镜号",
+      "id": "镜号ID",
+      "frame": "分镜图",
+      "clip": "分镜视频",
+      "size": "景别",
+      "angle": "视角",
+      "movement": "运镜",
+      "duration": "时长",
+      "dialogue": "台词",
+      "notes": "备注",
+      "description": "画面描述",
+      "imagePrompt": "图片提示词",
+      "videoPrompt": "视频提示词",
+      "actions": "分镜操作"
+    },
+    "option": {
+      "size": {
+        "extremeWide": "大远景",
+        "wide": "远景",
+        "full": "全景",
+        "medium": "中景",
+        "closeUp": "近景",
+        "extremeCloseUp": "特写"
+      },
+      "angle": {
+        "eyeLevel": "平视",
+        "high": "俯视",
+        "low": "仰视",
+        "birdsEye": "鸟瞰",
+        "overShoulder": "过肩",
+        "pov": "主观视角",
+        "dutch": "倾斜"
+      },
+      "movement": {
+        "static": "固定",
+        "pan": "横摇",
+        "tilt": "竖摇",
+        "dolly": "推拉",
+        "tracking": "跟拍",
+        "zoom": "变焦",
+        "handheld": "手持",
+        "crane": "升降"
+      }
+    },
+    "cell": {
+      "unset": "—",
+      "durationValue": "{seconds} 秒",
+      "durationUnit": "秒",
+      "durationPlaceholder": "0",
+      "dialoguePlaceholder": "台词或旁白…",
+      "notesPlaceholder": "备注…",
+      "descriptionPlaceholder": "描述画面——构图、光影、氛围…",
+      "imagePromptPlaceholder": "图片生成提示词…",
+      "videoPromptPlaceholder": "视频生成提示词…"
+    },
+    "frame": {
+      "add": "添加画面",
+      "generateImage": "生成图像",
+      "generateVideo": "生成视频",
+      "pickFromCanvas": "从画布选择",
+      "noSources": "画布上还没有可选素材",
+      "unlink": "断开连接",
+      "viewOnCanvas": "在画布中查看",
+      "generating": "生成中…",
+      "failed": "生成失败",
+      "waiting": "等待画面"
+    },
+    "row": {
+      "reorder": "拖动排序",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "insertAbove": "在上方插入分镜",
+      "insertBelow": "在下方插入分镜",
+      "delete": "删除分镜",
+      "actions": "分镜操作",
+      "copyId": "复制镜号ID",
+      "copiedId": "已复制镜号ID"
+    },
+    "drawer": {
+      "title": "分镜 {index} · {slot}",
+      "close": "关闭",
+      "slotFrame": "分镜图",
+      "slotClip": "分镜视频",
+      "emptySlot": "这里还没有画面",
+      "generate": "生成",
+      "upload": "上传",
+      "pick": "从画布选择",
+      "uploading": "上传中 · {progress}%",
+      "uploadFailed": "上传失败",
+      "openViewer": "查看大图",
+      "sourceHeading": "这张画面怎么来的",
+      "sourceModel": "模型",
+      "sourceMade": "由画布上的生成卡产出",
+      "sourceUploaded": "上传",
+      "sourcePicked": "取自画布素材",
+      "noPrompt": "没有记录提示词",
+      "candidates": "候选",
+      "candidatesSoon": "多候选与定稿将在后续版本提供。",
+      "promptLabel": "提示词",
+      "promptPlaceholder": "描述这个镜头——构图、主体、光线、氛围。",
+      "modelLabel": "模型",
+      "selectModelTitle": "选择模型",
+      "modelUnset": "选择模型",
+      "settingsLabel": "模型参数",
+      "generating": "生成中…",
+      "modelLoading": "正在加载模型…",
+      "modelLoadFailed": "模型加载失败，点击重试",
+      "effectLabel": "效果",
+      "selectEffect": "选择效果",
+      "effectComingSoon": "效果即将推出",
+      "change": "更换",
+      "startFrameLabel": "起始帧",
+      "startFrameHint": "先生成分镜图——视频会基于它动起来。",
+      "uploadLabel": "上传",
+      "optional": "可选",
+      "dropFiles": "将文件拖到这里",
+      "or": "或",
+      "select": "选择",
+      "library": "从画布选取",
+      "gallery": "图册",
+      "galleryTitle": "分镜图",
+      "clipGalleryTitle": "分镜视频",
+      "clipGalleryCount": "{count} 个视频",
+      "galleryCount": "{count} 张",
+      "galleryEmpty": "还没有图——上传或生成一张。",
+      "back": "返回",
+      "finalized": "定稿",
+      "candidate": "候选",
+      "markFinalized": "设为定稿",
+      "delete": "删除"
+    },
+    "delete": {
+      "title": "删除这个分镜？",
+      "description": "第 {number} 个分镜连同它的连线会被移除。给它供图的素材仍留在画布上。",
+      "dontAskAgain": "不再提示"
+    },
+    "assetDialog": {
+      "title": "选择资产",
+      "description": "选择画布上的资产进行引用，或上传新文件。",
+      "close": "关闭",
+      "upload": "上传",
+      "uploading": "上传中…",
+      "uploadFailed": "上传失败",
+      "unsupportedType": "仅支持 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
+      "empty": "还没有资产——先生成或上传一个。",
+      "filter": {
+        "all": "全部",
+        "aiGenerated": "AI 生成",
+        "uploaded": "已上传",
+        "crew": "剧组资产",
+        "character": "角色",
+        "scene": "场景"
+      }
     }
   },
   "invite": {
@@ -1665,10 +2391,10 @@
     "confirmRemoveEdge": "删除这条连线？"
   },
   "storyStudio": {
-    "metaTitle": "Story Studio",
+    "metaTitle": "影游工作室",
     "metaDescription": "创作、制作、审核并发布电影化互动故事。",
     "eyebrow": "互动故事制作",
-    "title": "Story Studio",
+    "title": "影游工作室",
     "subtitle": "在一个可追溯版本的工作台内设计分支影像场景并完成发布。",
     "newProject": "新建故事项目",
     "projects": {
@@ -1752,7 +2478,7 @@
       "switching": "正在切换到该故事所属的工作区…"
     },
     "canvas": {
-      "back": "返回 Story Studio",
+      "back": "返回影游工作室",
       "mode": "故事画布",
       "chapters": {
         "action": "章节",
@@ -1844,7 +2570,7 @@
       },
       "workingPreview": {
         "action": "预览试玩",
-        "pageTitle": "故事试玩 · Story Studio",
+        "pageTitle": "故事试玩 · 影游工作室",
         "pageDescription": "使用正式玩家运行时试玩精确保存的私有草稿或不可变构建。",
         "draftRevision": "草稿 r{revision}",
         "loading": "正在准备试玩…",
@@ -1860,197 +2586,6 @@
       "readOnly": "只读",
       "addNode": "添加故事节点",
       "loading": "正在打开故事画布…",
-      "assistant": {
-        "action": "StoryOS"
-      },
-      "studioAgent": {
-        "title": "StoryOS",
-        "surface": "StoryOS 助手",
-        "close": "关闭 StoryOS",
-        "newConversation": "新建对话",
-        "retry": "重试",
-        "dismissError": "关闭",
-        "timeline": {
-          "log": "StoryOS 对话",
-          "empty": "描述你想完善的故事、抉择或玩家体验。",
-          "loading": "正在载入对话……",
-          "scrollToLatest": "滚动到最新进展",
-          "loadEarlier": "载入更早的对话",
-          "loadingEarlier": "正在载入更早的对话……",
-          "thinking": "正在思考……",
-          "attachments": {
-            "unknownSize": "大小未知",
-            "status": {
-              "processing": "处理中",
-              "ready": "已就绪",
-              "failed": "失败"
-            }
-          },
-          "roles": {
-            "user": "你",
-            "assistant": "StoryOS"
-          }
-        },
-        "attachmentAnalysis": {
-          "region": "文档分析",
-          "queued": "文档分析已排队",
-          "mapping": "正在分析文档 · {progress}%",
-          "reducing": "正在归纳分析结果 · {progress}%",
-          "succeeded": "文档分析已完成",
-          "failed": "文档分析失败",
-          "cancelled": "文档分析已取消"
-        },
-        "activity": {
-          "expand": "展开活动详情",
-          "collapse": "收起活动详情",
-          "labels": {
-            "generatingResponse": "正在生成回复",
-            "readingStory": "正在读取当前故事",
-            "reviewingSource": "正在查阅源素材",
-            "applyingChanges": "正在应用故事改动"
-          },
-          "status": {
-            "running": "进行中",
-            "succeeded": "已完成",
-            "failed": "失败",
-            "cancelled": "已取消"
-          }
-        },
-        "runStatus": {
-          "queued": "等待中",
-          "running": "正在处理",
-          "waiting_for_approval": "等待批准",
-          "waiting_for_input": "等待输入",
-          "cancelling": "正在停止",
-          "succeeded": "已完成",
-          "failed": "失败",
-          "cancelled": "已取消"
-        },
-        "turnFailure": {
-          "region": "StoryOS 本轮失败",
-          "title": {
-            "inputRejected": "StoryOS 发出的请求被本故事拒绝",
-            "notRecorded": "改动已执行，但未能记录",
-            "failed": "本轮失败"
-          },
-          "explanation": {
-            "inputRejected": "StoryOS 构造了无效的工具调用，因此没有任何改动生效。重新发送请求可让它再试一次。",
-            "notRecorded": "该操作已到达你的故事，但服务端未能记录结果，因此你的故事没有任何改动。服务端已将这次故障标记为重发也无法解决，请编辑这条请求，换一种方式描述你要的改动。",
-            "failed": "本轮在完成前中止，因此它承诺的改动均未生效。"
-          },
-          "issues": "服务端拒绝的内容",
-          "code": "错误码",
-          "diagnosticId": "诊断编号",
-          "details": "详情",
-          "dismiss": "关闭",
-          "retry": "重新发送该请求",
-          "reword": "编辑这条请求",
-          "openSurface": "打开 StoryOS"
-        },
-        "stall": {
-          "region": "本轮无响应",
-          "title": "本轮已停止上报进度",
-          "explanation": "会话通道已超过两分钟没有任何消息。本轮可能仍在运行，也可能是处理它的工作进程已经退出。可以继续等待，或停止后重试。",
-          "stop": "停止本轮"
-        },
-        "childRuns": {
-          "group": "委派任务"
-        },
-        "composer": {
-          "input": "向 StoryOS 发送消息",
-          "placeholder": "让 StoryOS 分析、规划或修改这个故事……",
-          "stop": "停止当前任务",
-          "stopping": "正在停止当前运行…",
-          "cancelReason": "创作者已取消当前任务。",
-          "queued": "{count} 条消息等待处理",
-          "deliveryModeMenu": "选择消息处理方式",
-          "attachments": {
-            "add": "添加参考文件",
-            "drop": "将图片、TXT、Markdown、DOCX 或 PDF 文件拖到这里",
-            "remove": "移除 {fileName}",
-            "retry": "重试 {fileName}",
-            "uploading": "正在上传 · {progress}%",
-            "processing": "正在提取文本 · {progress}%",
-            "ready": "已就绪",
-            "failed": "上传失败",
-            "emptyFile": "无法上传空文件。",
-            "unsupportedType": "仅支持 JPEG、PNG、WebP、UTF-8 TXT、Markdown、DOCX 和 PDF 文件。",
-            "tooLarge": "此文件大小不能超过 {maxSize}。",
-            "fileNameTooLong": "文件名不能超过 255 个字符。"
-          },
-          "delivery": {
-            "send": {
-              "label": "发送",
-              "description": "开始一轮新的 StoryOS 对话。"
-            },
-            "steer": {
-              "label": "立即调整",
-              "description": "在下一个安全节点为当前任务补充方向。"
-            },
-            "enqueue": {
-              "label": "排到下一条",
-              "description": "继续当前任务，完成后再处理这条消息。"
-            },
-            "stopAndSend": {
-              "label": "停止并发送",
-              "description": "取消当前任务，然后用这条消息开始新一轮。"
-            }
-          }
-        },
-        "permission": {
-          "menu": "StoryOS 操作权限",
-          "options": {
-            "ask": {
-              "label": "每次询问",
-              "description": "执行任何会改动你数据的操作前都先请求批准。"
-            },
-            "smart": {
-              "label": "自动批准",
-              "description": "除删除外，其余操作都自动执行。"
-            },
-            "full": {
-              "label": "完全授权",
-              "description": "包括删除在内的操作都自动执行；平台安全规则仍然生效。"
-            }
-          }
-        },
-        "toolApproval": {
-          "title": "StoryOS 请求运行 {toolName}。",
-          "approve": "允许",
-          "deny": "拒绝",
-          "showInput": "查看运行参数",
-          "hideInput": "隐藏运行参数",
-          "preparing": "正在准备安全审批节点……",
-          "resuming": "正在继续本轮",
-          "decision": {
-            "approved": "已允许",
-            "denied": "已拒绝"
-          }
-        }
-      },
-      "firstOpen": {
-        "title": "让每个选择，改写故事",
-        "description": "把你想创作的故事告诉 StoryOS，或选择一种导演 Skill，由它起草第一版。",
-        "start": "描述你自己的故事",
-        "skillsTitle": "或从一种导演 Skill 开始",
-        "connecting": "正在连接 StoryOS……",
-        "unavailable": "StoryOS 暂时不可用，目前无法起草任何内容。画布依然可以手动搭建。",
-        "retry": "重试",
-        "skills": {
-          "halftoneCollage": {
-            "title": "半调纸拼贴",
-            "description": "纯色纸底、半调剪贴与卡纸点缀，每个选择拼装成一个视觉隐喻。",
-            "prompt": "创作一个互动短篇：一只装满旧车票与照片的手提箱在午夜自动打开，每个剪贴物件都是一段被折叠的记忆。主人公整理遗物时，逐渐拼出母亲隐瞒一生的旅程。使用 10-14 个影视片段，开场 2 个片段内抛出悬念，之后每 2-3 个片段一次关键选择，让每条路线自然结束于最后一个片段。",
-            "styleBrief": "美术方向：纯色纸底、黑白半调剪贴与卡纸点缀，每个节点用三到六件物件拼出一个视觉隐喻。不要文字排版、不要 3D、不要写实照片感。"
-          },
-          "symmetricalStorybook": {
-            "title": "对称童话电影",
-            "description": "对称构图、章节旁白与复古色彩，营造克制又荒诞的童话感。",
-            "prompt": "创作一个互动短篇：粉色山间旅馆迎来一位从不摘帽的神秘住客，门童奉命查明缘由。按影视章节推进，每章一次关键选择，让旅馆秩序更荒诞一分、真相更近一步。使用约 12 个影视片段和三幕结构，每幕收在一个视觉反转，让每条路线自然结束于最后一个片段。",
-            "styleBrief": "美术方向：刻意对称的居中构图，每一幕一个章节母题，克制的复古配色，揭示时机精准而收敛。"
-          }
-        }
-      },
       "saveState": {
         "idle": "可编辑草稿 · 修订 {revision}",
         "dirty": "有未保存修改 · 修订 {revision}",
@@ -2223,23 +2758,9 @@
           }
         }
       },
-      "productionCanvas": {
-        "title": "创作画布",
-        "identity": "Story Studio · 内容创作",
-        "groupDropHint": "松开以添加到此分组",
-        "workspaceLabel": "项目素材创作空间",
-        "backToChapter": "返回章节画布",
-        "closeSaveError": "无法保存最新的画布修改，请重试后再离开。",
-        "loadError": "无法打开创作画布。",
-        "retry": "重试",
-        "assets": {
-          "description": "浏览项目素材，并将可复用媒体拖入画布。"
-        },
+      "creativeWorkbench": {
         "candidates": {
           "title": "候选素材",
-          "description": "整理可供故事节点直接复用的媒体。",
-          "open": "打开候选素材",
-          "close": "关闭候选素材",
           "add": "添加到候选素材",
           "remove": "从候选素材中移除",
           "filterLabel": "筛选候选素材",
@@ -2251,7 +2772,7 @@
           },
           "empty": "还没有候选素材",
           "emptyFilter": "此分类暂无素材",
-          "emptyDescription": "选中已完成的媒体节点，通过浮动工具栏添加。",
+          "emptyDescription": "选中已完成的媒体节点，通过节点工具栏添加。",
           "loadError": "无法加载候选素材。",
           "actionError": "无法更新候选素材。",
           "retry": "重试",
@@ -2262,10 +2783,7 @@
           }
         },
         "status": {
-          "loading": "正在加载",
-          "saving": "正在保存…",
-          "saved": "已保存",
-          "error": "保存失败"
+          "loading": "正在加载"
         }
       },
       "candidatePicker": {
@@ -2290,7 +2808,7 @@
         "loading": "正在加载候选素材…",
         "retry": "重试",
         "empty": "没有符合条件的候选素材",
-        "emptyDescription": "请先在创作画布中将完成的图片或视频加入候选素材。",
+        "emptyDescription": "请先在创意工作台中将完成的图片或视频加入候选素材。",
         "assetLabel": {
           "image": "图片 {index}",
           "video": "视频 {index}"
@@ -2399,7 +2917,7 @@
       "share": "共创"
     },
     "workbench": {
-      "back": "返回 Story Studio",
+      "back": "返回影游工作室",
       "draftHead": "可编辑草稿 · 修订 {revision}",
       "stageNav": "项目阶段",
       "stages": {
@@ -2589,5 +3107,143 @@
     },
     "emptySequence": "暂无影片",
     "loadingMedia": "正在加载影片"
+  },
+  "agentOs": {
+    "title": "FizzAgent",
+    "subtitle": "对话式执行智能体 — 工具会真正写入项目",
+    "close": "关闭 FizzAgent",
+    "open": "打开 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想创作什么？",
+      "ask": "我是 FizzAgent，随时向我提问。",
+      "help": "我可以帮你完善故事和画布。"
+    },
+    "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
+    "emptyHintStory": "添加参考资料，或告诉 FizzAgent 如何推进当前章节，然后继续打磨故事。",
+    "modelProfile": "模型",
+    "permissionMode": "权限模式",
+    "permAsk": "每次询问",
+    "permSmart": "智能",
+    "permFull": "完全访问",
+    "permHint_ask": "每次写入前都需批准",
+    "permHint_smart": "安全操作自动执行，敏感写入才询问",
+    "permHint_full": "写入自动执行，仅 critical 操作拦截",
+    "scriptOptional": "添加附件",
+    "scriptPlaceholder": "",
+    "scriptAttached": "附件 · {chars} 字",
+    "attachFile": "添加附件",
+    "uploading": "上传中…",
+    "removeAttachment": "移除附件",
+    "attachmentReady": "已附加 {count} 个文件",
+    "attachmentFailed": "无法处理 {name}",
+    "attachmentFailedGeneric": "上传失败",
+    "attachmentTooMany": "每条消息最多可添加 {count} 个文件",
+    "attachmentTooLarge": "{name} 超过 {size} MB",
+    "attachmentEmpty": "{name} 是空文件",
+    "serviceUnavailable": "FizzAgent 服务暂时不可用，请稍后重试。",
+    "dismissIssue": "关闭错误提示",
+    "message": "消息",
+    "composerPlaceholder": "给 FizzAgent 发消息… 需要时附加剧本文件",
+    "composerPlaceholderStory": "给 FizzAgent 发消息… 需要时添加参考资料",
+    "skillsLabel": "技能",
+    "projectSkillsLabel": "项目 Skill",
+    "chooseProjectSkills": "选择本条消息使用的 Skill",
+    "catalogLoadFailed": "FizzAgent 模型与 Skill 加载失败。",
+    "skillCatalogFailed": "项目 Skill 加载失败。",
+    "skillDefaultBadge": "默认",
+    "skillToggleTurn": "本条消息启用",
+    "send": "发送",
+    "stop": "停止",
+    "stopped": "已停止接收本轮输出",
+    "newChat": "新对话",
+    "newConversationDialog": {
+      "title": "开始新对话？",
+      "description": "这会清空当前会话内容，且无法恢复；已写入项目的内容不会受到影响。",
+      "cancel": "保留当前对话",
+      "confirm": "清空并新建"
+    },
+    "runDetails": {
+      "open": "运行详情",
+      "title": "运行详情",
+      "description": "当前 FizzAgent 会话的诊断信息。",
+      "status": "运行状态",
+      "conversationId": "会话 ID",
+      "latestIssue": "最近问题",
+      "technicalDetail": "技术详情",
+      "notAvailable": "暂无",
+      "close": "知道了",
+      "statusValue": {
+        "idle": "空闲",
+        "running": "运行中",
+        "waiting_for_approval": "等待审批",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      }
+    },
+    "thinking": "处理中…",
+    "transcriptLabel": "FizzAgent 对话",
+    "scrollToLatest": "滚到最新",
+    "roleUser": "你",
+    "roleAssistant": "FizzAgent",
+    "roleSystem": "系统",
+    "roleTool": "工具",
+    "suggestCharacters": "根据剧本提取角色并写入",
+    "suggestShots": "把剧本拆成 10 个分镜镜头",
+    "suggestBoth": "先存剧本，再写角色和分镜",
+    "suggestStoryContinue": "为当前故事续写一个新场景",
+    "suggestStoryBranch": "添加一个关键选择和两条分支",
+    "suggestStoryPolish": "检查并润色当前章节",
+    "run": "发送",
+    "reset": "新对话",
+    "approve": "批准写入",
+    "reject": "拒绝",
+    "approved": "已批准写入",
+    "rejected": "已拒绝写入",
+    "runFailed": "Agent 失败",
+    "sendFailed": "发送失败",
+    "approvalFailed": "审批失败",
+    "approvalStoryBible": "故事设定",
+    "approvalStoryEntry": "故事入口",
+    "approvalSceneOrder": "场景顺序",
+    "approvalStoryScene": "故事场景",
+    "approvalNotReady": "审批信息还在准备中，请稍后再点",
+    "event": {
+      "RunStarted": "开始运行",
+      "PlanCreated": "计划",
+      "ToolProposed": "提议工具",
+      "ToolStarted": "工具开始",
+      "ToolCompleted": "工具完成",
+      "ToolFailed": "工具失败",
+      "ApprovalRequired": "需要审批",
+      "ApprovalResolved": "审批已处理",
+      "MessageCompleted": "回复",
+      "RunPaused": "已暂停",
+      "RunCompleted": "已完成",
+      "RunFailed": "失败",
+      "RunCancelled": "已取消",
+      "ProjectPatchApplied": "项目已更新"
+    },
+    "projectArtifacts": "项目产物",
+    "characters": "角色",
+    "shots": "分镜镜头",
+    "refreshArtifacts": "刷新",
+    "artifactsEmpty": "尚未写入角色或分镜。在对话中提出任务并批准写入。",
+    "artifactsLoadFailed": "无法加载项目产物",
+    "workerOnline": "Worker 在线",
+    "workerOffline": "当前不可用——正在自动重试",
+    "shotsSynced": "分镜已同步 · 新增 {created} · 更新 {updated}",
+    "charactersWritten": "已写入项目 {count} 个角色",
+    "approvalCreates": "新建 {count} 条",
+    "approvalUpdates": "修改 {count} 条",
+    "approvalDeletes": "删除 {count} 条",
+    "approvalAndMore": "还有 {count} 条",
+    "approvalShowDetails": "查看完整请求",
+    "approvalHideDetails": "收起完整请求",
+    "approvalUntitled": "未命名",
+    "pollLost": "与服务器失去联系，已停止跟踪本轮。它可能仍在运行——重新发送或重新打开面板可查看。",
+    "showOnCanvas": "在画布中查看",
+    "pollTimeout": "已停止跟踪本轮（超过 10 分钟）。它可能仍在运行——重新打开面板可查看。",
+    "runOrphaned": "本轮在完成前被中断——agent 进程重启了。重新发送消息即可重试。"
   }
 }

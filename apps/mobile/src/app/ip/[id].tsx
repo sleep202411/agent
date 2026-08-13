@@ -289,6 +289,10 @@ export default function IpDetailScreen() {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
+  // 1-based list position (same as web) — not raw episodeNo.
+  const epLabel = (episode: IpEpisode) =>
+    `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`;
+
   // Tap action for an episode, against the current access snapshot.
   const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
 
@@ -305,7 +309,7 @@ export default function IpDetailScreen() {
       // The just-unlocked episode's media URL now resolves — start playback.
       const fresh = detail?.episodes.find((e) => e.id === episode.id);
       if (fresh?.videoUrl && !resolvePlan(acc, fresh)) {
-        playVideo(fresh.videoUrl, fresh.title);
+        playVideo(fresh.videoUrl, epLabel(fresh));
       }
     } catch (error) {
       if (isInsufficientBalanceError(error)) {
@@ -372,7 +376,7 @@ export default function IpDetailScreen() {
             const freshPlan = resolvePlan(acc, fresh);
             if (!freshPlan) {
               // Now granted → just play it (member-free media, etc).
-              if (fresh.videoUrl) playVideo(fresh.videoUrl, fresh.title);
+              if (fresh.videoUrl) playVideo(fresh.videoUrl, epLabel(fresh));
               return;
             }
             if (freshPlan.kind === "pending") return;
@@ -629,10 +633,11 @@ export default function IpDetailScreen() {
                     key={episode.id}
                     episode={episode}
                     title={ip.title}
+                    label={epLabel(episode)}
                     plan={planFor(episode)}
                     locale={locale}
                     disabled={unlocking}
-                    onPlay={() => playVideo(episode.videoUrl, episode.title)}
+                    onPlay={() => playVideo(episode.videoUrl, epLabel(episode))}
                     onUnlock={() => unlockEpisode(episode)}
                   />
                 ))}
@@ -852,6 +857,7 @@ function MediaCard({
 function EpisodeCard({
   episode,
   title,
+  label,
   plan,
   locale,
   disabled,
@@ -860,6 +866,8 @@ function EpisodeCard({
 }: {
   episode: IpEpisode;
   title: string;
+  /** Localized list-order label, e.g. "第1集" / "Episode 1". */
+  label: string;
   plan?: UnlockPlan;
   locale: string;
   disabled?: boolean;
@@ -936,7 +944,7 @@ function EpisodeCard({
         ) : null}
       </View>
       <ThemedText type="smallBold" numberOfLines={1}>
-        {episode.title}
+        {label}
       </ThemedText>
       {episode.durationLabel ? (
         <ThemedText type="code" themeColor="textSecondary">

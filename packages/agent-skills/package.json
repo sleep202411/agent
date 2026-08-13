@@ -1,0 +1,35 @@
+{
+  "name": "@repo/agent-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FizzDragon Skill contracts, immutable catalog manifests, and Agent OS mount resolution.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "npm run check:catalog && tsc -p tsconfig.json",
+    "check-types": "npm run check:catalog && tsc --noEmit -p tsconfig.json",
+    "check:catalog": "tsx scripts/generate-catalog.mts --check",
+    "dev": "tsc -p tsconfig.json --watch",
+    "generate:catalog": "tsx scripts/generate-catalog.mts",
+    "test": "npm run check:catalog && vitest run"
+  },
+  "dependencies": {
+    "@repo/agent-capabilities": "*",
+    "@repo/shared": "*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18",
+    "yaml": "^2.9.0"
+  }
+}

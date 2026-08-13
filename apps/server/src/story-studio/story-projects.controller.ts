@@ -25,7 +25,6 @@ import {
   PatchStoryChapterSchema,
   PutStoryCanvasLayoutSchema,
   PutStoryDraftSchema,
-  PutStoryProductionCanvasSchema,
   StoryProjectIdParamsSchema,
   StoryChapterParamsSchema,
   StoryCandidateAssetParamsSchema,
@@ -43,7 +42,6 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
-  type PutStoryProductionCanvasInput,
   type StoryProjectIdParams,
   type StoryChapterParams,
   type StoryCandidateAssetParams,
@@ -260,47 +258,6 @@ export class StoryProjectsController {
         params.projectId,
         body,
         params.chapterId,
-      ),
-    };
-  }
-
-  @Get(':projectId/production-canvas')
-  async getProductionCanvas(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.getProductionCanvas(
-        user,
-        workspaceId,
-        params.projectId,
-      ),
-    };
-  }
-
-  @Put(':projectId/production-canvas')
-  async putProductionCanvas(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PutStoryProductionCanvasSchema))
-    body: PutStoryProductionCanvasInput,
-  ) {
-    const workspaceId = requiredWorkspaceId(workspaceHeader);
-    return {
-      code: 200,
-      data: await this.storyProjects.putProductionCanvas(
-        user,
-        workspaceId,
-        params.projectId,
-        body,
       ),
     };
   }

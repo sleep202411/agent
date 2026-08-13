@@ -1,0 +1,37 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000013",
+  "catalogOrder": 13,
+  "displayDescription": "Cinematic pixel environments, readable silhouettes and disciplined limited-palette lighting.",
+  "translationKey": "pixelArtAdventure",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "image",
+  "visibility": "public",
+  "status": "published",
+  "preview": {
+    "image": "pixel-art-adventure-v2.jpg",
+    "video": null
+  },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000013",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-11T12:00:00.000Z",
+    "capabilities": ["prompt_authoring", "image_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "riskPolicy": {
+      "allowsWrite": false,
+      "allowsPaidGeneration": false
+    },
+    "evalSuite": "evals/project-skills/pixel-art-adventure/v1"
+  }
+}

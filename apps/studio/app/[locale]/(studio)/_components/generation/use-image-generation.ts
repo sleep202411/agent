@@ -9,11 +9,15 @@ import {
   defaultSettingsForModel,
   estimateModelSellPoints,
   filterFizzAiInput,
+  generationInputHasBlockingIssues,
   referenceFieldsForMode,
+  validateModelGenerationInput,
   type FizzAiModel,
   type FizzAiReferenceBinding,
   type ModelSettings,
+  type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
+import { formatValidationIssue } from "@/lib/canvas-authoring/format-validation-issue";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGenerationFeed } from "./use-generation-feed";
 import { useReferenceUploads } from "./use-reference-uploads";
@@ -27,6 +31,7 @@ import { useComputeWalletBalance } from "@/app/_components/credits-badge";
  */
 export function useImageGeneration() {
   const t = useTranslations("studioModes");
+  const tv = useTranslations("generation");
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("image", "fizzstudio-image-studio");
   const { data: wallet } = useComputeWalletBalance();
@@ -38,6 +43,7 @@ export function useImageGeneration() {
   const [mode, setMode] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
   // Auto-select the first usable model with its schema defaults.
   useEffect(() => {
@@ -98,6 +104,7 @@ export function useImageGeneration() {
     if (!model || !canSubmit) return { ok: false };
     setSubmitting(true);
     setSubmitError(null);
+    setValidationIssues([]);
     if (cost != null && wallet && wallet.available < BigInt(Math.ceil(cost))) {
       setSubmitError(t("error.insufficientCredits"));
       setSubmitting(false);
@@ -120,12 +127,21 @@ export function useImageGeneration() {
               refId: item.id,
               label: item.label,
               assetId: item.mediaAssetId,
+              ...(typeof item.bytes === "number" ? { bytes: item.bytes } : {}),
             })),
           }
         : {};
     const input = compactFizzAiInput(
       filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
     );
+    const preflight = validateModelGenerationInput(model, input);
+    if (generationInputHasBlockingIssues(preflight)) {
+      setValidationIssues(preflight);
+      const first = preflight.find((issue) => issue.severity === "error");
+      setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+      setSubmitting(false);
+      return { ok: false };
+    }
     const result = await feed.submit({
       prompt,
       modelId: model.id,
@@ -161,6 +177,11 @@ export function useImageGeneration() {
     canSubmit,
     submitting,
     submitError,
+    validationIssues,
+    clearValidation: () => {
+      setValidationIssues([]);
+      setSubmitError(null);
+    },
     submit,
   };
 }

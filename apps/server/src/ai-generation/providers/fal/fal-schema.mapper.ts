@@ -11,6 +11,7 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
+  AiRequiredPlan,
 } from '../../types';
 import type {
   FalModelRuntimeConfig,
@@ -25,7 +26,7 @@ interface CreateFalModelConfigArgs {
   name?: string;
   description?: string;
   generationModes?: string[];
-  requiredPlan: string | null;
+  requiredPlan: AiRequiredPlan | null;
   enabled: boolean;
   disabledReason?: string;
   queueName: AiQueueName;

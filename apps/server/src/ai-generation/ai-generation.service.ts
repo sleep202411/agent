@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
 import type { AuthUser } from '../auth';
 import {
   CharacterGenerationService,
@@ -19,7 +20,15 @@ import {
 } from '../characters/character-generation.service';
 import { newUuidV7 } from '../common/id';
 import { EntitlementService } from '../entitlements';
+import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
+import {
+  ProjectSkillSelectionSchema,
+  ProjectSkillsResolver,
+  type ProjectSkillOwnerKind,
+  type ProjectSkillSelection,
+} from '../project-skills';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationEtaService } from './eta.service';
@@ -61,6 +70,7 @@ const TERMINAL_STATUSES = new Set([
 interface AiJobContext {
   workspaceId: string;
   projectId?: string;
+  storyProjectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
@@ -72,6 +82,8 @@ interface AiJobContext {
  */
 export interface AiJobSubmissionHooks {
   afterJobCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
+  /** Trusted internal retry path. Never exposed through the HTTP DTO. */
+  frozenSkillSnapshot?: ProjectSkillResolutionSnapshot | null;
 }
 
 /**
@@ -100,11 +112,14 @@ export class AiGenerationService {
     private readonly routing: AiGenerationRoutingService,
     private readonly workspaces: WorkspacesService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly documentAccess: StudioDocumentAccessService,
+    private readonly storyPermissions: StoryPermissionService,
     private readonly entitlements: EntitlementService,
     private readonly billingWallet: AiGenerationBillingWalletService,
     private readonly providerCapacity: ProviderCapacityRuntimeService,
     private readonly promptCompiler: AiPromptCompilerService,
     private readonly characterGeneration: CharacterGenerationService,
+    private readonly projectSkills: ProjectSkillsResolver,
   ) {}
 
   /**
@@ -142,6 +157,12 @@ export class AiGenerationService {
     // Resolve entitlement WITH the active workspace so a team plan's models
     // light up for members — without it, team grants never enter the candidate
     // set and team-gated models read as locked even though submitJob allows them.
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspacePresence(
+        user.userId,
+        workspaceId,
+      );
+    }
     const models = await this.catalog.listModels();
     const entitlement = await this.entitlements.resolveForUser(user, {
       workspaceId: workspaceId ?? null,
@@ -203,7 +224,13 @@ export class AiGenerationService {
         bindings: body.referenceBindings,
         input: rawInput,
       });
-    const input = characterExpansion.input;
+    // Resolve server-trusted media duration/size BEFORE routing. Routing
+    // freezes the wallet quote, and Seedance 2.5 charges reference-video jobs
+    // on input-video + output duration; accepting client-claimed duration here
+    // would let a caller understate the hold before validation corrected it.
+    const input = await this.validator.applyTrustedMediaFacts(
+      characterExpansion.input,
+    );
     const referenceBindings = characterExpansion.bindings;
 
     const entitlement = await this.entitlements.resolveForUser(user, {
@@ -248,12 +275,19 @@ export class AiGenerationService {
       model.input_schema.properties?.referenceVideos ||
       model.input_schema.properties?.referenceAudios,
     );
+    const skillSnapshot = await this.resolveGenerationSkillSnapshot({
+      context,
+      body,
+      type: model.type,
+      frozen: hooks.frozenSkillSnapshot,
+    });
     const promptCompilation = this.promptCompiler.compile({
       normalizedInput: schemaNormalizedInput,
       rawInput: input,
       promptDocument: body.promptDocument,
       references: supportsReferences ? referenceBindings : undefined,
       styles: body.styleBindings,
+      skillSnapshot,
     });
     const normalizedInput = promptCompilation.normalizedInput;
     const prompt = promptCompilation.snapshot.displayText;
@@ -317,6 +351,7 @@ export class AiGenerationService {
             schemaVersion: model.schemaVersion,
             workspaceId: context.workspaceId,
             projectId: context.projectId,
+            storyProjectId: context.storyProjectId,
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
             sourceSurface: context.sourceSurface,
@@ -346,6 +381,7 @@ export class AiGenerationService {
                 ? body.referenceBindings
                 : promptCompilation.snapshot.references,
             styleSnapshot: promptCompilation.snapshot.styles,
+            skillSnapshot,
             idempotencyKey,
             routingSnapshot: snapshot,
             outputs: [],
@@ -530,9 +566,12 @@ export class AiGenerationService {
       userId: user.userId,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
+      storyProjectId: scope.storyProjectId,
       documentId: scope.documentId,
       sourceSurface,
-      includeCollaboratorJobs: Boolean(scope.projectId || scope.documentId),
+      includeCollaboratorJobs: Boolean(
+        scope.projectId || scope.storyProjectId || scope.documentId,
+      ),
       type: query.type,
       limit: Number.isFinite(limit) ? limit : 50,
     });
@@ -713,26 +752,70 @@ export class AiGenerationService {
 
   async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
     const job = await this.getEditableJob(user, id);
-    return this.submitJob(user, {
-      modelId: job.modelId,
-      presetId: job.routingSnapshot?.presetId,
-      campaignId: job.routingSnapshot?.policy.quota.campaignId,
-      schemaVersion: job.schemaVersion,
-      workspaceId: job.workspaceId ?? undefined,
-      projectId: job.projectId ?? undefined,
-      documentId: job.documentId ?? undefined,
-      documentBlockId: job.documentBlockId ?? undefined,
-      sourceSurface: job.sourceSurface ?? undefined,
-      // Strip server-minted asset:// urls before resubmit: the submit-time
-      // rejectClientAssetReferences guard would otherwise 400 the retry, and
-      // expansion re-derives asset:// from the frozen referenceSnapshot anyway
-      // (the stamped url-less entries are stripped + re-appended). Preserves
-      // the guard for genuine client-sent asset:// (which never reach here).
-      input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
-      promptDocument: job.promptDocument ?? undefined,
-      referenceBindings: job.referenceSnapshot ?? undefined,
-      styleBindings: job.styleSnapshot ?? undefined,
-      idempotencyKey: randomUUID(),
+    return this.submitJob(
+      user,
+      {
+        modelId: job.modelId,
+        presetId: job.routingSnapshot?.presetId,
+        campaignId: job.routingSnapshot?.policy.quota.campaignId,
+        schemaVersion: job.schemaVersion,
+        workspaceId: job.workspaceId ?? undefined,
+        projectId: job.projectId ?? undefined,
+        storyProjectId: job.storyProjectId ?? undefined,
+        documentId: job.documentId ?? undefined,
+        documentBlockId: job.documentBlockId ?? undefined,
+        sourceSurface: job.sourceSurface ?? undefined,
+        // Strip server-minted asset:// urls before resubmit: the submit-time
+        // rejectClientAssetReferences guard would otherwise 400 the retry, and
+        // expansion re-derives asset:// from the frozen referenceSnapshot anyway
+        // (the stamped url-less entries are stripped + re-appended). Preserves
+        // the guard for genuine client-sent asset:// (which never reach here).
+        input: redactProviderAssetRefs(job.normalizedInput) ?? undefined,
+        promptDocument: job.promptDocument ?? undefined,
+        referenceBindings: job.referenceSnapshot ?? undefined,
+        styleBindings: job.styleSnapshot ?? undefined,
+        idempotencyKey: randomUUID(),
+      },
+      undefined,
+      { frozenSkillSnapshot: job.skillSnapshot ?? null },
+    );
+  }
+
+  private async resolveGenerationSkillSnapshot(input: {
+    context: AiJobContext;
+    body: AiSubmitJobBody;
+    type: AiJob['type'];
+    frozen?: ProjectSkillResolutionSnapshot | null;
+  }): Promise<ProjectSkillResolutionSnapshot | null> {
+    const owner = projectOwner(input.context);
+    const selection = parseSkillSelection(input.body);
+    if (!owner) {
+      if (
+        input.frozen ||
+        (selection.includeInstallationIds?.length ?? 0) > 0 ||
+        (selection.excludeInstallationIds?.length ?? 0) > 0
+      ) {
+        throw new BadRequestException({
+          code: 'PROJECT_SKILL_CONTEXT_REQUIRED',
+          msg: 'Project Skills can only be used by a generation with a trusted project context.',
+        });
+      }
+      return null;
+    }
+
+    const scope =
+      input.type === 'image' ? 'image_generation' : 'video_generation';
+    if (input.frozen) {
+      return this.projectSkills.validateFrozen(input.frozen, {
+        ...owner,
+        scope,
+      });
+    }
+    return this.projectSkills.resolve({
+      ...owner,
+      scope,
+      sourceSurface: input.context.sourceSurface,
+      selection,
     });
   }
 
@@ -762,7 +845,7 @@ export class AiGenerationService {
     if (!job) {
       throw new NotFoundException({
         code: 'JOB_NOT_FOUND',
-        msg: 'Foundry job not found.',
+        msg: 'AI generation job not found.',
       });
     }
     if (job.userId === user.userId) return job;
@@ -778,6 +861,17 @@ export class AiGenerationService {
       return job;
     }
 
+    if (job.storyProjectId) {
+      await this.storyPermissions.requireProject(
+        user.userId,
+        job.storyProjectId,
+        minimumRole === WorkspaceMemberRole.viewer
+          ? 'story.read'
+          : 'story.generate',
+      );
+      return job;
+    }
+
     if (job.workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
@@ -789,7 +883,7 @@ export class AiGenerationService {
 
     throw new NotFoundException({
       code: 'JOB_NOT_FOUND',
-      msg: 'Foundry job not found.',
+      msg: 'AI generation job not found.',
     });
   }
 
@@ -815,6 +909,7 @@ export class AiGenerationService {
     // entity's home workspace.
     const explicitWorkspaceId = body.context?.workspaceId ?? body.workspaceId;
     const projectId = body.context?.projectId ?? body.projectId;
+    const storyProjectId = body.context?.storyProjectId ?? body.storyProjectId;
     const documentId = body.context?.documentId ?? body.documentId;
     const documentBlockId =
       body.context?.documentBlockId ?? body.documentBlockId;
@@ -822,11 +917,13 @@ export class AiGenerationService {
       body.context?.sourceSurface ?? body.sourceSurface,
     );
 
+    this.assertSingleProjectScope(projectId, storyProjectId);
+
     if (documentId) {
-      const document = await this.workspacePermissions.requireDocumentRole(
+      const document = await this.documentAccess.requireDocument(
         user.userId,
         documentId,
-        ProjectMemberRole.editor,
+        'generate',
       );
       if (explicitWorkspaceId && explicitWorkspaceId !== document.workspaceId) {
         throw new BadRequestException({
@@ -834,15 +931,22 @@ export class AiGenerationService {
           msg: 'Document does not belong to the selected workspace.',
         });
       }
-      if (projectId && projectId !== document.projectId) {
+      if (projectId && projectId !== document.platformProjectId) {
         throw new BadRequestException({
           code: 'DOCUMENT_PROJECT_MISMATCH',
           msg: 'Document does not belong to the selected project.',
         });
       }
+      if (storyProjectId && storyProjectId !== document.storyProjectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_STORY_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected Story project.',
+        });
+      }
       return {
         workspaceId: document.workspaceId,
-        projectId: document.projectId,
+        projectId: document.platformProjectId ?? undefined,
+        storyProjectId: document.storyProjectId ?? undefined,
         documentId: document.id,
         documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
         sourceSurface,
@@ -864,6 +968,25 @@ export class AiGenerationService {
       return {
         workspaceId: project.workspaceId,
         projectId: project.id,
+        sourceSurface,
+      };
+    }
+
+    if (storyProjectId) {
+      const { project } = await this.storyPermissions.requireProject(
+        user.userId,
+        storyProjectId,
+        'story.generate',
+      );
+      if (explicitWorkspaceId && explicitWorkspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'STORY_PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Story project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        storyProjectId: project.id,
         sourceSurface,
       };
     }
@@ -895,18 +1018,20 @@ export class AiGenerationService {
   ): Promise<{
     workspaceId?: string;
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
   }> {
+    this.assertSingleProjectScope(query.projectId, query.storyProjectId);
     const workspaceId = this.resolveWorkspaceScope(
       workspaceHeaderId,
       query.workspaceId,
     );
 
     if (query.documentId) {
-      const document = await this.workspacePermissions.requireDocumentRole(
+      const document = await this.documentAccess.requireDocument(
         user.userId,
         query.documentId,
-        ProjectMemberRole.viewer,
+        'read',
       );
       if (workspaceId && workspaceId !== document.workspaceId) {
         throw new BadRequestException({
@@ -914,15 +1039,25 @@ export class AiGenerationService {
           msg: 'Document does not belong to the selected workspace.',
         });
       }
-      if (query.projectId && query.projectId !== document.projectId) {
+      if (query.projectId && query.projectId !== document.platformProjectId) {
         throw new BadRequestException({
           code: 'DOCUMENT_PROJECT_MISMATCH',
           msg: 'Document does not belong to the selected project.',
         });
       }
+      if (
+        query.storyProjectId &&
+        query.storyProjectId !== document.storyProjectId
+      ) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_STORY_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected Story project.',
+        });
+      }
       return {
         workspaceId: document.workspaceId,
-        projectId: document.projectId,
+        projectId: document.platformProjectId ?? undefined,
+        storyProjectId: document.storyProjectId ?? undefined,
         documentId: document.id,
       };
     }
@@ -942,6 +1077,24 @@ export class AiGenerationService {
       return { workspaceId: project.workspaceId, projectId: project.id };
     }
 
+    if (query.storyProjectId) {
+      const { project } = await this.storyPermissions.requireProject(
+        user.userId,
+        query.storyProjectId,
+        'story.read',
+      );
+      if (workspaceId && workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'STORY_PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Story project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        storyProjectId: project.id,
+      };
+    }
+
     if (workspaceId) {
       await this.workspacePermissions.requireWorkspaceRole(
         user.userId,
@@ -952,6 +1105,17 @@ export class AiGenerationService {
     }
 
     return {};
+  }
+
+  private assertSingleProjectScope(
+    projectId: string | undefined,
+    storyProjectId: string | undefined,
+  ): void {
+    if (!projectId || !storyProjectId) return;
+    throw new BadRequestException({
+      code: 'PROJECT_SCOPE_CONFLICT',
+      msg: 'Choose either a Creative Studio project or a Story project, not both.',
+    });
   }
 
   private resolveWorkspaceScope(
@@ -1012,6 +1176,7 @@ export class AiGenerationService {
       request_id: job.id,
       workspace_id: job.workspaceId ?? null,
       project_id: job.projectId ?? null,
+      story_project_id: job.storyProjectId ?? null,
       document_id: job.documentId ?? null,
       document_block_id: job.documentBlockId ?? null,
       source_surface: job.sourceSurface ?? null,
@@ -1035,6 +1200,7 @@ export class AiGenerationService {
       type: job.type,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,
+      storyProjectId: job.storyProjectId ?? null,
       documentId: job.documentId ?? null,
       documentBlockId: job.documentBlockId ?? null,
       sourceSurface: job.sourceSurface ?? null,
@@ -1064,6 +1230,7 @@ export class AiGenerationService {
       compiledPrompt: job.compiledPrompt ?? null,
       referenceSnapshot: job.referenceSnapshot ?? [],
       styleSnapshot: job.styleSnapshot ?? [],
+      skillSnapshot: job.skillSnapshot ?? null,
       // Always include the normalized input so the gallery can render
       // the correct aspect ratio for queued/in-flight cards on reload
       // (output rows don't carry width/height until upload finishes).
@@ -1156,4 +1323,46 @@ export class AiGenerationService {
       );
     }
   }
+}
+
+function projectOwner(context: AiJobContext): {
+  ownerKind: ProjectSkillOwnerKind;
+  projectId: string;
+} | null {
+  if (context.projectId) {
+    return { ownerKind: 'platform', projectId: context.projectId };
+  }
+  if (context.storyProjectId) {
+    return { ownerKind: 'story', projectId: context.storyProjectId };
+  }
+  return null;
+}
+
+function parseSkillSelection(
+  body: AiSubmitJobBody,
+): NonNullable<ProjectSkillSelection> {
+  const inlineInstallationIds = (body.promptDocument?.nodes ?? []).flatMap(
+    (node) => (node.type === 'skill_ref' ? [node.refId] : []),
+  );
+  const candidate = {
+    includeInstallationIds: uniqueStrings([
+      ...(body.skillSelection?.includeInstallationIds ?? []),
+      ...inlineInstallationIds,
+    ]),
+    excludeInstallationIds: uniqueStrings(
+      body.skillSelection?.excludeInstallationIds ?? [],
+    ),
+  };
+  const parsed = ProjectSkillSelectionSchema.safeParse(candidate);
+  if (!parsed.success) {
+    throw new BadRequestException({
+      code: 'INVALID_PROJECT_SKILL_SELECTION',
+      msg: parsed.error.issues[0]?.message ?? 'Skill selection is invalid.',
+    });
+  }
+  return parsed.data ?? {};
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }

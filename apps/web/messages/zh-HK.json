@@ -644,9 +644,9 @@
     "epDropzoneHint": "MP4 / WebM，最大 2 GB",
     "epCoverLabel": "封面",
     "epCoverDropzoneTitle": "拖拽或點擊上傳",
-    "epCoverHint": "JPG / PNG，最大 5 MB",
+    "epCoverHint": "JPG / PNG，最大 10 MB",
     "epCoverNotImage": "請選擇圖片檔案",
-    "epCoverTooLarge": "封面圖大小超過 5 MB",
+    "epCoverTooLarge": "封面圖大小超過 10 MB",
     "epCoverRequired": "請上傳劇集封面",
     "epProbing": "讀取影片資訊中…",
     "epLoadingPreview": "載入預覽中…",
@@ -1113,7 +1113,6 @@
       "accessAlreadyEditor": "此用戶已擁有編輯權限。",
       "accessUserId": "ID：{id}",
       "accessGrantedLine": "ID：{id} · 授權於 {date}",
-      "creatorShareLine": "每筆銷售中創作者可獲得 {pct}（由平台設定）。",
       "splitPrompt": "將此收益池分配給你的團隊：",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "未分配的部分以及取整餘額，歸 IP 管理員所有。",
@@ -6013,11 +6012,7 @@
   },
   "payment": {
     "upgrade": "升級套餐",
-    "vipPlans": "VIP 套餐",
     "credits": "積分充值",
-    "perMonth": "/月",
-    "days": "天",
-    "selectPlan": "選擇套餐",
     "wechatPay": "微信支付",
     "payNow": "立即支付",
     "noPackages": "No top-up packages available yet.",
@@ -6036,9 +6031,7 @@
     "orderNo": "訂單號",
     "backToCreatorCenter": "返回創作者中心",
     "changePlan": "更換套餐",
-    "popular": "推薦",
     "creditsUnit": "積分",
-    "originalPrice": "原價",
     "creditsRechargeDesc": "選擇積分套餐進行充值",
     "communityRechargeTitle": "社區積分充值",
     "communityRechargeDesc": "選擇套餐或輸入自訂金額，為社區積分充值",
@@ -6065,65 +6058,14 @@
     "pointsTypeLabel": "社區積分",
     "customGetLabel": "充值數量",
     "unlockMore": "解鎖更多 AI 創作能力，提升你的製作效率",
-    "billingPeriod": "按 {days} {unit}計費",
-    "disclaimer": "訂閱即表示您同意我們的服務條款。會員權益按帳單週期續訂；包含的算力積分將在付款成功後發放，並以結帳頁展示的計劃規則為準。",
     "plans": {
       "basic": "Basic · 基礎版",
       "standard": "Standard · 標準版",
       "pro": "Pro · 專業版",
       "team": "團隊版"
     },
-    "benefits": {
-      "bonusCredits": "包含 {value} 積分",
-      "creditDiscount": "積分充值享 {discount} 折優惠",
-      "freeCourses": "專屬課程權益",
-      "outputTitle": "預估創作產出",
-      "outputImagesVideos": "可生成約 {images} 張圖片或 {videos} 個影片",
-      "outputTime": "約 {min}–{max} 分鐘創作時長",
-      "outputAgents": "支援 {count} 次專業智能體拆解",
-      "storyosCore": "基礎存取",
-      "storyosFull": "完整存取",
-      "storyosMessages": "每對話 {count} 條訊息",
-      "storyosRetention": "{days} 天對話歷史",
-      "storyosUnlimited": "無限使用 AI 助手",
-      "storyosPriority": "優先任務佇列"
-    },
     "membership": {
-      "subscriptionLabel": "FizzDragon 會員",
-      "headline": "選擇你的創作會員",
-      "subheadline": "用每月算力積分、優先存取和團隊工作流擴展圖片、影片與 StoryOS 創作能力。",
-      "planAudience": "計劃類型",
-      "billingCycle": "帳單週期",
-      "annualSavings": "省 25%",
-      "currencyNote": "{currency} 價格",
-      "contactSales": "聯絡銷售",
-      "includedInPlan": "計劃包含",
-      "getStarted": "開始訂閱",
-      "perMonth": "/月",
-      "perYear": "/年",
-      "secureCheckout": "安全結帳。幣種會根據你的訪問地區自動選擇。",
-      "individual": "個人",
-      "teams": "團隊",
-      "monthly": "月付",
-      "yearly": "年付",
-      "oneTime": "一次性",
-      "loadFailed": "會員計劃載入失敗。",
-      "emptyTitle": "暫無可購買會員計劃",
-      "emptyBody": "請先在後台計費中建立會員計劃，並配置已同步支付渠道的價格。",
-      "defaultDescription": "面向 AI 創作工作流的會員權益。",
-      "computeCredits": "算力積分",
-      "seats": "席位",
-      "maxSeats": "最多 {count}",
-      "approxImages": "每月最多約 {count} 次圖片生成",
-      "privateGenerations": "私密生成",
-      "advancedWorkflows": "進階工作流",
-      "prioritySupport": "優先支援",
-      "sharedCredits": "團隊共享積分",
-      "concurrentJobs": "{count} 個並發任務",
-      "queuedJobs": "{count} 個排隊任務",
-      "customPrice": "定制",
-      "priceUnavailable": "價格未配置",
-      "workspaceRequired": "購買團隊會員前，請先進入團隊工作區。"
+      "getStarted": "開始訂閱"
     }
   },
   "guide": {
@@ -6532,7 +6474,7 @@
   },
   "home": {
     "hero": {
-      "statusPill": "Happy Horse · 現已上線",
+      "statusPill": "Seedance 2.5 · 現已上線",
       "headlineLine1": "全宇宙超精彩的",
       "headlineLine2": "AI故事劇集",
       "subtitle": "集結全球各路創作高手，融匯歷史、文學、漫畫、哲學、英雄與傳說，打造風靡全球的走心爆款——超越模版，後勁極大。",
@@ -6975,6 +6917,10 @@
         "accenture": {
           "title": "Accenture",
           "body": "合格的 AI 解決方案合作夥伴"
+        },
+        "auba": {
+          "title": "AUBA for Global",
+          "body": "日本國際開放創新平台"
         }
       }
     }
@@ -7528,7 +7474,7 @@
       "upload": "MB"
     },
     "badge": {
-      "unlimited": "VIP · 隊列優先",
+      "unlimited": "不限量 · 隊列優先",
       "tooltipUsed": "今日 {used}/{limit}{unit} · {resetIn} 後重設"
     },
     "blocker": {
@@ -7544,7 +7490,7 @@
       "nextTierPriority": "升級 {tier} · 隊列優先",
       "nextTierBody": "立即解鎖 {limit}{unit}/天",
       "nextTierBodyUnlimited": "立即解鎖無每日上限",
-      "vip3Body": "你已是 VIP3 最高套餐,目前隊列繁忙,稍後再試。",
+      "topTierBody": "你已是最高套餐，目前隊列繁忙，請稍後再試。",
       "later": "明天再說",
       "upgradeNow": "立即升級"
     }
@@ -8495,6 +8441,7 @@
     "createProjectDescLabel": "項目簡介",
     "createProjectDescPlaceholder": "這個項目是關於什麼的？（可選）",
     "createProjectSubmit": "建立項目",
+    "defaultSectionTitle": "第 1 章",
     "createTeamWorkspace": "建立團隊",
     "createTeamWorkspaceTitle": "建立團隊工作區",
     "workspaceNameLabel": "團隊名稱",
@@ -9081,18 +9028,96 @@
   },
   "games": {
     "back": "返回 IP 廣場",
-    "eyebrow": "影遊",
-    "title": "影遊",
-    "subtitle": "FizzDragon 發佈影遊的統一入口。",
-    "catalogue": {
-      "playableStory": "影遊",
-      "currentVersion": "目前版本",
-      "open": "開始遊玩",
-      "empty": "暫時還沒有已發佈的影遊。",
-      "unavailable": "影遊目錄暫時不可用"
+    "eyebrow": "可遊玩的故事",
+    "title": "進入一個會回應你的故事。",
+    "subtitle": "按自己的節奏閱讀，決定下一步，並隨時回來繼續。你的每次行動，都會成為故事的一部分。",
+    "textGames": {
+      "title": "文遊",
+      "description": "由你的決定推動的長篇世界。",
+      "count": "{count} 個已發佈世界",
+      "label": "文遊",
+      "untitled": "未命名世界",
+      "empty": "暫時還沒有已發佈的文遊。",
+      "unavailable": "文遊目錄暫時不可用"
     },
-    "status": {
-      "published": "已發佈"
+    "films": {
+      "title": "互動影遊",
+      "description": "用選擇推動的電影式故事。",
+      "label": "互動影遊",
+      "currentVersion": "版本 {version}",
+      "open": "開始遊玩",
+      "empty": "暫時還沒有已發佈的互動影遊。",
+      "unavailable": "互動影遊目錄暫時不可用"
+    }
+  },
+  "textGame": {
+    "metadataFallbackTitle": "文遊",
+    "metadataDescription": "氣泡龍上的可遊玩故事。",
+    "player": {
+      "untitled": "未命名世界",
+      "backToLibrary": "全部故事",
+      "libraryTitle": "文遊",
+      "libraryDescription": "切換另一個世界",
+      "currentWork": "正在閱讀",
+      "noOtherWorks": "暫時沒有其他已發佈的世界。",
+      "openLibrary": "打開文遊列表",
+      "resumedSession": "已恢復進度",
+      "newSession": "一個新故事",
+      "pauseSoundtrack": "暫停背景音樂",
+      "playSoundtrack": "播放背景音樂",
+      "enableSoundtrack": "開啟聲音",
+      "soundUnavailable": "無法播放背景音樂。",
+      "restart": "重新開始",
+      "restartTitle": "重新開始這個故事？",
+      "restartDescription": "目前進度會結束，系統將重新生成開場。",
+      "cancel": "取消",
+      "restartComplete": "新的故事已經開始。",
+      "restartFailed": "無法重新開始故事。",
+      "restartingStory": "正在重新開始故事…",
+      "openInfo": "打開作品資訊",
+      "characterCount": "角色：{count}",
+      "openingStory": "正在打開這個世界…",
+      "loadFailed": "無法打開故事",
+      "loadFailedDescription": "請重試以恢復你的進度。",
+      "retry": "重試",
+      "yourAction": "你的行動",
+      "storyResponding": "故事正在展開…",
+      "actionPlaceholder": "接下來，你想做甚麼？",
+      "sendAction": "發送行動",
+      "sendFailed": "無法發送你的行動。",
+      "composerHint": "Enter 行動 · Shift + Enter 換行",
+      "workInformation": "關於這個世界",
+      "interactiveFiction": "互動敘事",
+      "share": "分享故事",
+      "shareDescription": "進入氣泡龍上的這個可遊玩故事。",
+      "linkCopied": "故事連結已複製。",
+      "shareFailed": "無法分享這個故事。",
+      "like": "喜歡",
+      "dislike": "不喜歡",
+      "report": "舉報",
+      "comingSoon": "即將上線",
+      "newStoryAction": "重新開始",
+      "storyControls": "故事控制",
+      "voice": "語音",
+      "history": "歷史記錄",
+      "customize": "自訂",
+      "model": "模型",
+      "models": {
+        "qwen": "千問",
+        "kimi": "Kimi",
+        "deepseek": "DeepSeek",
+        "glm": "GLM"
+      },
+      "currentScene": "目前場景",
+      "soundtrack": "背景音樂",
+      "soundtrackPlaying": "正在循環播放",
+      "soundtrackPaused": "已暫停",
+      "soundtrackNeedsActivation": "點擊播放",
+      "cast": "角色",
+      "progressSaved": "遊玩進度會自動儲存",
+      "stillAlt": "故事場景圖 {index}",
+      "previousStill": "上一張圖片",
+      "nextStill": "下一張圖片"
     }
   },
   "notifications": {

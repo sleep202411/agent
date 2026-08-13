@@ -113,7 +113,6 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
       data: {
         role: WorkspaceMemberRole.viewer,
         status: WorkspaceMemberStatus.active,
-        seatAssigned: true,
       },
     });
     expect(t.db.workspaceMember.update).toHaveBeenCalledWith({
@@ -121,7 +120,6 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
       data: {
         role: WorkspaceMemberRole.owner,
         status: WorkspaceMemberStatus.active,
-        seatAssigned: true,
       },
     });
     expect(t.db.projectMember.updateMany).toHaveBeenCalledWith({
@@ -169,7 +167,6 @@ describe('CrewCollaborationService.transferCrewOwnershipAccess', () => {
         role: WorkspaceMemberRole.viewer,
         status: WorkspaceMemberStatus.removed,
         removedAt: expect.any(Date) as unknown,
-        seatAssigned: false,
       },
     });
     expect(t.db.projectMember.updateMany).toHaveBeenCalledWith({

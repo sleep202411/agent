@@ -1,89 +1,71 @@
 import type {
-  FOUNDRY_SCHEMA_DIALECT,
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryConditionExpression,
-  FoundryCostEstimate,
-  FoundryDocumentationLink,
-  FoundryFieldConstraint,
-  FoundryFieldUi,
-  FoundryInputControl,
-  FoundryJsonPrimitive,
-  FoundryJsonSchema,
-  FoundryJsonValue,
-  FoundryObjectSchema,
-  FoundryObservabilityContract,
-  FoundryOutputControl,
-  FoundryOutputUi,
-  FoundryPreflightEstimator,
-  FoundryProviderBinding,
-  FoundrySchemaRule,
-  FoundryUiOption,
-  FoundryUiSchema,
-} from "./foundry-schema.js";
+  AiAvailability,
+  AiCapabilityMatrix,
+  AiConditionExpression,
+  AiCostEstimate,
+  AiDocumentationLink,
+  AiFieldConstraint,
+  AiFieldUi,
+  AiGenerationMode,
+  AiInputControl,
+  AiJsonPrimitive,
+  AiJsonSchema,
+  AiJsonValue,
+  AiObjectSchema,
+  AiObservabilityContract,
+  AiOutputControl,
+  AiOutputUi,
+  AiPreflightEstimator,
+  AiProviderBinding,
+  AiSchemaRule,
+  AiUiOption,
+  AiUiSchema,
+} from "./ai-schema.js";
+import { AI_MODEL_PROTOCOL_DIALECT, estimateAiPreflightCost } from "./ai-schema.js";
 import type { AiProductPricingPolicy } from "./billing.js";
 
-export const AI_MODEL_PROTOCOL_DIALECT = "https://fizzdragon.com/schemas/ai/model/v1";
+export { AI_MODEL_PROTOCOL_DIALECT, estimateAiPreflightCost };
 
-export type AiJsonPrimitive = FoundryJsonPrimitive;
-export type AiJsonValue = FoundryJsonValue;
-export type AiJsonSchema = FoundryJsonSchema;
-export type AiObjectSchema = FoundryObjectSchema;
-export type AiInputSchema = FoundryObjectSchema;
-export type AiOutputSchema = FoundryObjectSchema;
-export type AiInputControl = FoundryInputControl;
-export type AiOutputControl = FoundryOutputControl;
-export type AiFieldUi = FoundryFieldUi;
-export type AiOutputUi = FoundryOutputUi;
-export type AiUiOption = FoundryUiOption;
-export type AiUiSchema = FoundryUiSchema;
-export type AiConditionExpression = FoundryConditionExpression;
-export type AiFieldConstraint = FoundryFieldConstraint;
-export type AiSchemaRule = FoundrySchemaRule;
-export type AiCapabilityMatrix = FoundryCapabilityMatrix;
-export type AiAvailability = FoundryAvailability;
-export type AiCostEstimate = FoundryCostEstimate;
-export type AiPreflightEstimator = FoundryPreflightEstimator;
-export type AiObservabilityContract = FoundryObservabilityContract;
-export type AiDocumentationLink = FoundryDocumentationLink;
-export type AiProviderBinding = FoundryProviderBinding;
+// Re-export schema contract types (canonical names live in ai-schema).
+export type {
+  AiJsonPrimitive,
+  AiJsonValue,
+  AiJsonSchema,
+  AiObjectSchema,
+  AiInputControl,
+  AiOutputControl,
+  AiFieldUi,
+  AiOutputUi,
+  AiUiOption,
+  AiUiSchema,
+  AiConditionExpression,
+  AiFieldConstraint,
+  AiSchemaRule,
+  AiCapabilityMatrix,
+  AiAvailability,
+  AiCostEstimate,
+  AiPreflightEstimator,
+  AiObservabilityContract,
+  AiDocumentationLink,
+  AiProviderBinding,
+  AiGenerationMode,
+} from "./ai-schema.js";
+export type AiInputSchema = AiObjectSchema;
+export type AiOutputSchema = AiObjectSchema;
 
-export type AiModelSchemaDialect =
-  | typeof AI_MODEL_PROTOCOL_DIALECT
-  | typeof FOUNDRY_SCHEMA_DIALECT
-  | string;
+export type AiModelSchemaDialect = typeof AI_MODEL_PROTOCOL_DIALECT | string;
 
 export type AiModelProviderId =
-  | "microsoft-foundry"
   | "fal-ai"
   | "byteplus-modelark"
-  | "replicate"
+  | "aliyun-bailian"
+  | "agnes-ai"
+  | "minimax"
   | "dashscope"
   | "self-hosted"
   | string;
 
 export type AiModelFamily = "image" | "video" | "audio" | "text" | "multimodal";
-
-export type AiGenerationMode =
-  | "text_to_image"
-  | "image_to_image"
-  | "inpainting"
-  | "outpainting"
-  | "upscale"
-  | "remove_background"
-  | "relight"
-  | "multi_angle"
-  | "reference_image_generation"
-  | "text_to_video"
-  | "image_to_video"
-  | "first_last_frame_to_video"
-  | "video_to_video"
-  | "text_to_audio"
-  | "audio_to_audio"
-  | "text_to_text"
-  | "multimodal_to_text"
-  | "multimodal_to_image"
-  | "multimodal_to_video";
 
 /** Coarse capability used for catalog grouping alongside concrete generation modes. */
 export type AiModelCapability =
@@ -106,20 +88,24 @@ export type AiPricingUnit =
   | "provider_usage";
 
 /**
- * Canonical list of providers we onboard. Provider accounts are reconciled from
- * THIS list on boot (one draft account per key). A key may exist before its
- * server adapter does — that account is a draft placeholder: visible/editable in
- * admin, but generation through it fails the ProviderRegistry guard until the
- * adapter ships and the account is activated.
+ * Active AI Job generation providers. ProviderAccountReconciler upserts a
+ * draft account for each key on boot so admin can activate bindings. A key may
+ * exist before its server adapter does — that account is a draft placeholder
+ * until the adapter ships and the account is activated.
+ *
+ * Historical DB rows may still store removed vendor strings (e.g. former
+ * Foundry/Replicate gen adapters); those are free-form `provider` columns, not
+ * onboarded keys. Agent project-cover may still use REPLICATE_API_TOKEN outside
+ * this list.
  */
 export const AI_PROVIDER_KEYS = [
   "fal-ai",
   "byteplus-modelark",
   "aliyun-bailian",
-  "microsoft-foundry",
-  "replicate",
   "agnes-ai",
+  "minimax",
 ] as const;
+
 export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 
 /** Human-readable labels for the provider keys (admin UI). */
@@ -127,9 +113,8 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "fal-ai": "Fal",
   "byteplus-modelark": "BytePlus ModelArk",
   "aliyun-bailian": "百炼",
-  "microsoft-foundry": "Azure Foundry",
-  replicate: "Replicate",
   "agnes-ai": "Agnes AI",
+  minimax: "MiniMax",
 };
 
 export interface AiBillingPolicy {
@@ -206,6 +191,12 @@ export interface AiModelDefinition {
   publisher?: string;
   source: string;
   family: AiModelFamily;
+  /**
+   * The company that makes the model (ByteDance / Google / Black Forest Labs /
+   * Alibaba / OpenAI / …). User-facing "provider" axis for filtering. Distinct
+   * from `provider` (the routing channel: fal-ai / byteplus-modelark / …).
+   */
+  vendor?: string;
   generationModes: AiGenerationMode[];
   capability?: AiModelCapability;
   type: "image" | "video";

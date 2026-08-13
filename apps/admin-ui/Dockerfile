@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:24.18.1-alpine AS base
 
 # ─── Stage 1: Install + build (full monorepo) ─────────────
 # Deliberately NOT turbo-pruned: pruning rewrites the lockfile layout and the
@@ -6,9 +6,10 @@ FROM node:22-alpine AS base
 # "default-transpiled-packages.json not found") — see apps/studio/Dockerfile.
 # The runner ships only the standalone output, so image size is unaffected.
 FROM base AS builder
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY . .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 ARG NEXT_PUBLIC_ADMIN_UI_BASE_PATH
 ARG ADMIN_GLOBAL_API_BASE_URL=http://fizzdragon-server:3001/admin

@@ -29,19 +29,34 @@ export interface MembershipPlan {
   includedSeats: number;
   maxSeats: number | null;
   seatOverageAllowed: boolean;
-  topupDiscountBps: number;
   billingIntervalDefault: "one_time" | "month" | "year" | null;
-  featureFlags: Record<string, unknown>;
-  limits: Record<string, unknown>;
+  benefits: MembershipBenefits;
   marketing: Record<string, unknown>;
   metadata: Record<string, unknown>;
   prices: MembershipPrice[];
   updatedAt: string;
 }
 
+export interface MembershipBenefits {
+  queuePriority: number;
+  imageDaily: number | "Infinity";
+  videoDaily: number | "Infinity";
+  chatDaily: number | "Infinity";
+  workflowDaily: number | "Infinity";
+  uploadMB: number;
+  chatPerMinute: number;
+  concurrentJobs: number | null;
+  queuedJobs: number | null;
+}
+
 export function listMembershipPlans(input: {
   productType: "membership_plan" | "team_membership_plan";
-  currency: "USD" | "SGD" | "CNY";
+  /**
+   * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
+   * Never ask for a currency the catalog has no rows for — the API answers
+   * with price-less plans and the dialog degrades to "Contact Sales".
+   */
+  currency: "USD" | "CNY";
 }) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(
     "/aurora/billing/membership-plans",
@@ -127,7 +142,6 @@ export interface EntitlementSnapshot {
   source: string;
   status: "active" | "expired" | string;
   expiresAt: string | null;
-  features: Record<string, boolean>;
   limits: EntitlementLimits;
 }
 
@@ -153,8 +167,10 @@ export interface MyEntitlement {
 }
 
 /** The caller's current plan + the subscription that backs it (for renew/cancel). */
-export function getMyEntitlement() {
-  return api.get<MyEntitlement>("/aurora/billing/entitlement/me");
+export function getMyEntitlement(workspaceId?: string | null) {
+  return api.get<MyEntitlement>("/aurora/billing/entitlement/me", {
+    headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
+  });
 }
 
 /** Cancel a recurring subscription. Access continues until currentPeriodEnd. */

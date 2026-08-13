@@ -30,7 +30,7 @@ const FREE_PROFILE: QuotaProfile = {
   },
 };
 
-const VIP1_PROFILE: QuotaProfile = {
+const BASIC_PROFILE: QuotaProfile = {
   planKey: 'basic',
   tier: 'basic',
   limits: {
@@ -302,7 +302,7 @@ describe('QuotaService strict Redis boundary', () => {
     await expect(
       service.consume({
         userId: 'user-a',
-        profile: VIP1_PROFILE,
+        profile: BASIC_PROFILE,
         dimension: 'chat',
         reason: 'test',
       }),
@@ -371,7 +371,7 @@ describe('QuotaService strict Redis boundary', () => {
       .mockRejectedValue(new Error('Stream is not writeable'));
 
     await expect(
-      service.checkChatRate('user-a', VIP1_PROFILE, {
+      service.checkChatRate('user-a', BASIC_PROFILE, {
         failureMode: 'closed',
       }),
     ).rejects.toThrow('Stream is not writeable');
@@ -395,7 +395,7 @@ describe('QuotaService strict Redis boundary', () => {
     strictRedis.eval.mockResolvedValueOnce(1);
 
     await expect(
-      service.checkChatRate('user-a', VIP1_PROFILE, {
+      service.checkChatRate('user-a', BASIC_PROFILE, {
         failureMode: 'closed',
       }),
     ).resolves.toEqual({ ok: true, remaining: 39 });
@@ -406,7 +406,7 @@ describe('QuotaService strict Redis boundary', () => {
     expect(script).toContain('redis.call("EXPIRE", key, ttl)');
 
     await expect(
-      service.checkChatRate('user-a', VIP1_PROFILE, {
+      service.checkChatRate('user-a', BASIC_PROFILE, {
         failureMode: 'closed',
       }),
     ).resolves.toEqual({ ok: true, remaining: 38 });

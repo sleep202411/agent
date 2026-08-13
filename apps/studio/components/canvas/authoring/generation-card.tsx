@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
@@ -24,12 +25,12 @@ import {
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
-import { CANVAS_NODE_DRAG_HANDLE_CLASS } from "@/components/canvas/canvas-interaction-policy";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
+import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
-import { removeEdgeById } from "@/lib/canvas-authoring/canvas-wiring";
+import { removeEdgeById, sourceMediaMetadata } from "@/lib/canvas-authoring/canvas-wiring";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
 import {
   EXPAND_OP,
@@ -46,7 +47,7 @@ import {
 import { MultiAngleEditor } from "./multi-angle-editor";
 import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
-import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
+import { mentionLabel, type MentionItem, type SkillMarketItem } from "@/lib/prompt-mentions";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
   canvasDefaultMode,
@@ -64,6 +65,9 @@ import {
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
+import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
+import { ValidationAlertDialog } from "./validation-alert-dialog";
+import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -75,6 +79,23 @@ import {
 import { PortPlus } from "./ports";
 import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import {
+  compatibleProjectSkillInstallations,
+  composePromptWithProjectSkills,
+  extractProjectSkillSelection,
+  generationSkillScope,
+  isProjectSkillDefault,
+  projectSkillMention,
+  resolveEffectiveProjectSkills,
+  type CanvasProjectSkillSelection,
+} from "@/lib/project-skill-runtime";
+import {
+  installProjectSkill,
+  type ProjectSkillCatalogItem,
+  type ProjectSkillInstallation,
+} from "@/lib/project-skills-api";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -85,6 +106,12 @@ import { CanvasMediaViewer } from "./canvas-media-viewer";
  * node types via the thin wrappers at the bottom).
  */
 export type GenerationModality = "image" | "video";
+
+function catalogTranslationKey(skill: ProjectSkillCatalogItem): string | null {
+  if (!skill.localizedMetadata || typeof skill.localizedMetadata !== "object") return null;
+  const key = (skill.localizedMetadata as { translationKey?: unknown }).translationKey;
+  return typeof key === "string" && key ? key : null;
+}
 
 export type GenerationNodeData = {
   name?: string;
@@ -99,6 +126,8 @@ export type GenerationNodeData = {
   settings?: ModelSettings;
   references?: CardReferences;
   generation?: GenerationState;
+  /** Explicit per-card additions/removals relative to project Skill defaults. */
+  skillSelection?: CanvasProjectSkillSelection;
   /** Set when a node is spawned to auto-run once on mount (e.g. panorama). */
   autoSubmit?: boolean;
   /**
@@ -178,6 +207,8 @@ function uploadedReferenceGraph({
   target,
   targetNodeId,
   url,
+  durationSeconds,
+  bytes,
 }: {
   edgeId: string;
   fileName: string;
@@ -188,6 +219,8 @@ function uploadedReferenceGraph({
   target: CanvasNodeShape | null;
   targetNodeId: string;
   url: string;
+  durationSeconds?: number;
+  bytes?: number;
 }): { edge: CanvasEdgeShape; node: CanvasNodeShape } {
   return {
     node: {
@@ -198,6 +231,8 @@ function uploadedReferenceGraph({
         src: url,
         mediaAssetId,
         label: fileName,
+        ...(durationSeconds != null ? { durationSeconds } : {}),
+        ...(bytes != null ? { bytes } : {}),
       },
     },
     edge: {
@@ -319,8 +354,10 @@ function GenerationCard({
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
+  const ts = useTranslations("project.skills");
   const ol = useOperationLabel();
   const graph = useCanvasGraphContext();
+  const { owner, projectSkills, projectSkillCatalog } = useProjectContext();
   const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
@@ -331,7 +368,10 @@ function GenerationCard({
     cancel,
     canSubmit: generationCanSubmit,
     disabledReason: generationDisabledReason,
+    preflightIssues,
+    clearPreflightIssues,
   } = useGeneration();
+  const validationIssues = preflightIssues(id);
   const spawnComposedOp = useSpawnComposedOperation();
   const [pendingOp, setPendingOp] = useState<OperationDef | null>(null);
   const autoSubmittedRef = useRef(false);
@@ -340,6 +380,15 @@ function GenerationCard({
   const [pano, setPano] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
+  const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
+  const [detailSkillIntent, setDetailSkillIntent] = useState<"inspect" | "use" | null>(null);
+  const pendingSkillApplyRef = useRef<((item: MentionItem) => void) | null>(null);
+  // The install response is authoritative before the catalog refetch reaches
+  // React. Keep it available to the prompt commit fired by mention insertion,
+  // so the new installation id is never discarded during that short window.
+  const justInstalledSkillsRef = useRef(new Map<string, ProjectSkillInstallation>());
+  const queryClient = useQueryClient();
+  const openSkills = useProjectUIStore((state) => state.openSkills);
   // Actual rendered-output aspect ratio (e.g. Topaz upscale returns no width/
   // height metadata) so the card hugs its content instead of the size default.
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
@@ -383,19 +432,116 @@ function GenerationCard({
   // preview + spinner) — never written to the doc; on confirm the durable URL
   // is patched into `references` and the pending chip is dropped.
   const [pendingRefs, setPendingRefs] = useState<CardReferences>({});
+  const hydratedReferences = useMemo<CardReferences>(() => {
+    let changed = false;
+    const next: CardReferences = {};
+    for (const [field, list] of Object.entries(references)) {
+      next[field] = list.map((reference) => {
+        if (!reference.sourceNodeId) return reference;
+        const metadata = sourceMediaMetadata(getNode, reference.sourceNodeId);
+        const hydrated = { ...metadata, ...reference };
+        if (
+          hydrated.name !== reference.name ||
+          hydrated.durationSeconds !== reference.durationSeconds ||
+          hydrated.bytes !== reference.bytes ||
+          hydrated.width !== reference.width ||
+          hydrated.height !== reference.height
+        ) {
+          changed = true;
+          return hydrated;
+        }
+        return reference;
+      });
+    }
+    return changed ? next : references;
+  }, [getNode, references]);
   const referencesForDisplay = useMemo<CardReferences>(() => {
     const fields = Object.keys(pendingRefs);
-    if (fields.length === 0) return references;
-    const merged: CardReferences = { ...references };
+    if (fields.length === 0) return hydratedReferences;
+    const merged: CardReferences = { ...hydratedReferences };
     for (const field of fields) {
       const pend = pendingRefs[field] ?? [];
-      if (pend.length) merged[field] = [...(references[field] ?? []), ...pend];
+      if (pend.length) merged[field] = [...(hydratedReferences[field] ?? []), ...pend];
     }
     return merged;
-  }, [references, pendingRefs]);
+  }, [hydratedReferences, pendingRefs]);
   const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
+  const skillScope = generationSkillScope(modality);
+  const skillSourceSurface =
+    owner.kind === "platform_project" ? "fizzstudio-canvas" : "story-studio-workbench";
+  const skillLabelFor = useCallback(
+    (installation: ProjectSkillInstallation) =>
+      installation.translationKey
+        ? ts(`items.${installation.translationKey}.name`)
+        : (installation.name ?? installation.slug ?? ts("title")),
+    [ts]
+  );
+  const compatibleSkills = useMemo(
+    () => compatibleProjectSkillInstallations(projectSkills.data, skillScope),
+    [projectSkills.data, skillScope]
+  );
+  const skillMarketOptions = useMemo<SkillMarketItem[]>(() => {
+    const installationBySkillId = new Map(
+      compatibleSkills.map((installation) => [installation.skillId, installation])
+    );
+    return (projectSkillCatalog.data?.items ?? [])
+      .filter((skill) => skill.latestVersion?.capabilities.includes(skillScope))
+      .map((skill) => {
+        const installation = installationBySkillId.get(skill.id);
+        const translationKey = catalogTranslationKey(skill);
+        const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+        return {
+          id: installation?.id ?? `catalog:${skill.id}`,
+          catalogId: skill.id,
+          installed: Boolean(installation),
+          kind: "skill" as const,
+          label,
+          name: label,
+          previewUrl: skill.previewUrl ?? undefined,
+          previewVideoUrl: skill.previewVideoUrl ?? undefined,
+        };
+      });
+  }, [compatibleSkills, projectSkillCatalog.data?.items, skillScope, ts]);
+  const defaultSkillIds = useMemo(
+    () =>
+      new Set(
+        compatibleSkills
+          .filter((installation) =>
+            isProjectSkillDefault({
+              installation,
+              scope: skillScope,
+              sourceSurface: skillSourceSurface,
+            })
+          )
+          .map((installation) => installation.id)
+      ),
+    [compatibleSkills, skillScope, skillSourceSurface]
+  );
+  const effectiveSkills = useMemo(
+    () =>
+      resolveEffectiveProjectSkills({
+        projectSkills: projectSkills.data,
+        scope: skillScope,
+        sourceSurface: skillSourceSurface,
+        selection: data.skillSelection,
+        labelFor: skillLabelFor,
+        promptLength: (data.prompt ?? "").length,
+      }),
+    [
+      data.prompt,
+      data.skillSelection,
+      projectSkills.data,
+      skillLabelFor,
+      skillScope,
+      skillSourceSurface,
+    ]
+  );
+  const promptWithSkills = useMemo(
+    () => composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills),
+    [data.prompt, effectiveSkills]
+  );
   // Attached references the prompt can cite with `@` — labeled per kind
   // (Image1, Video1, …) in the same scheme as the studio composer. Still-
   // uploading items are skipped (no stable target yet).
@@ -412,11 +558,66 @@ function GenerationCard({
           name: ref.name,
           kind: ref.kind,
           previewUrl: ref.url,
+          assetId: ref.assetId,
+          durationSeconds: ref.durationSeconds,
+          bytes: ref.bytes,
+          width: ref.width,
+          height: ref.height,
         });
       }
     }
+    for (const installation of compatibleSkills) {
+      items.push(projectSkillMention(installation, skillLabelFor(installation)));
+    }
     return items;
-  }, [referencesForDisplay, refFields]);
+  }, [compatibleSkills, referencesForDisplay, refFields, skillLabelFor]);
+  const detailSkill = useMemo(
+    () =>
+      projectSkillCatalog.data?.items.find(
+        (skill) => skill.id === detailSkillId || skill.installation?.id === detailSkillId
+      ) ?? null,
+    [detailSkillId, projectSkillCatalog.data?.items]
+  );
+  const installSkillMutation = useMutation({
+    mutationFn: (skill: ProjectSkillCatalogItem) =>
+      installProjectSkill({
+        ownerKind: owner.kind === "platform_project" ? "platform" : "story",
+        projectId: owner.projectId,
+        skillId: skill.id,
+        expectedProjectRevision:
+          projectSkills.data?.projectRevision ?? projectSkillCatalog.data?.projectRevision ?? 0,
+      }),
+    onSuccess: async (response, skill) => {
+      const translationKey = catalogTranslationKey(skill);
+      const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+      justInstalledSkillsRef.current.set(response.installation.id, response.installation);
+      pendingSkillApplyRef.current?.(projectSkillMention(response.installation, label));
+      justInstalledSkillsRef.current.delete(response.installation.id);
+      toast.success(ts("detail.installAndUseSuccess", { name: label }));
+      pendingSkillApplyRef.current = null;
+      setDetailSkillIntent(null);
+      setDetailSkillId(null);
+      await queryClient.invalidateQueries({ queryKey: ["project-skills"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : ts("errors.install")),
+  });
+  const useDetailSkill = useCallback(
+    (skill: ProjectSkillCatalogItem) => {
+      const applySkill = pendingSkillApplyRef.current;
+      if (!applySkill) return;
+      if (!skill.installation) {
+        installSkillMutation.mutate(skill);
+        return;
+      }
+      const translationKey = catalogTranslationKey(skill);
+      const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
+      applySkill(projectSkillMention(skill.installation, label));
+      pendingSkillApplyRef.current = null;
+      setDetailSkillIntent(null);
+      setDetailSkillId(null);
+    },
+    [installSkillMutation, ts]
+  );
 
   // Live compute-point estimate for the current model + settings + wired/uploaded
   // references — mirrors the model-settings panel and the standalone studio
@@ -424,10 +625,25 @@ function GenerationCard({
   // model has no pricing policy.
   const cost = useMemo(() => {
     if (!model) return null;
-    const uploadedReferenceCount = refFields.reduce(
-      (n, ff) => n + (references[ff.field]?.length ?? 0),
-      0
-    );
+    const uploadedReferenceCount = refFields
+      .filter((field) => field.kind === "image")
+      .reduce((n, field) => n + (references[field.field]?.length ?? 0), 0);
+    const referenceVideoSeconds = refFields
+      .filter((field) => field.kind === "video")
+      .reduce(
+        (seconds, field) =>
+          seconds +
+          (references[field.field] ?? []).reduce(
+            (fieldSeconds, reference) =>
+              fieldSeconds +
+              (typeof reference.durationSeconds === "number" &&
+              Number.isFinite(reference.durationSeconds)
+                ? reference.durationSeconds
+                : 0),
+            0
+          ),
+        0
+      );
     return (
       estimateModelSellPoints(model, {
         numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -437,6 +653,7 @@ function GenerationCard({
         durationSeconds:
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
         referenceImageCount: uploadedReferenceCount || undefined,
+        referenceVideoSeconds: referenceVideoSeconds || undefined,
       })?.sellPoints ?? null
     );
   }, [model, settings, refFields, references]);
@@ -477,8 +694,13 @@ function GenerationCard({
           { id: refId, url: objectUrl, name: file.name, kind, uploading: true },
         ],
       }));
-      uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] })
-        .then((uploaded) => {
+      Promise.all([
+        uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] }),
+        kind === "video" || kind === "audio"
+          ? probeMediaDurationSeconds(file, kind)
+          : Promise.resolve(null as number | null),
+      ])
+        .then(([uploaded, durationSeconds]) => {
           URL.revokeObjectURL(objectUrl);
           const target = getNode(id);
           if (!target) {
@@ -497,6 +719,8 @@ function GenerationCard({
             target,
             targetNodeId: id,
             url: uploaded.url,
+            durationSeconds: durationSeconds ?? undefined,
+            bytes: file.size,
           });
           addNodesAndEdges([node], [edge]);
           addAssets([
@@ -508,8 +732,10 @@ function GenerationCard({
               url: uploaded.url,
               name: file.name,
               createdAt: Date.now(),
+              category: "general",
             },
           ]);
+          clearPreflightIssues(id);
           // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
           // Removing the reference later removes this edge and binding together.
           patchNodeData(id, (node) => {
@@ -527,6 +753,8 @@ function GenerationCard({
                     name: file.name,
                     kind,
                     assetId: uploaded.mediaAssetId,
+                    ...(durationSeconds != null ? { durationSeconds } : {}),
+                    bytes: file.size,
                   },
                 ],
               },
@@ -555,6 +783,7 @@ function GenerationCard({
     const removed = (refs[field] ?? []).find((reference) => reference.id === refId);
     if (!removed) return;
 
+    clearPreflightIssues(id);
     URL.revokeObjectURL(removed.url);
     if (removed.edgeId) {
       removeEdgeById({ getEdges: graph.getEdges, graph }, removed.edgeId, id);
@@ -566,7 +795,8 @@ function GenerationCard({
     });
   };
 
-  const onSelectModel = (selected: FizzAiModel) =>
+  const onSelectModel = (selected: FizzAiModel) => {
+    clearPreflightIssues(id);
     patchNodeData(id, {
       modelId: selected.id,
       modelName: selected.name,
@@ -576,6 +806,7 @@ function GenerationCard({
       // otherwise make the request unroutable for the new model.
       settings: mergeCompatibleSettings(selected, settings),
     });
+  };
 
   // Default to the first usable model when none is picked yet, so a card is
   // generation-ready without forcing a manual selection. Only the editor writes
@@ -703,19 +934,17 @@ function GenerationCard({
 
       <div
         className={cn(
-          "relative w-[360px] overflow-hidden rounded-2xl bg-card",
+          "relative overflow-hidden rounded-2xl bg-card",
           selected && "ring-2 ring-ring",
           busy && "generating-beam"
         )}
+        style={{
+          width: canvasNodeGeometry({ type: modality === "video" ? "video" : "prompt" }).width,
+        }}
       >
         {/* Header: node name left, model used right — a lighter frosted strip
             distinct from the preview well below. */}
-        <div
-          className={cn(
-            CANVAS_NODE_DRAG_HANDLE_CLASS,
-            "flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs"
-          )}
-        >
+        <div className="flex items-center justify-between gap-2 bg-white/[0.12] px-3 py-2 text-xs">
           <span className="flex min-w-0 items-center gap-1.5 text-white/80">
             <Icon className="size-3.5 shrink-0" stroke={1.8} />
             {renaming ? (
@@ -837,7 +1066,7 @@ function GenerationCard({
                 disabled={!canEdit || !generationCanSubmit}
                 title={!generationCanSubmit ? (generationDisabledReason ?? undefined) : undefined}
                 onClick={() => submit(id)}
-                className="flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white disabled:opacity-45"
+                className="nodrag flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white disabled:opacity-45"
               >
                 <IconRefresh className="size-3.5" stroke={1.8} />
                 {tc("retry")}
@@ -851,7 +1080,7 @@ function GenerationCard({
                     type="button"
                     aria-label={t("copyTaskId")}
                     onClick={() => void copyTaskId(generation.jobId as string)}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.1] hover:text-white"
+                    className="nodrag flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.1] hover:text-white"
                   >
                     <IconCopy className="size-3.5" stroke={1.8} />
                   </button>
@@ -919,6 +1148,15 @@ function GenerationCard({
                 transformOrigin: "top center",
               }}
             >
+              <ValidationAlertDialog
+                open={validationIssues.length > 0}
+                onOpenChange={(open) => {
+                  if (!open) clearPreflightIssues(id);
+                }}
+                title={t("validationBlockedTitle")}
+                issues={validationIssues}
+                formatIssue={t}
+              />
               <GenerationPromptComposer
                 ariaLabel={t("generate")}
                 modality={modality}
@@ -927,13 +1165,47 @@ function GenerationCard({
                 modelFallbackLabel={data.modelName}
                 onSelectModel={onSelectModel}
                 modelPickerEnabled={!data.locked && !data.modelLocked}
-                prompt={data.prompt ?? ""}
-                onPromptCommit={(prompt) => patchNodeData(id, { prompt })}
+                prompt={promptWithSkills}
+                onPromptCommit={(prompt) => {
+                  const skillsForCommit = [...compatibleSkills];
+                  for (const installation of justInstalledSkillsRef.current.values()) {
+                    if (!skillsForCommit.some((candidate) => candidate.id === installation.id)) {
+                      skillsForCommit.push(installation);
+                    }
+                  }
+                  const extracted = extractProjectSkillSelection({
+                    value: prompt,
+                    mentions: skillsForCommit.map((installation) =>
+                      projectSkillMention(installation, skillLabelFor(installation))
+                    ),
+                    defaultInstallationIds: defaultSkillIds,
+                  });
+                  patchNodeData(id, {
+                    prompt: extracted.prompt,
+                    skillSelection: extracted.selection,
+                  });
+                }}
                 promptPlaceholder={t(promptPlaceholderKey(mode))}
                 promptAriaLabel={t(promptPlaceholderKey(mode))}
                 promptAutoFocus
                 showPrompt={!model || hasSchemaProperty(model, "prompt")}
                 mentions={mentionItems}
+                skillMarketOptions={skillMarketOptions}
+                skillMarketLoading={projectSkillCatalog.loading}
+                skillMarketError={projectSkillCatalog.error}
+                onMentionActivate={(mention) => {
+                  if (mention.kind === "skill") {
+                    pendingSkillApplyRef.current = null;
+                    setDetailSkillIntent("inspect");
+                    setDetailSkillId(mention.id);
+                  }
+                }}
+                onSkillMarketRetry={projectSkillCatalog.retry}
+                onOpenSkillMarket={(catalogId, applySkill) => {
+                  pendingSkillApplyRef.current = applySkill;
+                  setDetailSkillIntent("use");
+                  setDetailSkillId(catalogId);
+                }}
                 referenceContent={
                   refFields.length > 0 ? (
                     <ReferenceStack
@@ -946,7 +1218,10 @@ function GenerationCard({
                 }
                 mode={mode}
                 modes={modes}
-                onSelectMode={(nextMode) => patchNodeData(id, { mode: nextMode })}
+                onSelectMode={(nextMode) => {
+                  clearPreflightIssues(id);
+                  patchNodeData(id, { mode: nextMode });
+                }}
                 modePickerEnabled={!data.locked && !data.modelLocked}
                 settings={settings}
                 onSettingsChange={(next) => patchNodeData(id, { settings: next })}
@@ -970,6 +1245,31 @@ function GenerationCard({
           the right. The output port is tinted by the card's output kind. */}
       <PortPlus type="target" id="input" side="left" />
       <PortPlus type="source" id="output" side="right" dataType={modality} />
+      <ProjectSkillDetailDialog
+        open={detailSkillId !== null}
+        skill={detailSkill}
+        loading={projectSkillCatalog.loading}
+        error={projectSkillCatalog.error}
+        activeForGeneration={detailSkillIntent === "inspect" && Boolean(detailSkill)}
+        actionPending={installSkillMutation.isPending}
+        canInstall={projectSkillCatalog.data?.canManage ?? false}
+        onRetry={projectSkillCatalog.retry}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (installSkillMutation.isPending) return;
+            pendingSkillApplyRef.current = null;
+            setDetailSkillIntent(null);
+            setDetailSkillId(null);
+          }
+        }}
+        onUse={detailSkillIntent === "use" ? useDetailSkill : undefined}
+        onManage={(skillId) => {
+          pendingSkillApplyRef.current = null;
+          setDetailSkillIntent(null);
+          setDetailSkillId(null);
+          openSkills(skillId);
+        }}
+      />
     </div>
   );
 }

@@ -35,16 +35,20 @@ app.kubernetes.io/component: {{ .component }}
 {{/* sharedEnv as a list of `name: VALUE` env entries. */}}
 {{- define "fizzdragon.sharedEnv" -}}
 {{- range $k, $v := .Values.sharedEnv }}
+{{- if ne $v nil }}
 - name: {{ $k }}
   value: {{ $v | quote }}
+{{- end }}
 {{- end }}
 {{- end -}}
 
 {{/* Per-component env list. Call with $.component dict containing .env. */}}
 {{- define "fizzdragon.componentEnv" -}}
 {{- range $k, $v := .env }}
+{{- if ne $v nil }}
 - name: {{ $k }}
   value: {{ $v | quote }}
+{{- end }}
 {{- end }}
 {{- end -}}
 
@@ -53,15 +57,4 @@ app.kubernetes.io/component: {{ .component }}
 {{- if .Values.azure.enabled }}
 azure.workload.identity/use: "true"
 {{- end }}
-{{- end -}}
-
-{{/* GCP workload-identity provider resource path (no scheme). */}}
-{{- define "fizzdragon.agentPlatformGcpProviderPath" -}}
-{{- $wif := .Values.agentPlatform.model.workloadIdentityFederation -}}
-projects/{{ required "agentPlatform.model.workloadIdentityFederation.projectNumber is required" $wif.projectNumber }}/locations/global/workloadIdentityPools/{{ required "...pool is required" $wif.pool }}/providers/{{ required "...provider is required" $wif.provider }}
-{{- end -}}
-
-{{/* Audience the projected K8s token is minted for (https form). */}}
-{{- define "fizzdragon.agentPlatformGcpAudience" -}}
-https://iam.googleapis.com/{{ include "fizzdragon.agentPlatformGcpProviderPath" . }}
 {{- end -}}

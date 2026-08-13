@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { buildPromptReferenceBindingsForMode, buildReferenceInputForMode } from "./generation-api";
+import {
+  buildPromptDocument,
+  buildPromptReferenceBindingsForMode,
+  buildReferenceInputForMode,
+} from "./generation-api";
 import type { FizzAiModel } from "./generation-api";
+
+describe("buildPromptDocument", () => {
+  it("preserves Skill entities as installation references, not prompt instructions", () => {
+    expect(
+      buildPromptDocument("Paint @Image1 with /Ink Wash", [
+        { refId: "asset-1", label: "Image1" },
+        {
+          refId: "10000000-0000-7000-8000-000000000001",
+          label: "Ink Wash",
+          nodeType: "skill_ref",
+        },
+      ])
+    ).toEqual({
+      version: 1,
+      nodes: [
+        { type: "text", text: "Paint " },
+        { type: "asset_ref", refId: "asset-1", label: "Image1" },
+        { type: "text", text: " with " },
+        {
+          type: "skill_ref",
+          refId: "10000000-0000-7000-8000-000000000001",
+          label: "Ink Wash",
+        },
+      ],
+    });
+  });
+});
 
 /**
  * A Seedance-2.0-shaped catalog entry: ONE flat schema carrying every mode's

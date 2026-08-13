@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { ViewportPortal, type Node } from "@xyflow/react";
 import { IconCheck, IconMessage, IconSend, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { canvasNodeLayoutSize } from "@/lib/canvas-core/node-geometry";
 import { useDocumentComments } from "@/lib/collab/use-comments";
 import type { CommentThreadDto } from "@/lib/collab/comments-api";
 import type { DocumentProvider } from "@/lib/collab/document-provider";
@@ -99,7 +100,7 @@ export function CommentsLayer({ nodes }: { nodes: Node[] }) {
         const node = nodes.find((n) => n.id === nodeId);
         if (!node || node.selected) return null; // selected → toolbar handles it
         const count = commentCount(nodeId);
-        const width = node.measured?.width ?? 0;
+        const width = canvasNodeLayoutSize(node).width;
         const isActive = nodeId === activeNodeId;
         return (
           <button

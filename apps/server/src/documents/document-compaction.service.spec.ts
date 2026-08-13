@@ -121,8 +121,8 @@ function makePrisma(init: {
   );
 
   const prisma = {
-    platformDocument: { findUnique, updateMany },
-    platformDocumentOperation: { findMany, deleteMany },
+    studioDocument: { findUnique, updateMany },
+    studioDocumentOperation: { findMany, deleteMany },
   };
   return {
     prisma,

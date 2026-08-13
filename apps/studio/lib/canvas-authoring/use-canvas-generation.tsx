@@ -11,14 +11,15 @@ import {
 } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
-import { useReactFlow, useStore } from "@xyflow/react";
 import { toast } from "sonner";
 import { ComputeRechargeDialog } from "@/app/_components/compute-recharge-dialog";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { ApiRequestError } from "@/lib/api";
 import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
-import { outputKindForType, routeReferenceField } from "./reference-routing";
+import { outputKindForType } from "./reference-routing";
+import { routeTargetReferenceField } from "./canvas-wiring";
+import { SHOT_NODE_TYPE } from "./shot-node";
 import {
   computeWalletBalanceQueryKey,
   useComputeWalletBalance,
@@ -34,19 +35,37 @@ import {
   estimateModelSellPoints,
   filterFizzAiInput,
   generationIdempotencyKey,
+  generationInputHasBlockingIssues,
   generationStateFromJob,
   generationStatusFromRaw,
   getFizzAiJob,
   isTerminalGenerationStatus,
+  mediaSnapshotsForMode,
   promptRequired,
   normalizeFizzAiError,
   referenceFieldsForMode,
   submitFizzAiJob,
+  validateModelGenerationInput,
   type FizzAiCatalog,
   type FizzAiJobView,
   type FizzAiSourceSurface,
   type GenerationState,
+  type ValidationIssue,
 } from "./generation-api";
+import { probeMediaDurationSeconds } from "./probe-media-duration";
+import {
+  compatibleProjectSkillInstallations,
+  composePromptWithProjectSkills,
+  generationSkillScope,
+  resolveEffectiveProjectSkills,
+  sanitizeProjectSkillSelection,
+  type CanvasProjectSkillSelection,
+} from "@/lib/project-skill-runtime";
+import type {
+  ProjectSkillInstallation,
+  ProjectSkillInstallationsResponse,
+  ProjectSkillSelection,
+} from "@/lib/project-skills-api";
 
 /** Reconcile cadence while a card is running — slower when realtime is healthy. */
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
@@ -68,9 +87,14 @@ type GenNodeData = {
       edgeId?: string;
       sourceNodeId?: string;
       uploading?: boolean;
+      durationSeconds?: number | null;
+      bytes?: number | null;
+      width?: number | null;
+      height?: number | null;
     }[]
   >;
   generation?: GenerationState;
+  skillSelection?: CanvasProjectSkillSelection;
 };
 
 /** An equirectangular (~2:1) image output is a panorama. */
@@ -148,6 +172,9 @@ type GenerationContextValue = {
   cancel: (nodeId: string) => void;
   canSubmit: boolean;
   disabledReason: string | null;
+  /** Catalog-driven preflight issues for a node (cleared on successful submit path). */
+  preflightIssues: (nodeId: string) => ValidationIssue[];
+  clearPreflightIssues: (nodeId: string) => void;
 };
 
 type RechargePromptState = {
@@ -166,6 +193,8 @@ export function useGeneration(): GenerationContextValue {
       cancel: () => {},
       canSubmit: false,
       disabledReason: null,
+      preflightIssues: () => [],
+      clearPreflightIssues: () => {},
     }
   );
 }
@@ -174,10 +203,25 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
   const mode = data.mode ?? defaultMode(model);
   const settings = data.settings ?? {};
   const refFields = referenceFieldsForMode(model, mode);
-  const uploadedReferenceCount = refFields.reduce(
-    (count, field) => count + (data.references?.[field.field]?.length ?? 0),
-    0
-  );
+  const uploadedReferenceCount = refFields
+    .filter((field) => field.kind === "image")
+    .reduce((count, field) => count + (data.references?.[field.field]?.length ?? 0), 0);
+  const referenceVideoSeconds = refFields
+    .filter((field) => field.kind === "video")
+    .reduce(
+      (seconds, field) =>
+        seconds +
+        (data.references?.[field.field] ?? []).reduce(
+          (fieldSeconds, reference) =>
+            fieldSeconds +
+            (typeof reference.durationSeconds === "number" &&
+            Number.isFinite(reference.durationSeconds)
+              ? reference.durationSeconds
+              : 0),
+          0
+        ),
+      0
+    );
   return (
     estimateModelSellPoints(model, {
       numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
@@ -187,6 +231,7 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
       durationSeconds:
         typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
       referenceImageCount: uploadedReferenceCount || undefined,
+      referenceVideoSeconds: referenceVideoSeconds || undefined,
     })?.sellPoints ?? null
   );
 }
@@ -243,6 +288,7 @@ function insufficientComputePointDetails(
 export function CanvasGenerationProvider({
   catalog,
   context,
+  projectSkills,
   canGenerate = true,
   disabledReason = null,
   children,
@@ -250,28 +296,45 @@ export function CanvasGenerationProvider({
   catalog: FizzAiCatalog | undefined;
   context: {
     projectId?: string;
+    storyProjectId?: string;
     documentId?: string;
     sourceSurface: FizzAiSourceSurface;
+  };
+  projectSkills: {
+    data: ProjectSkillInstallationsResponse | undefined;
+    loading: boolean;
+    error: boolean;
   };
   canGenerate?: boolean;
   disabledReason?: string | null;
   children: React.ReactNode;
 }) {
   const t = useTranslations("canvasOps");
+  const ts = useTranslations("project.skills");
   const generationProjectId = context.projectId;
+  const generationStoryProjectId = context.storyProjectId;
   const generationDocumentId = context.documentId;
   const sourceSurface = context.sourceSurface;
-  const { getNodes } = useReactFlow();
+  const projectSkillsReady = !projectSkills.loading && !projectSkills.error && !!projectSkills.data;
+  const effectiveDisabledReason = projectSkillsReady ? disabledReason : ts("generationUnavailable");
   // Destructured mutators/accessors are individually stable (useCallback in
   // useCanvasGraph), unlike the graph object itself whose identity tracks
   // nodes/edges. Every callback and effect below depends on these — NEVER on
   // the whole graph — so the realtime subscription and the reconcile loop stay
   // armed exactly once instead of re-firing (and re-fetching) per re-derive.
+  // `getNodes` reads the document synchronously and is stable per document, so
+  // the realtime subscription arms once instead of re-arming on every graph
+  // re-derive — and it sees a write made earlier in the same turn. Reading the
+  // graph rather than React Flow's store is also what lets a NON-canvas
+  // rendering of the same document (the storyboard table) host this provider
+  // and get the identical generation loop.
   const {
     addAssets,
     addNode,
     getEdges,
     getNode,
+    getNodes,
+    nodes,
     patchNodeData,
     removeAssetsByMediaAssetId,
     removeEdge,
@@ -280,6 +343,7 @@ export function CanvasGenerationProvider({
   const queryClient = useQueryClient();
   const { data: wallet } = useComputeWalletBalance();
   const [rechargePrompt, setRechargePrompt] = useState<RechargePromptState | null>(null);
+  const [preflightByNode, setPreflightByNode] = useState<Record<string, ValidationIssue[]>>({});
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const params = new URLSearchParams(window.location.search);
@@ -375,23 +439,22 @@ export function CanvasGenerationProvider({
           const doneUrl = incoming === "done" ? (out?.url ?? out?.accessUrl) : null;
           const kind = outputKindForType(out?.type);
           if (doneUrl && kind) {
-            const allNodes = getNodes();
             for (const edge of getEdges()) {
               if (edge.source !== match.id || !edge.target) continue;
-              const target = allNodes.find((n) => n.id === edge.target);
-              if (!target || (target.type !== "prompt" && target.type !== "video")) continue;
               const edgeId = edge.id;
-              // Resolve model + field INSIDE the patch from the node's CURRENT
+              // Resolve the target slot INSIDE the patch from the node's CURRENT
               // data, so a card wired from multiple sources (or re-modelled
               // meanwhile) routes against fresh state, not a stale snapshot.
+              // A target that takes no pictures (or has no room) routes to
+              // nothing and is left alone; a shot's frame/clip slot is filled
+              // exactly like a card's reference field.
               patchNodeData(edge.target, (node) => {
                 const tdata = node.data as GenNodeData;
-                const model = catalogRef.current?.models.find((m) => m.id === tdata.modelId);
-                const routed = routeReferenceField(model, tdata.mode, tdata.references, kind);
+                const routed = routeTargetReferenceField(node, catalogRef.current, kind, edgeId);
                 if (!routed) return {};
                 const refs = tdata.references ?? {};
                 const list = (refs[routed.field] ?? []).filter((r) => r.edgeId !== edgeId);
-                const patch: Record<string, unknown> = {
+                return {
                   references: {
                     ...refs,
                     [routed.field]: [
@@ -402,13 +465,18 @@ export function CanvasGenerationProvider({
                         sourceNodeId: match.id,
                         url: doneUrl,
                         kind,
+                        ...(matchData?.prompt?.trim() ? { name: matchData.prompt.trim() } : {}),
                         ...(out?.assetId ? { assetId: out.assetId } : {}),
+                        ...(typeof out?.durationSeconds === "number"
+                          ? { durationSeconds: out.durationSeconds }
+                          : {}),
+                        ...(typeof out?.bytes === "number" ? { bytes: out.bytes } : {}),
+                        ...(typeof out?.width === "number" ? { width: out.width } : {}),
+                        ...(typeof out?.height === "number" ? { height: out.height } : {}),
                       },
                     ],
                   },
                 };
-                if (routed.mode) patch.mode = routed.mode;
-                return patch;
               });
             }
           }
@@ -434,6 +502,7 @@ export function CanvasGenerationProvider({
                 panorama: isPanoramaOutput(output),
                 prompt: job.prompt,
                 createdAt: Date.now(),
+                category: "general",
               };
             })
             .filter((asset): asset is CanvasAsset => asset !== null)
@@ -524,7 +593,10 @@ export function CanvasGenerationProvider({
           const blockedOutputSourceNodeIds = new Set<string>();
           for (const node of currentNodes) {
             if (
-              (node.type === "image" || node.type === "panorama") &&
+              (node.type === "image" ||
+                node.type === "panorama" ||
+                node.type === "videoAsset" ||
+                node.type === "audioAsset") &&
               (node.data as { mediaAssetId?: string }).mediaAssetId === event.assetId
             ) {
               placedNodeIds.add(node.id);
@@ -547,6 +619,17 @@ export function CanvasGenerationProvider({
           for (const node of currentNodes) {
             if (placedNodeIds.has(node.id)) {
               removeNode(node.id);
+              continue;
+            }
+            // A shot holds nothing but pictures: drop any slot fed by media
+            // that was just taken down, so the board never shows blocked media.
+            if (node.type === SHOT_NODE_TYPE) {
+              const shotData = node.data as GenNodeData;
+              const references = removeReferencesFromSources(
+                shotData.references,
+                blockedReferenceSources
+              );
+              if (references !== shotData.references) patchNodeData(node.id, { references });
               continue;
             }
             if (node.type !== "prompt" && node.type !== "video") continue;
@@ -601,18 +684,18 @@ export function CanvasGenerationProvider({
     workspaceId,
   ]);
 
-  // Non-terminal job ids on the canvas, reactive to doc hydration + node edits.
-  const activeJobIds = useStore((s) => {
+  // Non-terminal job ids in the document, reactive to doc hydration + node edits.
+  const activeJobIds = useMemo(() => {
     const ids: string[] = [];
-    s.nodeLookup.forEach((n) => {
-      if (n.type !== "prompt" && n.type !== "video") return;
-      const generation = (n.data as GenNodeData).generation;
+    for (const node of nodes) {
+      if (node.type !== "prompt" && node.type !== "video") continue;
+      const generation = (node.data as GenNodeData).generation;
       if (generation?.jobId && !isTerminalGenerationStatus(generation.status)) {
         ids.push(generation.jobId);
       }
-    });
+    }
     return ids.sort().join(",");
-  });
+  }, [nodes]);
 
   // Reconcile the instant an active card appears (e.g. after the doc hydrates
   // from IndexedDB on load). While the realtime channel is live the socket
@@ -638,8 +721,8 @@ export function CanvasGenerationProvider({
 
   const submit = useCallback(
     async (nodeId: string) => {
-      if (!canGenerate) {
-        if (disabledReason) toast.error(disabledReason);
+      if (!canGenerate || !projectSkillsReady) {
+        if (effectiveDisabledReason) toast.error(effectiveDisabledReason);
         return;
       }
       // Read source-of-truth from the doc (synchronous) so a card created/edited
@@ -671,16 +754,91 @@ export function CanvasGenerationProvider({
 
       // Only the ACTIVE mode's reference fields are submitted — leftover slots
       // from a prior mode must not ride along or Seedance rejects the combo.
-      const referenceInput = buildReferenceInputForMode(
-        model,
-        data.mode ?? defaultMode(model),
-        data.references
-      );
-      const referenceBindings = buildPromptReferenceBindingsForMode(
-        model,
-        data.mode ?? defaultMode(model),
-        data.references
-      );
+      const mode = data.mode ?? defaultMode(model);
+
+      // Backfill missing video/audio durations (wired refs without metadata).
+      // Persist onto the card so re-submit and server payload stay consistent.
+      let references = data.references;
+      const durationPatches: Array<{
+        field: string;
+        id: string;
+        durationSeconds: number;
+      }> = [];
+      for (const field of referenceFieldsForMode(model, mode)) {
+        if (field.kind !== "video" && field.kind !== "audio") continue;
+        for (const row of references?.[field.field] ?? []) {
+          if (typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)) {
+            continue;
+          }
+          if (!row.url || row.uploading) continue;
+          const probed = await probeMediaDurationSeconds(row.url, field.kind);
+          if (probed != null) {
+            durationPatches.push({
+              field: field.field,
+              id: row.id,
+              durationSeconds: probed,
+            });
+          }
+        }
+      }
+      if (durationPatches.length > 0) {
+        // Merge by ref id only — never replace the whole references map with a
+        // snapshot taken before probe await (user/collaborator may have edited).
+        patchNodeData(nodeId, (node) => {
+          const live = (node.data as GenNodeData).references ?? {};
+          const next: NonNullable<GenNodeData["references"]> = { ...live };
+          for (const patch of durationPatches) {
+            const list = next[patch.field];
+            if (!list?.length) continue;
+            next[patch.field] = list.map((row) =>
+              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+            );
+          }
+          return { references: next };
+        });
+        const latest = getNode(nodeId);
+        references =
+          latest && (latest.data as GenNodeData).references
+            ? (latest.data as GenNodeData).references
+            : references;
+        // Also fold patches into the local submit snapshot when live read fails.
+        if (references) {
+          const merged: NonNullable<GenNodeData["references"]> = { ...references };
+          for (const patch of durationPatches) {
+            merged[patch.field] = (merged[patch.field] ?? []).map((row) =>
+              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+            );
+          }
+          references = merged;
+        }
+      }
+
+      const referenceInput = buildReferenceInputForMode(model, mode, references);
+      const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
+      const skillScope = generationSkillScope(model.type);
+      const compatibleSkills = compatibleProjectSkillInstallations(projectSkills.data, skillScope);
+      const skillSelection = sanitizeProjectSkillSelection(data.skillSelection, compatibleSkills);
+      const labelForSkill = (installation: ProjectSkillInstallation) =>
+        installation.translationKey
+          ? ts(`items.${installation.translationKey}.name`)
+          : (installation.name ?? installation.slug ?? ts("title"));
+      const effectiveSkills = resolveEffectiveProjectSkills({
+        projectSkills: projectSkills.data,
+        scope: skillScope,
+        sourceSurface,
+        selection: skillSelection,
+        labelFor: labelForSkill,
+        promptLength: (data.prompt ?? "").length,
+      });
+      const promptWithSkills = composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills);
+      const requestSkillSelection: ProjectSkillSelection = {
+        ...(skillSelection?.includeInstallationIds?.length
+          ? { includeInstallationIds: skillSelection.includeInstallationIds }
+          : {}),
+        ...(skillSelection?.excludeInstallationIds?.length
+          ? { excludeInstallationIds: skillSelection.excludeInstallationIds }
+          : {}),
+      };
 
       const input = compactFizzAiInput(
         filterFizzAiInput(model, {
@@ -689,6 +847,21 @@ export function CanvasGenerationProvider({
           prompt: data.prompt,
         })
       );
+
+      // Catalog-driven preflight (same kernel as server). No model-specific ifs.
+      const media = mediaSnapshotsForMode(model, mode, references);
+      const preflight = validateModelGenerationInput(model, input, media);
+      if (generationInputHasBlockingIssues(preflight)) {
+        // Primary surface is ValidationAlertDialog on the card (not toast).
+        setPreflightByNode((prev) => ({ ...prev, [nodeId]: preflight }));
+        return;
+      }
+      setPreflightByNode((prev) => {
+        if (!(nodeId in prev)) return prev;
+        const next = { ...prev };
+        delete next[nodeId];
+        return next;
+      });
 
       patch(nodeId, {
         ...(data.generation ?? { status: "submitting" }),
@@ -703,14 +876,24 @@ export function CanvasGenerationProvider({
           // project's workspace wallet.
           context: {
             ...(generationProjectId ? { projectId: generationProjectId } : {}),
+            ...(generationStoryProjectId ? { storyProjectId: generationStoryProjectId } : {}),
             ...(generationDocumentId ? { documentId: generationDocumentId } : {}),
             documentBlockId: nodeId,
             sourceSurface,
           },
           idempotencyKey: generationIdempotencyKey("canvas"),
           input,
-          promptDocument: buildPromptDocument(data.prompt ?? "", referenceBindings),
+          promptDocument: buildPromptDocument(promptWithSkills, [
+            ...referenceBindings,
+            ...effectiveSkills.map((skill) => ({
+              refId: skill.installation.id,
+              label: skill.mention.label,
+              nodeType: "skill_ref" as const,
+            })),
+          ]),
           referenceBindings: referenceBindings.length ? referenceBindings : undefined,
+          skillSelection:
+            Object.keys(requestSkillSelection).length > 0 ? requestSkillSelection : undefined,
           modelId: model.id,
           schemaVersion: model.schemaVersion,
         });
@@ -743,14 +926,18 @@ export function CanvasGenerationProvider({
       catalog,
       wallet,
       generationProjectId,
+      generationStoryProjectId,
       generationDocumentId,
       sourceSurface,
       canGenerate,
-      disabledReason,
+      projectSkills.data,
+      projectSkillsReady,
+      effectiveDisabledReason,
       patch,
       patchNodeData,
       queryClient,
       t,
+      ts,
     ]
   );
 
@@ -771,14 +958,37 @@ export function CanvasGenerationProvider({
     [getNode, patch]
   );
 
+  const preflightIssues = useCallback(
+    (nodeId: string) => preflightByNode[nodeId] ?? [],
+    [preflightByNode]
+  );
+  const clearPreflightIssues = useCallback((nodeId: string) => {
+    setPreflightByNode((prev) => {
+      if (!(nodeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+  }, []);
+
   const value = useMemo<GenerationContextValue>(
     () => ({
       submit: (id) => void submit(id),
       cancel: (id) => void cancel(id),
-      canSubmit: canGenerate,
-      disabledReason,
+      canSubmit: canGenerate && projectSkillsReady,
+      disabledReason: effectiveDisabledReason,
+      preflightIssues,
+      clearPreflightIssues,
     }),
-    [submit, cancel, canGenerate, disabledReason]
+    [
+      submit,
+      cancel,
+      canGenerate,
+      projectSkillsReady,
+      effectiveDisabledReason,
+      preflightIssues,
+      clearPreflightIssues,
+    ]
   );
 
   return (

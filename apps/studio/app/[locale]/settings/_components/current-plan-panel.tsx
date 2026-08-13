@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconReceipt } from "@tabler/icons-react";
@@ -11,7 +11,8 @@ import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-
 import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import { Panel } from "./settings-ui";
 
-export const myEntitlementQueryKey = ["billing", "my-entitlement"] as const;
+export const myEntitlementQueryKey = (workspaceId: string | null) =>
+  ["billing", "my-entitlement", workspaceId ?? "personal"] as const;
 
 /**
  * The signed-in user's current plan + renews-on/cancel affordance. Replaces the
@@ -20,32 +21,39 @@ export const myEntitlementQueryKey = ["billing", "my-entitlement"] as const;
  * on" come from the active /aurora subscription (null when a plan was granted
  * which case we show the plan with no cancel button).
  */
-export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void }) {
+export function CurrentPlanPanel({
+  onManagePlan,
+  canManage,
+}: {
+  onManagePlan: () => void;
+  canManage: boolean;
+}) {
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const workspaceId = useActiveWorkspaceId();
+  const queryKey = useMemo(() => myEntitlementQueryKey(workspaceId), [workspaceId]);
 
   const { data, isLoading } = useQuery({
-    queryKey: myEntitlementQueryKey,
-    queryFn: getMyEntitlement,
+    queryKey,
+    queryFn: () => getMyEntitlement(workspaceId),
     staleTime: 30_000,
   });
 
   // Realtime: refresh the plan when the entitlement changes server-side (order
   // fulfilled, refund revoke/restore, expiry) — personal or workspace scope.
-  const workspaceId = useActiveWorkspaceId();
   useEffect(() => {
     const sub = getAssetsRealtimeKernel({
       workspaceId: workspaceId ?? undefined,
     }).subscribe({
       onEvent: (event) => {
         if (event.kind === "entitlement_changed") {
-          void queryClient.invalidateQueries({ queryKey: myEntitlementQueryKey });
+          void queryClient.invalidateQueries({ queryKey });
         }
       },
     });
     return () => sub.close();
-  }, [workspaceId, queryClient]);
+  }, [workspaceId, queryClient, queryKey]);
 
   const cancel = useMutation({
     mutationFn: (id: string) => cancelSubscription(id),
@@ -53,7 +61,7 @@ export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void })
       const date = sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : null;
       toast.success(date ? t("cancelPlanSuccess", { date }) : t("cancelPlanSuccessNoDate"));
       setConfirming(false);
-      void queryClient.invalidateQueries({ queryKey: myEntitlementQueryKey });
+      void queryClient.invalidateQueries({ queryKey });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : t("cancelPlanError"));
@@ -73,16 +81,18 @@ export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void })
     (subscription.cancelAtPeriodEnd ||
       subscription.status === "canceled" ||
       subscription.status === "expired");
-  const cancelable = !!subscription && !ending && subscription.status === "active";
+  const cancelable = canManage && !!subscription && !ending && subscription.status === "active";
 
   return (
     <Panel
       title={t("yourSubscription")}
       icon={<IconReceipt className="size-4 text-muted-foreground" />}
       action={
-        <Button variant="outline" size="sm" className="shrink-0" onClick={onManagePlan}>
-          {subscription ? t("changePlan") : t("managePlan")}
-        </Button>
+        canManage ? (
+          <Button variant="outline" size="sm" className="shrink-0" onClick={onManagePlan}>
+            {t("managePlan")}
+          </Button>
+        ) : undefined
       }
     >
       {isLoading ? (
@@ -132,7 +142,7 @@ export function CurrentPlanPanel({ onManagePlan }: { onManagePlan: () => void })
                   disabled={cancel.isPending}
                   onClick={() => setConfirming(false)}
                 >
-                  {t("managePlan")}
+                  {t("keepPlan")}
                 </Button>
               </div>
             ) : (

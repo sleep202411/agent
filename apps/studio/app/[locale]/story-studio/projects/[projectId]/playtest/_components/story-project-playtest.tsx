@@ -95,7 +95,12 @@ export function StoryProjectPlaytest({
       ? t("draftRevision", { revision: loadedRuntime.preview.draftRevision })
       : t("buildNumber", { number: loadedRuntime.build.number });
 
-  if (!runtime || errors.length > 0) {
+  // Only a runtime the server could not build at all stops a playtest. Clip-level
+  // errors — a scene with no video picked yet, media still in moderation — are
+  // reported alongside the running story instead of replacing it: the point of a
+  // playtest is to walk the story you have, and a half-finished story is exactly
+  // the one worth walking.
+  if (!runtime) {
     return (
       <PlaytestFailure
         projectId={projectId}
@@ -144,7 +149,7 @@ export function StoryProjectPlaytest({
         </div>
 
         <div className="pointer-events-auto flex items-start gap-2">
-          {warnings.length > 0 ? <PlaytestWarnings diagnostics={warnings} /> : null}
+          {diagnostics.length > 0 ? <PlaytestWarnings diagnostics={diagnostics} /> : null}
           <Button
             type="button"
             size="icon"

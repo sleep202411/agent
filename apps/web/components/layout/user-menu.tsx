@@ -41,7 +41,6 @@ export function UserMenu() {
   const displayEmail = user?.email || "";
   const avatarUrl = user?.avatar || undefined;
   const initials = displayName.slice(0, 1).toUpperCase();
-  const userLevel = user?.userLevel || "";
   const userId = userInfo?.id != null ? String(userInfo.id) : "";
   const isVerified = userInfo?.authStatus === AUTH_STATUS.APPROVED;
   const authenticatedRoles = (myCertifications ?? [])
@@ -79,11 +78,6 @@ export function UserMenu() {
                     className="size-4 shrink-0 text-primary"
                     aria-label={tc("verified")}
                   />
-                )}
-                {userLevel && (
-                  <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                    {userLevel}
-                  </span>
                 )}
               </div>
               {userId && (

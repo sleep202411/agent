@@ -23,6 +23,7 @@ export interface SharingMember {
   avatar: string | null;
   role: "owner" | AssignableShareRole;
   status: string;
+  accessScope?: "workspace" | "project_only";
   joinedAt: string | null;
   isOwner: boolean;
   isSelf: boolean;

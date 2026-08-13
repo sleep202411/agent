@@ -12,8 +12,8 @@
 import type { Prisma } from '@prisma/client';
 import type { AiProductPricingPolicy } from '@repo/shared';
 
-/** Plan tiers used by `entitlementPolicy.requiredPlan`. `null` = free tier. */
-export type RequiredPlan = 'vip' | null;
+/** Canonical compute-plan keys used by model gates. `null` = no plan gate. */
+export type RequiredPlan = 'basic' | 'standard' | 'pro' | 'team' | null;
 
 /**
  * GPT Image 2 `parameterPolicy`. Parameter policies are per ContainerModel:
@@ -1061,7 +1061,7 @@ export const SEEDREAM_5_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
-// ── Seedance 2.0 (ByteDance video) ──────────────────────────────
+// ── Seedance 2.5 / 2.0 (ByteDance video) ────────────────────────
 // Mode union (t2v / i2v / first-last-frame / omni-reference) lives on the
 // canonical model; the param panel filters per selected mode. Reference (全能参考)
 // is multimodal_to_video: ≤9 images / ≤3 videos / ≤3 audios.
@@ -1090,6 +1090,90 @@ const SEEDANCE_2_0_DURATION_OPTIONS = [
   '15',
 ];
 
+const SEEDANCE_2_5_DURATION_OPTIONS = [
+  'auto',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  '11',
+  '12',
+  '13',
+  '14',
+  '15',
+  '16',
+  '17',
+  '18',
+  '19',
+  '20',
+  '21',
+  '22',
+  '23',
+  '24',
+  '25',
+  '26',
+  '27',
+  '28',
+  '29',
+  '30',
+];
+
+/**
+ * Dreamina Seedance 2.5 (2026-06-28) — official BytePlus ModelArk contract.
+ * Editing and extension are prompt-intent subtypes of multimodal reference,
+ * not separate API modes. Their stricter `adaptive` / duration constraints are
+ * classified asynchronously by ModelArk and surfaced verbatim on failure.
+ */
+export const SEEDANCE_2_5_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'seedance',
+  defaultResolution: '720p',
+  resolutionOptions: ['480p', '720p'],
+  defaultDurationSeconds: '5',
+  durationOptions: SEEDANCE_2_5_DURATION_OPTIONS,
+  defaultAspectRatio: 'auto',
+  supportedAspectRatios: SEEDANCE_2_0_ASPECT_RATIOS,
+  defaultOutputFormat: 'mp4',
+  outputFormatOptions: ['mp4', 'mov'],
+  generateAudio: { enabled: true, default: true },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceInputs: {
+    enabled: true,
+    images: {
+      min: 0,
+      max: 30,
+      maxFileSizeMb: 30,
+      acceptFormats: ['jpeg', 'png', 'webp'],
+    },
+    videos: {
+      min: 0,
+      max: 10,
+      maxFileSizeMb: 200,
+      minItemDurationSeconds: 2,
+      maxItemDurationSeconds: 30,
+      maxCombinedDurationSeconds: 30,
+      acceptFormats: ['mp4', 'mov'],
+      resolutionBand: '480p-720p',
+    },
+    audios: {
+      min: 0,
+      max: 10,
+      maxFileSizeMb: 15,
+      minItemDurationSeconds: 2,
+      maxItemDurationSeconds: 30,
+      maxCombinedDurationSeconds: 30,
+      acceptFormats: ['mp3', 'wav'],
+    },
+    maxTotalFiles: 50,
+    audioRequiresVisual: false,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
 export const SEEDANCE_2_0_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedance',
@@ -1109,10 +1193,33 @@ export const SEEDANCE_2_0_PARAMETER_POLICY = {
   endFrame: { enabled: true }, // i2v optional last frame (end_image_url)
   referenceInputs: {
     enabled: true, // 全能参考 / multimodal_to_video
-    images: { min: 0, max: 9 },
-    videos: { min: 0, max: 3 },
-    audios: { min: 0, max: 3 },
+    images: {
+      min: 0,
+      max: 9,
+      maxFileSizeMb: 30,
+      acceptFormats: ['jpeg', 'png', 'webp'],
+    },
+    videos: {
+      min: 0,
+      max: 3,
+      maxFileSizeMb: 50,
+      maxCombinedFileSizeMb: 50,
+      minItemDurationSeconds: 2,
+      maxItemDurationSeconds: 15,
+      maxCombinedDurationSeconds: 15,
+      acceptFormats: ['mp4', 'mov'],
+      resolutionBand: '480p-720p',
+    },
+    audios: {
+      min: 0,
+      max: 3,
+      maxFileSizeMb: 15,
+      maxItemDurationSeconds: 15,
+      maxCombinedDurationSeconds: 15,
+      acceptFormats: ['mp3', 'wav'],
+    },
     maxTotalFiles: 12,
+    audioRequiresVisual: true,
   },
   // ModelArk-verified (doc 1520757): the Seedance 2.0 series does NOT
   // support `seed` (1.x only) — the schema mappers gate on this flag.
@@ -1160,6 +1267,32 @@ export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   maxSeconds: 15,
   defaultSeconds: 5,
   autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Official Seedance 2.5 list pricing (2026-08-07): without video input,
+// 480p ≈ $0.103/s and 720p ≈ $0.231/s. With video input, ModelArk bills
+// (combined input-video seconds + output seconds) at ≈$0.062/$0.139 per
+// second. Product points keep the established ~1.65× Seedance ladder while
+// charging the correct meter for reference-video jobs.
+export const SEEDANCE_2_5_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'seedance-2-5-points-v1-2026-08-10',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '480p': 18, '720p': 38 },
+  referenceVideoPointsPerSecond: { '480p': 11, '720p': 23 },
+  minSeconds: 4,
+  maxSeconds: 30,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 30,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -1218,6 +1351,81 @@ export const SEEDANCE_2_0_SD_PARAMETER_POLICY = {
   ...SEEDANCE_2_0_PARAMETER_POLICY,
   resolutionOptions: ['480p', '720p'],
 } as const;
+
+/**
+ * MiniMax-H3 video — V2 content[] API.
+ * User-facing enums match the official OpenAPI wire values (not Seedance
+ * aliases): resolution 768P|2K; ratio adaptive|21:9|… (no "auto").
+ * Official list (paygo): 768P $0.08/s · 2K $0.13/s. Designed points ≈1.5–1.9×
+ * (1 pt = $0.01): 768P 12 / 2K 25 → ~33% / ~48% gross on output-only jobs.
+ *
+ * Ratio rules (mapper enforces): t2v requires a concrete ratio (default 16:9);
+ * i2v forces adaptive; r2v defaults adaptive when adaptive is selected.
+ */
+export const MINIMAX_H3_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'minimax-h3',
+  defaultResolution: '2K',
+  resolutionOptions: ['768P', '2K'],
+  defaultDurationSeconds: '5',
+  durationOptions: [
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '10',
+    '11',
+    '12',
+    '13',
+    '14',
+    '15',
+  ],
+  // Official enum includes adaptive; default concrete for t2v (required).
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: [
+    '16:9',
+    '9:16',
+    '1:1',
+    '4:3',
+    '3:4',
+    '21:9',
+    'adaptive',
+  ],
+  generateAudio: { enabled: false, default: false },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceInputs: {
+    enabled: true,
+    images: { min: 0, max: 9 },
+    videos: { min: 0, max: 3 },
+    audios: { min: 0, max: 3 },
+    maxTotalFiles: 12,
+  },
+  seed: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'minimax-h3-points-v2-2026-08-07',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '2K',
+  // Keys match official resolution enum (and UI).
+  pointsPerSecond: { '768P': 12, '2K': 25 },
+  minSeconds: 4,
+  maxSeconds: 15,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 15,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
 
 export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
@@ -1479,9 +1687,8 @@ export const IMAGE_QUEUE_NAME = 'ai-image-generation';
 export const VIDEO_QUEUE_NAME = 'ai-video-generation';
 
 /**
- * `entitlementPolicy` factory — only `requiredPlan` varies. `freeUserVisible`
- * keeps the model in the public catalog; `providerSelectionPlan` gates manual
- * provider override behind a paid plan.
+ * `entitlementPolicy` factory — only the canonical compute `requiredPlan`
+ * varies. Provider selection is an internal routing concern.
  */
 export function buildEntitlementPolicy(
   requiredPlan: RequiredPlan,
@@ -1489,7 +1696,6 @@ export function buildEntitlementPolicy(
   return {
     requiredPlan,
     freeUserVisible: true,
-    providerSelectionPlan: 'vip',
   };
 }
 
@@ -1514,26 +1720,45 @@ export function buildBillingPolicy(
 }
 
 /**
- * `queuePolicy` factory — per-user limits and priority scale with whether the
- * model is gated (any non-null `requiredPlan` = paid tier gets higher caps and
- * queue priority).
+ * `queuePolicy` factory — how much of a model one user may occupy, and how much
+ * of it exists at all. Every number here is a CAPACITY statement about the
+ * provider, deliberately independent of `requiredPlan`.
+ *
+ * It did not used to be: the caps were `gated ? 2 : 1` off the model's plan
+ * gate, which welded two unrelated decisions together — opening a model to
+ * everyone silently halved its concurrency, and widening its concurrency
+ * silently put it behind a paid plan.
+ *
+ * The user's own plan is the other half of the limit and is applied at request
+ * time: `routing.service.ts` takes `min(entitlement.limits.concurrentJobs,
+ * queuePolicy.perUserRunning)`. So these values are a ceiling that protects the
+ * shared pool, not the product's idea of what a paying customer deserves — set
+ * them from provider capacity, and let the plan decide the rest. Set them too
+ * low and no plan upgrade can be felt: at perUserRunning 1, `team`'s 28
+ * concurrent jobs bought the customer exactly nothing.
  */
 export function buildQueuePolicy(
-  requiredPlan: RequiredPlan,
   overrides: {
     queueName?: string;
     globalConcurrency?: number;
     perUserRunning?: number;
+    perUserQueued?: number;
     maxProviderRuntimeSeconds?: number;
   } = {},
 ): Prisma.InputJsonObject {
-  const gated = Boolean(requiredPlan);
   return {
     queueName: overrides.queueName ?? IMAGE_QUEUE_NAME,
+    // Image defaults. 5,689 jobs of history peaked at 4 concurrent platform-wide
+    // and exactly 2 per user — i.e. the old per-user cap of 2 was the binding
+    // constraint, not demand. 6 of a 12-wide pool leaves room for two users at
+    // full tilt; images are seconds long and cheap.
     globalConcurrency: overrides.globalConcurrency ?? 12,
-    perUserRunning: overrides.perUserRunning ?? (gated ? 2 : 1),
-    perUserQueued: gated ? 12 : 8,
-    priority: gated ? 10 : 0,
+    perUserRunning: overrides.perUserRunning ?? 6,
+    perUserQueued: overrides.perUserQueued ?? 12,
+    // Read by nothing today (no consumer of queuePolicy.priority exists in
+    // apps/server). Kept as a constant so the stored shape stays stable rather
+    // than gaining and losing a key; do not reintroduce a derived value here.
+    priority: 0,
     maxProviderRuntimeSeconds: overrides.maxProviderRuntimeSeconds ?? 600,
   };
 }

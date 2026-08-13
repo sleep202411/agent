@@ -14,7 +14,6 @@ export interface AuthUser {
   email?: string;
   phone?: string;
   headImg?: string;
-  /** Membership expiry timestamp when Java returns it. */
 }
 
 /**

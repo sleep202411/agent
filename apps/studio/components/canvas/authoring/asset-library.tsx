@@ -4,10 +4,13 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
-import { IconLayoutGrid, IconPhoto, IconSearch, IconX } from "@tabler/icons-react";
-import { CanvasDrawerPanel } from "@/components/canvas/canvas-drawer-panel";
+import { IconLibraryPhoto, IconPhoto, IconSearch } from "@tabler/icons-react";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
-import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import {
+  projectAssetToCanvasAsset,
+  useProjectAssets,
+} from "@/lib/canvas-authoring/use-project-assets";
 import {
   getMediaAssetReadinessStatuses,
   mediaAssetReadinessKeys,
@@ -17,7 +20,7 @@ import { ProjectCrewAssetLibrary } from "./project-crew-asset-library";
 
 export const ASSET_LIBRARY_WIDTH = 320;
 
-type AssetTab = "generated" | "uploaded" | "crew";
+type AssetTab = "generated" | "uploaded" | "crew" | (string & {});
 
 const BASE_TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" | "crew" }[] = [
   { id: "generated", labelKey: "myCreations" },
@@ -59,8 +62,10 @@ function EmptyState({
 
 /**
  * The project's persistent asset library — a slide-in drawer over the canvas.
- * Generated and uploaded image/video assets expose capability-specific readiness at
- * the MediaAsset layer; the UI only reflects that server state.
+ * Generated and uploaded tabs read the unified `useProjectAssets` inventory;
+ * the crew tab keeps folder navigation in `ProjectCrewAssetLibrary`.
+ * Image/video assets expose capability-specific readiness at the MediaAsset
+ * layer; the UI only reflects that server state.
  */
 export function AssetLibrary({
   open,
@@ -68,36 +73,51 @@ export function AssetLibrary({
   variant = "default",
   description,
   crewProjectId,
+  customTab,
 }: {
   open: boolean;
   onClose: () => void;
   variant?: "default" | "floating";
   description?: string;
   crewProjectId?: string;
+  customTab?: {
+    id: string;
+    label: string;
+    render: () => ReactNode;
+  };
 }) {
   const t = useTranslations("canvasNodes");
-  const { assets } = useCanvasGraphContext();
+  // Same inventory as AssetSelectDialog — canvas graph + (when projectId set) crew.
+  // Generated/uploaded tabs only use canvas-origin rows; crew tab stays separate.
+  const { assets: projectAssets } = useProjectAssets(crewProjectId ?? "");
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
-  const tabs = useMemo(
-    () =>
-      crewProjectId
-        ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
-        : BASE_TABS,
-    [crewProjectId]
+  const tabs = useMemo(() => {
+    const base = crewProjectId
+      ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
+      : BASE_TABS;
+    return customTab ? [...base, { id: customTab.id, label: customTab.label }] : base;
+  }, [crewProjectId, customTab]);
+
+  const canvasAssetCount = useMemo(
+    () => projectAssets.filter((asset) => asset.origin !== "crew").length,
+    [projectAssets]
   );
 
   const filteredAssets = useMemo(() => {
+    if (tab === "crew") return [];
+    const origin = tab === "generated" ? "aiGenerated" : "uploaded";
     const q = query.trim().toLowerCase();
-    return assets.filter(
-      (a) =>
-        tab !== "crew" &&
-        a.source === tab &&
-        (!q ||
-          (a.name ?? "").toLowerCase().includes(q) ||
-          (a.prompt ?? "").toLowerCase().includes(q))
-    );
-  }, [assets, tab, query]);
+    return projectAssets
+      .filter((asset) => asset.origin === origin)
+      .filter(
+        (asset) =>
+          !q ||
+          (asset.name ?? "").toLowerCase().includes(q) ||
+          (asset.prompt ?? "").toLowerCase().includes(q)
+      )
+      .map(projectAssetToCanvasAsset);
+  }, [projectAssets, tab, query]);
 
   const statusAssetIds = useMemo(
     () =>
@@ -110,8 +130,8 @@ export function AssetLibrary({
     queryKey: mediaAssetReadinessKeys.statuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
     queryFn: () => getMediaAssetReadinessStatuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
     enabled: open && statusAssetIds.length > 0,
-    refetchInterval: (query) => {
-      const data = query.state.data;
+    refetchInterval: (queryState) => {
+      const data = queryState.state.data;
       if (!data) return false;
       return Object.values(data).some(
         (status) => status.status === "pending" || status.status === "processing"
@@ -125,7 +145,9 @@ export function AssetLibrary({
   const empty = filteredAssets.length === 0;
   const floating = variant === "floating";
   const content =
-    tab === "crew" && crewProjectId ? (
+    customTab && tab === customTab.id ? (
+      customTab.render()
+    ) : tab === "crew" && crewProjectId ? (
       <ProjectCrewAssetLibrary projectId={crewProjectId} query={query} floating={floating} />
     ) : empty ? (
       <EmptyState
@@ -137,7 +159,7 @@ export function AssetLibrary({
     ) : (
       <div
         className={cn(
-          "grid auto-rows-max grid-cols-2 gap-2 overflow-y-auto",
+          "grid auto-rows-max grid-cols-3 gap-1.5 overflow-y-auto",
           floating ? "min-h-0 flex-1 px-4 pb-4" : "p-4"
         )}
       >
@@ -165,15 +187,16 @@ export function AssetLibrary({
 
   if (floating) {
     return (
-      <CanvasDrawerPanel
-        title={t("asset.title")}
-        description={description}
-        count={assets.length}
-        icon={<IconLayoutGrid className="size-4" stroke={1.8} />}
-        closeLabel={t("asset.close")}
-        onClose={onClose}
-      >
-        <div className="flex gap-1 px-4 py-3" role="tablist" aria-label={t("asset.title")}>
+      <>
+        <DrawerPanel.Header
+          title={t("asset.title")}
+          description={description}
+          count={canvasAssetCount}
+          icon={<IconLibraryPhoto className="size-4" stroke={1.8} />}
+          closeLabel={t("asset.close")}
+          onClose={onClose}
+        />
+        <div className="flex shrink-0 gap-1 px-4 py-3" role="tablist" aria-label={t("asset.title")}>
           {tabs.map((tabItem) => (
             <button
               key={tabItem.id}
@@ -188,12 +211,12 @@ export function AssetLibrary({
                   : "text-white/42 hover:bg-white/[0.07] hover:text-white/72"
               )}
             >
-              {t(`asset.tab.${tabItem.labelKey}`)}
+              {"label" in tabItem ? tabItem.label : t(`asset.tab.${tabItem.labelKey}`)}
             </button>
           ))}
         </div>
 
-        <div className="mx-4 mb-3 flex h-9 items-center gap-2.5 rounded-xl bg-white/[0.055] px-3">
+        <div className="mx-4 mb-3 flex h-9 shrink-0 items-center gap-2.5 rounded-xl bg-white/[0.055] px-3">
           <IconSearch className="size-3.5 shrink-0 text-white/34" stroke={1.8} />
           <input
             value={query}
@@ -203,47 +226,39 @@ export function AssetLibrary({
           />
         </div>
 
-        {content}
-      </CanvasDrawerPanel>
+        <DrawerPanel.Body>{content}</DrawerPanel.Body>
+      </>
     );
   }
 
   return (
-    <div
-      className="absolute top-0 left-0 z-30 flex h-full flex-col bg-popover/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
-      style={{ width: ASSET_LIBRARY_WIDTH }}
-    >
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <span className="text-base font-semibold">{t("asset.title")}</span>
-        <button
-          type="button"
-          aria-label={t("asset.close")}
-          onClick={onClose}
-          className="flex size-7 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
-        >
-          <IconX className="size-4" stroke={1.8} />
-        </button>
-      </div>
+    <>
+      <DrawerPanel.Header
+        title={t("asset.title")}
+        icon={<IconLibraryPhoto className="size-4" stroke={1.8} />}
+        closeLabel={t("asset.close")}
+        onClose={onClose}
+      />
 
-      <div className="flex items-center gap-1.5 px-4">
+      <div className="grid shrink-0 grid-cols-3 gap-1 px-4 py-2">
         {tabs.map((tabItem) => (
           <button
             key={tabItem.id}
             type="button"
             onClick={() => setTab(tabItem.id)}
             className={cn(
-              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
+              "min-w-0 truncate rounded-xl px-1.5 py-1.5 text-[10px] font-medium transition-colors",
               tab === tabItem.id
                 ? "bg-white/[0.1] text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {t(`asset.tab.${tabItem.labelKey}`)}
+            {"label" in tabItem ? tabItem.label : t(`asset.tab.${tabItem.labelKey}`)}
           </button>
         ))}
       </div>
 
-      <div className="mx-4 mt-3 flex items-center gap-2.5 rounded-full bg-white/[0.05] px-3.5 py-2">
+      <div className="mx-4 mb-3 flex h-9 shrink-0 items-center gap-2.5 rounded-full bg-white/[0.055] px-3.5">
         <IconSearch className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
         <input
           value={query}
@@ -253,7 +268,7 @@ export function AssetLibrary({
         />
       </div>
 
-      {content}
-    </div>
+      <DrawerPanel.Body>{content}</DrawerPanel.Body>
+    </>
   );
 }

@@ -26,7 +26,7 @@ import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
-import { useCountry, useIsCnSite } from "./region-provider";
+import { useIsCnSite } from "./region-provider";
 import { useWorkspace } from "./workspace-context";
 
 type BillingInterval = "month" | "year";
@@ -88,12 +88,14 @@ export function SubscriptionDialog({
 }) {
   const t = useTranslations("billing");
   const tc = useTranslations("common");
-  const country = useCountry();
-  // The CELL (deployment), not the currency/country, decides CN behaviour: .cn is a
-  // one-off CNY pass (no interval toggle) paid via WeChat 扫码; .com is a USD/SGD
-  // subscription via Airwallex.
+  // The CELL (deployment) decides both behaviour and currency: .cn is a one-off
+  // CNY pass (no interval toggle) paid via WeChat 扫码; .com is a USD subscription
+  // via Airwallex. Membership pricing is deliberately NOT geo-derived — the
+  // catalog stocks exactly one currency per cell, so asking for anything else
+  // (SG visitors used to request SGD off cf-ipcountry) returns price-less plans
+  // and silently degrades every card to "Contact Sales".
   const isCn = useIsCnSite();
-  const currency = isCn ? "CNY" : membershipCurrencyForCountry(country);
+  const currency = isCn ? "CNY" : "USD";
   const { user, signIn } = useAuth();
   const { workspaces, activeWorkspace, createTeam } = useWorkspace();
   const signedIn = Boolean(user);
@@ -121,9 +123,7 @@ export function SubscriptionDialog({
   const plans = loaded?.plans ?? EMPTY_PLANS;
   const errorMessage = loaded?.error ?? null;
 
-  // The lineup is one combined list (individual + team tiers). Custom-priced
-  // plans (enterprise / team_enterprise) keep their prices-less rows so they
-  // render as the "Custom / Contact Sales" card, exactly as the Teams tab did.
+  // The lineup is one combined list of active individual and Team tiers.
   const visiblePlans = plans;
 
   useEffect(() => {
@@ -144,8 +144,7 @@ export function SubscriptionDialog({
     if (!open) return;
     let cancelled = false;
     // One combined lineup: load individual + team plans together, merge, keep
-    // active rows, and order by rank so the row reads basic → … → pro → team
-    // → enterprise / team_enterprise.
+    // active rows, and order by rank so it reads Basic → Standard → Pro → Team.
     Promise.all([
       listMembershipPlans({ productType: "membership_plan", currency }),
       listMembershipPlans({ productType: "team_membership_plan", currency }),
@@ -178,10 +177,10 @@ export function SubscriptionDialog({
         signIn();
         return;
       }
-      // Team plans are workspace-scoped: they attach to a TEAM workspace
-      // (create-then-upgrade, Vercel-style). Resolve one automatically — reuse
-      // the active team, else any team the user already has, else create one —
-      // so a personal-workspace user can buy a team plan without a detour.
+      // Team plans are workspace-scoped. Never silently bill the first team in
+      // the membership list: with multiple teams that can charge the wrong
+      // organization. Use the actively selected team; only auto-create when the
+      // user has no team yet.
       const isTeamPrice = price.subjectType === "workspace";
 
       setPayingPriceId(price.id);
@@ -190,15 +189,13 @@ export function SubscriptionDialog({
         if (isTeamPrice) {
           if (activeWorkspace?.type === "team") {
             workspaceId = activeWorkspace.id;
+          } else if (workspaces.some((workspace) => workspace.type === "team")) {
+            toast.error(t("toast.teamWorkspaceRequired"));
+            return;
           } else {
-            const existingTeam = workspaces.find((w) => w.type === "team");
-            if (existingTeam) {
-              workspaceId = existingTeam.id;
-            } else {
-              const defaultName = `${user?.nickName ?? user?.email ?? "My"}'s Team`;
-              const created = await createTeam(defaultName);
-              workspaceId = created.id;
-            }
+            const defaultName = `${user?.nickName ?? user?.email ?? "My"}'s Team`;
+            const created = await createTeam(defaultName);
+            workspaceId = created.id;
           }
         }
         const baseUrl = `${window.location.origin}${window.location.pathname}`;
@@ -258,7 +255,15 @@ export function SubscriptionDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t("dialogLabel")}
-      className="fixed left-0 top-0 z-50 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
+      /*
+        z-60 + pointer-events-auto, not the usual z-50: this dialog is opened
+        from inside the Radix settings overlay, which is modal and therefore
+        sets `pointer-events: none` on <body> and paints its own z-50 backdrop
+        LATER in the DOM. At z-50 with inherited pointer-events this panel
+        rendered on top visually but every click landed on the settings
+        backdrop instead (live incident 2026-08-03).
+      */
+      className="pointer-events-auto fixed left-0 top-0 z-60 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
     >
       {wechatScan && (
         <WechatScanPayDialog
@@ -656,10 +661,6 @@ function LoadingPlans() {
   );
 }
 
-function membershipCurrencyForCountry(country: string): "USD" | "SGD" {
-  return country.toUpperCase() === "SG" ? "SGD" : "USD";
-}
-
 function priceForInterval(plan: MembershipPlan, interval: BillingInterval) {
   return plan.prices.find((price) => price.interval === interval) ?? null;
 }
@@ -696,29 +697,25 @@ function intervalLabel(interval: string, t: BillingTranslator) {
 
 function membershipFeatureItems(plan: MembershipPlan, t: BillingTranslator) {
   const items: string[] = [];
-  const flags = plan.featureFlags ?? {};
-  const limits = plan.limits ?? {};
-  const images = numberField(limits, "approximateImagesPerMonth");
-  const concurrentJobs = numberField(limits, "concurrentJobs");
-  const queuedJobs = numberField(limits, "queuedJobs");
-  if (images !== null) items.push(t("features.imagesPerMonth", { count: formatInteger(images) }));
-  if (flags.privateGenerations) items.push(t("features.privateGenerations"));
-  if (flags.advancedWorkflows) items.push(t("features.advancedWorkflows"));
-  if (flags.prioritySupport) items.push(t("features.prioritySupport"));
-  if (flags.sharedCredits) items.push(t("features.sharedCredits"));
+  const { imageDaily, videoDaily, concurrentJobs, queuedJobs } = plan.benefits;
+  items.push(
+    imageDaily === "Infinity"
+      ? t("features.imagesUnlimited")
+      : t("features.imagesPerDay", { count: formatInteger(imageDaily) })
+  );
+  items.push(
+    videoDaily === "Infinity"
+      ? t("features.videosUnlimited")
+      : t("features.videosPerDay", { count: formatInteger(videoDaily) })
+  );
+  if (plan.subjectType === "workspace") items.push(t("features.sharedCredits"));
+  if (plan.subjectType === "workspace") items.push(t("features.seatScope"));
   if (concurrentJobs !== null) items.push(t("features.concurrentJobs", { count: concurrentJobs }));
   if (queuedJobs !== null) items.push(t("features.queuedJobs", { count: queuedJobs }));
-  if (plan.topupDiscountBps > 0)
-    items.push(t("features.topupDiscount", { percent: plan.topupDiscountBps / 100 }));
   return items.slice(0, 6);
 }
 
 function stringField(record: Record<string, unknown>, key: string) {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberField(record: Record<string, unknown>, key: string) {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

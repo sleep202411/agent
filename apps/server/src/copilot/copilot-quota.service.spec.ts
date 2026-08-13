@@ -205,7 +205,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
 
   it('trusts the durable charged attempt for a late continuation without touching an expired Redis idem key', async () => {
     attempt.status = CopilotQuotaChargeStatus.charged;
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     await expect(
       service.consumeTurn({ ...input, turnKind: 'tool-continuation' }),
     ).resolves.toMatchObject({ debited: false });
@@ -245,7 +245,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
   });
 
   it('recovers a process crash after Redis consume by fencing the expired owner and idempotently refunding', async () => {
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     conversation = {
       ...(conversation ?? {}),
       status: CopilotConversationStatus.streaming,
@@ -269,7 +269,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
   });
 
   it('recovers a provider crash after the debit was acknowledged as charged', async () => {
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     attempt.status = CopilotQuotaChargeStatus.charged;
     attempt.clientToolExpiresAt = null;
     conversation = {
@@ -292,7 +292,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
   });
 
   it('expires a ready client-tool wait atomically before refunding its physical attempt', async () => {
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     attempt.status = CopilotQuotaChargeStatus.charged;
     attempt.clientToolExpiresAt = new Date(0);
     conversation = {
@@ -324,7 +324,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
 
   it('finalizes a successful persistent idempotency key before marking the outbox settled', async () => {
     attempt.status = CopilotQuotaChargeStatus.settle_pending;
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     conversation = null;
     await expect(
       service.reconcileChargeAttempt(CHARGE_ATTEMPT_ID),
@@ -339,7 +339,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
 
   it('settles a durable successful charge when its already-bounded Redis key has expired', async () => {
     attempt.status = CopilotQuotaChargeStatus.settle_pending;
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     conversation = null;
     quota.finalizeIdempotencyFor.mockResolvedValue({
       ok: true,
@@ -355,7 +355,7 @@ describe('CopilotQuotaService durable charge attempts', () => {
 
   it('rebuilds a terminal refund tombstone when post-ack TTL finalization must retry', async () => {
     attempt.status = CopilotQuotaChargeStatus.refund_pending;
-    attempt.tier = 'VIP1';
+    attempt.tier = 'basic';
     attempt.refundReason = 'failed';
     conversation = null;
     quota.finalizeIdempotencyFor.mockResolvedValueOnce({

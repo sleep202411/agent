@@ -34,11 +34,13 @@ import {
   LegacyUserParamsSchema,
   ListLegacyLedgerQuerySchema,
   ListLegacyRecordsQuerySchema,
+  LegacyUsersByIdsQuerySchema,
   SearchMembersQuerySchema,
   type GrantLegacyPointsInput,
   type LegacyUserParams,
   type ListLegacyLedgerQuery,
   type ListLegacyRecordsQuery,
+  type LegacyUsersByIdsQuery,
   type SearchMembersQuery,
 } from './dto';
 import { LegacyPointsService } from './legacy-points.service';
@@ -65,6 +67,19 @@ export class LegacyPointsAdminController {
         page: query.page,
         pageSize: query.pageSize,
       }),
+    };
+  }
+
+  // Declared BEFORE `users/:identifier`, or that param route would swallow it.
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.UserRead)
+  @Get('users-by-ids')
+  async byIds(
+    @Query(new ZodValidationPipe(LegacyUsersByIdsQuerySchema))
+    query: LegacyUsersByIdsQuery,
+  ) {
+    return {
+      code: 200,
+      data: { items: await this.legacyPoints.findUsersByIds(query.ids) },
     };
   }
 
