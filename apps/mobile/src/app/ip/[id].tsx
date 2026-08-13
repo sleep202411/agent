@@ -3,7 +3,15 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEvent } from "expo";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 
@@ -313,7 +321,7 @@ export default function IpDetailScreen() {
       }
     } catch (error) {
       if (isInsufficientBalanceError(error)) {
-        Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+        promptTopUpOnWeb();
       } else if (isMemberOnlyError(error)) {
         Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
       } else if (error instanceof ApiRequestError && error.status === 401) {
@@ -333,7 +341,7 @@ export default function IpDetailScreen() {
   ) => {
     // Balance is known and below the price → skip the doomed "unlock" and say so.
     if (balance != null && balanceBelow(balance, plan.points)) {
-      Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+      promptTopUpOnWeb();
       return;
     }
     const unit = t("ipDetail.pointsUnit");
@@ -451,9 +459,31 @@ export default function IpDetailScreen() {
     authGate.requireAuth({ onAuthenticated: showActions });
   };
 
-  // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>); the QR encodes
-  // the region's public origin so a scan opens the work on the right site.
-  const shareUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
+  // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>) against the
+  // region's public origin. Two consumers: the share QR, and the top-up prompt
+  // below.
+  const webIpUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
+
+  /**
+   * Community points are only purchasable on the web — there is no in-app
+   * payment surface — so an empty balance sends the user to this work's web
+   * page, where the balance and its top-up dialog live.
+   */
+  const promptTopUpOnWeb = () => {
+    Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("ipDetail.insufficientOpenWeb"),
+        onPress: () => {
+          Linking.openURL(webIpUrl).catch((error: unknown) => {
+            console.warn("[ip-detail] open web top-up failed", error);
+            Alert.alert(t("ipDetail.openWebFailed"));
+          });
+        },
+      },
+    ]);
+  };
+
   const creator = ip.creators[0];
   const creatorName = creator?.name;
   // Real avatar if resolved, else a deterministic DiceBear face (same fallback
@@ -717,7 +747,7 @@ export default function IpDetailScreen() {
         ip={ip}
         creatorName={creatorName}
         creatorAvatar={creatorAvatar}
-        shareUrl={shareUrl}
+        shareUrl={webIpUrl}
         onClose={() => setShareOpen(false)}
       />
     </ThemedView>
