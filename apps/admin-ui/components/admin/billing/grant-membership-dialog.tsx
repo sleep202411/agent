@@ -1,7 +1,7 @@
 "use client";
 
-// GrantMembershipDialog — 给用户手动开通会员（complimentary grant），装在 AdminDialog 里。
-// 由用户列表的「开通会员」按钮共用（头部空标识符、行内预填该用户）。
+// GrantMembershipDialog — 给用户或团队工作区手动开通会员（complimentary grant）。
+// 个人入口先按手机号 / 邮箱解析用户；团队入口由工作区抽屉传入明确的 workspace。
 //
 // 用户解析走 legacy 桥的查人接口（手机号 / 邮箱 → userId）；发放调
 // POST /billing/membership-grants（服务端包 grantComplimentary：同档叠加顺延、
@@ -22,6 +22,7 @@ import {
   requestEnvelope,
   toErrorMessage,
 } from "./shared";
+import type { AdminWorkspaceRow } from "./types";
 
 interface LegacyUser {
   userId: string;
@@ -33,14 +34,15 @@ interface LegacyUser {
 
 interface MembershipGrant {
   id: string;
+  subjectType: "user" | "workspace";
+  subjectId: string;
   planKey: string;
-  status: "pending" | "active" | "expired" | "revoked";
   sourceType: string;
   startsAt: string;
   endsAt: string | null;
   revokedAt: string | null;
   note: string | null;
-  activeNow: boolean;
+  effectiveStatus: "pending" | "active" | "expired" | "revoked";
 }
 
 interface GrantablePlan {
@@ -53,12 +55,14 @@ interface GrantablePlan {
 // 列表跟计划表漂移过（历史上留过 creator / studio 这些早已下线的档位）。服务端
 // 现在按同一批计划行校验发放（没有 active 行就 MEMBERSHIP_PLAN_NOT_GRANTABLE），
 // 所以这里列出来的一定发得出去。
-const GRANTABLE_PLANS_URL =
+const PERSONAL_PLANS_URL =
   "/api/admin/billing/membership-plans?productType=membership_plan&subjectType=user&status=active";
+const TEAM_PLANS_URL =
+  "/api/admin/billing/membership-plans?productType=team_membership_plan&subjectType=workspace&status=active";
 
 const DURATION_PRESETS = [7, 30, 90] as const;
 
-const GRANT_STATUS_LABEL: Record<MembershipGrant["status"], string> = {
+const GRANT_STATUS_LABEL: Record<MembershipGrant["effectiveStatus"], string> = {
   pending: "待生效",
   active: "生效中",
   expired: "已过期",
@@ -71,18 +75,27 @@ const SOURCE_LABEL: Record<string, string> = {
   referral_reward: "推荐奖励",
 };
 
-export function GrantMembershipDialog({
-  open,
-  initialIdentifier,
-  onClose,
-  onGranted,
-}: {
+type GrantMembershipDialogProps = {
   open: boolean;
   initialIdentifier?: string;
+  workspace?: AdminWorkspaceRow;
   onClose: () => void;
   onGranted?: () => void;
-}) {
-  const [identifier, setIdentifier] = useState("");
+};
+
+export function GrantMembershipDialog(props: GrantMembershipDialogProps) {
+  if (!props.open) return null;
+  return <GrantMembershipDialogContent {...props} />;
+}
+
+function GrantMembershipDialogContent({
+  open,
+  initialIdentifier,
+  workspace,
+  onClose,
+  onGranted,
+}: GrantMembershipDialogProps) {
+  const [identifier, setIdentifier] = useState(initialIdentifier?.trim() ?? "");
   const [planKey, setPlanKey] = useState("");
   const [days, setDays] = useState("30");
   const [note, setNote] = useState("");
@@ -91,6 +104,8 @@ export function GrantMembershipDialog({
   const [plans, setPlans] = useState<GrantablePlan[]>([]);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [grants, setGrants] = useState<MembershipGrant[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantsError, setGrantsError] = useState<string | null>(null);
   const [lookupDone, setLookupDone] = useState(false);
   const [looking, setLooking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -98,48 +113,44 @@ export function GrantMembershipDialog({
   const [error, setError] = useState<string | null>(null);
   const [granted, setGranted] = useState<MembershipGrant | null>(null);
 
+  const subject = workspace
+    ? ({ subjectType: "workspace", subjectId: workspace.id } as const)
+    : user
+      ? ({ subjectType: "user", subjectId: user.userId } as const)
+      : null;
+
   const parsedDays = Number(days);
   const daysValid = Number.isInteger(parsedDays) && parsedDays >= 1 && parsedDays <= 366;
-  const canLookup = Boolean(identifier.trim()) && !looking;
+  const canLookup = Boolean(identifier.trim()) && !looking && !submitting;
   const canSubmit =
-    Boolean(user) && Boolean(planKey) && daysValid && Boolean(note.trim()) && !submitting;
+    Boolean(subject) &&
+    Boolean(planKey) &&
+    daysValid &&
+    Boolean(note.trim()) &&
+    !grantsLoading &&
+    !grantsError &&
+    !submitting;
 
   useEffect(() => {
-    if (!open) {
-      setIdentifier("");
-      setPlanKey("");
-      setDays("30");
-      setNote("");
-      setUser(null);
-      setPlans([]);
-      setPlansError(null);
-      setGrants([]);
-      setLookupDone(false);
-      setError(null);
-      setGranted(null);
-      return;
-    }
     const prefilled = initialIdentifier?.trim() ?? "";
-    setIdentifier(prefilled);
-    setDays("30");
-    setNote("");
-    setUser(null);
-    setGrants([]);
-    setLookupDone(false);
-    setError(null);
-    setGranted(null);
     // 每次打开都重读：admin 刚上线/下线一个档位就该立刻反映出来。
     void loadPlans();
-    if (prefilled) void lookup(prefilled);
+    if (workspace) {
+      void loadGrants({ subjectType: "workspace", subjectId: workspace.id });
+    } else if (prefilled) {
+      void lookup(prefilled);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialIdentifier]);
+  }, [initialIdentifier, workspace]);
 
   async function loadPlans() {
     setPlans([]);
     setPlanKey("");
     setPlansError(null);
     try {
-      const data = await requestEnvelope<{ items: GrantablePlan[] }>(GRANTABLE_PLANS_URL);
+      const data = await requestEnvelope<{ items: GrantablePlan[] }>(
+        workspace ? TEAM_PLANS_URL : PERSONAL_PLANS_URL
+      );
       const items = data?.items ?? [];
       setPlans(items);
       // 服务端按 rank 升序返回，默认选最高档。
@@ -149,15 +160,19 @@ export function GrantMembershipDialog({
     }
   }
 
-  async function loadGrants(userId: string) {
-    // Best-effort — a listing failure must not block the grant flow.
+  async function loadGrants(target: { subjectType: "user" | "workspace"; subjectId: string }) {
+    setGrantsLoading(true);
+    setGrantsError(null);
     try {
       const rows = await requestEnvelope<MembershipGrant[]>(
-        `/api/admin/billing/membership-grants?userId=${encodeURIComponent(userId)}`
+        `/api/admin/billing/membership-grants?subjectType=${target.subjectType}&subjectId=${encodeURIComponent(target.subjectId)}`
       );
       setGrants(rows ?? []);
-    } catch {
+    } catch (err) {
       setGrants([]);
+      setGrantsError(toErrorMessage(err));
+    } finally {
+      setGrantsLoading(false);
     }
   }
 
@@ -166,6 +181,10 @@ export function GrantMembershipDialog({
     if (!id) return;
     setLooking(true);
     setError(null);
+    setGrantsError(null);
+    setUser(null);
+    setLookupDone(false);
+    setGrants([]);
     setGranted(null);
     try {
       const u = await requestEnvelope<LegacyUser | null>(
@@ -174,7 +193,7 @@ export function GrantMembershipDialog({
       setUser(u);
       setLookupDone(true);
       setGrants([]);
-      if (u) await loadGrants(u.userId);
+      if (u) await loadGrants({ subjectType: "user", subjectId: u.userId });
     } catch (err) {
       setError(toErrorMessage(err));
       setUser(null);
@@ -185,19 +204,19 @@ export function GrantMembershipDialog({
   }
 
   async function submit() {
-    if (!canSubmit || !user) return;
+    if (!canSubmit || !subject) return;
     setSubmitting(true);
     setError(null);
     try {
       const grant = await mutateEnvelope<MembershipGrant>("/api/admin/billing/membership-grants", {
-        userId: user.userId,
+        ...subject,
         planKey,
         durationDays: parsedDays,
         note: note.trim(),
       });
       setGranted(grant);
       setNote("");
-      await loadGrants(user.userId);
+      await loadGrants(subject);
       onGranted?.();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -207,7 +226,7 @@ export function GrantMembershipDialog({
   }
 
   async function revoke(grantId: string) {
-    if (!user || revokingId) return;
+    if (!subject || revokingId) return;
     setRevokingId(grantId);
     setError(null);
     try {
@@ -215,7 +234,7 @@ export function GrantMembershipDialog({
         `/api/admin/billing/membership-grants/${grantId}/revoke`,
         {}
       );
-      await loadGrants(user.userId);
+      await loadGrants(subject);
       onGranted?.();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -242,8 +261,12 @@ export function GrantMembershipDialog({
   return (
     <AdminDialog
       open={open}
-      title="开通会员"
-      description="按手机号或邮箱解析用户，发放限时会员（不涉及订单与扣款）。同档再次发放自动顺延，到期自动回落。"
+      title={workspace ? "发放 Team Plan" : "开通个人会员"}
+      description={
+        workspace
+          ? `为团队工作区「${workspace.name}」发放限时 Team Plan（不涉及订单与扣款）。同档再次发放自动顺延，到期自动回落。`
+          : "按手机号或邮箱解析用户，发放限时个人会员（不涉及订单与扣款）。同档再次发放自动顺延，到期自动回落。"
+      }
       onClose={onClose}
       footer={
         granted ? (
@@ -267,7 +290,7 @@ export function GrantMembershipDialog({
               取消
             </Button>
             <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void submit()}>
-              {submitting ? "提交中" : "开通会员"}
+              {submitting ? "提交中" : workspace ? "发放 Team Plan" : "开通个人会员"}
             </Button>
           </>
         )
@@ -279,7 +302,9 @@ export function GrantMembershipDialog({
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-slate-950">开通成功</h3>
             <p className="text-[13px] text-slate-500">
-              {user?.nickName ? `${user.nickName} · ` : ""}ID {user?.userId}
+              {workspace
+                ? `${workspace.name} · ${workspace.id}`
+                : `${user?.nickName ? `${user.nickName} · ` : ""}ID ${user?.userId}`}
             </p>
           </div>
           <div className="w-full divide-y divide-slate-100 rounded-lg border border-slate-200 text-[13px]">
@@ -301,34 +326,47 @@ export function GrantMembershipDialog({
         </div>
       ) : (
         <div className="space-y-4">
-          <FormLabel label="手机号 / 邮箱">
-            <div className="flex gap-2">
-              <TextInput
-                value={identifier}
-                placeholder="手机号或邮箱"
-                onChange={(event) => setIdentifier(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void lookup();
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canLookup}
-                onClick={() => void lookup()}
-              >
-                <IconSearch className="size-4" />
-                {looking ? "查询中" : "查询"}
-              </Button>
+          {workspace ? (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
+              <span>
+                团队工作区 <span className="font-medium text-slate-950">{workspace.name}</span>
+              </span>
+              <span className="font-mono text-[11px]">{workspace.id}</span>
+              <span>成员 {workspace.memberCount}</span>
+              <span>所有者 UID {workspace.ownerUserId}</span>
             </div>
-          </FormLabel>
+          ) : (
+            <>
+              <FormLabel label="手机号 / 邮箱">
+                <div className="flex gap-2">
+                  <TextInput
+                    value={identifier}
+                    placeholder="手机号或邮箱"
+                    onChange={(event) => setIdentifier(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void lookup();
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canLookup}
+                    onClick={() => void lookup()}
+                  >
+                    <IconSearch className="size-4" />
+                    {looking ? "查询中" : "查询"}
+                  </Button>
+                </div>
+              </FormLabel>
 
-          {lookupDone && !user && !error ? (
-            <p className="text-[12px] text-amber-600">未找到匹配的用户（手机号或邮箱）。</p>
-          ) : null}
+              {lookupDone && !user && !error ? (
+                <p className="text-[12px] text-amber-600">未找到匹配的用户（手机号或邮箱）。</p>
+              ) : null}
+            </>
+          )}
 
-          {user ? (
+          {!workspace && user ? (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
               <span>
                 用户 <span className="font-medium text-slate-950">{user.nickName || "—"}</span>
@@ -339,10 +377,16 @@ export function GrantMembershipDialog({
             </div>
           ) : null}
 
-          {user && grants.length > 0 ? (
+          {subject && grantsLoading ? (
+            <p className="text-[12px] text-slate-400">正在读取现有会员记录…</p>
+          ) : null}
+
+          {grantsError ? <ErrorBanner message={`现有会员记录读取失败：${grantsError}`} /> : null}
+
+          {subject && !grantsLoading && !grantsError && grants.length > 0 ? (
             <div className="rounded-lg border border-slate-200">
               <div className="border-b border-slate-200 px-4 py-2 text-[12px] font-medium text-slate-500">
-                现有会员记录
+                {workspace ? "现有 Team Plan 记录" : "现有个人会员记录"}
               </div>
               <div className="max-h-40 divide-y divide-slate-100 overflow-y-auto">
                 {grants.map((g) => (
@@ -352,15 +396,20 @@ export function GrantMembershipDialog({
                   >
                     <span className="font-medium text-slate-950">{planLabel(g.planKey)}</span>
                     <span
-                      className={g.activeNow ? "font-medium text-emerald-600" : "text-slate-400"}
+                      className={
+                        g.effectiveStatus === "active"
+                          ? "font-medium text-emerald-600"
+                          : "text-slate-400"
+                      }
                     >
-                      {g.activeNow ? "生效中" : GRANT_STATUS_LABEL[g.status]}
+                      {GRANT_STATUS_LABEL[g.effectiveStatus]}
                     </span>
                     <span>{SOURCE_LABEL[g.sourceType] ?? g.sourceType}</span>
                     <span className="ml-auto text-slate-400">
                       {formatDate(g.startsAt)} → {g.endsAt ? formatDate(g.endsAt) : "长期"}
                     </span>
-                    {g.activeNow && g.sourceType === "admin_manual" ? (
+                    {(g.effectiveStatus === "active" || g.effectiveStatus === "pending") &&
+                    g.sourceType === "admin_manual" ? (
                       <Button
                         type="button"
                         size="xs"
@@ -368,7 +417,13 @@ export function GrantMembershipDialog({
                         disabled={revokingId === g.id}
                         onClick={() => void revoke(g.id)}
                       >
-                        {revokingId === g.id ? "收回中" : "收回"}
+                        {revokingId === g.id
+                          ? g.effectiveStatus === "pending"
+                            ? "取消中"
+                            : "收回中"
+                          : g.effectiveStatus === "pending"
+                            ? "取消"
+                            : "收回"}
                       </Button>
                     ) : null}
                   </div>
@@ -390,7 +445,8 @@ export function GrantMembershipDialog({
           {plansError ? <ErrorBanner message={plansError} /> : null}
           {!plansError && plans.length === 0 ? (
             <p className="text-[12px] text-amber-600">
-              没有可发放的档位：billing_membership_plans 里没有 active 的个人会员计划行。
+              没有可发放的档位：billing_membership_plans 里没有 active 的
+              {workspace ? " Team Plan" : "个人会员"}计划行。
             </p>
           ) : null}
 

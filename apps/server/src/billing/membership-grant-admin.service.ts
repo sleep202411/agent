@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
   BillingSubjectType,
   EntitlementGrantStatus,
+  WorkspaceStatus,
+  WorkspaceType,
   type EntitlementGrant,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { EntitlementService } from '../entitlements';
-import type { GrantMembershipInput } from './dto';
+import { enqueueEntitlementChanged } from './entitlement-realtime';
+import type { GrantMembershipInput, ListMembershipGrantsQuery } from './dto';
 
 /**
  * Admin 手动开会员 (complimentary membership grants). A thin admin surface over
@@ -24,15 +28,16 @@ const ADMIN_GRANT_SOURCE = 'admin_manual';
 
 export type MembershipGrantView = {
   id: string;
+  subjectType: BillingSubjectType;
+  subjectId: string;
   planKey: string;
-  status: EntitlementGrantStatus;
   sourceType: string;
   startsAt: Date;
   endsAt: Date | null;
   revokedAt: Date | null;
   note: string | null;
-  /** Derived: counted by the entitlement resolver as of now. */
-  activeNow: boolean;
+  /** Time-aware status for operators; unlike the stored lifecycle status, this expires at endsAt. */
+  effectiveStatus: EntitlementGrantStatus;
 };
 
 function noteFromMetadata(metadata: unknown): string | null {
@@ -41,20 +46,38 @@ function noteFromMetadata(metadata: unknown): string | null {
   return typeof note === 'string' && note.length > 0 ? note : null;
 }
 
+function effectiveStatusAt(
+  grant: EntitlementGrant,
+  now: Date,
+): EntitlementGrantStatus {
+  if (grant.status === EntitlementGrantStatus.revoked) {
+    return EntitlementGrantStatus.revoked;
+  }
+  if (grant.status === EntitlementGrantStatus.expired) {
+    return EntitlementGrantStatus.expired;
+  }
+  if (grant.status === EntitlementGrantStatus.pending || grant.startsAt > now) {
+    return EntitlementGrantStatus.pending;
+  }
+  if (grant.endsAt && grant.endsAt <= now) {
+    return EntitlementGrantStatus.expired;
+  }
+  return EntitlementGrantStatus.active;
+}
+
 function toView(grant: EntitlementGrant, now: Date): MembershipGrantView {
+  const effectiveStatus = effectiveStatusAt(grant, now);
   return {
     id: grant.id,
+    subjectType: grant.subjectType,
+    subjectId: grant.subjectId,
     planKey: grant.planKey,
-    status: grant.status,
     sourceType: grant.sourceType,
     startsAt: grant.startsAt,
     endsAt: grant.endsAt,
     revokedAt: grant.revokedAt,
     note: noteFromMetadata(grant.metadata),
-    activeNow:
-      grant.status === EntitlementGrantStatus.active &&
-      grant.startsAt <= now &&
-      (!grant.endsAt || grant.endsAt > now),
+    effectiveStatus,
   };
 }
 
@@ -65,11 +88,16 @@ export class MembershipGrantAdminService {
     private readonly entitlements: EntitlementService,
   ) {}
 
-  /** Every grant on the user (any source), newest first, for the admin dialog. */
-  async listForUser(userId: string): Promise<MembershipGrantView[]> {
+  /** Every grant on one subject (any source), newest first, for the admin dialog. */
+  async listForSubject(
+    input: ListMembershipGrantsQuery,
+  ): Promise<MembershipGrantView[]> {
     const now = new Date();
     const grants = await this.prisma.entitlementGrant.findMany({
-      where: { subjectType: BillingSubjectType.user, subjectId: userId },
+      where: {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+      },
       orderBy: [{ createdAt: 'desc' }],
       take: 50,
     });
@@ -80,9 +108,10 @@ export class MembershipGrantAdminService {
     adminId: string,
     input: GrantMembershipInput,
   ): Promise<MembershipGrantView> {
+    await this.assertGrantTarget(input);
     const grant = await this.entitlements.grantComplimentary({
-      subjectType: BillingSubjectType.user,
-      subjectId: input.userId,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
       planKey: input.planKey,
       durationDays: input.durationDays,
       sourceType: ADMIN_GRANT_SOURCE,
@@ -99,25 +128,74 @@ export class MembershipGrantAdminService {
    * must go through the refund flow so money and entitlement stay consistent.
    */
   async revoke(grantId: string): Promise<MembershipGrantView> {
-    const existing = await this.prisma.entitlementGrant.findUnique({
-      where: { id: grantId },
-    });
-    if (!existing) throw new NotFoundException('Grant not found.');
-    if (existing.sourceType !== ADMIN_GRANT_SOURCE) {
-      throw new BadRequestException(
-        'Only admin-issued grants can be revoked here; refund the order instead.',
-      );
-    }
-    if (existing.status !== EntitlementGrantStatus.active) {
-      throw new BadRequestException('Grant is not active.');
-    }
-    const updated = await this.prisma.entitlementGrant.update({
-      where: { id: grantId },
-      data: {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.entitlementGrant.findUnique({
+        where: { id: grantId },
+      });
+      if (!existing) throw new NotFoundException('Grant not found.');
+      if (existing.sourceType !== ADMIN_GRANT_SOURCE) {
+        throw new BadRequestException(
+          'Only admin-issued grants can be revoked here; refund the order instead.',
+        );
+      }
+      const now = new Date();
+      const effectiveStatus = effectiveStatusAt(existing, now);
+      if (
+        effectiveStatus !== EntitlementGrantStatus.active &&
+        effectiveStatus !== EntitlementGrantStatus.pending
+      ) {
+        throw new BadRequestException('Grant is not revocable.');
+      }
+      const result = await tx.entitlementGrant.updateMany({
+        where: {
+          id: grantId,
+          status: existing.status,
+          revokedAt: existing.revokedAt,
+        },
+        data: {
+          status: EntitlementGrantStatus.revoked,
+          revokedAt: now,
+        },
+      });
+      if (result.count !== 1) {
+        throw new ConflictException(
+          'Grant changed while it was being revoked. Refresh and try again.',
+        );
+      }
+      const updated: EntitlementGrant = {
+        ...existing,
         status: EntitlementGrantStatus.revoked,
-        revokedAt: new Date(),
-      },
+        revokedAt: now,
+      };
+      await enqueueEntitlementChanged(tx, updated, 'revoked');
+      return toView(updated, now);
     });
-    return toView(updated, new Date());
+  }
+
+  private async assertGrantTarget(input: GrantMembershipInput): Promise<void> {
+    if (input.subjectType === BillingSubjectType.user) return;
+
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: input.subjectId, deletedAt: null },
+      select: { type: true, status: true },
+    });
+    if (!workspace) {
+      throw new NotFoundException({
+        code: 'WORKSPACE_NOT_FOUND',
+        msg: 'Workspace not found.',
+      });
+    }
+    if (workspace.type !== WorkspaceType.team) {
+      throw new ConflictException({
+        code: 'TEAM_PLAN_REQUIRES_TEAM_WORKSPACE',
+        msg: 'Team plans can only be granted to team workspaces.',
+      });
+    }
+    if (workspace.status !== WorkspaceStatus.active) {
+      throw new ConflictException({
+        code: 'WORKSPACE_NOT_ACTIVE',
+        msg: 'Team plans can only be granted to active workspaces.',
+      });
+    }
   }
 }

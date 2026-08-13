@@ -12,7 +12,7 @@
 //   GET /legacy-points/users-by-ids?ids=…                   —— 把 ownerUserId 批量换成名字
 // 后者是必要的：工作区表里只有外部 userId，没有用户名（我们库里根本没有用户表）。
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { IconCrown, IconExternalLink, IconUsers, IconWallet } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -25,6 +25,7 @@ import {
   toErrorMessage,
 } from "./shared";
 import { WorkspaceGrantDialog } from "./workspace-grant-dialog";
+import { GrantMembershipDialog } from "./grant-membership-dialog";
 import type {
   AdminBillingWorkspacesData,
   AdminWorkspaceMemberRole,
@@ -64,6 +65,7 @@ export function MemberWorkspacesDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [granting, setGranting] = useState<AdminWorkspaceRow | null>(null);
+  const [grantingTeamPlan, setGrantingTeamPlan] = useState<AdminWorkspaceRow | null>(null);
 
   const userId = member?.userId ?? null;
 
@@ -211,14 +213,27 @@ export function MemberWorkspacesDrawer({
                               <IconWallet className="size-3.5 text-slate-400" />
                               {row.hasWallet ? formatInteger(row.availableBalance) : "0"}
                             </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setGranting(row)}
-                            >
-                              充值
-                            </Button>
+                            <div className="flex items-center gap-1.5">
+                              {row.type === "team" ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setGrantingTeamPlan(row)}
+                                >
+                                  <IconCrown className="size-3.5" />
+                                  Team Plan
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setGranting(row)}
+                              >
+                                充值
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </li>
@@ -241,6 +256,14 @@ export function MemberWorkspacesDrawer({
           workspace={granting}
           onClose={() => setGranting(null)}
           onGranted={applyBalance}
+        />
+      ) : null}
+
+      {grantingTeamPlan ? (
+        <GrantMembershipDialog
+          open
+          workspace={grantingTeamPlan}
+          onClose={() => setGrantingTeamPlan(null)}
         />
       ) : null}
     </>
