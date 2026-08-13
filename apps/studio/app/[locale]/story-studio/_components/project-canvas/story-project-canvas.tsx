@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import {
   applyNodeChanges,
@@ -40,13 +39,10 @@ import {
   IconDownload,
   IconGitBranch,
   IconLoader2,
-  IconBook,
   IconMovie,
-  IconUsers,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
-  IconSparkles,
   IconTrash,
   IconUser,
   IconX,
@@ -148,7 +144,7 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
-import { StoryChapterDropdown } from "./story-chapter-dropdown";
+import { StoryCanvasSidebar } from "./story-canvas-sidebar";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
   coordinateStoryCanvasNavigation,
@@ -2931,9 +2927,50 @@ function StoryProjectCanvasInner({
   };
   return (
     <main className="flex h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
+      <StoryCanvasSidebar
+        agentLabel={agentT("title")}
+        agentOpen={agentOpen}
+        foundationOpen={inspectorTarget.kind === "foundation"}
+        chapterDropdown={{
+          open: chapterDropdownOpen,
+          chapters: workbenchProjection.chapters,
+          activeChapterId: workbenchProjection.chapter.id,
+          canEdit,
+          creating: chapterCreatePending,
+          pendingChapterId: chapterMutationPendingId,
+          onOpenChange: (open) => {
+            setChapterDropdownOpen(open);
+            if (open) {
+              setAgentOpen(false);
+              setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+            }
+          },
+          onSelect: navigateToChapter,
+          onCreate: createChapter,
+          onRename: renameChapter,
+          onMove: moveChapter,
+          onArchive: archiveChapter,
+        }}
+        onBackNavigate={guardBackNavigation}
+        onOpenMediaCreation={() => openProductionCanvas()}
+        onShare={() => setShareOpen(true)}
+        onToggleAgent={() => {
+          setChapterDropdownOpen(false);
+          setAgentOpen((current) => !current);
+        }}
+        onToggleFoundation={() => {
+          setChapterDropdownOpen(false);
+          setInspectorTarget((current) =>
+            current.kind === "foundation"
+              ? CLOSED_STORY_CANVAS_INSPECTOR
+              : STORY_FOUNDATION_INSPECTOR
+          );
+        }}
+      />
       <div className="relative min-w-0 flex-1">
         <CanvasHeader
           title={project.title}
+          chapterTitle={workbenchProjection.chapter.title}
           canEdit={canEdit}
           previewPending={workingPreviewPending}
           publishPending={publication.isPending}
@@ -2949,45 +2986,6 @@ function StoryProjectCanvasInner({
           }
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
-          onOpenMediaCreation={() => openProductionCanvas()}
-          agentOpen={agentOpen}
-          agentLabel={agentT("title")}
-          onToggleAgent={() => setAgentOpen((current) => !current)}
-          foundationOpen={inspectorTarget.kind === "foundation"}
-          onToggleFoundation={() =>
-            setInspectorTarget((current) =>
-              current.kind === "foundation"
-                ? CLOSED_STORY_CANVAS_INSPECTOR
-                : STORY_FOUNDATION_INSPECTOR
-            )
-          }
-          chapterControl={
-            <StoryChapterDropdown
-              open={chapterDropdownOpen}
-              chapters={workbenchProjection.chapters}
-              activeChapterId={workbenchProjection.chapter.id}
-              canEdit={canEdit}
-              creating={chapterCreatePending}
-              pendingChapterId={chapterMutationPendingId}
-              onOpenChange={setChapterDropdownOpen}
-              onSelect={navigateToChapter}
-              onCreate={createChapter}
-              onRename={renameChapter}
-              onMove={moveChapter}
-              onArchive={archiveChapter}
-            />
-          }
-          shareControl={
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-            >
-              <IconUsers className="size-4" />
-              <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
-            </button>
-          }
-          onBackNavigate={guardBackNavigation}
         />
 
         <ShareDialog
@@ -3302,13 +3300,13 @@ function StoryProjectCanvasInner({
 /**
  * Toolbar label visibility. Below this container width the full-label pill
  * overflows the header row, so labels collapse to sr-only and the buttons run
- * icon-only. Applies to the canvas-header toolbar (including the share control
- * the parent passes in), which is why it lives at module scope.
+ * icon-only. Applies to the canvas-header preview and publish actions.
  */
 const HEADER_LABEL_CLASS = "@max-[1000px]:sr-only";
 
 function CanvasHeader({
   title,
+  chapterTitle,
   canEdit,
   previewPending,
   publishPending,
@@ -3317,17 +3315,9 @@ function CanvasHeader({
   publishDisabledReason,
   onPreview,
   onPublish,
-  onOpenMediaCreation,
-  agentOpen,
-  agentLabel,
-  onToggleAgent,
-  foundationOpen,
-  onToggleFoundation,
-  chapterControl,
-  shareControl,
-  onBackNavigate,
 }: {
   title: string;
+  chapterTitle: string;
   canEdit: boolean;
   previewPending: boolean;
   publishPending: boolean;
@@ -3336,15 +3326,6 @@ function CanvasHeader({
   publishDisabledReason: string | null;
   onPreview: () => void;
   onPublish: () => void;
-  onOpenMediaCreation: () => void;
-  agentOpen: boolean;
-  agentLabel: string;
-  onToggleAgent: () => void;
-  foundationOpen: boolean;
-  onToggleFoundation: () => void;
-  chapterControl: ReactNode;
-  shareControl: ReactNode;
-  onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
   const publishButton = (
@@ -3376,60 +3357,14 @@ function CanvasHeader({
     // `@container`: toolbar labels collapse to icon-only when space is tight.
     <header className="@container pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <div className="pointer-events-auto flex h-12 min-w-0 items-center gap-3">
-        <Link
-          href="/story-studio"
-          onNavigate={onBackNavigate}
-          aria-label={t("back")}
-          className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/68 transition hover:bg-white/[0.12] hover:text-white"
-        >
-          <IconArrowLeft className="size-5" />
-        </Link>
         <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
           {title}
         </h1>
         <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.1]" />
-        {chapterControl}
+        <span className="max-w-56 truncate text-xs font-medium text-white/52">{chapterTitle}</span>
       </div>
 
       <div className="liquid-rim pointer-events-auto relative flex h-12 shrink-0 items-center gap-0.5 rounded-[18px] bg-white/[0.055] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.3),0_16px_48px_-18px_rgba(0,0,0,0.68)] backdrop-blur-2xl backdrop-saturate-[1.8]">
-        <button
-          type="button"
-          aria-label={agentLabel}
-          aria-pressed={agentOpen}
-          onClick={onToggleAgent}
-          className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            agentOpen
-              ? "bg-white text-black"
-              : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
-          )}
-        >
-          <IconSparkles className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{agentLabel}</span>
-        </button>
-        <button
-          type="button"
-          aria-pressed={foundationOpen}
-          onClick={onToggleFoundation}
-          className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            foundationOpen
-              ? "bg-white/[0.14] text-white"
-              : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
-          )}
-        >
-          <IconBook className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("filmFoundation.title")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenMediaCreation}
-          className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-        >
-          <IconMovie className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("mediaCreation")}</span>
-        </button>
-        {shareControl}
         {/* Was hidden while a draft preview could only ever start at the story's
             first scene, which made it useless for a multi-chapter work. It now
             previews the chapter being edited, and a missing clip stands in

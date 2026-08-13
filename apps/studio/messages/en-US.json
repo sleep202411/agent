@@ -2480,6 +2480,12 @@
     "canvas": {
       "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
+      "sidebar": {
+        "navigation": "Story project navigation",
+        "world": "World",
+        "media": "Media",
+        "agent": "Agent"
+      },
       "chapters": {
         "action": "Chapters",
         "title": "Chapters",

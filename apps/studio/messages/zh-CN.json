@@ -2480,6 +2480,12 @@
     "canvas": {
       "back": "返回影游工作室",
       "mode": "故事画布",
+      "sidebar": {
+        "navigation": "影游项目导航",
+        "world": "世界",
+        "media": "素材",
+        "agent": "智能体"
+      },
       "chapters": {
         "action": "章节",
         "title": "章节",

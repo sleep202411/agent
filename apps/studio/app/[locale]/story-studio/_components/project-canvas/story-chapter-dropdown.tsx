@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   IconArchive,
   IconArrowDown,
@@ -35,7 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { StoryChapter } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 
-interface StoryChapterDropdownProps {
+export interface StoryChapterDropdownProps {
   open: boolean;
   chapters: StoryChapter[];
   activeChapterId: string;
@@ -48,6 +48,9 @@ interface StoryChapterDropdownProps {
   onRename: (chapter: StoryChapter, title: string) => Promise<boolean>;
   onMove: (chapter: StoryChapter, direction: -1 | 1) => Promise<boolean>;
   onArchive: (chapter: StoryChapter) => Promise<boolean>;
+  trigger?: ReactNode;
+  contentSide?: "top" | "right" | "bottom" | "left";
+  contentAlign?: "start" | "center" | "end";
 }
 
 /**
@@ -69,6 +72,9 @@ export function StoryChapterDropdown({
   onRename,
   onMove,
   onArchive,
+  trigger,
+  contentSide = "bottom",
+  contentAlign = "start",
 }: StoryChapterDropdownProps) {
   const t = useTranslations("storyStudio.canvas.chapters");
   const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
@@ -111,23 +117,26 @@ export function StoryChapterDropdown({
     <>
       <Popover open={open} onOpenChange={changeOpen}>
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={t("action")}
-            className="inline-flex h-9 min-w-0 max-w-56 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/72 transition hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none data-[state=open]:bg-white/[0.14] data-[state=open]:text-white"
-          >
-            <IconFileText className="size-4 shrink-0" stroke={1.8} />
-            <span className="truncate">{activeChapter?.title ?? t("title")}</span>
-            <IconChevronDown
-              className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-180")}
-              stroke={1.8}
-            />
-          </button>
+          {trigger ?? (
+            <button
+              type="button"
+              aria-label={t("action")}
+              className="inline-flex h-9 min-w-0 max-w-56 items-center gap-2 rounded-xl bg-white/[0.07] px-3 text-xs font-semibold text-white/72 transition hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none data-[state=open]:bg-white/[0.14] data-[state=open]:text-white"
+            >
+              <IconFileText className="size-4 shrink-0" stroke={1.8} />
+              <span className="truncate">{activeChapter?.title ?? t("title")}</span>
+              <IconChevronDown
+                className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-180")}
+                stroke={1.8}
+              />
+            </button>
+          )}
         </PopoverTrigger>
         <PopoverContent
           role="navigation"
           aria-label={t("title")}
-          align="start"
+          align={contentAlign}
+          side={contentSide}
           sideOffset={8}
           className="w-[316px] gap-0 overflow-hidden rounded-[20px] bg-[oklch(0.205_0_0/0.96)] p-0 text-white shadow-[0_24px_80px_rgba(0,0,0,0.48)] backdrop-blur-[60px] backdrop-saturate-150"
         >
