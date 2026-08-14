@@ -73,3 +73,22 @@ export function resolveAssetUrl(path: string, baseUrl: string): string {
 
   return `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
+
+/**
+ * Resolve manifest asset URIs for native playback.
+ * `/aurora/story-projects/.../content` is a Nest redirect to CDN — must hit
+ * `auroraBaseUrl`, not the marketing web origin (CN: fizzstudio, not fizzdragon).
+ */
+export function resolveExperienceAssetUrl(path: string): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("//")) return `https:${path}`;
+
+  if (path.startsWith("/aurora/")) {
+    const base = appEnv.api.auroraBaseUrl.replace(/\/+$/, "");
+    return `${base}${path.slice("/aurora".length)}`;
+  }
+
+  if (path.startsWith("/")) return resolveAssetUrl(path, webBaseUrl);
+  return path;
+}

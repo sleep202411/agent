@@ -89,11 +89,7 @@ function ParamChip({
           {label}
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-[260px] gap-0 p-2"
-      >
+      <PopoverContent align="start" sideOffset={6} className="w-[260px] gap-0 p-2">
         {/* Field title (imagine shows "Aspect Ratio" / "Duration" above the list). */}
         <p className="px-2 pb-1.5 pt-0.5 text-xs font-medium text-muted-foreground">
           {fieldLabel(field)}
@@ -155,10 +151,9 @@ export function QuickParamChips({
   const sizeField = fields.find(isSizeField);
   const quick = useMemo(
     () =>
-      [
-        ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
-        sizeField,
-      ].filter((f): f is SchemaFieldDescriptor => Boolean(f)),
+      [...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)), sizeField].filter(
+        (f): f is SchemaFieldDescriptor => Boolean(f)
+      ),
     [fields, sizeField]
   );
 
@@ -168,8 +163,7 @@ export function QuickParamChips({
     const v = settings[name];
     return Array.isArray(v) ? undefined : v;
   };
-  const set = (name: string, v: string | number | boolean) =>
-    onChange({ ...settings, [name]: v });
+  const set = (name: string, v: string | number | boolean) => onChange({ ...settings, [name]: v });
 
   return (
     <div className="flex flex-wrap gap-2">

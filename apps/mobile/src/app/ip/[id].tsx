@@ -2,8 +2,23 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEvent } from "expo";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 
@@ -19,6 +34,8 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
+import { usePortraitOnFocus } from "@/hooks/use-screen-orientation";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
   blockIpContent,
@@ -155,6 +172,10 @@ export default function IpDetailScreen() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Returning from landscape play leaves this screen mounted under a window that
+  // may still be sideways — assert portrait on focus before any Alert can fire.
+  usePortraitOnFocus();
 
   useEffect(() => {
     let alive = true;
@@ -313,7 +334,7 @@ export default function IpDetailScreen() {
       }
     } catch (error) {
       if (isInsufficientBalanceError(error)) {
-        Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+        promptTopUpOnWeb();
       } else if (isMemberOnlyError(error)) {
         Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
       } else if (error instanceof ApiRequestError && error.status === 401) {
@@ -333,7 +354,7 @@ export default function IpDetailScreen() {
   ) => {
     // Balance is known and below the price → skip the doomed "unlock" and say so.
     if (balance != null && balanceBelow(balance, plan.points)) {
-      Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"));
+      promptTopUpOnWeb();
       return;
     }
     const unit = t("ipDetail.pointsUnit");
@@ -451,9 +472,31 @@ export default function IpDetailScreen() {
     authGate.requireAuth({ onAuthenticated: showActions });
   };
 
-  // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>); the QR encodes
-  // the region's public origin so a scan opens the work on the right site.
-  const shareUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
+  // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>) against the
+  // region's public origin. Two consumers: the share QR, and the top-up prompt
+  // below.
+  const webIpUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
+
+  /**
+   * Community points are only purchasable on the web — there is no in-app
+   * payment surface — so an empty balance sends the user to this work's web
+   * page, where the balance and its top-up dialog live.
+   */
+  const promptTopUpOnWeb = () => {
+    Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("ipDetail.insufficientOpenWeb"),
+        onPress: () => {
+          Linking.openURL(webIpUrl).catch((error: unknown) => {
+            console.warn("[ip-detail] open web top-up failed", error);
+            Alert.alert(t("ipDetail.openWebFailed"));
+          });
+        },
+      },
+    ]);
+  };
+
   const creator = ip.creators[0];
   const creatorName = creator?.name;
   // Real avatar if resolved, else a deterministic DiceBear face (same fallback
@@ -566,60 +609,32 @@ export default function IpDetailScreen() {
               </View>
             </View>
             <View style={styles.engagementRow}>
-              <View
-                style={[
-                  styles.engagementPill,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                ]}
-              >
-                <SymbolView
-                  name={{ ios: "eye", android: "visibility", web: "visibility" }}
-                  size={14}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="smallBold">
-                  {formatEngagementCount(ip.viewCount, locale)}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">
-                  {t("ipDetail.views")}
-                </ThemedText>
-              </View>
-              <Pressable
+              <EngagementPill
+                icon={{ ios: "eye", android: "visibility", web: "visibility" }}
+                count={formatEngagementCount(ip.viewCount, locale)}
+                label={t("ipDetail.views")}
+                tint={theme.textSecondary}
+                backgroundColor={theme.backgroundElement}
+                borderColor={theme.border}
+              />
+              <EngagementPill
                 accessibilityLabel={ip.viewerHasLiked ? t("ipDetail.unlike") : t("ipDetail.like")}
-                accessibilityRole="button"
+                icon={{
+                  ios: ip.viewerHasLiked ? "heart.fill" : "heart",
+                  android: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                  web: ip.viewerHasLiked ? "favorite" : "favorite_border",
+                }}
+                count={formatEngagementCount(ip.likeCount, locale)}
+                label={t("ipDetail.likes")}
+                tint={ip.viewerHasLiked ? theme.brand : theme.textSecondary}
+                countColor={ip.viewerHasLiked ? theme.brand : undefined}
+                backgroundColor={
+                  ip.viewerHasLiked ? "rgba(229,34,39,0.14)" : theme.backgroundElement
+                }
+                borderColor={ip.viewerHasLiked ? theme.brand : theme.border}
                 disabled={likeBusy}
                 onPress={toggleLike}
-                style={({ pressed }) => [
-                  styles.engagementPill,
-                  {
-                    backgroundColor: ip.viewerHasLiked
-                      ? "rgba(229,34,39,0.14)"
-                      : theme.backgroundElement,
-                    borderColor: ip.viewerHasLiked ? theme.brand : theme.border,
-                  },
-                  pressed && styles.pressed,
-                  likeBusy && styles.engagementDisabled,
-                ]}
-              >
-                <SymbolView
-                  name={{
-                    ios: ip.viewerHasLiked ? "heart.fill" : "heart",
-                    android: ip.viewerHasLiked ? "favorite" : "favorite_border",
-                    web: ip.viewerHasLiked ? "favorite" : "favorite_border",
-                  }}
-                  size={14}
-                  tintColor={ip.viewerHasLiked ? theme.brand : theme.textSecondary}
-                />
-                <ThemedText
-                  type="smallBold"
-                  style={ip.viewerHasLiked ? { color: theme.brand } : undefined}
-                >
-                  {formatEngagementCount(ip.likeCount, locale)}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">
-                  {t("ipDetail.likes")}
-                </ThemedText>
-              </Pressable>
+              />
             </View>
           </View>
 
@@ -745,20 +760,115 @@ export default function IpDetailScreen() {
         ip={ip}
         creatorName={creatorName}
         creatorAvatar={creatorAvatar}
-        shareUrl={shareUrl}
+        shareUrl={webIpUrl}
         onClose={() => setShareOpen(false)}
       />
     </ThemedView>
   );
 }
 
+/**
+ * Views / likes chip.
+ * Visual shell (border/bg) always on a View — like a Tag/div.
+ * Pressable is only the click wrapper (like wrapping Tag with onClick);
+ * painting chrome on Pressable itself often fails to show on iOS.
+ */
+function EngagementPill({
+  icon,
+  count,
+  label,
+  tint,
+  countColor,
+  backgroundColor,
+  borderColor,
+  accessibilityLabel,
+  disabled,
+  onPress,
+}: {
+  icon: ComponentProps<typeof SymbolView>["name"];
+  count: string;
+  label: string;
+  tint: string;
+  countColor?: string;
+  backgroundColor: string;
+  borderColor: string;
+  accessibilityLabel?: string;
+  disabled?: boolean;
+  onPress?: () => void;
+}) {
+  const pill = (
+    <View style={[styles.engagementPillChrome, { backgroundColor, borderColor }]}>
+      <View style={styles.engagementPillRow}>
+        <View style={styles.engagementIconBox}>
+          <SymbolView name={icon} size={14} tintColor={tint} />
+        </View>
+        <ThemedText
+          type="smallBold"
+          numberOfLines={1}
+          style={countColor ? { color: countColor } : undefined}
+        >
+          {count}
+        </ThemedText>
+        <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+          {label}
+        </ThemedText>
+      </View>
+    </View>
+  );
+
+  if (!onPress) return pill;
+
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [pressed && styles.pressed, disabled && styles.engagementDisabled]}
+    >
+      {pill}
+    </Pressable>
+  );
+}
+
 function InlineVideo({ url }: { url: string }) {
   const t = useTranslations();
+  const resumeWhenPresentingRef = useRef(false);
   // Native player (expo-video) — autoplays, native controls incl. a fullscreen
   // button; the parent box already insets below the status bar.
   const player = useVideoPlayer(url, (instance) => {
+    instance.staysActiveInBackground = false;
     instance.play();
   });
+  const presenting = useScreenActive();
+
+  useEffect(() => {
+    if (!presenting) {
+      if (player.playing) {
+        resumeWhenPresentingRef.current = true;
+        player.pause();
+      }
+      return;
+    }
+    if (!resumeWhenPresentingRef.current) return;
+    resumeWhenPresentingRef.current = false;
+    player.play();
+  }, [player, presenting]);
+
+  /**
+   * Silence before release — same window as the film player. iOS keeps feeding
+   * the audio session until the last native AVPlayer reference drops.
+   */
+  useLayoutEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch {
+        // Player already released — nothing left to silence.
+      }
+    };
+  }, [player]);
+
   const { status } = useEvent(player, "statusChange", { status: player.status });
   // `idle`/`loading` cover first open + mid-playback rebuffer; hide once
   // frames are ready. Playback errors stay on the native player UI.
@@ -1039,16 +1149,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.two,
   },
-  engagementPill: {
-    minWidth: 92,
-    height: 34,
+  // Shared chrome for views + likes — identical shell so the two chips align.
+  engagementPillChrome: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  engagementPillRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.one,
+    minHeight: 34,
     paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: 8,
+    paddingVertical: Spacing.one,
+  },
+  engagementIconBox: {
+    width: 14,
+    height: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   engagementDisabled: {
     opacity: 0.6,
