@@ -1,5 +1,5 @@
 import { useIsFocused } from "expo-router";
-import { useEffect, useEffectEvent, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useEffectEvent, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import type { NativeEventSubscription } from "react-native";
 
@@ -61,4 +61,18 @@ export function useScreenActive(): boolean {
   const appActive = useAppActive();
   const focused = useIsFocused();
   return appActive && focused;
+}
+
+/**
+ * Host-owned pause, ANDed into `useGatedScreenActive` by every consumer under the
+ * provider. A screen sometimes has to freeze mounted playback for reasons
+ * navigation knows nothing about — a chapter switch in flight, a blocking
+ * overlay — and the components that own the media sit far below its props.
+ */
+export const ScreenActiveGateContext = createContext(true);
+
+export function useGatedScreenActive(): boolean {
+  const screenActive = useScreenActive();
+  const hostActive = useContext(ScreenActiveGateContext);
+  return screenActive && hostActive;
 }

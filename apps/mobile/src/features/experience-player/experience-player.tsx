@@ -28,7 +28,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { resolveExperienceAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
-import { useScreenActive } from "@/hooks/use-app-active";
+import { ScreenActiveGateContext, useScreenActive } from "@/hooks/use-app-active";
 
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
@@ -52,6 +52,7 @@ export interface ExperiencePlayerProps {
   onNextChapter?: () => void;
   nextChapterLabel?: string;
   loadTheme?: ExperienceThemeLoader;
+  active?: boolean;
 }
 
 /**
@@ -66,6 +67,7 @@ export function ExperiencePlayer({
   onNextChapter,
   nextChapterLabel,
   loadTheme = defaultLoadExperienceTheme,
+  active = true,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -124,6 +126,7 @@ export function ExperiencePlayer({
       onNextChapter={onNextChapter}
       nextChapterLabel={nextChapterLabel}
       loadTheme={loadTheme}
+      active={active}
       onRestart={() => {
         setRandomSeed(
           globalThis.crypto?.randomUUID?.() ?? `experience-player:${Date.now()}:${restartEpoch + 1}`
@@ -143,6 +146,7 @@ function ActiveExperienceRuntimePlayer({
   onNextChapter,
   nextChapterLabel,
   loadTheme,
+  active,
   onRestart,
 }: {
   manifest: ExperienceRuntimeManifest;
@@ -153,6 +157,7 @@ function ActiveExperienceRuntimePlayer({
   onNextChapter?: () => void;
   nextChapterLabel?: string;
   loadTheme: ExperienceThemeLoader;
+  active: boolean;
   onRestart: () => void;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
@@ -288,9 +293,11 @@ function ActiveExperienceRuntimePlayer({
 
   /**
    * One gate for everything that runs: video, audio cues, and the scene clock
-   * all stop when the app leaves the foreground or the viewer leaves the page.
+   * all stop when the app leaves the foreground, the viewer leaves the page, or
+   * the host pauses us (chapter switch in flight).
    */
-  const presenting = useScreenActive();
+  const screenActive = useScreenActive();
+  const presenting = screenActive && active;
   const presentingRef = useRef(presenting);
   useEffect(() => {
     presentingRef.current = presenting;
@@ -466,28 +473,32 @@ function ActiveExperienceRuntimePlayer({
   }
 
   return (
-    <View style={styles.stage}>
-      {visibleRenderers.map((renderer) => (
-        <View
-          key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
-          style={[styles.rendererLayer, { zIndex: renderer.layer }]}
-          pointerEvents="box-none"
-        >
-          <RendererPanel
-            manifest={manifest}
-            renderer={renderer}
-            runtimeState={runtimeState}
-            open={openRendererIds.has(renderer.instanceId)}
-            locale={locale}
-            copy={copy}
-            accent={accent}
-            onOutcome={emitOutcome}
-            onRuntimeError={setRuntimeError}
-            onTimelineTimeMs={advanceTimeline}
-          />
-        </View>
-      ))}
-    </View>
+    // Renderers own the media players, so the host pause reaches them by context
+    // rather than through every layer of renderer props.
+    <ScreenActiveGateContext.Provider value={active}>
+      <View style={styles.stage}>
+        {visibleRenderers.map((renderer) => (
+          <View
+            key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
+            style={[styles.rendererLayer, { zIndex: renderer.layer }]}
+            pointerEvents="box-none"
+          >
+            <RendererPanel
+              manifest={manifest}
+              renderer={renderer}
+              runtimeState={runtimeState}
+              open={openRendererIds.has(renderer.instanceId)}
+              locale={locale}
+              copy={copy}
+              accent={accent}
+              onOutcome={emitOutcome}
+              onRuntimeError={setRuntimeError}
+              onTimelineTimeMs={advanceTimeline}
+            />
+          </View>
+        ))}
+      </View>
+    </ScreenActiveGateContext.Provider>
   );
 }
 

@@ -42,6 +42,25 @@ type ActivePlayback = {
 const FADE_STEP_MS = 50;
 
 /**
+ * `expo-audio`'s session is process-wide, so ownership, ordering and the one-off
+ * mode configuration cannot live on a host instance. A chapter switch disposes
+ * the outgoing host after the incoming one has already unlocked, and an
+ * instance-scoped release would deactivate the session the new chapter is
+ * playing through — every cue after the switch would be silent.
+ */
+let sessionOwner: ExperienceAudioHost | null = null;
+let sessionChain: Promise<void> = Promise.resolve();
+let sessionIntent: { host: ExperienceAudioHost; state: "active" | "suspended" } | null = null;
+let sessionConfigured = false;
+
+/** Serializes every native session call in the process, across hosts. */
+function runSessionTransition(run: () => Promise<void>): Promise<void> {
+  const transition = sessionChain.then(run);
+  sessionChain = transition.catch(() => undefined);
+  return transition;
+}
+
+/**
  * Native rewrite of the web `use-experience-audio-host` — Web Audio is unavailable
  * on RN, so bus gains / ducking are applied as per-player volume products, and
  * cues play through `expo-audio` players.
@@ -87,10 +106,7 @@ class ExperienceAudioHost {
   readonly #busBaseGains = new Map<string, number>();
   readonly #active = new Map<string, ActivePlayback>();
   #queue: Promise<void> = Promise.resolve();
-  #sessionChain: Promise<void> = Promise.resolve();
-  #sessionIntent: "active" | "suspended" = "suspended";
   #disposed = false;
-  #sessionConfigured = false;
   #unlocked = false;
   #suspended = false;
 
@@ -107,7 +123,7 @@ class ExperienceAudioHost {
 
   unlock(): Promise<void> {
     return this.#transitionSession("active", async () => {
-      if (!this.#sessionConfigured) {
+      if (!sessionConfigured) {
         await setAudioModeAsync({
           playsInSilentMode: true,
           shouldPlayInBackground: false,
@@ -116,9 +132,10 @@ class ExperienceAudioHost {
           interruptionMode: "mixWithOthers",
           allowsRecording: false,
         });
-        this.#sessionConfigured = true;
+        sessionConfigured = true;
       }
       await setIsAudioActiveAsync(true);
+      sessionOwner = this;
       this.#unlocked = true;
       this.#suspended = false;
       for (const playback of this.#active.values()) {
@@ -135,6 +152,10 @@ class ExperienceAudioHost {
       for (const playback of this.#active.values()) {
         if (playback.player.playing) playback.player.pause();
       }
+      // Pausing our own players is always ours to do; deactivating the shared
+      // session is only ours while we hold it.
+      if (sessionOwner !== this) return;
+      sessionOwner = null;
       await setIsAudioActiveAsync(false);
     });
   }
@@ -146,15 +167,14 @@ class ExperienceAudioHost {
    * interleave, the session can end up inactive while the host believes it is
    * live, and every cue for the rest of the session is silent.
    */
-  #transitionSession(intent: "active" | "suspended", run: () => Promise<void>): Promise<void> {
-    this.#sessionIntent = intent;
-    const transition = this.#sessionChain.then(async () => {
-      // Superseded while queued — the later transition is the truthful one.
-      if (this.#disposed || this.#sessionIntent !== intent) return;
+  #transitionSession(state: "active" | "suspended", run: () => Promise<void>): Promise<void> {
+    const intent = { host: this, state };
+    sessionIntent = intent;
+    return runSessionTransition(async () => {
+      // Superseded while queued — by us or by the host taking over from us.
+      if (this.#disposed || sessionIntent !== intent) return;
       await run();
     });
-    this.#sessionChain = transition.catch(() => undefined);
-    return transition;
   }
 
   enqueue(effects: readonly AudioEffect[]): void {
@@ -171,12 +191,15 @@ class ExperienceAudioHost {
       this.#teardown(playback);
     }
     this.#active.clear();
-    // Only release the session if this host claimed it — a chapter switch can
-    // dispose the outgoing host after the incoming one has already unlocked.
-    if (!this.#unlocked) return;
-    // Let any queued transition retire first so the release is the last word.
-    await this.#sessionChain;
-    await setIsAudioActiveAsync(false);
+    // Only release the session while this host still owns it — a chapter switch
+    // disposes us after the incoming host has already unlocked, and the recheck
+    // inside the queued transition covers it unlocking while we wait.
+    if (sessionOwner !== this) return;
+    await runSessionTransition(async () => {
+      if (sessionOwner !== this) return;
+      sessionOwner = null;
+      await setIsAudioActiveAsync(false);
+    });
   }
 
   #initBuses(): void {

@@ -298,6 +298,8 @@
   "play.chapters": "Chapters",
   "play.nextChapter": "Next chapter",
   "play.loadingChapter": "Loading chapter…",
+  "play.chapterLoadFailed": "Couldn't load that chapter",
+  "play.keepWatching": "Keep watching",
   "ips.title": "All IPs",
   "ips.loadMore": "Load more",
   "ips.loadingMore": "Loading...",

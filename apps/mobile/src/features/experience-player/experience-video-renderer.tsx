@@ -9,7 +9,7 @@ import {
   type ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
 
-import { useScreenActive } from "@/hooks/use-app-active";
+import { useGatedScreenActive } from "@/hooks/use-app-active";
 
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { resolvePlaybackUri } from "./experience-media-cache";
@@ -158,7 +158,7 @@ export function ExperienceVideoRenderer({
     instance.staysActiveInBackground = false;
   });
 
-  const presenting = useScreenActive();
+  const presenting = useGatedScreenActive();
   const presentingRef = useRef(presenting);
   useEffect(() => {
     presentingRef.current = presenting;

@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
@@ -166,6 +166,21 @@ export default function PlayGameScreen() {
     ? `${published.game.gameId}:${published.activeChapterId ?? "solo"}:${published.manifest.buildId}`
     : "boot";
 
+  /** A chapter switch failed but the previous chapter is still mounted. */
+  const switchFailed = Boolean(error) && Boolean(published);
+  /**
+   * Back out of a failed switch: point the URL at the chapter that is actually
+   * on stage. The load effect then recognizes its own session key, clears the
+   * error without refetching, and the picker can retry the same chapter again.
+   */
+  const dismissSwitchError = useCallback(() => {
+    setError(undefined);
+    const loadedChapterId = published?.activeChapterId;
+    if (loadedChapterId && loadedChapterId !== chapterId) {
+      router.setParams({ chapter: loadedChapterId });
+    }
+  }, [chapterId, published?.activeChapterId, router]);
+
   // Share the site link for whatever chapter is open, same as web. The recipient
   // almost never has the app, so a web URL is the only payload that plays on tap.
   const shareUrl = useMemo(
@@ -210,7 +225,7 @@ export default function PlayGameScreen() {
       {/* Black covers enter/leave orientation windows — not the network wait. */}
       {!landscapeReady || exiting ? (
         <View style={styles.blackGate} />
-      ) : published && !error ? (
+      ) : published ? (
         <View style={styles.body}>
           <ExperiencePlayer
             key={playerKey}
@@ -224,6 +239,8 @@ export default function PlayGameScreen() {
                 ? `${t("play.nextChapter")}: ${chapterDisplayTitle(nextChapter, locale)}`
                 : undefined
             }
+            // Freeze video / audio / scene clock while an overlay owns the screen.
+            active={!loading && !switchFailed}
           />
           {multiChapter ? (
             <ExperienceChapterButton
@@ -245,7 +262,36 @@ export default function PlayGameScreen() {
               onClose={() => setChapterPickerOpen(false)}
             />
           ) : null}
-          {loading ? (
+          {switchFailed ? (
+            <View pointerEvents="auto" style={styles.switchOverlay}>
+              <ThemedText type="smallBold" style={styles.errorTitle}>
+                {t("play.chapterLoadFailed")}
+              </ThemedText>
+              <ThemedText type="small" style={styles.errorDetail}>
+                {error}
+              </ThemedText>
+              <View style={styles.switchActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={retry}
+                  style={[styles.switchAction, styles.switchActionPrimary]}
+                >
+                  <ThemedText type="smallBold" style={styles.switchActionPrimaryLabel}>
+                    {t("common.retry")}
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={dismissSwitchError}
+                  style={styles.switchAction}
+                >
+                  <ThemedText type="smallBold" style={styles.switchActionLabel}>
+                    {t("play.keepWatching")}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          ) : loading ? (
             <View pointerEvents="auto" style={styles.switchOverlay}>
               <ActivityIndicator color="#FFFFFF" />
               <ThemedText type="small" style={styles.switchLabel}>
@@ -254,7 +300,7 @@ export default function PlayGameScreen() {
             </View>
           ) : null}
         </View>
-      ) : error && !published ? (
+      ) : error ? (
         <View style={styles.body}>
           <ExperienceStartShell
             eyebrow={copy.interactiveFilm}
@@ -332,6 +378,26 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     color: "rgba(255,255,255,0.72)",
+  },
+  switchActions: {
+    flexDirection: "row",
+    gap: Spacing.two,
+    paddingTop: Spacing.one,
+  },
+  switchAction: {
+    borderRadius: 999,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  switchActionLabel: {
+    color: "rgba(255,255,255,0.88)",
+  },
+  switchActionPrimary: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+  },
+  switchActionPrimaryLabel: {
+    color: "#0C0E14",
   },
   errorBanner: {
     position: "absolute",

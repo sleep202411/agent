@@ -299,6 +299,8 @@
   "play.chapters": "章節",
   "play.nextChapter": "下一章",
   "play.loadingChapter": "正在載入章節…",
+  "play.chapterLoadFailed": "該章節載入失敗",
+  "play.keepWatching": "繼續觀看",
   "ips.title": "全部作品",
   "ips.loadMore": "載入更多",
   "ips.loadingMore": "載入中...",
