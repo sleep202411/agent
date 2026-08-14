@@ -204,7 +204,7 @@ export function AssetSelectDialog({
               <IconLoader2 className="size-5 animate-spin text-muted-foreground" stroke={1.5} />
             </div>
           ) : filtered.length > 0 ? (
-            <div className="grid flex-1 grid-cols-4 content-start gap-2 overflow-y-auto sm:grid-cols-5">
+            <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-4 content-start items-start gap-2 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-5">
               {filtered.map((asset) => {
                 const label = projectAssetToMentionItem(asset, assets).label;
                 return (
@@ -215,7 +215,7 @@ export function AssetSelectDialog({
                       onSelect(projectAssetToMentionItem(asset, assets));
                       onClose();
                     }}
-                    className="group relative aspect-square overflow-hidden rounded-lg bg-card transition-all hover:ring-2 hover:ring-primary/50"
+                    className="group relative aspect-square w-full self-start overflow-hidden rounded-lg bg-card transition-all hover:ring-2 hover:ring-primary/50"
                   >
                     {asset.url && (
                       // eslint-disable-next-line @next/next/no-img-element
