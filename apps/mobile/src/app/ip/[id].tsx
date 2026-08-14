@@ -2,7 +2,14 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEvent } from "expo";
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +35,7 @@ import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { usePortraitOnFocus } from "@/hooks/use-screen-orientation";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
   blockIpContent,
@@ -825,11 +833,42 @@ function EngagementPill({
 
 function InlineVideo({ url }: { url: string }) {
   const t = useTranslations();
+  const resumeWhenPresentingRef = useRef(false);
   // Native player (expo-video) — autoplays, native controls incl. a fullscreen
   // button; the parent box already insets below the status bar.
   const player = useVideoPlayer(url, (instance) => {
+    instance.staysActiveInBackground = false;
     instance.play();
   });
+  const presenting = useScreenActive();
+
+  useEffect(() => {
+    if (!presenting) {
+      if (player.playing) {
+        resumeWhenPresentingRef.current = true;
+        player.pause();
+      }
+      return;
+    }
+    if (!resumeWhenPresentingRef.current) return;
+    resumeWhenPresentingRef.current = false;
+    player.play();
+  }, [player, presenting]);
+
+  /**
+   * Silence before release — same window as the film player. iOS keeps feeding
+   * the audio session until the last native AVPlayer reference drops.
+   */
+  useLayoutEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch {
+        // Player already released — nothing left to silence.
+      }
+    };
+  }, [player]);
+
   const { status } = useEvent(player, "statusChange", { status: player.status });
   // `idle`/`loading` cover first open + mid-playback rebuffer; hide once
   // frames are ready. Playback errors stay on the native player UI.

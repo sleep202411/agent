@@ -53,6 +53,20 @@ let sessionChain: Promise<void> = Promise.resolve();
 let sessionIntent: { host: ExperienceAudioHost; state: "active" | "suspended" } | null = null;
 let sessionConfigured = false;
 
+/** App-wide audio defaults — restored when the film host releases the session. */
+const APP_AUDIO_MODE = {
+  playsInSilentMode: false,
+  shouldPlayInBackground: false,
+  interruptionMode: "mixWithOthers" as const,
+  allowsRecording: false,
+};
+
+async function restoreAppAudioSession(): Promise<void> {
+  if (!sessionConfigured) return;
+  await setAudioModeAsync(APP_AUDIO_MODE);
+  sessionConfigured = false;
+}
+
 /** Serializes every native session call in the process, across hosts. */
 function runSessionTransition(run: () => Promise<void>): Promise<void> {
   const transition = sessionChain.then(run);
@@ -199,6 +213,7 @@ class ExperienceAudioHost {
       if (sessionOwner !== this) return;
       sessionOwner = null;
       await setIsAudioActiveAsync(false);
+      await restoreAppAudioSession();
     });
   }
 
