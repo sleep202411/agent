@@ -77,6 +77,22 @@ export function createClipNode(
   return { content: appendGraphNode(content, created), created };
 }
 
+/** Updates human-facing clip metadata without changing its stable machine key. */
+export function updateStoryClipMeta(
+  content: InteractiveStoryDraftContent,
+  nodeId: string,
+  patch: { name?: string; description?: string }
+): InteractiveStoryDraftContent {
+  let found = false;
+  const nodes = content.graph.nodes.map((node) => {
+    if (node.nodeId !== nodeId) return node;
+    found = true;
+    return { ...node, ...patch };
+  });
+  if (!found) throw error("CLIP_NOT_FOUND", `Unknown clip node ${nodeId}.`);
+  return { ...content, graph: { ...content.graph, nodes } };
+}
+
 export function duplicateClipNode(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,

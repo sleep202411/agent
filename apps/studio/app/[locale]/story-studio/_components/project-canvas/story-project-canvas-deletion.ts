@@ -5,7 +5,6 @@ import {
   deleteGraphNode,
   disconnectStoryBranch,
 } from "./story-project-canvas-mutations";
-import { deleteStoryCharacter } from "./story-foundation-mutations";
 
 export function deleteStoryCanvasElements(
   content: InteractiveStoryDraftContent,
@@ -18,8 +17,8 @@ export function deleteStoryCanvasElements(
   }
 ): InteractiveStoryDraftContent {
   const selectedNodes = uniqueById(nodes);
-  const deletableNodes = selectedNodes;
-  const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
+  const deletableNodes = selectedNodes.filter((node) => node.data.kind !== "character");
+  const deletedCanvasNodeIds = new Set(deletableNodes.map((node) => node.id));
   const deletedGraphNodeIds = new Set(
     deletableNodes.flatMap((node) => (node.data.kind === "clip" ? [node.data.nodeId] : []))
   );
@@ -33,12 +32,6 @@ export function deleteStoryCanvasElements(
       if (!deletedGraphNodeIds.has(node.data.sourceNodeId)) {
         next = convertExitToAuto(next, node.data.sourceNodeId);
       }
-      continue;
-    }
-    if (node.data.kind === "character") {
-      // A pure branching tree never references a character, so the same
-      // mutation the inspector uses always succeeds here.
-      if (node.data.characterId) next = deleteStoryCharacter(next, node.data.characterId);
       continue;
     }
     next = deleteGraphNode(next, node.data.nodeId);

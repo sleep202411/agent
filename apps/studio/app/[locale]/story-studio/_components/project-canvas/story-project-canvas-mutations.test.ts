@@ -8,6 +8,7 @@ import {
   deleteGraphNode,
   duplicateClipNode,
   moveChoiceOption,
+  updateStoryClipMeta,
   updateChoiceExitPrompt,
   validateStoryDraftGraph,
 } from "./story-project-canvas-mutations";
@@ -20,6 +21,21 @@ describe("film-only canvas mutations", () => {
     expect(second.created.kind).toBe("clip");
     expect(second.created.nodeId).not.toBe("clip:a");
     expect(second.created.clipKey).not.toBe("A");
+  });
+
+  it("updates clip display metadata without changing its stable identity", () => {
+    const created = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" });
+    const next = updateStoryClipMeta(created.content, "clip:a", {
+      name: "Opening",
+      description: "Rain over Jinling.",
+    });
+
+    expect(next.graph.nodes[0]).toMatchObject({
+      nodeId: "clip:a",
+      clipKey: "A",
+      name: "Opening",
+      description: "Rain over Jinling.",
+    });
   });
 
   it("connects clips and removes inbound references when a clip is deleted", () => {

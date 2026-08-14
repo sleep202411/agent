@@ -114,7 +114,6 @@ import {
   buildStoryCanvasModel,
   estimateStoryNodeHeight,
   characterCanvasNodeId,
-  rejectsStoryCastWiring,
   syntheticDecisionNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
@@ -175,6 +174,7 @@ import {
   moveChoiceOption,
   removeChoiceOption,
   setEntryNode,
+  updateStoryClipMeta,
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
@@ -193,12 +193,6 @@ import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-pic
 import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector, type SceneExitIntent } from "./story-node-inspector";
 import { StoryPublicationDialog } from "./story-publication-dialog";
-import {
-  createStoryCharacter,
-  deleteStoryCharacter,
-  updateStoryCharacter,
-  updateStoryClipMeta,
-} from "./story-foundation-mutations";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
@@ -252,9 +246,7 @@ const STORY_PORT_COLORS = {
   flow: "rgba(255,255,255,0.72)",
   choice: "#5b9dff",
   ending: "#E52227",
-  cast: "rgba(255,255,255,0.34)",
 } as const;
-const STORY_MEMBERSHIP_EDGE_COLOR = "rgba(255,255,255,0.14)";
 const MIN_PLAYER_CHOICES = 2;
 const MAX_PLAYER_CHOICES = 6;
 
@@ -1939,19 +1931,14 @@ function StoryProjectCanvasInner({
       model?.edges.map((edge) => {
         const related =
           !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
-        const isMembership = edge.data.kind === "membership";
         return {
           ...edge,
-          // The membership tether reads as "belongs to this project", never story
-          // flow: it stays behind the flow edges and never lifts on focus.
-          zIndex: isMembership ? 0 : related ? 2 : 0,
+          zIndex: related ? 2 : 0,
           style: {
             ...DEFAULT_EDGE_OPTIONS.style,
-            strokeWidth: isMembership ? 1 : DEFAULT_EDGE_OPTIONS.style.strokeWidth,
-            opacity: isMembership ? (related ? 0.9 : 0.32) : related ? 1 : 0.18,
-            stroke: isMembership
-              ? STORY_MEMBERSHIP_EDGE_COLOR
-              : edge.data.kind === "choice" || edge.data.kind === "decision"
+            opacity: related ? 1 : 0.18,
+            stroke:
+              edge.data.kind === "choice" || edge.data.kind === "decision"
                 ? STORY_PORT_COLORS.choice
                 : "rgba(255,255,255,0.34)",
           },
@@ -2171,34 +2158,15 @@ function StoryProjectCanvasInner({
     void persistLayoutRef.current(nextLayout);
   };
 
-  const createStoryElement = (
-    kind: StoryNodeCreationKind,
-    position: StoryCanvasPosition,
-    options?: { atDropPosition?: boolean }
-  ) => {
+  const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
     if (!content || !mutationBarrier.permits("layout")) return;
     try {
-      let nextContent: InteractiveStoryDraftContent;
-      let createdCanvasNodeId: string;
-      // Characters are never wired into the story-flow graph; a fresh cast card
-      // is seeded in the cast lane left of the entry scene regardless of the
-      // click point that opened the creator.
-      let placement = position;
+      if (kind !== "clip") return;
+      const result = createClipNode(content);
+      const nextContent = result.content;
+      const createdCanvasNodeId = result.created.nodeId;
 
-      if (kind === "clip") {
-        const result = createClipNode(content);
-        nextContent = result.content;
-        createdCanvasNodeId = result.created.nodeId;
-      } else if (kind === "character") {
-        const result = createStoryCharacter(content, { locale: authoringLocale });
-        nextContent = result.content;
-        createdCanvasNodeId = characterCanvasNodeId(result.created.id);
-        // A cast-anchor drag carries spatial intent; menu/dock entries don't
-        // and keep the tidy cast-lane default.
-        if (!options?.atDropPosition) placement = nextCastLanePosition(canvasNodesRef.current);
-      } else return;
-
-      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...placement });
+      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...position });
       if (commitContent(nextContent)) persistLayoutWithPendingPositions(nextContent);
       selectCanvasNodeExclusively(createdCanvasNodeId);
       setGraphError(null);
@@ -2250,6 +2218,7 @@ function StoryProjectCanvasInner({
     const source = model.nodes.find((node) => node.id === connection.source);
     const target = model.nodes.find((node) => node.id === connection.target);
     if (!source || !target) return;
+    if (source.data.kind === "character" || target.data.kind === "character") return;
     const choiceDraftId =
       source.data.kind === "decision" ? choiceDraftIdFromHandle(connection.sourceHandle) : null;
     const createsChoice = choiceDraftId !== null;
@@ -2258,17 +2227,6 @@ function StoryProjectCanvasInner({
     );
     const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
     if (createsChoice && !pendingLabel) return;
-    // Character cards never participate in a story-flow connection in either direction.
-    if (
-      rejectsStoryCastWiring({
-        sourceKind: source.data.kind,
-        targetKind: target.data.kind,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
-      })
-    ) {
-      return;
-    }
     const committed = applyGraphMutation((current) => {
       if (source.data.kind === "decision" && source.data.sourceNodeId) {
         if (connection.sourceHandle?.startsWith("choice:")) {
@@ -2324,6 +2282,7 @@ function StoryProjectCanvasInner({
     const source = model.nodes.find((node) => node.id === connectionState.fromNode?.id);
     const clientPosition = connectionDropClientPosition(event);
     if (!source || !clientPosition) return;
+    if (source.data.kind === "character") return;
     const sourceHandleId = connectionState.fromHandle.id ?? "";
     const dropPosition = screenToFlowPosition(clientPosition);
     const choiceDraftId =
@@ -2460,19 +2419,12 @@ function StoryProjectCanvasInner({
     }
     const source = model?.nodes.find((node) => node.id === connection.source);
     const target = model?.nodes.find((node) => node.id === connection.target);
-    if (!source || !target || target.data.kind === "decision") {
-      return false;
-    }
-    // Red line: character cards tether only to the root cast anchor. Reject any
-    // attempt to wire a character into the story graph, a story node into the
-    // cast anchor, or the cast handles as a story-flow connection.
     if (
-      rejectsStoryCastWiring({
-        sourceKind: source.data.kind,
-        targetKind: target.data.kind,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
-      })
+      !source ||
+      !target ||
+      source.data.kind === "character" ||
+      target.data.kind === "character" ||
+      target.data.kind === "decision"
     ) {
       return false;
     }
@@ -2567,31 +2519,6 @@ function StoryProjectCanvasInner({
       }
       return current;
     });
-  };
-
-  const deleteCharacter = (characterId: string) => {
-    if (!content || !mutationBarrier.permits("content")) return;
-    // The inspector disables delete while a character is still referenced by a
-    // condition/effect, so this only ever removes an unreferenced character.
-    const snapshot = readHistorySnapshot();
-    try {
-      if (!commitContent(deleteStoryCharacter(content, characterId))) return;
-      setGraphError(null);
-      // Drop the removed character's orphaned cast-lane position.
-      const characterNodeId = characterCanvasNodeId(characterId);
-      pendingNodePositionsRef.current.delete(characterNodeId);
-      if (snapshot && characterNodeId in snapshot.nodePositions) {
-        const remainingPositions = Object.fromEntries(
-          Object.entries(snapshot.nodePositions).filter(([nodeId]) => nodeId !== characterNodeId)
-        );
-        void persistLayoutRef.current({
-          nodePositions: remainingPositions,
-        });
-      }
-      selectCanvasNodeExclusively(null);
-    } catch {
-      setGraphError(t("graphError.generic"));
-    }
   };
 
   const loadLatestAfterConflict = () => {
@@ -3066,6 +2993,9 @@ function StoryProjectCanvasInner({
                   }}
                   onNodeClick={(event, node) => {
                     closeCreatorMenu();
+                    // Character cards are read-only canvas context. They do not
+                    // enter selection state or open an editing surface.
+                    if (node.data.kind === "character") return;
                     const outcome = resolveStoryCanvasNodeClick({
                       nodeId: node.id,
                       nodeSelected: Boolean(node.selected),
@@ -3186,7 +3116,6 @@ function StoryProjectCanvasInner({
         {inspectorOpen ? (
           <StoryNodeInspector
             content={content}
-            locale={authoringLocale}
             selectedNode={focusedNode}
             clipMedia={
               focusedNode?.data.kind === "clip"
@@ -3227,12 +3156,6 @@ function StoryProjectCanvasInner({
               onUpload: uploadProjectCover,
             }}
             onUpdateFoundation={updateFoundation}
-            onUpdateCharacter={(characterId, patch) =>
-              applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
-                mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
-              })
-            }
-            onDeleteCharacter={deleteCharacter}
             onCloseNode={() => selectCanvasNodeExclusively(null)}
             chapterTargets={workbenchProjection.chapters
               .map((chapter) => ({
@@ -3522,17 +3445,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             color={isDecision ? STORY_PORT_COLORS.choice : STORY_PORT_COLORS.flow}
             label={t("ports.input")}
             className="-left-1.75!"
-          />
-        ) : null}
-        {isCharacter ? (
-          <StoryPortHandle
-            id="cast-in"
-            type="target"
-            position={Position.Right}
-            isConnectable={false}
-            color={STORY_PORT_COLORS.cast}
-            label={t("ports.cast")}
-            className="-right-1.75!"
           />
         ) : null}
         {data.kind === "clip" ? (
@@ -4054,21 +3966,6 @@ function CanvasError({
   );
 }
 
-// Cast-lane geometry mirrors the model's auto-layout: characters stack in a
-// dedicated column to the LEFT of the entry scene, clear of the story-flow
-// lane on the right.
-const CAST_LANE_COLUMN_GAP = 480;
-const CAST_LANE_ROW_GAP = 150;
-
-function nextCastLanePosition(nodes: readonly StoryCanvasNode[]): StoryCanvasPosition {
-  const anchor = nodes.find((node) => node.data.kind === "clip")?.position ?? { x: 0, y: 0 };
-  const existingCharacters = nodes.filter((node) => node.data.kind === "character").length;
-  return {
-    x: anchor.x - CAST_LANE_COLUMN_GAP,
-    y: anchor.y + existingCharacters * CAST_LANE_ROW_GAP,
-  };
-}
-
 function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosition> {
   return Object.fromEntries(
     [...nodes]
@@ -4108,9 +4005,8 @@ function storyCanvasContentNodeIds(content: InteractiveStoryDraftContent): Set<s
       nodeIds.add(syntheticDecisionNodeId(node.nodeId));
     }
   });
-  // Character cards persist their layout under `character:` keys. Including them
-  // here keeps their positions in history snapshots and drops a deleted
-  // character's orphaned position alongside the story-graph nodes.
+  // Read-only character cards still participate in canvas arrangement, so tidy
+  // operations preserve their derived lane positions alongside story nodes.
   content.storyBible.characters.forEach((character) => {
     nodeIds.add(characterCanvasNodeId(character.id));
   });

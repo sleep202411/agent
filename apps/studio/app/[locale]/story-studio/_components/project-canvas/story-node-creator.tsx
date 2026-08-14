@@ -23,13 +23,7 @@ interface CreatorItem {
   iconBackground: string;
 }
 
-/**
- * Authoring is clip + decision only. Character cards earn nothing today — the
- * agent cannot create them and they never join the story-flow graph — so the
- * entry points are withdrawn while the model, stored cards and rendering stay
- * intact: existing casts still display, and restoring the option is one entry
- * in this list.
- */
+/** Character cards are read-only projections, so clip is the only authorable node. */
 const CREATOR_ITEMS: CreatorItem[] = [
   {
     kind: "clip",

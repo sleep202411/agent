@@ -20,6 +20,17 @@ describe("deleteStoryCanvasElements", () => {
     const result = deleteStoryCanvasElements(content, { nodes: [decision], edges: [] });
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
+
+  it("ignores a defensive delete request for a read-only character card", () => {
+    const content = draft();
+    content.storyBible.characters = [
+      { id: "hero", name: { "en-US": "Hero" }, summary: "", images: [], voice: null },
+    ];
+    const model = buildStoryCanvasModel(content, "en-US");
+    const characterNode = model.nodes.find((node) => node.data.kind === "character")!;
+
+    expect(deleteStoryCanvasElements(content, { nodes: [characterNode], edges: [] })).toBe(content);
+  });
 });
 
 function draft(): InteractiveStoryDraftContent {

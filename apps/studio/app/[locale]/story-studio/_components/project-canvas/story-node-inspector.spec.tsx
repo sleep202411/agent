@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { StoryNodeInspector } from "./story-node-inspector";
-import { buildStoryCanvasModel, characterCanvasNodeId } from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -25,48 +25,6 @@ describe("StoryNodeInspector film authoring", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
-  });
-
-  it("edits and deletes a character through the dedicated character inspector", async () => {
-    const content = draftWithCharacter();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
-    const onUpdateCharacter =
-      vi.fn<ComponentProps<typeof StoryNodeInspector>["onUpdateCharacter"]>();
-    const onDeleteCharacter =
-      vi.fn<ComponentProps<typeof StoryNodeInspector>["onDeleteCharacter"]>();
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector
-          {...inspectorProps(content)}
-          onUpdateCharacter={onUpdateCharacter}
-          onDeleteCharacter={onDeleteCharacter}
-          selectedNode={requiredNode(model.nodes, characterCanvasNodeId("hero"))}
-        />
-      );
-    });
-
-    const nameInput = requiredElement(
-      container.querySelector<HTMLInputElement>('input[placeholder="namePlaceholder"]'),
-      "character name"
-    );
-    expect(nameInput.value).toBe("Hero");
-    await inputValue(nameInput, "Nova");
-    expect(onUpdateCharacter).toHaveBeenLastCalledWith("hero", {
-      name: { "en-US": "Nova" },
-    });
-
-    const deleteButton = requiredElement(
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "filmFoundation.characters.delete"
-      ) ?? null,
-      "character delete button"
-    );
-    await click(deleteButton);
-    expect(onDeleteCharacter).toHaveBeenCalledWith("hero");
   });
 
   it("confirms before replacing an authored choice with a direct continuation", async () => {
@@ -127,29 +85,6 @@ describe("StoryNodeInspector film authoring", () => {
   });
 });
 
-function draftWithCharacter(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      characters: [
-        {
-          id: "hero",
-          name: { "en-US": "Hero" },
-          summary: "The lead.",
-          images: [],
-          voice: null,
-        },
-      ],
-    },
-    graph: {
-      entryNodeId: "opening",
-      nodes: [clip("opening", "OPENING", null)],
-    },
-    productionNotes: [],
-  };
-}
-
 function branchingDraft(): InteractiveStoryDraftContent {
   return {
     storyBible: { logline: "", synopsis: "", characters: [] },
@@ -205,7 +140,6 @@ function inspectorProps(
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
     content,
-    locale: "en-US",
     showFoundation: false,
     canEdit: true,
     coverMedia: {
@@ -219,8 +153,6 @@ function inspectorProps(
       onUpload: vi.fn(),
     },
     onUpdateFoundation: vi.fn(),
-    onUpdateCharacter: vi.fn(),
-    onDeleteCharacter: vi.fn(),
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
@@ -261,16 +193,6 @@ function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-  });
-}
-
-async function inputValue(element: HTMLInputElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (!setter) throw new Error("Missing input value setter.");
-  await act(async () => {
-    setter.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
 }

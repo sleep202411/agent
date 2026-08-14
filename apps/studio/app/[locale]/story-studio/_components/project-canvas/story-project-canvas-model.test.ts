@@ -3,7 +3,6 @@ import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
   characterCanvasNodeId,
-  rejectsStoryCastWiring,
   syntheticDecisionNodeId,
 } from "./story-project-canvas-model";
 
@@ -33,15 +32,22 @@ describe("film-only story canvas projection", () => {
     expect(model.edges.map((edge) => edge.data.kind)).toEqual(["decision", "choice"]);
   });
 
-  it("keeps cast cards outside story wiring", () => {
+  it("projects cast cards as non-interactive display nodes outside story wiring", () => {
+    const model = buildStoryCanvasModel(draft(), "en-US");
+    const characterNode = model.nodes.find((node) => node.data.kind === "character");
+
+    expect(characterNode).toMatchObject({
+      connectable: false,
+      deletable: false,
+      draggable: false,
+      focusable: false,
+      selectable: false,
+    });
     expect(
-      rejectsStoryCastWiring({
-        sourceKind: "character",
-        targetKind: "clip",
-        sourceHandle: "cast-in",
-        targetHandle: "in",
-      })
-    ).toBe(true);
+      model.edges.some(
+        (edge) => edge.source === characterNode?.id || edge.target === characterNode?.id
+      )
+    ).toBe(false);
   });
 });
 

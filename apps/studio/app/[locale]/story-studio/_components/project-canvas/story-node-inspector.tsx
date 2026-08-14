@@ -1,16 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  IconArrowRight,
-  IconCheck,
-  IconPlayerPlay,
-  IconUpload,
-  IconPlayerStop,
-  IconPlus,
-  IconTrash,
-  IconX,
-} from "@tabler/icons-react";
+import { useState } from "react";
+import { IconArrowRight, IconCheck, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
@@ -33,7 +22,6 @@ import {
 } from "./story-foundation-library";
 
 type FoundationField = "logline" | "synopsis";
-type Character = InteractiveStoryDraftContent["storyBible"]["characters"][number];
 type StoryChapterTarget = {
   id: string;
   title: string;
@@ -53,14 +41,11 @@ const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice"];
 
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
-  locale: string;
   selectedNode: StoryCanvasNode | null;
   showFoundation: boolean;
   canEdit: boolean;
   coverMedia: StoryFoundationCoverMediaProps;
   onUpdateFoundation: (field: FoundationField, value: string) => void;
-  onUpdateCharacter: (characterId: string, patch: Partial<Omit<Character, "id">>) => void;
-  onDeleteCharacter: (characterId: string) => void;
   onCloseNode: () => void;
   chapterTargets?: StoryChapterTarget[];
   onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
@@ -78,14 +63,11 @@ interface StoryNodeInspectorProps {
 
 export function StoryNodeInspector({
   content,
-  locale,
   selectedNode,
   showFoundation,
   canEdit,
   coverMedia,
   onUpdateFoundation,
-  onUpdateCharacter,
-  onDeleteCharacter,
   onCloseNode,
   chapterTargets = [],
   onConnectChapter = () => undefined,
@@ -101,14 +83,12 @@ export function StoryNodeInspector({
     canvasData?.kind === "decision" ? canvasData.sourceNodeId : canvasData?.nodeId;
   const graphNode =
     content.graph.nodes.find((candidate) => candidate.nodeId === canonicalNodeId) ?? null;
-  const inspectedCharacter =
-    canvasData?.kind === "character" && canvasData.characterId
-      ? (content.storyBible.characters.find(
-          (candidate) => candidate.id === canvasData.characterId
-        ) ?? null)
-      : null;
 
-  if (!showFoundation && (!canvasData || canvasData.kind === "decision")) return null;
+  if (
+    !showFoundation &&
+    (!canvasData || canvasData.kind === "decision" || canvasData.kind === "character")
+  )
+    return null;
 
   return (
     <aside className="absolute top-16 bottom-3 left-3 z-30 flex w-[368px] flex-col overflow-hidden rounded-[24px] bg-[oklch(0.205_0_0/0.72)] shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
@@ -130,11 +110,7 @@ export function StoryNodeInspector({
               <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
                 {t("inspector.eyebrow")}
               </p>
-              <h2 className="mt-1 truncate text-base font-semibold">
-                {canvasData.kind === "character"
-                  ? canvasData.title || t("filmFoundation.characters.cardUntitled")
-                  : canvasData.title}
-              </h2>
+              <h2 className="mt-1 truncate text-base font-semibold">{canvasData.title}</h2>
               <p className="mt-1 text-[10px] text-white/34">{t(`nodeKinds.${canvasData.kind}`)}</p>
             </div>
             <button
@@ -148,16 +124,6 @@ export function StoryNodeInspector({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-            {canvasData.kind === "character" && canvasData.characterId ? (
-              <CharacterNodeEditor
-                content={content}
-                locale={locale}
-                characterId={canvasData.characterId}
-                canEdit={canEdit}
-                onUpdate={onUpdateCharacter}
-              />
-            ) : null}
-
             {graphNode ? (
               <GraphNodeEditor
                 content={content}
@@ -173,40 +139,18 @@ export function StoryNodeInspector({
             ) : null}
           </div>
 
-          {canvasData.kind === "character" && inspectedCharacter ? (
-            <div className="shrink-0 border-t border-white/[0.06] px-5 py-4">
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={!canEdit}
-                onClick={() => onDeleteCharacter(inspectedCharacter.id)}
-                className="w-full"
-              >
-                <IconTrash className="size-4" />
-                {t("filmFoundation.characters.delete")}
-              </Button>
-              <p className="mt-2 text-[9px] leading-4 text-white/30">
-                {t("filmFoundation.characters.deleteAvailable")}
-              </p>
-            </div>
-          ) : null}
-
-          {canvasData.kind !== "character" ? (
-            <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-5 py-4">
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={!canEdit}
-                onClick={onDeleteSelected}
-                className="w-full"
-              >
-                <IconTrash className="size-4" />
-                {t(
-                  canvasData.kind === "decision" ? "inspector.removeDecision" : "inspector.delete"
-                )}
-              </Button>
-            </div>
-          ) : null}
+          <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-5 py-4">
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!canEdit}
+              onClick={onDeleteSelected}
+              className="w-full"
+            >
+              <IconTrash className="size-4" />
+              {t(canvasData.kind === "decision" ? "inspector.removeDecision" : "inspector.delete")}
+            </Button>
+          </div>
         </>
       ) : null}
     </aside>
@@ -519,636 +463,5 @@ function ChapterDestinationEditor({
         })}
       </div>
     </section>
-  );
-}
-
-function InspectorRow({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-xl bg-white/[0.045] px-3 py-3">
-      <dt className="text-[9px] font-semibold text-white/32">{label}</dt>
-      <dd className={cn("mt-1 break-all text-xs text-white/68", mono && "font-mono text-[10px]")}>
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-const MAX_LOCALIZED_NAME_LENGTH = 4_000;
-const MAX_SUMMARY_LENGTH = 4_000;
-const MAX_CHARACTER_IMAGES = 6;
-const MAX_CHARACTER_VOICE_DURATION_MS = 5_000;
-const CHARACTER_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
-const CHARACTER_VOICE_ACCEPT =
-  "audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,audio/x-m4a";
-
-/**
- * The character-node inspector. Character cards are a canvas projection of
- * storyBible.characters, so their fields edit that bible entry directly through
- * the existing update/remove mutations. A pure branching tree never references a
- * character, so deletion is always available.
- */
-function CharacterNodeEditor({
-  content,
-  locale,
-  characterId,
-  canEdit,
-  onUpdate,
-}: {
-  content: InteractiveStoryDraftContent;
-  locale: string;
-  characterId: string;
-  canEdit: boolean;
-  onUpdate: (id: string, patch: Partial<Omit<Character, "id">>) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
-  const character =
-    content.storyBible.characters.find((candidate) => candidate.id === characterId) ?? null;
-  if (!character) return null;
-
-  return (
-    <div className="mt-6 space-y-4">
-      <InspectorRow label={t("stableId")} value={character.id} mono />
-
-      <label className="block">
-        <FieldLabel>{t("name", { locale })}</FieldLabel>
-        <Input
-          value={character.name[locale] ?? ""}
-          maxLength={MAX_LOCALIZED_NAME_LENGTH}
-          disabled={!canEdit}
-          placeholder={t("namePlaceholder")}
-          onChange={(event) =>
-            onUpdate(character.id, {
-              name: { ...character.name, [locale]: event.target.value },
-            })
-          }
-          className="mt-1.5 h-9 rounded-xl bg-white/[0.055] px-3"
-        />
-      </label>
-
-      <label className="block">
-        <FieldLabel>{t("summary")}</FieldLabel>
-        <Textarea
-          value={character.summary}
-          maxLength={MAX_SUMMARY_LENGTH}
-          disabled={!canEdit}
-          rows={5}
-          placeholder={t("summaryPlaceholder")}
-          onChange={(event) => onUpdate(character.id, { summary: event.target.value })}
-          className="mt-1.5 resize-none rounded-xl bg-white/[0.055] text-xs leading-5"
-        />
-      </label>
-
-      <CharacterImagesEditor
-        character={character}
-        canEdit={canEdit}
-        onUpdate={(images) => onUpdate(character.id, { images })}
-      />
-
-      <CharacterVoiceEditor
-        character={character}
-        canEdit={canEdit}
-        onUpdate={(voice) => onUpdate(character.id, { voice })}
-      />
-    </div>
-  );
-}
-
-function CharacterImagesEditor({
-  character,
-  canEdit,
-  onUpdate,
-}: {
-  character: Character;
-  canEdit: boolean;
-  onUpdate: (images: Character["images"]) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const remaining = MAX_CHARACTER_IMAGES - character.images.length;
-
-  const handleFiles = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0 || remaining <= 0) return;
-    const files = Array.from(fileList).slice(0, remaining);
-    setBusy(true);
-    setError(null);
-    try {
-      const uploaded: Character["images"] = [];
-      for (const file of files) {
-        const result = await uploadFileViaSignedUrl(file, {
-          kind: "ai_reference_image",
-          contentType: file.type || undefined,
-        });
-        uploaded.push({
-          mediaAssetId: result.mediaAssetId,
-          url: result.url,
-          label: defaultImageLabel(file.name, character.images.length + uploaded.length + 1),
-        });
-      }
-      onUpdate([...character.images, ...uploaded]);
-    } catch (err) {
-      if (!isUploadAbort(err)) setError(t("imageUploadFailed"));
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  };
-
-  return (
-    <section aria-labelledby="story-character-images-title">
-      <div className="flex items-center justify-between gap-3">
-        <FieldLabel id="story-character-images-title">{t("images")}</FieldLabel>
-        <span className="rounded-full bg-white/[0.055] px-2 py-1 text-[9px] tabular-nums text-white/34">
-          {character.images.length}/{MAX_CHARACTER_IMAGES}
-        </span>
-      </div>
-      <p className="mt-1 text-[9px] leading-4 text-white/30">
-        {t("imagesHint", { max: MAX_CHARACTER_IMAGES })}
-      </p>
-
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {character.images.map((image, index) => (
-          <div key={image.mediaAssetId} className="rounded-xl bg-white/[0.045] p-1.5">
-            <div className="group relative aspect-square overflow-hidden rounded-lg">
-              {/* eslint-disable-next-line @next/next/no-img-element -- unsized user upload */}
-              <img
-                src={image.url}
-                alt={image.label || t("imageAlt", { number: index + 1 })}
-                draggable={false}
-                className="size-full select-none object-cover"
-              />
-              {canEdit ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onUpdate(character.images.filter((candidate) => candidate !== image))
-                  }
-                  aria-label={t("removeImage", { number: index + 1 })}
-                  title={t("removeImage", { number: index + 1 })}
-                  className="absolute top-1 right-1 grid size-6 place-items-center rounded-full bg-black/55 text-white/70 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 hover:text-white"
-                >
-                  <IconX className="size-3.5" />
-                </button>
-              ) : null}
-            </div>
-            <ImageLabelInput
-              key={image.label}
-              label={image.label}
-              index={index}
-              canEdit={canEdit}
-              onCommit={(nextLabel) =>
-                onUpdate(
-                  character.images.map((candidate) =>
-                    candidate === image ? { ...candidate, label: nextLabel } : candidate
-                  )
-                )
-              }
-            />
-          </div>
-        ))}
-        {canEdit && remaining > 0 ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
-            aria-label={t("addImage")}
-            title={t("addImage")}
-            className="grid aspect-square place-items-center rounded-xl bg-white/[0.035] text-white/34 transition hover:bg-white/[0.07] hover:text-white/62 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24"
-          >
-            {busy ? (
-              <span className="text-[9px]">{t("uploading")}</span>
-            ) : (
-              <IconPlus className="size-5" />
-            )}
-          </button>
-        ) : null}
-      </div>
-      {character.images.length === 0 && (!canEdit || remaining <= 0) ? (
-        <p className="mt-2 rounded-xl bg-white/[0.035] px-3 py-2.5 text-[10px] leading-4 text-white/32">
-          {t("imagesEmpty")}
-        </p>
-      ) : null}
-      {error ? <p className="mt-2 text-[9px] leading-4 text-destructive/80">{error}</p> : null}
-      <input
-        ref={inputRef}
-        type="file"
-        accept={CHARACTER_IMAGE_ACCEPT}
-        multiple
-        hidden
-        onChange={(event) => void handleFiles(event.target.files)}
-      />
-    </section>
-  );
-}
-
-function CharacterVoiceEditor({
-  character,
-  canEdit,
-  onUpdate,
-}: {
-  character: Character;
-  canEdit: boolean;
-  onUpdate: (voice: Character["voice"]) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const progressRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const waveRef = useRef<HTMLButtonElement>(null);
-  const voice = character.voice;
-  const peaks = useVoiceWaveformPeaks(voice?.url ?? null);
-
-  const stopProgressLoop = () => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-  };
-
-  // Painted straight onto the DOM from the rAF loop — per-frame React
-  // state would re-render the whole inspector 60×/s for a cosmetic sweep.
-  const paintProgress = (ratio: number) => {
-    const clipped = Math.min(1, Math.max(0, ratio));
-    if (progressRef.current) {
-      progressRef.current.style.clipPath = `inset(0 ${((1 - clipped) * 100).toFixed(2)}% 0 0)`;
-    }
-  };
-
-  const stopPlayback = () => {
-    stopProgressLoop();
-    audioRef.current?.pause();
-    audioRef.current = null;
-    setPlaying(false);
-    paintProgress(0);
-  };
-
-  const startProgressLoop = () => {
-    stopProgressLoop();
-    const tick = () => {
-      const audio = audioRef.current;
-      if (!audio || !voice) return;
-      const total =
-        Number.isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : voice.durationMs / 1000;
-      paintProgress(audio.currentTime / total);
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  };
-
-  const playFrom = (ratio: number | null) => {
-    if (!voice) return;
-    let audio = audioRef.current;
-    if (!audio) {
-      audio = new Audio(voice.url);
-      const settle = () => {
-        stopProgressLoop();
-        audioRef.current = null;
-        setPlaying(false);
-        paintProgress(0);
-      };
-      audio.onended = settle;
-      audio.onerror = settle;
-      audioRef.current = audio;
-    }
-    if (ratio !== null) {
-      audio.currentTime = ratio * (voice.durationMs / 1000);
-      paintProgress(ratio);
-    }
-    setPlaying(true);
-    startProgressLoop();
-    void audio.play().catch(() => stopPlayback());
-  };
-
-  const togglePlayback = () => {
-    if (playing) stopPlayback();
-    else playFrom(null);
-  };
-
-  const seekFromPointer = (clientX: number) => {
-    const rect = waveRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) {
-      togglePlayback();
-      return;
-    }
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    playFrom(ratio);
-  };
-
-  const handleFile = async (file: File | undefined) => {
-    if (!file) return;
-    setError(null);
-    stopPlayback();
-    let durationMs: number;
-    try {
-      durationMs = Math.round(await probeAudioDurationMs(file));
-    } catch {
-      setError(t("voiceUnreadable"));
-      return;
-    }
-    if (durationMs <= 0 || durationMs > MAX_CHARACTER_VOICE_DURATION_MS) {
-      setError(t("voiceTooLong"));
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await uploadFileViaSignedUrl(file, {
-        kind: "ai_reference_audio",
-        contentType: file.type || undefined,
-      });
-      onUpdate({ mediaAssetId: result.mediaAssetId, url: result.url, durationMs });
-    } catch (err) {
-      if (!isUploadAbort(err)) setError(t("voiceUploadFailed"));
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, []);
-
-  return (
-    <section aria-labelledby="story-character-voice-title">
-      <FieldLabel id="story-character-voice-title">{t("voice")}</FieldLabel>
-      <p className="mt-1 text-[9px] leading-4 text-white/30">
-        {t("voiceHint", { seconds: MAX_CHARACTER_VOICE_DURATION_MS / 1000 })}
-      </p>
-
-      {voice ? (
-        <div className="mt-2 flex items-center gap-2 rounded-xl bg-white/[0.045] p-2">
-          <button
-            type="button"
-            onClick={togglePlayback}
-            aria-label={playing ? t("voiceStop") : t("voicePlay")}
-            title={playing ? t("voiceStop") : t("voicePlay")}
-            className="grid size-8 shrink-0 place-items-center rounded-full text-white/62 transition hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24"
-          >
-            {playing ? (
-              <IconPlayerStop className="size-4 fill-current" />
-            ) : (
-              <IconPlayerPlay className="size-4 fill-current" />
-            )}
-          </button>
-          <button
-            ref={waveRef}
-            type="button"
-            onClick={(event) => seekFromPointer(event.clientX)}
-            aria-label={playing ? t("voiceStop") : t("voicePlay")}
-            className="relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-[2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/24"
-          >
-            <WaveformBars peaks={peaks ?? FALLBACK_WAVEFORM_PEAKS} barClassName="bg-white/[0.22]" />
-            <div
-              ref={progressRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-center gap-[2px]"
-              style={{ clipPath: "inset(0 100% 0 0)" }}
-            >
-              <WaveformBars peaks={peaks ?? FALLBACK_WAVEFORM_PEAKS} barClassName="bg-white/85" />
-            </div>
-          </button>
-          <span className="shrink-0 font-mono text-[9px] tabular-nums text-white/44">
-            {busy ? t("uploading") : `${(voice.durationMs / 1000).toFixed(1)}s`}
-          </span>
-          {canEdit ? (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => inputRef.current?.click()}
-                aria-label={t("replaceVoice")}
-                title={t("replaceVoice")}
-                className="text-white/34 hover:text-white"
-              >
-                <IconUpload />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => {
-                  stopPlayback();
-                  onUpdate(null);
-                }}
-                aria-label={t("removeVoice")}
-                title={t("removeVoice")}
-                className="text-white/34 hover:text-destructive"
-              >
-                <IconTrash />
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ) : (
-        <p className="mt-2 rounded-xl bg-white/[0.035] px-3 py-2.5 text-[10px] leading-4 text-white/32">
-          {t("voiceEmpty")}
-        </p>
-      )}
-
-      {canEdit && !voice ? (
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-          className="mt-2 w-full"
-        >
-          <IconUpload className="size-4" />
-          {busy ? t("uploading") : t("addVoice")}
-        </Button>
-      ) : null}
-      {error ? <p className="mt-2 text-[9px] leading-4 text-destructive/80">{error}</p> : null}
-      <input
-        ref={inputRef}
-        type="file"
-        accept={CHARACTER_VOICE_ACCEPT}
-        hidden
-        onChange={(event) => void handleFile(event.target.files?.[0])}
-      />
-    </section>
-  );
-}
-
-const MAX_IMAGE_LABEL_LENGTH = 60;
-
-/** Names the look (常服 / 夜行 / 盛装 …); empty commits revert to the last name. */
-function ImageLabelInput({
-  label,
-  index,
-  canEdit,
-  onCommit,
-}: {
-  label: string;
-  index: number;
-  canEdit: boolean;
-  onCommit: (label: string) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.filmFoundation.characters");
-  const [draft, setDraft] = useState(label);
-
-  const commit = () => {
-    const normalized = draft.trim().slice(0, MAX_IMAGE_LABEL_LENGTH);
-    if (!normalized) {
-      setDraft(label);
-      return;
-    }
-    if (normalized !== label) onCommit(normalized);
-  };
-
-  return (
-    <Input
-      value={draft}
-      maxLength={MAX_IMAGE_LABEL_LENGTH}
-      disabled={!canEdit}
-      placeholder={t("imageLabelPlaceholder")}
-      aria-label={t("imageLabelLabel", { number: index + 1 })}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        if (event.key === "Escape") {
-          setDraft(label);
-          event.currentTarget.blur();
-        }
-      }}
-      className="mt-1.5 h-7 rounded-lg bg-black/18 px-2 text-[10px]"
-    />
-  );
-}
-
-const WAVEFORM_BUCKETS = 48;
-
-/** One row of peak bars; rendered twice (dim base + clipped bright layer). */
-function WaveformBars({ peaks, barClassName }: { peaks: number[]; barClassName: string }) {
-  return (
-    <>
-      {peaks.map((peak, index) => (
-        <span
-          key={index}
-          aria-hidden="true"
-          className={cn("min-h-[3px] w-full min-w-0 flex-1 rounded-full", barClassName)}
-          style={{ height: `${Math.max(10, Math.round(peak * 100))}%` }}
-        />
-      ))}
-    </>
-  );
-}
-
-/** Neutral placeholder bars shown until decode succeeds (or when it can't). */
-const FALLBACK_WAVEFORM_PEAKS = Array.from(
-  { length: WAVEFORM_BUCKETS },
-  (_, index) => 0.3 + 0.22 * Math.sin(index / 2.6) * Math.sin(index / 7)
-);
-
-/**
- * Decodes the uploaded sample into normalized per-bucket peaks. Any failure
- * (CORS, unsupported codec, no Web Audio) leaves the fallback bars in place.
- */
-function useVoiceWaveformPeaks(url: string | null): number[] | null {
-  const [result, setResult] = useState<{ url: string; peaks: number[] } | null>(null);
-
-  useEffect(() => {
-    if (!url) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch(url, { mode: "cors" });
-        if (!response.ok) return;
-        const bytes = await response.arrayBuffer();
-        const AudioContextCtor =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioContextCtor) return;
-        const context = new AudioContextCtor();
-        try {
-          const decoded = await context.decodeAudioData(bytes);
-          const channel = decoded.getChannelData(0);
-          const bucketSize = Math.max(1, Math.floor(channel.length / WAVEFORM_BUCKETS));
-          const raw: number[] = [];
-          for (let bucket = 0; bucket < WAVEFORM_BUCKETS; bucket += 1) {
-            const start = bucket * bucketSize;
-            const end = Math.min(channel.length, start + bucketSize);
-            let peak = 0;
-            for (let sample = start; sample < end; sample += 1) {
-              const value = Math.abs(channel[sample]!);
-              if (value > peak) peak = value;
-            }
-            raw.push(peak);
-          }
-          const highest = Math.max(...raw, 0.001);
-          if (!cancelled) {
-            setResult({ url, peaks: raw.map((value) => value / highest) });
-          }
-        } finally {
-          void context.close();
-        }
-      } catch {
-        // Keep the fallback bars.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  return result?.url === url ? result.peaks : null;
-}
-
-/** Default look name = the file name stem, falling back to a numbered ref. */
-function defaultImageLabel(fileName: string, ordinal: number): string {
-  const stem = fileName.replace(/\.[^.]+$/u, "").trim();
-  return (stem || `Ref ${ordinal}`).slice(0, MAX_IMAGE_LABEL_LENGTH);
-}
-
-/** Duration probe via a detached audio element; rejects unreadable files. */
-function probeAudioDurationMs(file: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const audio = document.createElement("audio");
-    audio.preload = "metadata";
-    audio.onloadedmetadata = () => {
-      URL.revokeObjectURL(url);
-      const seconds = audio.duration;
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        reject(new Error("unreadable audio duration"));
-        return;
-      }
-      resolve(seconds * 1000);
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("unreadable audio file"));
-    };
-    audio.src = url;
-  });
-}
-
-function FieldLabel({ id, children }: { id?: string; children: ReactNode }) {
-  return (
-    <span id={id} className="text-[10px] font-semibold text-white/42">
-      {children}
-    </span>
   );
 }

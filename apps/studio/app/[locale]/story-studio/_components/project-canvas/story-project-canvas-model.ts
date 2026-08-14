@@ -25,7 +25,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   sourceNodeId?: string;
   decisionId?: string;
   clipKey?: string;
-  characterId?: string;
   /** First appearance-reference image, shown as the card avatar. */
   characterImageUrl?: string;
   exitKind?: StoryCanvasExitKind;
@@ -39,7 +38,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
-  | { kind: "membership" }
   | { kind: "continuation" }
   | { kind: "decision"; decisionId: string; sourceNodeId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string };
@@ -64,9 +62,8 @@ const ROW_GAP = 220;
 const CAST_COLUMN_GAP = 480;
 const CAST_ROW_GAP = 150;
 const SYNTHETIC_DECISION_NODE_PREFIX = "__decision__:";
-// Character nodes are a canvas projection of storyBible.characters. The
-// "character:" prefix keeps their synthetic ids from colliding with graph node
-// ids (which the membership tether and inspector map back through).
+// Character nodes are a read-only canvas projection of storyBible.characters.
+// The prefix keeps their synthetic ids from colliding with graph node ids.
 const SYNTHETIC_CHARACTER_NODE_PREFIX = "character:";
 
 export interface StoryCanvasCopy {
@@ -171,7 +168,6 @@ export function buildStoryCanvasModel(
         title: localizedText(character.name, locale, ""),
         eyebrow: "",
         nodeId: characterCanvasNodeId(character.id),
-        characterId: character.id,
         characterImageUrl: character.images[0]?.url,
         summary: character.summary,
       },
@@ -183,9 +179,8 @@ export function buildStoryCanvasModel(
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
   const layoutSeedNodeId = content.graph.entryNodeId;
-  // Only story-flow projections and edges feed the layered layout; character
-  // nodes are placed afterwards so the membership tethers never pull them into
-  // the story-flow lane on the right.
+  // Only executable story-flow projections and edges feed the layered layout;
+  // read-only character cards are placed afterwards in their own visual lane.
   const positions = buildLayeredPositions(projections, storyEdges, layoutSeedNodeId);
   seedCastLanePositions(positions, characterProjections, layoutSeedNodeId);
 
@@ -197,9 +192,11 @@ export function buildStoryCanvasModel(
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      // Every projected element can be deleted from the canvas; characters may
-      // also use their inspector's guarded delete.
-      deletable: true,
+      connectable: projection.data.kind === "clip",
+      deletable: projection.data.kind === "clip",
+      draggable: projection.data.kind === "clip",
+      focusable: projection.data.kind === "clip",
+      selectable: projection.data.kind === "clip",
       data: projection.data,
     }));
 
@@ -208,9 +205,8 @@ export function buildStoryCanvasModel(
 
 /**
  * Places character cards in a tidy vertical column to the LEFT of the entry
- * scene, centred on the anchor's row. Manual drags still persist under the
- * `character:` layout keys; this is only the default auto-layout seed on first
- * appearance.
+ * scene, centred on the anchor's row. Character cards cannot be manually
+ * repositioned; their placement is always derived from the current story.
  */
 function seedCastLanePositions(
   positions: Map<string, { x: number; y: number }>,
@@ -447,42 +443,4 @@ export function isSyntheticDecisionNodeId(canvasNodeId: string): boolean {
 
 export function characterCanvasNodeId(characterId: string): string {
   return `${SYNTHETIC_CHARACTER_NODE_PREFIX}${characterId}`;
-}
-
-/**
- * Resolves a `character:` canvas node id back to its Story Bible character id,
- * or null when the node is not a character projection.
- */
-export function characterIdForCanvasNode(canvasNodeId: string): string | null {
-  return canvasNodeId.startsWith(SYNTHETIC_CHARACTER_NODE_PREFIX)
-    ? nonEmptySyntheticSource(canvasNodeId, SYNTHETIC_CHARACTER_NODE_PREFIX)
-    : null;
-}
-
-/**
- * The cast red line. Character cards tether only to the film foundation's
- * cast anchor and must never participate in a story-flow connection in either
- * direction. Returns true for any connection touching a character node or a
- * cast handle, so both the connection guard and the live validator can reject
- * it. Story-flow connections (no character node, no cast handle) return false.
- */
-export function rejectsStoryCastWiring(params: {
-  sourceKind: StoryCanvasNodeData["kind"];
-  targetKind: StoryCanvasNodeData["kind"];
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-}): boolean {
-  return (
-    params.sourceKind === "character" ||
-    params.targetKind === "character" ||
-    params.sourceHandle === "cast" ||
-    params.sourceHandle === "cast-in" ||
-    params.targetHandle === "cast" ||
-    params.targetHandle === "cast-in"
-  );
-}
-
-function nonEmptySyntheticSource(canvasNodeId: string, prefix: string): string | null {
-  const sourceId = canvasNodeId.slice(prefix.length);
-  return sourceId.length > 0 ? sourceId : null;
 }
