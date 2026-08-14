@@ -44,4 +44,4 @@ export function useLocale(): AppLocale {
   return useSyncExternalStore(subscribeLocale, getLocale, getLocale);
 }
 
-export { SUPPORTED_LOCALES, setLocale, initLocale } from "./locale-store";
+export { SUPPORTED_LOCALES, getLocale, setLocale, initLocale } from "./locale-store";
