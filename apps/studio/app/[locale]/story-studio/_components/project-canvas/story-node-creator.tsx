@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconMovie, type Icon } from "@tabler/icons-react";
+import { IconMovie, IconWorld, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDismiss } from "@/lib/use-dismiss";
 import { type StoryNodeCreationKind } from "./story-node-creator-model";
+import { STORY_WORLD_EXPERIENCE_AVAILABLE } from "./story-world-feature-policy";
 
 export type { StoryNodeCreationKind } from "./story-node-creator-model";
 
@@ -23,7 +24,7 @@ interface CreatorItem {
   iconBackground: string;
 }
 
-/** Character cards are read-only projections, so clip is the only authorable node. */
+/** Character cards are read-only projections; only available executable media is authored here. */
 const CREATOR_ITEMS: CreatorItem[] = [
   {
     kind: "clip",
@@ -31,6 +32,16 @@ const CREATOR_ITEMS: CreatorItem[] = [
     color: "rgba(255,255,255,0.14)",
     iconBackground: "rgba(255,255,255,0.22)",
   },
+  ...(STORY_WORLD_EXPERIENCE_AVAILABLE
+    ? [
+        {
+          kind: "world" as const,
+          icon: IconWorld,
+          color: "rgba(255,255,255,0.14)",
+          iconBackground: "rgba(255,255,255,0.22)",
+        },
+      ]
+    : []),
 ];
 
 export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreationKind) => void }) {

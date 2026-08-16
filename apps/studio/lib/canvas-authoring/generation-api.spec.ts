@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildReferenceInputForMode,
   canvasDefaultModel,
   fizzAiModelLock,
   fizzAiPlanLabel,
   isFizzAiModelUsable,
   isFizzAiModelVisible,
+  filterFizzAiInput,
+  normalizeModelSettings,
+  referenceFieldsForMode,
+  schemaFields,
   type FizzAiCatalog,
   type FizzAiGenerationMode,
   type FizzAiModel,
@@ -53,6 +58,47 @@ describe("canvasDefaultModel", () => {
     });
 
     expect(canvasDefaultModel(catalog([agnes, seedance]), "video")).toBe(agnes);
+  });
+});
+
+describe("stateful video editing references", () => {
+  const omni = videoModel("gemini-omni-flash-preview", ["text_to_video", "video_to_video"], {
+    input_schema: {
+      type: "object",
+      properties: {
+        sourceVideo: {
+          type: "object",
+          properties: { url: { type: "string" }, sourceJobId: { type: "string" } },
+          "x-ui": { control: "video_upload" },
+        },
+      },
+    },
+  });
+
+  it("routes video-to-video to the singular sourceVideo field", () => {
+    expect(referenceFieldsForMode(omni, "video_to_video").map((field) => field.field)).toEqual([
+      "sourceVideo",
+    ]);
+  });
+
+  it("preserves the internal source job lineage in the provider input", () => {
+    expect(
+      buildReferenceInputForMode(omni, "video_to_video", {
+        sourceVideo: [
+          {
+            id: "edge-1",
+            url: "https://assets.test/omni.mp4",
+            kind: "video",
+            sourceJobId: "job-omni-1",
+          },
+        ],
+      })
+    ).toEqual({
+      sourceVideo: {
+        url: "https://assets.test/omni.mp4",
+        sourceJobId: "job-omni-1",
+      },
+    });
   });
 });
 
@@ -115,5 +161,34 @@ describe("visibility vs usability", () => {
   it("title-cases a plan key for display", () => {
     expect(fizzAiPlanLabel("pro")).toBe("Pro");
     expect(fizzAiPlanLabel("community_membership")).toBe("Community Membership");
+  });
+});
+
+describe("schema numeric normalization", () => {
+  const audio = videoModel("seed-audio-1-0", ["text_to_audio"], {
+    type: "audio",
+    input_schema: {
+      type: "object",
+      properties: {
+        durationSeconds: {
+          type: "number",
+          minimum: 1,
+          maximum: 120,
+          multipleOf: 1,
+          default: 10,
+          "x-ui": { control: "slider" },
+        },
+      },
+    },
+  });
+
+  it("carries JSON Schema multipleOf into the slider descriptor", () => {
+    expect(schemaFields(audio)[0]?.step).toBe(1);
+  });
+
+  it("migrates legacy floating slider values and normalizes the wire input", () => {
+    const legacy = { durationSeconds: 8.8818359375 };
+    expect(normalizeModelSettings(audio, legacy)).toEqual({ durationSeconds: 9 });
+    expect(filterFizzAiInput(audio, legacy)).toEqual({ durationSeconds: 9 });
   });
 });

@@ -6,6 +6,7 @@ import { IconBolt, IconChevronDown, IconMinus, IconPlus } from "@tabler/icons-re
 import { cn } from "@/lib/utils";
 import {
   estimateModelSellPoints,
+  normalizeSchemaFieldNumber,
   schemaFields,
   type FizzAiModel,
   type ModelSettings,
@@ -230,13 +231,15 @@ export function Field({
 }) {
   const t = useTranslations("canvasControls");
   const showInline = field.control === "slider";
+  const rawSliderValue = Number(value ?? field.min ?? 0);
+  const sliderValue = normalizeSchemaFieldNumber(rawSliderValue, field);
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{fieldLabel(field)}</span>
         {showInline && (
           <span className="text-xs text-white/70 tabular-nums">
-            {`${value ?? field.min ?? 0}${field.unit ?? ""}`}
+            {`${sliderValue}${field.unit ?? ""}`}
           </span>
         )}
       </div>
@@ -269,9 +272,9 @@ export function Field({
           type="range"
           min={field.min ?? 0}
           max={field.max ?? 100}
-          step={field.type === "integer" ? 1 : "any"}
-          value={Number(value ?? field.min ?? 0)}
-          onChange={(e) => set(Number(e.target.value))}
+          step={field.step ?? (field.type === "integer" ? 1 : "any")}
+          value={sliderValue}
+          onChange={(e) => set(normalizeSchemaFieldNumber(Number(e.target.value), field))}
           className="w-full accent-white"
         />
       )}
@@ -403,6 +406,8 @@ export function ModelSettings({
         duration: settings.duration != null ? String(settings.duration) : undefined,
         durationSeconds:
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
+        generateAudio:
+          typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
       })?.sellPoints ?? null
     );
   }, [model, settings]);

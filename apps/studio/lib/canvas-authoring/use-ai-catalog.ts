@@ -29,12 +29,11 @@ export function useAiCatalog() {
 }
 
 /**
- * UI modality for the studio surface. `image`/`video` are real catalog +
- * job-system modalities; `audio` is a layout-only modality for now (voice/audio
- * generation runs on the separate Java voice service, not this catalog), so it
- * resolves to an empty model list until audio models are wired in.
+ * UI modality for the studio surface. The catalog may expose image, video or
+ * audio models; products render the same schema-driven selection contract for
+ * every modality instead of carrying a separate voice-service exception.
  */
-export type StudioModality = FizzAiModel["type"] | "audio";
+export type StudioModality = FizzAiModel["type"];
 
 export function modelsByModality(
   catalog: FizzAiCatalog | undefined,

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ExperiencePlayer } from "./experience-player";
+import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import { ExperiencePlayer, resolveNextSceneVideoUris } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
 const HASH = "a".repeat(64);
@@ -43,7 +44,7 @@ function localized(english: string, chinese: string) {
 function runtimeFixture(input: {
   experienceProfile?: "cinematic" | "narrative";
   completion: "continue" | "passive";
-  rendererKind?: "text" | "video";
+  rendererKind?: "text" | "video" | "world";
   overlayKind?: "choice";
   videoFit?: "cover" | "contain" | "native";
   /**
@@ -52,10 +53,12 @@ function runtimeFixture(input: {
    * immutable, so the current player must keep parsing them.
    */
   retiredAudioMode?: "none" | "embedded";
+  requiredHostCapabilities?: string[];
 }) {
   const rendererKind = input.rendererKind ?? "text";
   const videoFit = input.videoFit ?? "cover";
   const isVideo = rendererKind === "video";
+  const isWorld = rendererKind === "world";
   const overlayRendererId = input.overlayKind ? `core.${input.overlayKind}` : null;
   return {
     manifestType: "fizzdragon.experience",
@@ -74,8 +77,9 @@ function runtimeFixture(input: {
       experienceApiVersion: "1.0.0",
       semanticRulesVersion: 1,
       requiredCapabilities: [
-        isVideo ? "core.video" : "core.text",
+        isVideo ? "core.video" : isWorld ? "core.world-model" : "core.text",
         ...(overlayRendererId ? [overlayRendererId] : []),
+        ...(input.requiredHostCapabilities ?? []),
       ],
     },
     localization: {
@@ -94,14 +98,23 @@ function runtimeFixture(input: {
             outcomes: [{ outcomeType: "media-ended" }],
             commands: [],
           }
-        : {
-            rendererId: "core.text",
-            apiVersion: "1.0.0",
-            configSchemaVersion: "1.0.0",
-            requiredCapabilities: ["core.text"],
-            outcomes: [{ outcomeType: "text-completed" }],
-            commands: [],
-          },
+        : isWorld
+          ? {
+              rendererId: "core.world-model",
+              apiVersion: "1.0.0",
+              configSchemaVersion: "1.0.0",
+              requiredCapabilities: ["core.world-model"],
+              outcomes: [{ outcomeType: "world-completed" }],
+              commands: [{ commandType: "end" }],
+            }
+          : {
+              rendererId: "core.text",
+              apiVersion: "1.0.0",
+              configSchemaVersion: "1.0.0",
+              requiredCapabilities: ["core.text"],
+              outcomes: [{ outcomeType: "text-completed" }],
+              commands: [],
+            },
       ...(input.overlayKind === "choice"
         ? [
             {
@@ -184,20 +197,34 @@ function runtimeFixture(input: {
                   },
                   bindings: {},
                 }
-              : {
-                  instanceId: "text.primary",
-                  rendererId: "core.text",
-                  layer: 0,
-                  config: {
-                    title: localized("Chapter one", "第一章"),
-                    body: localized(
-                      "The story begins.\n\nKeep reading.",
-                      "故事开始。\n\n继续阅读。"
-                    ),
-                    completion: input.completion,
+              : isWorld
+                ? {
+                    instanceId: "world.primary",
+                    rendererId: "core.world-model",
+                    layer: 0,
+                    config: {
+                      projectId: "0197f4a2-0800-7000-8000-000000000001",
+                      worldId: "0197f4a2-0800-7000-8000-000000000002",
+                      entryInstruction: "Continue through the gate.",
+                      maxExperienceSeconds: 90,
+                      autoplay: true,
+                    },
+                    bindings: {},
+                  }
+                : {
+                    instanceId: "text.primary",
+                    rendererId: "core.text",
+                    layer: 0,
+                    config: {
+                      title: localized("Chapter one", "第一章"),
+                      body: localized(
+                        "The story begins.\n\nKeep reading.",
+                        "故事开始。\n\n继续阅读。"
+                      ),
+                      completion: input.completion,
+                    },
+                    bindings: {},
                   },
-                  bindings: {},
-                },
             ...(input.overlayKind === "choice"
               ? [
                   {
@@ -232,8 +259,12 @@ function runtimeFixture(input: {
               bindingId: "text.complete",
               on: {
                 type: "renderer.outcome",
-                sourceId: isVideo ? "video.primary" : "text.primary",
-                qualifierId: isVideo ? "media-ended" : "text-completed",
+                sourceId: isVideo ? "video.primary" : isWorld ? "world.primary" : "text.primary",
+                qualifierId: isVideo
+                  ? "media-ended"
+                  : isWorld
+                    ? "world-completed"
+                    : "text-completed",
               },
               routes: [
                 {
@@ -357,6 +388,24 @@ describe("ExperiencePlayer core.text", () => {
     }
   );
 
+  it("accepts spatial tap and swipe capabilities implemented by the React host", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({
+          completion: "passive",
+          rendererKind: "video",
+          requiredHostCapabilities: ["input.tap", "input.swipe", "renderer.content-transform"],
+        })}
+        locale="zh-CN"
+        copy={copy}
+        randomSeed="spatial-tap-host-capabilities-test"
+      />
+    );
+
+    expect(html).not.toContain(copy.invalidManifest);
+    expect(html).toContain("/video.mp4");
+  });
+
   it("keeps an initially-open text choice behind the start boundary", () => {
     const html = renderToStaticMarkup(
       <ExperiencePlayer
@@ -373,5 +422,153 @@ describe("ExperiencePlayer core.text", () => {
 
     expect(html).toContain(">Start<");
     expect(html).not.toContain("Choose before start");
+  });
+
+  it("delegates a world scene to the host without exposing provider configuration", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({ completion: "passive", rendererKind: "world" })}
+        locale="en-US"
+        copy={copy}
+        randomSeed="core-world-model-host-test"
+        renderWorldModel={({ config, active }) => (
+          <div data-testid="world-host" data-active={active}>
+            {config.worldId}
+          </div>
+        )}
+      />
+    );
+
+    expect(html).not.toContain(copy.invalidManifest);
+    expect(html).toContain('data-experience-renderer="core.world-model"');
+    expect(html).toContain('data-testid="world-host"');
+    expect(html).toContain("0197f4a2-0800-7000-8000-000000000002");
+    expect(html).not.toContain("fal:happy-oyster");
+  });
+
+  it("preloads only the video branches directly reachable from the current scene", () => {
+    const base = runtimeFixture({ completion: "passive", rendererKind: "video" });
+    const currentScene = base.graph.nodes[0];
+    const runtime = {
+      ...base,
+      assets: [
+        ...base.assets,
+        {
+          assetId: "video.next",
+          kind: "video",
+          orientationPolicy: "single-master",
+          variants: [
+            {
+              variantId: "video.next.landscape",
+              sourceAssetId: "video.next.source",
+              sha256: HASH,
+              uri: "/next.mp4",
+              mediaType: "video/mp4",
+              orientation: "landscape",
+              width: 1920,
+              height: 1080,
+              durationMs: 5_000,
+            },
+          ],
+        },
+        {
+          assetId: "video.unrelated",
+          kind: "video",
+          orientationPolicy: "single-master",
+          variants: [
+            {
+              variantId: "video.unrelated.landscape",
+              sourceAssetId: "video.unrelated.source",
+              sha256: HASH,
+              uri: "/unrelated.mp4",
+              mediaType: "video/mp4",
+              orientation: "landscape",
+              width: 1920,
+              height: 1080,
+              durationMs: 5_000,
+            },
+          ],
+        },
+      ],
+      graph: {
+        ...base.graph,
+        nodes: [
+          {
+            ...currentScene,
+            eventBindings: [
+              {
+                bindingId: "scene.next",
+                on: {
+                  type: "renderer.outcome",
+                  sourceId: "video.primary",
+                  qualifierId: "media-ended",
+                },
+                routes: [
+                  {
+                    routeId: "next",
+                    actions: [
+                      { kind: "scene.goto", sceneId: "scene.next" },
+                      // A retry of the current clip is already warm and must not
+                      // create a second detached media element.
+                      { kind: "scene.goto", sceneId: "scene.text" },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            ...currentScene,
+            sceneId: "scene.next",
+            renderers: [
+              {
+                instanceId: "video.next",
+                rendererId: "core.video",
+                layer: 0,
+                config: {
+                  fit: "cover",
+                  sequence: [
+                    {
+                      clipId: "clip.next",
+                      assetId: "video.next",
+                      endBehavior: { behavior: "advance" },
+                    },
+                  ],
+                  autoplay: true,
+                },
+                bindings: {},
+              },
+            ],
+            eventBindings: [],
+          },
+          {
+            ...currentScene,
+            sceneId: "scene.unrelated",
+            renderers: [
+              {
+                instanceId: "video.unrelated",
+                rendererId: "core.video",
+                layer: 0,
+                config: {
+                  fit: "cover",
+                  sequence: [
+                    {
+                      clipId: "clip.unrelated",
+                      assetId: "video.unrelated",
+                      endBehavior: { behavior: "advance" },
+                    },
+                  ],
+                  autoplay: true,
+                },
+                bindings: {},
+              },
+            ],
+            eventBindings: [],
+          },
+        ],
+      },
+    } as unknown as ExperienceRuntimeManifest;
+
+    expect(resolveNextSceneVideoUris(runtime, "scene.text", "landscape")).toEqual(["/next.mp4"]);
   });
 });

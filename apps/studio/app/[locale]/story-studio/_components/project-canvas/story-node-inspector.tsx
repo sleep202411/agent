@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IconArrowRight, IconCheck, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
+import type {
+  InteractiveStoryDraftContent,
+  StoryClipGraphNode,
+  StoryGraphNode,
+} from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
 import {
@@ -30,8 +34,8 @@ type StoryChapterTarget = {
 
 /**
  * What the creator asked a scene's next step to become. The inspector states the
- * intent; the canvas owns which mutation realizes it, because only the canvas
- * knows the surrounding draft and can mint a decision for a choice exit.
+ * intent; the canvas owns which mutation realizes it because only the canvas
+ * knows the surrounding draft and can author an inline interaction branch.
  */
 export type SceneExitIntent = { kind: "auto"; nextNodeId: string | null } | { kind: "choice" };
 
@@ -53,14 +57,8 @@ interface StoryNodeInspectorProps {
   clipMedia?: StoryClipMediaPanelProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
   onSetSceneExit: (nodeId: string, intent: SceneExitIntent) => void;
-  /**
-   * Promotes a scene to the entry of the chapter being edited. Scoped, not
-   * global: the server stores an entry per chapter and only mirrors the first
-   * chapter's onto the story, so this is deliberately worded per chapter.
-   */
-  onSetEntryNode: (nodeId: string) => void;
+  onEditInteractions: (nodeId: string) => void;
 }
-
 export function StoryNodeInspector({
   content,
   selectedNode,
@@ -75,20 +73,17 @@ export function StoryNodeInspector({
   clipMedia,
   onUpdateClipMeta,
   onSetSceneExit,
-  onSetEntryNode,
+  onEditInteractions,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
   const canvasData = selectedNode?.data;
-  const canonicalNodeId =
-    canvasData?.kind === "decision" ? canvasData.sourceNodeId : canvasData?.nodeId;
+  const canonicalNodeId = canvasData?.nodeId;
   const graphNode =
     content.graph.nodes.find((candidate) => candidate.nodeId === canonicalNodeId) ?? null;
 
-  if (
-    !showFoundation &&
-    (!canvasData || canvasData.kind === "decision" || canvasData.kind === "character")
-  )
-    return null;
+  const editableGraphNode = graphNode?.kind === "clip" ? graphNode : null;
+
+  if (!showFoundation && !editableGraphNode) return null;
 
   return (
     <aside className="absolute top-16 bottom-3 left-3 z-30 flex w-[368px] flex-col overflow-hidden rounded-[24px] bg-[oklch(0.205_0_0/0.72)] shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
@@ -103,7 +98,7 @@ export function StoryNodeInspector({
             onClose={onCloseNode}
           />
         </div>
-      ) : canvasData ? (
+      ) : canvasData && editableGraphNode ? (
         <>
           <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-1">
             <div className="min-w-0">
@@ -124,19 +119,17 @@ export function StoryNodeInspector({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-            {graphNode ? (
-              <GraphNodeEditor
-                content={content}
-                node={graphNode}
-                canEdit={canEdit}
-                clipMedia={clipMedia}
-                onUpdateClipMeta={onUpdateClipMeta}
-                chapterTargets={chapterTargets}
-                onConnectChapter={onConnectChapter}
-                onSetSceneExit={onSetSceneExit}
-                onSetEntryNode={onSetEntryNode}
-              />
-            ) : null}
+            <GraphNodeEditor
+              content={content}
+              node={editableGraphNode}
+              canEdit={canEdit}
+              clipMedia={clipMedia}
+              onUpdateClipMeta={onUpdateClipMeta}
+              chapterTargets={chapterTargets}
+              onConnectChapter={onConnectChapter}
+              onSetSceneExit={onSetSceneExit}
+              onEditInteractions={onEditInteractions}
+            />
           </div>
 
           <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-5 py-4">
@@ -148,7 +141,7 @@ export function StoryNodeInspector({
               className="w-full"
             >
               <IconTrash className="size-4" />
-              {t(canvasData.kind === "decision" ? "inspector.removeDecision" : "inspector.delete")}
+              {t("inspector.delete")}
             </Button>
           </div>
         </>
@@ -166,45 +159,22 @@ function GraphNodeEditor({
   chapterTargets,
   onConnectChapter,
   onSetSceneExit,
-  onSetEntryNode,
+  onEditInteractions,
 }: {
   content: InteractiveStoryDraftContent;
-  node: StoryGraphNode;
+  node: StoryClipGraphNode;
   canEdit: boolean;
   clipMedia?: StoryClipMediaPanelProps;
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   chapterTargets: StoryChapterTarget[];
   onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
   onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
-  onSetEntryNode: StoryNodeInspectorProps["onSetEntryNode"];
+  onEditInteractions: NonNullable<StoryNodeInspectorProps["onEditInteractions"]>;
 }) {
   const t = useTranslations("storyStudio.canvas");
-  const isEntry = content.graph.entryNodeId === node.nodeId;
   return (
     <>
-      {/*
-        The chapter's entry used to be reachable only by dragging off the story
-        project foundation. It does not belong to a chapter
-        anyway — the entry does.
-      */}
-      <button
-        type="button"
-        aria-current={isEntry ? "true" : undefined}
-        disabled={!canEdit || isEntry}
-        onClick={() => onSetEntryNode(node.nodeId)}
-        className={cn(
-          "mt-6 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[10px] transition",
-          isEntry
-            ? "bg-[#8f65ff]/[0.16] text-white disabled:opacity-100"
-            : "bg-white/[0.045] text-white/58 hover:bg-white/[0.09] hover:text-white disabled:opacity-55"
-        )}
-      >
-        <IconPlayerPlay className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">{t("inspector.entry")}</span>
-        {isEntry ? <IconCheck className="size-3.5 shrink-0" /> : null}
-      </button>
-
-      <label className="mt-4 block" htmlFor="story-clip-name">
+      <label className="mt-6 block" htmlFor="story-clip-name">
         <span className="text-[9px] font-semibold text-white/32">{t("inspector.nodeName")}</span>
         <Input
           id="story-clip-name"
@@ -220,6 +190,26 @@ function GraphNodeEditor({
       {clipMedia ? (
         <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
       ) : null}
+
+      <button
+        type="button"
+        disabled={!canEdit}
+        onClick={() => onEditInteractions(node.nodeId)}
+        className="group mt-4 flex w-full items-center gap-3 rounded-[18px] bg-white/[0.045] p-3 text-left transition hover:bg-white/[0.075] disabled:pointer-events-none disabled:opacity-40"
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-blue/10 text-brand-blue transition group-hover:bg-brand-blue/15 group-hover:text-brand-blue">
+          <IconFocusCentered className="size-4" stroke={1.7} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-semibold text-white/82">
+            {t("interactionEditor.entryTitle")}
+          </span>
+          <span className="mt-0.5 block text-[9px] leading-4 text-white/34">
+            {t("interactionEditor.entryDescription")}
+          </span>
+        </span>
+        <IconArrowRight className="size-4 shrink-0 text-white/22 transition group-hover:translate-x-0.5 group-hover:text-white/48" />
+      </button>
 
       <SceneExitEditor
         content={content}
@@ -252,7 +242,7 @@ function SceneExitEditor({
   onSetSceneExit,
 }: {
   content: InteractiveStoryDraftContent;
-  node: StoryGraphNode;
+  node: StoryClipGraphNode;
   canEdit: boolean;
   onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
 }) {
@@ -393,7 +383,7 @@ function SceneExitEditor({
 }
 
 function sceneLabel(node: StoryGraphNode): string {
-  return node.name?.trim() || node.clipKey;
+  return node.name?.trim() || (node.kind === "clip" ? node.clipKey : (node.worldId ?? node.nodeId));
 }
 
 function ChapterDestinationEditor({

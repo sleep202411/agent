@@ -9,6 +9,7 @@ import type {
   ProjectSkillScope,
   ProjectSkillSelection,
 } from "@/lib/project-skills-api";
+import type { GenerationModality } from "@/lib/canvas-authoring/generation-node-types";
 
 type ProjectGenerationSkillScope = Extract<
   ProjectSkillScope,
@@ -33,14 +34,19 @@ interface EffectiveProjectSkill {
   anchor: number;
 }
 
-export function generationSkillScope(modality: "image" | "video"): ProjectGenerationSkillScope {
-  return modality === "image" ? "image_generation" : "video_generation";
+export function generationSkillScope(
+  modality: GenerationModality
+): ProjectGenerationSkillScope | undefined {
+  if (modality === "image") return "image_generation";
+  if (modality === "video") return "video_generation";
+  return undefined;
 }
 
 export function compatibleProjectSkillInstallations(
   projectSkills: ProjectSkillInstallationsResponse | undefined,
-  scope: ProjectGenerationSkillScope
+  scope: ProjectGenerationSkillScope | undefined
 ): ProjectSkillInstallation[] {
+  if (!scope) return [];
   return (projectSkills?.installations ?? []).filter(
     (installation) =>
       installation.status === "active" && installation.version.capabilities.includes(scope)
@@ -49,10 +55,11 @@ export function compatibleProjectSkillInstallations(
 
 export function isProjectSkillDefault(input: {
   installation: ProjectSkillInstallation;
-  scope: ProjectGenerationSkillScope;
+  scope: ProjectGenerationSkillScope | undefined;
   sourceSurface: string;
   workbenchMode?: string;
 }): boolean {
+  if (!input.scope) return false;
   return input.installation.defaults.some(
     (activation) =>
       activation.scope === input.scope &&
@@ -77,13 +84,14 @@ export function projectSkillMention(
 
 export function resolveEffectiveProjectSkills(input: {
   projectSkills: ProjectSkillInstallationsResponse | undefined;
-  scope: ProjectGenerationSkillScope;
+  scope: ProjectGenerationSkillScope | undefined;
   sourceSurface: string;
   workbenchMode?: string;
   selection?: CanvasProjectSkillSelection;
   labelFor: (installation: ProjectSkillInstallation) => string;
   promptLength: number;
 }): EffectiveProjectSkill[] {
+  if (!input.scope) return [];
   const compatible = compatibleProjectSkillInstallations(input.projectSkills, input.scope);
   const byId = new Map(compatible.map((installation) => [installation.id, installation]));
   const included = new Set(

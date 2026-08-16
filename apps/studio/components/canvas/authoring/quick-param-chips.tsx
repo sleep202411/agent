@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   schemaFields,
+  normalizeSchemaFieldNumber,
   type FizzAiModel,
   type ModelSettings,
   type SchemaFieldDescriptor,
@@ -66,7 +67,11 @@ function ParamChip({
     const n = Number(value ?? field.default ?? field.min ?? 1) || 1;
     label = <span>×{n}</span>;
   } else {
-    const v = value ?? field.default ?? field.enum?.[0] ?? "";
+    const raw = value ?? field.default ?? field.enum?.[0] ?? "";
+    const v =
+      typeof raw === "number" && (field.type === "number" || field.type === "integer")
+        ? normalizeSchemaFieldNumber(raw, field)
+        : raw;
     label = (
       <span className="flex items-center gap-1 whitespace-nowrap">
         {isDuration ? <IconClock className="size-3.5 opacity-70" stroke={1.8} /> : null}
@@ -89,11 +94,7 @@ function ParamChip({
           {label}
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-[260px] gap-0 p-2"
-      >
+      <PopoverContent align="start" sideOffset={6} className="w-[260px] gap-0 p-2">
         {/* Field title (imagine shows "Aspect Ratio" / "Duration" above the list). */}
         <p className="px-2 pb-1.5 pt-0.5 text-xs font-medium text-muted-foreground">
           {fieldLabel(field)}
@@ -155,10 +156,9 @@ export function QuickParamChips({
   const sizeField = fields.find(isSizeField);
   const quick = useMemo(
     () =>
-      [
-        ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
-        sizeField,
-      ].filter((f): f is SchemaFieldDescriptor => Boolean(f)),
+      [...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)), sizeField].filter(
+        (f): f is SchemaFieldDescriptor => Boolean(f)
+      ),
     [fields, sizeField]
   );
 
@@ -168,8 +168,7 @@ export function QuickParamChips({
     const v = settings[name];
     return Array.isArray(v) ? undefined : v;
   };
-  const set = (name: string, v: string | number | boolean) =>
-    onChange({ ...settings, [name]: v });
+  const set = (name: string, v: string | number | boolean) => onChange({ ...settings, [name]: v });
 
   return (
     <div className="flex flex-wrap gap-2">

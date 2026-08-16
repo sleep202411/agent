@@ -27,6 +27,7 @@ export interface ExperienceMediaPlaybackHandle {
   readonly playbackIdentity: string;
   play(): Promise<void>;
   pause(): void;
+  seek(seconds: number): void;
   /** Mute state applied straight to the element. The host calls this from the
    *  unmute click itself so the change rides the user activation instead of
    *  waiting for a render + effect. */
@@ -175,6 +176,7 @@ export function ExperienceMediaPlayer({
       playbackIdentity: rendered.identity,
       play: () => playWithSoundFallback(soundFallbackTarget(player), mutedRef, onSoundBlocked),
       pause: () => pauseMediaPlayer(player),
+      seek: (seconds) => seekMediaPlayer(player, seconds),
       setMuted: (nextMuted) => {
         mutedRef.current = nextMuted;
         applyPlayerMuted(player, nextMuted);
@@ -502,6 +504,21 @@ function pauseMediaPlayer(player: MediaPlayerInstance): void {
     return;
   }
   void player.pause();
+}
+
+function seekMediaPlayer(player: MediaPlayerInstance, seconds: number): void {
+  if (!Number.isFinite(seconds) || seconds < 0) return;
+  const provider = player.provider;
+  if (
+    provider?.type === "video" ||
+    provider?.type === "audio" ||
+    provider?.type === "hls" ||
+    provider?.type === "dash"
+  ) {
+    provider.media.currentTime = seconds;
+    return;
+  }
+  player.currentTime = seconds;
 }
 
 function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: number): void {

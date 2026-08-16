@@ -1253,7 +1253,7 @@ function resultImages(
   outputs: Array<{
     height?: number | null;
     id: string;
-    type: "image" | "video";
+    type: "image" | "video" | "audio";
     url: string;
     width?: number | null;
   }>

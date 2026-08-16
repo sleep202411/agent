@@ -1,4 +1,3 @@
-import { isSyntheticDecisionNodeId } from "./story-project-canvas-model";
 import { nextStoryCanvasFocusedNodeId } from "./story-project-canvas-selection";
 
 export type StoryCanvasInspectorTarget =
@@ -10,10 +9,6 @@ export const CLOSED_STORY_CANVAS_INSPECTOR: StoryCanvasInspectorTarget = { kind:
 export const STORY_FOUNDATION_INSPECTOR: StoryCanvasInspectorTarget = { kind: "foundation" };
 
 export function storyNodeInspectorTarget(nodeId: string): StoryCanvasInspectorTarget {
-  // Player choices are edited directly on their canvas card. Treating their
-  // synthetic projection as an inspector target would duplicate the same form
-  // in a drawer and make a simple click unexpectedly cover the canvas.
-  if (isSyntheticDecisionNodeId(nodeId)) return CLOSED_STORY_CANVAS_INSPECTOR;
   return { kind: "node", nodeId };
 }
 

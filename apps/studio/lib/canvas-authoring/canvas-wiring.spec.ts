@@ -93,6 +93,7 @@ describe("atomic canvas reference wiring", () => {
       type: "prompt",
       data: {
         generation: {
+          jobId: "job-generated-1",
           status: "done",
           outputs: [
             {
@@ -134,6 +135,7 @@ describe("atomic canvas reference wiring", () => {
     };
     expect(references.referenceImages[0]).toMatchObject({
       assetId: "asset-1",
+      sourceJobId: "job-generated-1",
       durationSeconds: 5,
       bytes: 2_097_152,
       width: 1920,

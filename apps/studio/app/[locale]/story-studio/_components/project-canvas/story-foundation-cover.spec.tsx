@@ -133,7 +133,7 @@ describe("film foundation cover authoring", () => {
       onDeleteSelected: vi.fn(),
       onUpdateClipMeta: vi.fn(),
       onSetSceneExit: vi.fn(),
-      onSetEntryNode: vi.fn(),
+      onEditInteractions: vi.fn(),
     };
     await act(async () => {
       root.render(<StoryNodeInspector {...props} />);

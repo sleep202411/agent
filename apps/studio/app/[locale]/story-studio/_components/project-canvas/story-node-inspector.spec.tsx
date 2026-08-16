@@ -29,10 +29,7 @@ describe("StoryNodeInspector film authoring", () => {
 
   it("confirms before replacing an authored choice with a direct continuation", async () => {
     const content = branchingDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
+    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
     const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
 
     await act(async () => {
@@ -62,26 +59,61 @@ describe("StoryNodeInspector film authoring", () => {
     });
   });
 
-  it("promotes a clip to the chapter entry", async () => {
+  it("opens the interaction editor for the inspected clip", async () => {
     const content = linearDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
-    const onSetEntryNode = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetEntryNode"]>();
+    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
+    const onEditInteractions =
+      vi.fn<ComponentProps<typeof StoryNodeInspector>["onEditInteractions"]>();
 
     await act(async () => {
       root.render(
         <StoryNodeInspector
           {...inspectorProps(content)}
-          onSetEntryNode={onSetEntryNode}
+          onEditInteractions={onEditInteractions}
           selectedNode={requiredNode(model.nodes, "second")}
         />
       );
     });
 
-    await click(entryButton(container));
-    expect(onSetEntryNode).toHaveBeenCalledWith("second");
+    const editInteractions = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("interactionEditor.entryTitle")
+      ) ?? null,
+      "edit interactions button"
+    );
+    await click(editInteractions);
+    expect(onEditInteractions).toHaveBeenCalledWith("second");
+  });
+
+  it("does not render a side inspector for a world node", async () => {
+    const content: InteractiveStoryDraftContent = {
+      storyBible: { logline: "", synopsis: "", characters: [] },
+      graph: {
+        entryNodeId: "world:one",
+        nodes: [
+          {
+            kind: "world",
+            nodeId: "world:one",
+            worldId: null,
+            maxExperienceSeconds: 60,
+            exit: { kind: "auto", nextNodeId: null },
+          },
+        ],
+      },
+      productionNotes: [],
+    };
+    const model = buildStoryCanvasModel(content, "en-US", [], { world: "World" });
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector
+          {...inspectorProps(content)}
+          selectedNode={requiredNode(model.nodes, "world:one")}
+        />
+      );
+    });
+
+    expect(container.innerHTML).toBe("");
   });
 });
 
@@ -95,6 +127,7 @@ function branchingDraft(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "opening",
           clipKey: "OPENING",
+          interactions: [],
           exit: {
             kind: "choice",
             decisionId: "decision.route",
@@ -131,6 +164,7 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null) {
     kind: "clip" as const,
     nodeId,
     clipKey,
+    interactions: [],
     exit: { kind: "auto" as const, nextNodeId },
   };
 }
@@ -157,7 +191,7 @@ function inspectorProps(
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
     onSetSceneExit: vi.fn(),
-    onSetEntryNode: vi.fn(),
+    onEditInteractions: vi.fn(),
   };
 }
 
@@ -170,15 +204,6 @@ function requiredNode(nodes: ReturnType<typeof buildStoryCanvasModel>["nodes"], 
 function requiredElement<T extends Element>(element: T | null, label: string): T {
   if (!element) throw new Error(`Missing ${label}`);
   return element;
-}
-
-function entryButton(container: HTMLElement): HTMLButtonElement {
-  return requiredElement(
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "inspector.entry"
-    ) ?? null,
-    "entry button"
-  );
 }
 
 function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {

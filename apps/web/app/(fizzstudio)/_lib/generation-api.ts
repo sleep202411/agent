@@ -625,6 +625,8 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
 }
 
 export interface FizzAiPointEstimateInput {
+  text?: string;
+  generateAudio?: boolean;
   /** Video duration as submitted (string enum incl. "auto", or seconds). */
   duration?: string | number;
   /** Legacy numeric duration field (integer-slider video models). */
@@ -646,10 +648,12 @@ export function estimateModelSellPoints(
   try {
     const result = estimateProductModelPoints({
       policy: productPricing,
+      text: input.text,
       numOutputs: input.numOutputs,
       quality: input.quality,
       duration: input.duration,
       durationSeconds: input.durationSeconds,
+      generateAudio: input.generateAudio,
       referenceImageCount: input.referenceImageCount,
       resolution: input.resolution,
       hasMask: input.hasMask,
@@ -689,14 +693,25 @@ export function cheapestSellPoints(model: FizzAiModel | undefined): number | nul
     // Floor = cheapest resolution at the minimum billable duration.
     let min: number | null = null;
     for (const resolution of Object.keys(pricing.pointsPerSecond)) {
-      const est = estimateModelSellPoints(model, {
-        resolution,
-        duration: pricing.minSeconds,
-        numOutputs,
-      });
-      if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+      for (const generateAudio of pricing.videoOnlyPointsPerSecond ? [true, false] : [undefined]) {
+        const est = estimateModelSellPoints(model, {
+          resolution,
+          duration: pricing.minSeconds,
+          generateAudio,
+          numOutputs,
+        });
+        if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+      }
     }
     if (min !== null) return min;
+  }
+  if (pricing.mode === "per_character") {
+    return (
+      estimateModelSellPoints(model, {
+        text: "x".repeat(pricing.minCharacters),
+        numOutputs,
+      })?.sellPoints ?? null
+    );
   }
   return estimateModelSellPoints(model, { numOutputs })?.sellPoints ?? null;
 }

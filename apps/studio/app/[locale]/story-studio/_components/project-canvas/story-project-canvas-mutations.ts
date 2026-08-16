@@ -1,10 +1,15 @@
 import type {
   InteractiveStoryDraftContent,
+  StoryClipGraphNode,
   StoryGraphChoice,
   StoryGraphNode,
+  StoryWorldGraphNode,
 } from "@/lib/story-projects-api";
 
-type ClipGraphNode = StoryGraphNode;
+type ClipGraphNode = StoryClipGraphNode;
+type FlowGraphNode = StoryGraphNode & {
+  exit: { kind: "auto"; nextNodeId: string | null };
+};
 type ChoiceClipNode = ClipGraphNode & {
   exit: Extract<ClipGraphNode["exit"], { kind: "choice" }>;
 };
@@ -46,6 +51,13 @@ export interface CreateClipNodeOptions {
   clipKey?: string;
 }
 
+export interface CreateWorldNodeOptions {
+  nodeId?: string;
+  worldId?: string | null;
+  name?: string;
+  maxExperienceSeconds?: 60 | 90 | 120;
+}
+
 export interface StoryNodeCreationResult<T> {
   content: InteractiveStoryDraftContent;
   created: T;
@@ -65,13 +77,36 @@ export function createClipNode(
   const clipKey = options.clipKey
     ? assertAvailableClipKey(content, options.clipKey)
     : allocateClipKey(
-        content.graph.nodes.map((node) => node.clipKey),
+        content.graph.nodes.flatMap((node) => (node.kind === "clip" ? [node.clipKey] : [])),
         `SCENE_${ordinal}`
       );
   const created: ClipGraphNode = {
     kind: "clip",
     nodeId,
     clipKey,
+    interactions: [],
+    exit: { kind: "auto", nextNodeId: null },
+  };
+  return { content: appendGraphNode(content, created), created };
+}
+
+export function createWorldNode(
+  content: InteractiveStoryDraftContent,
+  options: CreateWorldNodeOptions = {}
+): StoryNodeCreationResult<StoryWorldGraphNode> {
+  const ordinal = content.graph.nodes.filter((node) => node.kind === "world").length + 1;
+  const nodeId = options.nodeId
+    ? assertAvailableNodeId(content, options.nodeId)
+    : allocateStableId(
+        content.graph.nodes.map((node) => node.nodeId),
+        `world:experience-${ordinal}`
+      );
+  const created: StoryWorldGraphNode = {
+    kind: "world",
+    nodeId,
+    worldId: options.worldId ?? null,
+    ...(options.name ? { name: options.name } : {}),
+    maxExperienceSeconds: options.maxExperienceSeconds ?? 60,
     exit: { kind: "auto", nextNodeId: null },
   };
   return { content: appendGraphNode(content, created), created };
@@ -85,12 +120,32 @@ export function updateStoryClipMeta(
 ): InteractiveStoryDraftContent {
   let found = false;
   const nodes = content.graph.nodes.map((node) => {
-    if (node.nodeId !== nodeId) return node;
+    if (node.nodeId !== nodeId || node.kind !== "clip") return node;
     found = true;
     return { ...node, ...patch };
   });
   if (!found) throw error("CLIP_NOT_FOUND", `Unknown clip node ${nodeId}.`);
   return { ...content, graph: { ...content.graph, nodes } };
+}
+
+export function updateStoryWorldNode(
+  content: InteractiveStoryDraftContent,
+  nodeId: string,
+  patch: Partial<
+    Pick<StoryWorldGraphNode, "worldId" | "name" | "entryInstruction" | "maxExperienceSeconds">
+  >
+): InteractiveStoryDraftContent {
+  const source = requireWorld(content, nodeId);
+  return replaceGraphNode(content, nodeId, { ...source, ...patch });
+}
+
+export function replaceStoryNodeInteractions(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  interactions: StoryClipGraphNode["interactions"]
+): InteractiveStoryDraftContent {
+  const source = requireClip(content, sourceNodeId);
+  return replaceGraphNode(content, sourceNodeId, { ...source, interactions });
 }
 
 export function duplicateClipNode(
@@ -313,11 +368,11 @@ export function connectSceneContinuation(
   targetNodeId: string,
   options: { allowExternalTarget?: boolean } = {}
 ): InteractiveStoryDraftContent {
-  const source = requireClip(content, sourceNodeId);
+  const source = requireFlowNode(content, sourceNodeId);
   if (options.allowExternalTarget) assertStableId(targetNodeId);
   else requireTargetNode(content, targetNodeId);
   if (source.exit.kind !== "auto") {
-    throw error("SOURCE_EXIT_KIND_MISMATCH", `Clip ${sourceNodeId} is not automatic.`);
+    throw error("SOURCE_EXIT_KIND_MISMATCH", `Node ${sourceNodeId} is not automatic.`);
   }
   return source.exit.nextNodeId === targetNodeId
     ? content
@@ -332,13 +387,13 @@ export function disconnectSceneContinuation(
   sourceNodeId: string,
   targetNodeId?: string
 ): InteractiveStoryDraftContent {
-  const source = requireClip(content, sourceNodeId);
+  const source = requireFlowNode(content, sourceNodeId);
   if (
     source.exit.kind !== "auto" ||
     source.exit.nextNodeId === null ||
     (targetNodeId !== undefined && source.exit.nextNodeId !== targetNodeId)
   ) {
-    throw error("BRANCH_NOT_FOUND", `Clip ${sourceNodeId} has no matching continuation.`);
+    throw error("BRANCH_NOT_FOUND", `Node ${sourceNodeId} has no matching continuation.`);
   }
   return replaceGraphNode(content, sourceNodeId, {
     ...source,
@@ -348,8 +403,13 @@ export function disconnectSceneContinuation(
 
 export type StoryBranchSelector =
   | { kind: "continuation"; sourceNodeId: string; targetNodeId: string }
-  | { kind: "decision"; sourceNodeId: string }
-  | { kind: "choice"; sourceNodeId: string; choiceId: string };
+  | { kind: "choice"; sourceNodeId: string; choiceId: string }
+  | {
+      kind: "interaction";
+      sourceNodeId: string;
+      interactionId: string;
+      outcome: "success" | "failure" | "timeout";
+    };
 
 export function disconnectStoryBranch(
   content: InteractiveStoryDraftContent,
@@ -358,114 +418,34 @@ export function disconnectStoryBranch(
   if (selector.kind === "continuation") {
     return disconnectSceneContinuation(content, selector.sourceNodeId, selector.targetNodeId);
   }
-  if (selector.kind === "decision") return convertExitToAuto(content, selector.sourceNodeId);
-  return disconnectChoiceTarget(content, selector.sourceNodeId, selector.choiceId);
-}
-
-export type StoryDraftGraphIssueCode =
-  | "duplicate-node-id"
-  | "duplicate-clip-key"
-  | "duplicate-choice-id"
-  | "missing-entry-node"
-  | "unknown-entry-node"
-  | "unknown-target-node"
-  | "empty-choice-prompt"
-  | "empty-choice-label"
-  | "incomplete-choice-exit";
-
-export interface StoryDraftGraphIssue {
-  code: StoryDraftGraphIssueCode;
-  path: Array<string | number>;
-  message: string;
-}
-
-export function validateStoryDraftGraph(
-  content: InteractiveStoryDraftContent,
-  options: { requireComplete?: boolean } = {}
-): StoryDraftGraphIssue[] {
-  const issues: StoryDraftGraphIssue[] = [];
-  const nodeIds = duplicateAwareSet(
-    content.graph.nodes.map((node) => node.nodeId),
-    "duplicate-node-id",
-    ["graph", "nodes"],
-    issues
-  );
-  duplicateAwareSet(
-    content.graph.nodes.map((node) => node.clipKey),
-    "duplicate-clip-key",
-    ["graph", "nodes"],
-    issues
-  );
-  if (options.requireComplete && !content.graph.entryNodeId) {
-    issues.push({
-      code: "missing-entry-node",
-      path: ["graph", "entryNodeId"],
-      message: "A publishable film needs an entry clip.",
-    });
-  } else if (content.graph.entryNodeId && !nodeIds.has(content.graph.entryNodeId)) {
-    issues.push({
-      code: "unknown-entry-node",
-      path: ["graph", "entryNodeId"],
-      message: `Unknown entry clip ${content.graph.entryNodeId}.`,
+  if (selector.kind === "interaction") {
+    const source = requireClip(content, selector.sourceNodeId);
+    const interaction = source.interactions.find(
+      (candidate) => candidate.interactionId === selector.interactionId
+    );
+    const action = interaction?.outcomes[selector.outcome];
+    if (!interaction || !action || action.kind !== "goto") {
+      throw error(
+        "BRANCH_NOT_FOUND",
+        `Clip ${selector.sourceNodeId} has no matching interaction branch.`
+      );
+    }
+    return replaceGraphNode(content, selector.sourceNodeId, {
+      ...source,
+      interactions: source.interactions.map((candidate) =>
+        candidate.interactionId === selector.interactionId
+          ? {
+              ...candidate,
+              outcomes:
+                selector.outcome === "success"
+                  ? { ...candidate.outcomes, success: { kind: "continue" } }
+                  : omitInteractionOutcome(candidate.outcomes, selector.outcome),
+            }
+          : candidate
+      ),
     });
   }
-  content.graph.nodes.forEach((node, nodeIndex) => {
-    const exitPath: Array<string | number> = ["graph", "nodes", nodeIndex, "exit"];
-    if (node.exit.kind === "auto") {
-      if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
-        issues.push({
-          code: "unknown-target-node",
-          path: [...exitPath, "nextNodeId"],
-          message: `Unknown target clip ${node.exit.nextNodeId}.`,
-        });
-      }
-      return;
-    }
-    if (
-      options.requireComplete &&
-      Object.values(node.exit.prompt).every((prompt) => !prompt.trim())
-    ) {
-      issues.push({
-        code: "empty-choice-prompt",
-        path: [...exitPath, "prompt"],
-        message: "A choice needs a prompt.",
-      });
-    }
-    if (options.requireComplete && node.exit.choices.length < 2) {
-      issues.push({
-        code: "incomplete-choice-exit",
-        path: [...exitPath, "choices"],
-        message: "A choice needs at least two options.",
-      });
-    }
-    const choiceIds = new Set<string>();
-    node.exit.choices.forEach((choice, choiceIndex) => {
-      const choicePath = [...exitPath, "choices", choiceIndex];
-      if (choiceIds.has(choice.choiceId)) {
-        issues.push({
-          code: "duplicate-choice-id",
-          path: [...choicePath, "choiceId"],
-          message: `Duplicate choice ${choice.choiceId}.`,
-        });
-      }
-      choiceIds.add(choice.choiceId);
-      if (options.requireComplete && Object.values(choice.label).every((label) => !label.trim())) {
-        issues.push({
-          code: "empty-choice-label",
-          path: [...choicePath, "label"],
-          message: "A choice needs a label.",
-        });
-      }
-      if (!nodeIds.has(choice.nextNodeId)) {
-        issues.push({
-          code: "unknown-target-node",
-          path: [...choicePath, "nextNodeId"],
-          message: `Unknown target clip ${choice.nextNodeId}.`,
-        });
-      }
-    });
-  });
-  return issues;
+  return disconnectChoiceTarget(content, selector.sourceNodeId, selector.choiceId);
 }
 
 function appendGraphNode(
@@ -482,17 +462,59 @@ function appendGraphNode(
 }
 
 function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): StoryGraphNode {
+  if (node.kind === "world") {
+    return {
+      ...node,
+      exit: node.exit.nextNodeId === deletedNodeId ? { kind: "auto", nextNodeId: null } : node.exit,
+    };
+  }
+  const interactions = node.interactions.map((interaction) => ({
+    ...interaction,
+    outcomes: removeDeletedInteractionTargets(interaction.outcomes, deletedNodeId),
+  }));
   if (node.exit.kind === "auto") {
-    return node.exit.nextNodeId === deletedNodeId
-      ? { ...node, exit: { kind: "auto", nextNodeId: null } }
-      : node;
+    return {
+      ...node,
+      interactions,
+      exit: node.exit.nextNodeId === deletedNodeId ? { kind: "auto", nextNodeId: null } : node.exit,
+    };
   }
   return {
     ...node,
+    interactions,
     exit: {
       ...node.exit,
       choices: node.exit.choices.filter((choice) => choice.nextNodeId !== deletedNodeId),
     },
+  };
+}
+
+function omitInteractionOutcome(
+  outcomes: StoryClipGraphNode["interactions"][number]["outcomes"],
+  outcome: "failure" | "timeout"
+): StoryClipGraphNode["interactions"][number]["outcomes"] {
+  const { [outcome]: _removed, ...remaining } = outcomes;
+  return remaining;
+}
+
+function removeDeletedInteractionTargets(
+  outcomes: StoryClipGraphNode["interactions"][number]["outcomes"],
+  deletedNodeId: string
+): StoryClipGraphNode["interactions"][number]["outcomes"] {
+  const success =
+    outcomes.success.kind === "goto" && outcomes.success.nodeId === deletedNodeId
+      ? ({ kind: "continue" } as const)
+      : outcomes.success;
+  return {
+    success,
+    ...(outcomes.failure &&
+    !(outcomes.failure.kind === "goto" && outcomes.failure.nodeId === deletedNodeId)
+      ? { failure: outcomes.failure }
+      : {}),
+    ...(outcomes.timeout &&
+    !(outcomes.timeout.kind === "goto" && outcomes.timeout.nodeId === deletedNodeId)
+      ? { timeout: outcomes.timeout }
+      : {}),
   };
 }
 
@@ -520,8 +542,23 @@ function replaceChoiceExit(
 
 function requireClip(content: InteractiveStoryDraftContent, nodeId: string): ClipGraphNode {
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node) throw error("CLIP_NOT_FOUND", `Unknown clip ${nodeId}.`);
+  if (!node || node.kind !== "clip") throw error("CLIP_NOT_FOUND", `Unknown clip ${nodeId}.`);
   return node;
+}
+
+function requireWorld(content: InteractiveStoryDraftContent, nodeId: string): StoryWorldGraphNode {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node || node.kind !== "world")
+    throw error("NODE_NOT_FOUND", `Unknown world node ${nodeId}.`);
+  return node;
+}
+
+function requireFlowNode(content: InteractiveStoryDraftContent, nodeId: string): FlowGraphNode {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node || node.exit.kind !== "auto") {
+    throw error("SOURCE_EXIT_KIND_MISMATCH", `Node ${nodeId} is not an automatic flow node.`);
+  }
+  return node as FlowGraphNode;
 }
 
 function requireChoiceClip(content: InteractiveStoryDraftContent, nodeId: string): ChoiceClipNode {
@@ -554,7 +591,7 @@ function assertAvailableNodeId(content: InteractiveStoryDraftContent, value: str
 
 function assertAvailableClipKey(content: InteractiveStoryDraftContent, value: string): string {
   const clipKey = assertClipKey(value);
-  if (content.graph.nodes.some((node) => node.clipKey === clipKey)) {
+  if (content.graph.nodes.some((node) => node.kind === "clip" && node.clipKey === clipKey)) {
     throw error("DUPLICATE_CLIP_KEY", `Clip key ${clipKey} already exists.`);
   }
   return clipKey;
@@ -620,22 +657,6 @@ function allocateClipKey(existing: string[], preferred: string): string {
     const candidate = `${base.slice(0, MAX_CLIP_KEY_LENGTH - tail.length)}${tail}`;
     if (!values.has(candidate)) return candidate;
   }
-}
-
-function duplicateAwareSet(
-  values: string[],
-  code: "duplicate-node-id" | "duplicate-clip-key",
-  path: Array<string | number>,
-  issues: StoryDraftGraphIssue[]
-): Set<string> {
-  const result = new Set<string>();
-  values.forEach((value, index) => {
-    if (result.has(value)) {
-      issues.push({ code, path: [...path, index], message: `Duplicate identifier ${value}.` });
-    }
-    result.add(value);
-  });
-  return result;
 }
 
 function error(code: StoryDraftMutationErrorCode, message: string): StoryDraftMutationError {
