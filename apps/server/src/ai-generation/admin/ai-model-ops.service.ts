@@ -873,7 +873,7 @@ type ProductPriceBand = {
   defaultPoints: number;
   currency: string;
   pricingVersion: string;
-  unit: 'per_output';
+  unit: 'per_output' | 'per_character';
   minLabel: string | null;
   maxLabel: string | null;
   defaultLabel: string | null;
@@ -905,7 +905,7 @@ function summarizeProductPricing(value: unknown): ProductPriceBand | null {
       defaultPoints: defaultEstimate.sellPoints,
       currency: policy.currency,
       pricingVersion: policy.version,
-      unit: 'per_output',
+      unit: policy.mode === 'per_character' ? 'per_character' : 'per_output',
       minLabel: min.label,
       maxLabel: max.label,
       defaultLabel: labelFromSelection(defaultEstimate.selection),
@@ -931,19 +931,38 @@ function priceBandCandidates(policy: AiProductPricingPolicy) {
     const candidates: Array<{ points: number; label: string | null }> = [];
     for (const resolution of Object.keys(policy.pointsPerSecond)) {
       for (const seconds of [policy.minSeconds, policy.maxSeconds]) {
-        const estimate = estimateProductModelPoints({
-          policy,
-          numOutputs: 1,
-          resolution,
-          duration: seconds,
-        });
-        candidates.push({
-          points: estimate.sellPoints,
-          label: labelFromSelection(estimate.selection),
-        });
+        for (const generateAudio of policy.videoOnlyPointsPerSecond
+          ? [true, false]
+          : [undefined]) {
+          const estimate = estimateProductModelPoints({
+            policy,
+            numOutputs: 1,
+            resolution,
+            duration: seconds,
+            generateAudio,
+          });
+          candidates.push({
+            points: estimate.sellPoints,
+            label: labelFromSelection(estimate.selection),
+          });
+        }
       }
     }
     return candidates;
+  }
+
+  if (policy.mode === 'per_character') {
+    return [policy.minCharacters, policy.maxCharacters].map((characters) => {
+      const estimate = estimateProductModelPoints({
+        policy,
+        numOutputs: 1,
+        text: 'x'.repeat(characters),
+      });
+      return {
+        points: estimate.sellPoints,
+        label: labelFromSelection(estimate.selection),
+      };
+    });
   }
 
   const candidates: Array<{ points: number; label: string | null }> = [];
@@ -968,12 +987,16 @@ function labelFromSelection(selection: {
   resolution?: string;
   quality?: string;
   seconds?: number;
+  characters?: number;
 }): string | null {
   return (
     [
       selection.resolution,
       selection.quality,
       selection.seconds !== undefined ? `${selection.seconds}s` : undefined,
+      selection.characters !== undefined
+        ? `${selection.characters} characters`
+        : undefined,
     ]
       .filter(Boolean)
       .join(' / ') || null

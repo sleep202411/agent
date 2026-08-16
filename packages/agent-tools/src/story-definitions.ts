@@ -2,6 +2,7 @@ import {
   StoryAgentCharacterSchema,
   StoryAgentClipKeySchema,
   StoryAgentGraphNodeSchema,
+  StoryAgentHotspotInteractionSchema,
   StoryAgentLocalizedTextSchema,
   StoryAgentStableIdSchema,
   StoryPatchOperationsSchema,
@@ -88,6 +89,22 @@ export const StoryEditNodeInputSchema = StoryMutationBaseSchema.extend({
     (value) => value.name !== undefined || value.description !== undefined,
     "At least one narrative field is required."
   );
+
+/**
+ * Semantic interaction writes deliberately replace the canonical interaction
+ * by id. The model never has to reconstruct the containing scene or emit raw
+ * StoryPatch operations, and manual editing and Agent editing therefore share
+ * exactly the same interaction contract.
+ */
+export const StoryPutInteractionInputSchema = StoryMutationBaseSchema.extend({
+  nodeId: StoryAgentStableIdSchema,
+  interaction: StoryAgentHotspotInteractionSchema,
+}).strict();
+
+export const StoryRemoveInteractionInputSchema = StoryMutationBaseSchema.extend({
+  nodeId: StoryAgentStableIdSchema,
+  interactionId: StoryAgentStableIdSchema,
+}).strict();
 
 export const StoryRemoveSubtreeInputSchema = StoryMutationBaseSchema.extend({
   nodeId: StoryAgentStableIdSchema,
@@ -185,6 +202,24 @@ export const STORY_AGENT_OS_TOOLS = [
     kind: "command",
     risk: "sensitive",
     inputSchema: StoryEditNodeInputSchema,
+    outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.putInteraction",
+    description:
+      "Create or replace one scene interaction by interactionId using the same tap, swipe, press-hold, timing, hotspot, and outcome protocol as the visual editor.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryPutInteractionInputSchema,
+    outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.removeInteraction",
+    description:
+      "Remove one scene interaction by interactionId without changing the scene's video or narrative topology.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryRemoveInteractionInputSchema,
     outputSchema: StoryMutationOutputSchema,
   },
   {

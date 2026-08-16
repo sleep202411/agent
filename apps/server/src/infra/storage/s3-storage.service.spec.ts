@@ -4,7 +4,6 @@
  * hint about which input broke it. Signing is offline: getSignedUrl never
  * issues a request, so throwaway credentials produce the real URL.
  */
-import { CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { S3CompatibleStorageService } from './s3-storage.service';
 
 const R2_HOST = 'c378107772065c0671dc6b2a00c06412.r2.cloudflarestorage.com';
@@ -16,6 +15,7 @@ const R2_ENV: Record<string, string> = {
   S3_ACCESS_KEY_ID: 'access-key-id-example',
   S3_ACCESS_KEY_SECRET: 'access-key-secret-example',
   S3_FORCE_PATH_STYLE: 'true',
+  MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: 'https://r2.fizzdragon.com',
 };
 
 /** Env is read in the constructor, so it only has to hold for the `new`. */
@@ -49,6 +49,24 @@ const checksumParams = (url: URL): string[] =>
   );
 
 describe(S3CompatibleStorageService.name, () => {
+  it('reports every missing R2 value before the service is selected', () => {
+    const service = buildService({
+      S3_ACCESS_KEY_ID: undefined,
+      S3_ACCESS_KEY_SECRET: undefined,
+      MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: undefined,
+    });
+
+    expect(() => service.assertConfigured('global output storage')).toThrow(
+      'S3_ACCESS_KEY_ID, S3_ACCESS_KEY_SECRET, MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE',
+    );
+  });
+
+  it('accepts a complete R2 configuration', () => {
+    expect(() =>
+      buildService().assertConfigured('global output storage'),
+    ).not.toThrow();
+  });
+
   it('signs upload PUTs over host + content-type and nothing else', async () => {
     const result = await buildService().createUploadUrl({
       storageKey: 'staging/clip.mp4',
@@ -119,38 +137,5 @@ describe(S3CompatibleStorageService.name, () => {
     const url = new URL(result.url);
     expect(url.host).toBe(`fizzdragon-media.${R2_HOST}`);
     expect(url.pathname).toBe('/staging/clip.mp4');
-  });
-
-  it('bootstraps a missing local bucket once', async () => {
-    const service = buildService({
-      S3_AUTO_CREATE_BUCKET: 'true',
-    });
-    const send = jest
-      .fn()
-      .mockRejectedValueOnce(
-        Object.assign(new Error('bucket missing'), {
-          name: 'NotFound',
-          $metadata: { httpStatusCode: 404 },
-        }),
-      )
-      .mockResolvedValue(undefined);
-    Object.defineProperty(service, 'client', { value: { send } });
-
-    await expect(service.isHealthy()).resolves.toBe(true);
-    expect(send.mock.calls[0]?.[0]).toBeInstanceOf(HeadBucketCommand);
-    expect(send.mock.calls[1]?.[0]).toBeInstanceOf(CreateBucketCommand);
-
-    await expect(service.isHealthy()).resolves.toBe(true);
-    expect(send).toHaveBeenCalledTimes(3);
-    expect(send.mock.calls[2]?.[0]).toBeInstanceOf(HeadBucketCommand);
-  });
-
-  it('refuses local bucket auto-creation in production', () => {
-    expect(() =>
-      buildService({
-        NODE_ENV: 'production',
-        S3_AUTO_CREATE_BUCKET: 'true',
-      }),
-    ).toThrow(/must not be enabled in production/);
   });
 });

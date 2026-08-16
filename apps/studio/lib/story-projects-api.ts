@@ -151,6 +151,49 @@ export interface StoryGraphChoice {
   nextNodeId: string;
 }
 
+export type StoryInteractionAction =
+  | { kind: "continue" }
+  | { kind: "seek"; timeMs: number }
+  | { kind: "goto"; nodeId: string };
+
+export type StoryInteractionTrigger =
+  | { kind: "tap" }
+  | { kind: "swipe"; direction: "up" | "down" | "left" | "right" }
+  | {
+      kind: "press-hold";
+      durationMs: number;
+      /**
+       * Timeline-control charge: the clip pauses while the input window is
+       * open and only advances while the pointer is held, so playback
+       * position is the charge progress. Optional because the server fills
+       * the legacy default (false) when omitted.
+       */
+      controlTimeline?: boolean;
+    };
+
+export interface StoryInteractionOutcomes {
+  success: StoryInteractionAction;
+  failure?: StoryInteractionAction;
+  timeout?: StoryInteractionAction;
+}
+
+export interface StoryHotspotInteraction {
+  kind: "hotspot";
+  interactionId: string;
+  label: Record<string, string>;
+  trigger: StoryInteractionTrigger;
+  rect: { x: number; y: number; width: number; height: number };
+  startMs: number;
+  endMs: number;
+  /**
+   * Safe branch frame: a resolved interaction keeps playing the current clip
+   * until this timestamp before the branch cut lands. Omitted means the
+   * window end (legacy cut-on-resolution behavior).
+   */
+  branchAtMs?: number;
+  outcomes: StoryInteractionOutcomes;
+}
+
 /** A choice shown when its clip finishes. */
 export interface StoryChoiceExit {
   kind: "choice";
@@ -159,14 +202,27 @@ export interface StoryChoiceExit {
   choices: StoryGraphChoice[];
 }
 
-export interface StoryGraphNode {
+export interface StoryClipGraphNode {
   kind: "clip";
   nodeId: string;
   clipKey: string;
   name?: string;
   description?: string;
+  interactions: StoryHotspotInteraction[];
   exit: { kind: "auto"; nextNodeId: string | null } | StoryChoiceExit;
 }
+
+export interface StoryWorldGraphNode {
+  kind: "world";
+  nodeId: string;
+  worldId: string | null;
+  name?: string;
+  entryInstruction?: string;
+  maxExperienceSeconds: 60 | 90 | 120;
+  exit: { kind: "auto"; nextNodeId: string | null };
+}
+
+export type StoryGraphNode = StoryClipGraphNode | StoryWorldGraphNode;
 
 export interface InteractiveStoryDraftContent {
   storyBible: {
@@ -1077,7 +1133,22 @@ export function storyApiErrorBody(error: unknown): Record<string, unknown> | nul
 }
 
 export function storyApiErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiRequestError && error.message.trim()) return error.message;
+  if (error instanceof ApiRequestError) {
+    const body = storyApiErrorBody(error);
+    const issues = Array.isArray(body?.issues) ? body.issues : [];
+    const issueDetails = issues
+      .map((issue) => {
+        if (!issue || typeof issue !== "object") return null;
+        const record = issue as Record<string, unknown>;
+        const message = typeof record.message === "string" ? record.message.trim() : "";
+        if (!message) return null;
+        const path = typeof record.path === "string" ? record.path.trim() : "";
+        return path ? `${path}: ${message}` : message;
+      })
+      .filter((issue): issue is string => Boolean(issue));
+    if (issueDetails.length > 0) return issueDetails.join("; ");
+    if (error.message.trim()) return error.message;
+  }
   if (error instanceof Error && error.message.trim()) return error.message;
   return fallback;
 }

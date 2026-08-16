@@ -8,7 +8,7 @@ import {
   setEntryNode,
 } from "./story-project-canvas-mutations";
 
-type BlankDropSource = Pick<StoryCanvasNodeData, "kind" | "nodeId" | "sourceNodeId" | "exitKind">;
+type BlankDropSource = Pick<StoryCanvasNodeData, "kind" | "nodeId" | "exitKind">;
 
 export type BlankDropConnectionPlan =
   | { kind: "entry" }
@@ -36,16 +36,15 @@ export function resolveBlankDropConnectionPlan(
 ): BlankDropConnectionPlan | null {
   if (!sourceHandle) return null;
 
-  if (source.kind === "decision") {
-    if (!source.sourceNodeId) return null;
+  if (source.kind === "clip" && source.exitKind === "choice") {
     if (sourceHandle.startsWith("choice-new:")) {
-      return { kind: "new-choice", sourceNodeId: source.sourceNodeId };
+      return { kind: "new-choice", sourceNodeId: source.nodeId };
     }
     const choiceMatch = sourceHandle.match(/^choice:(.+)$/u);
     return choiceMatch
       ? {
           kind: "existing-choice",
-          sourceNodeId: source.sourceNodeId,
+          sourceNodeId: source.nodeId,
           choiceId: choiceMatch[1]!,
         }
       : null;

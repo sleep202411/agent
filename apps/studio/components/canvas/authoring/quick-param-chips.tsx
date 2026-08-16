@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   schemaFields,
+  normalizeSchemaFieldNumber,
   type FizzAiModel,
   type ModelSettings,
   type SchemaFieldDescriptor,
@@ -66,7 +67,11 @@ function ParamChip({
     const n = Number(value ?? field.default ?? field.min ?? 1) || 1;
     label = <span>×{n}</span>;
   } else {
-    const v = value ?? field.default ?? field.enum?.[0] ?? "";
+    const raw = value ?? field.default ?? field.enum?.[0] ?? "";
+    const v =
+      typeof raw === "number" && (field.type === "number" || field.type === "integer")
+        ? normalizeSchemaFieldNumber(raw, field)
+        : raw;
     label = (
       <span className="flex items-center gap-1 whitespace-nowrap">
         {isDuration ? <IconClock className="size-3.5 opacity-70" stroke={1.8} /> : null}

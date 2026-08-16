@@ -29,6 +29,7 @@ import { useDismiss } from "@/lib/use-dismiss";
 import { ComposerQuickSettings } from "@/components/canvas/authoring/composer-quick-settings";
 import { ModeMenu } from "@/components/canvas/authoring/mode-menu";
 import { ModelPicker } from "@/components/canvas/authoring/model-picker";
+import type { StudioModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   hasRenderableModelSettings,
   ModelSettings as ModelSettingsPanel,
@@ -38,6 +39,7 @@ import {
   type PromptTextareaHandle,
 } from "@/components/canvas/authoring/prompt-textarea";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 
 gsap.registerPlugin(useGSAP);
 
@@ -100,7 +102,7 @@ export function GenerationPromptComposer({
   className,
 }: {
   ariaLabel?: string;
-  modality: "image" | "video";
+  modality: StudioModality;
   catalog: FizzAiCatalog | undefined;
   model: FizzAiModel | undefined;
   modelFallbackLabel?: string;
@@ -265,9 +267,14 @@ export function GenerationPromptComposer({
     }
   );
 
-  const ModalityIcon = modality === "image" ? IconPhoto : IconVideo;
+  const ModalityIcon =
+    modality === "image" ? IconPhoto : modality === "video" ? IconVideo : IconAudioWaveform;
   const expandedTitle =
-    modality === "image" ? t("expandedComposer.imageTitle") : t("expandedComposer.videoTitle");
+    modality === "image"
+      ? t("expandedComposer.imageTitle")
+      : modality === "video"
+        ? t("expandedComposer.videoTitle")
+        : t("expandedComposer.audioTitle");
 
   const renderComposer = (presentation: "compact" | "expanded") => {
     const isExpanded = presentation === "expanded";

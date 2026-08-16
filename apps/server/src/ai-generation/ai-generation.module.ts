@@ -47,11 +47,21 @@ import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.servi
 import { MiniMaxClient } from './providers/minimax/minimax-client';
 import { MiniMaxConfigService } from './providers/minimax/minimax-config.service';
 import { MiniMaxProviderAdapter } from './providers/minimax/minimax-provider.adapter';
+import { GoogleVertexCatalogService } from './providers/google-vertex/google-vertex-catalog.service';
+import { GoogleVertexClient } from './providers/google-vertex/google-vertex-client';
+import { GoogleVertexConfigService } from './providers/google-vertex/google-vertex-config.service';
+import { GoogleVertexMediaLoaderService } from './providers/google-vertex/google-vertex-media-loader.service';
+import { GoogleVertexProviderAdapter } from './providers/google-vertex/google-vertex-provider.adapter';
+import { BytePlusSpeechCatalogService } from './providers/byteplus-speech/byteplus-speech-catalog.service';
+import { BytePlusSpeechClient } from './providers/byteplus-speech/byteplus-speech-client';
+import { BytePlusSpeechConfigService } from './providers/byteplus-speech/byteplus-speech-config.service';
+import { BytePlusSpeechProviderAdapter } from './providers/byteplus-speech/byteplus-speech-provider.adapter';
 import { AiGenerationQueueService } from './queue.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
 import { AiGenerationWorkerService } from './worker.service';
+import { AiReferenceUrlPreparerService } from './reference-url-preparer.service';
 
 @Module({
   imports: [
@@ -82,6 +92,7 @@ import { AiGenerationWorkerService } from './worker.service';
     AiGenerationEtaService,
     AiGenerationValidatorService,
     AiPromptCompilerService,
+    AiReferenceUrlPreparerService,
     AiModelOpsService,
     ProviderAccountReconciler,
     ProviderRegistry,
@@ -105,6 +116,19 @@ import { AiGenerationWorkerService } from './worker.service';
     BytePlusClient,
     BytePlusReferencePreparerService,
     BytePlusProviderAdapter,
+
+    // Provider: BytePlus Seed Speech (Seed Audio + Seed TTS)
+    BytePlusSpeechConfigService,
+    BytePlusSpeechCatalogService,
+    BytePlusSpeechClient,
+    BytePlusSpeechProviderAdapter,
+
+    // Provider: Google Vertex AI (Nano Banana + Veo)
+    GoogleVertexConfigService,
+    GoogleVertexCatalogService,
+    GoogleVertexMediaLoaderService,
+    GoogleVertexClient,
+    GoogleVertexProviderAdapter,
 
     // Provider: Agnes AI
     AgnesConfigService,
@@ -143,6 +167,8 @@ export class AiGenerationModule implements OnModuleInit {
     private readonly fal: FalProviderAdapter,
     private readonly bailian: BailianProviderAdapter,
     private readonly bytePlus: BytePlusProviderAdapter,
+    private readonly bytePlusSpeech: BytePlusSpeechProviderAdapter,
+    private readonly googleVertex: GoogleVertexProviderAdapter,
     private readonly agnes: AgnesProviderAdapter,
     private readonly minimax: MiniMaxProviderAdapter,
   ) {}
@@ -151,6 +177,8 @@ export class AiGenerationModule implements OnModuleInit {
     this.registry.register(this.fal);
     this.registry.register(this.bailian);
     this.registry.register(this.bytePlus);
+    this.registry.register(this.bytePlusSpeech);
+    this.registry.register(this.googleVertex);
     this.registry.register(this.agnes);
     this.registry.register(this.minimax);
   }

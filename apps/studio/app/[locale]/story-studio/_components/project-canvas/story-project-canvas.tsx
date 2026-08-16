@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import {
   applyNodeChanges,
@@ -36,24 +35,23 @@ import {
   IconArrowLeft,
   IconArrowUp,
   IconCheck,
+  IconChevronDown,
   IconCloudUpload,
   IconDownload,
-  IconGitBranch,
+  IconFocusCentered,
   IconLoader2,
-  IconBook,
   IconMovie,
-  IconUsers,
   IconPlayerPlay,
   IconPlus,
   IconRefresh,
-  IconSparkles,
   IconTrash,
-  IconUser,
+  IconWorld,
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
@@ -61,6 +59,7 @@ import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
 import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
+import type { CanvasTidyLayoutOptions } from "@/components/canvas/canvas-tidy-layout";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
@@ -79,6 +78,7 @@ import {
 import type { MediaManualPlaybackLease } from "@/components/media/media-preview-coordinator";
 import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/studio-video-player";
 import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
+import { WorldModelExperienceRenderer } from "@/components/experience-runtime/world-model-experience-renderer";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -86,6 +86,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
+import { listWorlds, worldModelQueryKeys } from "@/lib/world-model-api";
 import {
   addStoryCandidateAsset,
   canvasLayoutRevisionConflict,
@@ -112,14 +113,17 @@ import {
   type StoryVideoLibraryItem,
   type StoryCanvasPosition,
   type StoryCanvasLayout,
+  type StoryClipGraphNode,
+  type StoryGraphNode,
+  type StoryInteractionAction,
+  type StoryInteractionOutcomes,
+  type StoryInteractionTrigger,
+  type StoryWorldGraphNode,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
   estimateStoryNodeHeight,
-  characterCanvasNodeId,
-  rejectsStoryCastWiring,
-  syntheticDecisionNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
 } from "./story-project-canvas-model";
@@ -148,7 +152,7 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
-import { StoryChapterDropdown } from "./story-chapter-dropdown";
+import { StoryCanvasSidebar } from "./story-canvas-sidebar";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
   coordinateStoryCanvasNavigation,
@@ -176,9 +180,12 @@ import {
   convertExitToAuto,
   convertSceneExitToChoice,
   createClipNode,
+  createWorldNode,
   moveChoiceOption,
   removeChoiceOption,
-  setEntryNode,
+  replaceStoryNodeInteractions,
+  updateStoryClipMeta,
+  updateStoryWorldNode,
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
@@ -196,13 +203,20 @@ import {
 import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-picker-dialog";
 import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector, type SceneExitIntent } from "./story-node-inspector";
-import { StoryPublicationDialog } from "./story-publication-dialog";
+import { StoryWorldBindingControl, StoryWorldNodeEditor } from "./story-world-node-editor";
+import { StoryInteractionEditor } from "./story-interaction-editor";
+import { migrateLegacyStoryHotspotIds } from "./story-interaction-ids";
+import type {
+  StoryInteractionActionDraft,
+  StoryInteractionDraft,
+  StoryInteractionOutcomesDraft,
+  StoryInteractionTriggerDraft,
+} from "./story-interaction-types";
 import {
-  createStoryCharacter,
-  deleteStoryCharacter,
-  updateStoryCharacter,
-  updateStoryClipMeta,
-} from "./story-foundation-mutations";
+  applyActiveStoryCanvasCapabilities,
+  STORY_WORLD_EXPERIENCE_AVAILABLE,
+} from "./story-world-feature-policy";
+import { StoryPublicationDialog } from "./story-publication-dialog";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
 import { useStoryPublication } from "./use-story-publication";
@@ -244,6 +258,37 @@ type StoryCanvasChoiceContextValue = {
   moveChoice: (sourceNodeId: string, choiceId: string, direction: "up" | "down") => void;
   removeChoice: (sourceNodeId: string, choiceId: string) => void;
 };
+type StoryCanvasWorldContextValue = {
+  projectId: string;
+  worlds: WorldModelWorld[];
+  loading: boolean;
+  error: string | null;
+  canEdit: boolean;
+  canGenerate: boolean;
+  candidateAssets: StoryCandidateAsset[];
+  candidateAssetsLoading: boolean;
+  candidateAssetsError: string | null;
+  node: (nodeId: string) => StoryWorldGraphNode | null;
+  retry: () => void;
+  retryCandidateAssets: () => void;
+  uploadCandidateAsset: (
+    file: File,
+    onState: (state: StoryCandidateAssetUploadState) => void,
+    signal: AbortSignal
+  ) => Promise<StoryCandidateAsset>;
+  update: (
+    nodeId: string,
+    patch: Partial<
+      Pick<StoryWorldGraphNode, "worldId" | "entryInstruction" | "maxExperienceSeconds">
+    >
+  ) => void;
+  run: (nodeId: string, worldId: string) => void;
+};
+type StoryWorldRunState = {
+  worldId: string;
+  entryInstruction?: string;
+  maxExperienceSeconds: 60 | 90 | 120;
+};
 
 const NODE_TYPES = { storyCanvas: StoryGraphNodeCard };
 const DEFAULT_EDGE_OPTIONS = {
@@ -256,14 +301,16 @@ const STORY_PORT_COLORS = {
   flow: "rgba(255,255,255,0.72)",
   choice: "#5b9dff",
   ending: "#E52227",
-  cast: "rgba(255,255,255,0.34)",
 } as const;
-const STORY_MEMBERSHIP_EDGE_COLOR = "rgba(255,255,255,0.14)";
+const STORY_CANVAS_TIDY_LAYOUT = {
+  lanes: [],
+} satisfies CanvasTidyLayoutOptions<StoryCanvasNode>;
 const MIN_PLAYER_CHOICES = 2;
 const MAX_PLAYER_CHOICES = 6;
 
 const StoryCanvasFocusContext = createContext<string | null>(null);
 const StoryCanvasChoiceContext = createContext<StoryCanvasChoiceContextValue | null>(null);
+const StoryCanvasWorldContext = createContext<StoryCanvasWorldContextValue | null>(null);
 
 function StoryCanvasReactFlow({
   onInteractionStart,
@@ -311,10 +358,7 @@ function StoryProjectCanvasInner({
   const canvasT = useTranslations("canvas");
   const agentT = useTranslations("agentOs");
   const router = useRouter();
-  const { deleteElements, fitView, screenToFlowPosition } = useReactFlow<
-    StoryCanvasNode,
-    StoryCanvasEdge
-  >();
+  const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
   const queryClient = useQueryClient();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
@@ -326,11 +370,12 @@ function StoryProjectCanvasInner({
   const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
+  const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
   const [chapterMutationPendingId, setChapterMutationPendingId] = useState<string | null>(null);
   const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
   const focusedNodeId = storyCanvasInspectorNodeId(inspectorTarget);
-  const inspectorOpen = inspectorTarget.kind !== "closed";
   const [creatorMenu, setCreatorMenu] = useState<StoryNodeCreationMenuPlacement | null>(null);
   const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
     null
@@ -576,6 +621,14 @@ function StoryProjectCanvasInner({
   const project = workbenchProjection?.project ?? null;
   const video = workbenchProjection?.video ?? null;
   const authoringLocale = project?.defaultLocale ?? "en-US";
+  const worldsQuery = useQuery({
+    queryKey: worldModelQueryKeys.worlds(projectId),
+    queryFn: () => listWorlds(projectId),
+    enabled: Boolean(workspaceId) && STORY_WORLD_EXPERIENCE_AVAILABLE,
+    staleTime: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.some((world) => world.status === "generating") ? 3_000 : false,
+  });
 
   const cacheSavedDraft = useCallback(
     (saved: StoryWorkbench["draft"]) => {
@@ -640,12 +693,15 @@ function StoryProjectCanvasInner({
     hydratedChapterIdRef.current = workbench.chapter.id;
     revisionRef.current = workbench.draft.revision;
     setDraftRevision(workbench.draft.revision);
+    const adoptedContent = applyActiveStoryCanvasCapabilities(
+      migrateLegacyStoryHotspotIds(workbench.draft.content)
+    );
     savedSignatureRef.current = canonicalJsonString(workbench.draft.content);
-    latestContentRef.current = workbench.draft.content;
+    latestContentRef.current = adoptedContent;
     history.clear();
     setHistoryVersion((current) => current + 1);
     setContentChapterId(workbench.chapter.id);
-    setContent(workbench.draft.content);
+    setContent(adoptedContent);
     setSaveState("idle");
   }, [history, workbenchProjection]);
 
@@ -1036,7 +1092,7 @@ function StoryProjectCanvasInner({
 
   const projectionCopy = {
     clip: t("projection.clip"),
-    decision: t("projection.decision"),
+    world: t("projection.world"),
   };
   const model = useMemo(
     () =>
@@ -1046,7 +1102,8 @@ function StoryProjectCanvasInner({
             project?.defaultLocale ?? "en-US",
             video?.clips ?? [],
             projectionCopy,
-            project?.frameProfile
+            project?.frameProfile,
+            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : []
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -1058,7 +1115,8 @@ function StoryProjectCanvasInner({
       project?.defaultLocale,
       project?.frameProfile,
       projectionCopy.clip,
-      projectionCopy.decision,
+      projectionCopy.world,
+      worldsQuery.data,
     ]
   );
   const editPolicy = resolveStoryCanvasEditPolicy({
@@ -1086,10 +1144,10 @@ function StoryProjectCanvasInner({
   const choiceDraftRequirements = useMemo(
     () =>
       model?.nodes.flatMap((node) =>
-        node.data.kind === "decision" && node.data.sourceNodeId
+        node.data.kind === "clip" && node.data.exitKind === "choice"
           ? [
               {
-                sourceNodeId: node.data.sourceNodeId,
+                sourceNodeId: node.data.nodeId,
                 choiceCount: node.data.choices?.length ?? 0,
               },
             ]
@@ -1101,7 +1159,7 @@ function StoryProjectCanvasInner({
     reconcilePendingChoiceDrafts(drafts, choiceDraftRequirements, (sourceNodeId, index) => ({
       sourceNodeId,
       draftId: `required-${index + 1}`,
-      label: t("decisionCard.defaultOption", {
+      label: t("interactionCard.defaultOption", {
         number:
           (choiceDraftRequirements.find((requirement) => requirement.sourceNodeId === sourceNodeId)
             ?.choiceCount ?? 0) +
@@ -1135,7 +1193,7 @@ function StoryProjectCanvasInner({
         {
           sourceNodeId,
           draftId: `draft-${pendingChoiceDraftSequenceRef.current}`,
-          label: t("decisionCard.defaultOption", {
+          label: t("interactionCard.defaultOption", {
             number:
               choiceCount +
               materialized.filter((draft) => draft.sourceNodeId === sourceNodeId).length +
@@ -1262,6 +1320,27 @@ function StoryProjectCanvasInner({
     await candidateAssets.refresh();
     if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
     await updateProjectCover(candidate.asset.id);
+  };
+  const uploadWorldOpeningFrame = async (
+    file: File,
+    onState: (state: StoryCandidateAssetUploadState) => void,
+    signal: AbortSignal
+  ): Promise<StoryCandidateAsset> => {
+    if (!workspaceId || !canMutateCanvasLayout) {
+      throw new Error(t("production.errors.action"));
+    }
+    const uploaded = await uploadFileViaSignedUrl(file, {
+      kind: "ai_reference_image",
+      workspaceId,
+      onProgress: (progress) => onState({ stage: "uploading", progress }),
+      signal,
+    });
+    if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+    onState({ stage: "processing" });
+    const candidate = await addStoryCandidateAsset(workspaceId, projectId, uploaded.mediaAssetId);
+    await candidateAssets.refresh();
+    if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
+    return candidate;
   };
 
   useEffect(() => {
@@ -1782,9 +1861,17 @@ function StoryProjectCanvasInner({
     () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
     [focusedNodeId, model?.nodes]
   );
+  const inspectorOpen = inspectorTarget.kind === "foundation" || focusedNode?.data.kind === "clip";
   const focusedClipVideo =
     focusedNode?.data.kind === "clip" ? (focusedNode.data.clipVideo ?? null) : null;
   const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
+  const interactionEditorNode =
+    content?.graph.nodes.find(
+      (node): node is StoryClipGraphNode =>
+        node.nodeId === interactionEditorNodeId && node.kind === "clip"
+    ) ?? null;
+  const interactionEditorClip =
+    video?.clips.find((clip) => clip.graphNodeId === interactionEditorNodeId) ?? null;
   const updateClipVideoSelection = useCallback(
     async (
       graphNodeId: string,
@@ -1933,7 +2020,7 @@ function StoryProjectCanvasInner({
   const layeredCanvasNodes = useMemo(
     () =>
       canvasNodes.map((node) => {
-        const zIndex = node.id === focusedNodeId ? 1 : 0;
+        const zIndex = node.id === focusedNodeId ? 100 : 0;
         return node.zIndex === zIndex ? node : { ...node, zIndex };
       }),
     [canvasNodes, focusedNodeId]
@@ -1943,19 +2030,14 @@ function StoryProjectCanvasInner({
       model?.edges.map((edge) => {
         const related =
           !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
-        const isMembership = edge.data.kind === "membership";
         return {
           ...edge,
-          // The membership tether reads as "belongs to this project", never story
-          // flow: it stays behind the flow edges and never lifts on focus.
-          zIndex: isMembership ? 0 : related ? 2 : 0,
+          zIndex: related ? 2 : 0,
           style: {
             ...DEFAULT_EDGE_OPTIONS.style,
-            strokeWidth: isMembership ? 1 : DEFAULT_EDGE_OPTIONS.style.strokeWidth,
-            opacity: isMembership ? (related ? 0.9 : 0.32) : related ? 1 : 0.18,
-            stroke: isMembership
-              ? STORY_MEMBERSHIP_EDGE_COLOR
-              : edge.data.kind === "choice" || edge.data.kind === "decision"
+            opacity: related ? 1 : 0.18,
+            stroke:
+              edge.data.kind === "choice" || edge.data.kind === "interaction"
                 ? STORY_PORT_COLORS.choice
                 : "rgba(255,255,255,0.34)",
           },
@@ -2040,6 +2122,7 @@ function StoryProjectCanvasInner({
   const tidyStoryCanvas = useCanvasTidy<StoryCanvasNode, StoryCanvasEdge>({
     estimateHeight: (node) => estimateStoryNodeHeight((node as StoryCanvasNode).data),
     edges: canvasEdges,
+    layoutOptions: STORY_CANVAS_TIDY_LAYOUT,
     onNodesChange: onCanvasNodesChange,
     onTidied: useCallback(
       (nextNodes: StoryCanvasNode[]) => commitCanvasLayout(nextNodes, readHistorySnapshot()),
@@ -2060,11 +2143,14 @@ function StoryProjectCanvasInner({
           nodePositions: currentSnapshot.nodePositions,
         }) !== layoutPayloadSignature(nextLayout);
 
-      latestContentRef.current = snapshot.content;
+      const restoredContent = applyActiveStoryCanvasCapabilities(
+        migrateLegacyStoryHotspotIds(snapshot.content)
+      );
+      latestContentRef.current = restoredContent;
       setPendingCompletionDrop(null);
       closeCreatorMenu();
       setGraphError(null);
-      setContent(snapshot.content);
+      setContent(restoredContent);
 
       if (!layoutChanged) return;
       pendingNodePositionsRef.current.clear();
@@ -2120,13 +2206,15 @@ function StoryProjectCanvasInner({
     // conflict, or permission change.
     if (!mutationBarrier.permits("content")) return false;
     const current = latestContentRef.current;
-    if (!current || next === current) return false;
+    if (!current) return false;
+    const normalizedNext = applyActiveStoryCanvasCapabilities(migrateLegacyStoryHotspotIds(next));
+    if (normalizedNext === current) return false;
     const snapshot = readHistorySnapshot(current);
     if (!snapshot) return false;
     history.capture(snapshot, { mergeKey: options.mergeKey });
     refreshHistoryState();
-    latestContentRef.current = next;
-    setContent(next);
+    latestContentRef.current = normalizedNext;
+    setContent(normalizedNext);
     return true;
   };
 
@@ -2175,34 +2263,15 @@ function StoryProjectCanvasInner({
     void persistLayoutRef.current(nextLayout);
   };
 
-  const createStoryElement = (
-    kind: StoryNodeCreationKind,
-    position: StoryCanvasPosition,
-    options?: { atDropPosition?: boolean }
-  ) => {
+  const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
     if (!content || !mutationBarrier.permits("layout")) return;
+    if (kind === "world" && !STORY_WORLD_EXPERIENCE_AVAILABLE) return;
     try {
-      let nextContent: InteractiveStoryDraftContent;
-      let createdCanvasNodeId: string;
-      // Characters are never wired into the story-flow graph; a fresh cast card
-      // is seeded in the cast lane left of the entry scene regardless of the
-      // click point that opened the creator.
-      let placement = position;
+      const result = kind === "world" ? createWorldNode(content) : createClipNode(content);
+      const nextContent = result.content;
+      const createdCanvasNodeId = result.created.nodeId;
 
-      if (kind === "clip") {
-        const result = createClipNode(content);
-        nextContent = result.content;
-        createdCanvasNodeId = result.created.nodeId;
-      } else if (kind === "character") {
-        const result = createStoryCharacter(content, { locale: authoringLocale });
-        nextContent = result.content;
-        createdCanvasNodeId = characterCanvasNodeId(result.created.id);
-        // A cast-anchor drag carries spatial intent; menu/dock entries don't
-        // and keep the tidy cast-lane default.
-        if (!options?.atDropPosition) placement = nextCastLanePosition(canvasNodesRef.current);
-      } else return;
-
-      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...placement });
+      pendingNodePositionsRef.current.set(createdCanvasNodeId, { ...position });
       if (commitContent(nextContent)) persistLayoutWithPendingPositions(nextContent);
       selectCanvasNodeExclusively(createdCanvasNodeId);
       setGraphError(null);
@@ -2253,58 +2322,43 @@ function StoryProjectCanvasInner({
     }
     const source = model.nodes.find((node) => node.id === connection.source);
     const target = model.nodes.find((node) => node.id === connection.target);
-    if (!source || !target) return;
+    if (!source || !target) {
+      return;
+    }
     const choiceDraftId =
-      source.data.kind === "decision" ? choiceDraftIdFromHandle(connection.sourceHandle) : null;
+      source.data.kind === "clip" && source.data.exitKind === "choice"
+        ? choiceDraftIdFromHandle(connection.sourceHandle)
+        : null;
     const createsChoice = choiceDraftId !== null;
     const pendingDraft = pendingChoiceDraftsRef.current.find(
-      (draft) => draft.sourceNodeId === source.data.sourceNodeId && draft.draftId === choiceDraftId
+      (draft) => draft.sourceNodeId === source.data.nodeId && draft.draftId === choiceDraftId
     );
     const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
     if (createsChoice && !pendingLabel) return;
-    // Character cards never participate in a story-flow connection in either direction.
-    if (
-      rejectsStoryCastWiring({
-        sourceKind: source.data.kind,
-        targetKind: target.data.kind,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
-      })
-    ) {
-      return;
-    }
     const committed = applyGraphMutation((current) => {
-      if (source.data.kind === "decision" && source.data.sourceNodeId) {
+      if (source.data.exitKind === "choice") {
         if (connection.sourceHandle?.startsWith("choice:")) {
           return connectChoiceTarget(
             current,
-            source.data.sourceNodeId,
+            source.data.nodeId,
             connection.sourceHandle.slice("choice:".length),
             target.data.nodeId
           );
         }
         if (!choiceDraftId) return current;
-        return addChoiceOption(
-          current,
-          source.data.sourceNodeId,
-          target.data.nodeId,
-          authoringLocale,
-          { label: pendingLabel }
-        ).content;
+        return addChoiceOption(current, source.data.nodeId, target.data.nodeId, authoringLocale, {
+          label: pendingLabel,
+        }).content;
       }
-      if (
-        source.data.kind === "clip" &&
-        source.data.exitKind === "auto" &&
-        connection.sourceHandle === "completion"
-      ) {
+      if (source.data.exitKind === "auto" && connection.sourceHandle === "completion") {
         return connectSceneContinuation(current, source.data.nodeId, target.data.nodeId);
       }
       // No other source handle produces a story-flow connection in a pure
       // branching tree; leave the draft unchanged.
       return current;
     });
-    if (committed && choiceDraftId && source.data.sourceNodeId) {
-      removePendingChoiceDraft(source.data.sourceNodeId, choiceDraftId);
+    if (committed && choiceDraftId) {
+      removePendingChoiceDraft(source.data.nodeId, choiceDraftId);
     }
   };
 
@@ -2327,23 +2381,19 @@ function StoryProjectCanvasInner({
 
     const source = model.nodes.find((node) => node.id === connectionState.fromNode?.id);
     const clientPosition = connectionDropClientPosition(event);
-    if (!source || !clientPosition) return;
+    if (!source || source.data.kind !== "clip" || !clientPosition) return;
     const sourceHandleId = connectionState.fromHandle.id ?? "";
     const dropPosition = screenToFlowPosition(clientPosition);
     const choiceDraftId =
-      source.data.kind === "decision" ? choiceDraftIdFromHandle(sourceHandleId) : null;
+      source.data.exitKind === "choice" ? choiceDraftIdFromHandle(sourceHandleId) : null;
     const createsChoice = choiceDraftId !== null;
     const pendingDraft = pendingChoiceDraftsRef.current.find(
-      (draft) => draft.sourceNodeId === source.data.sourceNodeId && draft.draftId === choiceDraftId
+      (draft) => draft.sourceNodeId === source.data.nodeId && draft.draftId === choiceDraftId
     );
     const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
     if (createsChoice && !pendingLabel) return;
 
-    if (
-      source.data.kind === "clip" &&
-      source.data.exitKind === "auto" &&
-      sourceHandleId === "completion"
-    ) {
+    if (source.data.exitKind === "auto" && sourceHandleId === "completion") {
       closeCreatorMenu();
       setPendingCompletionDrop({
         sourceCanvasNodeId: source.id,
@@ -2373,8 +2423,8 @@ function StoryProjectCanvasInner({
       setGraphError(null);
       if (commitContent(created.content)) {
         persistLayoutWithPendingPositions(created.content);
-        if (choiceDraftId && source.data.sourceNodeId) {
-          removePendingChoiceDraft(source.data.sourceNodeId, choiceDraftId);
+        if (choiceDraftId) {
+          removePendingChoiceDraft(source.data.nodeId, choiceDraftId);
         }
       }
       closeCreatorMenu();
@@ -2396,13 +2446,8 @@ function StoryProjectCanvasInner({
 
     try {
       if (kind === "choice") {
-        const decisionNodeId = syntheticDecisionNodeId(source.data.nodeId);
-        pendingNodePositionsRef.current.set(decisionNodeId, {
-          x: pending.flowPosition.x + 18,
-          y: pending.flowPosition.y - 72,
-        });
         commitContent(convertSceneExitToChoice(content, source.data.nodeId, authoringLocale));
-        selectCanvasNodeExclusively(decisionNodeId);
+        selectCanvasNodeExclusively(source.data.nodeId);
       } else {
         const created = createConnectedSceneForBlankDrop(
           content,
@@ -2434,18 +2479,10 @@ function StoryProjectCanvasInner({
    */
   const setSceneExit = (nodeId: string, intent: SceneExitIntent) => {
     if (intent.kind === "choice") {
-      const decisionNodeId = syntheticDecisionNodeId(nodeId);
-      const source = model?.nodes.find((candidate) => candidate.id === nodeId);
-      if (source) {
-        pendingNodePositionsRef.current.set(decisionNodeId, {
-          x: source.position.x + 264,
-          y: source.position.y - 56,
-        });
-      }
       if (
         applyGraphMutation((current) => convertSceneExitToChoice(current, nodeId, authoringLocale))
       ) {
-        selectCanvasNodeExclusively(decisionNodeId);
+        selectCanvasNodeExclusively(nodeId);
       }
       return;
     }
@@ -2464,40 +2501,22 @@ function StoryProjectCanvasInner({
     }
     const source = model?.nodes.find((node) => node.id === connection.source);
     const target = model?.nodes.find((node) => node.id === connection.target);
-    if (!source || !target || target.data.kind === "decision") {
+    if (!source || !target) {
       return false;
     }
-    // Red line: character cards tether only to the root cast anchor. Reject any
-    // attempt to wire a character into the story graph, a story node into the
-    // cast anchor, or the cast handles as a story-flow connection.
-    if (
-      rejectsStoryCastWiring({
-        sourceKind: source.data.kind,
-        targetKind: target.data.kind,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
-      })
-    ) {
-      return false;
-    }
-    if (source.data.kind === "decision") {
+    if (source.data.kind === "clip" && source.data.exitKind === "choice") {
       return (
         (Boolean(choiceDraftIdFromHandle(connection.sourceHandle)) ||
           Boolean(connection.sourceHandle?.startsWith("choice:"))) &&
-        connection.targetHandle === "in" &&
-        target.data.kind === "clip"
+        connection.targetHandle === "in"
       );
     }
     if (connection.targetHandle !== "in") return false;
-    if (source.data.kind === "clip") {
-      return (
-        source.data.exitKind === "auto" &&
-        !source.data.continuationTargetNodeId &&
-        connection.sourceHandle === "completion" &&
-        target.data.kind === "clip"
-      );
-    }
-    return false;
+    return (
+      source.data.exitKind === "auto" &&
+      !source.data.continuationTargetNodeId &&
+      connection.sourceHandle === "completion"
+    );
   };
 
   const deleteStoryElements = ({
@@ -2507,7 +2526,10 @@ function StoryProjectCanvasInner({
     nodes: StoryCanvasNode[];
     edges: StoryCanvasEdge[];
   }) => {
-    if (!mutationBarrier.permits("layout")) return;
+    // Nodes and edges are canonical story content. Their screen coordinates
+    // live in the separate layout document, but deleting graph structure must
+    // never be blocked by an unrelated layout-revision conflict.
+    if (!mutationBarrier.permits("content")) return;
     const currentSnapshot = readHistorySnapshot();
     const current = latestContentRef.current;
     if (!currentSnapshot || !current) return;
@@ -2573,31 +2595,6 @@ function StoryProjectCanvasInner({
     });
   };
 
-  const deleteCharacter = (characterId: string) => {
-    if (!content || !mutationBarrier.permits("content")) return;
-    // The inspector disables delete while a character is still referenced by a
-    // condition/effect, so this only ever removes an unreferenced character.
-    const snapshot = readHistorySnapshot();
-    try {
-      if (!commitContent(deleteStoryCharacter(content, characterId))) return;
-      setGraphError(null);
-      // Drop the removed character's orphaned cast-lane position.
-      const characterNodeId = characterCanvasNodeId(characterId);
-      pendingNodePositionsRef.current.delete(characterNodeId);
-      if (snapshot && characterNodeId in snapshot.nodePositions) {
-        const remainingPositions = Object.fromEntries(
-          Object.entries(snapshot.nodePositions).filter(([nodeId]) => nodeId !== characterNodeId)
-        );
-        void persistLayoutRef.current({
-          nodePositions: remainingPositions,
-        });
-      }
-      selectCanvasNodeExclusively(null);
-    } catch {
-      setGraphError(t("graphError.generic"));
-    }
-  };
-
   const loadLatestAfterConflict = () => {
     if (!conflict) return;
     conflictRef.current = null;
@@ -2605,12 +2602,15 @@ function StoryProjectCanvasInner({
     revisionRef.current = conflict.current.revision;
     setDraftRevision(conflict.current.revision);
     savedSignatureRef.current = canonicalJsonString(conflict.current.content);
-    latestContentRef.current = conflict.current.content;
+    const activeContent = applyActiveStoryCanvasCapabilities(
+      migrateLegacyStoryHotspotIds(conflict.current.content)
+    );
+    latestContentRef.current = activeContent;
     queuedContentRef.current = null;
     recoveryContentRef.current = null;
     history.clear();
     refreshHistoryState();
-    setContent(conflict.current.content);
+    setContent(activeContent);
     setConflict(null);
     setSaveError(null);
     setSaveState("idle");
@@ -2929,11 +2929,122 @@ function StoryProjectCanvasInner({
   const refreshAfterAgentMutation = async () => {
     await Promise.all([workbenchQuery.refetch(), layoutQuery.refetch()]);
   };
+  const worldContext: StoryCanvasWorldContextValue = {
+    projectId,
+    worlds: worldsQuery.data ?? [],
+    loading: worldsQuery.isLoading,
+    error: worldsQuery.isError
+      ? storyApiErrorMessage(worldsQuery.error, commonT("errors.generic"))
+      : null,
+    canEdit: canMutateCanvasLayout,
+    canGenerate: editPolicy.canManageProduction,
+    candidateAssets: candidateAssets.items,
+    candidateAssetsLoading: candidateAssets.loading,
+    candidateAssetsError: candidateAssets.failed
+      ? candidateAssets.error || t("worldNode.firstFrameCandidateLoadError")
+      : null,
+    node: (nodeId) => {
+      const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+      return node?.kind === "world" ? node : null;
+    },
+    retry: () => void worldsQuery.refetch(),
+    retryCandidateAssets: () => void candidateAssets.refresh(),
+    uploadCandidateAsset: uploadWorldOpeningFrame,
+    update: (nodeId, patch) =>
+      applyGraphMutation((current) => updateStoryWorldNode(current, nodeId, patch), {
+        mergeKey: `world-node:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+      }),
+    run: (nodeId, worldId) => {
+      const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+      if (node?.kind !== "world") return;
+      const entryInstruction = node.entryInstruction?.trim();
+      setWorldRun({
+        worldId,
+        entryInstruction: entryInstruction || undefined,
+        maxExperienceSeconds: node.maxExperienceSeconds,
+      });
+    },
+  };
   return (
     <main className="flex h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
+      <StoryCanvasSidebar
+        agentLabel={agentT("title")}
+        agentOpen={agentOpen}
+        foundationOpen={inspectorTarget.kind === "foundation"}
+        chapterDropdown={{
+          open: chapterDropdownOpen,
+          chapters: workbenchProjection.chapters,
+          activeChapterId: workbenchProjection.chapter.id,
+          canEdit,
+          creating: chapterCreatePending,
+          pendingChapterId: chapterMutationPendingId,
+          onOpenChange: (open) => {
+            setChapterDropdownOpen(open);
+            if (open) {
+              setAgentOpen(false);
+              setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+            }
+          },
+          onSelect: navigateToChapter,
+          onCreate: createChapter,
+          onRename: renameChapter,
+          onMove: moveChapter,
+          onArchive: archiveChapter,
+        }}
+        onBackNavigate={guardBackNavigation}
+        onOpenMediaCreation={() => openProductionCanvas()}
+        onShare={() => setShareOpen(true)}
+        onToggleAgent={() => {
+          setChapterDropdownOpen(false);
+          setAgentOpen((current) => !current);
+        }}
+        onToggleFoundation={() => {
+          setChapterDropdownOpen(false);
+          setInspectorTarget((current) =>
+            current.kind === "foundation"
+              ? CLOSED_STORY_CANVAS_INSPECTOR
+              : STORY_FOUNDATION_INSPECTOR
+          );
+        }}
+      />
       <div className="relative min-w-0 flex-1">
+        {worldRun ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("worldNode.run")}
+            className="fixed inset-0 z-[200] bg-black"
+          >
+            <WorldModelExperienceRenderer
+              config={{
+                projectId,
+                worldId: worldRun.worldId,
+                entryInstruction: worldRun.entryInstruction,
+                maxExperienceSeconds: worldRun.maxExperienceSeconds,
+                autoplay: true,
+              }}
+              active
+              onCompleted={() => setWorldRun(null)}
+              onError={(error) => {
+                toast.error(storyApiErrorMessage(error, t("worldNode.runError")));
+                setWorldRun(null);
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t("worldNode.exitRun")}
+              title={t("worldNode.exitRun")}
+              onClick={() => setWorldRun(null)}
+              className="absolute top-5 right-5 grid size-11 place-items-center rounded-full border border-white/12 bg-black/55 text-white/78 backdrop-blur-xl transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <IconX className="size-5" />
+            </button>
+          </div>
+        ) : null}
+
         <CanvasHeader
           title={project.title}
+          chapterTitle={workbenchProjection.chapter.title}
           canEdit={canEdit}
           previewPending={workingPreviewPending}
           publishPending={publication.isPending}
@@ -2949,45 +3060,6 @@ function StoryProjectCanvasInner({
           }
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
-          onOpenMediaCreation={() => openProductionCanvas()}
-          agentOpen={agentOpen}
-          agentLabel={agentT("title")}
-          onToggleAgent={() => setAgentOpen((current) => !current)}
-          foundationOpen={inspectorTarget.kind === "foundation"}
-          onToggleFoundation={() =>
-            setInspectorTarget((current) =>
-              current.kind === "foundation"
-                ? CLOSED_STORY_CANVAS_INSPECTOR
-                : STORY_FOUNDATION_INSPECTOR
-            )
-          }
-          chapterControl={
-            <StoryChapterDropdown
-              open={chapterDropdownOpen}
-              chapters={workbenchProjection.chapters}
-              activeChapterId={workbenchProjection.chapter.id}
-              canEdit={canEdit}
-              creating={chapterCreatePending}
-              pendingChapterId={chapterMutationPendingId}
-              onOpenChange={setChapterDropdownOpen}
-              onSelect={navigateToChapter}
-              onCreate={createChapter}
-              onRename={renameChapter}
-              onMove={moveChapter}
-              onArchive={archiveChapter}
-            />
-          }
-          shareControl={
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-            >
-              <IconUsers className="size-4" />
-              <span className={HEADER_LABEL_CLASS}>{t("share")}</span>
-            </button>
-          }
-          onBackNavigate={guardBackNavigation}
         />
 
         <ShareDialog
@@ -3028,129 +3100,131 @@ function StoryProjectCanvasInner({
           <CanvasBackdrop />
           <MediaHoverPreviewProvider>
             <StoryCanvasChoiceContext.Provider value={choiceContext}>
-              <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-                <StoryCanvasReactFlow
-                  nodes={layeredCanvasNodes}
-                  edges={canvasEdges}
-                  onNodesChange={onCanvasNodesChange}
-                  onEdgesChange={(changes) =>
-                    onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-                  }
-                  onConnect={connectStoryNodes}
-                  onConnectEnd={finishConnectionOnBlankCanvas}
-                  onInteractionStart={closeCreatorMenu}
-                  isValidConnection={isValidStoryConnection}
-                  onDelete={deleteStoryElements}
-                  onSelectionChange={onCanvasSelectionChange}
-                  onSelectionStart={onCanvasSelectionStart}
-                  onSelectionEnd={onCanvasSelectionEnd}
-                  onNodeDragStart={() => {
-                    didDragNodeRef.current = false;
-                    dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
-                      ? readHistorySnapshot()
-                      : null;
-                  }}
-                  onNodeDrag={() => {
-                    // A real move occurred: the following pointer-up is a drag, not
-                    // a click, so it must not open the inspector.
-                    didDragNodeRef.current = true;
-                  }}
-                  onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                    const beforeDrag = dragStartHistorySnapshotRef.current;
-                    dragStartHistorySnapshotRef.current = null;
-                    const movedNodes = new Map(
-                      [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                    );
-                    commitCanvasLayout(
-                      canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                      beforeDrag
-                    );
-                  }}
-                  onNodeClick={(event, node) => {
-                    closeCreatorMenu();
-                    const outcome = resolveStoryCanvasNodeClick({
-                      nodeId: node.id,
-                      nodeSelected: Boolean(node.selected),
-                      shiftKey: event.shiftKey,
-                      didDrag: didDragNodeRef.current,
-                      currentSelection: latestCanvasSelectionRef.current,
-                    });
-                    didDragNodeRef.current = false;
-                    // A pointer-up that ended a drag never opens the inspector.
-                    if (outcome.kind === "drag-suppressed") return;
-                    if (outcome.kind === "toggle-off") {
-                      requestedCanvasFocusRef.current = null;
-                      latestCanvasSelectionRef.current = outcome.remainingNodeIds;
-                      reconcileCanvasFocus(outcome.remainingNodeIds);
-                      return;
+              <StoryCanvasWorldContext.Provider value={worldContext}>
+                <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                  <StoryCanvasReactFlow
+                    nodes={layeredCanvasNodes}
+                    edges={canvasEdges}
+                    onNodesChange={onCanvasNodesChange}
+                    onEdgesChange={(changes) =>
+                      onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
                     }
-                    // An explicit click is the only path that may open a node
-                    // inspector. Player-choice projections deliberately resolve
-                    // to "closed" because their editor lives on the card.
-                    requestedCanvasFocusRef.current = outcome.nodeId;
-                    setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
-                  }}
-                  onNodeDoubleClick={(event, node) => {
-                    if (node.data.kind !== "clip") return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openProductionCanvas(node.id);
-                  }}
-                  onPaneClick={() => {
-                    selectCanvasNodeExclusively(null);
-                    closeCreatorMenu();
-                  }}
-                  onPaneContextMenu={(event) => {
-                    if (!mutationBarrier.permits("layout")) return;
-                    event.preventDefault();
-                    openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-                  }}
-                  onMoveStart={closeCreatorMenu}
-                  nodeTypes={NODE_TYPES}
-                  defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                  colorMode="dark"
-                  proOptions={{ hideAttribution: true }}
-                  minZoom={0.16}
-                  maxZoom={1.4}
-                  defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-                  nodesDraggable={canMutateCanvasLayout}
-                  nodesConnectable={canMutateCanvasLayout}
-                  edgesReconnectable={false}
-                  edgesFocusable={canMutateCanvasLayout}
-                  deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
-                  selectNodesOnDrag
-                  zoomOnDoubleClick={false}
-                  fitView={canvasNodes.length > 0}
-                  fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-                  className="relative z-10"
-                  style={{ backgroundColor: "transparent" }}
-                >
-                  {model.nodes.length > 0 ? (
-                    <MiniMap
-                      pannable
+                    onConnect={connectStoryNodes}
+                    onConnectEnd={finishConnectionOnBlankCanvas}
+                    onInteractionStart={closeCreatorMenu}
+                    isValidConnection={isValidStoryConnection}
+                    onDelete={deleteStoryElements}
+                    onSelectionChange={onCanvasSelectionChange}
+                    onSelectionStart={onCanvasSelectionStart}
+                    onSelectionEnd={onCanvasSelectionEnd}
+                    onNodeDragStart={() => {
+                      didDragNodeRef.current = false;
+                      dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
+                        ? readHistorySnapshot()
+                        : null;
+                    }}
+                    onNodeDrag={() => {
+                      // A real move occurred: the following pointer-up is a drag, not
+                      // a click, so it must not open the inspector.
+                      didDragNodeRef.current = true;
+                    }}
+                    onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                      const beforeDrag = dragStartHistorySnapshotRef.current;
+                      dragStartHistorySnapshotRef.current = null;
+                      const movedNodes = new Map(
+                        [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                      );
+                      commitCanvasLayout(
+                        canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                        beforeDrag
+                      );
+                    }}
+                    onNodeClick={(event, node) => {
+                      closeCreatorMenu();
+                      const outcome = resolveStoryCanvasNodeClick({
+                        nodeId: node.id,
+                        nodeSelected: Boolean(node.selected),
+                        shiftKey: event.shiftKey,
+                        didDrag: didDragNodeRef.current,
+                        currentSelection: latestCanvasSelectionRef.current,
+                      });
+                      didDragNodeRef.current = false;
+                      // A pointer-up that ended a drag never opens the inspector.
+                      if (outcome.kind === "drag-suppressed") return;
+                      if (outcome.kind === "toggle-off") {
+                        requestedCanvasFocusRef.current = null;
+                        latestCanvasSelectionRef.current = outcome.remainingNodeIds;
+                        reconcileCanvasFocus(outcome.remainingNodeIds);
+                        return;
+                      }
+                      // An explicit click is the only path that may open a node
+                      // inspector. Player-choice projections deliberately resolve
+                      // to "closed" because their editor lives on the card.
+                      requestedCanvasFocusRef.current = outcome.nodeId;
+                      setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
+                    }}
+                    onNodeDoubleClick={(event, node) => {
+                      if (node.data.kind !== "clip") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openProductionCanvas(node.id);
+                    }}
+                    onPaneClick={() => {
+                      selectCanvasNodeExclusively(null);
+                      closeCreatorMenu();
+                    }}
+                    onPaneContextMenu={(event) => {
+                      if (!mutationBarrier.permits("layout")) return;
+                      event.preventDefault();
+                      openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+                    }}
+                    onMoveStart={closeCreatorMenu}
+                    nodeTypes={NODE_TYPES}
+                    defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                    colorMode="dark"
+                    proOptions={{ hideAttribution: true }}
+                    minZoom={0.16}
+                    maxZoom={1.4}
+                    defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                    nodesDraggable={canMutateCanvasLayout}
+                    nodesConnectable={canMutateCanvasLayout}
+                    edgesReconnectable={false}
+                    edgesFocusable={canMutateCanvasLayout}
+                    deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
+                    selectNodesOnDrag
+                    zoomOnDoubleClick={false}
+                    fitView={canvasNodes.length > 0}
+                    fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                    className="relative z-10"
+                    style={{ backgroundColor: "transparent" }}
+                  >
+                    {model.nodes.length > 0 ? (
+                      <MiniMap
+                        pannable
+                        position="bottom-left"
+                        className={cn(
+                          "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                          // Clear the full-width canvas's left inspector overlay.
+                          inspectorOpen ? "left-[452px]!" : "left-20!"
+                        )}
+                        bgColor="oklch(0.24 0 0 / 0.82)"
+                        maskColor="rgba(0,0,0,0.46)"
+                        nodeColor="rgba(255,255,255,0.42)"
+                        nodeStrokeWidth={0}
+                      />
+                    ) : null}
+                    <CanvasControls
                       position="bottom-left"
+                      onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
                       className={cn(
-                        "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                        "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
                         // Clear the full-width canvas's left inspector overlay.
-                        inspectorOpen ? "left-[452px]!" : "left-20!"
+                        inspectorOpen ? "left-[392px]!" : "left-5!"
                       )}
-                      bgColor="oklch(0.24 0 0 / 0.82)"
-                      maskColor="rgba(0,0,0,0.46)"
-                      nodeColor="rgba(255,255,255,0.42)"
-                      nodeStrokeWidth={0}
                     />
-                  ) : null}
-                  <CanvasControls
-                    position="bottom-left"
-                    onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
-                    className={cn(
-                      "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
-                      // Clear the full-width canvas's left inspector overlay.
-                      inspectorOpen ? "left-[392px]!" : "left-5!"
-                    )}
-                  />
-                </StoryCanvasReactFlow>
-              </StoryCanvasFocusContext.Provider>
+                  </StoryCanvasReactFlow>
+                </StoryCanvasFocusContext.Provider>
+              </StoryCanvasWorldContext.Provider>
             </StoryCanvasChoiceContext.Provider>
           </MediaHoverPreviewProvider>
 
@@ -3188,7 +3262,6 @@ function StoryProjectCanvasInner({
         {inspectorOpen ? (
           <StoryNodeInspector
             content={content}
-            locale={authoringLocale}
             selectedNode={focusedNode}
             clipMedia={
               focusedNode?.data.kind === "clip"
@@ -3229,12 +3302,6 @@ function StoryProjectCanvasInner({
               onUpload: uploadProjectCover,
             }}
             onUpdateFoundation={updateFoundation}
-            onUpdateCharacter={(characterId, patch) =>
-              applyGraphMutation((current) => updateStoryCharacter(current, characterId, patch), {
-                mergeKey: `character:${characterId}:${Object.keys(patch).sort().join(",")}`,
-              })
-            }
-            onDeleteCharacter={deleteCharacter}
             onCloseNode={() => selectCanvasNodeExclusively(null)}
             chapterTargets={workbenchProjection.chapters
               .map((chapter) => ({
@@ -3248,12 +3315,44 @@ function StoryProjectCanvasInner({
               )}
             onConnectChapter={connectChapterTarget}
             onSetSceneExit={setSceneExit}
-            onSetEntryNode={(nodeId) =>
-              applyGraphMutation((current) => setEntryNode(current, nodeId))
-            }
+            onEditInteractions={setInteractionEditorNodeId}
             onDeleteSelected={() => {
-              if (focusedNode) void deleteElements({ nodes: [focusedNode] });
+              if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
             }}
+          />
+        ) : null}
+
+        {interactionEditorNode ? (
+          <StoryInteractionEditor
+            node={interactionEditorNode}
+            nodes={content.graph.nodes}
+            clip={interactionEditorClip}
+            frameProfile={project.frameProfile}
+            drafts={storyInteractionDrafts(interactionEditorNode, authoringLocale)}
+            onDraftsChange={(drafts) =>
+              applyGraphMutation(
+                (current) =>
+                  replaceStoryNodeInteractions(
+                    current,
+                    interactionEditorNode.nodeId,
+                    drafts.map((draft) => ({
+                      kind: "hotspot" as const,
+                      interactionId: draft.id,
+                      label: { [authoringLocale]: draft.label },
+                      trigger: storyInteractionTriggerDocument(draft.trigger),
+                      rect: draft.rect,
+                      startMs: Math.round(draft.startSeconds * 1_000),
+                      endMs: Math.round(draft.endSeconds * 1_000),
+                      ...(draft.branchAtSeconds !== null
+                        ? { branchAtMs: Math.round(draft.branchAtSeconds * 1_000) }
+                        : {}),
+                      outcomes: storyInteractionOutcomesDocument(draft.outcomes),
+                    }))
+                  ),
+                { mergeKey: `interactions:${interactionEditorNode.nodeId}` }
+              )
+            }
+            onClose={() => setInteractionEditorNodeId(null)}
           />
         ) : null}
 
@@ -3299,16 +3398,102 @@ function StoryProjectCanvasInner({
   );
 }
 
+function storyInteractionDrafts(
+  node: Extract<StoryGraphNode, { kind: "clip" }>,
+  locale: string
+): StoryInteractionDraft[] {
+  return node.interactions.map((interaction) => ({
+    id: interaction.interactionId,
+    label:
+      interaction.label[locale] ??
+      Object.values(interaction.label).find((value) => value.trim()) ??
+      interaction.interactionId,
+    rect: interaction.rect,
+    startSeconds: interaction.startMs / 1_000,
+    endSeconds: interaction.endMs / 1_000,
+    branchAtSeconds: interaction.branchAtMs !== undefined ? interaction.branchAtMs / 1_000 : null,
+    trigger: storyInteractionTriggerDraft(interaction.trigger),
+    outcomes: storyInteractionOutcomesDraft(interaction.outcomes),
+  }));
+}
+
+function storyInteractionTriggerDocument(
+  trigger: StoryInteractionTriggerDraft
+): StoryInteractionTrigger {
+  return trigger.kind === "press-hold"
+    ? {
+        kind: "press-hold",
+        durationMs: Math.round(trigger.durationSeconds * 1_000),
+        controlTimeline: trigger.controlTimeline,
+      }
+    : trigger;
+}
+
+function storyInteractionTriggerDraft(
+  trigger: StoryInteractionTrigger
+): StoryInteractionTriggerDraft {
+  return trigger.kind === "press-hold"
+    ? {
+        kind: "press-hold",
+        durationSeconds: trigger.durationMs / 1_000,
+        controlTimeline: trigger.controlTimeline ?? false,
+      }
+    : trigger;
+}
+
+function storyInteractionActionDocument(
+  action: StoryInteractionActionDraft
+): StoryInteractionAction {
+  if (action.kind === "goto") return { kind: "goto", nodeId: action.targetNodeId };
+  if (action.kind === "seek") {
+    return { kind: "seek", timeMs: Math.round(action.timeSeconds * 1_000) };
+  }
+  return { kind: "continue" };
+}
+
+function storyInteractionActionDraft(action: StoryInteractionAction): StoryInteractionActionDraft {
+  if (action.kind === "goto") return { kind: "goto", targetNodeId: action.nodeId };
+  if (action.kind === "seek") return { kind: "seek", timeSeconds: action.timeMs / 1_000 };
+  return { kind: "continue" };
+}
+
+function storyInteractionOutcomesDocument(
+  outcomes: StoryInteractionOutcomesDraft
+): StoryInteractionOutcomes {
+  return {
+    success: storyInteractionActionDocument(outcomes.success),
+    ...(outcomes.failure ? { failure: storyInteractionActionDocument(outcomes.failure) } : {}),
+    ...(outcomes.timeout ? { timeout: storyInteractionActionDocument(outcomes.timeout) } : {}),
+  };
+}
+
+function storyInteractionOutcomesDraft(
+  outcomes: StoryInteractionOutcomes
+): StoryInteractionOutcomesDraft {
+  return {
+    success: storyInteractionActionDraft(outcomes.success),
+    ...(outcomes.failure ? { failure: storyInteractionActionDraft(outcomes.failure) } : {}),
+    ...(outcomes.timeout ? { timeout: storyInteractionActionDraft(outcomes.timeout) } : {}),
+  };
+}
+
+function formatInteractionTime(timeMs: number): string {
+  const totalSeconds = Math.max(0, timeMs) / 1_000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
+}
+
 /**
  * Toolbar label visibility. Below this container width the full-label pill
  * overflows the header row, so labels collapse to sr-only and the buttons run
- * icon-only. Applies to the canvas-header toolbar (including the share control
- * the parent passes in), which is why it lives at module scope.
+ * icon-only. Applies to the canvas-header preview and publish actions.
  */
 const HEADER_LABEL_CLASS = "@max-[1000px]:sr-only";
 
 function CanvasHeader({
   title,
+  chapterTitle,
   canEdit,
   previewPending,
   publishPending,
@@ -3317,17 +3502,9 @@ function CanvasHeader({
   publishDisabledReason,
   onPreview,
   onPublish,
-  onOpenMediaCreation,
-  agentOpen,
-  agentLabel,
-  onToggleAgent,
-  foundationOpen,
-  onToggleFoundation,
-  chapterControl,
-  shareControl,
-  onBackNavigate,
 }: {
   title: string;
+  chapterTitle: string;
   canEdit: boolean;
   previewPending: boolean;
   publishPending: boolean;
@@ -3336,15 +3513,6 @@ function CanvasHeader({
   publishDisabledReason: string | null;
   onPreview: () => void;
   onPublish: () => void;
-  onOpenMediaCreation: () => void;
-  agentOpen: boolean;
-  agentLabel: string;
-  onToggleAgent: () => void;
-  foundationOpen: boolean;
-  onToggleFoundation: () => void;
-  chapterControl: ReactNode;
-  shareControl: ReactNode;
-  onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
   const publishButton = (
@@ -3376,60 +3544,14 @@ function CanvasHeader({
     // `@container`: toolbar labels collapse to icon-only when space is tight.
     <header className="@container pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
       <div className="pointer-events-auto flex h-12 min-w-0 items-center gap-3">
-        <Link
-          href="/story-studio"
-          onNavigate={onBackNavigate}
-          aria-label={t("back")}
-          className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/68 transition hover:bg-white/[0.12] hover:text-white"
-        >
-          <IconArrowLeft className="size-5" />
-        </Link>
         <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
           {title}
         </h1>
         <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.1]" />
-        {chapterControl}
+        <span className="max-w-56 truncate text-xs font-medium text-white/52">{chapterTitle}</span>
       </div>
 
       <div className="liquid-rim pointer-events-auto relative flex h-12 shrink-0 items-center gap-0.5 rounded-[18px] bg-white/[0.055] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.3),0_16px_48px_-18px_rgba(0,0,0,0.68)] backdrop-blur-2xl backdrop-saturate-[1.8]">
-        <button
-          type="button"
-          aria-label={agentLabel}
-          aria-pressed={agentOpen}
-          onClick={onToggleAgent}
-          className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            agentOpen
-              ? "bg-white text-black"
-              : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
-          )}
-        >
-          <IconSparkles className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{agentLabel}</span>
-        </button>
-        <button
-          type="button"
-          aria-pressed={foundationOpen}
-          onClick={onToggleFoundation}
-          className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-[14px] px-3 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-            foundationOpen
-              ? "bg-white/[0.14] text-white"
-              : "bg-transparent text-white/68 hover:bg-white/[0.1] hover:text-white"
-          )}
-        >
-          <IconBook className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("filmFoundation.title")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenMediaCreation}
-          className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-        >
-          <IconMovie className="size-4" />
-          <span className={HEADER_LABEL_CLASS}>{t("mediaCreation")}</span>
-        </button>
-        {shareControl}
         {/* Was hidden while a draft preview could only ever start at the story's
             first scene, which made it useless for a multi-chapter work. It now
             previews the chapter being edited, and a missing clip stands in
@@ -3519,12 +3641,17 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
   const t = useTranslations("storyStudio.canvas");
   const focusedNodeId = useContext(StoryCanvasFocusContext);
   const choiceContext = useContext(StoryCanvasChoiceContext);
-  const isDecision = data.kind === "decision";
-  const isCharacter = data.kind === "character";
-  const decisionChoices = data.choices ?? [];
-  const decisionSourceNodeId = isDecision ? data.sourceNodeId : undefined;
-  const choiceDrafts = decisionSourceNodeId
-    ? (choiceContext?.drafts.filter((draft) => draft.sourceNodeId === decisionSourceNodeId) ?? [])
+  const worldContext = useContext(StoryCanvasWorldContext);
+  const [worldEditorOpen, setWorldEditorOpen] = useState(false);
+  const isWorld = data.kind === "world";
+  const worldEditorId = `story-world-editor-${data.nodeId}`;
+  const interactionSourceNodeId =
+    data.kind === "clip" && data.exitKind === "choice" ? data.nodeId : undefined;
+  const interactionChoices = interactionSourceNodeId ? (data.choices ?? []) : [];
+  const hotspotInteractions = data.kind === "clip" ? (data.interactions ?? []) : [];
+  const choiceDrafts = interactionSourceNodeId
+    ? (choiceContext?.drafts.filter((draft) => draft.sourceNodeId === interactionSourceNodeId) ??
+      [])
     : [];
   const currentVideo = data.kind === "clip" ? data.clipVideo?.currentVideo : null;
   const currentVideoAsset = currentVideo?.asset;
@@ -3543,13 +3670,8 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
     canClaimManual: canClaimCanvasManualPlayback,
   });
   const previewFocused = focusedNodeId === id;
-  const chipStyle =
-    data.kind === "decision"
-      ? { background: "rgba(91,157,255,0.38)", iconBackground: "rgba(91,157,255,0.62)" }
-      : isCharacter
-        ? { background: "rgba(255,255,255,0.09)", iconBackground: "rgba(255,255,255,0.17)" }
-        : { background: "rgba(255,255,255,0.14)", iconBackground: "rgba(255,255,255,0.22)" };
   const geometry = canvasNodeGeometry({ type: "storyCanvas", data });
+  const worldNode = isWorld ? (worldContext?.node(data.nodeId) ?? null) : null;
   return (
     <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
@@ -3557,15 +3679,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         className={cn(
           "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
         )}
-        style={{ backgroundColor: chipStyle.background }}
+        style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
       >
         <span
           className="grid size-6 place-items-center rounded-full"
-          style={{ backgroundColor: chipStyle.iconBackground }}
+          style={{ backgroundColor: "rgba(255,255,255,0.22)" }}
         >
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
-          {isDecision ? <IconGitBranch className="size-3.5" stroke={2} /> : null}
-          {isCharacter ? <IconUser className="size-3.5" stroke={2} /> : null}
+          {isWorld ? <IconWorld className="size-3.5" stroke={2} /> : null}
         </span>
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
@@ -3578,39 +3699,26 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         style={{ width: geometry.width, minHeight: geometry.minHeight }}
       >
         <GlassRim width="1px" />
-        {!isCharacter ? (
-          <StoryPortHandle
-            id={isDecision ? "decision-in" : "in"}
-            type="target"
-            position={Position.Left}
-            isConnectable={isConnectable && !isDecision}
-            color={isDecision ? STORY_PORT_COLORS.choice : STORY_PORT_COLORS.flow}
-            label={t("ports.input")}
-            className="-left-1.75!"
-          />
-        ) : null}
-        {isCharacter ? (
-          <StoryPortHandle
-            id="cast-in"
-            type="target"
-            position={Position.Right}
-            isConnectable={false}
-            color={STORY_PORT_COLORS.cast}
-            label={t("ports.cast")}
-            className="-right-1.75!"
-          />
-        ) : null}
-        {data.kind === "clip" ? (
+        <StoryPortHandle
+          id="in"
+          type="target"
+          position={Position.Left}
+          isConnectable={isConnectable}
+          color={STORY_PORT_COLORS.flow}
+          label={t("ports.input")}
+          className="-left-1.75!"
+          style={isWorld ? { top: geometry.minHeight / 2 } : undefined}
+        />
+        {data.exitKind === "auto" ? (
           <StoryPortHandle
             id="completion"
             type="source"
             position={Position.Right}
-            color={data.exitKind === "choice" ? STORY_PORT_COLORS.choice : STORY_PORT_COLORS.flow}
+            color={STORY_PORT_COLORS.flow}
             label={t("ports.completion")}
-            isConnectable={
-              isConnectable && data.exitKind === "auto" && !data.continuationTargetNodeId
-            }
+            isConnectable={isConnectable && !data.continuationTargetNodeId}
             className="-right-1.75!"
+            style={isWorld ? { top: geometry.minHeight / 2 } : undefined}
           />
         ) : null}
         {data.kind === "clip" ? (
@@ -3627,14 +3735,55 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             className="rounded-t-[22px]"
           />
         ) : null}
-        {isCharacter && data.characterImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- unsized user upload
-          <img
-            src={data.characterImageUrl}
-            alt=""
-            draggable={false}
-            className="aspect-[3/4] w-full select-none rounded-t-[22px] object-cover"
-          />
+        {isWorld ? (
+          <div className="group/world relative aspect-video overflow-hidden rounded-t-[22px] bg-white/[0.025]">
+            {data.world?.firstFrameUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- provider-owned world preview
+              <img
+                src={data.world.firstFrameUrl}
+                alt=""
+                draggable={false}
+                className="size-full select-none object-cover"
+              />
+            ) : null}
+            {!data.worldId && worldNode && worldContext ? (
+              <div className="absolute inset-0 z-10 grid place-items-center bg-black/10">
+                <StoryWorldBindingControl
+                  node={worldNode}
+                  worlds={worldContext.worlds}
+                  loading={worldContext.loading}
+                  error={worldContext.error}
+                  canEdit={worldContext.canEdit}
+                  compact={false}
+                  onRetry={worldContext.retry}
+                  onUpdate={(worldId) => worldContext.update(worldNode.nodeId, { worldId })}
+                />
+              </div>
+            ) : !data.world?.firstFrameUrl ? (
+              <div className="grid size-full place-items-center">
+                <span className="grid size-12 place-items-center rounded-2xl bg-white/[0.06] text-white/38">
+                  <IconWorld className="size-6" stroke={1.5} />
+                </span>
+              </div>
+            ) : null}
+            {data.worldId && worldNode && worldContext ? (
+              <div className="absolute top-2 right-2 z-20">
+                <StoryWorldBindingControl
+                  node={worldNode}
+                  worlds={worldContext.worlds}
+                  loading={worldContext.loading}
+                  error={worldContext.error}
+                  canEdit={worldContext.canEdit}
+                  compact
+                  onRetry={worldContext.retry}
+                  onUpdate={(worldId) => worldContext.update(worldNode.nodeId, { worldId })}
+                />
+              </div>
+            ) : null}
+            <div className="absolute right-2 bottom-2 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/70 backdrop-blur-xl">
+              {data.world ? t(`worldNode.status.${data.world.status}`) : t("worldNode.unbound")}
+            </div>
+          </div>
         ) : null}
         <div className="p-3">
           {data.kind === "clip" ? (
@@ -3660,58 +3809,178 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 </dl>
               ) : null}
             </>
-          ) : (
-            <div className="-mx-1 flex items-start justify-between gap-3 rounded px-1">
-              <div className="min-w-0 flex-1">
-                {isDecision && decisionSourceNodeId ? (
-                  <textarea
-                    rows={1}
-                    value={data.title}
-                    disabled={!choiceContext?.canEditContent}
-                    maxLength={4_000}
-                    placeholder={t("decisionCard.promptPlaceholder")}
-                    aria-label={t("decisionCard.promptPlaceholder")}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      choiceContext?.updatePrompt(decisionSourceNodeId, event.target.value)
-                    }
-                    className="nodrag nopan nowheel field-sizing-content block max-h-20 min-h-8 w-full resize-none overflow-y-auto bg-transparent py-1 text-[16px] leading-6 font-semibold tracking-[-0.01em] text-white/90 outline-none placeholder:text-white/38 disabled:cursor-default"
+          ) : isWorld ? (
+            <>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-[15px] font-semibold text-white/90">{data.title}</h2>
+                  <p className="mt-1 text-[10px] text-white/38">
+                    {data.maxExperienceSeconds
+                      ? t("worldNode.duration", { seconds: data.maxExperienceSeconds })
+                      : null}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-controls={worldEditorId}
+                  aria-expanded={worldEditorOpen}
+                  aria-label={t(
+                    worldEditorOpen ? "worldNode.collapseEditor" : "worldNode.expandEditor"
+                  )}
+                  title={t(worldEditorOpen ? "worldNode.collapseEditor" : "worldNode.expandEditor")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setWorldEditorOpen((open) => !open);
+                  }}
+                  className="nodrag nopan nowheel grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58 transition hover:bg-white/[0.11] hover:text-white/82 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/45"
+                >
+                  <IconChevronDown
+                    className={cn(
+                      "size-4 transition-transform duration-200",
+                      worldEditorOpen && "rotate-180"
+                    )}
                   />
-                ) : (
-                  <>
-                    <p className="text-[10px] font-semibold tracking-[0.14em] text-white/34 uppercase">
-                      {isCharacter ? t("filmFoundation.characters.cardEyebrow") : data.eyebrow}
-                    </p>
-                    <h2
-                      className={cn(
-                        "mt-1 truncate text-[15px] font-semibold",
-                        isCharacter && !data.title ? "text-white/40" : "text-white/90"
-                      )}
-                    >
-                      {isCharacter
-                        ? data.title || t("filmFoundation.characters.cardUntitled")
-                        : data.title}
-                    </h2>
-                  </>
-                )}
+                </button>
               </div>
-              <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.07] text-white/58">
-                {isDecision ? <IconGitBranch className="size-4" /> : null}
-                {isCharacter ? <IconUser className="size-4" /> : null}
-              </span>
-            </div>
-          )}
-          {data.summary ? (
-            <p className="mt-3 line-clamp-3 text-[11px] leading-[18px] text-white/48">
-              {data.summary}
-            </p>
+              {data.summary ? (
+                <p className="mt-3 line-clamp-2 text-[11px] leading-[18px] text-white/46">
+                  {data.summary}
+                </p>
+              ) : null}
+            </>
           ) : null}
-          {isDecision ? (
-            <div className="mt-3">
-              {decisionChoices.length > 0 ? <div className="h-px bg-white/[0.07]" /> : null}
-              {decisionChoices.map((choice, index) => (
+          {hotspotInteractions.length > 0 ? (
+            <div className="mt-3 overflow-hidden rounded-[16px] border border-[#5b9dff]/20 bg-[#5b9dff]/[0.055]">
+              <div className="flex items-center gap-2 border-b border-[#5b9dff]/15 px-3 py-2.5">
+                <span className="grid size-6 place-items-center rounded-lg bg-[#5b9dff]/18 text-[#a9ceff]">
+                  <IconFocusCentered className="size-3.5" stroke={1.8} />
+                </span>
+                <span className="min-w-0 flex-1 text-xs font-semibold text-white/78">
+                  {t("interactionAnchors.title")}
+                </span>
+                <span className="text-xs text-white/34 tabular-nums">
+                  {hotspotInteractions.length}
+                </span>
+                <span className="rounded-full bg-[#5b9dff]/12 px-2 py-1 text-xs font-semibold text-[#9bc4ff]">
+                  {t("interactionAnchors.hotspotType")}
+                </span>
+              </div>
+              {hotspotInteractions.map((interaction, index) => {
+                const triggerLabel =
+                  interaction.trigger.kind === "swipe"
+                    ? t("interactionAnchors.triggerSwipe", {
+                        direction: t(
+                          `interactionAnchors.directions.${interaction.trigger.direction}`
+                        ),
+                      })
+                    : interaction.trigger.kind === "press-hold"
+                      ? t("interactionAnchors.triggerPressHold", {
+                          duration: formatInteractionTime(interaction.trigger.durationMs),
+                        })
+                      : t("interactionAnchors.triggerTap");
+                const outcomes = (
+                  [
+                    ["success", interaction.outcomes.success],
+                    ["failure", interaction.outcomes.failure],
+                    ["timeout", interaction.outcomes.timeout],
+                  ] as const
+                ).filter((entry) => entry[1] !== undefined);
+                return (
+                  <div
+                    key={interaction.interactionId}
+                    className="group/hotspot relative grid min-h-11 grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-2 px-1 py-2 pr-3 text-xs"
+                  >
+                    <span className="pt-1 tabular-nums text-white/24">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-white/72">
+                        {interaction.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-white/34 tabular-nums">
+                        {formatInteractionTime(interaction.startMs)}–
+                        {formatInteractionTime(interaction.endMs)} · {triggerLabel}
+                      </span>
+                    </span>
+                    <span className="flex max-w-[132px] flex-col items-end gap-1">
+                      {outcomes.map(([outcome, value]) => {
+                        if (!value) return null;
+                        const actionLabel =
+                          value.action.kind === "continue"
+                            ? t("interactionAnchors.continueCurrent")
+                            : value.action.kind === "seek"
+                              ? t("interactionAnchors.seekCurrent", {
+                                  time: formatInteractionTime(value.action.timeMs),
+                                })
+                              : t("interactionAnchors.gotoTarget", {
+                                  target: value.targetTitle ?? t("interactionCard.linkedTarget"),
+                                });
+                        const outcomeLabel = t(`interactionAnchors.outcomes.${outcome}`);
+                        return (
+                          <span
+                            key={outcome}
+                            className={cn(
+                              "relative max-w-full truncate rounded-full px-2 py-1 font-semibold",
+                              value.action.kind === "goto"
+                                ? "bg-[#5b9dff]/12 text-[#9bc4ff]"
+                                : "bg-white/[0.055] text-white/48"
+                            )}
+                            title={`${outcomeLabel}: ${actionLabel}`}
+                          >
+                            {outcomeLabel}: {actionLabel}
+                            {value.action.kind === "goto" ? (
+                              <StoryPortHandle
+                                id={`interaction:${interaction.interactionId}:${outcome}`}
+                                type="source"
+                                position={Position.Right}
+                                isConnectable={false}
+                                color={STORY_PORT_COLORS.choice}
+                                label={`${outcomeLabel}: ${actionLabel}`}
+                                className="-right-[23px]!"
+                              />
+                            ) : null}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {interactionSourceNodeId ? (
+            <div className="mt-3 overflow-hidden rounded-[16px] border border-[#5b9dff]/20 bg-[#5b9dff]/[0.055]">
+              <div className="flex items-center gap-2 border-b border-[#5b9dff]/15 px-3 py-2.5">
+                <span className="grid size-6 place-items-center rounded-lg bg-[#5b9dff]/18 text-[#a9ceff]">
+                  <IconFocusCentered className="size-3.5" stroke={1.8} />
+                </span>
+                <span className="min-w-0 flex-1 text-xs font-semibold text-white/78">
+                  {t("interactionAnchors.title")}
+                </span>
+                <span className="text-xs text-white/34 tabular-nums">
+                  {interactionChoices.length}
+                </span>
+                <span className="rounded-full bg-[#5b9dff]/12 px-2 py-1 text-xs font-semibold text-[#9bc4ff]">
+                  {t("interactionAnchors.choiceType")}
+                </span>
+              </div>
+              <textarea
+                rows={1}
+                value={data.summary ?? ""}
+                disabled={!choiceContext?.canEditContent}
+                maxLength={4_000}
+                placeholder={t("interactionCard.promptPlaceholder")}
+                aria-label={t("interactionCard.promptPlaceholder")}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onChange={(event) =>
+                  choiceContext?.updatePrompt(interactionSourceNodeId, event.target.value)
+                }
+                className="nodrag nopan nowheel field-sizing-content block max-h-20 min-h-10 w-full resize-none overflow-y-auto border-b border-white/[0.06] bg-transparent px-3 py-2.5 text-[12px] leading-5 font-semibold text-white/82 outline-none placeholder:text-white/32 disabled:cursor-default"
+              />
+              {interactionChoices.map((choice, index) => (
                 <div
                   key={choice.choiceId}
                   className="group/choice relative grid min-h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-2 pr-3 text-xs transition-colors hover:bg-white/[0.025]"
@@ -3723,15 +3992,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                     value={choice.label}
                     disabled={!choiceContext?.canEditContent}
                     maxLength={4_000}
-                    placeholder={t("decisionCard.untitledOption")}
-                    aria-label={t("decisionCard.optionPlaceholder")}
+                    placeholder={t("interactionCard.untitledOption")}
+                    aria-label={t("interactionCard.optionPlaceholder")}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => event.stopPropagation()}
                     onChange={(event) => {
-                      if (!decisionSourceNodeId) return;
                       choiceContext?.updateChoice(
-                        decisionSourceNodeId,
+                        interactionSourceNodeId,
                         choice.choiceId,
                         event.target.value
                       );
@@ -3741,10 +4009,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                       choice.label.trim() ? "text-white/72" : "text-[#e0a45c]/78"
                     )}
                   />
-                  <span className="max-w-[112px] truncate rounded-full bg-white/[0.055] px-2 py-1 text-[9px] text-white/38 group-hover/choice:hidden group-focus-within/choice:hidden">
-                    → {choice.targetTitle ?? t("decisionCard.linkedTarget")}
+                  <span className="max-w-[112px] truncate rounded-full bg-white/[0.055] px-2 py-1 text-xs text-white/38 group-hover/choice:hidden group-focus-within/choice:hidden">
+                    → {choice.targetTitle ?? t("interactionCard.linkedTarget")}
                   </span>
-                  {choiceContext?.canEditContent && decisionSourceNodeId ? (
+                  {choiceContext?.canEditContent ? (
                     <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
                       <button
                         type="button"
@@ -3752,7 +4020,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          choiceContext.moveChoice(decisionSourceNodeId, choice.choiceId, "up");
+                          choiceContext.moveChoice(interactionSourceNodeId, choice.choiceId, "up");
                         }}
                         className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
                         aria-label={t("inspector.moveChoiceUp")}
@@ -3761,11 +4029,15 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                       </button>
                       <button
                         type="button"
-                        disabled={index === decisionChoices.length - 1}
+                        disabled={index === interactionChoices.length - 1}
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          choiceContext.moveChoice(decisionSourceNodeId, choice.choiceId, "down");
+                          choiceContext.moveChoice(
+                            interactionSourceNodeId,
+                            choice.choiceId,
+                            "down"
+                          );
                         }}
                         className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
                         aria-label={t("inspector.moveChoiceDown")}
@@ -3777,7 +4049,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          choiceContext.removeChoice(decisionSourceNodeId, choice.choiceId);
+                          choiceContext.removeChoice(interactionSourceNodeId, choice.choiceId);
                         }}
                         className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-[#ff9b9e]"
                         aria-label={t("inspector.removeChoice")}
@@ -3793,79 +4065,76 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                     isConnectable={isConnectable}
                     color={STORY_PORT_COLORS.choice}
                     label={t("ports.choiceOption", {
-                      label: choice.label.trim() || t("decisionCard.untitledOption"),
+                      label: choice.label.trim() || t("interactionCard.untitledOption"),
                     })}
                     className="-right-[23px]!"
                   />
                 </div>
               ))}
-              {decisionSourceNodeId
-                ? choiceDrafts.map((draft, index) => (
-                    <div
-                      key={draft.draftId}
-                      className="nodrag nopan nowheel relative mt-1 grid min-h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white/[0.045] px-1 py-2 pr-3"
+              {choiceDrafts.map((draft, index) => (
+                <div
+                  key={draft.draftId}
+                  className="nodrag nopan nowheel relative mt-1 grid min-h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white/[0.045] px-1 py-2 pr-3"
+                >
+                  <span className="tabular-nums text-white/24">
+                    {String(interactionChoices.length + index + 1).padStart(2, "0")}
+                  </span>
+                  <input
+                    value={draft.label}
+                    maxLength={4_000}
+                    placeholder={t("interactionCard.optionPlaceholder")}
+                    aria-label={t("interactionCard.optionPlaceholder")}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) =>
+                      choiceContext?.updateDraft(
+                        interactionSourceNodeId,
+                        draft.draftId,
+                        event.target.value
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Escape" && !draft.required) {
+                        event.preventDefault();
+                        choiceContext?.cancel(interactionSourceNodeId, draft.draftId);
+                      }
+                    }}
+                    className="h-7 w-full min-w-0 bg-transparent px-1 text-xs text-white/82 outline-none placeholder:text-white/28"
+                  />
+                  {!draft.required ? (
+                    <button
+                      type="button"
+                      aria-label={t("interactionCard.cancelOption")}
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        choiceContext?.cancel(interactionSourceNodeId, draft.draftId);
+                      }}
+                      className="grid size-6 shrink-0 place-items-center rounded-lg text-white/32 transition hover:bg-white/[0.08] hover:text-white/72"
                     >
-                      <span className="tabular-nums text-white/24">
-                        {String(decisionChoices.length + index + 1).padStart(2, "0")}
-                      </span>
-                      <input
-                        value={draft.label}
-                        maxLength={4_000}
-                        placeholder={t("decisionCard.optionPlaceholder")}
-                        aria-label={t("decisionCard.optionPlaceholder")}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) =>
-                          choiceContext?.updateDraft(
-                            decisionSourceNodeId,
-                            draft.draftId,
-                            event.target.value
-                          )
-                        }
-                        onKeyDown={(event) => {
-                          event.stopPropagation();
-                          if (event.key === "Escape" && !draft.required) {
-                            event.preventDefault();
-                            choiceContext?.cancel(decisionSourceNodeId, draft.draftId);
-                          }
-                        }}
-                        className="h-7 w-full min-w-0 bg-transparent px-1 text-xs text-white/82 outline-none placeholder:text-white/28"
-                      />
-                      {!draft.required ? (
-                        <button
-                          type="button"
-                          aria-label={t("decisionCard.cancelOption")}
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext?.cancel(decisionSourceNodeId, draft.draftId);
-                          }}
-                          className="grid size-6 shrink-0 place-items-center rounded-lg text-white/32 transition hover:bg-white/[0.08] hover:text-white/72"
-                        >
-                          <IconX className="size-3" />
-                        </button>
-                      ) : (
-                        <span className="size-6" aria-hidden="true" />
-                      )}
-                      {draft.label.trim() ? (
-                        <StoryPortHandle
-                          id={`choice-new:${draft.draftId}`}
-                          type="source"
-                          position={Position.Right}
-                          isConnectable={isConnectable}
-                          color={STORY_PORT_COLORS.choice}
-                          label={t("decisionCard.connectOption")}
-                          className="-right-[23px]!"
-                        />
-                      ) : null}
-                    </div>
-                  ))
-                : null}
-              {decisionChoices.length + choiceDrafts.length < MAX_PLAYER_CHOICES &&
-              decisionSourceNodeId &&
+                      <IconX className="size-3" />
+                    </button>
+                  ) : (
+                    <span className="size-6" aria-hidden="true" />
+                  )}
+                  {draft.label.trim() ? (
+                    <StoryPortHandle
+                      id={`choice-new:${draft.draftId}`}
+                      type="source"
+                      position={Position.Right}
+                      isConnectable={isConnectable}
+                      color={STORY_PORT_COLORS.choice}
+                      label={t("interactionCard.connectOption")}
+                      className="-right-[23px]!"
+                    />
+                  ) : null}
+                </div>
+              ))}
+              {interactionChoices.length + choiceDrafts.length < MAX_PLAYER_CHOICES &&
               choiceContext?.canCreateOption ? (
                 <button
                   type="button"
@@ -3873,16 +4142,46 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
-                    choiceContext?.start(decisionSourceNodeId);
+                    choiceContext?.start(interactionSourceNodeId);
                   }}
                 >
                   <IconPlus className="size-4" />
-                  {t("decisionCard.addOption")}
+                  {t("interactionCard.addOption")}
                 </button>
               ) : null}
             </div>
           ) : null}
         </div>
+        {worldEditorOpen && worldNode && worldContext ? (
+          <div
+            id={worldEditorId}
+            className="nodrag nopan nowheel border-t border-white/[0.07] p-4"
+            aria-label={t("worldNode.bindingTitle")}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <StoryWorldNodeEditor
+              key={`${worldNode.nodeId}:${worldNode.worldId ?? "unbound"}`}
+              projectId={worldContext.projectId}
+              node={worldNode}
+              world={
+                worldNode.worldId
+                  ? (worldContext.worlds.find((world) => world.id === worldNode.worldId) ?? null)
+                  : null
+              }
+              canEdit={worldContext.canEdit}
+              canGenerate={worldContext.canGenerate}
+              candidateAssets={worldContext.candidateAssets}
+              candidateAssetsLoading={worldContext.candidateAssetsLoading}
+              candidateAssetsError={worldContext.candidateAssetsError}
+              onRetryCandidateAssets={worldContext.retryCandidateAssets}
+              onUploadCandidateAsset={worldContext.uploadCandidateAsset}
+              onUpdate={worldContext.update}
+              onRun={(worldId) => worldContext.run(worldNode.nodeId, worldId)}
+            />
+          </div>
+        ) : null}
       </article>
     </div>
   );
@@ -4119,21 +4418,6 @@ function CanvasError({
   );
 }
 
-// Cast-lane geometry mirrors the model's auto-layout: characters stack in a
-// dedicated column to the LEFT of the entry scene, clear of the story-flow
-// lane on the right.
-const CAST_LANE_COLUMN_GAP = 480;
-const CAST_LANE_ROW_GAP = 150;
-
-function nextCastLanePosition(nodes: readonly StoryCanvasNode[]): StoryCanvasPosition {
-  const anchor = nodes.find((node) => node.data.kind === "clip")?.position ?? { x: 0, y: 0 };
-  const existingCharacters = nodes.filter((node) => node.data.kind === "character").length;
-  return {
-    x: anchor.x - CAST_LANE_COLUMN_GAP,
-    y: anchor.y + existingCharacters * CAST_LANE_ROW_GAP,
-  };
-}
-
 function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosition> {
   return Object.fromEntries(
     [...nodes]
@@ -4169,15 +4453,6 @@ function storyCanvasContentNodeIds(content: InteractiveStoryDraftContent): Set<s
   const nodeIds = new Set<string>();
   content.graph.nodes.forEach((node) => {
     nodeIds.add(node.nodeId);
-    if (node.exit.kind === "choice") {
-      nodeIds.add(syntheticDecisionNodeId(node.nodeId));
-    }
-  });
-  // Character cards persist their layout under `character:` keys. Including them
-  // here keeps their positions in history snapshots and drops a deleted
-  // character's orphaned position alongside the story-graph nodes.
-  content.storyBible.characters.forEach((character) => {
-    nodeIds.add(characterCanvasNodeId(character.id));
   });
   return nodeIds;
 }

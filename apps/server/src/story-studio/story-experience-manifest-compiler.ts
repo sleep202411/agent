@@ -9,10 +9,13 @@ import {
   EXPERIENCE_CORE_RENDERER_API_VERSION,
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
+  EXPERIENCE_GESTURE_CAPABILITY,
   ExperienceRuntimeManifestSchema,
   type ExperienceCoreChoiceRendererConfig,
   type ExperienceCoreRendererId,
   type ExperienceCoreVideoRendererConfig,
+  type ExperienceCoreWorldModelRendererConfig,
   type ExperienceCondition,
   type ExperienceEventBinding,
   type ExperienceGraphNode,
@@ -75,10 +78,15 @@ export interface StoryExperienceManifestCompilerResult {
 
 interface NodeCompilationContext {
   experienceProfile: 'cinematic';
+  projectId: string;
   usedRendererIds: Set<ExperienceCoreRendererId>;
   syntheticScenes: ExperienceScene[];
   diagnostics: StoryExperienceManifestDiagnostic[];
 }
+
+type RuntimeInteraction = InteractiveFilmRuntimeNode['interactions'][number];
+type RuntimeInteractionOutcomeName = keyof RuntimeInteraction['outcomes'];
+type RuntimeInteractionAction = RuntimeInteraction['outcomes']['success'];
 
 /**
  * Lowers the already validated unified Story Build product into the single
@@ -110,6 +118,7 @@ export function compileStoryExperienceManifest(
   const syntheticScenes: ExperienceScene[] = [];
   const context: NodeCompilationContext = {
     experienceProfile: input.experienceProfile,
+    projectId: input.release.gameId,
     usedRendererIds,
     syntheticScenes,
     diagnostics,
@@ -121,6 +130,20 @@ export function compileStoryExperienceManifest(
     },
   );
   graphNodes.push(...syntheticScenes);
+  const hasSpatialInteractions = input.release.nodes.some(
+    (node) => node.interactions.length > 0,
+  );
+  const interactionCapabilities = new Set(
+    input.release.nodes.flatMap((node) =>
+      node.interactions.map(
+        (interaction) =>
+          EXPERIENCE_GESTURE_CAPABILITY[interaction.trigger.kind],
+      ),
+    ),
+  );
+  const hasTerminalScene = input.release.nodes.some(
+    (node) => node.exit.kind === 'auto' && node.exit.nextNodeId === null,
+  );
 
   if (diagnostics.length > 0) return { manifest: null, diagnostics };
 
@@ -134,7 +157,7 @@ export function compileStoryExperienceManifest(
     // UUID here so local persistence, Java authority queries, and the runtime
     // manifest all compare the same value without hidden normalization.
     contentVersion: input.release.contentVersion,
-    completionPolicy: 'finite',
+    completionPolicy: hasTerminalScene ? 'finite' : 'open-ended',
     metadata: {
       title: localizeScalar(input.metadata.title, input.release.locales),
       experienceProfile: input.experienceProfile,
@@ -154,15 +177,37 @@ export function compileStoryExperienceManifest(
       engineApiVersion: '2.0.0',
       experienceApiVersion: '1.0.0',
       semanticRulesVersion: 1,
-      requiredCapabilities: [...usedRendererIds].sort(),
+      requiredCapabilities: [
+        ...usedRendererIds,
+        ...(hasSpatialInteractions
+          ? [
+              'spatial.anchor',
+              'spatial.renderer-content',
+              'renderer.content-transform',
+            ]
+          : []),
+        ...interactionCapabilities,
+      ].sort(),
     },
     localization: {
       defaultLocale: input.release.defaultLocale,
       locales: input.release.locales,
     },
     stateDefinitions: [],
-    inputActions: [],
-    rendererRequirements: compileRendererRequirements(usedRendererIds),
+    inputActions: input.release.nodes.flatMap((node) =>
+      node.interactions.map((interaction) => ({
+        actionId: interactionInputActionId(
+          node.nodeId,
+          interaction.interactionId,
+        ),
+        label: interaction.label,
+        required: true,
+      })),
+    ),
+    rendererRequirements: compileRendererRequirements(
+      usedRendererIds,
+      hasSpatialInteractions,
+    ),
     assets,
     theme: {
       themeId: 'core.film-dark',
@@ -170,16 +215,18 @@ export function compileStoryExperienceManifest(
       configAssetId: STORY_CORE_THEME_CONFIG_ASSET_ID,
     },
     telemetryDefinitions: [],
-    // The cross-product runtime requires a finite-experience completion marker.
-    // Story Studio does not author endings: one technical marker is synthesized
-    // here when a terminal film clip is lowered into the generic manifest.
-    endings: [
-      {
-        endingId: STORY_EXPERIENCE_COMPLETION_ID,
-        title: localizeScalar(input.metadata.title, input.release.locales),
-        kind: 'custom' as const,
-      },
-    ],
+    // Closed films use one technical completion marker. Retry loops and other
+    // deliberately open-ended films declare no synthetic ending; their exit is
+    // owned by a later interaction or the player chrome.
+    endings: hasTerminalScene
+      ? [
+          {
+            endingId: STORY_EXPERIENCE_COMPLETION_ID,
+            title: localizeScalar(input.metadata.title, input.release.locales),
+            kind: 'custom' as const,
+          },
+        ]
+      : [],
     graph: {
       entrySceneId: input.release.entryNodeId,
       nodes: graphNodes,
@@ -341,6 +388,9 @@ function compileGraphNode(
     });
     return null;
   }
+  if (node.presentation.kind === 'world') {
+    return compileWorldGraphNode(node, context);
+  }
   if (node.presentation.kind !== 'video') {
     context.diagnostics.push({
       code: 'STORY_EXPERIENCE_PRESENTATION_UNSUPPORTED',
@@ -370,6 +420,43 @@ function compileGraphNode(
   };
   const renderers: ExperienceRendererInstance[] = [primaryRenderer];
   const eventBindings: ExperienceEventBinding[] = [];
+  const anchors: ExperienceScene['anchors'] = node.interactions.map(
+    (interaction) => ({
+      anchorId: interactionAnchorId(node.nodeId, interaction.interactionId),
+      space: {
+        kind: 'renderer-content',
+        rendererInstanceId: primaryInstanceId,
+      },
+      geometry: { default: { kind: 'rect', rect: interaction.rect } },
+      motion: { kind: 'fixed' },
+    }),
+  );
+  const gestures: ExperienceScene['gestures'] = node.interactions.map(
+    (interaction) => compileInteractionGesture(node.nodeId, interaction),
+  );
+  node.interactions.forEach((interaction) => {
+    const gestureId = interactionGestureId(
+      node.nodeId,
+      interaction.interactionId,
+    );
+    interactionOutcomeEntries(interaction.outcomes).forEach(
+      ([outcome, action]) => {
+        eventBindings.push({
+          bindingId: `binding:${node.nodeId}:interaction:${interaction.interactionId}:${outcome}`,
+          on: {
+            type: interactionOutcomeEventType(outcome),
+            sourceId: gestureId,
+          },
+          routes: [
+            {
+              routeId: `route:${node.nodeId}:interaction:${interaction.interactionId}:${outcome}`,
+              actions: compileInteractionAction(action, primaryInstanceId),
+            },
+          ],
+        });
+      },
+    );
+  });
 
   if (node.exit.kind === 'auto') {
     const actions: ExperienceRuntimeAction[] =
@@ -410,11 +497,162 @@ function compileGraphNode(
     sceneId: node.nodeId,
     clock: { kind: 'renderer', rendererInstanceId: primaryInstanceId },
     renderers,
-    anchors: [],
-    gestures: [],
+    anchors,
+    gestures,
     timeline: { cues: [] },
     eventBindings,
   };
+}
+
+function compileWorldGraphNode(
+  node: InteractiveFilmRuntimeNode,
+  context: NodeCompilationContext,
+): ExperienceGraphNode {
+  if (node.presentation.kind !== 'world' || node.exit.kind !== 'auto') {
+    throw new Error(
+      'World runtime nodes require a world presentation and automatic exit.',
+    );
+  }
+  const rendererId = EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID;
+  const instanceId = `renderer:${node.nodeId}:world`;
+  context.usedRendererIds.add(rendererId);
+  const actions: ExperienceRuntimeAction[] =
+    node.exit.nextNodeId === null
+      ? [{ kind: 'ending.complete', endingId: STORY_EXPERIENCE_COMPLETION_ID }]
+      : [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }];
+  return {
+    kind: 'scene',
+    sceneId: node.nodeId,
+    clock: { kind: 'renderer', rendererInstanceId: instanceId },
+    renderers: [
+      {
+        instanceId,
+        rendererId,
+        layer: 0,
+        config: {
+          projectId: context.projectId,
+          worldId: node.presentation.worldId,
+          ...(node.presentation.entryInstruction
+            ? { entryInstruction: node.presentation.entryInstruction }
+            : {}),
+          maxExperienceSeconds: node.presentation.maxExperienceSeconds,
+          autoplay: true,
+        } satisfies ExperienceCoreWorldModelRendererConfig,
+        bindings: {},
+      },
+    ],
+    anchors: [],
+    gestures: [],
+    timeline: { cues: [] },
+    eventBindings: [
+      rendererOutcomeBinding(node.nodeId, instanceId, 'world-completed', [
+        { routeId: `route:${node.nodeId}:auto`, actions },
+      ]),
+    ],
+  };
+}
+
+function interactionAnchorId(nodeId: string, interactionId: string): string {
+  return `anchor:${nodeId}:${interactionId}`;
+}
+
+function interactionGestureId(nodeId: string, interactionId: string): string {
+  return `gesture:${nodeId}:${interactionId}`;
+}
+
+function interactionInputActionId(
+  nodeId: string,
+  interactionId: string,
+): string {
+  return `input:${nodeId}:${interactionId}`;
+}
+
+function compileInteractionGesture(
+  nodeId: string,
+  interaction: RuntimeInteraction,
+): ExperienceScene['gestures'][number] {
+  const common = {
+    gestureId: interactionGestureId(nodeId, interaction.interactionId),
+    anchorId: interactionAnchorId(nodeId, interaction.interactionId),
+    inputActionId: interactionInputActionId(nodeId, interaction.interactionId),
+    activeWindow: {
+      startMs: interaction.startMs,
+      endMs: interaction.endMs,
+    },
+    ...(interaction.branchAtMs !== undefined
+      ? { branchAtMs: interaction.branchAtMs }
+      : {}),
+  };
+  if (interaction.trigger.kind === 'swipe') {
+    return {
+      ...common,
+      kind: 'swipe',
+      directions: [interaction.trigger.direction],
+      minimumDistance: 0.08,
+      maximumDurationMs: 1_000,
+    };
+  }
+  if (interaction.trigger.kind === 'press-hold') {
+    return {
+      ...common,
+      kind: 'press-hold',
+      durationMs: interaction.trigger.durationMs,
+      releaseBehavior: 'reset',
+      cancelOnPointerExit: true,
+      timelineControl: interaction.trigger.controlTimeline,
+    };
+  }
+  return { ...common, kind: 'tap', maxDurationMs: 500 };
+}
+
+function interactionOutcomeEntries(
+  outcomes: RuntimeInteraction['outcomes'],
+): Array<[RuntimeInteractionOutcomeName, RuntimeInteractionAction]> {
+  return (['success', 'failure', 'timeout'] as const).flatMap((outcome) => {
+    const action = outcomes[outcome];
+    return action ? [[outcome, action]] : [];
+  });
+}
+
+function interactionOutcomeEventType(
+  outcome: RuntimeInteractionOutcomeName,
+): 'gesture.completed' | 'gesture.cancelled' | 'gesture.timed-out' {
+  if (outcome === 'failure') return 'gesture.cancelled';
+  if (outcome === 'timeout') return 'gesture.timed-out';
+  return 'gesture.completed';
+}
+
+function compileInteractionAction(
+  action: RuntimeInteractionAction,
+  primaryInstanceId: string,
+): ExperienceRuntimeAction[] {
+  if (action.kind === 'goto') {
+    return [{ kind: 'scene.goto', sceneId: action.nodeId }];
+  }
+  if (action.kind === 'seek') {
+    return [
+      {
+        kind: 'renderer.command',
+        instanceId: primaryInstanceId,
+        commandType: 'seek',
+        payload: { timeMs: { kind: 'literal', value: action.timeMs } },
+      },
+      {
+        kind: 'renderer.command',
+        instanceId: primaryInstanceId,
+        commandType: 'play',
+        payload: {},
+      },
+    ];
+  }
+  return [
+    {
+      kind: 'renderer.command',
+      instanceId: primaryInstanceId,
+      commandType: 'play',
+      payload: {},
+    },
+  ];
 }
 
 function compileChoiceExit(
@@ -490,6 +728,7 @@ function rendererOutcomeBinding(
 
 function compileRendererRequirements(
   usedRendererIds: ReadonlySet<ExperienceCoreRendererId>,
+  hasSpatialInteractions: boolean,
 ): ExperienceRendererRequirement[] {
   return [...usedRendererIds].sort().map((rendererId) => {
     if (rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
@@ -497,9 +736,12 @@ function compileRendererRequirements(
         rendererId,
         apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
         configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
-        requiredCapabilities: [rendererId],
+        requiredCapabilities: [
+          rendererId,
+          ...(hasSpatialInteractions ? ['renderer.content-transform'] : []),
+        ],
         outcomes: [{ outcomeType: 'media-ended' }],
-        commands: [],
+        commands: [{ commandType: 'play' }, { commandType: 'seek' }],
       };
     }
     if (rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID) {
@@ -520,6 +762,16 @@ function compileRendererRequirements(
         requiredCapabilities: [rendererId, 'input.press-hold'],
         outcomes: [],
         commands: [{ commandType: 'complete' }],
+      };
+    }
+    if (rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID) {
+      return {
+        rendererId,
+        apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
+        configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+        requiredCapabilities: [rendererId],
+        outcomes: [{ outcomeType: 'world-completed' }],
+        commands: [{ commandType: 'end' }],
       };
     }
     throw new Error(`Unsupported Story renderer requirement: ${rendererId}`);

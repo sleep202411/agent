@@ -105,6 +105,10 @@
     "./text-game": {
       "types": "./dist/text-game.d.ts",
       "default": "./dist/text-game.js"
+    },
+    "./world-model-protocol": {
+      "types": "./dist/world-model-protocol.d.ts",
+      "default": "./dist/world-model-protocol.js"
     }
   },
   "scripts": {

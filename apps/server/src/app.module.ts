@@ -41,6 +41,7 @@ import { SparkModule } from './spark/spark.module';
 import { SharingModule } from './sharing/sharing.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
+import { WorldModelModule } from './world-model/world-model.module';
 
 const agentOsGatewayEnabled = (() => {
   const raw = (process.env.AGENT_OS_ENABLED ?? 'false').trim().toLowerCase();
@@ -98,6 +99,7 @@ const agentOsGatewayEnabled = (() => {
     OrdersModule,
     ProjectSectionsModule,
     ProjectSkillsModule,
+    WorldModelModule,
     HealthModule,
   ],
   providers: [

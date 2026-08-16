@@ -23,6 +23,9 @@ export type BailianProviderTransform =
   | 'identity'
   | 'mediaUrl'
   | 'mediaArray'
+  | 'mediaArrayAsImages'
+  | 'mediaArrayAsVideos'
+  | 'mediaArrayAsAudios'
   | 'secondsToInteger'
   | 'omitAuto';
 

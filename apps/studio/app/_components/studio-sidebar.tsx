@@ -17,9 +17,9 @@ import {
   IconPhoto,
   IconSettings,
   IconVideo,
-  IconVolume,
   IconWriting,
 } from "@tabler/icons-react";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 import gsap from "gsap";
 import { Link, usePathname } from "@/i18n/navigation";
 import { getWebBaseUrl } from "@/lib/web-base";
@@ -328,7 +328,7 @@ export function StudioSidebar() {
   const toolItems: SidebarItem[] = [
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },
-    { label: t("nav.audio"), href: "/audio", icon: IconVolume, disabled: true },
+    { label: t("nav.audio"), href: "/audio", icon: IconAudioWaveform, disabled: true },
   ];
   const settingsItem: SidebarItem = {
     label: t("nav.settings"),

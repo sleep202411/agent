@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { IconDownload, IconMinus, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 
 export function CanvasMediaViewer({
   alt,
@@ -19,7 +20,7 @@ export function CanvasMediaViewer({
   onClose: () => void;
   src: string;
   title?: string;
-  type: "image" | "video";
+  type: "image" | "video" | "audio";
 }) {
   const tc = useTranslations("common");
   const tg = useTranslations("generation");
@@ -62,7 +63,9 @@ export function CanvasMediaViewer({
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = downloadName ?? (type === "video" ? "video.mp4" : "image.png");
+      anchor.download =
+        downloadName ??
+        (type === "video" ? "video.mp4" : type === "audio" ? "audio.mp3" : "image.png");
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -137,6 +140,22 @@ export function CanvasMediaViewer({
               className="max-h-full max-w-full rounded-xl"
             />
             {videoFailed && <VideoPlaybackFallback onDownload={() => void download()} />}
+          </div>
+        ) : type === "audio" ? (
+          <div className="flex size-full items-center justify-center">
+            <div className="flex w-full max-w-xl flex-col items-center gap-5 rounded-3xl bg-white/[0.055] px-8 py-10 shadow-2xl shadow-black/40">
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-white/[0.08] text-white/72">
+                <IconAudioWaveform className="size-6" stroke={1.7} />
+              </span>
+              {title ? <p className="max-w-full truncate text-sm text-white/82">{title}</p> : null}
+              <audio
+                src={src}
+                controls
+                autoPlay
+                preload="metadata"
+                className="h-10 w-full [color-scheme:dark]"
+              />
+            </div>
           </div>
         ) : (
           <div

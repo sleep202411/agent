@@ -74,6 +74,7 @@ const ossPublicCnameEndpoint = (): string =>
 
 @Injectable()
 export class AliyunOssStorageService extends OutputStorageService {
+  readonly providerId = 'aliyun_oss' as const;
   private readonly logger = new Logger(AliyunOssStorageService.name);
   private readonly client: OSS | null;
   private readonly bucket: string;

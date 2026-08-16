@@ -74,10 +74,11 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 
 type StatusFilter = "" | "draft" | "active" | "disabled" | "degraded" | "archived";
-type AiModality = "image" | "video";
+type AiModality = "image" | "video" | "audio";
 const MODALITY_OPTIONS: { value: AiModality; label: string }[] = [
   { value: "image", label: "图片" },
   { value: "video", label: "视频" },
+  { value: "audio", label: "音频" },
 ];
 type DrawerMode = "provider" | "endpoint" | "model" | "binding" | "endpointBinding" | "job" | null;
 type AssetModerationFilter = "" | "unreviewed" | "approved" | "flagged" | "blocked";
@@ -214,6 +215,9 @@ const PROVIDER_MODE_OPTIONS = [
   // is built from rendered checkboxes only), breaking per-mode routing.
   { value: "first_last_frame_to_video", label: "First/last frame to video" },
   { value: "multimodal_to_video", label: "Multimodal (omni) to video" },
+  { value: "text_to_audio", label: "Text to audio" },
+  { value: "audio_to_audio", label: "Audio to audio" },
+  { value: "image_to_audio", label: "Image to audio" },
 ] as const;
 
 const PROVIDER_BINDING_FIELDS = {
@@ -1738,9 +1742,7 @@ function ModelBindingsSubTable({
 function ModelRuntimePolicyCell({ model }: { model: AdminAiCanonicalModel }) {
   const parameter = asRecord(model.parameterPolicy);
   const queue = asRecord(model.queuePolicy);
-  const queueName =
-    stringFromRecord(queue, "queueName") ??
-    (model.modality === "video" ? "ai-video-generation" : "ai-image-generation");
+  const queueName = stringFromRecord(queue, "queueName") ?? defaultQueueName(model.modality);
   const defaults = [
     stringFromRecord(parameter, "defaultResolution"),
     stringFromRecord(parameter, "defaultQuality"),
@@ -2389,9 +2391,7 @@ function ModelPolicySummary({ model }: { model: AdminAiCanonicalModel }) {
   const queueName =
     typeof queue.queueName === "string" && queue.queueName.trim()
       ? queue.queueName
-      : model.modality === "video"
-        ? "ai-video-generation"
-        : "ai-image-generation";
+      : defaultQueueName(model.modality);
   const runtimeSeconds = numberFromRecord(queue, "maxProviderRuntimeSeconds");
   const alertSeconds = numberFromRecord(observability, "alertOnQueueWaitSeconds");
 
@@ -3972,20 +3972,26 @@ function computeReadiness(
 
 function defaultModelDraft(modality: AiModality): AdminAiCanonicalModel {
   const video = modality === "video";
+  const audio = modality === "audio";
   return {
     id: "",
-    slug: video ? "seedance-2.0" : "gpt-image-2",
-    displayName: video ? "Seedance 2.0" : "GPT Image 2",
+    slug: video ? "seedance-2.0" : audio ? "seed-tts-2-0" : "gpt-image-2",
+    displayName: video ? "Seedance 2.0" : audio ? "Seed TTS 2.0" : "GPT Image 2",
     modality,
-    family: video ? "seedance" : "gpt-image",
-    generationModes: video ? ["text_to_video"] : ["text_to_image"],
+    family: video ? "seedance" : audio ? "audio" : "gpt-image",
+    generationModes: video ? ["text_to_video"] : audio ? ["text_to_audio"] : ["text_to_image"],
     status: "draft",
     description: "",
     parameterPolicy: {},
     outputPolicy: {},
     entitlementPolicy: {},
     billingPolicy: { mode: "charge", unit: "compute_point", finalCostSource: "product_pricing" },
-    queuePolicy: { priorityTier: "standard", maxConcurrentPerUser: 2, timeoutMs: 150000 },
+    queuePolicy: {
+      queueName: defaultQueueName(modality),
+      priorityTier: "standard",
+      maxConcurrentPerUser: audio ? 4 : 2,
+      timeoutMs: audio ? 300000 : 150000,
+    },
     uiPolicy: {},
     observabilityPolicy: {
       providerTrace: true,
@@ -4015,7 +4021,12 @@ function defaultProviderEndpointDraft(
     modality,
     status: "draft",
     healthStatus: "unknown",
-    supportedModes: modality === "video" ? ["text_to_video"] : ["text_to_image"],
+    supportedModes:
+      modality === "video"
+        ? ["text_to_video"]
+        : modality === "audio"
+          ? ["text_to_audio"]
+          : ["text_to_image"],
     providerInputSchema: {
       type: "object",
       properties: {},
@@ -4041,6 +4052,12 @@ function defaultProviderEndpointDraft(
       : undefined,
     bindingCount: 0,
   };
+}
+
+function defaultQueueName(modality: AiModality): string {
+  if (modality === "video") return "ai-video-generation";
+  if (modality === "audio") return "ai-audio-generation";
+  return "ai-image-generation";
 }
 
 function buildProviderAccountPayload(form: FormData) {

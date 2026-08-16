@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel, syntheticDecisionNodeId } from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 import {
   addChoiceOption,
   convertSceneExitToChoice,
@@ -23,7 +23,7 @@ describe("story canvas blank-drop connections", () => {
     });
   });
 
-  it("supports both decision option handle forms", () => {
+  it("supports both inline interaction option handle forms", () => {
     let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
     content = createClipNode(content, { nodeId: "old-target", clipKey: "OLD_TARGET" }).content;
     content = convertSceneExitToChoice(content, "opening", "en-US");
@@ -31,10 +31,9 @@ describe("story canvas blank-drop connections", () => {
       choiceId: "stay",
     }).content;
 
-    const decisionId = syntheticDecisionNodeId("opening");
     const retargeted = createConnectedSceneForBlankDrop(
       content,
-      canvasNode(content, decisionId).data,
+      canvasNode(content, "opening").data,
       "choice:stay",
       "en-US"
     )!;
@@ -45,7 +44,7 @@ describe("story canvas blank-drop connections", () => {
 
     const appended = createConnectedSceneForBlankDrop(
       retargeted.content,
-      canvasNode(retargeted.content, decisionId).data,
+      canvasNode(retargeted.content, "opening").data,
       "choice-new:draft-1",
       "en-US",
       { newChoiceLabel: "Take the new path" }

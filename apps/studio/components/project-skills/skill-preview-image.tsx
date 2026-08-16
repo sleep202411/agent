@@ -20,6 +20,10 @@ export function SkillPreviewImage({
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = Boolean(src && failedSrc === src);
+  // Protected media is served through the same-origin Aurora proxy. Let the
+  // browser request it directly so the user's session cookie is preserved;
+  // Next's server-side image optimizer cannot authenticate that request.
+  const isProtectedMedia = Boolean(src?.startsWith("/aurora/media/assets/"));
 
   if (!src || failed) {
     return (
@@ -38,6 +42,7 @@ export function SkillPreviewImage({
       src={src}
       alt={alt}
       fill
+      unoptimized={isProtectedMedia}
       loading="eager"
       sizes={sizes}
       className={className}

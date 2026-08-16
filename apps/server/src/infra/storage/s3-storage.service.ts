@@ -1,6 +1,6 @@
 /**
  * S3-compatible implementation of OutputStorageService — built for
- * Cloudflare R2, works against any S3 API (MinIO in tests, AWS proper).
+ * Cloudflare R2.
  *
  * Sibling to AzureBlobStorageService / AliyunOssStorageService; fills the
  * `s3_compatible` slot that has been enum-only since the storage split.
@@ -16,9 +16,8 @@
  *   S3_QUARANTINE_BUCKET  — private bucket takendown objects move into
  *     (S3 has no usable per-object ACL on R2). Defaults to
  *     `${S3_BUCKET}-quarantine`. Created on demand.
- *   S3_FORCE_PATH_STYLE   — set truthy for path-style addressing. R2 (whose
- *     S3 endpoint is account-scoped, not bucket-scoped) and MinIO both want
- *     it; default off.
+ *   S3_FORCE_PATH_STYLE   — set truthy for path-style addressing. R2's S3
+ *     endpoint is account-scoped, not bucket-scoped; default off.
  *
  * Public reads: R2's S3 endpoint is NOT the public URL — set
  * `MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE` (read resolver) to the CDN custom
@@ -81,6 +80,7 @@ const s3ForcePathStyle = (): boolean =>
 
 @Injectable()
 export class S3CompatibleStorageService extends OutputStorageService {
+  readonly providerId = 's3_compatible' as const;
   private readonly logger = new Logger(S3CompatibleStorageService.name);
   private readonly client: S3Client | null;
   private readonly bucket: string;
@@ -88,8 +88,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private readonly region: string | null;
   private readonly endpoint: string;
   private readonly forcePathStyle: boolean;
-  private readonly autoCreateBucket: boolean;
-  private autoCreateInitialized = false;
+  private readonly missingConfigurationKeys: readonly string[];
 
   constructor() {
     super();
@@ -105,18 +104,20 @@ export class S3CompatibleStorageService extends OutputStorageService {
     this.region = region || null;
     this.endpoint = endpoint;
     this.forcePathStyle = s3ForcePathStyle();
-    this.autoCreateBucket = envFlag('S3_AUTO_CREATE_BUCKET');
-
-    if (this.autoCreateBucket && process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'S3_AUTO_CREATE_BUCKET is a local-development option and must not be enabled in production',
-      );
-    }
-
-    if (!endpoint || !region || !bucket || !accessKeyId || !accessKeySecret) {
-      this.logger.warn(
-        'S3_* env incomplete — S3CompatibleStorageService is a no-op',
-      );
+    this.missingConfigurationKeys = [
+      ['S3_ENDPOINT', endpoint],
+      ['S3_REGION', region],
+      ['S3_BUCKET', bucket],
+      ['S3_ACCESS_KEY_ID', accessKeyId],
+      ['S3_ACCESS_KEY_SECRET', accessKeySecret],
+      [
+        'MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE',
+        (process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE ?? '').trim(),
+      ],
+    ]
+      .filter((entry) => !entry[1])
+      .map((entry) => entry[0]);
+    if (this.missingConfigurationKeys.length > 0) {
       this.client = null;
       return;
     }
@@ -136,6 +137,20 @@ export class S3CompatibleStorageService extends OutputStorageService {
       // ride inside every signed GET, demanding a checksum R2 never stored.
       responseChecksumValidation: 'WHEN_REQUIRED',
     });
+  }
+
+  /**
+   * The service is instantiated in every cell so existing objects can still
+   * be resolved by their persisted provider. Call this when R2 is selected as
+   * a write target; a half-configured deployment must fail during bootstrap,
+   * not during the first user upload.
+   */
+  assertConfigured(context: string): void {
+    if (this.missingConfigurationKeys.length === 0) return;
+    throw new Error(
+      `${context} requires Cloudflare R2, but the following environment variables are missing: ${this.missingConfigurationKeys.join(', ')}. ` +
+        'For local development, store credentials in apps/server/.env.local.',
+    );
   }
 
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
@@ -215,7 +230,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
       }),
       // signableHeaders is load-bearing: without it the presigner leaves
       // content-type OUT of SignedHeaders and any Content-Type is accepted
-      // (verified against MinIO) — the pin below is what makes the
+      // (verified against the S3-compatible wire contract) — the pin below is what makes the
       // mismatched-type PUT fail like the Azure SAS / OSS V4 paths do. It
       // takes SignedHeaders to exactly `content-type;host`; every other
       // signing input the SDK emits is hoisted into the query, not signed as
@@ -458,25 +473,6 @@ export class S3CompatibleStorageService extends OutputStorageService {
 
   async isHealthy(): Promise<boolean> {
     if (!this.client) return false;
-    if (this.autoCreateBucket && !this.autoCreateInitialized) {
-      try {
-        try {
-          await this.client.send(
-            new HeadBucketCommand({ Bucket: this.bucket }),
-          );
-        } catch (err) {
-          if (!isS3BucketMissing(err)) throw err;
-          await this.ensureBucket(this.client, this.bucket);
-        }
-        this.autoCreateInitialized = true;
-        return true;
-      } catch (err) {
-        this.logger.warn(
-          `S3 local bucket bootstrap failed: ${errorMessage(err)}`,
-        );
-        return false;
-      }
-    }
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       return true;
@@ -489,7 +485,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private requireClient(): S3Client {
     if (!this.client) {
       throw new ServiceUnavailableException(
-        's3_compatible storage is not configured',
+        `Cloudflare R2 is not configured. Missing: ${this.missingConfigurationKeys.join(', ')}`,
       );
     }
     return this.client;
@@ -572,15 +568,6 @@ function isS3NotFound(err: unknown): boolean {
   return false;
 }
 
-function isS3BucketMissing(err: unknown): boolean {
-  if (isS3NotFound(err)) return true;
-  if (err && typeof err === 'object') {
-    const name = (err as { name?: string }).name;
-    return name === 'NoSuchBucket';
-  }
-  return false;
-}
-
 function assertSameS3Region(
   source: StorageObjectRef,
   destination: StorageObjectRef,
@@ -606,10 +593,4 @@ function isBucketAlreadyOurs(err: unknown): boolean {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function envFlag(name: string): boolean {
-  return ['1', 'true', 'yes', 'on'].includes(
-    (process.env[name] ?? '').trim().toLowerCase(),
-  );
 }

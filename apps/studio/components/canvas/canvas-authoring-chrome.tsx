@@ -5,21 +5,20 @@ import { useTranslations } from "next-intl";
 import { useReactFlow, useViewport, type FitViewOptions } from "@xyflow/react";
 import {
   IconApps,
-  IconCloudUpload,
-  IconLayoutList,
   IconMagnet,
   IconMap,
   IconMaximize,
   IconMinus,
-  IconNote,
-  IconPhoto,
   IconPlus,
-  IconVideo,
-  type Icon,
 } from "@tabler/icons-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvasToolButtons } from "./canvas-controls";
-import { ADD_NODE_LABEL_KEYS, DEFAULT_ADD_NODE_ACTIONS, type AddNodeAction } from "./add-node-menu";
+import {
+  ADD_NODE_ICONS,
+  ADD_NODE_LABEL_KEYS,
+  DEFAULT_ADD_NODE_ACTIONS,
+  type AddNodeAction,
+} from "./add-node-menu";
 import { cn } from "@/lib/utils";
 
 export const CANVAS_FLOATING_PANEL =
@@ -146,14 +145,6 @@ export function CanvasAuthoringControls({
   );
 }
 
-const DOCK_ICONS: Record<AddNodeAction, Icon> = {
-  upload: IconCloudUpload,
-  "generate-image": IconPhoto,
-  "generate-video": IconVideo,
-  note: IconNote,
-  shot: IconLayoutList,
-};
-
 export function CanvasAuthoringDock({
   actions = DEFAULT_ADD_NODE_ACTIONS,
   onAdd,
@@ -170,7 +161,7 @@ export function CanvasAuthoringDock({
       )}
     >
       {actions.map((action) => {
-        const Icon = DOCK_ICONS[action];
+        const Icon = ADD_NODE_ICONS[action];
         const label = t(`dock.${ADD_NODE_LABEL_KEYS[action]}`);
         return (
           <button

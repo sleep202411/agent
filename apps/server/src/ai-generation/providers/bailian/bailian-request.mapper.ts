@@ -2,11 +2,13 @@ import type {
   BailianModelRuntimeConfig,
   BailianProviderFieldBinding,
 } from './bailian.types';
+import { bailianError } from './bailian-error.mapper';
 
 export function mapBailianProviderRequest(
   config: BailianModelRuntimeConfig,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
+  validateProviderInput(config, input);
   const request: Record<string, unknown> = {
     model: config.endpointId,
     input: {},
@@ -29,7 +31,11 @@ export function mapBailianProviderRequest(
     const mapped = transformValue(raw, binding.transform);
     if (mapped === undefined) continue;
     const target = binding.section === 'parameters' ? parameters : inputBody;
-    target[binding.parameter] = mapped;
+    const existing = target[binding.parameter];
+    target[binding.parameter] =
+      Array.isArray(existing) && Array.isArray(mapped)
+        ? [...existing, ...mapped]
+        : mapped;
   }
 
   normalizeServiceRequest(config, request, input);
@@ -43,7 +49,7 @@ function normalizeServiceRequest(
   rawInput: Record<string, unknown>,
 ): void {
   if (config.service === 'video-synthesis') {
-    normalizeVideoRequest(request, rawInput);
+    normalizeVideoRequest(config, request, rawInput);
     return;
   }
   if (
@@ -86,11 +92,12 @@ function normalizeServiceRequest(
  *  - image inputs ride in `input.media` as typed-role MediaItems, NOT a flat
  *    `input.img_url`: { type: 'first_frame'|'last_frame', url }. start frame =>
  *    first_frame (i2v); + end frame => last_frame (first-last-frame to video).
- *  - aspect ratio is `parameters.ratio` and ONLY valid for text-to-video; for
- *    image-driven modes the output ratio is derived from the input frame, so we
- *    drop it. (The schema emits `aspect_ratio`; Wan uses `ratio`.)
+ *  - aspect ratio is `parameters.ratio`. Older Wan endpoints only accept it
+ *    for text-to-video; all-in-one endpoints such as Wan 3.0 accept it for
+ *    every mode. The model policy chooses the strategy.
  */
 function normalizeVideoRequest(
+  config: BailianModelRuntimeConfig,
   request: Record<string, unknown>,
   rawInput: Record<string, unknown>,
 ): void {
@@ -100,8 +107,7 @@ function normalizeVideoRequest(
   // Omni-reference (参考生视频): the `references` array is already mapped to
   // input.media (typed reference_image/reference_video items) by the generic
   // providerInputMap loop — leave it intact and don't treat this as i2v.
-  const hasReferences =
-    Array.isArray(rawInput.references) && rawInput.references.length > 0;
+  const hasReferences = providerReferences(rawInput).length > 0;
   delete input.img_url;
 
   if (startUrl && !hasReferences) {
@@ -116,17 +122,150 @@ function normalizeVideoRequest(
   if (parameters) {
     const aspect = parameters.aspect_ratio;
     delete parameters.aspect_ratio;
-    // text-to-video only: image-driven and reference modes derive the output
-    // ratio from their input media.
+    const aspectRatioStrategy = stringFromPolicy(
+      config.parameterPolicy,
+      'aspectRatioStrategy',
+    );
     if (
-      !startUrl &&
-      !hasReferences &&
+      (aspectRatioStrategy === 'always' || (!startUrl && !hasReferences)) &&
       typeof aspect === 'string' &&
       aspect.trim()
     ) {
       parameters.ratio = aspect.trim();
     }
   }
+}
+
+function validateProviderInput(
+  config: BailianModelRuntimeConfig,
+  input: Record<string, unknown>,
+): void {
+  if (
+    stringFromPolicy(config.parameterPolicy, 'providerProtocol') !==
+    'wan3-video'
+  ) {
+    return;
+  }
+
+  const startUrl = mediaUrl(input.startFrame);
+  const endUrl = mediaUrl(input.endFrame);
+  const references = providerReferences(input);
+
+  const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
+  if (!prompt && !startUrl && references.length === 0) {
+    throw validationError('Add a prompt, a start frame, or reference media.');
+  }
+
+  if (endUrl && !startUrl) {
+    throw validationError('Wan 3.0 requires a start frame with an end frame.');
+  }
+  if ((startUrl || endUrl) && references.length > 0) {
+    throw validationError(
+      'Wan 3.0 frame inputs cannot be combined with reference media.',
+    );
+  }
+
+  const counts = new Map<string, number>();
+  let referenceVideoSeconds = 0;
+  let referenceAudioSeconds = 0;
+  for (const reference of references) {
+    const type =
+      typeof reference.type === 'string' ? reference.type.trim() : '';
+    if (!type) continue;
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+    const duration = finiteNumber(
+      reference.durationSeconds ?? reference.duration,
+    );
+    if (duration == null) continue;
+    if (
+      (type === 'reference_video' || type === 'reference_audio') &&
+      (duration < 1 || duration > 15)
+    ) {
+      throw validationError(
+        `Wan 3.0 ${type} items must be between 1 and 15 seconds.`,
+      );
+    }
+    if (type === 'reference_video') referenceVideoSeconds += duration;
+    if (type === 'reference_audio') referenceAudioSeconds += duration;
+  }
+
+  const limits = recordValue(
+    recordValue(config.parameterPolicy)?.referenceLimits,
+  );
+  const maxReferenceItems = finiteNumber(
+    recordValue(config.parameterPolicy)?.maxReferenceItems,
+  );
+  if (maxReferenceItems != null && references.length > maxReferenceItems) {
+    throw validationError(
+      `Wan 3.0 accepts at most ${maxReferenceItems} reference items in total.`,
+    );
+  }
+  for (const [type, count] of counts) {
+    const maximum = finiteNumber(limits?.[type]);
+    if (maximum != null && count > maximum) {
+      throw validationError(
+        `Wan 3.0 accepts at most ${maximum} ${type} item${maximum === 1 ? '' : 's'}.`,
+      );
+    }
+  }
+  if ((counts.get('file') ?? 0) > 0 && (counts.get('link') ?? 0) > 0) {
+    throw validationError(
+      'Wan 3.0 file and link inputs are mutually exclusive.',
+    );
+  }
+  if (referenceVideoSeconds > 15) {
+    throw validationError(
+      'Wan 3.0 reference videos may total at most 15 seconds.',
+    );
+  }
+  if (referenceAudioSeconds > 15) {
+    throw validationError(
+      'Wan 3.0 reference audio may total at most 15 seconds.',
+    );
+  }
+  const outputSeconds = finiteNumber(input.durationSeconds);
+  if (
+    outputSeconds != null &&
+    referenceVideoSeconds > 0 &&
+    outputSeconds + referenceVideoSeconds > 30
+  ) {
+    throw validationError(
+      'Wan 3.0 reference video plus generated video may total at most 30 seconds.',
+    );
+  }
+}
+
+function providerReferences(
+  input: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const references: Array<Record<string, unknown>> = [];
+  const push = (field: string, type?: string) => {
+    if (!Array.isArray(input[field])) return;
+    for (const item of input[field]) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      references.push(type ? { ...record, type } : record);
+    }
+  };
+  push('referenceImages', 'reference_image');
+  push('referenceVideos', 'reference_video');
+  push('referenceAudios', 'reference_audio');
+  push('references');
+  return references;
+}
+
+function validationError(message: string) {
+  return bailianError('VALIDATION_ERROR', message, message);
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function stringFromPolicy(policy: unknown, key: string): string | undefined {
+  const value = recordValue(policy)?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function collectReferenceImageUrls(
@@ -263,8 +402,21 @@ function transformValue(
     }
     return undefined;
   }
-  if (transform === 'mediaArray') {
+  if (
+    transform === 'mediaArray' ||
+    transform === 'mediaArrayAsImages' ||
+    transform === 'mediaArrayAsVideos' ||
+    transform === 'mediaArrayAsAudios'
+  ) {
     if (!Array.isArray(value)) return undefined;
+    const fixedType =
+      transform === 'mediaArrayAsImages'
+        ? 'reference_image'
+        : transform === 'mediaArrayAsVideos'
+          ? 'reference_video'
+          : transform === 'mediaArrayAsAudios'
+            ? 'reference_audio'
+            : undefined;
     const media = value
       .map((item) => {
         if (!item || typeof item !== 'object') return null;
@@ -272,9 +424,10 @@ function transformValue(
         const url = typeof raw.url === 'string' ? raw.url.trim() : '';
         if (!url) return null;
         const type =
-          typeof raw.type === 'string' && raw.type.trim()
+          fixedType ??
+          (typeof raw.type === 'string' && raw.type.trim()
             ? raw.type.trim()
-            : 'reference_image';
+            : 'reference_image');
         const out: Record<string, unknown> = { type, url };
         if (typeof raw.referenceVoice === 'string' && raw.referenceVoice) {
           out.reference_voice = raw.referenceVoice;

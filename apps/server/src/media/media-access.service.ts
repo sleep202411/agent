@@ -62,6 +62,17 @@ type MediaAccessAsset = Prisma.MediaAssetGetPayload<{
   include: typeof MEDIA_ACCESS_ASSET_INCLUDE;
 }>;
 
+export type MediaAssetAccessSubject = Pick<
+  MediaAccessAsset,
+  | 'id'
+  | 'visibility'
+  | 'status'
+  | 'moderationStatus'
+  | 'createdByUserId'
+  | 'workspaceId'
+  | 'metadata'
+>;
+
 @Injectable()
 export class MediaAccessService {
   constructor(
@@ -85,7 +96,28 @@ export class MediaAccessService {
     query: MediaAssetAccessQueryDto,
   ): Promise<MediaAssetAccessResponseDto> {
     const asset = await this.loadAsset(assetId);
+    await this.requireUseAccess(userId, asset);
 
+    return this.issueStorageUrl(asset, query, {
+      allowInactivePlacements: false,
+      cacheControl: USER_READ_CACHE_CONTROL,
+      expiresInSeconds: USER_READ_URL_TTL_SECONDS,
+    });
+  }
+
+  /**
+   * Canonical product-level authorization for consuming an asset.
+   *
+   * Browser playback, provider references, exports, and future media tools
+   * must share this rule instead of inferring access from workspaceId alone.
+   * In particular, a personal private asset has no workspaceId and is owned
+   * through createdByUserId; workspace, Crew, and cast grants are evaluated by
+   * the same policy used by the asset library.
+   */
+  async requireUseAccess(
+    userId: string | null | undefined,
+    asset: MediaAssetAccessSubject,
+  ): Promise<void> {
     if (
       asset.status === MediaAssetStatus.deleted ||
       asset.moderationStatus === MediaAssetModerationStatus.blocked
@@ -120,12 +152,11 @@ export class MediaAccessService {
     }
 
     await this.requireAccess(userId, asset);
+  }
 
-    return this.issueStorageUrl(asset, query, {
-      allowInactivePlacements: false,
-      cacheControl: USER_READ_CACHE_CONTROL,
-      expiresInSeconds: USER_READ_URL_TTL_SECONDS,
-    });
+  async requireUseAccessById(userId: string, assetId: string): Promise<void> {
+    const asset = await this.loadAsset(assetId);
+    await this.requireUseAccess(userId, asset);
   }
 
   async issueAdminAccessUrl(

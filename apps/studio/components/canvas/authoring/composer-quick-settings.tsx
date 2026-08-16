@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
 import {
   schemaFields,
+  normalizeSchemaFieldNumber,
   type FizzAiModel,
   type ModelSettings,
   type SchemaFieldDescriptor,
@@ -115,7 +116,11 @@ export function ComposerQuickSettings({
       const n = Number(scalar(field.name) ?? field.default ?? field.min ?? 1) || 1;
       return <span>×{n}</span>;
     }
-    const v = scalar(field.name) ?? field.default ?? field.enum?.[0];
+    const raw = scalar(field.name) ?? field.default ?? field.enum?.[0];
+    const v =
+      typeof raw === "number" && (field.type === "number" || field.type === "integer")
+        ? normalizeSchemaFieldNumber(raw, field)
+        : raw;
     const isDuration = /duration/i.test(field.name);
     return (
       <span className="flex items-center gap-1 whitespace-nowrap">

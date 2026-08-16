@@ -71,6 +71,8 @@ export interface CanvasAsset {
   url: string;
   width?: number;
   height?: number;
+  durationSeconds?: number;
+  bytes?: number;
   name?: string;
   prompt?: string;
   panorama?: boolean;

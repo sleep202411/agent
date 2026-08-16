@@ -57,8 +57,8 @@ export const GPT_IMAGE_2_PARAMETER_POLICY = {
 export const NANO_BANANA_PARAMETER_POLICY = {
   parameterMode: 'provider_intersection',
   providerFamily: 'nano-banana',
-  // fal nano-banana endpoints take a native `aspect_ratio` enum (not
-  // image_size): https://fal.ai/models/fal-ai/nano-banana/api
+  // Shared Google Vertex + fal product control. The provider mappers translate
+  // this canonical value to their respective imageConfig/aspect_ratio fields.
   aspectParameter: 'aspect_ratio',
   defaultAspectRatio: '1:1',
   supportedAspectRatios: [
@@ -75,12 +75,14 @@ export const NANO_BANANA_PARAMETER_POLICY = {
   ],
   defaultVariations: 1,
   variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K'],
   defaultOutputFormat: 'png',
   outputFormatOptions: ['png', 'jpeg'],
   referenceImages: {
     enabled: true,
     min: 0,
-    max: 4,
+    max: 3,
     maskSupported: false,
   },
   seed: { enabled: false },
@@ -102,12 +104,13 @@ export const NANO_BANANA_2_PARAMETER_POLICY = {
     '4:5',
     '5:4',
     '21:9',
+    '9:21',
   ],
-  advancedAspectRatios: ['4:1', '1:4', '8:1', '1:8'],
+  advancedAspectRatios: ['1:4', '4:1', '1:8', '8:1'],
   defaultVariations: 1,
   variationOptions: [1],
   defaultResolution: '1K',
-  resolutionOptions: ['1K', '2K', '4K'],
+  resolutionOptions: ['512', '1K', '2K', '4K'],
   defaultOutputFormat: 'png',
   outputFormatOptions: ['png', 'jpeg'],
   referenceImages: {
@@ -137,11 +140,13 @@ export const NANO_BANANA_PRO_PARAMETER_POLICY = {
     '4:5',
     '5:4',
     '21:9',
+    '9:21',
   ],
+  advancedAspectRatios: ['1:4', '4:1', '1:8', '8:1'],
   defaultVariations: 1,
   variationOptions: [1],
   defaultResolution: '2K',
-  resolutionOptions: ['2K', '4K'],
+  resolutionOptions: ['1K', '2K', '4K'],
   defaultOutputFormat: 'png',
   outputFormatOptions: ['png', 'jpeg'],
   referenceImages: {
@@ -153,6 +158,41 @@ export const NANO_BANANA_PRO_PARAMETER_POLICY = {
   seed: { enabled: false },
   webSearch: { enabled: false },
   replicateFallbackModel: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+export const NANO_BANANA_2_LITE_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'nano-banana',
+  aspectParameter: 'aspect_ratio',
+  defaultAspectRatio: '1:1',
+  supportedAspectRatios: [
+    '1:1',
+    '3:2',
+    '2:3',
+    '3:4',
+    '4:3',
+    '4:5',
+    '5:4',
+    '9:16',
+    '16:9',
+    '21:9',
+  ],
+  advancedAspectRatios: ['1:4', '4:1', '1:8', '8:1'],
+  defaultVariations: 1,
+  variationOptions: [1],
+  defaultResolution: '1K',
+  resolutionOptions: ['1K'],
+  defaultOutputFormat: 'png',
+  outputFormatOptions: ['png', 'jpeg'],
+  referenceImages: {
+    enabled: true,
+    min: 0,
+    max: 14,
+    maskSupported: false,
+  },
+  seed: { enabled: false },
+  webSearch: { enabled: false },
+  thinking: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
 export const QUICK_IMAGE_PARAMETER_POLICY = {
@@ -647,16 +687,17 @@ export const NANO_BANANA_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'nano-banana-2-points-v1-2026-06-08',
+  version: 'nano-banana-2-points-v2-2026-08-13',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '1K',
   defaultQuality: 'standard',
-  resolutionOptions: ['1K', '2K', '4K'],
+  resolutionOptions: ['512', '1K', '2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
+    '512': { standard: 14 },
     '1K': { standard: 20 },
     '2K': { standard: 30 },
     '4K': { standard: 50 },
@@ -668,18 +709,34 @@ export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+export const NANO_BANANA_2_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'fixed_per_output',
+  version: 'nano-banana-2-lite-points-v1-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  pointsPerOutput: 10,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'nano-banana-pro-points-v1-2026-06-08',
+  version: 'nano-banana-pro-points-v2-2026-08-13',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '2K',
   defaultQuality: 'standard',
-  resolutionOptions: ['2K', '4K'],
+  resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
+    '1K': { standard: 50 },
     '2K': { standard: 50 },
     '4K': { standard: 90 },
   },
@@ -1244,6 +1301,156 @@ export const QUICK_VIDEO_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+/**
+ * Google Veo 3.1 GA on Vertex AI. Standard supports native 4K and asset
+ * references. Video extension is intentionally not exposed here: Vertex fixes
+ * extension output at 7 seconds, which cannot share this generation policy's
+ * 4/6/8-second control without presenting invalid combinations.
+ */
+export const VEO_3_1_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'veo',
+  defaultResolution: '1080p',
+  resolutionOptions: ['720p', '1080p', '4k'],
+  defaultDurationSeconds: '8',
+  durationOptions: ['4', '6', '8'],
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['16:9', '9:16'],
+  generateAudio: { enabled: true, default: true },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceImages: { enabled: true, min: 0, max: 3 },
+  negativePrompt: { enabled: true },
+  seed: { enabled: true },
+} as const satisfies Prisma.InputJsonObject;
+
+export const VEO_3_1_FAST_PARAMETER_POLICY = {
+  ...VEO_3_1_PARAMETER_POLICY,
+  defaultResolution: '1080p',
+  resolutionOptions: ['720p', '1080p'],
+} as const satisfies Prisma.InputJsonObject;
+
+export const VEO_3_1_LITE_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'veo',
+  defaultResolution: '720p',
+  resolutionOptions: ['720p', '1080p'],
+  defaultDurationSeconds: '8',
+  durationOptions: ['4', '6', '8'],
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['16:9', '9:16'],
+  generateAudio: { enabled: true, default: true },
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceImages: { enabled: false, min: 0, max: 0 },
+  negativePrompt: { enabled: true },
+  seed: { enabled: true },
+} as const satisfies Prisma.InputJsonObject;
+
+export const GEMINI_OMNI_FLASH_PARAMETER_POLICY = {
+  parameterMode: 'provider_intersection',
+  providerFamily: 'gemini-omni',
+  defaultResolution: '720p',
+  resolutionOptions: ['720p'],
+  defaultDurationSeconds: '8',
+  durationOptions: ['3', '4', '5', '6', '7', '8', '9', '10'],
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['16:9', '9:16'],
+  startFrame: { enabled: true },
+  referenceImages: { enabled: true, min: 0, max: 10 },
+  sourceVideo: { enabled: true, maxFileSizeMb: 50 },
+  nativeAudio: { enabled: true, alwaysOn: true },
+  seed: { enabled: false },
+  negativePrompt: { enabled: false },
+} as const satisfies Prisma.InputJsonObject;
+
+// Public list price: $0.40/s with audio and $0.20/s video-only at both
+// resolutions. At 1 point ≈ $0.01, the rates keep a ~1.5× product margin.
+export const VEO_3_1_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'veo-3-1-points-v2-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1080p',
+  pointsPerSecond: { '720p': 60, '1080p': 60, '4k': 90 },
+  videoOnlyPointsPerSecond: { '720p': 30, '1080p': 30, '4k': 60 },
+  minSeconds: 4,
+  maxSeconds: 8,
+  defaultSeconds: 8,
+  autoQuoteSeconds: 8,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+// Public list price: $0.10/s at 720p and $0.12/s at 1080p with audio;
+// video-only is $0.08/s and $0.10/s respectively.
+export const VEO_3_1_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'veo-3-1-fast-points-v2-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '1080p',
+  pointsPerSecond: { '720p': 16, '1080p': 20 },
+  videoOnlyPointsPerSecond: { '720p': 12, '1080p': 15 },
+  minSeconds: 4,
+  maxSeconds: 8,
+  defaultSeconds: 8,
+  autoQuoteSeconds: 8,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const VEO_3_1_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'veo-3-1-lite-points-v1-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '720p': 8, '1080p': 12 },
+  videoOnlyPointsPerSecond: { '720p': 5, '1080p': 8 },
+  minSeconds: 4,
+  maxSeconds: 8,
+  defaultSeconds: 8,
+  autoQuoteSeconds: 8,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
+export const GEMINI_OMNI_FLASH_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'gemini-omni-flash-preview-points-v1-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720p',
+  pointsPerSecond: { '720p': 16 },
+  minSeconds: 3,
+  maxSeconds: 10,
+  defaultSeconds: 8,
+  autoQuoteSeconds: 10,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 // v3 2026-07-08: re-based on the OFFICIAL BytePlus ModelArk per-second cost
 // (720p ≈ $0.151/s, 480p ≈ $0.067/s) — fal (retired) was ~2× pricier, so the old
 // v2 points (61/37) were an accidental ~4× margin. Designed/floored price, not
@@ -1541,6 +1748,75 @@ export const WAN_2_7_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+/**
+ * Wan 3.0's single all-in-one endpoint serves text, first/last frame, and
+ * mixed reference media. The policy mirrors the official 2026-08-06 API:
+ * 480P/720P/1080P, adaptive or fixed ratios, 2-30 second output, native audio,
+ * and up to 10 images / 5 videos / 5 audio clips as references.
+ */
+export const WAN_3_0_VIDEO_PARAMETER_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'wan',
+  providerProtocol: 'wan3-video',
+  maxPromptCharacters: 20_000,
+  defaultResolution: '720P',
+  resolutionOptions: ['480P', '720P', '1080P'],
+  defaultDurationSeconds: 5,
+  minDurationSeconds: 2,
+  maxDurationSeconds: 30,
+  defaultAspectRatio: 'adaptive',
+  supportedAspectRatios: ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16'],
+  // Wan 3.0 accepts ratio for every mode; Wan 2.7 only accepts it for T2V.
+  aspectRatioStrategy: 'always',
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceTypes: [
+    'reference_image',
+    'reference_video',
+    'reference_audio',
+    'file',
+    'link',
+  ],
+  maxReferenceItems: 20,
+  referenceLimits: {
+    reference_image: 10,
+    reference_video: 5,
+    reference_audio: 5,
+    file: 1,
+    link: 1,
+  },
+  referenceVoice: { enabled: false },
+  generateAudio: { enabled: true, default: true },
+  enableThinking: { enabled: true, default: false },
+  promptExtend: { enabled: false },
+  watermark: { enabled: true, default: false },
+  seed: { enabled: true, minimum: 0, maximum: 2147483647 },
+} as const satisfies Prisma.InputJsonObject;
+
+// International list price is $0.05/$0.10/$0.20 per second for
+// 480P/720P/1080P. Product points keep the catalog's 2× gross-margin policy
+// (1 compute point ≈ US$0.01). Provider-cost accounting remains the exact list
+// price and is stored separately on the binding snapshot.
+export const WAN_3_0_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
+  mode: 'per_second_matrix',
+  version: 'wan-3-0-video-points-v1-2026-08-13',
+  currency: 'COMPUTE_POINTS',
+  defaultOutputCount: 1,
+  minOutputCount: 1,
+  maxOutputCount: 1,
+  defaultResolution: '720P',
+  pointsPerSecond: { '480P': 10, '720P': 20, '1080P': 40 },
+  minSeconds: 2,
+  maxSeconds: 30,
+  defaultSeconds: 5,
+  autoQuoteSeconds: 30,
+  referenceImageSurchargePoints: 0,
+  extraReferenceImagePoints: 0,
+  maskSurchargePoints: 0,
+  minimumPoints: 1,
+  roundTo: 1,
+};
+
 // HappyHorse 1.0 video on Alibaba Model Studio (ap-southeast-1). One canonical,
 // three upstream ids: happyhorse-1.0-t2v (text→video, native synced audio +
 // lip-sync), happyhorse-1.0-i2v (image→video, input.media first_frame),
@@ -1662,7 +1938,7 @@ export const HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
 /** Canonical `outputPolicy` factory. Output count follows product pricing. */
 export function buildOutputPolicy(
   productPricing: AiProductPricingPolicy,
-  outputType: 'image' | 'video' = 'image',
+  outputType: 'image' | 'video' | 'audio' = 'image',
 ): Prisma.InputJsonObject {
   return {
     outputTypes: [outputType],
@@ -1685,6 +1961,8 @@ export const OBSERVABILITY_POLICY = {
 export const IMAGE_QUEUE_NAME = 'ai-image-generation';
 /** Queue name for video binding/canonical models (matches AI_QUEUE_VIDEO). */
 export const VIDEO_QUEUE_NAME = 'ai-video-generation';
+/** Queue name for audio binding/canonical models (matches AI_QUEUE_AUDIO). */
+export const AUDIO_QUEUE_NAME = 'ai-audio-generation';
 
 /**
  * `entitlementPolicy` factory — only the canonical compute `requiredPlan`

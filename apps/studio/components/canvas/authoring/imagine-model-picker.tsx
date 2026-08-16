@@ -37,10 +37,10 @@ import {
   IconPlayerPlay,
   IconSearch,
   IconSparkles,
-  IconVolume,
   IconX,
   type Icon,
 } from "@tabler/icons-react";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 import { cn } from "@/lib/utils";
 import {
   cheapestSellPoints,
@@ -449,7 +449,7 @@ export function ImagineModelPicker({
                         {cost != null && <Chip icon={IconCoin}>{cost} credits</Chip>}
                         {fm && <Chip icon={IconPlayerPlay}>{fm}</Chip>}
                         {res && <Chip icon={IconFrame}>{res}</Chip>}
-                        {audio && <Chip icon={IconVolume}>Audio</Chip>}
+                        {audio && <Chip icon={IconAudioWaveform}>Audio</Chip>}
                         {dur && <Chip icon={IconClock}>{dur}</Chip>}
                       </div>
                     </div>

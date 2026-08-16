@@ -39,6 +39,12 @@ export interface StoryBuildVideoInput {
   eligibilityDiagnostics: StoryBuildDiagnosticDto[];
 }
 
+export interface StoryBuildWorldInput {
+  graphNodeId: string;
+  worldId: string;
+  status: 'generating' | 'ready' | 'failed';
+}
+
 type FrozenStoryBuildVideoInput = StoryBuildVideoInput & {
   asset: FrozenStoryVideoAsset;
 };
@@ -87,6 +93,7 @@ export interface StoryBuildCompilerInput {
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
   videos: StoryBuildVideoInput[];
+  worlds?: StoryBuildWorldInput[];
   /**
    * Playable URL per bound music MediaAsset id — a plain public media URL, not
    * a frozen build asset. A binding missing from this map simply gets no music,
@@ -137,6 +144,22 @@ export function compileStoryBuild(
     }
     videos.set(video.graphNodeId, video);
   });
+  const worlds = new Map<string, StoryBuildWorldInput>();
+  (input.worlds ?? []).forEach((world) => {
+    if (worlds.has(world.graphNodeId)) {
+      diagnostics.push(
+        diagnostic(
+          'error',
+          'STORY_BUILD_WORLD_BINDING_DUPLICATE',
+          `Graph node ${world.graphNodeId} has more than one world binding.`,
+          'revision',
+          world.graphNodeId,
+        ),
+      );
+      return;
+    }
+    worlds.set(world.graphNodeId, world);
+  });
 
   const entryNodeId = resolveEntryNodeId(input, nodes, diagnostics);
   const selection = selectGraphNodes(
@@ -166,6 +189,7 @@ export function compileStoryBuild(
   // not part of this playable cut. Compiling it into the runtime would make the
   // manifest invalid even though the connected film itself is ready.
   const runtimeSelection = reachable;
+  validateWorldBindings(runtimeSelection, nodes, worlds, diagnostics);
   const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
   const includedVideos = [...requiredGraphNodeIds]
     .flatMap((graphNodeId) => {
@@ -179,7 +203,7 @@ export function compileStoryBuild(
         diagnostic(
           input.channel === 'preview' ? 'warning' : 'error',
           'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
-          `Clip ${node?.clipKey ?? graphNodeId} has no current video selection.`,
+          `Clip ${node?.kind === 'clip' ? node.clipKey : graphNodeId} has no current video selection.`,
           'clip',
           graphNodeId,
         ),
@@ -207,9 +231,9 @@ export function compileStoryBuild(
   if (pathReport.reachableTerminalNodeIds.length === 0) {
     diagnostics.push(
       diagnostic(
-        'error',
+        'warning',
         'STORY_BUILD_NO_REACHABLE_TERMINAL',
-        'The selected graph has no reachable terminal clip.',
+        'This story has no terminal scene and may continue until the player exits.',
         'revision',
         null,
       ),
@@ -293,6 +317,45 @@ export function compileStoryBuild(
     runtime,
     includedGraphNodeIds: includedVideos.map((video) => video.graphNodeId),
   };
+}
+
+function validateWorldBindings(
+  selection: ReadonlySet<string>,
+  nodes: ReadonlyMap<
+    string,
+    InteractiveStoryDraftContent['graph']['nodes'][number]
+  >,
+  worlds: ReadonlyMap<string, StoryBuildWorldInput>,
+  diagnostics: StoryBuildDiagnosticDto[],
+) {
+  [...selection].sort().forEach((nodeId) => {
+    const node = nodes.get(nodeId);
+    if (!node || node.kind !== 'world') return;
+    const binding = worlds.get(nodeId);
+    if (!node.worldId || !binding || binding.worldId !== node.worldId) {
+      diagnostics.push(
+        diagnostic(
+          'error',
+          'STORY_BUILD_WORLD_UNAVAILABLE',
+          `World node ${nodeId} does not resolve to a world in this project.`,
+          'revision',
+          nodeId,
+        ),
+      );
+      return;
+    }
+    if (binding.status !== 'ready') {
+      diagnostics.push(
+        diagnostic(
+          'error',
+          'STORY_BUILD_WORLD_NOT_READY',
+          `World node ${nodeId} is ${binding.status}; wait until the world is ready before playtesting or publishing.`,
+          'revision',
+          nodeId,
+        ),
+      );
+    }
+  });
 }
 
 function resolveEntryNodeId(
@@ -389,7 +452,7 @@ function requiredVideoNodeIds(
   const required = new Set<string>();
   [...selection].forEach((nodeId) => {
     const node = nodes.get(nodeId);
-    if (node) required.add(node.nodeId);
+    if (node?.kind === 'clip') required.add(node.nodeId);
   });
   return required;
 }
@@ -508,9 +571,9 @@ function detectStructuralCycles(
             reported.add(edge);
             diagnostics.push(
               diagnostic(
-                'error',
+                'warning',
                 'STORY_BUILD_GRAPH_CYCLE',
-                `The story graph contains a cycle (${edge}).`,
+                `The story contains a replay loop (${edge}).`,
                 'revision',
                 nodeId,
               ),
@@ -627,7 +690,10 @@ function analyzePaths(
     }
 
     onStack.add(nodeId);
-    const selfMs = videos.get(node.nodeId)?.asset?.durationMs ?? 0;
+    const selfMs =
+      node.kind === 'world'
+        ? node.maxExperienceSeconds * 1_000
+        : (videos.get(node.nodeId)?.asset?.durationMs ?? 0);
 
     let facts: NodePathFacts = DEAD_END;
     if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) {
@@ -727,6 +793,24 @@ function compileIntermediateRelease(
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
     if (!node) return;
+    if (node.kind === 'world') {
+      if (!node.worldId) return;
+      runtimeNodes.push({
+        nodeId: node.nodeId,
+        presentation: {
+          kind: 'world',
+          worldId: node.worldId,
+          ...(node.entryInstruction
+            ? { entryInstruction: node.entryInstruction }
+            : {}),
+          maxExperienceSeconds: node.maxExperienceSeconds,
+        },
+        overlays: [],
+        interactions: [],
+        exit: compileExit(node),
+      });
+      return;
+    }
     const video = videos.get(node.nodeId);
     // A preview keeps the shot in the story with an empty sequence so the work
     // stays playable end to end while its footage is still being made; the
@@ -752,6 +836,7 @@ function compileIntermediateRelease(
         fit: 'cover',
       },
       overlays: [],
+      interactions: node.interactions,
       exit: compileExit(node),
     });
   });
@@ -803,7 +888,7 @@ function clipNodeById(
   { kind: 'clip' }
 > {
   const node = nodes.get(graphNodeId);
-  if (!node) {
+  if (!node || node.kind !== 'clip') {
     throw new Error(
       `Frozen video ${graphNodeId} does not identify a clip node.`,
     );
@@ -888,10 +973,21 @@ export function storyMusicTrackId(mediaAssetId: string): string {
 function nextNodeIds(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
-  if (node.exit.kind === 'choice') {
-    return node.exit.choices.map((choice) => choice.nextNodeId);
-  }
-  return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
+  const exitTargets =
+    node.exit.kind === 'choice'
+      ? node.exit.choices.map((choice) => choice.nextNodeId)
+      : node.exit.nextNodeId
+        ? [node.exit.nextNodeId]
+        : [];
+  const interactionTargets =
+    node.kind === 'clip'
+      ? node.interactions.flatMap((interaction) =>
+          Object.values(interaction.outcomes).flatMap((action) =>
+            action?.kind === 'goto' ? [action.nodeId] : [],
+          ),
+        )
+      : [];
+  return [...new Set([...exitTargets, ...interactionTargets])];
 }
 
 function diagnostic(

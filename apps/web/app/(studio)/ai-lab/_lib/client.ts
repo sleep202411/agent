@@ -19,7 +19,16 @@ export async function listAiCatalog(): Promise<{
 }> {
   try {
     const catalog = await api.get<AiLabCatalog>("/aurora/ai/models", { timeout: 15_000 });
-    return { catalog, source: "live" };
+    return {
+      catalog: {
+        ...catalog,
+        models: catalog.models.filter((model) => model.type === "image" || model.type === "video"),
+        presets: catalog.presets.filter(
+          (preset) => preset.type === "image" || preset.type === "video"
+        ),
+      },
+      source: "live",
+    };
   } catch (error) {
     if (!ALLOW_DEV_PREVIEW) throw error;
     if (process.env.NODE_ENV !== "production") {

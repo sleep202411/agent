@@ -229,10 +229,18 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
         duration,
         durationSeconds,
         resolution,
+        generateAudio:
+          typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
         numOutputs: 1,
       })?.sellPoints ?? cheapestSellPoints(selectedModel)
     );
-  }, [selectedModel, settings.duration, settings.durationSeconds, settings.resolution]);
+  }, [
+    selectedModel,
+    settings.duration,
+    settings.durationSeconds,
+    settings.generateAudio,
+    settings.resolution,
+  ]);
 
   const uploadSlots = useMemo(
     () =>
@@ -1431,7 +1439,7 @@ function resultVideos(
     durationSeconds?: number | null;
     height?: number | null;
     id: string;
-    type: "image" | "video";
+    type: "image" | "video" | "audio";
     url: string;
     width?: number | null;
   }>

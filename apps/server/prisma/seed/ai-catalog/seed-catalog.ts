@@ -24,6 +24,7 @@ import {
   buildQueuePolicy,
   buildUiPolicy,
   OBSERVABILITY_POLICY,
+  AUDIO_QUEUE_NAME,
   VIDEO_QUEUE_NAME,
 } from './defaults';
 import {
@@ -32,10 +33,11 @@ import {
   type ProviderEntry,
 } from './image-models';
 import { VIDEO_MODELS } from './video-models';
+import { AUDIO_MODELS } from './audio-models';
 
 const SEED_ADMIN_ID: string | null = null; // seed-managed rows have no admin author.
 
-type OutputType = 'image' | 'video';
+type OutputType = 'image' | 'video' | 'audio';
 
 /** Per-modality knobs that differ between the image and video catalogs. */
 interface ModalityConfig {
@@ -75,6 +77,19 @@ const VIDEO_CONFIG: ModalityConfig = {
     maxProviderRuntimeSeconds: 2700,
   },
   label: 'video',
+};
+
+const AUDIO_CONFIG: ModalityConfig = {
+  modality: 'audio',
+  outputType: 'audio',
+  models: AUDIO_MODELS,
+  queueOverrides: {
+    queueName: AUDIO_QUEUE_NAME,
+    globalConcurrency: 8,
+    perUserRunning: 4,
+    maxProviderRuntimeSeconds: 300,
+  },
+  label: 'audio',
 };
 
 /**
@@ -341,6 +356,11 @@ export async function seedAiImageCatalog(prisma: PrismaClient): Promise<void> {
 /** Run the full video-catalog seed. Idempotent. */
 export async function seedAiVideoCatalog(prisma: PrismaClient): Promise<void> {
   await seedModalityCatalog(prisma, VIDEO_CONFIG);
+}
+
+/** Run the full audio-catalog seed. Idempotent. */
+export async function seedAiAudioCatalog(prisma: PrismaClient): Promise<void> {
+  await seedModalityCatalog(prisma, AUDIO_CONFIG);
 }
 
 /**

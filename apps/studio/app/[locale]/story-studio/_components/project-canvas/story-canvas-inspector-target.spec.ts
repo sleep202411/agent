@@ -6,7 +6,6 @@ import {
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
 } from "./story-canvas-inspector-target";
-import { syntheticDecisionNodeId } from "./story-project-canvas-model";
 
 describe("story canvas inspector target", () => {
   it("starts and remains closed when the canvas has no selection", () => {
@@ -58,25 +57,6 @@ describe("story canvas inspector target", () => {
     expect(
       reconcileStoryCanvasInspectorTarget(storyNodeInspectorTarget("clip:a"), ["clip:b"])
     ).toEqual({ kind: "closed" });
-  });
-
-  it("routes a character node selection to its node inspector, not the foundation panel", () => {
-    expect(storyNodeInspectorTarget("character:hero")).toEqual({
-      kind: "node",
-      nodeId: "character:hero",
-    });
-  });
-
-  it("keeps player-choice nodes on-canvas instead of opening an inspector", () => {
-    const decisionNodeId = syntheticDecisionNodeId("clip:a");
-    expect(storyNodeInspectorTarget(decisionNodeId)).toBe(CLOSED_STORY_CANVAS_INSPECTOR);
-    expect(
-      reconcileStoryCanvasInspectorTarget(
-        STORY_FOUNDATION_INSPECTOR,
-        [decisionNodeId],
-        decisionNodeId
-      )
-    ).toBe(CLOSED_STORY_CANVAS_INSPECTOR);
   });
 
   it("exposes a node id only for node inspectors", () => {

@@ -437,7 +437,7 @@ Agent 项目封面若仍调用 Replicate，用 **agent** 进程的 `REPLICATE_AP
 ### 本地启动
 
 ```bash
-# 1. 起 Postgres + Redis + MinIO（本地 S3/R2 协议替身）
+# 1. 起 Postgres + Redis
 npm run db:up
 
 # 2. 应用 schema migration（首次或 schema 变更后）
@@ -451,24 +451,22 @@ curl http://localhost:3002/ready
 # → web_pubsub / foundry_provider / output_storage / postgres / redis 五项全绿
 ```
 
-本地剧组资产上传使用 `docker-compose.dev.yml` 中的 MinIO，完整执行与
-Cloudflare R2 相同的 S3 预签名上传协议，但不会写入生产桶。`apps/server/.env`
-需要以下本地值：
+本地 `.com/global` 剧组资产与生成结果直接写入 Cloudflare R2，不维护另一套
+对象存储或公开 URL 语义。非敏感配置放在 `apps/server/.env`；作用域受限的
+R2 凭据必须放在不会被环境初始化覆盖的 `apps/server/.env.local`：
 
 ```dotenv
-S3_ENDPOINT=http://localhost:9000
-S3_REGION=us-east-1
-S3_BUCKET=fizzdragon-media
-S3_ACCESS_KEY_ID=fizzdragon
-S3_ACCESS_KEY_SECRET=fizzdragon-local-storage
-S3_FORCE_PATH_STYLE=true
-S3_AUTO_CREATE_BUCKET=true
-MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE=http://localhost:9000/fizzdragon-media
+S3_ACCESS_KEY_ID=<scoped-r2-access-key-id>
+S3_ACCESS_KEY_SECRET=<scoped-r2-access-key-secret>
 ```
 
-`S3_AUTO_CREATE_BUCKET` 只允许本地开发使用；生产环境启用时服务会拒绝启动。
-生产 `.com` 继续由 Helm 注入 R2 endpoint/bucket/Secret，`.cn` 继续使用
-Alibaba OSS。
+运行时配置优先级为“进程环境 > `.env.local` > `.env`”。global/local cell
+默认写入 R2，因此缺少 endpoint、region、bucket、公开域名或任一凭据时，
+server 会在启动阶段直接失败并列出缺失变量，不会等到首次上传才报错。
+
+R2 桶及其公开域名必须预先完成配置；服务不会在启动或探活时创建主桶。
+生产 `.com` 由 Helm 注入相同的 R2 endpoint/bucket/Secret，`.cn` 继续使用
+Alibaba OSS。不要把访问密钥提交到仓库。
 
 ### 剧组任务查询边界
 

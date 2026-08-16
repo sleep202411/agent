@@ -50,6 +50,11 @@ import {
 } from "@/lib/canvas-authoring/shot-node";
 import { DEFAULT_ADD_NODE_ACTIONS, type AddNodeAction } from "@/components/canvas/add-node-menu";
 import type { CardReferences } from "@/components/canvas/authoring/reference-stack";
+import {
+  generationNodeTypeForModality,
+  isGenerationNodeType,
+  type GenerationModality,
+} from "@/lib/canvas-authoring/generation-node-types";
 
 export type UploadMediaKind = "image" | "video" | "audio";
 
@@ -67,9 +72,13 @@ type PendingConnection = {
   handleType: "source" | "target";
 };
 
-const GEN_ACCEPTS: Record<"generate-image" | "generate-video", readonly UploadMediaKind[]> = {
+const GEN_ACCEPTS: Record<
+  "generate-image" | "generate-video" | "generate-audio",
+  readonly UploadMediaKind[]
+> = {
   "generate-image": ["image"],
   "generate-video": ["image", "video", "audio"],
+  "generate-audio": ["image", "audio"],
 };
 
 /** A shot takes pictures — a still for its frame, a clip for its motion. */
@@ -359,6 +368,7 @@ export function useMediaAuthoringCanvas({
       if (kind) {
         if (!GEN_ACCEPTS["generate-image"].includes(kind)) disabled.add("generate-image");
         if (!GEN_ACCEPTS["generate-video"].includes(kind)) disabled.add("generate-video");
+        if (!GEN_ACCEPTS["generate-audio"].includes(kind)) disabled.add("generate-audio");
         if (!SHOT_ACCEPTS.includes(kind)) disabled.add("shot");
       }
     } else {
@@ -367,6 +377,7 @@ export function useMediaAuthoringCanvas({
       disabled.add("shot");
       if (!targetAcceptsKind(pending.nodeId, "image")) disabled.add("generate-image");
       if (!targetAcceptsKind(pending.nodeId, "video")) disabled.add("generate-video");
+      if (!targetAcceptsKind(pending.nodeId, "audio")) disabled.add("generate-audio");
     }
     return disabled;
   }, [addMenu?.pending, outputKind, targetAcceptsKind]);
@@ -592,7 +603,7 @@ export function useMediaAuthoringCanvas({
     [graphAddNode, selectNodes]
   );
   const generationDefaults = useCallback(
-    (modality: "image" | "video") => {
+    (modality: GenerationModality) => {
       const model = canvasDefaultModel(catalog, modality);
       return {
         modelId: model?.id,
@@ -614,14 +625,19 @@ export function useMediaAuthoringCanvas({
         return;
       }
       const id = crypto.randomUUID();
-      const nodeType =
+      const modality: GenerationModality | null =
         action === "generate-image"
-          ? "prompt"
+          ? "image"
           : action === "generate-video"
             ? "video"
-            : action === "shot"
-              ? SHOT_NODE_TYPE
-              : "note";
+            : action === "generate-audio"
+              ? "audio"
+              : null;
+      const nodeType = modality
+        ? generationNodeTypeForModality(modality)
+        : action === "shot"
+          ? SHOT_NODE_TYPE
+          : "note";
       if (nodeType === SHOT_NODE_TYPE) {
         addNode({
           id,
@@ -629,29 +645,16 @@ export function useMediaAuthoringCanvas({
           position: flow,
           data: { order: nextShotOrder(getDocumentNodes()) },
         });
-      } else if (nodeType === "prompt") {
+      } else if (modality) {
         addNode({
           id,
           type: nodeType,
           position: flow,
           data: {
-            ...generationDefaults("image"),
+            ...generationDefaults(modality),
             prompt: "",
-            name: t("imageCardName", {
-              index: nodes.filter((node) => node.type === "prompt").length + 1,
-            }),
-          },
-        });
-      } else if (nodeType === "video") {
-        addNode({
-          id,
-          type: nodeType,
-          position: flow,
-          data: {
-            ...generationDefaults("video"),
-            prompt: "",
-            name: t("videoCardName", {
-              index: nodes.filter((node) => node.type === "video").length + 1,
+            name: t(`${modality}CardName`, {
+              index: nodes.filter((node) => node.type === nodeType).length + 1,
             }),
           },
         });
@@ -672,7 +675,7 @@ export function useMediaAuthoringCanvas({
         }
         return;
       }
-      if (nodeType === "prompt" || nodeType === "video") {
+      if (isGenerationNodeType(nodeType)) {
         onConnect(
           pending.handleType === "source"
             ? {

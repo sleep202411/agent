@@ -7,6 +7,7 @@
  * entry seeds an AiProviderEndpoint + a runtime-valid AiProviderModelBinding
  * (modality 'video').
  */
+import type { Prisma } from '@prisma/client';
 import type { AiGenerationMode } from '@repo/shared';
 
 import {
@@ -29,6 +30,16 @@ import {
   SEEDANCE_2_5_PRODUCT_PRICING,
   WAN_2_7_VIDEO_PARAMETER_POLICY,
   WAN_2_7_VIDEO_PRODUCT_PRICING,
+  WAN_3_0_VIDEO_PARAMETER_POLICY,
+  WAN_3_0_VIDEO_PRODUCT_PRICING,
+  VEO_3_1_FAST_PRODUCT_PRICING,
+  VEO_3_1_FAST_PARAMETER_POLICY,
+  VEO_3_1_LITE_PARAMETER_POLICY,
+  VEO_3_1_LITE_PRODUCT_PRICING,
+  VEO_3_1_PARAMETER_POLICY,
+  VEO_3_1_PRODUCT_PRICING,
+  GEMINI_OMNI_FLASH_PARAMETER_POLICY,
+  GEMINI_OMNI_FLASH_PRODUCT_PRICING,
 } from './defaults';
 import {
   bailianVideoCatalogSnapshot,
@@ -43,6 +54,45 @@ const T2V: AiGenerationMode = 'text_to_video';
 const I2V: AiGenerationMode = 'image_to_video';
 const FLF2V: AiGenerationMode = 'first_last_frame_to_video';
 const MM2V: AiGenerationMode = 'multimodal_to_video'; // 全能参考 / omni reference
+const V2V: AiGenerationMode = 'video_to_video';
+
+const WAN_3_0_DOCS_URL =
+  'https://modelstudio.console.alibabacloud.com/ap-southeast-1?tab=doc#/doc/?type=model&url=2840914_2&modelId=wan3.0-video&serviceSite=international';
+
+const WAN_3_0_CATALOG_SNAPSHOT = {
+  service: 'video-synthesis',
+  callMode: 'async',
+  lifecycle: {
+    stage: 'preview',
+    releasedAt: '2026-08-06',
+    access: 'application_required',
+  },
+  pricing: {
+    source: 'aliyun_model_studio_official_pricing',
+    unit: 'second',
+    markets: {
+      cn: {
+        currency: 'CNY',
+        defaultResolution: '720P',
+        unitPriceByResolution: { '480P': 0.3, '720P': 0.6, '1080P': 1.2 },
+      },
+      global: {
+        currency: 'USD',
+        defaultResolution: '720P',
+        unitPriceByResolution: { '480P': 0.05, '720P': 0.1, '1080P': 0.2 },
+      },
+    },
+    defaultMarket: 'global',
+  },
+  docs: [
+    { title: 'Wan 3.0 API reference', url: WAN_3_0_DOCS_URL },
+    {
+      title: 'Wan 3.0 launch and pricing',
+      url: 'https://www.alibabacloud.com/en/product/model-studio/wan3.0',
+    },
+  ],
+  model: 'wan3.0-video',
+} as const satisfies Prisma.InputJsonObject;
 
 /** Fal video result: a single mp4 (audio muxed in) + echoed seed. */
 const PROVIDER_VIDEO_OUTPUT_SCHEMA = {
@@ -60,6 +110,185 @@ const PROVIDER_VIDEO_OUTPUT_SCHEMA = {
       },
     },
     seed: { type: 'integer' },
+  },
+};
+
+const GOOGLE_VEO_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['model', 'config'],
+  properties: {
+    model: { type: 'string' },
+    prompt: { type: 'string' },
+    image: { type: 'object' },
+    config: {
+      type: 'object',
+      properties: {
+        numberOfVideos: { type: 'integer' },
+        durationSeconds: { type: 'integer' },
+        aspectRatio: { type: 'string' },
+        resolution: { type: 'string' },
+        generateAudio: { type: 'boolean' },
+        negativePrompt: { type: 'string' },
+        seed: { type: 'integer' },
+        lastFrame: { type: 'object' },
+        referenceImages: { type: 'array' },
+      },
+    },
+  },
+};
+
+const GOOGLE_OMNI_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['api_version', 'model', 'input', 'response_format'],
+  properties: {
+    api_version: { const: 'v1beta1' },
+    model: { const: 'gemini-omni-flash-preview' },
+    input: { type: 'array' },
+    previous_interaction_id: { type: 'string' },
+    store: { type: 'boolean' },
+    background: { type: 'boolean' },
+    response_format: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { const: 'video' },
+          aspect_ratio: { type: 'string' },
+          duration: { type: 'string' },
+          delivery: { type: 'string' },
+        },
+      },
+    },
+    generation_config: {
+      type: 'object',
+      properties: { video_config: { type: 'object' } },
+    },
+  },
+};
+
+const GOOGLE_OMNI_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['id', 'status'],
+  properties: {
+    id: { type: 'string' },
+    status: { type: 'string' },
+    output_video: { type: 'object' },
+    errors: { type: 'array' },
+    usage: { type: 'object' },
+    steps: { type: 'array' },
+  },
+};
+
+const GOOGLE_VEO_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    done: { type: 'boolean' },
+    error: { type: 'object' },
+    response: {
+      type: 'object',
+      properties: {
+        generatedVideos: { type: 'array' },
+        raiMediaFilteredCount: { type: 'integer' },
+        raiMediaFilteredReasons: { type: 'array' },
+      },
+    },
+  },
+};
+
+function googleVeoProvider(
+  endpointId:
+    | 'veo-3.1-generate-001'
+    | 'veo-3.1-fast-generate-001'
+    | 'veo-3.1-lite-generate-001',
+  modes: AiGenerationMode[],
+): ProviderEntry {
+  return {
+    provider: 'google-vertex',
+    endpointId,
+    modes,
+    providerInputSchema: GOOGLE_VEO_INPUT_SCHEMA,
+    providerOutputSchema: GOOGLE_VEO_OUTPUT_SCHEMA,
+    requestTimeoutSeconds: 1800,
+    failureThreshold: 3,
+    priority: 10,
+    catalogSnapshot: {
+      service: 'Vertex AI generateVideos',
+      model: endpointId,
+      apiVersion: 'v1',
+      authentication: 'Application Default Credentials',
+      callMode: 'long_running_operation',
+      cancellation: 'not_supported',
+      lifecycle: endpointId.endsWith('lite-generate-001')
+        ? { stage: 'preview' }
+        : {
+            stage: 'ga',
+            releasedAt: '2025-11-17',
+            retirementNotBefore: '2026-11-17',
+          },
+      docs: [
+        {
+          title: 'Veo 3.1 model card',
+          url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/veo/3-1-generate',
+        },
+        {
+          title: 'Veo video generation overview',
+          url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/overview',
+        },
+      ],
+      pricing: {
+        source: 'provider_usage',
+        unit: 'second',
+        url: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+      },
+    },
+  };
+}
+
+const googleOmniProvider: ProviderEntry = {
+  provider: 'google-vertex',
+  endpointId: 'gemini-omni-flash-preview',
+  modes: [T2V, I2V, MM2V, V2V],
+  providerInputSchema: GOOGLE_OMNI_INPUT_SCHEMA,
+  providerOutputSchema: GOOGLE_OMNI_OUTPUT_SCHEMA,
+  requestTimeoutSeconds: 600,
+  failureThreshold: 3,
+  priority: 10,
+  catalogSnapshot: {
+    service: 'Vertex AI Interactions API',
+    model: 'gemini-omni-flash-preview',
+    apiVersion: 'v1beta1',
+    authentication: 'Application Default Credentials',
+    callMode: 'background_interaction_with_polling',
+    statefulEditing: true,
+    quota: {
+      mode: 'fixed_quota_only',
+      payAsYouGoSupported: false,
+    },
+    docs: [
+      {
+        title: 'Gemini 2.5 Omni model card',
+        url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/omni-flash-preview',
+      },
+      {
+        title: 'Generate videos from text with Gemini 2.5 Omni',
+        url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-text',
+      },
+      {
+        title: 'Interactions API reference',
+        url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/models/interactions-api',
+      },
+    ],
+    pricing: {
+      source: 'provider_usage',
+      unit: 'video_output_tokens',
+      url: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+    },
+    lifecycle: {
+      stage: 'preview',
+      releasedAt: '2026-06-30',
+      retirementAt: '2027-06-30',
+    },
   },
 };
 
@@ -187,6 +416,124 @@ const miniMaxH3Provider: ProviderEntry = {
 };
 
 export const VIDEO_MODELS: VideoModelSeed[] = [
+  {
+    slug: 'wan-3-0',
+    displayName: 'Wan 3.0',
+    family: 'wan',
+    vendor: 'Alibaba',
+    description:
+      'Alibaba Wan 3.0 all-in-one video generation with native audio, first/last-frame control, and mixed image, video, audio, file, and link references. 480P-1080P, 2-30s.',
+    modes: [T2V, I2V, FLF2V, MM2V, V2V],
+    requiredPlan: null,
+    // Preflight hold = 30s × 720P points(20).
+    cost: 600,
+    parameterPolicy: WAN_3_0_VIDEO_PARAMETER_POLICY,
+    productPricing: WAN_3_0_VIDEO_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 5,
+    recommended: true,
+    providers: [
+      {
+        provider: 'aliyun-bailian',
+        endpointId: 'wan3.0-video',
+        modes: [T2V, I2V, FLF2V, MM2V, V2V],
+        requestTimeoutSeconds: 1800,
+        priority: 10,
+        maxRequestsPerMinute: 50,
+        failureThreshold: 3,
+        catalogSnapshot: WAN_3_0_CATALOG_SNAPSHOT,
+      },
+    ],
+    providerAliases: ['bailian/wan3.0-video', 'wan3.0-video'],
+  },
+  {
+    slug: 'veo-3-1',
+    displayName: 'Veo 3.1',
+    family: 'veo',
+    vendor: 'Google',
+    description:
+      'Google Veo 3.1 cinematic video generation with native audio, text-to-video, image-to-video and controlled first/last frames.',
+    modes: [T2V, I2V, FLF2V, MM2V],
+    requiredPlan: null,
+    // Default 8s × 1080p points(60).
+    cost: 480,
+    parameterPolicy: VEO_3_1_PARAMETER_POLICY,
+    productPricing: VEO_3_1_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 1,
+    recommended: true,
+    providers: [
+      googleVeoProvider('veo-3.1-generate-001', [T2V, I2V, FLF2V, MM2V]),
+    ],
+    providerAliases: [
+      'google-vertex/veo-3.1-generate-001',
+      'veo-3.1-generate-preview',
+    ],
+  },
+  {
+    slug: 'veo-3-1-fast',
+    displayName: 'Veo 3.1 Fast',
+    family: 'veo',
+    vendor: 'Google',
+    description:
+      'Google Veo 3.1 Fast for rapid cinematic iteration with native audio and the same text, frame and portrait/landscape controls.',
+    modes: [T2V, I2V, FLF2V, MM2V],
+    requiredPlan: null,
+    // Default 8s × 1080p points(20).
+    cost: 160,
+    parameterPolicy: VEO_3_1_FAST_PARAMETER_POLICY,
+    productPricing: VEO_3_1_FAST_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 2,
+    recommended: false,
+    providers: [
+      googleVeoProvider('veo-3.1-fast-generate-001', [T2V, I2V, FLF2V, MM2V]),
+    ],
+    providerAliases: [
+      'google-vertex/veo-3.1-fast-generate-001',
+      'veo-3.1-fast-generate-preview',
+    ],
+  },
+  {
+    slug: 'veo-3-1-lite',
+    displayName: 'Veo 3.1 Lite',
+    family: 'veo',
+    vendor: 'Google',
+    description:
+      'Google Veo 3.1 Lite preview for lower-cost native-audio generation with text, start-image, and controlled first/last frames.',
+    modes: [T2V, I2V, FLF2V],
+    requiredPlan: null,
+    // Default 8s × 720p points(8).
+    cost: 64,
+    parameterPolicy: VEO_3_1_LITE_PARAMETER_POLICY,
+    productPricing: VEO_3_1_LITE_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 3,
+    recommended: false,
+    providers: [
+      googleVeoProvider('veo-3.1-lite-generate-001', [T2V, I2V, FLF2V]),
+    ],
+    providerAliases: ['google-vertex/veo-3.1-lite-generate-001'],
+  },
+  {
+    slug: 'gemini-omni-flash-preview',
+    displayName: 'Gemini 2.5 Omni Flash',
+    family: 'gemini-omni',
+    vendor: 'Google',
+    description:
+      'Google native multimodal video model for text, start-image, multi-image reference, and stateful generated-video editing with synchronized audio.',
+    modes: [T2V, I2V, MM2V, V2V],
+    requiredPlan: null,
+    // Default 8s × 720p points(16).
+    cost: 128,
+    parameterPolicy: GEMINI_OMNI_FLASH_PARAMETER_POLICY,
+    productPricing: GEMINI_OMNI_FLASH_PRODUCT_PRICING,
+    group: 'video',
+    sortOrder: 4,
+    recommended: true,
+    providers: [googleOmniProvider],
+    providerAliases: ['google-vertex/gemini-omni-flash-preview'],
+  },
   {
     slug: 'seedance-2-5',
     displayName: 'Seedance 2.5',

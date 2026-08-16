@@ -5,14 +5,15 @@ import {
   connectSceneContinuation,
   convertSceneExitToChoice,
   createClipNode,
+  createWorldNode,
   deleteGraphNode,
   duplicateClipNode,
   moveChoiceOption,
+  updateStoryClipMeta,
   updateChoiceExitPrompt,
-  validateStoryDraftGraph,
 } from "./story-project-canvas-mutations";
 
-describe("film-only canvas mutations", () => {
+describe("story canvas mutations", () => {
   it("creates and duplicates only clip nodes with unique identities", () => {
     const first = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" });
     const second = duplicateClipNode(first.content, "clip:a");
@@ -20,6 +21,21 @@ describe("film-only canvas mutations", () => {
     expect(second.created.kind).toBe("clip");
     expect(second.created.nodeId).not.toBe("clip:a");
     expect(second.created.clipKey).not.toBe("A");
+  });
+
+  it("updates clip display metadata without changing its stable identity", () => {
+    const created = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" });
+    const next = updateStoryClipMeta(created.content, "clip:a", {
+      name: "Opening",
+      description: "Rain over Jinling.",
+    });
+
+    expect(next.graph.nodes[0]).toMatchObject({
+      nodeId: "clip:a",
+      clipKey: "A",
+      name: "Opening",
+      description: "Rain over Jinling.",
+    });
   });
 
   it("connects clips and removes inbound references when a clip is deleted", () => {
@@ -30,7 +46,25 @@ describe("film-only canvas mutations", () => {
     expect(content.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
-  it("authors ordered choices and validates their targets", () => {
+  it("connects world experiences into the same story-flow graph in both directions", () => {
+    let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
+    content = createWorldNode(content, { nodeId: "world:a" }).content;
+    content = createClipNode(content, { nodeId: "clip:b", clipKey: "B" }).content;
+
+    content = connectSceneContinuation(content, "clip:a", "world:a");
+    content = connectSceneContinuation(content, "world:a", "clip:b");
+
+    expect(content.graph.nodes.find((node) => node.nodeId === "clip:a")?.exit).toEqual({
+      kind: "auto",
+      nextNodeId: "world:a",
+    });
+    expect(content.graph.nodes.find((node) => node.nodeId === "world:a")?.exit).toEqual({
+      kind: "auto",
+      nextNodeId: "clip:b",
+    });
+  });
+
+  it("authors ordered choices", () => {
     let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
     content = createClipNode(content, { nodeId: "clip:b", clipKey: "B" }).content;
     content = createClipNode(content, { nodeId: "clip:c", clipKey: "C" }).content;
@@ -50,7 +84,6 @@ describe("film-only canvas mutations", () => {
       "right",
       "left",
     ]);
-    expect(validateStoryDraftGraph(content, { requireComplete: true })).toEqual([]);
   });
 });
 

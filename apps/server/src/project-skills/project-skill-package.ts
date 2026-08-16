@@ -57,8 +57,8 @@ export function parseProjectSkillPackage(
   const markdown =
     extension === 'zip'
       ? markdownFromZip(file.buffer)
-      : extension === 'md' || filename.toLocaleLowerCase() === 'skill.md'
-        ? [{ path: filename, content: decodeUtf8(file.buffer, filename) }]
+      : extension === 'md'
+        ? [{ path: 'SKILL.md', content: decodeUtf8(file.buffer, filename) }]
         : invalidPackage('Upload a SKILL.md file or a .zip Skill package.');
   const skillDocument = markdown.find(
     (entry) => entry.path.split('/').pop()?.toLocaleLowerCase() === 'skill.md',

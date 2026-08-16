@@ -138,6 +138,10 @@ secrets:
       env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
+    # Seed Speech is intentionally fail-closed until a dedicated key has been
+    # provisioned in Key Vault. Do not reuse the ModelArk inference key.
+    # - kv: byteplus-seed-speech-api-key
+    #   env: BYTEPLUS_SEED_SPEECH_API_KEY
     # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
     # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
     - kv: minimax-api-key
@@ -406,6 +410,20 @@ server:
   # list is safe to carry into a cell that has no such secret.
   extraSecretRefs:
     - fizzdragon-r2
+  # Direct Google media generation through Vertex AI. ADC is supplied by
+  # AKS→GCP Workload Identity Federation; no API key or service-account key is
+  # stored in Kubernetes. These identifiers restore the already-provisioned
+  # federation previously used by the retired agent platform worker.
+  googleVertex:
+    enabled: true
+    project: glass-proxy-501907-d2
+    imageLocation: global
+    videoLocation: us-central1
+    workloadIdentityFederation:
+      projectNumber: "553701186007"
+      pool: fizzdragon-aks
+      provider: aks-com
+      serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
     # Required region-owned base for relative legacy Java project cover keys.
     # Never default this in code: an omitted value must fail the server at boot
@@ -414,6 +432,10 @@ server:
     # Public, versioned preview media for the Git-governed Project Skill catalog.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"
+    # Happy Oyster is a realtime world-model capability, not an ordinary fal
+    # image/video preset. Its own explicit gate keeps provider availability and
+    # boot-time credential validation independent from AI generation routing.
+    WORLD_MODEL_HAPPY_OYSTER_ENABLED: "true"
     # BoldSign is intentionally OFF until the production API key, production
     # template ID, and webhook HMAC secret have all been provisioned in Key
     # Vault and mapped into fizzdragon-server-secrets. Once provisioned, flip
@@ -440,6 +462,9 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
+    # Enable only after `byteplus-seed-speech-api-key` exists and its mapping
+    # above is uncommented; the application fails boot on a missing key.
+    BYTEPLUS_SEED_SPEECH_ENABLED: "false"
     # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
     MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.

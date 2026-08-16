@@ -122,6 +122,13 @@ const GestureCommonShape = {
   inputActionId: ExperienceStableIdSchema,
   enabledWhen: ExperienceConditionSchema.optional(),
   activeWindow: InteractionWindowSchema.optional(),
+  /**
+   * Safe branch frame: once this gesture resolves, the scene keeps playing
+   * until scene time reaches this timestamp before any bound route fires.
+   * Hosts fall back to the active window end when omitted, preserving the
+   * legacy cut-on-resolution behavior.
+   */
+  branchAtMs: z.number().int().positive().optional(),
   feedbackRendererInstanceId: ExperienceStableIdSchema.optional(),
   accessibleAlternativeActionId: ExperienceStableIdSchema.optional(),
 };
@@ -142,6 +149,13 @@ const PressHoldGestureSchema = z
     releaseBehavior: z.enum(["reset", "retain", "decay"]),
     decayPerSecond: z.number().positive().max(10).optional(),
     cancelOnPointerExit: z.boolean().default(true),
+    /**
+     * Timeline-control charge: hosts pause the scene media while the active
+     * window is open and unresolved, and only advance playback while the
+     * pointer is held. Charge progress then equals media playback position,
+     * and release-time judging reads the scene clock instead of wall time.
+     */
+    timelineControl: z.boolean().default(false),
   })
   .strict()
   .superRefine((gesture, context) => {
@@ -157,6 +171,13 @@ const PressHoldGestureSchema = z
         code: "custom",
         path: ["decayPerSecond"],
         message: "decayPerSecond is only valid for decay gestures",
+      });
+    }
+    if (gesture.timelineControl && gesture.releaseBehavior !== "reset") {
+      context.addIssue({
+        code: "custom",
+        path: ["releaseBehavior"],
+        message: "Timeline-control gestures must reset on release",
       });
     }
   });

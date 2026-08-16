@@ -258,6 +258,8 @@ function workerWith(input: {
     {} as never,
     { enqueueAutomaticChecks: jest.fn() } as never,
     (input.videoProbe ?? {}) as never,
+    {} as never,
+    {} as never,
   );
 }
 
@@ -339,6 +341,7 @@ function submitHarness(type: AiJobType) {
       ),
     } as never,
     {} as never,
+    { requireUseAccessById: jest.fn() } as never,
   );
   return {
     service,

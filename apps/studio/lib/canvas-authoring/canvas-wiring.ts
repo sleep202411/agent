@@ -22,6 +22,10 @@ import type { FizzAiModel, FizzAiReferenceKind } from "@/lib/canvas-authoring/ge
 import type { CardReference, CardReferences } from "@/components/canvas/authoring/reference-stack";
 import type { GenerationNodeData } from "@/components/canvas/authoring/generation-card";
 import type { CanvasGraph } from "@/lib/collab/use-canvas-graph";
+import {
+  generationModalityForNodeType,
+  isGenerationNodeType,
+} from "@/lib/canvas-authoring/generation-node-types";
 
 // Structural node read — satisfied by both the RF store's `getNode` (drag path)
 // and the Yjs-doc `graph.getNode` (copilot). Only `.type` and `.data` are read.
@@ -88,8 +92,10 @@ export function sourceOutputKind(
 ): FizzAiReferenceKind | undefined {
   const node = getNode(nodeId);
   if (!node) return undefined;
-  if (node.type === "image" || node.type === "panorama" || node.type === "prompt") return "image";
-  if (node.type === "video" || node.type === "videoAsset") return "video";
+  if (node.type === "image" || node.type === "panorama") return "image";
+  const generationModality = generationModalityForNodeType(node.type);
+  if (generationModality) return generationModality;
+  if (node.type === "videoAsset") return "video";
   if (node.type === "audioAsset") return "audio";
   return undefined;
 }
@@ -101,7 +107,7 @@ export function sourceMediaUrl(getNode: GetNode, nodeId: string): string | undef
   if (node.type === "image" || node.type === "panorama") {
     return (node.data as { src?: string }).src;
   }
-  if (node.type === "prompt" || node.type === "video") {
+  if (isGenerationNodeType(node.type)) {
     return (node.data as GenerationNodeData).generation?.outputs?.[0]?.url;
   }
   if (node.type === "videoAsset" || node.type === "audioAsset") {
@@ -117,7 +123,7 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   if (node.type === "image" || node.type === "panorama") {
     return (node.data as { mediaAssetId?: string }).mediaAssetId;
   }
-  if (node.type === "prompt" || node.type === "video") {
+  if (isGenerationNodeType(node.type)) {
     return (node.data as GenerationNodeData).generation?.outputs?.[0]?.assetId;
   }
   if (node.type === "videoAsset" || node.type === "audioAsset") {
@@ -126,27 +132,33 @@ export function sourceMediaAssetId(getNode: GetNode, nodeId: string): string | u
   return undefined;
 }
 
+/** AI generation job that produced a source node's current output. */
+export function sourceGenerationJobId(getNode: GetNode, nodeId: string): string | undefined {
+  const node = getNode(nodeId);
+  if (!isGenerationNodeType(node?.type)) return undefined;
+  const jobId = (node.data as GenerationNodeData).generation?.jobId;
+  return typeof jobId === "string" && jobId.trim() ? jobId : undefined;
+}
+
 export function sourceMediaMetadata(
   getNode: GetNode,
   nodeId: string
 ): Pick<CardReference, "bytes" | "durationSeconds" | "height" | "name" | "width"> {
   const node = getNode(nodeId);
   if (!node) return {};
-  const source =
-    node.type === "prompt" || node.type === "video"
-      ? (node.data as GenerationNodeData).generation?.outputs?.[0]
-      : (node.data as {
-          bytes?: number | null;
-          durationSeconds?: number | null;
-          height?: number | null;
-          width?: number | null;
-        });
+  const source = isGenerationNodeType(node.type)
+    ? (node.data as GenerationNodeData).generation?.outputs?.[0]
+    : (node.data as {
+        bytes?: number | null;
+        durationSeconds?: number | null;
+        height?: number | null;
+        width?: number | null;
+      });
   if (!source) return {};
-  const sourceName =
-    node.type === "prompt" || node.type === "video"
-      ? (node.data as GenerationNodeData).prompt
-      : ((node.data as { label?: string; name?: string }).label ??
-        (node.data as { label?: string; name?: string }).name);
+  const sourceName = isGenerationNodeType(node.type)
+    ? (node.data as GenerationNodeData).prompt
+    : ((node.data as { label?: string; name?: string }).label ??
+      (node.data as { label?: string; name?: string }).name);
   const positiveFinite = (value: number | null | undefined): value is number =>
     typeof value === "number" && Number.isFinite(value) && value > 0;
   return {
@@ -202,7 +214,7 @@ export function evaluateTargetReferenceField(
           issue: { code: "reference_limit", kind, limit: constraint.maxItems },
         };
   }
-  if (target.type !== "prompt" && target.type !== "video") {
+  if (!isGenerationNodeType(target.type)) {
     return { ok: false, issue: { code: "target_not_connectable" } };
   }
   const data = target.data as GenerationNodeData;
@@ -302,6 +314,7 @@ export function bindEdgeReference(
   const kind = validation.kind;
   const url = sourceMediaUrl(ctx.getNode, source);
   const assetId = sourceMediaAssetId(ctx.getNode, source);
+  const sourceJobId = sourceGenerationJobId(ctx.getNode, source);
   const metadata = sourceMediaMetadata(ctx.getNode, source);
   // Never bind a session-local blob: URL into the shared doc; the reconciler
   // re-binds the durable URL once the source's generation/upload resolves.
@@ -313,6 +326,7 @@ export function bindEdgeReference(
     url,
     kind,
     ...(assetId ? { assetId } : {}),
+    ...(sourceJobId ? { sourceJobId } : {}),
     ...metadata,
   };
   ctx.graph.patchNodeData(target, (node) => {
