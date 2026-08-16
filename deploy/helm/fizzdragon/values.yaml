@@ -138,10 +138,9 @@ secrets:
       env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
-    # Seed Speech is intentionally fail-closed until a dedicated key has been
-    # provisioned in Key Vault. Do not reuse the ModelArk inference key.
-    # - kv: byteplus-seed-speech-api-key
-    #   env: BYTEPLUS_SEED_SPEECH_API_KEY
+    # Seed Speech — dedicated BytePlus voice key, not the ModelArk inference key.
+    - kv: byteplus-seed-speech-api-key
+      env: BYTEPLUS_SEED_SPEECH_API_KEY
     # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
     # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
     - kv: minimax-api-key
@@ -462,9 +461,7 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
-    # Enable only after `byteplus-seed-speech-api-key` exists and its mapping
-    # above is uncommented; the application fails boot on a missing key.
-    BYTEPLUS_SEED_SPEECH_ENABLED: "false"
+    BYTEPLUS_SEED_SPEECH_ENABLED: "true"
     # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
     MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.
