@@ -33,7 +33,9 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -49,6 +51,7 @@ import { AgentOsTranscript } from "./agent-os-transcript";
 import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
 import { useAgentOsRun } from "./use-agent-os-run";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { listProjectSkillInstallations } from "@/lib/project-skills-api";
 
 const PERMISSION_MODES: Array<{
@@ -138,6 +141,7 @@ function AgentOsProjectSession({
 }: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
   const ts = useTranslations("project.skills");
+  const openSkills = useProjectUIStore((state) => state.openSkills);
   const projectContext = useOptionalProjectContext();
   const projectSkillsQuery = useQuery({
     queryKey: ["project-skills", "installations", projectKind, projectId],
@@ -750,140 +754,156 @@ function AgentOsProjectSession({
               </div>
             }
             attachmentBar={
-              invocableSkills.length > 0 ||
-              projectSkillEntries.length > 0 ||
-              pendingFiles.length > 0 ||
-              uploading ? (
-                <div className="grid gap-1.5">
-                  {invocableSkills.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
-                      {invocableSkills.map((skill) => {
-                        const isTurn = turnSkillIds.includes(skill.id);
-                        const active = isTurn;
-                        return (
-                          <button
-                            key={skill.id}
-                            type="button"
-                            disabled={turnBusy}
-                            title={`${skill.description} · ${t("skillToggleTurn")}`}
-                            aria-pressed={active}
-                            onClick={() => onSkillChipClick(skill.id)}
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[10px] transition-colors",
-                              active
-                                ? "bg-white/15 text-white/90"
-                                : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75"
-                            )}
-                          >
-                            {skill.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  {projectSkillEntries.length > 0 ? (
-                    <div className="flex min-w-0 items-center">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
+              <div className="grid gap-1.5">
+                {invocableSkills.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
+                    {invocableSkills.map((skill) => {
+                      const isTurn = turnSkillIds.includes(skill.id);
+                      const active = isTurn;
+                      return (
+                        <button
+                          key={skill.id}
+                          type="button"
                           disabled={turnBusy}
-                          aria-label={t("chooseProjectSkills")}
-                          title={t("chooseProjectSkills")}
-                          className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-transparent px-2.5 text-[11px] font-medium text-white/70 ring-1 ring-inset outline-none transition-colors hover:text-white/92 focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-45"
+                          title={`${skill.description} · ${t("skillToggleTurn")}`}
+                          aria-pressed={active}
+                          onClick={() => onSkillChipClick(skill.id)}
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] transition-colors",
+                            active
+                              ? "bg-white/15 text-white/90"
+                              : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75"
+                          )}
                         >
-                          <IconPuzzle
-                            aria-hidden="true"
-                            className="text-brand-yellow size-3.5"
-                            stroke={1.8}
-                          />
-                          <span>{t("skillsLabel")}</span>
-                          {activeProjectSkillEntries.length > 0 ? (
-                            <span className="text-brand-yellow/75 tabular-nums">
-                              · {activeProjectSkillEntries.length}
-                            </span>
-                          ) : null}
-                          <IconChevronDown
-                            aria-hidden="true"
-                            className="size-3 text-white/35"
-                            stroke={1.8}
-                          />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="start"
-                          side="top"
-                          sideOffset={8}
-                          className="liquid-rim max-h-72 w-[min(320px,calc(100vw-24px))] rounded-2xl bg-[oklch(0.18_0_0_/_0.98)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_72px_rgba(0,0,0,0.68)] backdrop-blur-[36px]"
-                        >
-                          <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-white/38">
-                            {t("projectSkillsLabel")}
-                          </DropdownMenuLabel>
-                          {projectSkillEntries.map(({ installation, name, isDefault }) => {
-                            const active = isDefault
-                              ? !effectiveDisabledProjectDefaultSkillIds.includes(installation.id)
-                              : effectiveTurnProjectSkillIds.includes(installation.id);
-                            return (
-                              <DropdownMenuCheckboxItem
-                                key={installation.id}
-                                checked={active}
-                                disabled={turnBusy}
-                                onSelect={(event) => event.preventDefault()}
-                                onCheckedChange={() =>
-                                  onProjectSkillChipClick(installation.id, isDefault)
-                                }
-                                className="min-h-9 rounded-xl px-2.5 py-2 pr-9 focus:bg-white/[0.06]"
-                              >
-                                <IconPuzzle
-                                  aria-hidden="true"
-                                  className={cn(
-                                    "size-3.5",
-                                    active ? "text-brand-yellow" : "text-white/28"
-                                  )}
-                                  stroke={1.8}
-                                />
-                                <span className="min-w-0 flex-1 truncate text-white/78">
-                                  {name}
-                                </span>
-                                {isDefault ? (
-                                  <span className="text-brand-yellow/55 text-[10px]">
-                                    {t("skillDefaultBadge")}
-                                  </span>
-                                ) : null}
-                              </DropdownMenuCheckboxItem>
-                            );
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  ) : null}
+                          {skill.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
-                  {pendingFiles.length > 0 || uploading ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {uploading ? (
-                        <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
-                          {t("uploading")}
+                <div className="flex min-w-0 items-center">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      disabled={turnBusy}
+                      aria-label={t("chooseProjectSkills")}
+                      title={t("chooseProjectSkills")}
+                      className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-transparent px-2.5 text-[11px] font-medium text-white/70 ring-1 ring-inset outline-none transition-colors hover:text-white/92 focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-45"
+                    >
+                      <IconPuzzle
+                        aria-hidden="true"
+                        className="text-brand-yellow size-3.5"
+                        stroke={1.8}
+                      />
+                      <span>{t("skillsLabel")}</span>
+                      {activeProjectSkillEntries.length > 0 ? (
+                        <span className="text-brand-yellow/75 tabular-nums">
+                          · {activeProjectSkillEntries.length}
                         </span>
                       ) : null}
-                      {pendingFiles.map((file) => (
-                        <span
-                          key={file.id}
-                          className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
+                      <IconChevronDown
+                        aria-hidden="true"
+                        className="size-3 text-white/35"
+                        stroke={1.8}
+                      />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      side="top"
+                      sideOffset={8}
+                      className="liquid-rim max-h-72 w-[min(320px,calc(100vw-24px))] rounded-2xl bg-[oklch(0.18_0_0_/_0.98)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_72px_rgba(0,0,0,0.68)] backdrop-blur-[36px]"
+                    >
+                      <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-white/38">
+                        {t("projectSkillsLabel")}
+                      </DropdownMenuLabel>
+                      {projectSkills.loading ? (
+                        <p className="px-2.5 py-2 text-[11px] text-white/42">
+                          {t("skillsLoading")}
+                        </p>
+                      ) : projectSkills.error ? (
+                        <DropdownMenuItem
+                          onSelect={() => projectSkills.retry()}
+                          className="min-h-9 rounded-xl px-2.5 py-2 focus:bg-white/[0.06]"
                         >
-                          <span className="truncate">{file.filename}</span>
-                          <button
-                            type="button"
-                            onClick={() => removePending(file.id)}
-                            className="shrink-0 text-white/40 transition-colors hover:text-white/80"
-                            aria-label={t("removeAttachment")}
-                          >
-                            <IconX aria-hidden="true" className="size-3" stroke={2} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
+                          <span className="text-white/70">{t("skillCatalogFailed")}</span>
+                          <span className="ml-auto text-[10px] text-white/38">
+                            {t("skillsRetry")}
+                          </span>
+                        </DropdownMenuItem>
+                      ) : projectSkillEntries.length > 0 ? (
+                        projectSkillEntries.map(({ installation, name, isDefault }) => {
+                          const active = isDefault
+                            ? !effectiveDisabledProjectDefaultSkillIds.includes(installation.id)
+                            : effectiveTurnProjectSkillIds.includes(installation.id);
+                          return (
+                            <DropdownMenuCheckboxItem
+                              key={installation.id}
+                              checked={active}
+                              disabled={turnBusy}
+                              onSelect={(event) => event.preventDefault()}
+                              onCheckedChange={() =>
+                                onProjectSkillChipClick(installation.id, isDefault)
+                              }
+                              className="min-h-9 rounded-xl px-2.5 py-2 pr-9 focus:bg-white/[0.06]"
+                            >
+                              <IconPuzzle
+                                aria-hidden="true"
+                                className={cn(
+                                  "size-3.5",
+                                  active ? "text-brand-yellow" : "text-white/28"
+                                )}
+                                stroke={1.8}
+                              />
+                              <span className="min-w-0 flex-1 truncate text-white/78">{name}</span>
+                              {isDefault ? (
+                                <span className="text-brand-yellow/55 text-[10px]">
+                                  {t("skillDefaultBadge")}
+                                </span>
+                              ) : null}
+                            </DropdownMenuCheckboxItem>
+                          );
+                        })
+                      ) : (
+                        <p className="px-2.5 py-2 text-[11px] text-white/42">{t("skillsEmpty")}</p>
+                      )}
+                      <DropdownMenuSeparator className="my-1 bg-white/[0.08]" />
+                      <DropdownMenuItem
+                        onSelect={() => openSkills()}
+                        className="min-h-9 rounded-xl px-2.5 py-2 focus:bg-white/[0.06]"
+                      >
+                        <span className="text-white/78">{t("browseSkills")}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              ) : null
+
+                {pendingFiles.length > 0 || uploading ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {uploading ? (
+                      <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/50">
+                        {t("uploading")}
+                      </span>
+                    ) : null}
+                    {pendingFiles.map((file) => (
+                      <span
+                        key={file.id}
+                        className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
+                      >
+                        <span className="truncate">{file.filename}</span>
+                        <button
+                          type="button"
+                          onClick={() => removePending(file.id)}
+                          className="shrink-0 text-white/40 transition-colors hover:text-white/80"
+                          aria-label={t("removeAttachment")}
+                        >
+                          <IconX aria-hidden="true" className="size-3" stroke={2} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             }
           />
         </div>
