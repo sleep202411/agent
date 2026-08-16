@@ -266,6 +266,80 @@ export const StoryAgentGraphChoiceSchema = z
   .strict();
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
 
+export const StoryAgentInteractionActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("continue") }).strict(),
+  z
+    .object({
+      kind: z.literal("seek"),
+      timeMs: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("goto"),
+      nodeId: StoryAgentStableIdSchema,
+    })
+    .strict(),
+]);
+export type StoryAgentInteractionAction = z.infer<typeof StoryAgentInteractionActionSchema>;
+
+export const StoryAgentInteractionTriggerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("tap") }).strict(),
+  z
+    .object({
+      kind: z.literal("swipe"),
+      direction: z.enum(["up", "down", "left", "right"]),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("press-hold"),
+      durationMs: z.number().int().min(300).max(10_000),
+      /**
+       * Timeline-control charge: the clip pauses while the input window is
+       * open and only advances while the pointer is held, so playback
+       * position is the charge progress. Mirrors the draft/runtime schemas.
+       */
+      controlTimeline: z.boolean().default(false),
+    })
+    .strict(),
+]);
+
+export const StoryAgentInteractionOutcomesSchema = z
+  .object({
+    success: StoryAgentInteractionActionSchema,
+    failure: StoryAgentInteractionActionSchema.optional(),
+    timeout: StoryAgentInteractionActionSchema.optional(),
+  })
+  .strict();
+
+export const StoryAgentHotspotInteractionSchema = z
+  .object({
+    kind: z.literal("hotspot"),
+    interactionId: StoryAgentStableIdSchema,
+    label: StoryAgentLocalizedTextSchema,
+    trigger: StoryAgentInteractionTriggerSchema,
+    rect: z
+      .object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        width: z.number().min(0.001).max(1),
+        height: z.number().min(0.001).max(1),
+      })
+      .strict(),
+    startMs: z.number().int().min(0),
+    endMs: z.number().int().min(1),
+    /**
+     * Safe branch frame: a resolved interaction keeps playing the current
+     * clip until this timestamp before the branch cut lands. Mirrors the
+     * draft/runtime schemas; defaults to the window end when omitted.
+     */
+    branchAtMs: z.number().int().min(1).optional(),
+    outcomes: StoryAgentInteractionOutcomesSchema,
+  })
+  .strict();
+export type StoryAgentHotspotInteraction = z.infer<typeof StoryAgentHotspotInteractionSchema>;
+
 /**
  * A clip node's editorial labels.
  *
@@ -283,6 +357,7 @@ export const StoryAgentGraphNodeSchema = z
     clipKey: StoryAgentClipKeySchema,
     name: StoryAgentNodeNameSchema.optional(),
     description: StoryAgentNodeDescriptionSchema.optional(),
+    interactions: z.array(StoryAgentHotspotInteractionSchema).max(100).default([]),
     exit: z.discriminatedUnion("kind", [
       z
         .object({

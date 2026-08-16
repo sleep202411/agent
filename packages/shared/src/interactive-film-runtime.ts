@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION = 1 as const;
+export const INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION = 2 as const;
 
 const stableId = z.string().trim().min(1).max(120);
 const localizedText = z.record(z.string().trim().min(2), z.string().trim().min(1));
@@ -181,6 +181,79 @@ const ChoiceSchema = z
   })
   .strict();
 
+const RuntimeInteractionActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("continue") }).strict(),
+  z.object({ kind: z.literal("seek"), timeMs: z.number().int().nonnegative() }).strict(),
+  z.object({ kind: z.literal("goto"), nodeId: stableId }).strict(),
+]);
+
+const RuntimeInteractionTriggerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("tap") }).strict(),
+  z
+    .object({
+      kind: z.literal("swipe"),
+      direction: z.enum(["up", "down", "left", "right"]),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("press-hold"),
+      durationMs: z.number().int().min(300).max(10_000),
+      /**
+       * Timeline-control charge: the clip pauses when the input window opens
+       * and only advances while the pointer is held, so media playback
+       * position is the charge progress. Defaults keep legacy wall-clock
+       * judging with a freely playing video.
+       */
+      controlTimeline: z.boolean().default(false),
+    })
+    .strict(),
+]);
+
+const RuntimeInteractionOutcomesSchema = z
+  .object({
+    success: RuntimeInteractionActionSchema,
+    failure: RuntimeInteractionActionSchema.optional(),
+    timeout: RuntimeInteractionActionSchema.optional(),
+  })
+  .strict();
+
+const RuntimeHotspotInteractionSchema = z
+  .object({
+    kind: z.literal("hotspot"),
+    interactionId: stableId,
+    label: localizedText,
+    trigger: RuntimeInteractionTriggerSchema,
+    rect: SafeAreaSchema,
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    /**
+     * Safe branch frame: a resolved interaction keeps playing the current
+     * clip until this timestamp before the branch cut lands. Defaults to the
+     * input window end when omitted.
+     */
+    branchAtMs: z.number().int().positive().optional(),
+    outcomes: RuntimeInteractionOutcomesSchema,
+  })
+  .strict()
+  .superRefine((interaction, context) => {
+    if (interaction.endMs > interaction.startMs) return;
+    context.addIssue({
+      code: "custom",
+      path: ["endMs"],
+      message: "Interaction end must be after its start",
+    });
+  })
+  .superRefine((interaction, context) => {
+    if (interaction.branchAtMs === undefined) return;
+    if (interaction.branchAtMs >= interaction.endMs) return;
+    context.addIssue({
+      code: "custom",
+      path: ["branchAtMs"],
+      message: "Branch frame must not land before the input window closes",
+    });
+  });
+
 export const RuntimeAutoExitSchema = z
   .object({
     kind: z.literal("auto"),
@@ -273,6 +346,15 @@ const ImagePresentationSchema = z
   })
   .strict();
 
+const WorldPresentationSchema = z
+  .object({
+    kind: z.literal("world"),
+    worldId: stableId,
+    entryInstruction: z.string().trim().min(1).max(4_000).optional(),
+    maxExperienceSeconds: z.union([z.literal(60), z.literal(90), z.literal(120)]),
+  })
+  .strict();
+
 const ExtensionPresentationSchema = z
   .object({
     kind: z.literal("extension"),
@@ -294,6 +376,7 @@ const SceneNodeSchema = z
     presentation: z.discriminatedUnion("kind", [
       VideoPresentationSchema,
       ImagePresentationSchema,
+      WorldPresentationSchema,
       ExtensionPresentationSchema,
     ]),
     /**
@@ -304,6 +387,7 @@ const SceneNodeSchema = z
      */
     music: z.object({ trackId: stableId, url: RuntimeUriSchema }).strict().optional(),
     overlays: z.array(OverlaySchema).default([]),
+    interactions: z.array(RuntimeHotspotInteractionSchema).max(100).default([]),
     exit: RuntimeNodeExitSchema,
   })
   .strict();
@@ -411,7 +495,7 @@ export const InteractiveFilmReleaseSchema = z
           }
         } else if (node.presentation.kind === "image") {
           requireAsset(node.presentation.assetId, ["image"], [...presentationPath, "assetId"]);
-        } else {
+        } else if (node.presentation.kind === "extension") {
           requireAsset(
             node.presentation.configAssetId,
             ["data"],
@@ -448,6 +532,25 @@ export const InteractiveFilmReleaseSchema = z
               });
             }
           }
+        });
+
+        const interactionIds = new Set<string>();
+        node.interactions.forEach((interaction, interactionIndex) => {
+          const interactionPath = ["nodes", nodeIndex, "interactions", interactionIndex];
+          if (interactionIds.has(interaction.interactionId)) {
+            context.addIssue({
+              code: "custom",
+              path: [...interactionPath, "interactionId"],
+              message: `Duplicate interaction id ${interaction.interactionId}`,
+            });
+          }
+          interactionIds.add(interaction.interactionId);
+          requireLocaleCoverage(interaction.label, [...interactionPath, "label"]);
+          Object.entries(interaction.outcomes).forEach(([outcome, action]) => {
+            if (action?.kind === "goto") {
+              requireNode(action.nodeId, [...interactionPath, "outcomes", outcome, "nodeId"]);
+            }
+          });
         });
       }
 
@@ -489,6 +592,11 @@ export const InteractiveFilmReleaseSchema = z
           : node.exit.kind === "choice"
             ? node.exit.choices.map((choice) => choice.nextNodeId)
             : [];
+      node.interactions.forEach((interaction) => {
+        Object.values(interaction.outcomes).forEach((action) => {
+          if (action?.kind === "goto") pending.push(action.nodeId);
+        });
+      });
       nextNodeIds.forEach((nextNodeId) => {
         if (nextNodeId !== null) pending.push(nextNodeId);
       });
@@ -502,17 +610,11 @@ export const InteractiveFilmReleaseSchema = z
         });
       }
     });
-    const hasReachableTerminal = release.nodes.some(
-      (node) =>
-        reachable.has(node.nodeId) && node.exit.kind === "auto" && node.exit.nextNodeId === null
-    );
-    if (!hasReachableTerminal) {
-      context.addIssue({
-        code: "custom",
-        path: ["nodes"],
-        message: "Release graph has no reachable terminal clip",
-      });
-    }
+    // A runtime may intentionally contain no terminal clip. Retry loops,
+    // survival sequences and open-ended interactions are valid film-game
+    // structures; the player owns their exit through a later interaction or
+    // an explicit user action. Authoring diagnostics may still surface this
+    // shape as a warning, but it is not a malformed release contract.
   });
 
 export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema>;
