@@ -11,6 +11,8 @@ export const STORY_WORKBENCH_MODE = {
     "story.addScene",
     "story.addBranch",
     "story.editNode",
+    "story.putInteraction",
+    "story.removeInteraction",
     "story.removeSubtree",
     "story.setEntry",
     "story.reorder",
@@ -30,6 +32,16 @@ and the project story bible as the authoritative creative document.
 - Prefer intent-level tools. They construct legal graph mutations atomically.
 - Use story_addScene for linear continuation and story_addBranch for choices.
 - Use story_editNode only for narrative fields; it deliberately cannot change topology.
+- Use story_putInteraction to create or replace a timed video interaction. Choose
+  tap, directional swipe, or press-hold; define the normalized hotspot rectangle,
+  active time range, and success/failure/timeout outcomes. Continue keeps playing
+  the current clip, seek moves within it, and goto transitions to another scene.
+  Resolved outcomes park until optional branchAtMs (a safe cut frame at or after
+  the window end) so the clip plays its resolve beat before branching. A
+  press-hold may set controlTimeline so the clip only advances while held and
+  playback position is the charge progress.
+- Use story_removeInteraction to remove one interaction. Never rebuild the whole
+  scene or use a raw patch for ordinary interaction authoring.
 - Use story_removeSubtree only when the user explicitly asks to delete that narrative branch.
 - Use story_applyPatch only for a complex refactor that the intent tools cannot express.
 - Never invent success. A Story change exists only after the tool returns a new draftRevision.

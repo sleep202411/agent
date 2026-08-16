@@ -39,6 +39,8 @@ import { BailianCatalogService } from './providers/bailian/bailian-catalog.servi
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
 import { AgnesCatalogService } from './providers/agnes/agnes-catalog.service';
 import { MiniMaxCatalogService } from './providers/minimax/minimax-catalog.service';
+import { GoogleVertexCatalogService } from './providers/google-vertex/google-vertex-catalog.service';
+import { BytePlusSpeechCatalogService } from './providers/byteplus-speech/byteplus-speech-catalog.service';
 import type { AiModelDefinition } from './types';
 
 /**
@@ -66,13 +68,17 @@ export class AiCanonicalCatalogService {
     private readonly fal: FalCatalogService,
     private readonly bailian: BailianCatalogService,
     private readonly bytePlus: BytePlusCatalogService,
+    private readonly bytePlusSpeech: BytePlusSpeechCatalogService,
+    private readonly googleVertex: GoogleVertexCatalogService,
     private readonly agnes: AgnesCatalogService,
     private readonly minimax: MiniMaxCatalogService,
   ) {
     this.catalogByProvider = {
       'fal-ai': this.fal,
       'byteplus-modelark': this.bytePlus,
+      'byteplus-seed-speech': this.bytePlusSpeech,
       'aliyun-bailian': this.bailian,
+      'google-vertex': this.googleVertex,
       'agnes-ai': this.agnes,
       minimax: this.minimax,
     };

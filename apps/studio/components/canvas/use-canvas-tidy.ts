@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import {
   useReactFlow,
   type Edge,
@@ -9,19 +11,17 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import {
-  computeCanvasTidyLayout,
+  computeCanvasTidyLayoutRequest,
+  createCanvasTidyLayoutRequest,
   resolveCanvasTidyTargets,
   type CanvasNodeHeightEstimate,
+  type CanvasTidyLayoutOptions,
 } from "./canvas-tidy-layout";
 
 /**
- * React Flow wiring for {@link computeCanvasTidyLayout}, shared by every
- * authoring canvas so the layout, the fit-view framing and the selection
- * semantics are identical wherever "tidy" is offered.
- *
- * Positions are pushed through the caller's own `onNodesChange`, so a canvas
- * that guards layout mutations keeps guarding them here — tidy never becomes a
- * side door around a permission barrier.
+ * React Flow wiring for the shared canvas layout engine. Positions still pass
+ * through each canvas's own change and persistence boundaries; the worker only
+ * computes geometry and never becomes a side door around permissions or undo.
  */
 export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edge = Edge>({
   edges,
@@ -29,60 +29,97 @@ export function useCanvasTidy<NodeType extends Node = Node, EdgeType extends Edg
   tidySelection = false,
   onTidied,
   estimateHeight,
+  layoutOptions,
 }: {
   edges: EdgeType[];
   onNodesChange: (changes: NodeChange<NodeType>[]) => void;
   /** Tidy only the selection once more than one node is selected. */
   tidySelection?: boolean;
-  /**
-   * Receives the repositioned nodes so a canvas that persists layout separately
-   * from `onNodesChange` can commit them. Omit when the change stream already
-   * lands positions — a tidy the viewer sees but the store forgets is worse than
-   * no tidy at all.
-   */
+  /** Commit hook for canvases whose layout persistence is separate from changes. */
   onTidied?: (nodes: NodeType[]) => void;
-  /**
-   * Height to reserve for a node React Flow has not measured yet. Supply it on
-   * any canvas whose cards differ in height, or a tall unmeasured card lands
-   * under the one above it.
-   */
+  /** Height to reserve before React Flow has measured a card. */
   estimateHeight?: CanvasNodeHeightEstimate;
+  /** Direction, spacing and semantic side-lane policy for this canvas. */
+  layoutOptions?: CanvasTidyLayoutOptions<NodeType>;
 }) {
+  const t = useTranslations("canvas");
   const { fitView, getNodes } = useReactFlow<NodeType, EdgeType>();
+  const runVersion = useRef(0);
 
   return useCallback(
     (padding?: FitViewOptions["padding"]) => {
+      const version = ++runVersion.current;
       const target = resolveCanvasTidyTargets(getNodes(), edges, tidySelection);
-      const targetNodeIds = new Set(target.nodes.map((node) => node.id));
-      const positions = computeCanvasTidyLayout(target.nodes, target.edges, estimateHeight);
-      if (positions.length === 0) return;
-      onNodesChange(
-        positions.map((position) => ({
-          type: "position" as const,
-          id: position.id,
-          position: position.position,
-          dragging: false,
-        }))
+      if (target.nodes.length === 0) return;
+      const request = createCanvasTidyLayoutRequest(
+        target.nodes,
+        target.edges,
+        estimateHeight,
+        layoutOptions
       );
-      if (onTidied) {
-        // Derived from the freshly computed positions rather than read back from
-        // `getNodes()`, which has not re-rendered yet at this point.
-        const tidied = new Map(positions.map((position) => [position.id, position.position]));
-        onTidied(
-          getNodes().map((node) => {
-            const position = tidied.get(node.id);
-            return position ? { ...node, position } : node;
-          })
-        );
-      }
-      window.setTimeout(() => {
-        void fitView({
-          nodes: getNodes().filter((node) => targetNodeIds.has(node.id)),
-          padding: padding ?? (tidySelection ? 0.7 : 0.3),
-          duration: 280,
+      const requestSignature = JSON.stringify(request);
+
+      void computeCanvasTidyLayoutRequest(request)
+        .then((positions) => {
+          if (version !== runVersion.current) return;
+
+          // Discard a result computed for a graph or selection that changed
+          // while ELK was working. Applying stale geometry is worse than doing
+          // nothing, especially when a concurrent edit deleted an endpoint.
+          const latestTarget = resolveCanvasTidyTargets(getNodes(), edges, tidySelection);
+          const latestRequest = createCanvasTidyLayoutRequest(
+            latestTarget.nodes,
+            latestTarget.edges,
+            estimateHeight,
+            layoutOptions
+          );
+          if (JSON.stringify(latestRequest) !== requestSignature) return;
+
+          const targetNodeIds = new Set(positions.map((position) => position.id));
+          onNodesChange(
+            positions.map((position) => ({
+              type: "position" as const,
+              id: position.id,
+              position: position.position,
+              dragging: false,
+            }))
+          );
+          if (onTidied) {
+            const tidied = new Map(positions.map((position) => [position.id, position.position]));
+            onTidied(
+              getNodes().map((node) => {
+                const position = tidied.get(node.id);
+                return position ? { ...node, position } : node;
+              })
+            );
+          }
+          window.setTimeout(() => {
+            void fitView({
+              nodes: getNodes().filter((node) => targetNodeIds.has(node.id)),
+              padding: padding ?? (tidySelection ? 0.7 : 0.3),
+              duration: 320,
+            });
+          }, 60);
+        })
+        .catch((error: unknown) => {
+          if (version !== runVersion.current) return;
+          toast.error(
+            t("tidyFailed", {
+              message: error instanceof Error ? error.message : String(error),
+            })
+          );
         });
-      }, 60);
     },
-    [edges, estimateHeight, fitView, getNodes, onNodesChange, onTidied, tidySelection]
+    [
+      edges,
+      estimateHeight,
+      fitView,
+      getNodes,
+      layoutOptions,
+      onNodesChange,
+      onTidied,
+      t,
+      tidySelection,
+    ]
   );
 }

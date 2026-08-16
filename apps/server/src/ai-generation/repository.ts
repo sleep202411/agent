@@ -219,6 +219,11 @@ export interface CreateAiOutputAssetInput {
     audioCodecs: string[];
     browserSafeMp4: boolean;
   };
+  audioMetadata?: {
+    audioCodec: string;
+    sampleRate: number;
+    channels: number;
+  };
   checksumSha256: string;
   outputIndex: number;
   contentHash: string;
@@ -821,6 +826,7 @@ export class AiGenerationRepository {
       outputIndex: input.outputIndex,
       safetyFlags: (input.safetyFlags ?? null) as Prisma.InputJsonValue | null,
       videoProbe: (input.videoMetadata ?? null) as Prisma.InputJsonValue | null,
+      audioProbe: (input.audioMetadata ?? null) as Prisma.InputJsonValue | null,
     };
 
     const existing = await this.prisma.mediaAsset.findFirst({
@@ -869,7 +875,11 @@ export class AiGenerationRepository {
 
     const data: Prisma.MediaAssetUncheckedCreateInput = {
       kind:
-        input.type === 'video' ? MediaAssetKind.video : MediaAssetKind.image,
+        input.type === 'video'
+          ? MediaAssetKind.video
+          : input.type === 'audio'
+            ? MediaAssetKind.audio
+            : MediaAssetKind.image,
       storageProvider,
       bucket: input.bucket,
       region: input.region,

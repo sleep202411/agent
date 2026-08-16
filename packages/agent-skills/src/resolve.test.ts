@@ -39,6 +39,8 @@ describe("resolveSkillMounts", () => {
     expect(mount.toolIds).toContain("script.store");
     expect(mount.toolIds).toContain("script.readSection");
     expect(mount.toolIds).toContain("story.read");
+    expect(mount.toolIds).toContain("story.putInteraction");
+    expect(mount.toolIds).toContain("story.removeInteraction");
     expect(mount.instructions).toMatch(/untrusted user data/i);
   });
 

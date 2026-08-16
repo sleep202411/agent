@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
 import { ReferencePreparationError } from '../../provider-adapter';
+import type { BytePlusReferenceTransport } from './byteplus-runtime';
 
 const REFERENCE_FIELDS = [
   'referenceImages',
@@ -35,14 +36,12 @@ const PROVIDER_KEY = 'byteplus-modelark';
  *     (revocation source of truth). Failures are TERMINAL — the worker
  *     releases the billing hold and never requeues.
  *
- *  2. UPGRADE provider-registered IMAGE/VIDEO references from their plain CDN URL
- *     to `asset://<externalAssetId>` when an ACTIVE AIGC mirror exists. This
- *     is what lets Seedance use the private asset library instead of treating
- *     the same media as an unregistered public URL. Best-effort and
- *     provider-scoped: only byteplus jobs reach this hook, an unregistered /
- *     still-processing asset keeps its plain URL, and the rewrite is
- *     ephemeral (never persisted — retry re-derives it, and client-facing job
- *     payloads keep the plain URL).
+ *  2. RESOLVE provider-registered IMAGE/VIDEO references according to the
+ *     model runtime's explicit transport contract. Seedream retains public
+ *     HTTPS URLs. Seedance upgrades an ACTIVE AIGC mirror to
+ *     `asset://<externalAssetId>` so ModelArk uses its private asset library.
+ *     The rewrite is ephemeral (never persisted — retry re-derives it, and
+ *     client-facing job payloads keep the platform URL).
  */
 @Injectable()
 export class BytePlusReferencePreparerService {
@@ -53,6 +52,7 @@ export class BytePlusReferencePreparerService {
     jobUserId: string,
     projectId: string | null,
     jobWorkspaceId: string | null,
+    transport: BytePlusReferenceTransport,
   ): Promise<Record<string, unknown>> {
     await this.validateAssetReferences(
       input,
@@ -60,7 +60,23 @@ export class BytePlusReferencePreparerService {
       projectId,
       jobWorkspaceId,
     );
-    return this.upgradeAigcReferences(input);
+    if (
+      transport === 'public_url' &&
+      collectAssetReferenceIds(input).length > 0
+    ) {
+      throw new ReferencePreparationError({
+        code: 'VALIDATION_ERROR',
+        message:
+          'The selected model accepts public reference URLs, but this job contains ModelArk private-asset references.',
+        userMessage:
+          'This model cannot use the selected private reference asset. Choose a compatible model.',
+        retryable: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return transport === 'modelark_asset_uri'
+      ? this.upgradeAigcReferences(input)
+      : input;
   }
 
   /** Pass 1 — validate real_person `asset://` references (terminal on fail). */

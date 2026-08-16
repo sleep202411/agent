@@ -15,7 +15,6 @@ import {
   IconRefresh,
   IconSparkles,
   IconVolume,
-  IconWaveSine,
   type IconProps,
 } from "@tabler/icons-react";
 import type { ComponentType, FormEvent } from "react";
@@ -23,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 
 type AudioMode = "voice" | "music" | "sfx";
 
@@ -62,7 +62,7 @@ const MODES: ModeConfig[] = [
     labelKey: "modes.sfx",
     descriptionKey: "modeDescriptions.sfx",
     placeholderKey: "composer.placeholders.sfx",
-    icon: IconWaveSine,
+    icon: IconAudioWaveform,
     credits: 3,
   },
 ];
@@ -117,7 +117,7 @@ const PREVIEW_CARDS = [
     titleKey: "preview.sfx.title",
     promptKey: "preview.sfx.prompt",
     durationKey: "preview.sfx.duration",
-    icon: IconWaveSine,
+    icon: IconAudioWaveform,
     progress: 0.22,
     seed: 8,
   },

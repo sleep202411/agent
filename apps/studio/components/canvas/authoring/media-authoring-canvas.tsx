@@ -27,7 +27,7 @@ import { AudioAssetNode, VideoAssetNode } from "@/components/canvas/authoring/me
 import { NoteNode } from "@/components/canvas/authoring/note-node";
 import { PanoramaNode } from "@/components/canvas/authoring/panorama-node";
 import { ShotNode } from "@/components/canvas/authoring/shot-node";
-import { PromptNode, VideoNode } from "@/components/canvas/authoring/generation-card";
+import { AudioNode, PromptNode, VideoNode } from "@/components/canvas/authoring/generation-card";
 import { UploadStateContext } from "@/components/canvas/authoring/upload-state-context";
 import {
   useMediaAuthoringCanvas,
@@ -55,6 +55,7 @@ const NODE_TYPES = {
   audioAsset: AudioAssetNode,
   prompt: PromptNode,
   video: VideoNode,
+  audio: AudioNode,
   shot: ShotNode,
 };
 const EDGE_TYPES = { gradient: GradientEdge };

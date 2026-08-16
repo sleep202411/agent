@@ -101,7 +101,9 @@ export type AiPricingUnit =
 export const AI_PROVIDER_KEYS = [
   "fal-ai",
   "byteplus-modelark",
+  "byteplus-seed-speech",
   "aliyun-bailian",
+  "google-vertex",
   "agnes-ai",
   "minimax",
 ] as const;
@@ -112,7 +114,9 @@ export type AiProviderKey = (typeof AI_PROVIDER_KEYS)[number];
 export const AI_PROVIDER_LABELS: Record<AiProviderKey, string> = {
   "fal-ai": "Fal",
   "byteplus-modelark": "BytePlus ModelArk",
+  "byteplus-seed-speech": "BytePlus Seed Speech",
   "aliyun-bailian": "百炼",
+  "google-vertex": "Google Vertex AI",
   "agnes-ai": "Agnes AI",
   minimax: "MiniMax",
 };
@@ -199,7 +203,7 @@ export interface AiModelDefinition {
   vendor?: string;
   generationModes: AiGenerationMode[];
   capability?: AiModelCapability;
-  type: "image" | "video";
+  type: "image" | "video" | "audio";
   name: string;
   description: string;
   enabled: boolean;
@@ -217,6 +221,9 @@ export interface AiModelDefinition {
     imageToImage?: boolean;
     textToVideo?: boolean;
     imageToVideo?: boolean;
+    textToAudio?: boolean;
+    imageToAudio?: boolean;
+    audioToAudio?: boolean;
     supportsSeed?: boolean;
     supportsCancel?: boolean;
     maxOutputs: number;
@@ -249,7 +256,7 @@ export interface AiModelPresetDefinition {
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
   capability?: AiModelCapability;
-  type: "image" | "video";
+  type: "image" | "video" | "audio";
   routeMode: AiModelRouteMode;
   modelIds: string[];
   enabled: boolean;

@@ -275,6 +275,7 @@ export type AiGenerationMode =
   | "first_last_frame_to_video"
   | "video_to_video"
   | "text_to_audio"
+  | "image_to_audio"
   | "audio_to_audio"
   | "text_to_text"
   | "multimodal_to_text"

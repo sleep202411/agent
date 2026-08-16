@@ -45,6 +45,50 @@ describe("agent-tools registry", () => {
     expect(parsed).toMatchObject({ baseRevision: 0 });
   });
 
+  it("validates semantic Story interaction input", () => {
+    const parsed = parseToolInput("story.putInteraction", {
+      baseDraftRevision: 4,
+      nodeId: "scene.opening",
+      interaction: {
+        kind: "hotspot",
+        interactionId: "interaction.dodge",
+        label: { "zh-CN": "向右闪避" },
+        trigger: { kind: "swipe", direction: "right" },
+        rect: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
+        startMs: 800,
+        endMs: 1_600,
+        outcomes: {
+          success: { kind: "continue" },
+          failure: { kind: "goto", nodeId: "ending.caught" },
+          timeout: { kind: "goto", nodeId: "ending.caught" },
+        },
+      },
+    });
+    expect(parsed).toMatchObject({
+      nodeId: "scene.opening",
+      interaction: {
+        interactionId: "interaction.dodge",
+        trigger: { kind: "swipe", direction: "right" },
+      },
+    });
+    expect(() =>
+      parseToolInput("story.putInteraction", {
+        baseDraftRevision: 4,
+        nodeId: "scene.opening",
+        interaction: {
+          kind: "hotspot",
+          interactionId: "interaction.dodge",
+          label: {},
+          trigger: { kind: "press-hold", durationMs: 100 },
+          rect: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
+          startMs: 800,
+          endMs: 1_600,
+          outcomes: { success: { kind: "continue" } },
+        },
+      })
+    ).toThrow();
+  });
+
   it("builds stable idempotency keys", () => {
     expect(
       buildToolIdempotencyKey({

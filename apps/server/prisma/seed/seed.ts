@@ -13,6 +13,7 @@ import { CURRENT_CELL } from '../../src/common/region';
 import { buildPrisma } from '../../src/infra/db/db.module';
 import {
   seedAiImageCatalog,
+  seedAiAudioCatalog,
   seedAiVideoCatalog,
 } from './ai-catalog/seed-catalog';
 import { seedCnPrices } from './cn-prices';
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
   try {
     await seedAiImageCatalog(prisma);
     await seedAiVideoCatalog(prisma);
+    await seedAiAudioCatalog(prisma);
     await seedMembershipPlans(prisma);
     // CN-only fiat pricing (CNY compute packs + one-off membership + wechat_pay
     // bindings). Gated so it never runs on .com.

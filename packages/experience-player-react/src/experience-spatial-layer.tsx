@@ -40,6 +40,15 @@ import {
   type ExperienceSize,
 } from "@repo/experience-engine";
 import { classNames } from "./class-names";
+import { evaluateExperienceSwipe, type ExperienceSwipeGesture } from "./experience-swipe-gesture";
+
+/**
+ * Wall-clock grace before an untouched timeline-control charge times out.
+ * The scene media is paused while the gate is up, so the media-driven window
+ * timeout can never fire on its own; without this the clip would freeze
+ * forever waiting for a press that never comes.
+ */
+const TIMELINE_CONTROL_IDLE_TIMEOUT_MS = 3_000;
 
 type PressHoldPresentation = {
   anchor: ExperienceSpatialAnchor;
@@ -53,6 +62,26 @@ type PressHoldPresentation = {
   available: boolean;
 };
 
+type TapPresentation = {
+  anchor: ExperienceSpatialAnchor;
+  geometry: ExperienceSpatialGeometry;
+  transform: ExperienceMediaContentTransform;
+  gestureId: string;
+  label: string;
+  description?: string;
+  available: boolean;
+};
+
+type SwipePresentation = {
+  anchor: ExperienceSpatialAnchor;
+  geometry: ExperienceSpatialGeometry;
+  transform: ExperienceMediaContentTransform;
+  gesture: ExperienceSwipeGesture;
+  label: string;
+  description?: string;
+  available: boolean;
+};
+
 export function ExperienceSpatialLayer({
   manifest,
   scene,
@@ -62,6 +91,7 @@ export function ExperienceSpatialLayer({
   orientation,
   onEvents,
   onRuntimeError,
+  onTimelineHoldGateChange,
 }: {
   manifest: ExperienceRuntimeManifest;
   scene: ExperienceScene;
@@ -71,9 +101,83 @@ export function ExperienceSpatialLayer({
   orientation: ExperienceOrientation;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
+  onTimelineHoldGateChange?: (gating: boolean) => void;
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const viewportSize = useElementSize(layerRef);
+  const settledRef = useRef<{ sceneId: string; gestureIds: Set<string> }>({
+    sceneId: scene.sceneId,
+    gestureIds: new Set(),
+  });
+  const [settledVersion, setSettledVersion] = useState(0);
+  if (settledRef.current.sceneId !== scene.sceneId) {
+    settledRef.current = { sceneId: scene.sceneId, gestureIds: new Set() };
+  }
+  const settledGestureIds = settledRef.current.gestureIds;
+  // Timeline-control gate state per gesture, lifted from PressHoldControl so
+  // the host can pause/resume the scene media. Resets with the scene, like
+  // the settled set above.
+  const gateStatesRef = useRef<{ sceneId: string; gating: Map<string, boolean> }>({
+    sceneId: scene.sceneId,
+    gating: new Map(),
+  });
+  const [gateVersion, setGateVersion] = useState(0);
+  if (gateStatesRef.current.sceneId !== scene.sceneId) {
+    gateStatesRef.current = { sceneId: scene.sceneId, gating: new Map() };
+  }
+  const handleGateStateChange = useCallback((gestureId: string, gating: boolean) => {
+    const current = gateStatesRef.current;
+    if (current.gating.get(gestureId) === gating) return;
+    current.gating.set(gestureId, gating);
+    setGateVersion((version) => version + 1);
+  }, []);
+  const timelineHoldGate = [...gateStatesRef.current.gating.values()].some(Boolean);
+  useEffect(() => {
+    onTimelineHoldGateChange?.(timelineHoldGate);
+  }, [onTimelineHoldGateChange, timelineHoldGate]);
+
+  const markGestureSettled = useCallback(
+    (gestureId: string) => {
+      if (settledRef.current.sceneId !== scene.sceneId) {
+        settledRef.current = { sceneId: scene.sceneId, gestureIds: new Set() };
+      }
+      if (settledRef.current.gestureIds.has(gestureId)) return false;
+      settledRef.current.gestureIds.add(gestureId);
+      setSettledVersion((version) => version + 1);
+      return true;
+    },
+    [scene.sceneId]
+  );
+
+  const sceneHandlesGestureEvent = useCallback(
+    (gestureId: string, eventType: "gesture.cancelled" | "gesture.timed-out") =>
+      scene.eventBindings.some(
+        (binding) =>
+          binding.on.type === eventType &&
+          (binding.on.sourceId === undefined || binding.on.sourceId === gestureId)
+      ),
+    [scene.eventBindings]
+  );
+
+  const emitGestureEvents = useCallback(
+    (events: readonly ExperienceRuntimeEvent[]) => {
+      const forwarded = events.filter((event) => {
+        if (!event.sourceId) return true;
+        if (event.type === "gesture.completed") {
+          return markGestureSettled(event.sourceId);
+        }
+        if (
+          event.type === "gesture.cancelled" &&
+          sceneHandlesGestureEvent(event.sourceId, "gesture.cancelled")
+        ) {
+          return markGestureSettled(event.sourceId);
+        }
+        return !settledRef.current.gestureIds.has(event.sourceId);
+      });
+      if (forwarded.length > 0) onEvents(forwarded);
+    },
+    [markGestureSettled, onEvents, sceneHandlesGestureEvent]
+  );
   const rendererTransforms = useMemo(
     () =>
       viewportSize
@@ -128,7 +232,9 @@ export function ExperienceSpatialLayer({
             : {}),
           appearance: feedbackConfig?.appearance ?? "ring",
           layer: feedback?.layer ?? 20,
-          available: isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs),
+          available:
+            !settledGestureIds.has(gesture.gestureId) &&
+            isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs),
         } satisfies PressHoldPresentation,
       ];
     });
@@ -141,8 +247,131 @@ export function ExperienceSpatialLayer({
     runtimeState,
     scene,
     sceneTimeMs,
+    settledVersion,
     viewportSize,
   ]);
+  const tapPresentations = useMemo(() => {
+    if (!viewportSize) return [];
+    return scene.gestures.flatMap((gesture) => {
+      if (gesture.kind !== "tap") return [];
+      const anchor = scene.anchors.find((candidate) => candidate.anchorId === gesture.anchorId);
+      if (!anchor) return [];
+      const transform =
+        anchor.space.kind === "viewport"
+          ? createMediaContentTransform(viewportSize, viewportSize, "contain")
+          : rendererTransforms.get(anchor.space.rendererInstanceId);
+      if (!transform) return [];
+      const action = manifest.inputActions.find(
+        (candidate) => candidate.actionId === gesture.inputActionId
+      );
+      return [
+        {
+          anchor,
+          geometry: resolveExperienceAnchorGeometry(anchor, orientation, sceneTimeMs),
+          transform,
+          gestureId: gesture.gestureId,
+          label: action
+            ? localize(action.label, locale, manifest.localization.defaultLocale)
+            : gesture.inputActionId,
+          ...(action?.accessibilityDescription
+            ? {
+                description: localize(
+                  action.accessibilityDescription,
+                  locale,
+                  manifest.localization.defaultLocale
+                ),
+              }
+            : {}),
+          available:
+            !settledGestureIds.has(gesture.gestureId) &&
+            isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs),
+        } satisfies TapPresentation,
+      ];
+    });
+  }, [
+    locale,
+    manifest.inputActions,
+    manifest.localization.defaultLocale,
+    orientation,
+    rendererTransforms,
+    runtimeState,
+    scene,
+    sceneTimeMs,
+    settledVersion,
+    viewportSize,
+  ]);
+  const swipePresentations = useMemo(() => {
+    if (!viewportSize) return [];
+    return scene.gestures.flatMap((gesture) => {
+      if (gesture.kind !== "swipe") return [];
+      const anchor = scene.anchors.find((candidate) => candidate.anchorId === gesture.anchorId);
+      if (!anchor) return [];
+      const transform =
+        anchor.space.kind === "viewport"
+          ? createMediaContentTransform(viewportSize, viewportSize, "contain")
+          : rendererTransforms.get(anchor.space.rendererInstanceId);
+      if (!transform) return [];
+      const action = manifest.inputActions.find(
+        (candidate) => candidate.actionId === gesture.inputActionId
+      );
+      return [
+        {
+          anchor,
+          geometry: resolveExperienceAnchorGeometry(anchor, orientation, sceneTimeMs),
+          transform,
+          gesture,
+          label: action
+            ? localize(action.label, locale, manifest.localization.defaultLocale)
+            : gesture.inputActionId,
+          ...(action?.accessibilityDescription
+            ? {
+                description: localize(
+                  action.accessibilityDescription,
+                  locale,
+                  manifest.localization.defaultLocale
+                ),
+              }
+            : {}),
+          available:
+            !settledGestureIds.has(gesture.gestureId) &&
+            isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs),
+        } satisfies SwipePresentation,
+      ];
+    });
+  }, [
+    locale,
+    manifest.inputActions,
+    manifest.localization.defaultLocale,
+    orientation,
+    rendererTransforms,
+    runtimeState,
+    scene,
+    sceneTimeMs,
+    settledVersion,
+    viewportSize,
+  ]);
+
+  useEffect(() => {
+    const timedOutEvents = scene.gestures.flatMap((gesture): ExperienceRuntimeEvent[] => {
+      if (
+        !gesture.activeWindow ||
+        sceneTimeMs < gesture.activeWindow.endMs ||
+        settledRef.current.gestureIds.has(gesture.gestureId) ||
+        !sceneHandlesGestureEvent(gesture.gestureId, "gesture.timed-out")
+      ) {
+        return [];
+      }
+      if (!markGestureSettled(gesture.gestureId)) return [];
+      return [
+        {
+          type: "gesture.timed-out",
+          sourceId: gesture.gestureId,
+          payload: { sceneTimeMs, activeWindowEndMs: gesture.activeWindow.endMs },
+        },
+      ];
+    });
+    if (timedOutEvents.length > 0) onEvents(timedOutEvents);
+  }, [markGestureSettled, onEvents, scene.gestures, sceneHandlesGestureEvent, sceneTimeMs]);
 
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0">
@@ -153,11 +382,190 @@ export function ExperienceSpatialLayer({
           runtimeState={runtimeState}
           sceneTimeMs={sceneTimeMs}
           viewportElementRef={layerRef}
-          onEvents={onEvents}
+          onEvents={emitGestureEvents}
           onRuntimeError={onRuntimeError}
+          onGateStateChange={
+            presentation.gesture.timelineControl
+              ? (gating) => handleGateStateChange(presentation.gesture.gestureId, gating)
+              : undefined
+          }
+        />
+      ))}
+      {tapPresentations.map((presentation) => (
+        <TapControl
+          key={presentation.gestureId}
+          presentation={presentation}
+          onEvents={emitGestureEvents}
+        />
+      ))}
+      {swipePresentations.map((presentation) => (
+        <SwipeControl
+          key={presentation.gesture.gestureId}
+          presentation={presentation}
+          onEvents={emitGestureEvents}
         />
       ))}
     </div>
+  );
+}
+
+function TapControl({
+  presentation,
+  onEvents,
+}: {
+  presentation: TapPresentation;
+  onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
+}) {
+  const projected = projectExperienceGeometryToViewport(
+    presentation.geometry,
+    presentation.transform
+  );
+  const bounds = boundsOfExperienceProjectedGeometry(projected);
+  const clipPath = geometryClipPath(projected, bounds);
+  return (
+    <button
+      type="button"
+      className={classNames(
+        "pointer-events-auto absolute touch-manipulation border border-[var(--experience-interaction-color,#4d8dff)]/75 bg-[var(--experience-interaction-color,#4d8dff)]/10 outline-none transition hover:bg-[var(--experience-interaction-color,#4d8dff)]/20 focus-visible:ring-2 focus-visible:ring-white/80",
+        !presentation.available && "pointer-events-none opacity-0"
+      )}
+      style={{
+        left: bounds.x,
+        top: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        clipPath,
+        zIndex: 30,
+      }}
+      aria-label={presentation.description ?? presentation.label}
+      aria-disabled={!presentation.available}
+      onClick={() =>
+        onEvents([
+          {
+            type: "gesture.completed",
+            sourceId: presentation.gestureId,
+            payload: {},
+          },
+        ])
+      }
+    >
+      <span className="sr-only">{presentation.label}</span>
+    </button>
+  );
+}
+
+function SwipeControl({
+  presentation,
+  onEvents,
+}: {
+  presentation: SwipePresentation;
+  onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
+}) {
+  const pointerRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    startedAt: number;
+  } | null>(null);
+  const projected = projectExperienceGeometryToViewport(
+    presentation.geometry,
+    presentation.transform
+  );
+  const bounds = boundsOfExperienceProjectedGeometry(projected);
+  const clipPath = geometryClipPath(projected, bounds);
+
+  const emit = useCallback(
+    (
+      type: "gesture.completed" | "gesture.cancelled",
+      payload: Readonly<Record<string, string | number>>
+    ) => {
+      onEvents([{ type, sourceId: presentation.gesture.gestureId, payload }]);
+    },
+    [onEvents, presentation.gesture.gestureId]
+  );
+
+  const cancelPointer = useCallback(() => {
+    const pointer = pointerRef.current;
+    if (!pointer) return;
+    pointerRef.current = null;
+    emit("gesture.cancelled", {
+      reason: "pointer-cancelled",
+      durationMs: Math.max(0, Math.round(performance.now() - pointer.startedAt)),
+    });
+  }, [emit]);
+
+  const completePointer = (event: PointerEvent<HTMLButtonElement>) => {
+    const pointer = pointerRef.current;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    pointerRef.current = null;
+    const durationMs = Math.max(0, Math.round(performance.now() - pointer.startedAt));
+    const deltaX = event.clientX - pointer.x;
+    const deltaY = event.clientY - pointer.y;
+    const evaluation = evaluateExperienceSwipe(presentation.gesture, {
+      deltaX,
+      deltaY,
+      durationMs,
+      viewportWidth: bounds.width,
+      viewportHeight: bounds.height,
+    });
+    emit(evaluation.completed ? "gesture.completed" : "gesture.cancelled", {
+      direction: evaluation.direction,
+      distance: evaluation.distance,
+      durationMs: evaluation.durationMs,
+      ...(evaluation.completed ? {} : { reason: "gesture-threshold-not-met" }),
+    });
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const direction = keyboardSwipeDirection(event.key);
+    if (!direction || event.repeat || !presentation.available) return;
+    event.preventDefault();
+    const completed = presentation.gesture.directions.includes(direction);
+    emit(completed ? "gesture.completed" : "gesture.cancelled", {
+      direction,
+      distance: 1,
+      durationMs: 0,
+      input: "keyboard",
+      ...(completed ? {} : { reason: "direction-not-allowed" }),
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      className={classNames(
+        "pointer-events-auto absolute touch-none select-none border border-[var(--experience-interaction-color,#4d8dff)]/75 bg-[var(--experience-interaction-color,#4d8dff)]/10 outline-none transition hover:bg-[var(--experience-interaction-color,#4d8dff)]/20 focus-visible:ring-2 focus-visible:ring-white/80",
+        !presentation.available && "pointer-events-none opacity-0"
+      )}
+      style={{
+        left: bounds.x,
+        top: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        clipPath,
+        zIndex: 30,
+      }}
+      aria-label={presentation.description ?? presentation.label}
+      aria-disabled={!presentation.available}
+      onPointerDown={(event) => {
+        if (event.button !== 0 || !presentation.available) return;
+        event.preventDefault();
+        pointerRef.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          startedAt: performance.now(),
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerUp={completePointer}
+      onPointerCancel={cancelPointer}
+      onLostPointerCapture={cancelPointer}
+      onKeyDown={handleKeyDown}
+      onClick={(event) => event.preventDefault()}
+    >
+      <span className="sr-only">{presentation.label}</span>
+    </button>
   );
 }
 
@@ -168,6 +576,7 @@ function PressHoldControl({
   viewportElementRef,
   onEvents,
   onRuntimeError,
+  onGateStateChange,
 }: {
   presentation: PressHoldPresentation;
   runtimeState: ExperienceRuntimeState;
@@ -175,8 +584,15 @@ function PressHoldControl({
   viewportElementRef: RefObject<HTMLDivElement | null>;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
+  /**
+   * Timeline-control only: reports whether this gesture currently gates the
+   * scene media (window open, unresolved, not held). The host pauses playback
+   * while any gate is active so media position equals charge progress.
+   */
+  onGateStateChange?: (gating: boolean) => void;
 }) {
   const { gesture, geometry, transform } = presentation;
+  const timelineControl = gesture.timelineControl === true;
   const [state, setState] = useState<ExperiencePressHoldState>(() =>
     createExperiencePressHoldState()
   );
@@ -187,6 +603,93 @@ function PressHoldControl({
   const previousFrameTimeRef = useRef<number | null>(null);
   const latestRef = useRef({ gesture, runtimeState, sceneTimeMs });
   const runFrameRef = useRef<(time: number) => void>(() => undefined);
+
+  // ── Timeline-control branch ─────────────────────────────────────────────
+  // The scene media only advances while the pointer is held, so charge
+  // progress is derived from the scene clock instead of wall-clock rAF.
+  const timelineWindowStartMs = gesture.activeWindow?.startMs ?? 0;
+  const timelineProgress = Math.min(
+    1,
+    Math.max(0, (sceneTimeMs - timelineWindowStartMs) / gesture.durationMs)
+  );
+  const [timelinePressed, setTimelinePressed] = useState(false);
+  const [timelineResolved, setTimelineResolved] = useState(false);
+  const timelinePressedRef = useRef(false);
+  const timelineGate =
+    timelineControl && presentation.available && !timelineResolved && !timelinePressed;
+
+  useEffect(() => {
+    if (!timelineControl) return;
+    onGateStateChange?.(timelineGate);
+  }, [onGateStateChange, timelineControl, timelineGate]);
+
+  useEffect(() => {
+    if (!timelineControl || !timelinePressed || timelineResolved) return;
+    if (timelineProgress < 1) return;
+    setTimelineResolved(true);
+    onEvents([
+      {
+        type: "gesture.completed",
+        sourceId: gesture.gestureId,
+        payload: { holdDurationMs: gesture.durationMs, progress: 1 },
+      },
+    ]);
+  }, [
+    gesture.durationMs,
+    gesture.gestureId,
+    onEvents,
+    timelineControl,
+    timelinePressed,
+    timelineProgress,
+    timelineResolved,
+  ]);
+
+  // A gated charge that nobody presses would freeze the clip forever. The
+  // scene clock cannot run to the window end while paused, so the idle
+  // timeout is wall-clock and resolves the gesture so playback resumes.
+  useEffect(() => {
+    if (!timelineGate) return;
+    const timer = window.setTimeout(() => {
+      timelinePressedRef.current = false;
+      setTimelinePressed(false);
+      setTimelineResolved(true);
+      onEvents([
+        {
+          type: "gesture.timed-out",
+          sourceId: gesture.gestureId,
+          payload: { sceneTimeMs, idleTimeout: true },
+        },
+      ]);
+    }, TIMELINE_CONTROL_IDLE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [gesture.gestureId, onEvents, sceneTimeMs, timelineGate]);
+
+  const startTimelinePress = () => {
+    if (!presentation.available || timelineResolved) return;
+    timelinePressedRef.current = true;
+    setTimelinePressed(true);
+  };
+
+  const stopTimelinePress = () => {
+    if (!timelinePressedRef.current) return;
+    timelinePressedRef.current = false;
+    setTimelinePressed(false);
+    if (timelineResolved) return;
+    // Release below the threshold latches failure; the host unpauses so the
+    // clip plays its resolve beat to the safe branch frame before the cut.
+    setTimelineResolved(true);
+    onEvents([
+      {
+        type: "gesture.cancelled",
+        sourceId: gesture.gestureId,
+        payload: {
+          holdDurationMs: Math.round(timelineProgress * gesture.durationMs),
+          progress: timelineProgress,
+        },
+      },
+    ]);
+  };
+  // ── End timeline-control branch ─────────────────────────────────────────
 
   useEffect(() => {
     latestRef.current = { gesture, runtimeState, sceneTimeMs };
@@ -265,12 +768,17 @@ function PressHoldControl({
   }, []);
 
   const stopPress = useCallback(() => {
+    if (timelineControl) {
+      stopTimelinePress();
+      return;
+    }
     if (!pressedRef.current) return;
     pressedRef.current = false;
     pointerInsideRef.current = true;
     step(0);
     ensureAnimationFrame();
-  }, [ensureAnimationFrame, step]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ensureAnimationFrame, step, timelineControl, timelineProgress]);
 
   useEffect(
     () => () => {
@@ -282,6 +790,10 @@ function PressHoldControl({
   );
 
   const startPress = () => {
+    if (timelineControl) {
+      startTimelinePress();
+      return;
+    }
     if (!presentation.available || stateRef.current.status === "completed") return;
     pressedRef.current = true;
     pointerInsideRef.current = true;
@@ -318,7 +830,10 @@ function PressHoldControl({
     stopPress();
   };
 
-  const progressDegrees = Math.round(state.progress * 360);
+  const displayProgress = timelineControl ? timelineProgress : state.progress;
+  const displayPressing = timelineControl ? timelinePressed : state.status === "pressing";
+  const displayCompleted = timelineControl ? timelineResolved : state.status === "completed";
+  const progressDegrees = Math.round(displayProgress * 360);
   const controlStyle = {
     left: bounds.x,
     top: bounds.y,
@@ -328,7 +843,7 @@ function PressHoldControl({
     zIndex: presentation.layer,
   } satisfies CSSProperties;
   const indicatorStyle = {
-    background: `conic-gradient(var(--experience-color-accent,#ea2804) ${progressDegrees}deg,rgba(255,255,255,.18) ${progressDegrees}deg)`,
+    background: `conic-gradient(var(--experience-interaction-color,#4d8dff) ${progressDegrees}deg,rgba(255,255,255,.18) ${progressDegrees}deg)`,
   } satisfies CSSProperties;
 
   return (
@@ -340,7 +855,7 @@ function PressHoldControl({
       )}
       style={controlStyle}
       aria-label={presentation.description ?? presentation.label}
-      aria-pressed={state.status === "pressing"}
+      aria-pressed={displayPressing}
       aria-disabled={!presentation.available}
       onPointerDown={handlePointerDown}
       onPointerMove={updatePointerInside}
@@ -358,8 +873,8 @@ function PressHoldControl({
       <span
         className={classNames(
           "absolute top-1/2 left-1/2 grid size-12 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full p-[3px] shadow-[0_8px_32px_rgba(0,0,0,0.38)] transition-transform",
-          state.status === "pressing" && "scale-105",
-          state.status === "completed" && "scale-110"
+          displayPressing && "scale-105",
+          displayCompleted && "scale-110"
         )}
         style={indicatorStyle}
         aria-hidden="true"
@@ -446,6 +961,14 @@ function geometryClipPath(
         `${((point.x - bounds.x) / bounds.width) * 100}% ${((point.y - bounds.y) / bounds.height) * 100}%`
     )
     .join(",")})`;
+}
+
+function keyboardSwipeDirection(key: string): ExperienceSwipeGesture["directions"][number] | null {
+  if (key === "ArrowUp") return "up";
+  if (key === "ArrowDown") return "down";
+  if (key === "ArrowLeft") return "left";
+  if (key === "ArrowRight") return "right";
+  return null;
 }
 
 function useElementSize(ref: RefObject<HTMLElement | null>): ExperienceSize | null {

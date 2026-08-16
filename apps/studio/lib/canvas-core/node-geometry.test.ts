@@ -13,8 +13,14 @@ describe("canvas node geometry", () => {
     expect(canvasNodeGeometry(node("storyCanvas", { kind: "character" })).width).toBe(280);
     expect(canvasNodeGeometry(node("storyCanvas", { kind: "clip" })).width).toBe(320);
     expect(
-      canvasNodeGeometry(node("storyCanvas", { kind: "decision", choices: [{}, {}, {}] }))
-    ).toMatchObject({ width: 360, estimatedHeight: 386 });
+      canvasNodeGeometry(
+        node("storyCanvas", {
+          kind: "clip",
+          exitKind: "choice",
+          choices: [{}, {}, {}],
+        })
+      )
+    ).toMatchObject({ width: 320, estimatedHeight: 508 });
   });
 
   it("uses live measurements only while available in the current client", () => {

@@ -326,6 +326,23 @@ function providerPricingFromCatalog(
       ? pricing.unit.trim()
       : 'image';
   const market = marketForRegion(region);
+  const markets = recordValue(pricing.markets);
+  const marketPricing = recordValue(markets?.[market]);
+  if (marketPricing) {
+    const marketCurrency =
+      typeof marketPricing.currency === 'string' &&
+      marketPricing.currency.trim()
+        ? marketPricing.currency.trim()
+        : currency;
+    return {
+      ...pricing,
+      ...marketPricing,
+      unit,
+      currency: marketCurrency,
+      market,
+      region,
+    };
+  }
   const byMarket = recordValue(pricing.unitPriceByMarket);
   const marketPrice = numberFromRecord(byMarket, market);
   const defaultUnitPrice = numberFromRecord(pricing, 'defaultUnitPrice');

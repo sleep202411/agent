@@ -115,7 +115,6 @@ describe("film foundation cover authoring", () => {
   }) {
     const props: ComponentProps<typeof StoryNodeInspector> = {
       content: emptyDraft(),
-      locale: "en-US",
       selectedNode: null,
       showFoundation: true,
       canEdit: true,
@@ -130,13 +129,11 @@ describe("film foundation cover authoring", () => {
         onUpload: vi.fn().mockResolvedValue(undefined),
       },
       onUpdateFoundation: vi.fn(),
-      onUpdateCharacter: vi.fn(),
-      onDeleteCharacter: vi.fn(),
       onCloseNode: vi.fn(),
       onDeleteSelected: vi.fn(),
       onUpdateClipMeta: vi.fn(),
       onSetSceneExit: vi.fn(),
-      onSetEntryNode: vi.fn(),
+      onEditInteractions: vi.fn(),
     };
     await act(async () => {
       root.render(<StoryNodeInspector {...props} />);

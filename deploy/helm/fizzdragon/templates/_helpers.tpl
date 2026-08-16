@@ -58,3 +58,13 @@ app.kubernetes.io/component: {{ .component }}
 azure.workload.identity/use: "true"
 {{- end }}
 {{- end -}}
+
+{{/* Google Vertex WIF resource path for the Nest server. */}}
+{{- define "fizzdragon.serverGoogleVertexProviderPath" -}}
+{{- $wif := .Values.server.googleVertex.workloadIdentityFederation -}}
+projects/{{ required "server.googleVertex.workloadIdentityFederation.projectNumber is required" $wif.projectNumber }}/locations/global/workloadIdentityPools/{{ required "server.googleVertex.workloadIdentityFederation.pool is required" $wif.pool }}/providers/{{ required "server.googleVertex.workloadIdentityFederation.provider is required" $wif.provider }}
+{{- end -}}
+
+{{- define "fizzdragon.serverGoogleVertexAudience" -}}
+https://iam.googleapis.com/{{ include "fizzdragon.serverGoogleVertexProviderPath" . }}
+{{- end -}}

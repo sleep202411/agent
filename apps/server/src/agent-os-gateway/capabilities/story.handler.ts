@@ -11,6 +11,8 @@ import {
   StoryAddSceneInputSchema,
   StoryApplyPatchInputSchema,
   StoryEditNodeInputSchema,
+  StoryPutInteractionInputSchema,
+  StoryRemoveInteractionInputSchema,
   StoryRemoveSubtreeInputSchema,
   StoryReorderInputSchema,
   StorySetEntryInputSchema,
@@ -46,6 +48,8 @@ const STORY_TOOL_IDS = new Set([
   'story.addScene',
   'story.addBranch',
   'story.editNode',
+  'story.putInteraction',
+  'story.removeInteraction',
   'story.removeSubtree',
   'story.setEntry',
   'story.reorder',
@@ -53,6 +57,7 @@ const STORY_TOOL_IDS = new Set([
 ]);
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
+type StoryClipNode = Extract<StoryNode, { kind: 'clip' }>;
 type StoryOperationDraft = {
   kind: StoryPatchOperation['kind'];
   payload: unknown;
@@ -150,6 +155,24 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
               },
             ]);
           },
+        );
+      }
+      case 'story.putInteraction': {
+        const args = StoryPutInteractionInputSchema.parse(input.arguments);
+        return this.mutateStory(
+          input,
+          chapterId,
+          args.baseDraftRevision,
+          (state) => buildPutInteractionOperations(state.content, args),
+        );
+      }
+      case 'story.removeInteraction': {
+        const args = StoryRemoveInteractionInputSchema.parse(input.arguments);
+        return this.mutateStory(
+          input,
+          chapterId,
+          args.baseDraftRevision,
+          (state) => buildRemoveInteractionOperations(state.content, args),
         );
       }
       case 'story.removeSubtree': {
@@ -628,6 +651,59 @@ export function buildRemoveSubtreeOperations(
   );
 }
 
+export function buildPutInteractionOperations(
+  content: InteractiveStoryDraftContent,
+  args: ReturnType<typeof StoryPutInteractionInputSchema.parse>,
+): StoryPatchOperation[] {
+  const node = requireClipNode(content, args.nodeId);
+  const existingIndex = node.interactions.findIndex(
+    (interaction) =>
+      interaction.interactionId === args.interaction.interactionId,
+  );
+  const interactions = [...node.interactions];
+  if (existingIndex >= 0) {
+    interactions[existingIndex] = args.interaction;
+  } else {
+    interactions.push(args.interaction);
+  }
+  return finalizeOperations([
+    {
+      kind: 'story_graph.put_node',
+      payload: {
+        intent: 'replace',
+        node: { ...node, interactions },
+      },
+    },
+  ]);
+}
+
+export function buildRemoveInteractionOperations(
+  content: InteractiveStoryDraftContent,
+  args: ReturnType<typeof StoryRemoveInteractionInputSchema.parse>,
+): StoryPatchOperation[] {
+  const node = requireClipNode(content, args.nodeId);
+  const interactions = node.interactions.filter(
+    (interaction) => interaction.interactionId !== args.interactionId,
+  );
+  if (interactions.length === node.interactions.length) {
+    throw new UnprocessableEntityException({
+      code: 'STORY_INTERACTION_NOT_FOUND',
+      message: `Interaction ${args.interactionId} does not exist on scene ${args.nodeId}.`,
+      nodeId: args.nodeId,
+      interactionId: args.interactionId,
+    });
+  }
+  return finalizeOperations([
+    {
+      kind: 'story_graph.put_node',
+      payload: {
+        intent: 'replace',
+        node: { ...node, interactions },
+      },
+    },
+  ]);
+}
+
 function descendantsOf(
   rootNodeId: string,
   byId: Map<string, StoryNode>,
@@ -645,11 +721,21 @@ function descendantsOf(
 }
 
 function targetsOf(node: StoryNode): string[] {
-  return node.exit.kind === 'auto'
-    ? node.exit.nextNodeId
-      ? [node.exit.nextNodeId]
-      : []
-    : node.exit.choices.map((choice) => choice.nextNodeId);
+  const exitTargets =
+    node.exit.kind === 'auto'
+      ? node.exit.nextNodeId
+        ? [node.exit.nextNodeId]
+        : []
+      : node.exit.choices.map((choice) => choice.nextNodeId);
+  const interactionTargets =
+    node.kind === 'clip'
+      ? node.interactions.flatMap((interaction) =>
+          Object.values(interaction.outcomes).flatMap((action) =>
+            action?.kind === 'goto' ? [action.nodeId] : [],
+          ),
+        )
+      : [];
+  return [...exitTargets, ...interactionTargets];
 }
 
 function requireNode(
@@ -661,6 +747,19 @@ function requireNode(
   );
   if (!node) throw missingNode(nodeId);
   return node;
+}
+
+function requireClipNode(
+  content: InteractiveStoryDraftContent,
+  nodeId: string,
+): StoryClipNode {
+  const node = requireNode(content, nodeId);
+  if (node.kind === 'clip') return node;
+  throw new UnprocessableEntityException({
+    code: 'STORY_INTERACTION_REQUIRES_CLIP',
+    message: `Scene ${nodeId} cannot contain video interactions.`,
+    nodeId,
+  });
 }
 
 function missingNode(nodeId: string): UnprocessableEntityException {

@@ -30,7 +30,7 @@ export type AdminAiProviderEndpoint = {
   provider: string;
   endpointId: string;
   displayName: string | null;
-  modality: "image" | "video";
+  modality: "image" | "video" | "audio";
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   healthStatus: "unknown" | "healthy" | "degraded" | "outage";
   supportedModes: unknown;
@@ -55,7 +55,7 @@ export type AdminAiCanonicalModel = {
   id: string;
   slug: string;
   displayName: string;
-  modality: "image" | "video";
+  modality: "image" | "video" | "audio";
   family: string;
   generationModes: unknown;
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
@@ -77,7 +77,7 @@ export type AdminAiCanonicalModel = {
     defaultPoints: number;
     currency: string;
     pricingVersion: string;
-    unit: "per_output";
+    unit: "per_output" | "per_character";
     minLabel: string | null;
     maxLabel: string | null;
     defaultLabel: string | null;
@@ -92,7 +92,7 @@ export type AdminAiProviderBinding = {
   provider: string;
   endpointId: string;
   displayName: string | null;
-  modality: "image" | "video";
+  modality: "image" | "video" | "audio";
   status: "draft" | "active" | "disabled" | "degraded" | "archived";
   priority: number;
   weight: number;

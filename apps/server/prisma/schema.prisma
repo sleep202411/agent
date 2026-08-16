@@ -936,6 +936,9 @@ model Workspace {
   projectSkillAudits        ProjectSkillAudit[]
   projectSkillMutations     ProjectSkillMutation[]
   skillCatalogItems         SkillCatalogItem[]         @relation("SkillCatalogWorkspace")
+  worldModelWorlds          WorldModelWorld[]
+  worldModelSessions        WorldModelSession[]
+  worldModelTravels         WorldModelTravel[]
   billingOrders             BillingOrder[]
   subscriptions             BillingSubscription[]
   crew                      Crew?                      @relation("CrewWorkspace")
@@ -5859,6 +5862,7 @@ model NotificationOutbox {
 enum AiJobType {
   image
   video
+  audio
 }
 
 enum AiJobStatus {
@@ -7924,6 +7928,26 @@ enum StoryReferenceVersionStatus {
   failed
 }
 
+enum WorldModelWorldStatus {
+  generating
+  ready
+  failed
+}
+
+enum WorldModelSessionStatus {
+  active
+  closed
+  expired
+}
+
+enum WorldModelTravelStatus {
+  init
+  pending
+  running
+  failed
+  completed
+}
+
 model StoryProject {
   id              String             @id @default(uuid(7)) @db.Uuid
   workspaceId     String             @map("workspace_id") @db.Uuid
@@ -7971,11 +7995,107 @@ model StoryProject {
   skillInstallations      ProjectSkillInstallation[]
   skillAudits             ProjectSkillAudit[]
   skillCatalogItems       SkillCatalogItem[]            @relation("SkillCatalogStoryProject")
+  worldModelWorlds        WorldModelWorld[]
+  worldModelSessions      WorldModelSession[]
+  worldModelTravels       WorldModelTravel[]
 
   @@unique([id, workspaceId], map: "story_projects_id_workspace_unique")
   @@index([workspaceId, status, updatedAt(sort: Desc)], map: "story_projects_workspace_recent_idx")
   @@index([createdByUserId, status, updatedAt(sort: Desc)], map: "story_projects_creator_recent_idx")
   @@map("story_projects")
+}
+
+/// Durable provider-neutral world. Provider identifiers remain server-side;
+/// clients address this row by its local UUID and receive only short-lived
+/// connection material when entering a session.
+model WorldModelWorld {
+  id                 String                @id @default(uuid(7)) @db.Uuid
+  workspaceId        String                @map("workspace_id") @db.Uuid
+  storyProjectId     String                @map("story_project_id") @db.Uuid
+  providerKey        String                @map("provider_key") @db.VarChar(128)
+  providerWorldId    String                @map("provider_world_id") @db.VarChar(2048)
+  /// Server-hashed identity for one logical paid create intent. Replaying the
+  /// same client key returns this row and never calls the provider again.
+  submissionKey      String?               @unique(map: "world_model_worlds_submission_key_unique") @map("submission_key") @db.VarChar(64)
+  /// Canonical request hash prevents one idempotency key from being reused for
+  /// different world definitions.
+  requestFingerprint String?               @map("request_fingerprint") @db.VarChar(64)
+  mode               String                @db.VarChar(32)
+  status             WorldModelWorldStatus @default(generating)
+  name               String?               @db.VarChar(160)
+  prompt             String                @db.Text
+  firstFrameUrl      String?               @map("first_frame_url") @db.VarChar(2048)
+  request            Json                  @db.JsonB
+  providerData       Json                  @default("{}") @map("provider_data") @db.JsonB
+  errorCode          String?               @map("error_code") @db.VarChar(128)
+  errorMessage       String?               @map("error_message") @db.Text
+  createdByUserId    String                @map("created_by_user_id") @db.VarChar(64)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  project   StoryProject        @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  sessions  WorldModelSession[]
+  travels   WorldModelTravel[]
+
+  @@unique([providerKey, providerWorldId], map: "world_model_worlds_provider_identity_unique")
+  @@unique([id, storyProjectId, workspaceId], map: "world_model_worlds_project_identity_unique")
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "world_model_worlds_project_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "world_model_worlds_workspace_recent_idx")
+  @@map("world_model_worlds")
+}
+
+model WorldModelSession {
+  id                       String                  @id @default(uuid(7)) @db.Uuid
+  workspaceId              String                  @map("workspace_id") @db.Uuid
+  storyProjectId           String                  @map("story_project_id") @db.Uuid
+  worldId                  String                  @map("world_id") @db.Uuid
+  providerSessionId        String                  @unique @map("provider_session_id") @db.VarChar(2048)
+  status                   WorldModelSessionStatus @default(active)
+  heartbeatIntervalSeconds Float                   @map("heartbeat_interval_seconds")
+  sessionTimeoutSeconds    Float                   @map("session_timeout_seconds")
+  lastHeartbeatAt          DateTime                @default(now()) @map("last_heartbeat_at") @db.Timestamptz(6)
+  expiresAt                DateTime                @map("expires_at") @db.Timestamptz(6)
+  createdByUserId          String                  @map("created_by_user_id") @db.VarChar(64)
+  closedAt                 DateTime?               @map("closed_at") @db.Timestamptz(6)
+  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  project   StoryProject      @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  world     WorldModelWorld   @relation(fields: [worldId, storyProjectId, workspaceId], references: [id, storyProjectId, workspaceId], onDelete: Cascade)
+  travel    WorldModelTravel?
+
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "world_model_sessions_project_status_idx")
+  @@index([status, expiresAt], map: "world_model_sessions_expiry_idx")
+  @@map("world_model_sessions")
+}
+
+model WorldModelTravel {
+  id                String                 @id @default(uuid(7)) @db.Uuid
+  workspaceId       String                 @map("workspace_id") @db.Uuid
+  storyProjectId    String                 @map("story_project_id") @db.Uuid
+  worldId           String                 @map("world_id") @db.Uuid
+  sessionId         String                 @unique @map("session_id") @db.Uuid
+  providerTravelId  String                 @unique @map("provider_travel_id") @db.VarChar(2048)
+  status            WorldModelTravelStatus @default(init)
+  rtcStatus         String?                @map("rtc_status") @db.VarChar(64)
+  providerUpdatedAt DateTime?              @map("provider_updated_at") @db.Timestamptz(6)
+  providerData      Json                   @default("{}") @map("provider_data") @db.JsonB
+  artifactData      Json                   @default("{}") @map("artifact_data") @db.JsonB
+  startedAt         DateTime?              @map("started_at") @db.Timestamptz(6)
+  endedAt           DateTime?              @map("ended_at") @db.Timestamptz(6)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  project   StoryProject      @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  world     WorldModelWorld   @relation(fields: [worldId, storyProjectId, workspaceId], references: [id, storyProjectId, workspaceId], onDelete: Cascade)
+  session   WorldModelSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([storyProjectId, status, createdAt(sort: Desc)], map: "world_model_travels_project_status_idx")
+  @@index([worldId, createdAt(sort: Desc)], map: "world_model_travels_world_recent_idx")
+  @@map("world_model_travels")
 }
 
 /// The single, durable serialization point for every human-authored project

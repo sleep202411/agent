@@ -5,6 +5,7 @@ import {
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   ExperienceCoreChargeFeedbackRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreChoiceSelectedOutcomePayloadSchema,
@@ -12,7 +13,11 @@ import {
   ExperienceCoreRendererOpenCommandPayloadSchema,
   ExperienceCoreTextCompletedOutcomePayloadSchema,
   ExperienceCoreTextRendererConfigSchema,
+  ExperienceCoreVideoPlaybackCommandPayloadSchema,
   ExperienceCoreVideoRendererConfigSchema,
+  ExperienceCoreVideoSeekCommandPayloadSchema,
+  ExperienceCoreWorldCompletedOutcomePayloadSchema,
+  ExperienceCoreWorldModelRendererConfigSchema,
   type ExperienceJsonObject,
 } from "@repo/shared/experience-runtime";
 import type { ExperienceRendererAdapter } from "./renderer-registry.js";
@@ -45,18 +50,26 @@ export const EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER: ExperienceRendererAdapter =
   rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
   configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
-  capabilities: new Set([EXPERIENCE_CORE_VIDEO_RENDERER_ID]),
-  supportsCommand: () => false,
+  capabilities: new Set([EXPERIENCE_CORE_VIDEO_RENDERER_ID, "renderer.content-transform"]),
+  supportsCommand: (commandType) =>
+    commandType === "play" || commandType === "pause" || commandType === "seek",
   supportsOutcome: (outcomeType) => outcomeType === "media-ended",
   assertConfig(config) {
     const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(config);
     if (!parsed.success) invalidRendererContract(this.rendererId, "config", parsed.error.issues);
   },
-  assertCommand(commandType) {
-    throw new ExperienceRuntimeInvariantError(
-      "RENDERER_COMMAND_UNSUPPORTED",
-      `${this.rendererId} does not support command ${commandType}`
-    );
+  assertCommand(commandType, payload) {
+    if (!this.supportsCommand(commandType)) {
+      throw new ExperienceRuntimeInvariantError(
+        "RENDERER_COMMAND_UNSUPPORTED",
+        `${this.rendererId} does not support command ${commandType}`
+      );
+    }
+    const parsed =
+      commandType === "seek"
+        ? ExperienceCoreVideoSeekCommandPayloadSchema.safeParse(payload)
+        : ExperienceCoreVideoPlaybackCommandPayloadSchema.safeParse(payload);
+    if (!parsed.success) invalidRendererContract(this.rendererId, "command", parsed.error.issues);
   },
   assertOutcome(outcomeType, payload) {
     if (!this.supportsOutcome(outcomeType)) {
@@ -159,9 +172,42 @@ export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER: ExperienceRendere
   },
 };
 
+export const EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER: ExperienceRendererAdapter = {
+  rendererId: EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
+  apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
+  configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+  capabilities: new Set([EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID]),
+  supportsCommand: (commandType) => commandType === "end",
+  supportsOutcome: (outcomeType) => outcomeType === "world-completed",
+  assertConfig(config) {
+    const parsed = ExperienceCoreWorldModelRendererConfigSchema.safeParse(config);
+    if (!parsed.success) invalidRendererContract(this.rendererId, "config", parsed.error.issues);
+  },
+  assertCommand(commandType, payload) {
+    if (!this.supportsCommand(commandType)) {
+      throw new ExperienceRuntimeInvariantError(
+        "RENDERER_COMMAND_UNSUPPORTED",
+        `${this.rendererId} does not support command ${commandType}`
+      );
+    }
+    assertEmptyPayload(this.rendererId, "command", payload);
+  },
+  assertOutcome(outcomeType, payload) {
+    if (!this.supportsOutcome(outcomeType)) {
+      throw new ExperienceRuntimeInvariantError(
+        "RENDERER_OUTCOME_UNSUPPORTED",
+        `${this.rendererId} does not support outcome ${outcomeType}`
+      );
+    }
+    const parsed = ExperienceCoreWorldCompletedOutcomePayloadSchema.safeParse(payload);
+    if (!parsed.success) invalidRendererContract(this.rendererId, "outcome", parsed.error.issues);
+  },
+};
+
 export const EXPERIENCE_CORE_RENDERER_ADAPTERS = [
   EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
   EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
   EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER,
 ] as const satisfies readonly ExperienceRendererAdapter[];

@@ -18,8 +18,7 @@ import { OutputStorageService } from './storage.types';
  *                                       read-only for existing MediaAsset rows)
  *
  * Roll back new writes to Azure with `OUTPUT_STORAGE_PROVIDER=azure_blob`
- * without redeploying code. Local MinIO is the same `s3_compatible` slot
- * (see server README).
+ * without redeploying code.
  *
  * All impls are instantiated as Nest providers so the factory can pick;
  * only the chosen one is bound to the OutputStorageService token. Every
@@ -47,16 +46,21 @@ import { OutputStorageService } from './storage.types';
         const override = (process.env.OUTPUT_STORAGE_PROVIDER ?? '').trim();
         if (override === 'azure_blob') return azure;
         if (override === 'aliyun_oss') return oss;
-        if (override === 's3_compatible') return s3;
+        if (override === 's3_compatible') {
+          s3.assertConfigured('OUTPUT_STORAGE_PROVIDER=s3_compatible');
+          return s3;
+        }
         if (override) {
           throw new Error(
             `Unknown OUTPUT_STORAGE_PROVIDER "${override}" (expected azure_blob | aliyun_oss | s3_compatible)`,
           );
         }
-        // cn stays OSS; every other cell (com / global / local) writes to R2
-        // (or MinIO when S3_* points at local). Azure remains available for
-        // reads of legacy rows and for emergency env override.
-        return CURRENT_CELL === 'cn' ? oss : s3;
+        // cn stays OSS; every other cell (com / global / local) writes to R2.
+        // Azure remains available for reads of legacy rows and for emergency
+        // env override.
+        if (CURRENT_CELL === 'cn') return oss;
+        s3.assertConfigured(`${CURRENT_CELL} cell default output storage`);
+        return s3;
       },
       inject: [
         AzureBlobStorageService,

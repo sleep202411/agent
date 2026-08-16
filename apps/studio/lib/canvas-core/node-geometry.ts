@@ -5,7 +5,7 @@ import type { Node } from "@xyflow/react";
  *
  * Widths intentionally form a small optical scale instead of forcing every
  * card into one rectangle: compact text/identity nodes, standard media/story
- * nodes, and primary generation/decision nodes. Heights remain content-aware;
+ * nodes, and primary generation nodes. Heights remain content-aware;
  * `estimatedHeight` is only the pre-measurement reservation used by layout,
  * grouping and hit-testing.
  */
@@ -28,6 +28,7 @@ const GEOMETRY_BY_TYPE: Readonly<Record<string, CanvasNodeGeometry>> = {
   panorama: geometry(PRIMARY_WIDTH, 180, 224),
   prompt: geometry(PRIMARY_WIDTH, 320, 408),
   video: geometry(PRIMARY_WIDTH, 232, 280),
+  audio: geometry(PRIMARY_WIDTH, 168, 216),
 };
 
 const FALLBACK_GEOMETRY = geometry(STANDARD_WIDTH, 160, 240);
@@ -60,11 +61,17 @@ export function canvasNodeLayoutSize(
 
 function storyNodeGeometry(data: Record<string, unknown> | undefined): CanvasNodeGeometry {
   if (data?.kind === "character") return geometry(COMPACT_WIDTH, 120, 140);
-  if (data?.kind === "decision") {
+  const interactionCount = Array.isArray(data?.interactions) ? data.interactions.length : 0;
+  const interactionHeight = interactionCount > 0 ? 52 + interactionCount * 44 : 0;
+  if (data?.kind === "clip" && data.exitKind === "choice") {
     const choiceCount = Array.isArray(data.choices) ? data.choices.length : 0;
-    return geometry(PRIMARY_WIDTH, 224, 224 + choiceCount * 54);
+    return geometry(
+      STANDARD_WIDTH,
+      364 + interactionHeight,
+      364 + interactionHeight + choiceCount * 48
+    );
   }
-  return geometry(STANDARD_WIDTH, 236, 268);
+  return geometry(STANDARD_WIDTH, 236 + interactionHeight, 268 + interactionHeight);
 }
 
 function positive(value: number | null | undefined): number | undefined {

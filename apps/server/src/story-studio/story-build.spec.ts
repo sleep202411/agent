@@ -2,11 +2,13 @@ import {
   compileStoryBuild,
   type StoryBuildCompilerInput,
   type StoryBuildVideoInput,
+  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000001';
 const BUILD_ID = '0197f4a2-0800-7000-8000-000000000002';
+const WORLD_ID = '0197f4a2-0800-7000-8000-000000000003';
 
 function draft(): InteractiveStoryDraftContent {
   return {
@@ -22,6 +24,7 @@ function draft(): InteractiveStoryDraftContent {
           kind: 'clip',
           nodeId: 'opening',
           clipKey: 'OPENING',
+          interactions: [],
           exit: {
             kind: 'choice',
             decisionId: 'route',
@@ -44,12 +47,14 @@ function draft(): InteractiveStoryDraftContent {
           kind: 'clip',
           nodeId: 'left',
           clipKey: 'LEFT',
+          interactions: [],
           exit: { kind: 'auto', nextNodeId: null },
         },
         {
           kind: 'clip',
           nodeId: 'right',
           clipKey: 'RIGHT',
+          interactions: [],
           exit: { kind: 'auto', nextNodeId: null },
         },
       ],
@@ -144,12 +149,67 @@ describe('compileStoryBuild', () => {
     );
   });
 
+  it('keeps intentional replay loops playable in Preview and releases', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    const left = content.graph.nodes[1];
+    if (!opening || opening.kind !== 'clip' || !left || left.kind !== 'clip') {
+      throw new Error('Loop fixture clips are missing.');
+    }
+    opening.exit = { kind: 'auto', nextNodeId: left.nodeId };
+    left.exit = { kind: 'auto', nextNodeId: opening.nodeId };
+    content.graph.nodes = [opening, left];
+
+    const preview = compileStoryBuild(
+      input({
+        channel: 'preview',
+        draft: content,
+        videos: [video(opening.nodeId), video(left.nodeId)],
+      }),
+    );
+    expect(preview.runtime).not.toBeNull();
+    expect(preview.runtime?.completionPolicy).toBe('open-ended');
+    expect(preview.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_GRAPH_CYCLE',
+          severity: 'warning',
+        }),
+        expect.objectContaining({
+          code: 'STORY_BUILD_NO_REACHABLE_TERMINAL',
+          severity: 'warning',
+        }),
+      ]),
+    );
+
+    const production = compileStoryBuild(
+      input({
+        draft: content,
+        videos: [video(opening.nodeId), video(left.nodeId)],
+      }),
+    );
+    expect(production.runtime).not.toBeNull();
+    expect(production.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_GRAPH_CYCLE',
+          severity: 'warning',
+        }),
+        expect.objectContaining({
+          code: 'STORY_BUILD_NO_REACHABLE_TERMINAL',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
+
   it('keeps disconnected canvas work out of the playable cut', () => {
     const content = draft();
     content.graph.nodes.push({
       kind: 'clip',
       nodeId: 'orphan',
       clipKey: 'ORPHAN',
+      interactions: [],
       exit: { kind: 'auto', nextNodeId: 'orphan' },
     });
     const result = compileStoryBuild(input({ draft: content }));
@@ -163,5 +223,104 @@ describe('compileStoryBuild', () => {
       ]),
     );
     expect(result.includedGraphNodeIds).not.toContain('orphan');
+  });
+
+  it('compiles a ready world node as a first-class runtime scene', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    if (!opening || opening.kind !== 'clip')
+      throw new Error('Opening clip fixture is missing.');
+    opening.exit = { kind: 'auto', nextNodeId: 'world' };
+    content.graph.nodes = [
+      opening,
+      {
+        kind: 'world',
+        nodeId: 'world',
+        worldId: WORLD_ID,
+        name: 'Rain world',
+        entryInstruction: 'Continue through the gate.',
+        maxExperienceSeconds: 90,
+        exit: { kind: 'auto', nextNodeId: 'left' },
+      },
+      content.graph.nodes[1]!,
+    ];
+    const worlds: StoryBuildWorldInput[] = [
+      { graphNodeId: 'world', worldId: WORLD_ID, status: 'ready' },
+    ];
+
+    const result = compileStoryBuild(
+      input({
+        draft: content,
+        videos: [video('opening'), video('left')],
+        worlds,
+      }),
+    );
+
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    expect(result.pathReport.durationMinMs).toBe(100_000);
+    expect(result.runtime?.rendererRequirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rendererId: 'core.world-model' }),
+      ]),
+    );
+    expect(result.runtime?.graph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'scene',
+          renderers: expect.arrayContaining([
+            expect.objectContaining({
+              rendererId: 'core.world-model',
+              config: expect.objectContaining({
+                projectId: PROJECT_ID,
+                worldId: WORLD_ID,
+                maxExperienceSeconds: 90,
+              }),
+            }),
+          ]),
+        }),
+      ]),
+    );
+  });
+
+  it('blocks playtest when a referenced world is not ready', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    if (!opening || opening.kind !== 'clip')
+      throw new Error('Opening clip fixture is missing.');
+    opening.exit = { kind: 'auto', nextNodeId: 'world' };
+    content.graph.nodes = [
+      opening,
+      {
+        kind: 'world',
+        nodeId: 'world',
+        worldId: WORLD_ID,
+        maxExperienceSeconds: 60,
+        exit: { kind: 'auto', nextNodeId: null },
+      },
+    ];
+
+    const result = compileStoryBuild(
+      input({
+        channel: 'preview',
+        draft: content,
+        videos: [video('opening')],
+        worlds: [
+          { graphNodeId: 'world', worldId: WORLD_ID, status: 'generating' },
+        ],
+      }),
+    );
+
+    expect(result.runtime).toBeNull();
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_WORLD_NOT_READY',
+          severity: 'error',
+          entityId: 'world',
+        }),
+      ]),
+    );
   });
 });

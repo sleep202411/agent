@@ -9,11 +9,11 @@ import {
   IconDownload,
   IconLoader2,
   IconMaximize,
-  IconMusic,
   IconPencil,
   IconRefresh,
   IconUpload,
 } from "@tabler/icons-react";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 import { cn } from "@/lib/utils";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
@@ -151,7 +151,7 @@ function MediaAssetNodeComponent({
             style={{ minHeight: geometry.minHeight - 26 }}
           >
             <div className="flex min-w-0 items-center gap-2 text-white/70">
-              <IconMusic className="size-5 shrink-0" stroke={1.7} />
+              <IconAudioWaveform className="size-5 shrink-0" stroke={1.7} />
               <span className="truncate text-sm">{title}</span>
             </div>
             <audio src={src} controls className="nodrag h-8 w-full [color-scheme:dark]" />

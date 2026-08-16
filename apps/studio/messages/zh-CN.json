@@ -1170,6 +1170,7 @@
   },
   "canvas": {
     "tidyCanvas": "整理画布",
+    "tidyFailed": "无法整理画布：{message}",
     "toggleMinimap": "切换缩略图",
     "snapToGrid": "对齐网格",
     "zoomOut": "缩小",
@@ -1180,6 +1181,7 @@
       "upload": "上传",
       "image": "图像",
       "video": "视频",
+      "audio": "音频",
       "note": "便签",
       "shot": "分镜"
     },
@@ -1187,6 +1189,7 @@
     "uploadFailed": "上传失败",
     "imageCardName": "图像 {index}",
     "videoCardName": "视频 {index}",
+    "audioCardName": "音频 {index}",
     "videoAssetsComingSoon": "视频素材 · 即将推出",
     "offline": "离线",
     "connecting": "连接中…",
@@ -1244,6 +1247,7 @@
       "upload": "上传",
       "image": "图像",
       "video": "视频",
+      "audio": "音频",
       "note": "便签",
       "shot": "分镜",
       "searchPlaceholder": "搜索节点",
@@ -1260,6 +1264,10 @@
     },
     "modelPicker": {
       "searchPlaceholder": "搜索模型",
+      "vendor": "厂商",
+      "filterByVendor": "按厂商筛选",
+      "allVendors": "全部厂商",
+      "otherVendor": "其他",
       "heading": "模型",
       "searchResults": "搜索结果",
       "featuredModels": "热门",
@@ -1280,7 +1288,8 @@
         "fastBalancedVideo": "高速稳定成片",
         "cinematicVideo": "音画电影成片",
         "stableMotionVideo": "动作稳定成片",
-        "creativeVideo": "创意灵活成片"
+        "creativeVideo": "创意灵活成片",
+        "expressiveAudio": "生成富有表现力的音频"
       },
       "requiresPlan": "需要 {plan} 套餐",
       "locked": "当前套餐不可用",
@@ -1437,6 +1446,7 @@
   "canvasOps": {
     "modalityImage": "图像",
     "modalityVideo": "视频",
+    "modalityAudio": "音频",
     "selectModel": "选择模型",
     "settings": "设置",
     "generate": "生成",
@@ -1444,7 +1454,8 @@
       "expand": "展开生成面板",
       "collapse": "返回紧凑面板",
       "imageTitle": "图像生成",
-      "videoTitle": "视频生成"
+      "videoTitle": "视频生成",
+      "audioTitle": "音频生成"
     },
     "cancelGeneration": "取消生成",
     "run": "运行",
@@ -1482,6 +1493,7 @@
     "uploadFailed": "无法上传 {name}",
     "noModelForOp": "目录中暂无可用的{op}模型",
     "promptPlaceholderDefault": "输入提示词……",
+    "promptPlaceholderAudio": "描述你想生成的声音、音效、环境声或音乐……",
     "promptPlaceholderRelight": "描述光照效果，例如“从左侧打来的温暖夕阳光”",
     "statusSubmitting": "提交中……",
     "statusQueued": "排队中……",
@@ -2296,6 +2308,9 @@
       "uploadFailed": "上传失败",
       "unsupportedType": "仅支持 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
       "empty": "还没有资产——先生成或上传一个。",
+      "search": "搜索资产",
+      "selected": "已选择 {count}/{max}",
+      "confirm": "添加所选资产",
       "filter": {
         "all": "全部",
         "aiGenerated": "AI 生成",
@@ -2330,6 +2345,8 @@
   "modes": {
     "text_to_image": "文生图",
     "text_to_video": "文生视频",
+    "text_to_audio": "文生音频",
+    "audio_to_audio": "音频生音频",
     "image_to_image": "图生图",
     "image_to_panorama": "全景图",
     "image_to_video": "图生视频",
@@ -2483,6 +2500,12 @@
     "canvas": {
       "back": "返回影游工作室",
       "mode": "故事画布",
+      "sidebar": {
+        "navigation": "影游项目导航",
+        "world": "世界",
+        "media": "素材",
+        "agent": "智能体"
+      },
       "chapters": {
         "action": "章节",
         "title": "章节",
@@ -2582,7 +2605,6 @@
         "retry": "重试",
         "refresh": "刷新试玩",
         "editStory": "编辑故事",
-        "previewWarnings": "当前试玩有 {count} 条提示",
         "unavailableTitle": "当前故事还不能试玩",
         "unavailableDescription": "{errors} 个阻塞错误 · {warnings} 个警告。只需补齐下方列出的生产输入，画布仍可随时修改。"
       },
@@ -2599,19 +2621,14 @@
       },
       "nodeKinds": {
         "clip": "影像镜头",
-        "choice": "玩家选择",
-        "decision": "玩家选择",
-        "character": "角色"
+        "world": "世界体验"
       },
       "ports": {
-        "cast": "角色成员",
         "input": "故事流入",
         "completion": "场景的下一步",
-        "choiceTrigger": "触发选择",
-        "choiceOption": "选择：{label}",
-        "newChoice": "连接新选项"
+        "choiceOption": "选择：{label}"
       },
-      "decisionCard": {
+      "interactionCard": {
         "promptPlaceholder": "玩家此刻必须决定什么？",
         "defaultOption": "选项 {number}",
         "untitledOption": "未命名选项",
@@ -2621,11 +2638,35 @@
         "optionPlaceholder": "输入玩家看到的选项",
         "connectOption": "连接这个选项"
       },
+      "interactionAnchors": {
+        "title": "交互锚点",
+        "choiceType": "选择",
+        "hotspotType": "热点",
+        "continueCurrent": "继续本片",
+        "seekCurrent": "跳至 {time}",
+        "gotoTarget": "进入 {target}",
+        "triggerTap": "点击",
+        "triggerSwipe": "向{direction}滑动",
+        "triggerPressHold": "长按 {duration}",
+        "directions": {
+          "up": "上",
+          "down": "下",
+          "left": "左",
+          "right": "右"
+        },
+        "outcomes": {
+          "success": "成功",
+          "failure": "失败",
+          "timeout": "超时"
+        }
+      },
       "creator": {
         "title": "添加到故事图",
         "description": "创建互动故事结构中的图元素。",
         "clip": "影像镜头",
         "clipDescription": "一段带有明确后续走向的生成视频。",
+        "world": "世界体验",
+        "worldDescription": "进入一个带有明确完成出口的实时生成世界。",
         "character": "角色",
         "characterDescription": "属于当前故事项目的可复用角色卡。",
         "choice": "玩家选择",
@@ -2643,7 +2684,64 @@
       },
       "projection": {
         "clip": "镜头",
-        "decision": "玩家选择"
+        "world": "世界"
+      },
+      "worldNode": {
+        "untitled": "未命名世界",
+        "bindingTitle": "绑定世界",
+        "bindingDescription": "绑定已有世界，或直接为当前故事节点构建新世界。",
+        "change": "更换世界",
+        "chooseExisting": "选择已有",
+        "chooseAnother": "选择其他世界",
+        "boundWorldUnavailable": "当前绑定的世界已不可用。",
+        "retry": "重试",
+        "loading": "正在加载世界…",
+        "select": "选择世界",
+        "unbound": "尚未选择世界",
+        "noWorlds": "当前项目还没有可复用的世界，可直接在这里构建。",
+        "providerUnavailable": "尚未配置可用的世界模型服务。",
+        "providerLoadError": "无法加载世界模型服务。",
+        "generationUnavailable": "当前项目角色不能构建世界。",
+        "createError": "无法创建世界。",
+        "buildFailed": "无法构建世界。",
+        "buildTimeout": "世界生成在 10 分钟内未完成，请检查服务状态后重试。",
+        "worldPrompt": "世界描述",
+        "worldPromptTooltip": "构建世界时发送给模型，用于定义持续存在的场景、氛围、角色、空间规则与开场时刻。",
+        "worldPromptPlaceholder": "描述世界、氛围、角色、空间规则和开场时刻…",
+        "firstFrame": "开场画面",
+        "firstFrameTooltip": "构建世界时发送给模型的可选项目图片，用于约束构图和视觉身份。",
+        "firstFrameHint": "从当前项目选择图片，或上传新图片。",
+        "chooseFirstFrame": "选择开场画面",
+        "replaceFirstFrame": "更换开场画面",
+        "clearFirstFrame": "移除开场画面",
+        "firstFramePreviewAlt": "已选择的世界开场画面",
+        "firstFrameUnavailable": "这张图片不能作为世界开场画面。",
+        "firstFrameDisabled": "你不能修改这个世界的开场画面。",
+        "firstFrameCandidateLoadError": "无法加载项目图片。",
+        "perspective": "视角",
+        "perspectiveTooltip": "设置玩家探索生成世界时使用的镜头视角。",
+        "build": "构建并绑定世界",
+        "rebuild": "应用修改并替换世界",
+        "expandEditor": "展开世界设置",
+        "collapseEditor": "收起世界设置",
+        "run": "运行",
+        "runError": "无法启动世界会话。",
+        "exitRun": "退出世界",
+        "entryInstruction": "初始指令",
+        "entryInstructionTooltip": "世界会话启动后立即向运行中的模型发送一次，用于指示首个事件或目标，不会重新构建世界。",
+        "entryInstructionPlaceholder": "描述玩家进入世界后的首个事件或目标。",
+        "maxDuration": "体验时长上限",
+        "maxDurationTooltip": "单次世界体验允许持续的最长时间；达到上限后，本次体验结束。",
+        "duration": "{seconds} 秒",
+        "perspectiveValue": {
+          "first_person": "第一人称",
+          "third_person": "第三人称"
+        },
+        "status": {
+          "generating": "生成中",
+          "ready": "已就绪",
+          "failed": "失败"
+        }
       },
       "foundation": {
         "description": "先固化戏剧承诺，再展开分支图；修改会自动保存到可编辑草稿。",
@@ -2826,6 +2924,82 @@
         "clearError": "无法取消选择当前素材。"
       },
       "mediaCreation": "素材创作",
+      "interactionEditor": {
+        "entryTitle": "编辑交互",
+        "entryDescription": "在画面与时间线上放置可点击热点。",
+        "workspaceLabel": "视频交互编辑器",
+        "back": "返回故事画布",
+        "projectInteraction": "项目交互",
+        "subtitle": "热点布局与时间范围",
+        "edit": "编辑",
+        "preview": "预览",
+        "refreshWarning": "更改将自动保存",
+        "done": "完成",
+        "selectTool": "选择与移动",
+        "rectangleTool": "绘制热点",
+        "addHotspot": "添加热点",
+        "duplicate": "复制",
+        "delete": "删除",
+        "newHotspot": "热点 {number}",
+        "copyName": "{name} 副本",
+        "previewAction": "已触发交互 · 前往{target}",
+        "previewContinue": "已触发交互 · 继续播放本片",
+        "previewSeek": "已触发交互 · 跳转至 {time}",
+        "previewMissingTarget": "这个热点尚未指定跳转目标。",
+        "noVideo": "暂无当前视频",
+        "noVideoDescription": "请先在节点中选择当前视频，再回到这里基于真实画面定位交互。",
+        "emptyTitle": "绘制第一个热点",
+        "emptyDescription": "先定义观众可点击的区域，再设置它出现的时间与触发动作。",
+        "drawFirst": "绘制热点",
+        "pause": "暂停视频",
+        "play": "播放视频",
+        "seek": "视频播放位置",
+        "unmute": "打开声音",
+        "mute": "静音",
+        "videoTrack": "视频",
+        "hotspotTrack": "热点",
+        "hotspots": "热点",
+        "hotspotCount": "{count} 个交互",
+        "identity": "热点",
+        "name": "名称",
+        "timing": "时间范围",
+        "start": "开始",
+        "end": "结束",
+        "timingHint": "热点仅在此时间范围内显示并可点击。",
+        "position": "位置与尺寸",
+        "x": "X",
+        "y": "Y",
+        "width": "宽度",
+        "height": "高度",
+        "trigger": "触发方式",
+        "interactionType": "交互类型",
+        "tap": "点击",
+        "swipe": "滑动",
+        "pressHold": "长按",
+        "direction": "方向",
+        "directionUp": "向上",
+        "directionDown": "向下",
+        "directionLeft": "向左",
+        "directionRight": "向右",
+        "holdDuration": "长按时长",
+        "outcomes": "结果",
+        "successOutcome": "成功",
+        "failureOutcome": "失败",
+        "timeoutOutcome": "超时",
+        "addOutcome": "添加{outcome}结果",
+        "removeOutcome": "移除",
+        "goToScene": "前往场景",
+        "continueCurrent": "继续播放本片",
+        "seekCurrent": "跳转到本片时间",
+        "seekTime": "目标时间",
+        "destination": "目标场景",
+        "nothingSelected": "未选择热点",
+        "nothingSelectedDescription": "在视频、时间线或列表中选择热点，以编辑详细属性。",
+        "branchAt": "切点时间",
+        "branchAtHint": "输入判定完成后,当前片段会继续播放到该时间点才切入分支;默认等于窗口结束时间。",
+        "controlTimeline": "时间轴控制蓄力",
+        "controlTimelineHint": "窗口开启时片段暂停,按住才继续播放;播放进度即蓄力进度。"
+      },
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
@@ -2854,7 +3028,6 @@
           "connect": "连接",
           "linked": "已连接"
         },
-        "entry": "入口场景",
         "exitAuto": "继续到场景",
         "exitChoice": "玩家选择",
         "continuationTarget": "下一个场景",
@@ -2876,7 +3049,6 @@
         "convertExitDescription": "这会删除现有的 {count} 条分支，以及其中已经编写的条件或选项细节。",
         "confirmConversion": "替换后续走向",
         "delete": "删除节点",
-        "removeDecision": "移除选择环节",
         "cancel": "取消",
         "nodeName": "名称"
       },
@@ -3109,7 +3281,20 @@
       "seekBackward": "快退"
     },
     "emptySequence": "暂无影片",
-    "loadingMedia": "正在加载影片"
+    "loadingMedia": "正在加载影片",
+    "world": {
+      "label": "交互世界",
+      "stream": "实时世界画面",
+      "connecting": "正在进入世界…",
+      "movementControls": "移动控制",
+      "forward": "向前移动",
+      "backward": "向后移动",
+      "left": "向左移动",
+      "right": "向右移动",
+      "pause": "暂停世界",
+      "resume": "继续世界",
+      "finish": "结束世界体验"
+    }
   },
   "agentOs": {
     "title": "FizzAgent",

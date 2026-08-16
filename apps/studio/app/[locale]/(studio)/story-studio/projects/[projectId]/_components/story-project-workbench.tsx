@@ -593,7 +593,7 @@ interface AuthoredDecision {
 function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.exit.kind !== "choice") continue;
+    if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
     const sourceLabel = node.name?.trim() || node.clipKey;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {

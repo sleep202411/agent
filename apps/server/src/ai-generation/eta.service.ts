@@ -57,6 +57,16 @@ export class AiGenerationEtaService {
       return Math.ceil(75 * n * qualityFactor);
     }
 
+    if (model.type === 'audio') {
+      const requestedSeconds = Number(
+        input.durationSeconds ?? input.duration ?? 0,
+      );
+      const seconds = Number.isFinite(requestedSeconds)
+        ? Math.max(0, requestedSeconds)
+        : 0;
+      return Math.ceil(12 + seconds * 1.5);
+    }
+
     const seconds = Math.max(1, Number(input.seconds) || 4);
     const size = typeof input.size === 'string' ? input.size : '';
     const resolutionFactor =

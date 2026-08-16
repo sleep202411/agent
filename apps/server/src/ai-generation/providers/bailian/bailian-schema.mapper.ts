@@ -19,7 +19,7 @@ import type {
   BailianProviderFieldBinding,
 } from './bailian.types';
 
-export const BAILIAN_SCHEMA_VERSION = '2026-06-05';
+export const BAILIAN_SCHEMA_VERSION = '2026-08-13';
 
 interface CreateBailianModelConfigArgs {
   endpointId: string;
@@ -146,6 +146,9 @@ function inputSchemaFor(
   parameterPolicy?: AiJsonValue,
 ): AiInputSchema {
   const policy = recordValue(parameterPolicy);
+  const maxPromptCharacters =
+    numberFromPolicy(policy, 'maxPromptCharacters') ??
+    (type === 'video' ? 2000 : 4000);
   const aspectOptions = stringArrayFromPolicy(
     parameterPolicy,
     'supportedAspectRatios',
@@ -170,7 +173,7 @@ function inputSchemaFor(
       type: 'string',
       title: 'Prompt',
       minLength: 1,
-      maxLength: type === 'video' ? 2000 : 4000,
+      maxLength: maxPromptCharacters,
       'x-ui': {
         control: 'textarea',
         group: 'prompt',
@@ -254,43 +257,186 @@ function inputSchemaFor(
       policyReferenceTypes.length > 0
         ? policyReferenceTypes
         : ['reference_image', 'reference_video', 'reference_audio'];
-    properties.references = providerProperty({
-      type: 'array',
-      title: 'References',
-      minItems: 1,
-      maxItems: 4,
-      items: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            title: 'Type',
-            default: referenceTypes[0],
-            enum: referenceTypes,
-          },
-          url: { type: 'string', format: 'uri', title: 'URL' },
-          referenceVoice: {
-            type: 'string',
-            format: 'uri',
-            title: 'Reference voice',
-          },
-        },
-        required: ['type', 'url'],
-        additionalProperties: true,
+    const maxReferenceItems =
+      numberFromPolicy(policy, 'maxReferenceItems') ?? 4;
+    const wan3Protocol =
+      stringFromPolicy(parameterPolicy, 'providerProtocol') === 'wan3-video';
+    const supportsReferenceVoice =
+      recordValue(policy?.referenceVoice)?.enabled !== false;
+    const referenceProperties: Record<string, unknown> = {
+      type: {
+        type: 'string',
+        title: 'Type',
+        default: referenceTypes[0],
+        enum: referenceTypes,
       },
-      'x-ui': {
-        control: 'media_upload',
-        group: 'references',
+      url: { type: 'string', format: 'uri', title: 'URL' },
+    };
+    if (supportsReferenceVoice) {
+      referenceProperties.referenceVoice = {
+        type: 'string',
+        format: 'uri',
+        title: 'Reference voice',
+      };
+    }
+    if (wan3Protocol) {
+      const referenceLimits = recordValue(policy?.referenceLimits);
+      const addReferenceField = (args: {
+        field: 'referenceImages' | 'referenceVideos' | 'referenceAudios';
+        title: string;
+        providerType: 'reference_image' | 'reference_video' | 'reference_audio';
+        control: 'image_upload' | 'video_upload' | 'audio_upload';
+        mediaKind: 'image' | 'video' | 'audio';
+        accept: string;
+        acceptFormats: string[];
+        order: number;
+        promptRefPrefix: '@Image' | '@Video' | '@Audio';
+      }) => {
+        const maximum =
+          numberFromPolicy(referenceLimits, args.providerType) ?? 0;
+        if (maximum <= 0) return;
+        properties[args.field] = providerProperty({
+          type: 'array',
+          title: args.title,
+          minItems: 0,
+          maxItems: maximum,
+          items: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', format: 'uri', title: 'URL' },
+            },
+            required: ['url'],
+            additionalProperties: true,
+          },
+          'x-ui': {
+            control: args.control,
+            group: 'references',
+            order: args.order,
+            importance: 'primary',
+            accept: args.accept,
+            mediaKind: args.mediaKind,
+            acceptFormats: args.acceptFormats,
+            maxTotalFiles: maxReferenceItems,
+            promptRefPrefix: args.promptRefPrefix,
+            ...((args.mediaKind === 'video' || args.mediaKind === 'audio') && {
+              minItemDurationSeconds: 1,
+              maxItemDurationSeconds: 15,
+              maxCombinedDurationSeconds: 15,
+            }),
+          },
+          'x-provider': {
+            section: 'input',
+            parameter: 'media',
+            transform:
+              args.mediaKind === 'image'
+                ? 'mediaArrayAsImages'
+                : args.mediaKind === 'video'
+                  ? 'mediaArrayAsVideos'
+                  : 'mediaArrayAsAudios',
+            omitIfEmpty: true,
+          },
+        });
+      };
+      addReferenceField({
+        field: 'referenceImages',
+        title: 'Reference images',
+        providerType: 'reference_image',
+        control: 'image_upload',
+        mediaKind: 'image',
+        accept: 'image/jpeg,image/png,image/webp',
+        acceptFormats: ['jpeg', 'png', 'webp'],
         order: 30,
-        importance: 'primary',
-      },
-      'x-provider': {
-        section: 'input',
-        parameter: 'media',
-        transform: 'mediaArray',
-        omitIfEmpty: true,
-      },
-    });
+        promptRefPrefix: '@Image',
+      });
+      addReferenceField({
+        field: 'referenceVideos',
+        title: 'Reference videos',
+        providerType: 'reference_video',
+        control: 'video_upload',
+        mediaKind: 'video',
+        accept: 'video/mp4,video/quicktime',
+        acceptFormats: ['mp4', 'mov'],
+        order: 31,
+        promptRefPrefix: '@Video',
+      });
+      addReferenceField({
+        field: 'referenceAudios',
+        title: 'Reference audio',
+        providerType: 'reference_audio',
+        control: 'audio_upload',
+        mediaKind: 'audio',
+        accept: 'audio/mpeg,audio/wav',
+        acceptFormats: ['mp3', 'wav'],
+        order: 32,
+        promptRefPrefix: '@Audio',
+      });
+
+      // Agent/API callers can additionally pass documents or links through
+      // the provider-native heterogeneous array. It stays schema-valid but is
+      // deliberately hidden from the canvas until document assets exist.
+      const nonMediaTypes = referenceTypes.filter(
+        (value) => value === 'file' || value === 'link',
+      );
+      if (nonMediaTypes.length > 0) {
+        properties.references = providerProperty({
+          type: 'array',
+          title: 'Document and link references',
+          minItems: 1,
+          maxItems: maxReferenceItems,
+          items: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                title: 'Type',
+                default: nonMediaTypes[0],
+                enum: nonMediaTypes,
+              },
+              url: { type: 'string', format: 'uri', title: 'URL' },
+            },
+            required: ['type', 'url'],
+            additionalProperties: true,
+          },
+          'x-ui': {
+            control: 'hidden',
+            group: 'advanced',
+            order: 33,
+            importance: 'advanced',
+          },
+          'x-provider': {
+            section: 'input',
+            parameter: 'media',
+            transform: 'mediaArray',
+            omitIfEmpty: true,
+          },
+        });
+      }
+    } else {
+      properties.references = providerProperty({
+        type: 'array',
+        title: 'References',
+        minItems: 1,
+        maxItems: maxReferenceItems,
+        items: {
+          type: 'object',
+          properties: referenceProperties,
+          required: ['type', 'url'],
+          additionalProperties: true,
+        },
+        'x-ui': {
+          control: 'media_upload',
+          group: 'references',
+          order: 30,
+          importance: 'primary',
+        },
+        'x-provider': {
+          section: 'input',
+          parameter: 'media',
+          transform: 'mediaArray',
+          omitIfEmpty: true,
+        },
+      });
+    }
   }
 
   if (type === 'image') {
@@ -511,15 +657,52 @@ function inputSchemaFor(
         order: 60,
         importance: 'secondary',
       },
-      // Mapped to `parameters.ratio` for text-to-video (dropped for image-driven
-      // modes) by the request mapper. omitIfDefault: the provider's own default
-      // ratio matches ours, so a default pick can be safely elided.
+      // Mapped to `parameters.ratio` by the request mapper. The parameter
+      // policy decides whether media-driven modes accept it.
       'x-provider': {
         section: 'parameters',
         parameter: 'aspect_ratio',
         omitIfDefault: true,
       },
     });
+
+    if (recordValue(policy?.generateAudio)?.enabled === true) {
+      properties.generateAudio = providerProperty({
+        type: 'boolean',
+        title: 'Generate audio',
+        default: recordValue(policy?.generateAudio)?.default !== false,
+        'x-ui': {
+          control: 'switch',
+          group: 'settings',
+          order: 70,
+          importance: 'secondary',
+        },
+        'x-provider': {
+          section: 'parameters',
+          parameter: 'audio',
+          omitIfDefault: true,
+        },
+      });
+    }
+
+    if (recordValue(policy?.enableThinking)?.enabled === true) {
+      properties.enableThinking = providerProperty({
+        type: 'boolean',
+        title: 'Deep thinking',
+        default: recordValue(policy?.enableThinking)?.default === true,
+        'x-ui': {
+          control: 'switch',
+          group: 'advanced',
+          order: 175,
+          importance: 'advanced',
+        },
+        'x-provider': {
+          section: 'parameters',
+          parameter: 'enable_thinking',
+          omitIfDefault: true,
+        },
+      });
+    }
   }
 
   if (recordValue(policy?.promptExtend)?.enabled !== false) {
@@ -578,10 +761,12 @@ function inputSchemaFor(
     });
   }
 
-  return {
+  const wan3Protocol =
+    stringFromPolicy(parameterPolicy, 'providerProtocol') === 'wan3-video';
+  const schema: AiInputSchema = {
     type: 'object',
     properties,
-    required: ['prompt'],
+    required: wan3Protocol ? [] : ['prompt'],
     additionalProperties: false,
     'x-ui': {
       groups: [
@@ -598,6 +783,53 @@ function inputSchemaFor(
       ],
     },
   };
+  if (wan3Protocol) {
+    schema['x-rules'] = [
+      {
+        id: 'wan3-prompt-or-media',
+        when: {
+          all: [
+            { field: 'prompt', operator: 'empty' },
+            { field: 'startFrame', operator: 'empty' },
+            { field: 'referenceImages', operator: 'empty' },
+            { field: 'referenceVideos', operator: 'empty' },
+            { field: 'referenceAudios', operator: 'empty' },
+            { field: 'references', operator: 'empty' },
+          ],
+        },
+        fields: ['prompt'],
+        effect: 'require',
+        message: 'Add a prompt, a start frame, or reference media.',
+      },
+      {
+        id: 'wan3-end-frame-requires-start-frame',
+        when: {
+          all: [
+            { field: 'endFrame', operator: 'exists' },
+            { field: 'startFrame', operator: 'empty' },
+          ],
+        },
+        fields: ['startFrame'],
+        effect: 'require',
+        message: 'An end frame requires a start frame.',
+      },
+      {
+        id: 'wan3-references-are-exclusive',
+        when: {
+          any: [
+            { field: 'referenceImages', operator: 'exists' },
+            { field: 'referenceVideos', operator: 'exists' },
+            { field: 'referenceAudios', operator: 'exists' },
+            { field: 'references', operator: 'exists' },
+          ],
+        },
+        fields: ['startFrame', 'endFrame'],
+        effect: 'forbid',
+        message: 'Reference media cannot be combined with first/last frames.',
+      },
+    ];
+  }
+  return schema;
 }
 
 function outputSchemaFor(type: AiJobType): AiOutputSchema {
@@ -634,7 +866,9 @@ function capabilityMatrixFor(
   generationModes: AiGenerationMode[],
   inputSchema: AiInputSchema,
 ): AiCapabilityMatrix {
-  const inputModalities = new Set<'text' | 'image' | 'video'>(['text']);
+  const inputModalities = new Set<
+    AiCapabilityMatrix['inputModalities'][number]
+  >(['text']);
   if (
     generationModes.some(
       (mode) =>
@@ -651,6 +885,25 @@ function capabilityMatrixFor(
   ) {
     inputModalities.add('video');
   }
+  const referenceTypes = recordValue(inputSchema.properties.references)?.items;
+  const referenceItem = recordValue(referenceTypes);
+  const referenceProperties = recordValue(referenceItem?.properties);
+  const referenceType = recordValue(referenceProperties?.type);
+  const supportedReferenceTypes = Array.isArray(referenceType?.enum)
+    ? referenceType.enum.filter(
+        (value): value is string => typeof value === 'string',
+      )
+    : [];
+  if (supportedReferenceTypes.includes('reference_audio')) {
+    inputModalities.add('audio');
+  }
+  if (inputSchema.properties.referenceAudios) {
+    inputModalities.add('audio');
+  }
+  if (supportedReferenceTypes.includes('file')) {
+    inputModalities.add('file');
+    inputModalities.add('document');
+  }
   return {
     source: 'internal',
     inputModalities: Array.from(inputModalities),
@@ -665,7 +918,9 @@ function capabilityMatrixFor(
     },
     limits: {
       maxOutputs: maxOutputsFromSchema(inputSchema, type),
-      maxPromptCharacters: type === 'video' ? 2000 : 4000,
+      maxPromptCharacters:
+        numberFromPolicy(inputSchema.properties.prompt, 'maxLength') ??
+        (type === 'video' ? 2000 : 4000),
     },
   };
 }
@@ -771,7 +1026,11 @@ export function createBailianModelConfig(
     inputSchema,
     outputSchema,
     providerInputMap: providerInputMap(inputSchema),
-    documentation: documentationForEndpoint(args.endpointId, args.service),
+    documentation: documentationForEndpoint(
+      args.endpointId,
+      args.service,
+      args.catalogSnapshot,
+    ),
   };
 }
 
@@ -804,7 +1063,11 @@ export function toAiModelDefinition(
       config.documentation?.map((item) => ({
         title: item.title,
         url: item.url,
-        source: item.url.includes('aliyun.com') ? 'official' : 'internal',
+        source:
+          item.url.includes('aliyun.com') ||
+          item.url.includes('alibabacloud.com')
+            ? 'official'
+            : 'internal',
         scope: item.scope as never,
         provider: 'aliyun-bailian',
       })) ?? [],
@@ -877,7 +1140,7 @@ export function toAiModelDefinition(
       imageToVideo:
         config.generationModes.includes('image_to_video') ||
         config.generationModes.includes('multimodal_to_video'),
-      supportsSeed: true,
+      supportsSeed: 'seed' in config.inputSchema.properties,
       supportsCancel: config.callMode === 'async',
       maxOutputs: Number(capabilityMatrix.limits.maxOutputs ?? 1),
     },
@@ -908,7 +1171,18 @@ export function toAiModelDefinition(
 function documentationForEndpoint(
   endpointId: string,
   service: BailianModelService,
+  catalogSnapshot?: AiJsonValue,
 ) {
+  const catalogDocs = recordValue(catalogSnapshot)?.docs;
+  if (Array.isArray(catalogDocs)) {
+    const docs = catalogDocs.flatMap((item) => {
+      const doc = recordValue(item);
+      const title = typeof doc?.title === 'string' ? doc.title.trim() : '';
+      const url = typeof doc?.url === 'string' ? doc.url.trim() : '';
+      return title && url ? [{ title, url, scope: 'api_reference' }] : [];
+    });
+    if (docs.length > 0) return docs;
+  }
   const url =
     endpointId === 'wan2.7-r2v'
       ? 'https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference'

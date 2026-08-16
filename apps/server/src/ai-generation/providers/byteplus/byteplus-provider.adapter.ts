@@ -43,16 +43,18 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
    * Worker seam (design §3.4): re-validate `asset://` mirrors + character
    * status right before provider submit — see the preparer for semantics.
    */
-  prepareReferences(
-    _modelId: string,
+  async prepareReferences(
+    modelId: string,
     input: Record<string, unknown>,
     ctx: ProviderGenerationContext,
   ): Promise<Record<string, unknown>> {
+    const runtime = await this.requireRuntime(modelId);
     return this.referencePreparer.prepareReferences(
       input,
       ctx.userId,
       ctx.projectId ?? null,
       ctx.workspaceId ?? null,
+      runtime.referenceTransport,
     );
   }
 

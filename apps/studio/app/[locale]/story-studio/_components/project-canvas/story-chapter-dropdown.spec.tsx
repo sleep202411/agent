@@ -42,6 +42,26 @@ describe("StoryChapterDropdown", () => {
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 
+  it("supports the project-canvas rail as its trigger", async () => {
+    const onOpenChange = vi.fn();
+    await renderDropdown({
+      open: false,
+      onOpenChange,
+      trigger: (
+        <button type="button" aria-label="Open chapters from project rail">
+          Chapters
+        </button>
+      ),
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open chapters from project rail"]'
+    );
+    await act(async () => trigger?.click());
+
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
   it("exposes chapter selection and creation while open", async () => {
     const onSelect = vi.fn();
     const onCreate = vi.fn().mockResolvedValue(true);

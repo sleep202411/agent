@@ -14,7 +14,7 @@ const WritableControlPlaneStatusSchema = z.enum([
   'degraded',
 ]);
 
-export const AiJobTypeSchema = z.enum(['image', 'video']);
+export const AiJobTypeSchema = z.enum(['image', 'video', 'audio']);
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 const ProviderHealthStatusSchema = z.enum([

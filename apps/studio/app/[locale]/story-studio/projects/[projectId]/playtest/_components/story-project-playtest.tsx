@@ -149,7 +149,6 @@ export function StoryProjectPlaytest({
         </div>
 
         <div className="pointer-events-auto flex items-start gap-2">
-          {diagnostics.length > 0 ? <PlaytestWarnings diagnostics={diagnostics} /> : null}
           <Button
             type="button"
             size="icon"
@@ -238,27 +237,5 @@ function PlaytestFailure({
         </div>
       </section>
     </main>
-  );
-}
-
-function PlaytestWarnings({ diagnostics }: { diagnostics: StoryBuildDiagnostic[] }) {
-  const t = useTranslations("storyStudio.canvas.workingPreview");
-  return (
-    <details className="group max-w-sm rounded-2xl bg-black/58 text-white shadow-[0_14px_50px_rgb(0_0_0/0.38)] backdrop-blur-2xl">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 px-3 text-[11px] font-semibold text-white/66">
-        <IconAlertTriangle className="size-3.5" />
-        {t("previewWarnings", { count: diagnostics.length })}
-      </summary>
-      <ul className="max-h-72 space-y-2 overflow-y-auto border-t border-white/8 p-3">
-        {diagnostics.map((diagnostic, index) => (
-          <li
-            key={`${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`}
-            className="rounded-xl bg-white/[0.055] px-3 py-2 text-[10px] leading-4 text-white/54"
-          >
-            {diagnostic.message}
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }

@@ -16,7 +16,7 @@ import type { ProjectSkillSelection } from "@/lib/project-skills-api";
 
 export type { MediaRefSnapshot, ValidationIssue };
 
-export type FizzAiJobType = "image" | "video";
+export type FizzAiJobType = "image" | "video" | "audio";
 export type FizzAiGenerationMode =
   | "first_last_frame_to_video"
   | "image_to_image"
@@ -28,9 +28,11 @@ export type FizzAiGenerationMode =
   | "outpainting"
   | "relight"
   | "remove_background"
+  | "text_to_audio"
   | "text_to_image"
   | "text_to_video"
   | "upscale"
+  | "audio_to_audio"
   | "video_to_video";
 
 /** Media kind of a reference upload — mirrors the catalog's `x-ui.mediaKind`. */
@@ -654,6 +656,8 @@ export function referenceFields(model: FizzAiModel | undefined): FizzAiReference
 const MODE_LABELS: Record<string, string> = {
   text_to_image: "Text to Image",
   text_to_video: "Text to Video",
+  text_to_audio: "Text to Audio",
+  audio_to_audio: "Audio to Audio",
   image_to_image: "Image to Image",
   image_to_panorama: "Panorama",
   image_to_video: "Image to Video",
@@ -688,6 +692,7 @@ export function defaultMode(model: FizzAiModel | undefined): string | undefined 
 const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerationMode[]> = {
   image: ["image_to_image"],
   video: ["multimodal_to_video", "image_to_video", "first_last_frame_to_video", "video_to_video"],
+  audio: ["text_to_audio", "audio_to_audio"],
 };
 
 /**
@@ -760,7 +765,8 @@ export function referenceFieldsForMode(
     return explicit.length ? [explicit[0]] : all.filter((f) => f.kind === "image").slice(0, 1);
   }
   if (mode === "image_to_image" || mode === "video_to_video") {
-    const explicit = pick("referenceImages", "referenceVideos");
+    const explicit =
+      mode === "video_to_video" ? pick("sourceVideo", "referenceVideos") : pick("referenceImages");
     return explicit.length ? explicit : nonFrames.filter((f) => !/audio/i.test(f.field));
   }
   if (mode === "inpainting") return pick("referenceImages", "maskImage");
@@ -796,6 +802,7 @@ export type ReferenceRowLike = {
   id: string;
   url: string;
   assetId?: string;
+  sourceJobId?: string;
   /** Exact media duration when known (video/audio). Required by catalog duration rules. */
   durationSeconds?: number | null;
   bytes?: number | null;
@@ -810,10 +817,11 @@ function referenceEntry(row: ReferenceRowLike): string | Record<string, string |
       : undefined;
   const bytes = typeof row.bytes === "number" && Number.isFinite(row.bytes) ? row.bytes : undefined;
   // Prefer object form whenever we have metadata the server kernel needs.
-  if (row.assetId || duration != null || bytes != null) {
+  if (row.assetId || row.sourceJobId || duration != null || bytes != null) {
     return {
       url: row.url,
       ...(row.assetId ? { assetId: row.assetId, refId: row.id } : {}),
+      ...(row.sourceJobId ? { sourceJobId: row.sourceJobId } : {}),
       ...(duration != null ? { durationSeconds: duration } : {}),
       ...(bytes != null ? { bytes } : {}),
     };
@@ -998,6 +1006,8 @@ export interface SchemaFieldDescriptor {
   default: string | number | boolean | undefined;
   min?: number;
   max?: number;
+  /** JSON Schema `multipleOf`; the numeric control and wire value share it. */
+  step?: number;
   unit?: string;
   title?: string;
 }
@@ -1074,6 +1084,12 @@ export function schemaFields(model: FizzAiModel | undefined): SchemaFieldDescrip
       default: prop.default as string | number | boolean | undefined,
       min: typeof prop.minimum === "number" ? prop.minimum : undefined,
       max: typeof prop.maximum === "number" ? prop.maximum : undefined,
+      step:
+        typeof prop.multipleOf === "number" &&
+        Number.isFinite(prop.multipleOf) &&
+        prop.multipleOf > 0
+          ? prop.multipleOf
+          : undefined,
       unit: typeof ui.unit === "string" ? ui.unit : undefined,
       title: prop.title,
     });
@@ -1095,6 +1111,87 @@ export function defaultSettingsForModel(model: FizzAiModel | undefined): ModelSe
     else if (field.type === "boolean") out[field.name] = false;
   }
   return out;
+}
+
+function decimalPlaces(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) return 0;
+  const text = String(value).toLowerCase();
+  if (!text.includes("e")) return text.split(".")[1]?.length ?? 0;
+  const [coefficient, exponentText] = text.split("e");
+  const exponent = Number(exponentText);
+  const fraction = coefficient.split(".")[1]?.length ?? 0;
+  return Math.max(0, fraction - exponent);
+}
+
+function normalizeConstrainedNumber(
+  value: number,
+  constraint: {
+    type?: string;
+    min?: number;
+    max?: number;
+    step?: number;
+  }
+): number {
+  if (!Number.isFinite(value)) return value;
+  const minimum = Number.isFinite(constraint.min) ? constraint.min : undefined;
+  const maximum = Number.isFinite(constraint.max) ? constraint.max : undefined;
+  const step =
+    constraint.step != null && Number.isFinite(constraint.step) && constraint.step > 0
+      ? constraint.step
+      : constraint.type === "integer"
+        ? 1
+        : undefined;
+  let next = value;
+  if (minimum != null) next = Math.max(minimum, next);
+  if (maximum != null) next = Math.min(maximum, next);
+  if (step != null) {
+    next = Math.round(next / step) * step;
+    if (minimum != null && next < minimum) next = Math.ceil(minimum / step) * step;
+    if (maximum != null && next > maximum) next = Math.floor(maximum / step) * step;
+    const precision = Math.min(12, decimalPlaces(step));
+    next = Number(next.toFixed(precision));
+  }
+  if (constraint.type === "integer") next = Math.round(next);
+  return next;
+}
+
+/** Quantize one schema-driven numeric control exactly as its wire schema requires. */
+export function normalizeSchemaFieldNumber(value: number, field: SchemaFieldDescriptor): number {
+  return normalizeConstrainedNumber(value, field);
+}
+
+/**
+ * Normalize persisted settings against the active model. Returning the same
+ * object when no value changes lets callers migrate old floating slider values
+ * without creating render/update loops.
+ */
+export function normalizeModelSettings(
+  model: FizzAiModel | undefined,
+  settings: ModelSettings
+): ModelSettings {
+  const properties = model?.input_schema?.properties;
+  if (!properties) return settings;
+  let normalized = settings;
+  for (const [name, value] of Object.entries(settings)) {
+    const property = properties[name];
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      (property?.type !== "number" && property?.type !== "integer")
+    ) {
+      continue;
+    }
+    const next = normalizeConstrainedNumber(value, {
+      type: property.type,
+      min: property.minimum,
+      max: property.maximum,
+      step: property.multipleOf,
+    });
+    if (Object.is(next, value)) continue;
+    if (normalized === settings) normalized = { ...settings };
+    normalized[name] = next;
+  }
+  return normalized;
 }
 
 /**
@@ -1235,7 +1332,17 @@ export function filterFizzAiInput(
     ) {
       continue;
     }
-    next[key] = value;
+    next[key] =
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      (prop.type === "number" || prop.type === "integer")
+        ? normalizeConstrainedNumber(value, {
+            type: prop.type,
+            min: prop.minimum,
+            max: prop.maximum,
+            step: prop.multipleOf,
+          })
+        : value;
   }
   return next;
 }
@@ -1280,6 +1387,8 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
 }
 
 export interface FizzAiPointEstimateInput {
+  text?: string;
+  generateAudio?: boolean;
   /** Video duration as submitted (string enum incl. "auto", or seconds). */
   duration?: string | number;
   /** Legacy numeric duration field (integer-slider video models). */
@@ -1303,10 +1412,12 @@ export function estimateModelSellPoints(
   try {
     const result = estimateProductModelPoints({
       policy: productPricing,
+      text: input.text,
       numOutputs: input.numOutputs,
       quality: input.quality,
       duration: input.duration,
       durationSeconds: input.durationSeconds,
+      generateAudio: input.generateAudio,
       referenceImageCount: input.referenceImageCount,
       referenceVideoSeconds: input.referenceVideoSeconds,
       resolution: input.resolution,
@@ -1347,14 +1458,25 @@ export function cheapestSellPoints(model: FizzAiModel | undefined): number | nul
     // Floor = cheapest resolution at the minimum billable duration.
     let min: number | null = null;
     for (const resolution of Object.keys(pricing.pointsPerSecond)) {
-      const est = estimateModelSellPoints(model, {
-        resolution,
-        duration: pricing.minSeconds,
-        numOutputs,
-      });
-      if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+      for (const generateAudio of pricing.videoOnlyPointsPerSecond ? [true, false] : [undefined]) {
+        const est = estimateModelSellPoints(model, {
+          resolution,
+          duration: pricing.minSeconds,
+          generateAudio,
+          numOutputs,
+        });
+        if (est && (min === null || est.sellPoints < min)) min = est.sellPoints;
+      }
     }
     if (min !== null) return min;
+  }
+  if (pricing.mode === "per_character") {
+    return (
+      estimateModelSellPoints(model, {
+        text: "x".repeat(pricing.minCharacters),
+        numOutputs,
+      })?.sellPoints ?? null
+    );
   }
   return estimateModelSellPoints(model, { numOutputs })?.sellPoints ?? null;
 }

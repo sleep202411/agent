@@ -23,6 +23,7 @@ import { MediaUploadController } from './media-upload.controller';
 import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaUploadService } from './media-upload.service';
 import { PlayableVideoProbeService } from './playable-video-probe.service';
+import { PlayableAudioProbeService } from './playable-audio-probe.service';
 import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
 
@@ -66,6 +67,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
       ): SeedanceMediaAssetReadinessAdapter[] => [seedance],
     },
     PlayableVideoProbeService,
+    PlayableAudioProbeService,
     UploadedImageProbeService,
     StoryVideoUploadSessionService,
     MediaAccessService,
@@ -82,6 +84,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
     MediaAssetFactsService,
     MediaAssetReadinessService,
     PlayableVideoProbeService,
+    PlayableAudioProbeService,
     MediaAccessService,
     MediaModerationAdminService,
     MediaProcessingService,

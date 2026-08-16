@@ -129,6 +129,117 @@ export const StoryGraphChoiceSchema = z
   })
   .strict();
 
+export const StoryInteractionActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('continue') }).strict(),
+  z
+    .object({
+      kind: z.literal('seek'),
+      timeMs: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('goto'),
+      nodeId: StoryStableIdSchema,
+    })
+    .strict(),
+]);
+export type StoryInteractionAction = z.infer<
+  typeof StoryInteractionActionSchema
+>;
+
+export const StoryInteractionTriggerSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('tap') }).strict(),
+  z
+    .object({
+      kind: z.literal('swipe'),
+      direction: z.enum(['up', 'down', 'left', 'right']),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('press-hold'),
+      durationMs: z.number().int().min(300).max(10_000),
+      /**
+       * Timeline-control charge: the hotspot video pauses when the input
+       * window opens and only advances while the pointer is held down, so the
+       * media playback position itself is the charge progress. The legacy
+       * default keeps judging against wall-clock time while the video plays.
+       */
+      controlTimeline: z.boolean().default(false),
+    })
+    .strict(),
+]);
+export type StoryInteractionTrigger = z.infer<
+  typeof StoryInteractionTriggerSchema
+>;
+
+export const StoryInteractionOutcomesSchema = z
+  .object({
+    success: StoryInteractionActionSchema,
+    failure: StoryInteractionActionSchema.optional(),
+    timeout: StoryInteractionActionSchema.optional(),
+  })
+  .strict();
+export type StoryInteractionOutcomes = z.infer<
+  typeof StoryInteractionOutcomesSchema
+>;
+
+const StoryInteractionRectSchema = z
+  .object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().positive().max(1),
+    height: z.number().positive().max(1),
+  })
+  .strict()
+  .superRefine((rect, context) => {
+    if (rect.x + rect.width <= 1 && rect.y + rect.height <= 1) return;
+    context.addIssue({
+      code: 'custom',
+      message: 'Interaction rectangle must remain inside the video frame.',
+    });
+  });
+
+export const StoryHotspotInteractionSchema = z
+  .object({
+    kind: z.literal('hotspot'),
+    interactionId: StoryStableIdSchema,
+    label: DraftLocalizedTextSchema,
+    trigger: StoryInteractionTriggerSchema,
+    rect: StoryInteractionRectSchema,
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    /**
+     * Safe branch frame: a resolved interaction keeps playing the current
+     * clip until this timestamp before the branch cut lands, so the outgoing
+     * pose never jumps. Defaults to the input window end when omitted.
+     */
+    branchAtMs: z.number().int().positive().optional(),
+    outcomes: StoryInteractionOutcomesSchema,
+  })
+  .strict()
+  .superRefine((interaction, context) => {
+    if (interaction.endMs > interaction.startMs) return;
+    context.addIssue({
+      code: 'custom',
+      path: ['endMs'],
+      message: 'Interaction end must be after its start.',
+    });
+  })
+  .superRefine((interaction, context) => {
+    if (interaction.branchAtMs === undefined) return;
+    if (interaction.branchAtMs >= interaction.endMs) return;
+    context.addIssue({
+      code: 'custom',
+      path: ['branchAtMs'],
+      message: 'Branch frame must not land before the input window closes.',
+    });
+  });
+export type StoryHotspotInteraction = z.infer<
+  typeof StoryHotspotInteractionSchema
+>;
+
 const StoryClipAutoExitSchema = z
   .object({
     kind: z.literal('auto'),
@@ -156,13 +267,40 @@ const StoryClipGraphNodeSchema = z
     // Optional so drafts authored before the field parse unchanged.
     name: z.string().trim().max(120).optional(),
     description: z.string().trim().max(4_000).optional(),
+    interactions: z.array(StoryHotspotInteractionSchema).max(100).default([]),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
     ]),
   })
   .strict();
-export const StoryGraphNodeSchema = StoryClipGraphNodeSchema;
+
+/**
+ * A durable, provider-neutral world-model experience embedded in the film
+ * graph. The provider and realtime credentials remain properties of the
+ * referenced World resource; graph documents only bind that resource and
+ * author the transition into and out of it.
+ */
+const StoryWorldGraphNodeSchema = z
+  .object({
+    kind: z.literal('world'),
+    nodeId: StoryStableIdSchema,
+    worldId: StoryUuidSchema.nullable(),
+    name: z.string().trim().max(120).optional(),
+    entryInstruction: z.string().trim().max(4_000).optional(),
+    maxExperienceSeconds: z.union([
+      z.literal(60),
+      z.literal(90),
+      z.literal(120),
+    ]),
+    exit: StoryClipAutoExitSchema,
+  })
+  .strict();
+
+export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
+  StoryClipGraphNodeSchema,
+  StoryWorldGraphNodeSchema,
+]);
 
 /** Mutable graph shape. Referential and completeness checks run on lock. */
 export const InteractiveStoryGraphSchema = z
@@ -207,7 +345,7 @@ type InteractiveStoryDraftContentBase = z.infer<
   typeof InteractiveStoryDraftContentBaseSchema
 >;
 
-export const InteractiveStoryDraftContentSchema =
+const RefinedInteractiveStoryDraftContentSchema =
   InteractiveStoryDraftContentBaseSchema.superRefine((draft, context) => {
     addDuplicateStableIdentifierIssues(
       draft.storyBible.characters,
@@ -216,11 +354,68 @@ export const InteractiveStoryDraftContentSchema =
       'id',
       context,
     );
-    validateCanonicalDecisionDefinitions(draft, context);
   });
+
+/**
+ * Drafts created before the unified interaction contract stored one `action`
+ * and could only describe a tap. Migrate that shape at the document boundary;
+ * all authoring, agent and runtime code sees the canonical outcomes model.
+ */
+export const InteractiveStoryDraftContentSchema = z.preprocess(
+  migrateLegacyStoryInteractionActions,
+  RefinedInteractiveStoryDraftContentSchema,
+);
 export type InteractiveStoryDraftContent = z.infer<
   typeof InteractiveStoryDraftContentSchema
 >;
+
+function migrateLegacyStoryInteractionActions(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  const draft = value as Record<string, unknown>;
+  const graph = draft.graph;
+  if (graph === null || typeof graph !== 'object' || Array.isArray(graph)) {
+    return value;
+  }
+  const nodes = (graph as Record<string, unknown>).nodes;
+  if (!Array.isArray(nodes)) return value;
+
+  let changed = false;
+  const migratedNodes = nodes.map((node) => {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+      return node;
+    }
+    const record = node as Record<string, unknown>;
+    if (record.kind !== 'clip' || !Array.isArray(record.interactions)) {
+      return node;
+    }
+    const interactions = record.interactions.map((interaction) => {
+      if (
+        interaction === null ||
+        typeof interaction !== 'object' ||
+        Array.isArray(interaction)
+      ) {
+        return interaction;
+      }
+      const interactionRecord = interaction as Record<string, unknown>;
+      if ('outcomes' in interactionRecord || !('action' in interactionRecord)) {
+        return interaction;
+      }
+      changed = true;
+      const { action, ...rest } = interactionRecord;
+      return { ...rest, outcomes: { success: action } };
+    });
+    return interactions === record.interactions
+      ? node
+      : { ...record, interactions };
+  });
+  if (!changed) return value;
+  return {
+    ...draft,
+    graph: { ...(graph as Record<string, unknown>), nodes: migratedNodes },
+  };
+}
 
 interface RuntimeLocalizedCopy {
   value: Record<string, string>;
@@ -310,30 +505,21 @@ export const EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT: InteractiveStoryDraftContent
     productionNotes: [],
   };
 
-/**
- * A stable decision may be rendered after more than one predecessor clip.
- * Those copies are one authored decision, not independent definitions: copy
- * and interaction semantics must remain identical while each predecessor is
- * free to route the same option to its own continuation node.
- */
-function validateCanonicalDecisionDefinitions(
+/** A repeated decision id is shared only while its authored copy still agrees. */
+function findDecisionDefinitionConflicts(
   draft: InteractiveStoryDraftContentBase,
-  context: z.RefinementCtx,
-): void {
+): Set<string> {
   type ChoiceExit = z.infer<typeof StoryChoiceExitSchema>;
-  const decisions = new Map<
-    string,
-    { exit: ChoiceExit; nodeId: string; nodeIndex: number }
-  >();
+  const decisions = new Map<string, { exit: ChoiceExit; nodeId: string }>();
+  const conflicts = new Set<string>();
 
-  draft.graph.nodes.forEach((node, nodeIndex) => {
-    if (node.exit.kind !== 'choice') return;
+  draft.graph.nodes.forEach((node) => {
+    if (node.kind !== 'clip' || node.exit.kind !== 'choice') return;
     const canonical = decisions.get(node.exit.decisionId);
     if (!canonical) {
       decisions.set(node.exit.decisionId, {
         exit: node.exit,
         nodeId: node.nodeId,
-        nodeIndex,
       });
       return;
     }
@@ -342,13 +528,9 @@ function validateCanonicalDecisionDefinitions(
       canonical.exit,
       node.exit,
     );
-    if (!conflictingField) return;
-    context.addIssue({
-      code: 'custom',
-      path: ['graph', 'nodes', nodeIndex, 'exit', 'decisionId'],
-      message: `Decision ${node.exit.decisionId} conflicts with its canonical definition on node ${canonical.nodeId}: ${conflictingField} must match.`,
-    });
+    if (conflictingField) conflicts.add(node.nodeId);
   });
+  return conflicts;
 }
 
 function findDecisionSemanticConflict(
@@ -476,7 +658,7 @@ export const LockableInteractiveStoryDraftContentSchema =
 function validateInteractiveStoryGameplayReadiness(
   draft: InteractiveStoryDraftContent,
   context: z.RefinementCtx,
-  defaultLocale?: string,
+  _defaultLocale?: string,
 ): void {
   const requireLocalizedText = (
     value: Record<string, string>,
@@ -525,21 +707,6 @@ function validateInteractiveStoryGameplayReadiness(
       message: 'A lockable story needs an entry node.',
     });
   }
-  const enabledLocales = collectInteractiveStoryRuntimeLocales(
-    draft,
-    defaultLocale,
-  );
-  findInteractiveStoryRuntimeLocaleCoverageIssues(
-    draft,
-    enabledLocales,
-  ).forEach((issue) => {
-    context.addIssue({
-      code: 'custom',
-      path: issue.path,
-      message: `Provide non-empty ${issue.locale} runtime copy.`,
-    });
-  });
-
   const nodeIds = unique(
     draft.graph.nodes,
     (value) => value.nodeId,
@@ -547,7 +714,7 @@ function validateInteractiveStoryGameplayReadiness(
     'nodeId',
   );
   unique(
-    draft.graph.nodes,
+    draft.graph.nodes.filter((node) => node.kind === 'clip'),
     (value) => value.clipKey,
     ['graph', 'nodes'],
     'clipKey',
@@ -562,6 +729,16 @@ function validateInteractiveStoryGameplayReadiness(
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
+    if (node.kind !== 'clip') {
+      if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
+        context.addIssue({
+          code: 'custom',
+          path: [...exitPath, 'nextNodeId'],
+          message: `Unknown target node ${node.exit.nextNodeId}.`,
+        });
+      }
+      return;
+    }
     if (node.exit.kind === 'auto') {
       if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
         context.addIssue({
@@ -619,10 +796,126 @@ function normalizeInteractiveFilmRuntimeDraft(
 
   const draft = parsed.data;
   const nodeIds = new Set(draft.graph.nodes.map((node) => node.nodeId));
+  // A missing translation is not a gameplay failure. The player already uses
+  // same-language, project-default, then first-available copy fallback. Keep
+  // that one runtime rule here as well so a perfectly playable branch is not
+  // silently flattened merely because its default-locale translation is still
+  // being authored.
   const hasCopy = (copy: Record<string, string>) =>
-    defaultLocale
-      ? Boolean(copy[defaultLocale]?.trim())
-      : Object.values(copy).some((text) => Boolean(text.trim()));
+    Object.values(copy).some((text) => Boolean(text.trim()));
+  const runtimeLocale = defaultLocale ?? 'en-US';
+
+  const normalizeInteractions = (
+    interactions: StoryHotspotInteraction[],
+  ): StoryHotspotInteraction[] => {
+    const seenInteractionIds = new Set<string>();
+    return interactions.flatMap((interaction, interactionIndex) => {
+      if (seenInteractionIds.has(interaction.interactionId)) return [];
+      seenInteractionIds.add(interaction.interactionId);
+
+      const normalizeAction = (
+        action: StoryInteractionAction | undefined,
+        required: boolean,
+      ): StoryInteractionAction | undefined => {
+        if (!action) return required ? { kind: 'continue' } : undefined;
+        if (action.kind !== 'goto' || nodeIds.has(action.nodeId)) return action;
+        return required ? { kind: 'continue' } : undefined;
+      };
+      const label = Object.fromEntries(
+        Object.entries(interaction.label).flatMap(([locale, copy]) => {
+          const trimmed = copy.trim();
+          return trimmed ? [[locale, trimmed]] : [];
+        }),
+      );
+      const failure = normalizeAction(interaction.outcomes.failure, false);
+      const timeout = normalizeAction(interaction.outcomes.timeout, false);
+
+      return [
+        {
+          ...interaction,
+          label:
+            Object.keys(label).length > 0
+              ? label
+              : {
+                  [runtimeLocale]: `Interaction ${interactionIndex + 1}`,
+                },
+          outcomes: {
+            success:
+              normalizeAction(interaction.outcomes.success, true) ??
+              ({ kind: 'continue' } as const),
+            ...(failure ? { failure } : {}),
+            ...(timeout ? { timeout } : {}),
+          },
+        },
+      ];
+    });
+  };
+
+  const normalizedNodes = draft.graph.nodes.map((node) => {
+    const normalizedNode =
+      node.kind === 'clip'
+        ? { ...node, interactions: normalizeInteractions(node.interactions) }
+        : node;
+    if (normalizedNode.exit.kind === 'auto') {
+      return normalizedNode.exit.nextNodeId === null ||
+        nodeIds.has(normalizedNode.exit.nextNodeId)
+        ? normalizedNode
+        : {
+            ...normalizedNode,
+            exit: { kind: 'auto' as const, nextNodeId: null },
+          };
+    }
+
+    const connectedChoices = normalizedNode.exit.choices.filter((choice) =>
+      nodeIds.has(choice.nextNodeId),
+    );
+    const branchIsComplete =
+      hasCopy(normalizedNode.exit.prompt) &&
+      connectedChoices.length >= 2 &&
+      connectedChoices.length === normalizedNode.exit.choices.length &&
+      connectedChoices.every((choice) => hasCopy(choice.label));
+    if (branchIsComplete) return normalizedNode;
+
+    return {
+      ...normalizedNode,
+      exit: {
+        kind: 'auto' as const,
+        nextNodeId: connectedChoices[0]?.nextNodeId ?? null,
+      },
+    };
+  });
+
+  // Reusing a decision id is useful when two predecessor clips present the
+  // same authored choice. If those copies drift while editing, saving must not
+  // fail. Give only the conflicting runtime copy a fresh deterministic id; the
+  // mutable canvas keeps the creator's exact draft untouched.
+  const conflictNodeIds = findDecisionDefinitionConflicts({
+    ...draft,
+    graph: { ...draft.graph, nodes: normalizedNodes },
+  });
+  const usedDecisionIds = new Set(
+    normalizedNodes.flatMap((node) =>
+      node.kind === 'clip' && node.exit.kind === 'choice'
+        ? [node.exit.decisionId]
+        : [],
+    ),
+  );
+  let generatedDecisionIndex = 1;
+  const runtimeNodes = normalizedNodes.map((node) => {
+    if (
+      node.kind !== 'clip' ||
+      node.exit.kind !== 'choice' ||
+      !conflictNodeIds.has(node.nodeId)
+    ) {
+      return node;
+    }
+    let decisionId = `decision-${generatedDecisionIndex++}`;
+    while (usedDecisionIds.has(decisionId)) {
+      decisionId = `decision-${generatedDecisionIndex++}`;
+    }
+    usedDecisionIds.add(decisionId);
+    return { ...node, exit: { ...node.exit, decisionId } };
+  });
 
   return {
     ...draft,
@@ -631,32 +924,7 @@ function normalizeInteractiveFilmRuntimeDraft(
         draft.graph.entryNodeId && nodeIds.has(draft.graph.entryNodeId)
           ? draft.graph.entryNodeId
           : (draft.graph.nodes[0]?.nodeId ?? null),
-      nodes: draft.graph.nodes.map((node) => {
-        if (node.exit.kind === 'auto') {
-          return node.exit.nextNodeId === null ||
-            nodeIds.has(node.exit.nextNodeId)
-            ? node
-            : { ...node, exit: { kind: 'auto' as const, nextNodeId: null } };
-        }
-
-        const connectedChoices = node.exit.choices.filter((choice) =>
-          nodeIds.has(choice.nextNodeId),
-        );
-        const branchIsComplete =
-          hasCopy(node.exit.prompt) &&
-          connectedChoices.length >= 2 &&
-          connectedChoices.length === node.exit.choices.length &&
-          connectedChoices.every((choice) => hasCopy(choice.label));
-        if (branchIsComplete) return node;
-
-        return {
-          ...node,
-          exit: {
-            kind: 'auto' as const,
-            nextNodeId: connectedChoices[0]?.nextNodeId ?? null,
-          },
-        };
-      }),
+      nodes: runtimeNodes,
     },
   } satisfies InteractiveStoryDraftContent;
 }

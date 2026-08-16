@@ -30,6 +30,8 @@ export interface ProjectAsset {
   panorama?: boolean;
   width?: number;
   height?: number;
+  durationSeconds?: number;
+  bytes?: number;
   createdAt: number;
   /** Source dimension: AI-generated / uploaded / crew library. */
   origin: AssetOrigin;
@@ -104,6 +106,8 @@ export function useProjectAssets(projectId: string): {
         panorama: asset.panorama,
         width: asset.width,
         height: asset.height,
+        durationSeconds: asset.durationSeconds,
+        bytes: asset.bytes,
         createdAt: asset.createdAt,
         origin: (asset.source === "generated" ? "aiGenerated" : "uploaded") as AssetOrigin,
         category: (asset.category ?? "general") as AssetCategory,
@@ -123,6 +127,8 @@ export function useProjectAssets(projectId: string): {
         name: node.name,
         width: media.width ?? undefined,
         height: media.height ?? undefined,
+        durationSeconds: media.durationSeconds ?? undefined,
+        bytes: media.sizeBytes ?? undefined,
         createdAt: 0,
         origin: "crew",
         category: "general",
@@ -154,6 +160,8 @@ export function projectAssetToCanvasAsset(asset: ProjectAsset): CanvasAsset {
     url: asset.url,
     width: asset.width,
     height: asset.height,
+    durationSeconds: asset.durationSeconds,
+    bytes: asset.bytes,
     name: asset.name,
     prompt: asset.prompt,
     panorama: asset.panorama,
@@ -182,5 +190,10 @@ export function projectAssetToMentionItem(
     name: asset.name,
     kind: asset.kind,
     previewUrl: asset.url,
+    assetId: asset.mediaAssetId,
+    durationSeconds: asset.durationSeconds,
+    bytes: asset.bytes,
+    width: asset.width,
+    height: asset.height,
   };
 }

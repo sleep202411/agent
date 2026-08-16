@@ -8,10 +8,21 @@ vi.mock("@/lib/api", () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
-  ApiRequestError: class ApiRequestError extends Error {},
+  ApiRequestError: class ApiRequestError extends Error {
+    public code: number | string;
+    public status: number;
+    public responseBody?: string;
+
+    constructor(code: number | string, message: string, status: number, responseBody?: string) {
+      super(message);
+      this.code = code;
+      this.status = status;
+      this.responseBody = responseBody;
+    }
+  },
 }));
 
-import { api } from "@/lib/api";
+import { api, ApiRequestError } from "@/lib/api";
 import {
   archiveStoryChapter,
   addStoryCandidateAsset,
@@ -27,6 +38,7 @@ import {
   putStoryCanvasLayout,
   putStoryClipCurrentVideo,
   removeStoryCandidateAsset,
+  storyApiErrorMessage,
   updateStoryChapter,
   type StoryClipVideoFinalization,
   type StoryCandidateAsset,
@@ -34,6 +46,42 @@ import {
   type StoryVideoLibraryItem,
   waitForStoryClipVideoUploadFinalization,
 } from "./story-projects-api";
+
+describe("storyApiErrorMessage", () => {
+  it("surfaces structured validation issues instead of the generic Zod summary", () => {
+    const error = new ApiRequestError(
+      "HTTP_400",
+      "Validation failed",
+      400,
+      JSON.stringify({
+        message: "Validation failed",
+        issues: [
+          {
+            path: "content.graph.nodes.12.interactions.0.trigger",
+            message: 'Invalid input: expected "tap"',
+            code: "invalid_value",
+          },
+          {
+            path: "content.graph.nodes.12.interactions.0.rect",
+            message: "Hotspot must stay within the video frame.",
+            code: "custom",
+          },
+        ],
+      })
+    );
+
+    expect(storyApiErrorMessage(error, "Could not save draft.")).toBe(
+      'content.graph.nodes.12.interactions.0.trigger: Invalid input: expected "tap"; ' +
+        "content.graph.nodes.12.interactions.0.rect: Hotspot must stay within the video frame."
+    );
+  });
+
+  it("keeps the upstream message when no structured validation issue exists", () => {
+    const error = new ApiRequestError("DRAFT_LOCKED", "Draft is locked.", 409);
+
+    expect(storyApiErrorMessage(error, "Could not save draft.")).toBe("Draft is locked.");
+  });
+});
 
 describe("current-draft Story production routes", () => {
   beforeEach(() => {

@@ -7,8 +7,8 @@ import {
 
 describe("story node creator model", () => {
   it("exposes only film clips and cast members", () => {
-    const kinds = ["clip", "character"] satisfies StoryNodeCreationKind[];
-    expect(kinds).toEqual(["clip", "character"]);
+    const kinds = ["clip"] satisfies StoryNodeCreationKind[];
+    expect(kinds).toEqual(["clip"]);
   });
 
   it("keeps the chosen flow point while clamping the menu", () => {

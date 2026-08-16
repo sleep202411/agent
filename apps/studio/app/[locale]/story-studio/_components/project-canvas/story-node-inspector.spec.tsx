@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { StoryNodeInspector } from "./story-node-inspector";
-import { buildStoryCanvasModel, characterCanvasNodeId } from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -27,54 +27,9 @@ describe("StoryNodeInspector film authoring", () => {
     container.remove();
   });
 
-  it("edits and deletes a character through the dedicated character inspector", async () => {
-    const content = draftWithCharacter();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
-    const onUpdateCharacter =
-      vi.fn<ComponentProps<typeof StoryNodeInspector>["onUpdateCharacter"]>();
-    const onDeleteCharacter =
-      vi.fn<ComponentProps<typeof StoryNodeInspector>["onDeleteCharacter"]>();
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector
-          {...inspectorProps(content)}
-          onUpdateCharacter={onUpdateCharacter}
-          onDeleteCharacter={onDeleteCharacter}
-          selectedNode={requiredNode(model.nodes, characterCanvasNodeId("hero"))}
-        />
-      );
-    });
-
-    const nameInput = requiredElement(
-      container.querySelector<HTMLInputElement>('input[placeholder="namePlaceholder"]'),
-      "character name"
-    );
-    expect(nameInput.value).toBe("Hero");
-    await inputValue(nameInput, "Nova");
-    expect(onUpdateCharacter).toHaveBeenLastCalledWith("hero", {
-      name: { "en-US": "Nova" },
-    });
-
-    const deleteButton = requiredElement(
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "filmFoundation.characters.delete"
-      ) ?? null,
-      "character delete button"
-    );
-    await click(deleteButton);
-    expect(onDeleteCharacter).toHaveBeenCalledWith("hero");
-  });
-
   it("confirms before replacing an authored choice with a direct continuation", async () => {
     const content = branchingDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
+    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
     const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
 
     await act(async () => {
@@ -104,51 +59,63 @@ describe("StoryNodeInspector film authoring", () => {
     });
   });
 
-  it("promotes a clip to the chapter entry", async () => {
+  it("opens the interaction editor for the inspected clip", async () => {
     const content = linearDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
-    });
-    const onSetEntryNode = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetEntryNode"]>();
+    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
+    const onEditInteractions =
+      vi.fn<ComponentProps<typeof StoryNodeInspector>["onEditInteractions"]>();
 
     await act(async () => {
       root.render(
         <StoryNodeInspector
           {...inspectorProps(content)}
-          onSetEntryNode={onSetEntryNode}
+          onEditInteractions={onEditInteractions}
           selectedNode={requiredNode(model.nodes, "second")}
         />
       );
     });
 
-    await click(entryButton(container));
-    expect(onSetEntryNode).toHaveBeenCalledWith("second");
+    const editInteractions = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("interactionEditor.entryTitle")
+      ) ?? null,
+      "edit interactions button"
+    );
+    await click(editInteractions);
+    expect(onEditInteractions).toHaveBeenCalledWith("second");
+  });
+
+  it("does not render a side inspector for a world node", async () => {
+    const content: InteractiveStoryDraftContent = {
+      storyBible: { logline: "", synopsis: "", characters: [] },
+      graph: {
+        entryNodeId: "world:one",
+        nodes: [
+          {
+            kind: "world",
+            nodeId: "world:one",
+            worldId: null,
+            maxExperienceSeconds: 60,
+            exit: { kind: "auto", nextNodeId: null },
+          },
+        ],
+      },
+      productionNotes: [],
+    };
+    const model = buildStoryCanvasModel(content, "en-US", [], { world: "World" });
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector
+          {...inspectorProps(content)}
+          selectedNode={requiredNode(model.nodes, "world:one")}
+        />
+      );
+    });
+
+    expect(container.innerHTML).toBe("");
   });
 });
-
-function draftWithCharacter(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      characters: [
-        {
-          id: "hero",
-          name: { "en-US": "Hero" },
-          summary: "The lead.",
-          images: [],
-          voice: null,
-        },
-      ],
-    },
-    graph: {
-      entryNodeId: "opening",
-      nodes: [clip("opening", "OPENING", null)],
-    },
-    productionNotes: [],
-  };
-}
 
 function branchingDraft(): InteractiveStoryDraftContent {
   return {
@@ -160,6 +127,7 @@ function branchingDraft(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "opening",
           clipKey: "OPENING",
+          interactions: [],
           exit: {
             kind: "choice",
             decisionId: "decision.route",
@@ -196,6 +164,7 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null) {
     kind: "clip" as const,
     nodeId,
     clipKey,
+    interactions: [],
     exit: { kind: "auto" as const, nextNodeId },
   };
 }
@@ -205,7 +174,6 @@ function inspectorProps(
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
     content,
-    locale: "en-US",
     showFoundation: false,
     canEdit: true,
     coverMedia: {
@@ -219,13 +187,11 @@ function inspectorProps(
       onUpload: vi.fn(),
     },
     onUpdateFoundation: vi.fn(),
-    onUpdateCharacter: vi.fn(),
-    onDeleteCharacter: vi.fn(),
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
     onSetSceneExit: vi.fn(),
-    onSetEntryNode: vi.fn(),
+    onEditInteractions: vi.fn(),
   };
 }
 
@@ -240,15 +206,6 @@ function requiredElement<T extends Element>(element: T | null, label: string): T
   return element;
 }
 
-function entryButton(container: HTMLElement): HTMLButtonElement {
-  return requiredElement(
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "inspector.entry"
-    ) ?? null,
-    "entry button"
-  );
-}
-
 function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
   return requiredElement(
     [...container.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -261,16 +218,6 @@ function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-  });
-}
-
-async function inputValue(element: HTMLInputElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (!setter) throw new Error("Missing input value setter.");
-  await act(async () => {
-    setter.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
 }

@@ -89,6 +89,9 @@ function defaultApiBaseUrl(region: string, workspaceId: string | null): string {
     normalized === 'beijing' ||
     normalized === 'cn'
   ) {
+    if (workspaceId) {
+      return `https://${workspaceId}.cn-beijing.maas.aliyuncs.com/api/v1`;
+    }
     return 'https://dashscope.aliyuncs.com/api/v1';
   }
   if (normalized === 'ap-southeast-1' && workspaceId) {

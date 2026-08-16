@@ -76,8 +76,9 @@ export class HealthController {
       {
         name: 'output_storage',
         ok: storageOk,
-        detail:
-          'AZURE_BLOB_CONNECTION_STRING (+ AZURE_BLOB_CONTAINER) required so worker can persist outputs',
+        detail: storageOk
+          ? `${this.storage.providerId} output storage reachable`
+          : `${this.storage.providerId} output storage unreachable`,
       },
       {
         name: 'postgres',

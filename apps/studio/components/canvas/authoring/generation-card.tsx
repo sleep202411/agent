@@ -26,11 +26,16 @@ import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
-import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
-import type { CanvasAsset, CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
+import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
-import { removeEdgeById, sourceMediaMetadata } from "@/lib/canvas-authoring/canvas-wiring";
+import {
+  removeEdgeById,
+  sourceGenerationJobId,
+  sourceMediaAssetId,
+  sourceMediaMetadata,
+  sourceMediaUrl,
+} from "@/lib/canvas-authoring/canvas-wiring";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
 import {
   EXPAND_OP,
@@ -54,10 +59,12 @@ import {
   canvasDefaultModel,
   defaultSettingsForModel,
   mergeCompatibleSettings,
+  normalizeModelSettings,
   estimateModelSellPoints,
   hasSchemaProperty,
   isUnsafeGenerationErrorMessage,
   referenceFieldsForMode,
+  type FizzAiReferenceFieldConstraints,
   type FizzAiModel,
   type FizzAiGenerationMode,
   type FizzAiReferenceKind,
@@ -65,7 +72,6 @@ import {
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
-import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
@@ -96,6 +102,13 @@ import {
   type ProjectSkillCatalogItem,
   type ProjectSkillInstallation,
 } from "@/lib/project-skills-api";
+import {
+  generationNodeTypeForModality,
+  type GenerationModality,
+  type GenerationNodeTypeId,
+} from "@/lib/canvas-authoring/generation-node-types";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
+import { AssetSelectDialog } from "./asset-select-dialog";
 
 /**
  * One generation card for both image and video — the card is a display
@@ -105,8 +118,6 @@ import {
  * video cards share this single component (registered as the `prompt`/`video`
  * node types via the thin wrappers at the bottom).
  */
-export type GenerationModality = "image" | "video";
-
 function catalogTranslationKey(skill: ProjectSkillCatalogItem): string | null {
   if (!skill.localizedMetadata || typeof skill.localizedMetadata !== "object") return null;
   const key = (skill.localizedMetadata as { translationKey?: unknown }).translationKey;
@@ -143,11 +154,12 @@ export type GenerationNodeData = {
    */
   modelLocked?: boolean;
 };
-export type GenerationNodeType = Node<GenerationNodeData, "prompt" | "video">;
+export type GenerationNodeType = Node<GenerationNodeData, GenerationNodeTypeId>;
 
 const MODALITY = {
   image: { icon: IconPhoto },
   video: { icon: IconVideo },
+  audio: { icon: IconAudioWaveform },
 } as const;
 
 function displayGenerationError(
@@ -159,12 +171,6 @@ function displayGenerationError(
   if (isUnsafeGenerationErrorMessage(generation?.error)) return providerUnavailable;
   return generation?.error || fallback;
 }
-
-const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, string> = {
-  image: "ai_reference_image",
-  video: "ai_reference_video",
-  audio: "ai_reference_audio",
-};
 
 const SOURCE_NODE_GAP_X = 96;
 const SOURCE_NODE_STACK_Y = 92;
@@ -197,7 +203,7 @@ function sourceNodePosition(
   };
 }
 
-function uploadedReferenceGraph({
+function createReferenceSourceGraph({
   edgeId,
   fileName,
   kind,
@@ -209,6 +215,8 @@ function uploadedReferenceGraph({
   url,
   durationSeconds,
   bytes,
+  width,
+  height,
 }: {
   edgeId: string;
   fileName: string;
@@ -221,6 +229,8 @@ function uploadedReferenceGraph({
   url: string;
   durationSeconds?: number;
   bytes?: number;
+  width?: number;
+  height?: number;
 }): { edge: CanvasEdgeShape; node: CanvasNodeShape } {
   return {
     node: {
@@ -233,6 +243,8 @@ function uploadedReferenceGraph({
         label: fileName,
         ...(durationSeconds != null ? { durationSeconds } : {}),
         ...(bytes != null ? { bytes } : {}),
+        ...(width != null ? { width } : {}),
+        ...(height != null ? { height } : {}),
       },
     },
     edge: {
@@ -260,7 +272,31 @@ function resultAspectRatio(
   const token = String(settings.imageSize ?? settings.aspectRatio ?? settings.size ?? "");
   const match = token.match(/(\d+)\s*[:x]\s*(\d+)/);
   if (match) return `${match[1]} / ${match[2]}`;
-  return modality === "video" ? "16 / 9" : "1 / 1";
+  if (modality === "video") return "16 / 9";
+  return "1 / 1";
+}
+
+function outputExtension(type: GenerationModality): "png" | "mp4" | "mp3" {
+  if (type === "video") return "mp4";
+  if (type === "audio") return "mp3";
+  return "png";
+}
+
+function AudioPreview({ src, title }: { src: string; title: string }) {
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-4 px-5">
+      <span className="flex size-11 items-center justify-center rounded-xl bg-white/[0.07] text-white/70">
+        <IconAudioWaveform className="size-5" stroke={1.7} />
+      </span>
+      <p className="max-w-full truncate text-sm text-white/72">{title}</p>
+      <audio
+        src={src}
+        controls
+        preload="metadata"
+        className="nodrag nowheel h-9 w-full [color-scheme:dark]"
+      />
+    </div>
+  );
 }
 
 /**
@@ -329,7 +365,8 @@ function useCountdown(seconds: number | undefined, active: boolean): number | nu
 const PROMPT_PLACEHOLDER_KEYS: Record<string, string> = {
   relight: "promptPlaceholderRelight",
 };
-function promptPlaceholderKey(mode: string | undefined): string {
+function promptPlaceholderKey(mode: string | undefined, modality: GenerationModality): string {
+  if (modality === "audio") return "promptPlaceholderAudio";
   return (mode && PROMPT_PLACEHOLDER_KEYS[mode]) || "promptPlaceholderDefault";
 }
 
@@ -358,7 +395,7 @@ function GenerationCard({
   const ol = useOperationLabel();
   const graph = useCanvasGraphContext();
   const { owner, projectSkills, projectSkillCatalog } = useProjectContext();
-  const { addAssets, addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
+  const { addNodesAndEdges, getNode, patchNodeData, canEdit, nodes } = graph;
   const { data: catalog } = useAiCatalog();
   // Composer is click-triggered: it opens for a sole selected node only, so a
   // marquee / select-all doesn't pop every card's prompt at once.
@@ -380,6 +417,9 @@ function GenerationCard({
   const [pano, setPano] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
+  const [assetPickerField, setAssetPickerField] = useState<FizzAiReferenceFieldConstraints | null>(
+    null
+  );
   const [detailSkillId, setDetailSkillId] = useState<string | null>(null);
   const [detailSkillIntent, setDetailSkillIntent] = useState<"inspect" | "use" | null>(null);
   const pendingSkillApplyRef = useRef<((item: MentionItem) => void) | null>(null);
@@ -397,7 +437,12 @@ function GenerationCard({
 
   const descriptor = MODALITY[modality];
   const Icon = descriptor.icon;
-  const modalityLabel = modality === "video" ? t("modalityVideo") : t("modalityImage");
+  const modalityLabel =
+    modality === "video"
+      ? t("modalityVideo")
+      : modality === "audio"
+        ? t("modalityAudio")
+        : t("modalityImage");
   // Node title: a user-set name wins; else the translated operation label (for
   // op-result nodes); else the modality default. Never bakes a locale into the doc.
   const opTitle = ol(data.opType);
@@ -408,7 +453,6 @@ function GenerationCard({
     t("generationFailed"),
     t("generationProviderUnavailable")
   );
-  const settings = useMemo(() => data.settings ?? {}, [data.settings]);
   const busy =
     generation?.status === "submitting" ||
     generation?.status === "queued" ||
@@ -419,6 +463,14 @@ function GenerationCard({
     () => catalog?.models.find((m) => m.id === data.modelId),
     [catalog, data.modelId]
   );
+  const rawSettings = useMemo(() => data.settings ?? {}, [data.settings]);
+  const settings = useMemo(() => normalizeModelSettings(model, rawSettings), [model, rawSettings]);
+  useEffect(() => {
+    if (!canEdit || settings === rawSettings) return;
+    patchNodeData(id, { settings });
+  }, [canEdit, id, patchNodeData, rawSettings, settings]);
+  const cardCanSubmit = generationCanSubmit && Boolean(model);
+  const cardDisabledReason = model ? generationDisabledReason : t("chooseModelFirst");
   const references = useMemo(() => data.references ?? {}, [data.references]);
   // First bound input image — the "before" for an op's before/after comparison.
   const compareBeforeUrl = useMemo(() => {
@@ -428,10 +480,6 @@ function GenerationCard({
     }
     return null;
   }, [references]);
-  // Optimistic, LOCAL-only reference chips still streaming to storage (blob
-  // preview + spinner) — never written to the doc; on confirm the durable URL
-  // is patched into `references` and the pending chip is dropped.
-  const [pendingRefs, setPendingRefs] = useState<CardReferences>({});
   const hydratedReferences = useMemo<CardReferences>(() => {
     let changed = false;
     const next: CardReferences = {};
@@ -455,16 +503,7 @@ function GenerationCard({
     }
     return changed ? next : references;
   }, [getNode, references]);
-  const referencesForDisplay = useMemo<CardReferences>(() => {
-    const fields = Object.keys(pendingRefs);
-    if (fields.length === 0) return hydratedReferences;
-    const merged: CardReferences = { ...hydratedReferences };
-    for (const field of fields) {
-      const pend = pendingRefs[field] ?? [];
-      if (pend.length) merged[field] = [...(hydratedReferences[field] ?? []), ...pend];
-    }
-    return merged;
-  }, [hydratedReferences, pendingRefs]);
+  const referencesForDisplay = hydratedReferences;
   const mode = data.mode ?? canvasDefaultMode(model);
   const modes = model?.generationModes ?? [];
   const refFields = useMemo(() => referenceFieldsForMode(model, mode), [model, mode]);
@@ -487,7 +526,7 @@ function GenerationCard({
       compatibleSkills.map((installation) => [installation.skillId, installation])
     );
     return (projectSkillCatalog.data?.items ?? [])
-      .filter((skill) => skill.latestVersion?.capabilities.includes(skillScope))
+      .filter((skill) => skillScope && skill.latestVersion?.capabilities.includes(skillScope))
       .map((skill) => {
         const installation = installationBySkillId.get(skill.id);
         const translationKey = catalogTranslationKey(skill);
@@ -646,17 +685,20 @@ function GenerationCard({
       );
     return (
       estimateModelSellPoints(model, {
+        text: data.prompt,
         numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
         resolution: settings.resolution != null ? String(settings.resolution) : undefined,
         quality: settings.quality != null ? String(settings.quality) : undefined,
         duration: settings.duration != null ? String(settings.duration) : undefined,
         durationSeconds:
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
+        generateAudio:
+          typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
         referenceImageCount: uploadedReferenceCount || undefined,
         referenceVideoSeconds: referenceVideoSeconds || undefined,
       })?.sellPoints ?? null
     );
-  }, [model, settings, refFields, references]);
+  }, [model, settings, refFields, references, data.prompt]);
   const isPanorama =
     mode === "image_to_panorama" || /hunyuan|panorama|world/i.test(model?.id ?? "");
 
@@ -669,113 +711,94 @@ function GenerationCard({
     }
   }, [data.autoSubmit, model, canEdit, generationCanSubmit, id, submit, patchNodeData]);
 
-  // Revoke object URLs this card created when it unmounts (blobs would leak).
-  const createdUrls = useRef<string[]>([]);
-  useEffect(() => () => createdUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
+  const addAssetReference = useCallback(
+    (field: FizzAiReferenceFieldConstraints, item: MentionItem) => {
+      if (item.kind === "skill" || item.kind !== field.kind || !item.previewUrl) return;
+      const target = getNode(id);
+      if (!target) return;
+      const currentReferences =
+        ((target.data as GenerationNodeData).references ?? {})[field.field] ?? [];
+      if (currentReferences.length >= field.maxItems) return;
+      if (
+        currentReferences.some(
+          (reference) =>
+            (Boolean(item.assetId) && reference.assetId === item.assetId) ||
+            reference.url === item.previewUrl ||
+            reference.id === item.id
+        )
+      ) {
+        return;
+      }
 
-  const dropPending = (field: string, refId: string) =>
-    setPendingRefs((prev) => ({
-      ...prev,
-      [field]: (prev[field] ?? []).filter((r) => r.id !== refId),
-    }));
-
-  const addReferences = (field: string, files: File[]) => {
-    const kind = refFields.find((f) => f.field === field)?.kind ?? "image";
-    const layoutOrdinalBase = referenceCountForLayout(referencesForDisplay);
-    for (const [fileIndex, file] of files.entries()) {
-      const refId = crypto.randomUUID();
-      const objectUrl = URL.createObjectURL(file);
-      createdUrls.current.push(objectUrl);
-      // Show an optimistic local chip immediately; upload in the background.
-      setPendingRefs((prev) => ({
-        ...prev,
-        [field]: [
-          ...(prev[field] ?? []),
-          { id: refId, url: objectUrl, name: file.name, kind, uploading: true },
-        ],
-      }));
-      Promise.all([
-        uploadFileViaSignedUrl(file, { kind: UPLOAD_KIND_BY_REFERENCE[kind] }),
-        kind === "video" || kind === "audio"
-          ? probeMediaDurationSeconds(file, kind)
-          : Promise.resolve(null as number | null),
-      ])
-        .then(([uploaded, durationSeconds]) => {
-          URL.revokeObjectURL(objectUrl);
-          const target = getNode(id);
-          if (!target) {
-            dropPending(field, refId);
-            return;
-          }
-          const edgeId = crypto.randomUUID();
-          const sourceNodeId = crypto.randomUUID();
-          const { edge, node } = uploadedReferenceGraph({
-            edgeId,
-            fileName: file.name,
-            kind,
-            mediaAssetId: uploaded.mediaAssetId,
-            ordinal: layoutOrdinalBase + fileIndex,
-            sourceNodeId,
-            target,
-            targetNodeId: id,
-            url: uploaded.url,
-            durationSeconds: durationSeconds ?? undefined,
-            bytes: file.size,
-          });
-          addNodesAndEdges([node], [edge]);
-          addAssets([
+      const existingSource = nodes.find((candidate) => {
+        if (candidate.id === id) return false;
+        const candidateAssetId = sourceMediaAssetId(getNode, candidate.id);
+        if (item.assetId && candidateAssetId === item.assetId) return true;
+        return !item.assetId && sourceMediaUrl(getNode, candidate.id) === item.previewUrl;
+      });
+      const edgeId = crypto.randomUUID();
+      const sourceNodeId = existingSource?.id ?? crypto.randomUUID();
+      if (existingSource) {
+        addNodesAndEdges(
+          [],
+          [
             {
-              id: uploaded.mediaAssetId,
-              mediaAssetId: uploaded.mediaAssetId,
-              kind: kind as CanvasAsset["kind"],
-              source: "uploaded",
-              url: uploaded.url,
-              name: file.name,
-              createdAt: Date.now(),
-              category: "general",
+              id: edgeId,
+              source: sourceNodeId,
+              target: id,
+              sourceHandle: "output",
+              targetHandle: "input",
             },
-          ]);
-          clearPreflightIssues(id);
-          // Persist the DURABLE url (never the blob:) into the doc, drop the chip.
-          // Removing the reference later removes this edge and binding together.
-          patchNodeData(id, (node) => {
-            const refs: CardReferences = (node.data as GenerationNodeData).references ?? {};
-            return {
-              references: {
-                ...refs,
-                [field]: [
-                  ...(refs[field] ?? []),
-                  {
-                    id: edgeId,
-                    edgeId,
-                    sourceNodeId,
-                    url: uploaded.url,
-                    name: file.name,
-                    kind,
-                    assetId: uploaded.mediaAssetId,
-                    ...(durationSeconds != null ? { durationSeconds } : {}),
-                    bytes: file.size,
-                  },
-                ],
-              },
-            };
-          });
-          dropPending(field, refId);
-        })
-        .catch((err) => {
-          dropPending(field, refId);
-          URL.revokeObjectURL(objectUrl);
-          if (!isUploadAbort(err)) {
-            const message = err instanceof Error ? err.message : "";
-            toast.error(
-              message
-                ? `${t("uploadFailed", { name: file.name })}: ${message}`
-                : t("uploadFailed", { name: file.name })
-            );
-          }
+          ]
+        );
+      } else {
+        const { edge, node } = createReferenceSourceGraph({
+          edgeId,
+          fileName: item.name ?? item.label,
+          kind: field.kind,
+          mediaAssetId: item.assetId ?? item.id,
+          ordinal: referenceCountForLayout((target.data as GenerationNodeData).references ?? {}),
+          sourceNodeId,
+          target,
+          targetNodeId: id,
+          url: item.previewUrl,
+          durationSeconds: item.durationSeconds ?? undefined,
+          bytes: item.bytes ?? undefined,
+          width: item.width ?? undefined,
+          height: item.height ?? undefined,
         });
-    }
-  };
+        addNodesAndEdges([node], [edge]);
+      }
+      const sourceJobId = sourceGenerationJobId(getNode, sourceNodeId);
+      clearPreflightIssues(id);
+      patchNodeData(id, (generationNode) => {
+        const refs = (generationNode.data as GenerationNodeData).references ?? {};
+        return {
+          references: {
+            ...refs,
+            [field.field]: [
+              ...(refs[field.field] ?? []),
+              {
+                id: edgeId,
+                edgeId,
+                sourceNodeId,
+                url: item.previewUrl as string,
+                name: item.name,
+                kind: field.kind,
+                ...(item.assetId ? { assetId: item.assetId } : {}),
+                ...(sourceJobId ? { sourceJobId } : {}),
+                ...(item.durationSeconds != null ? { durationSeconds: item.durationSeconds } : {}),
+                ...(item.bytes != null ? { bytes: item.bytes } : {}),
+                ...(item.width != null ? { width: item.width } : {}),
+                ...(item.height != null ? { height: item.height } : {}),
+              },
+            ],
+          },
+        };
+      });
+    },
+    [addNodesAndEdges, clearPreflightIssues, getNode, id, nodes, patchNodeData]
+  );
 
   const removeReference = (field: string, refId: string) => {
     const node = getNode(id);
@@ -828,7 +851,7 @@ function GenerationCard({
   const output = generation?.outputs?.[0];
   const onDownload = async () => {
     if (!output?.url) return;
-    const ext = output.type === "video" ? "mp4" : "png";
+    const ext = outputExtension(output.type);
     try {
       const blob = await (await fetch(output.url)).blob();
       const url = URL.createObjectURL(blob);
@@ -863,7 +886,7 @@ function GenerationCard({
               ? {
                   nodeId: id,
                   mediaAssetId: output.assetId,
-                  kind: output.type === "video" ? "video" : "image",
+                  kind: output.type,
                   url: output.url,
                   label: displayTitle,
                 }
@@ -927,7 +950,7 @@ function GenerationCard({
           src={output.url}
           title={displayTitle}
           alt={data.prompt ?? t("result")}
-          downloadName={`${displayTitle}.${output.type === "video" ? "mp4" : "png"}`}
+          downloadName={`${displayTitle}.${outputExtension(output.type)}`}
           onClose={() => setViewerOpen(false)}
         />
       )}
@@ -939,7 +962,7 @@ function GenerationCard({
           busy && "generating-beam"
         )}
         style={{
-          width: canvasNodeGeometry({ type: modality === "video" ? "video" : "prompt" }).width,
+          width: canvasNodeGeometry({ type: generationNodeTypeForModality(modality) }).width,
         }}
       >
         {/* Header: node name left, model used right — a lighter frosted strip
@@ -976,7 +999,11 @@ function GenerationCard({
             media or the live job state (queued / generating+ETA / failed). */}
         <div
           className="relative flex flex-col items-center justify-center gap-3 overflow-hidden bg-muted"
-          style={{ aspectRatio: loadedRatio ?? resultAspectRatio(modality, settings, generation) }}
+          style={
+            modality === "audio"
+              ? { height: canvasNodeGeometry({ type: "audio" }).minHeight }
+              : { aspectRatio: loadedRatio ?? resultAspectRatio(modality, settings, generation) }
+          }
           onDoubleClick={(event) => {
             if (!output?.url) return;
             event.preventDefault();
@@ -985,7 +1012,9 @@ function GenerationCard({
           }}
         >
           {generation?.status === "done" && generation.outputs?.[0] ? (
-            generation.outputs[0].type === "video" ? (
+            generation.outputs[0].type === "audio" ? (
+              <AudioPreview src={generation.outputs[0].url} title={displayTitle} />
+            ) : generation.outputs[0].type === "video" ? (
               <HoverPreviewVideo
                 src={generation.outputs[0].url}
                 onLoadedRatio={setLoadedRatio}
@@ -1063,8 +1092,8 @@ function GenerationCard({
               </p>
               <button
                 type="button"
-                disabled={!canEdit || !generationCanSubmit}
-                title={!generationCanSubmit ? (generationDisabledReason ?? undefined) : undefined}
+                disabled={!canEdit || !cardCanSubmit}
+                title={!cardCanSubmit ? (cardDisabledReason ?? undefined) : undefined}
                 onClick={() => submit(id)}
                 className="nodrag flex items-center gap-1.5 rounded-full bg-white/[0.1] px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/[0.16] hover:text-white disabled:opacity-45"
               >
@@ -1185,14 +1214,14 @@ function GenerationCard({
                     skillSelection: extracted.selection,
                   });
                 }}
-                promptPlaceholder={t(promptPlaceholderKey(mode))}
-                promptAriaLabel={t(promptPlaceholderKey(mode))}
+                promptPlaceholder={t(promptPlaceholderKey(mode, modality))}
+                promptAriaLabel={t(promptPlaceholderKey(mode, modality))}
                 promptAutoFocus
                 showPrompt={!model || hasSchemaProperty(model, "prompt")}
                 mentions={mentionItems}
-                skillMarketOptions={skillMarketOptions}
-                skillMarketLoading={projectSkillCatalog.loading}
-                skillMarketError={projectSkillCatalog.error}
+                skillMarketOptions={skillScope ? skillMarketOptions : undefined}
+                skillMarketLoading={skillScope ? projectSkillCatalog.loading : false}
+                skillMarketError={skillScope ? projectSkillCatalog.error : false}
                 onMentionActivate={(mention) => {
                   if (mention.kind === "skill") {
                     pendingSkillApplyRef.current = null;
@@ -1211,7 +1240,7 @@ function GenerationCard({
                     <ReferenceStack
                       fields={refFields}
                       references={referencesForDisplay}
-                      onAdd={addReferences}
+                      onOpenPicker={setAssetPickerField}
                       onRemove={removeReference}
                     />
                   ) : null
@@ -1229,13 +1258,13 @@ function GenerationCard({
                 onPanelChange={setPanel}
                 onQuickSettingsOpenChange={setQuickSettingsOpen}
                 cost={cost}
-                canSubmit={canEdit && generationCanSubmit}
+                canSubmit={canEdit && cardCanSubmit}
                 submitting={busy}
                 onSubmit={() => submit(id)}
                 onCancel={() => cancel(id)}
                 submitLabel={t("generate")}
                 cancelLabel={t("cancelGeneration")}
-                disabledReason={generationDisabledReason}
+                disabledReason={cardDisabledReason}
               />
             </div>
           </div>
@@ -1270,6 +1299,19 @@ function GenerationCard({
           openSkills(skillId);
         }}
       />
+      {assetPickerField ? (
+        <AssetSelectDialog
+          open
+          projectId={owner.projectId}
+          acceptedKinds={[assetPickerField.kind]}
+          maxSelection={Math.max(
+            1,
+            assetPickerField.maxItems - (referencesForDisplay[assetPickerField.field]?.length ?? 0)
+          )}
+          onClose={() => setAssetPickerField(null)}
+          onSelect={(item) => addAssetReference(assetPickerField, item)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1287,3 +1329,9 @@ export const VideoNode = memo((props: NodeProps<GenerationNodeType>) => (
   <GenerationCardMemo {...props} modality="video" />
 ));
 VideoNode.displayName = "VideoNode";
+
+/** Audio generation card (`audio` node type). */
+export const AudioNode = memo((props: NodeProps<GenerationNodeType>) => (
+  <GenerationCardMemo {...props} modality="audio" />
+));
+AudioNode.displayName = "AudioNode";

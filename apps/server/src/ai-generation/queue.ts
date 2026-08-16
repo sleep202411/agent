@@ -1,8 +1,8 @@
 /**
  * BullMQ queue + worker wiring for AI generation.
  *
- * Two queues, one per job type, so image throughput doesn't share a
- * concurrency budget with video (which is slower and rarer). Each
+ * One queue per output modality, so image, video and audio throughput do not
+ * share concurrency budgets. Each
  * queue owns a separate Redis prefix space; Bull's stalled detection
  * and delayed-job timers apply per-queue.
  *
@@ -21,8 +21,12 @@ import { Queue, Worker, type Processor } from 'bullmq';
 
 export const AI_QUEUE_IMAGE = 'ai-image-generation';
 export const AI_QUEUE_VIDEO = 'ai-video-generation';
+export const AI_QUEUE_AUDIO = 'ai-audio-generation';
 
-export type AiQueueName = typeof AI_QUEUE_IMAGE | typeof AI_QUEUE_VIDEO;
+export type AiQueueName =
+  | typeof AI_QUEUE_IMAGE
+  | typeof AI_QUEUE_VIDEO
+  | typeof AI_QUEUE_AUDIO;
 
 export interface AiQueueJobData {
   jobId: string;

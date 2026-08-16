@@ -92,5 +92,5 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
   }
 }
 
-export { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from './queue';
+export { AI_QUEUE_AUDIO, AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from './queue';
 export type { AiQueueName } from './queue';

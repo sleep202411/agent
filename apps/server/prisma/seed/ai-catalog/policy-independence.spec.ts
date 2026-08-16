@@ -1,5 +1,6 @@
 import { IMAGE_MODELS } from './image-models';
 import { VIDEO_MODELS } from './video-models';
+import { AUDIO_MODELS } from './audio-models';
 import { buildEntitlementPolicy, buildQueuePolicy } from './defaults';
 
 /**
@@ -35,7 +36,7 @@ describe('entitlement and queue policy are independent', () => {
 });
 
 describe('the shipped catalogue', () => {
-  const ALL = [...IMAGE_MODELS, ...VIDEO_MODELS];
+  const ALL = [...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS];
 
   /**
    * Models are open today and paid for in compute points. This is not a style

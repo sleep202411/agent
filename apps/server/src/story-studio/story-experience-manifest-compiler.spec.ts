@@ -43,7 +43,7 @@ function coverMedia(): InteractiveFilmRelease['media'][number] {
 
 function release(): InteractiveFilmRelease {
   return InteractiveFilmReleaseSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     channel: 'production',
     gameId: PROJECT_ID,
     releaseId: BUILD_ID,
@@ -218,6 +218,167 @@ describe('Story Runtime Manifest v2 compiler', () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it('passes timeline control and safe branch frames through to compiled gestures', () => {
+    const value = release();
+    value.nodes[0]!.interactions = [
+      {
+        kind: 'hotspot',
+        interactionId: 'charge',
+        label: { 'en-US': 'Charge' },
+        trigger: {
+          kind: 'press-hold',
+          durationMs: 1_000,
+          controlTimeline: true,
+        },
+        rect: { x: 0.3, y: 0.3, width: 0.4, height: 0.4 },
+        startMs: 500,
+        endMs: 2_000,
+        branchAtMs: 2_200,
+        outcomes: {
+          success: { kind: 'goto', nodeId: 'clip.truth' },
+          failure: { kind: 'continue' },
+        },
+      },
+      {
+        kind: 'hotspot',
+        interactionId: 'dodge',
+        label: { 'en-US': 'Dodge' },
+        trigger: { kind: 'swipe', direction: 'right' },
+        rect: { x: 0.7, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 2_000,
+        endMs: 3_000,
+        outcomes: { success: { kind: 'continue' } },
+      },
+    ];
+
+    const result = compile(value);
+    const scene = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'clip.start',
+    );
+    if (!scene || scene.kind !== 'scene') {
+      throw new Error(
+        `Scene is missing: ${JSON.stringify(result.diagnostics)}`,
+      );
+    }
+    expect(scene.gestures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'press-hold',
+          durationMs: 1_000,
+          timelineControl: true,
+          activeWindow: { startMs: 500, endMs: 2_000 },
+          branchAtMs: 2_200,
+        }),
+      ]),
+    );
+    const swipe = scene.gestures.find((gesture) => gesture.kind === 'swipe');
+    expect(swipe).toBeDefined();
+    expect(swipe && 'branchAtMs' in swipe).toBe(false);
+  });
+
+  it('lowers hotspot triggers and outcome routes without fake scene branches', () => {
+    const value = release();
+    value.nodes[0]!.interactions = [
+      {
+        kind: 'hotspot',
+        interactionId: 'continue',
+        label: { 'en-US': 'Continue' },
+        trigger: { kind: 'tap' },
+        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 100,
+        endMs: 1_000,
+        outcomes: { success: { kind: 'continue' } },
+      },
+      {
+        kind: 'hotspot',
+        interactionId: 'rewind',
+        label: { 'en-US': 'Rewind' },
+        trigger: { kind: 'press-hold', durationMs: 800 },
+        rect: { x: 0.4, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 1_000,
+        endMs: 2_000,
+        outcomes: {
+          success: { kind: 'seek', timeMs: 500 },
+          failure: { kind: 'continue' },
+        },
+      },
+      {
+        kind: 'hotspot',
+        interactionId: 'branch',
+        label: { 'en-US': 'Branch' },
+        trigger: { kind: 'swipe', direction: 'right' },
+        rect: { x: 0.7, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 2_000,
+        endMs: 3_000,
+        outcomes: {
+          success: { kind: 'goto', nodeId: 'clip.truth' },
+          timeout: { kind: 'seek', timeMs: 1_500 },
+        },
+      },
+    ];
+
+    const result = compile(value);
+    const scene = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'clip.start',
+    );
+    if (!scene || scene.kind !== 'scene') {
+      throw new Error(
+        `Scene is missing: ${JSON.stringify(result.diagnostics)}`,
+      );
+    }
+    expect(scene.anchors).toHaveLength(3);
+    expect(scene.gestures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tap',
+          activeWindow: { startMs: 100, endMs: 1_000 },
+        }),
+        expect.objectContaining({ kind: 'press-hold', durationMs: 800 }),
+        expect.objectContaining({
+          kind: 'swipe',
+          directions: ['right'],
+        }),
+      ]),
+    );
+    expect(scene.eventBindings.map((binding) => binding.on.type)).toEqual(
+      expect.arrayContaining([
+        'gesture.completed',
+        'gesture.cancelled',
+        'gesture.timed-out',
+      ]),
+    );
+    const actions = scene.eventBindings.flatMap((binding) =>
+      binding.routes.flatMap((route) => route.actions),
+    );
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'renderer.command',
+          commandType: 'play',
+        }),
+        expect.objectContaining({
+          kind: 'renderer.command',
+          commandType: 'seek',
+        }),
+        expect.objectContaining({ kind: 'scene.goto', sceneId: 'clip.truth' }),
+      ]),
+    );
+    const rewindSuccess = scene.eventBindings.find(
+      (binding) =>
+        binding.bindingId === 'binding:clip.start:interaction:rewind:success',
+    );
+    expect(rewindSuccess?.routes[0]?.actions).toEqual([
+      expect.objectContaining({
+        kind: 'renderer.command',
+        commandType: 'seek',
+      }),
+      expect.objectContaining({
+        kind: 'renderer.command',
+        commandType: 'play',
+      }),
+    ]);
   });
 
   /**

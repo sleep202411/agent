@@ -47,6 +47,19 @@ describe('parseProjectSkillPackage', () => {
     expect(parsed.instructions).toContain('Use deliberate blocking');
   });
 
+  it('normalizes a renamed standalone Markdown upload to SKILL.md', () => {
+    const parsed = parseProjectSkillPackage(
+      file('SKILL (3).md', Buffer.from(SKILL_MD)),
+    );
+
+    expect(parsed).toMatchObject({
+      packageName: 'careful-camera',
+      displayName: 'Careful Camera',
+      slugBase: 'careful-camera',
+      sourceFiles: ['SKILL.md'],
+    });
+  });
+
   it('keeps the downloadable template importable by this parser', () => {
     const buffer = readFileSync(
       resolve(__dirname, '../../../studio/public/skills/templates/SKILL.md'),

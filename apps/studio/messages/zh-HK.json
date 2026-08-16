@@ -1170,6 +1170,7 @@
   },
   "canvas": {
     "tidyCanvas": "整理畫布",
+    "tidyFailed": "無法整理畫布：{message}",
     "toggleMinimap": "切換縮圖",
     "snapToGrid": "對齊網格",
     "zoomOut": "縮小",
@@ -1180,6 +1181,7 @@
       "upload": "上載",
       "image": "圖像",
       "video": "影片",
+      "audio": "音訊",
       "note": "便箋",
       "shot": "分鏡"
     },
@@ -1187,6 +1189,7 @@
     "uploadFailed": "上載失敗",
     "imageCardName": "圖像 {index}",
     "videoCardName": "影片 {index}",
+    "audioCardName": "音訊 {index}",
     "videoAssetsComingSoon": "影片素材 · 即將推出",
     "offline": "離線",
     "connecting": "連線中…",
@@ -1244,6 +1247,7 @@
       "upload": "上載",
       "image": "圖像",
       "video": "影片",
+      "audio": "音訊",
       "note": "便箋",
       "shot": "分鏡",
       "searchPlaceholder": "搜尋節點",
@@ -1260,6 +1264,10 @@
     },
     "modelPicker": {
       "searchPlaceholder": "搜尋模型",
+      "vendor": "廠商",
+      "filterByVendor": "按廠商篩選",
+      "allVendors": "全部廠商",
+      "otherVendor": "其他",
       "heading": "模型",
       "searchResults": "搜尋結果",
       "featuredModels": "熱門",
@@ -1280,7 +1288,8 @@
         "fastBalancedVideo": "高速穩定成片",
         "cinematicVideo": "音畫電影成片",
         "stableMotionVideo": "動作穩定成片",
-        "creativeVideo": "創意靈活成片"
+        "creativeVideo": "創意靈活成片",
+        "expressiveAudio": "生成富有表現力的音訊"
       },
       "requiresPlan": "需要 {plan} 方案",
       "locked": "目前方案不可用",
@@ -1437,6 +1446,7 @@
   "canvasOps": {
     "modalityImage": "圖像",
     "modalityVideo": "影片",
+    "modalityAudio": "音訊",
     "selectModel": "選擇模型",
     "settings": "設定",
     "generate": "生成",
@@ -1444,7 +1454,8 @@
       "expand": "展開生成面板",
       "collapse": "返回精簡面板",
       "imageTitle": "圖像生成",
-      "videoTitle": "影片生成"
+      "videoTitle": "影片生成",
+      "audioTitle": "音訊生成"
     },
     "cancelGeneration": "取消生成",
     "run": "執行",
@@ -1482,6 +1493,7 @@
     "uploadFailed": "無法上載 {name}",
     "noModelForOp": "目錄中暫無可用的{op}模型",
     "promptPlaceholderDefault": "輸入你的提示詞……",
+    "promptPlaceholderAudio": "描述你想生成的聲音、音效、環境聲或音樂……",
     "promptPlaceholderRelight": "描述光照效果，例如「從左側照來的溫暖夕陽光」",
     "statusSubmitting": "提交中……",
     "statusQueued": "排隊中……",
@@ -2296,6 +2308,9 @@
       "uploadFailed": "上傳失敗",
       "unsupportedType": "僅支援 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
       "empty": "還沒有資產——先生成或上傳一個。",
+      "search": "搜尋資產",
+      "selected": "已選擇 {count}/{max}",
+      "confirm": "加入所選資產",
       "filter": {
         "all": "全部",
         "aiGenerated": "AI 生成",
@@ -2330,6 +2345,8 @@
   "modes": {
     "text_to_image": "文生圖",
     "text_to_video": "文生影片",
+    "text_to_audio": "文生音訊",
+    "audio_to_audio": "音訊生音訊",
     "image_to_image": "圖生圖",
     "image_to_panorama": "全景圖",
     "image_to_video": "圖生影片",
@@ -2483,6 +2500,12 @@
     "canvas": {
       "back": "返回影遊工作室",
       "mode": "故事畫布",
+      "sidebar": {
+        "navigation": "影遊專案導覽",
+        "world": "世界",
+        "media": "素材",
+        "agent": "智能體"
+      },
       "chapters": {
         "action": "章節",
         "title": "章節",
@@ -2582,7 +2605,6 @@
         "retry": "重試",
         "refresh": "重新整理試玩",
         "editStory": "編輯故事",
-        "previewWarnings": "目前試玩有 {count} 條提示",
         "unavailableTitle": "目前故事還不能試玩",
         "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。"
       },
@@ -2599,19 +2621,14 @@
       },
       "nodeKinds": {
         "clip": "影像鏡頭",
-        "choice": "玩家選擇",
-        "decision": "玩家選擇",
-        "character": "角色"
+        "world": "世界體驗"
       },
       "ports": {
-        "cast": "角色成員",
         "input": "故事流入",
         "completion": "場景的下一步",
-        "choiceTrigger": "觸發選擇",
-        "choiceOption": "選擇：{label}",
-        "newChoice": "連接新選項"
+        "choiceOption": "選擇：{label}"
       },
-      "decisionCard": {
+      "interactionCard": {
         "promptPlaceholder": "玩家此刻必須決定甚麼？",
         "defaultOption": "選項 {number}",
         "untitledOption": "未命名選項",
@@ -2621,11 +2638,35 @@
         "optionPlaceholder": "輸入玩家看到的選項",
         "connectOption": "連接這個選項"
       },
+      "interactionAnchors": {
+        "title": "互動錨點",
+        "choiceType": "選擇",
+        "hotspotType": "熱點",
+        "continueCurrent": "繼續本片",
+        "seekCurrent": "跳至 {time}",
+        "gotoTarget": "進入 {target}",
+        "triggerTap": "點擊",
+        "triggerSwipe": "向{direction}滑動",
+        "triggerPressHold": "長按 {duration}",
+        "directions": {
+          "up": "上",
+          "down": "下",
+          "left": "左",
+          "right": "右"
+        },
+        "outcomes": {
+          "success": "成功",
+          "failure": "失敗",
+          "timeout": "逾時"
+        }
+      },
       "creator": {
         "title": "新增至故事圖",
         "description": "建立互動故事結構中的圖元素。",
         "clip": "影像鏡頭",
         "clipDescription": "一段帶有明確後續走向的生成影片。",
+        "world": "世界體驗",
+        "worldDescription": "進入一個帶有明確完成出口的即時生成世界。",
         "character": "角色",
         "characterDescription": "屬於目前故事專案的可重用角色卡。",
         "choice": "玩家選擇",
@@ -2643,7 +2684,64 @@
       },
       "projection": {
         "clip": "鏡頭",
-        "decision": "玩家選擇"
+        "world": "世界"
+      },
+      "worldNode": {
+        "untitled": "未命名世界",
+        "bindingTitle": "綁定世界",
+        "bindingDescription": "綁定已有世界，或直接為目前故事節點構建新世界。",
+        "change": "更換世界",
+        "chooseExisting": "選擇已有",
+        "chooseAnother": "選擇其他世界",
+        "boundWorldUnavailable": "目前綁定的世界已不可用。",
+        "retry": "重試",
+        "loading": "正在載入世界…",
+        "select": "選擇世界",
+        "unbound": "尚未選擇世界",
+        "noWorlds": "目前專案還沒有可重用的世界，可直接在這裡構建。",
+        "providerUnavailable": "尚未設定可用的世界模型服務。",
+        "providerLoadError": "無法載入世界模型服務。",
+        "generationUnavailable": "目前專案角色不能構建世界。",
+        "createError": "無法建立世界。",
+        "buildFailed": "無法構建世界。",
+        "buildTimeout": "世界生成在 10 分鐘內未完成，請檢查服務狀態後重試。",
+        "worldPrompt": "世界描述",
+        "worldPromptTooltip": "構建世界時傳送給模型，用於定義持續存在的場景、氛圍、角色、空間規則與開場時刻。",
+        "worldPromptPlaceholder": "描述世界、氛圍、角色、空間規則和開場時刻…",
+        "firstFrame": "開場畫面",
+        "firstFrameTooltip": "構建世界時傳送給模型的可選項目圖片，用於約束構圖和視覺身份。",
+        "firstFrameHint": "從目前項目選擇圖片，或上傳新圖片。",
+        "chooseFirstFrame": "選擇開場畫面",
+        "replaceFirstFrame": "更換開場畫面",
+        "clearFirstFrame": "移除開場畫面",
+        "firstFramePreviewAlt": "已選擇的世界開場畫面",
+        "firstFrameUnavailable": "這張圖片不能作為世界開場畫面。",
+        "firstFrameDisabled": "你不能修改這個世界的開場畫面。",
+        "firstFrameCandidateLoadError": "無法載入項目圖片。",
+        "perspective": "視角",
+        "perspectiveTooltip": "設定玩家探索生成世界時使用的鏡頭視角。",
+        "build": "構建並綁定世界",
+        "rebuild": "套用修改並取代世界",
+        "expandEditor": "展開世界設定",
+        "collapseEditor": "收起世界設定",
+        "run": "運行",
+        "runError": "無法啟動世界工作階段。",
+        "exitRun": "退出世界",
+        "entryInstruction": "初始指令",
+        "entryInstructionTooltip": "世界工作階段啟動後立即向運行中的模型傳送一次，用於指示首個事件或目標，不會重新構建世界。",
+        "entryInstructionPlaceholder": "描述玩家進入世界後的首個事件或目標。",
+        "maxDuration": "體驗時長上限",
+        "maxDurationTooltip": "單次世界體驗允許持續的最長時間；達到上限後，本次體驗結束。",
+        "duration": "{seconds} 秒",
+        "perspectiveValue": {
+          "first_person": "第一人稱",
+          "third_person": "第三人稱"
+        },
+        "status": {
+          "generating": "生成中",
+          "ready": "已就緒",
+          "failed": "失敗"
+        }
       },
       "foundation": {
         "description": "先固定戲劇承諾，再展開分支圖；修改會自動儲存到可編輯草稿。",
@@ -2826,6 +2924,82 @@
         "clearError": "無法取消選擇目前素材。"
       },
       "mediaCreation": "素材創作",
+      "interactionEditor": {
+        "entryTitle": "編輯互動",
+        "entryDescription": "在畫面與時間軸上放置可點擊熱點。",
+        "workspaceLabel": "影片互動編輯器",
+        "back": "返回故事畫布",
+        "projectInteraction": "專案互動",
+        "subtitle": "熱點佈局與時間範圍",
+        "edit": "編輯",
+        "preview": "預覽",
+        "refreshWarning": "變更將自動儲存",
+        "done": "完成",
+        "selectTool": "選擇與移動",
+        "rectangleTool": "繪製熱點",
+        "addHotspot": "新增熱點",
+        "duplicate": "複製",
+        "delete": "刪除",
+        "newHotspot": "熱點 {number}",
+        "copyName": "{name} 副本",
+        "previewAction": "已觸發互動 · 前往{target}",
+        "previewContinue": "已觸發互動 · 繼續播放本片",
+        "previewSeek": "已觸發互動 · 跳轉至 {time}",
+        "previewMissingTarget": "這個熱點尚未指定前往目標。",
+        "noVideo": "暫無目前影片",
+        "noVideoDescription": "請先在節點中選擇目前影片，再回到這裡按真實畫面定位互動。",
+        "emptyTitle": "繪製第一個熱點",
+        "emptyDescription": "先定義觀眾可點擊的區域，再設定它出現的時間與觸發動作。",
+        "drawFirst": "繪製熱點",
+        "pause": "暫停影片",
+        "play": "播放影片",
+        "seek": "影片播放位置",
+        "unmute": "開啟聲音",
+        "mute": "靜音",
+        "videoTrack": "影片",
+        "hotspotTrack": "熱點",
+        "hotspots": "熱點",
+        "hotspotCount": "{count} 個互動",
+        "identity": "熱點",
+        "name": "名稱",
+        "timing": "時間範圍",
+        "start": "開始",
+        "end": "結束",
+        "timingHint": "熱點只會在此時間範圍內顯示及可點擊。",
+        "position": "位置與尺寸",
+        "x": "X",
+        "y": "Y",
+        "width": "寬度",
+        "height": "高度",
+        "trigger": "觸發方式",
+        "interactionType": "互動類型",
+        "tap": "點擊",
+        "swipe": "滑動",
+        "pressHold": "長按",
+        "direction": "方向",
+        "directionUp": "向上",
+        "directionDown": "向下",
+        "directionLeft": "向左",
+        "directionRight": "向右",
+        "holdDuration": "長按時長",
+        "outcomes": "結果",
+        "successOutcome": "成功",
+        "failureOutcome": "失敗",
+        "timeoutOutcome": "逾時",
+        "addOutcome": "新增{outcome}結果",
+        "removeOutcome": "移除",
+        "goToScene": "前往場景",
+        "continueCurrent": "繼續播放本片",
+        "seekCurrent": "跳轉到本片時間",
+        "seekTime": "目標時間",
+        "destination": "目標場景",
+        "nothingSelected": "未選擇熱點",
+        "nothingSelectedDescription": "在影片、時間軸或清單中選擇熱點，以編輯詳細屬性。",
+        "branchAt": "切點時間",
+        "branchAtHint": "輸入判定完成後,目前片段會繼續播放到該時間點才切入分支;預設等於視窗結束時間。",
+        "controlTimeline": "時間軸控制蓄力",
+        "controlTimelineHint": "視窗開啟時片段暫停,按住才繼續播放;播放進度即蓄力進度。"
+      },
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
@@ -2854,7 +3028,6 @@
           "connect": "連接",
           "linked": "已連接"
         },
-        "entry": "入口場景",
         "exitAuto": "繼續到場景",
         "exitChoice": "玩家選擇",
         "continuationTarget": "下一個場景",
@@ -2876,7 +3049,6 @@
         "convertExitDescription": "這會刪除現有的 {count} 條分支，以及其中已編寫的條件或選項細節。",
         "confirmConversion": "取代後續走向",
         "delete": "刪除節點",
-        "removeDecision": "移除選擇環節",
         "cancel": "取消",
         "nodeName": "名稱"
       },
@@ -3109,7 +3281,20 @@
       "seekBackward": "快退"
     },
     "emptySequence": "暫無影片",
-    "loadingMedia": "正在載入影片"
+    "loadingMedia": "正在載入影片",
+    "world": {
+      "label": "互動世界",
+      "stream": "即時世界畫面",
+      "connecting": "正在進入世界…",
+      "movementControls": "移動控制",
+      "forward": "向前移動",
+      "backward": "向後移動",
+      "left": "向左移動",
+      "right": "向右移動",
+      "pause": "暫停世界",
+      "resume": "繼續世界",
+      "finish": "結束世界體驗"
+    }
   },
   "agentOs": {
     "title": "FizzAgent",

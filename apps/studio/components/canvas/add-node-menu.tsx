@@ -11,15 +11,23 @@ import {
   IconVideo,
   type Icon,
 } from "@tabler/icons-react";
+import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 
 /** Product-neutral creation actions shared by every media-authoring canvas. */
-export type AddNodeAction = "upload" | "generate-image" | "generate-video" | "note" | "shot";
+export type AddNodeAction =
+  | "upload"
+  | "generate-image"
+  | "generate-video"
+  | "generate-audio"
+  | "note"
+  | "shot";
 
 /** What a canvas offers when the product doesn't narrow it. */
 export const DEFAULT_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
   "upload",
   "generate-image",
   "generate-video",
+  "generate-audio",
   "note",
 ];
 
@@ -37,6 +45,7 @@ export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
   upload: "u",
   "generate-image": "i",
   "generate-video": "v",
+  "generate-audio": "a",
   note: "n",
   shot: "s",
 };
@@ -45,6 +54,7 @@ export const ADD_NODE_ICONS: Record<AddNodeAction, Icon> = {
   upload: IconCloudUpload,
   "generate-image": IconPhoto,
   "generate-video": IconVideo,
+  "generate-audio": IconAudioWaveform,
   note: IconNote,
   shot: IconLayoutList,
 };
@@ -54,6 +64,7 @@ export const ADD_NODE_LABEL_KEYS: Record<AddNodeAction, string> = {
   upload: "upload",
   "generate-image": "image",
   "generate-video": "video",
+  "generate-audio": "audio",
   note: "note",
   shot: "shot",
 };

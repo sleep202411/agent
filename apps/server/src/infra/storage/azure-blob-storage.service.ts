@@ -59,6 +59,7 @@ const COPY_STATUS_POLL_MS = 1_000;
 
 @Injectable()
 export class AzureBlobStorageService extends OutputStorageService {
+  readonly providerId = 'azure_blob' as const;
   private readonly logger = new Logger(AzureBlobStorageService.name);
   private readonly service: BlobServiceClient | null;
   private readonly client: ContainerClient | null;

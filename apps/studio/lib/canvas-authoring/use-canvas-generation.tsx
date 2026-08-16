@@ -20,6 +20,7 @@ import { getAssetsRealtimeKernel } from "./assets-realtime-kernel";
 import { outputKindForType } from "./reference-routing";
 import { routeTargetReferenceField } from "./canvas-wiring";
 import { SHOT_NODE_TYPE } from "./shot-node";
+import { isGenerationNodeType } from "./generation-node-types";
 import {
   computeWalletBalanceQueryKey,
   useComputeWalletBalance,
@@ -41,6 +42,7 @@ import {
   getFizzAiJob,
   isTerminalGenerationStatus,
   mediaSnapshotsForMode,
+  normalizeModelSettings,
   promptRequired,
   normalizeFizzAiError,
   referenceFieldsForMode,
@@ -201,7 +203,7 @@ export function useGeneration(): GenerationContextValue {
 
 function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeData): number | null {
   const mode = data.mode ?? defaultMode(model);
-  const settings = data.settings ?? {};
+  const settings = normalizeModelSettings(model, data.settings ?? {});
   const refFields = referenceFieldsForMode(model, mode);
   const uploadedReferenceCount = refFields
     .filter((field) => field.kind === "image")
@@ -224,12 +226,15 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
     );
   return (
     estimateModelSellPoints(model, {
+      text: data.prompt,
       numOutputs: Number(settings.numOutputs ?? settings.n ?? 1) || 1,
       resolution: settings.resolution != null ? String(settings.resolution) : undefined,
       quality: settings.quality != null ? String(settings.quality) : undefined,
       duration: settings.duration != null ? String(settings.duration) : undefined,
       durationSeconds:
         typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
+      generateAudio:
+        typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
       referenceImageCount: uploadedReferenceCount || undefined,
       referenceVideoSeconds: referenceVideoSeconds || undefined,
     })?.sellPoints ?? null
@@ -384,9 +389,7 @@ export function CanvasGenerationProvider({
       // Find the node this job belongs to (sync read) so we can decide whether
       // to convert it to a panorama node + drop its now-dangling input wire.
       const match = getNodes().find(
-        (n) =>
-          (n.type === "prompt" || n.type === "video") &&
-          (n.data as GenNodeData).generation?.jobId === job.id
+        (n) => isGenerationNodeType(n.type) && (n.data as GenNodeData).generation?.jobId === job.id
       );
       const matchData = match?.data as GenNodeData | undefined;
 
@@ -494,11 +497,13 @@ export function CanvasGenerationProvider({
               return {
                 id: output.id ?? `${job.id}:${index}`,
                 mediaAssetId: output.assetId,
-                kind: output.type === "video" ? "video" : "image",
+                kind: output.type,
                 source: "generated",
                 url,
                 width: output.width,
                 height: output.height,
+                durationSeconds: output.durationSeconds,
+                bytes: output.bytes,
                 panorama: isPanoramaOutput(output),
                 prompt: job.prompt,
                 createdAt: Date.now(),
@@ -527,7 +532,7 @@ export function CanvasGenerationProvider({
     const ids = [
       ...new Set(
         getNodes()
-          .filter((n) => n.type === "prompt" || n.type === "video")
+          .filter((n) => isGenerationNodeType(n.type))
           .map((n) => (n.data as GenNodeData).generation)
           .filter((g): g is GenerationState => !!g?.jobId && !isTerminalGenerationStatus(g.status))
           .map((g) => g.jobId as string)
@@ -552,7 +557,7 @@ export function CanvasGenerationProvider({
     const ids = [
       ...new Set(
         getNodes()
-          .filter((n) => n.type === "prompt" || n.type === "video")
+          .filter((n) => isGenerationNodeType(n.type))
           .map((n) => (n.data as GenNodeData).generation)
           .filter(
             (g): g is GenerationState =>
@@ -603,7 +608,7 @@ export function CanvasGenerationProvider({
               continue;
             }
             if (
-              (node.type === "prompt" || node.type === "video") &&
+              isGenerationNodeType(node.type) &&
               (node.data as GenNodeData).generation?.outputs?.some(
                 (output) => output.assetId === event.assetId
               )
@@ -632,7 +637,7 @@ export function CanvasGenerationProvider({
               if (references !== shotData.references) patchNodeData(node.id, { references });
               continue;
             }
-            if (node.type !== "prompt" && node.type !== "video") continue;
+            if (!isGenerationNodeType(node.type)) continue;
             const data = node.data as GenNodeData;
             const generation = removeMediaAssetFromGeneration(
               data.generation,
@@ -688,7 +693,7 @@ export function CanvasGenerationProvider({
   const activeJobIds = useMemo(() => {
     const ids: string[] = [];
     for (const node of nodes) {
-      if (node.type !== "prompt" && node.type !== "video") continue;
+      if (!isGenerationNodeType(node.type)) continue;
       const generation = (node.data as GenNodeData).generation;
       if (generation?.jobId && !isTerminalGenerationStatus(generation.status)) {
         ids.push(generation.jobId);

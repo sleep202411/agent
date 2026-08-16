@@ -9,7 +9,11 @@ export const COMPUTE_POINTS_PER_USD_CENT = 1 as const;
 export const COMPUTE_POINT_EXPLICIT_ADMIN_PRICING = "explicit_admin_pricing" as const;
 
 export type AiProductPricingCurrency = "COMPUTE_POINTS";
-export type AiProductPricingMode = "fixed_per_output" | "parameter_matrix" | "per_second_matrix";
+export type AiProductPricingMode =
+  | "fixed_per_output"
+  | "parameter_matrix"
+  | "per_second_matrix"
+  | "per_character";
 
 interface AiProductPricingBase {
   /**
@@ -58,6 +62,11 @@ export interface AiPerSecondMatrixPricingPolicy extends AiProductPricingBase {
   defaultResolution: string;
   /** resolution -> points charged per generated output second. */
   pointsPerSecond: Record<string, number>;
+  /**
+   * Optional lower rate when the provider is explicitly asked for video-only
+   * output. Absent means audio does not change the provider price.
+   */
+  videoOnlyPointsPerSecond?: Record<string, number>;
   /** Provider's minimum billable duration; shorter requests bill this floor. */
   minSeconds: number;
   /** Provider's maximum duration; longer requests are clamped (and rejected upstream). */
@@ -79,10 +88,20 @@ export interface AiPerSecondMatrixPricingPolicy extends AiProductPricingBase {
   referenceVideoPointsPerSecond?: Record<string, number>;
 }
 
+/** Character-metered product pricing for speech synthesis. */
+export interface AiPerCharacterPricingPolicy extends AiProductPricingBase {
+  mode: "per_character";
+  pointsPerCharacter: number;
+  minCharacters: number;
+  maxCharacters: number;
+  defaultCharacters: number;
+}
+
 export type AiProductPricingPolicy =
   | AiFixedPerOutputPricingPolicy
   | AiParameterMatrixPricingPolicy
-  | AiPerSecondMatrixPricingPolicy;
+  | AiPerSecondMatrixPricingPolicy
+  | AiPerCharacterPricingPolicy;
 
 export interface EstimateProductModelPointsInput {
   policy: AiProductPricingPolicy;
@@ -96,9 +115,13 @@ export interface EstimateProductModelPointsInput {
   duration?: string | number;
   /** Legacy numeric duration field (integer-slider video models). */
   durationSeconds?: number;
+  /** Text billed by a character-metered provider (usually the prompt). */
+  text?: string;
   referenceImageCount?: number;
   /** Combined duration of all reference videos supplied to the job. */
   referenceVideoSeconds?: number;
+  /** Whether native audio is requested. Only affects policies with a video-only rate. */
+  generateAudio?: boolean;
   hasMask?: boolean;
 }
 
@@ -117,6 +140,8 @@ export interface EstimateProductModelPointsResult {
     quality?: string;
     /** Billed seconds for per_second_matrix pricing. */
     seconds?: number;
+    /** Billed Unicode code points for per_character pricing. */
+    characters?: number;
   };
 }
 
@@ -141,10 +166,13 @@ export function estimateProductModelPoints(
     const seconds = selectBilledSeconds(policy, requestedDuration);
     const referenceVideoSeconds = finiteNonNegative(input.referenceVideoSeconds) ?? 0;
     const referenceVideoRate = positiveNumber(policy.referenceVideoPointsPerSecond?.[resolution]);
+    const videoOnlyRate = positiveNumber(policy.videoOnlyPointsPerSecond?.[resolution]);
     const perSecond =
       referenceVideoSeconds > 0 && referenceVideoRate !== undefined
         ? referenceVideoRate
-        : (positiveNumber(policy.pointsPerSecond[resolution]) ?? 0);
+        : input.generateAudio === false && videoOnlyRate !== undefined
+          ? videoOnlyRate
+          : (positiveNumber(policy.pointsPerSecond[resolution]) ?? 0);
     selection.resolution = resolution;
     selection.seconds = seconds;
     pointsPerOutput = perSecond * seconds;
@@ -152,6 +180,10 @@ export function estimateProductModelPoints(
       referenceVideoSeconds > 0 && referenceVideoRate !== undefined
         ? referenceVideoRate * referenceVideoSeconds
         : 0;
+  } else if (policy.mode === "per_character") {
+    const characters = selectBilledCharacters(policy, input.text);
+    selection.characters = characters;
+    pointsPerOutput = (positiveNumber(policy.pointsPerCharacter) ?? 0) * characters;
   } else {
     const resolution = selectMatrixResolution(policy, input.resolution);
     const quality = selectMatrixQuality(policy, resolution, input.quality, requestedDuration);
@@ -194,6 +226,14 @@ export function estimateProductModelPoints(
     pricingVersion: policy.version,
     selection,
   };
+}
+
+function selectBilledCharacters(
+  policy: AiPerCharacterPricingPolicy,
+  text: string | undefined
+): number {
+  const requested = typeof text === "string" ? Array.from(text).length : policy.defaultCharacters;
+  return Math.min(Math.max(requested, policy.minCharacters), policy.maxCharacters);
 }
 
 function normalizeOutputCount(value: number | undefined, policy: AiProductPricingBase): number {

@@ -57,6 +57,8 @@ describe("skill mounts (system workbench skills)", () => {
     expect(names).toContain("story_read");
     expect(names).toContain("story_addScene");
     expect(names).toContain("story_addBranch");
+    expect(names).toContain("story_putInteraction");
+    expect(names).toContain("story_removeInteraction");
     expect(names).toContain("story_removeSubtree");
     expect(names).not.toContain("canvas_applyPatch");
     expect(names).not.toContain("characters_upsert");

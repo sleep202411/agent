@@ -16,11 +16,14 @@ export interface AiLabAccess {
   requiredPlan?: string | null;
 }
 
-export type AiLabModel = AiModelDefinition & {
+export type AiLabModel = Omit<AiModelDefinition, "type"> & {
+  type: AiLabMode;
   access?: AiLabAccess;
 };
 
-export type AiLabPreset = AiModelPresetDefinition;
+export type AiLabPreset = Omit<AiModelPresetDefinition, "type"> & {
+  type: AiLabMode;
+};
 
 export type AiLabCatalog = Omit<AiModelCatalogResponse, "models" | "presets" | "campaigns"> & {
   models: AiLabModel[];

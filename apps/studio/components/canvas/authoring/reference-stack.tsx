@@ -29,6 +29,8 @@ export type CardReference = {
   /** Present when the reference came from a wired source node (vs an upload). */
   edgeId?: string;
   sourceNodeId?: string;
+  /** Internal AI job lineage used by stateful providers such as Gemini Omni. */
+  sourceJobId?: string;
   /**
    * Exact duration in seconds when known (video/audio). Catalog duration rules
    * require this; missing values hard-fail preflight validation.
@@ -165,16 +167,15 @@ function ReferenceTile({
 function ReferenceField({
   field,
   items,
-  onAdd,
+  onOpenPicker,
   onRemove,
 }: {
   field: FizzAiReferenceFieldConstraints;
   items: CardReference[];
-  onAdd: (files: File[]) => void;
+  onOpenPicker: () => void;
   onRemove: (id: string) => void;
 }) {
   const t = useTranslations("canvasNodes");
-  const inputRef = useRef<HTMLInputElement>(null);
   const AddIcon = ADD_ICON[field.kind];
   const canAdd = items.length < field.maxItems;
 
@@ -189,44 +190,30 @@ function ReferenceField({
           type="button"
           title={humanize(field.field)}
           aria-label={t("reference.add", { field: humanize(field.field) })}
-          onClick={() => inputRef.current?.click()}
+          onClick={onOpenPicker}
           className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.09] hover:text-white"
         >
           <AddIcon className="size-6" stroke={1.6} />
         </button>
       )}
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept={field.accept}
-        multiple={field.maxItems > 1}
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (files.length) onAdd(files.slice(0, Math.max(0, field.maxItems - items.length)));
-        }}
-      />
     </div>
   );
 }
 
 /**
- * Reference uploads shown above the prompt — one labeled group per reference
- * field the model declares (`referenceFields`). Image models surface only
- * images; video models (Seedance) surface start/end frame + reference images,
- * videos, and audios, each with the correct file-picker accept type.
+ * Reference assets shown above the prompt — one group per reference field the
+ * model declares (`referenceFields`). The add tile delegates to the shared
+ * project asset picker, which enforces the field's media kind and capacity.
  */
 export function ReferenceStack({
   fields,
   references,
-  onAdd,
+  onOpenPicker,
   onRemove,
 }: {
   fields: FizzAiReferenceFieldConstraints[];
   references: CardReferences;
-  onAdd: (field: string, files: File[]) => void;
+  onOpenPicker: (field: FizzAiReferenceFieldConstraints) => void;
   onRemove: (field: string, id: string) => void;
 }) {
   if (fields.length === 0) return null;
@@ -240,7 +227,7 @@ export function ReferenceStack({
           key={field.field}
           field={field}
           items={references[field.field] ?? []}
-          onAdd={(files) => onAdd(field.field, files)}
+          onOpenPicker={() => onOpenPicker(field)}
           onRemove={(id) => onRemove(field.field, id)}
         />
       ))}
