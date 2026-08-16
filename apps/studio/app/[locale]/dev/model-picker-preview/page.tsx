@@ -21,10 +21,11 @@ export default function ModelPickerPreviewPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background p-8">
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-lg font-semibold text-foreground">imagine.art Model Picker — 1:1 replica</h1>
+        <h1 className="text-lg font-semibold text-foreground">
+          imagine.art Model Picker — 1:1 replica
+        </h1>
         <p className="max-w-md text-sm text-muted-foreground">
-          Evaluation artifact. Real catalog data, transplanted UI. Not the studio
-          design language.
+          Evaluation artifact. Real catalog data, transplanted UI. Not the studio design language.
         </p>
         <div className="mt-2 flex gap-2">
           {(["image", "video"] as const).map((m) => (
@@ -44,9 +45,7 @@ export default function ModelPickerPreviewPage() {
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">
-          selected: {selected ? selected.name : "—"}
-        </p>
+        <p className="text-xs text-muted-foreground">selected: {selected ? selected.name : "—"}</p>
       </div>
 
       <ImagineModelPickerConnected

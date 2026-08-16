@@ -7,6 +7,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
+import { lockAppPortrait } from "@/hooks/use-screen-orientation";
+import { PlayOrientationExitCover } from "@/components/play-orientation-exit-cover";
 import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
@@ -33,6 +35,9 @@ export default function RootLayout() {
   useEffect(() => {
     void initLocale();
     void checkForUpdate();
+    void lockAppPortrait().catch((error: unknown) => {
+      console.warn("[orientation] initial portrait lock failed", error);
+    });
   }, []);
 
   return (
@@ -53,6 +58,17 @@ export default function RootLayout() {
               <Stack.Screen name="referrals" />
               <Stack.Screen name="delete-account" />
               <Stack.Screen name="ips" options={detailHeader} />
+              <Stack.Screen name="games" options={detailHeader} />
+              <Stack.Screen
+                name="play/interactive-film/[gameId]"
+                options={{
+                  ...detailHeader,
+                  animation: "fade",
+                  headerBackButtonMenuEnabled: false,
+                  gestureEnabled: false,
+                  fullScreenGestureEnabled: false,
+                }}
+              />
               <Stack.Screen name="ip/[id]" options={detailHeader} />
               <Stack.Screen name="crew/[id]" options={detailHeader} />
               <Stack.Screen name="creator/[id]" options={detailHeader} />
@@ -60,6 +76,7 @@ export default function RootLayout() {
             </Stack>
           </MobileAppFrame>
           <ConsentGate />
+          <PlayOrientationExitCover />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
@@ -70,5 +87,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+    overflow: "hidden",
   },
 });

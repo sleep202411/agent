@@ -83,12 +83,23 @@ export function ShotOptionCell({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40">
-        <DropdownMenuItem onSelect={() => { onCommit(undefined); onNavigate?.("next"); }}>
+        <DropdownMenuItem
+          onSelect={() => {
+            onCommit(undefined);
+            onNavigate?.("next");
+          }}
+        >
           <IconCheck className={cn("size-3.5", value ? "opacity-0" : "opacity-100")} stroke={2} />
           <span className="text-white/50">{t("cell.unset")}</span>
         </DropdownMenuItem>
         {shotOptionValues(group).map((option) => (
-          <DropdownMenuItem key={option} onSelect={() => { onCommit(option); onNavigate?.("next"); }}>
+          <DropdownMenuItem
+            key={option}
+            onSelect={() => {
+              onCommit(option);
+              onNavigate?.("next");
+            }}
+          >
             <IconCheck
               className={cn("size-3.5", value === option ? "opacity-100" : "opacity-0")}
               stroke={2}

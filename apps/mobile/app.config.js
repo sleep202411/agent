@@ -220,8 +220,8 @@ module.exports = ({ config }) => {
     owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.0.5",
-    orientation: "portrait",
+    version: "2.1.0",
+    orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: getScheme(appRegion, appVariant),
     userInterfaceStyle: "dark",
@@ -235,7 +235,7 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "76",
+      buildNumber: "77",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -245,7 +245,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 76,
+      versionCode: 77,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
@@ -269,11 +269,25 @@ module.exports = ({ config }) => {
       "expo-router",
       "expo-asset",
       "expo-font",
+      [
+        "expo-dev-client",
+        {
+          launchMode: "most-recent",
+        },
+      ],
+      "expo-file-system",
       "expo-image",
       "expo-localization",
       "expo-secure-store",
       "expo-sharing",
+      [
+        "expo-screen-orientation",
+        {
+          initialOrientation: "PORTRAIT_UP",
+        },
+      ],
       "expo-video",
+      "expo-audio",
       "expo-web-browser",
       [
         "expo-media-library",

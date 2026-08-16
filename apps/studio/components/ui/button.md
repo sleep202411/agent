@@ -1,8 +1,8 @@
 # Button
 
 `components/ui/button.tsx` — the studio's one button primitive (shadcn + `cva`).
-The design *rules* live in `apps/studio/DESIGN.md` (rule 3 + "Radius & shape" +
-the quiet-icon recipe); this file is the *usage* reference.
+The design _rules_ live in `apps/studio/DESIGN.md` (rule 3 + "Radius & shape" +
+the quiet-icon recipe); this file is the _usage_ reference.
 
 ```tsx
 import { Button } from "@/components/ui/button";
@@ -21,31 +21,31 @@ import { Button } from "@/components/ui/button";
 Everything a native `<button>` accepts (`onClick`, `disabled`, `className`,
 `aria-*`, …), plus:
 
-| Prop      | Type                                | Default     | Notes                                                                                                                                                             |
-| --------- | ----------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `variant` | one of the variants below           | `"default"` | visual role                                                                                                                                                     |
-| `size`    | one of the sizes below              | `"default"` | height + padding                                                                                                                                                |
-| `loading` | `boolean`                           | `false`     | shows a spinner, sets `aria-busy`, and blocks activation — but stays **coloured and focusable** (busy ≠ disabled). Icon sizes swap the glyph for the spinner. Not auto-applied for `asChild`. |
-| `block`   | `boolean`                           | `false`     | stretch to full width (`w-full`)                                                                                                                                |
-| `asChild` | `boolean`                           | `false`     | render the single child element instead of a `<button>` (links, `DialogTrigger`, `DialogClose`, …), keeping the button styles                                  |
-| `type`    | `"button" \| "submit" \| "reset"`   | `"button"`  | defaults to `"button"` on real buttons so it never submits a form by accident — pass `"submit"` explicitly for a form's submit control                          |
-| `disabled`| `boolean`                           | —           | native disable: dims, blocks activation, and drops from the tab order                                                                                           |
+| Prop       | Type                              | Default     | Notes                                                                                                                                                                                         |
+| ---------- | --------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`  | one of the variants below         | `"default"` | visual role                                                                                                                                                                                   |
+| `size`     | one of the sizes below            | `"default"` | height + padding                                                                                                                                                                              |
+| `loading`  | `boolean`                         | `false`     | shows a spinner, sets `aria-busy`, and blocks activation — but stays **coloured and focusable** (busy ≠ disabled). Icon sizes swap the glyph for the spinner. Not auto-applied for `asChild`. |
+| `block`    | `boolean`                         | `false`     | stretch to full width (`w-full`)                                                                                                                                                              |
+| `asChild`  | `boolean`                         | `false`     | render the single child element instead of a `<button>` (links, `DialogTrigger`, `DialogClose`, …), keeping the button styles                                                                 |
+| `type`     | `"button" \| "submit" \| "reset"` | `"button"`  | defaults to `"button"` on real buttons so it never submits a form by accident — pass `"submit"` explicitly for a form's submit control                                                        |
+| `disabled` | `boolean`                         | —           | native disable: dims, blocks activation, and drops from the tab order                                                                                                                         |
 
 `buttonVariants` is also exported, for styling a non-button element the same way
 (`className={buttonVariants({ variant, size })}`).
 
 ## Variants
 
-| Variant       | Use it for                                                                                     |
-| ------------- | ---------------------------------------------------------------------------------------------- |
-| `default`     | a standard primary action (brand-red fill)                                                     |
-| `primary-cta` | **the** hero action of a view (Generate / Upgrade …) — the "candy" treatment. **One per view.** |
-| `secondary`   | a secondary action sitting beside a primary one                                                |
-| `ghost`       | incidental / inline / text-adjacent actions (Cancel, Back)                                      |
-| `outline`     | the sanctioned named-border action                                                             |
+| Variant       | Use it for                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `default`     | a standard primary action (brand-red fill)                                                                   |
+| `primary-cta` | **the** hero action of a view (Generate / Upgrade …) — the "candy" treatment. **One per view.**              |
+| `secondary`   | a secondary action sitting beside a primary one                                                              |
+| `ghost`       | incidental / inline / text-adjacent actions (Cancel, Back)                                                   |
+| `outline`     | the sanctioned named-border action                                                                           |
 | `quiet`       | a standalone **icon** action on a borderless dark surface (dialog close, toolbar) — resting white-alpha fill |
-| `destructive` | a destructive action — a translucent red **tint** with red text (never a solid red fill)       |
-| `link`        | a button that reads as a text link                                                             |
+| `destructive` | a destructive action — a translucent red **tint** with red text (never a solid red fill)                     |
+| `link`        | a button that reads as a text link                                                                           |
 
 With a red primary, reach for `ghost` / `secondary` / `quiet` on incidental
 actions — using `default` everywhere shouts (DESIGN.md rule 3).

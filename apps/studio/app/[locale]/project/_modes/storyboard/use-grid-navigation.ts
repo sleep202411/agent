@@ -50,7 +50,7 @@ export function useGridNavigation({
       direction: NavDirection,
       currentRowIndex: number,
       currentColumnKey: string,
-      rowIds: readonly string[],
+      rowIds: readonly string[]
     ) => {
       const currentColIdx = editableKeys.indexOf(currentColumnKey);
       if (currentColIdx === -1) return; // Not an editable column — ignore.
@@ -96,7 +96,7 @@ export function useGridNavigation({
       scrollToIndex(nextRow, { align: "center" });
       setPendingFocus({ rowIndex: nextRow, columnKey: nextColKey });
     },
-    [rowCount, colCount, editableKeys, focusElement, scrollToIndex],
+    [rowCount, colCount, editableKeys, focusElement, scrollToIndex]
   );
 
   /** Called after virtual items render — resolves a pending focus request. */
@@ -108,7 +108,7 @@ export function useGridNavigation({
         setPendingFocus(null);
       }
     },
-    [pendingFocus, focusElement],
+    [pendingFocus, focusElement]
   );
 
   return { pendingFocus, moveFocus, resolvePendingFocus };
