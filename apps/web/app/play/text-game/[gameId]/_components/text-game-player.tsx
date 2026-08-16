@@ -115,8 +115,8 @@ export function TextGamePlayer({
   const content = game.content;
 
   const sessionQuery = useQuery({
-    queryKey: playerTextGameKeys.session(game.gameId),
-    queryFn: () => loadOrStartTextGameSession(game.gameId),
+    queryKey: playerTextGameKeys.session(game.gameId, locale),
+    queryFn: () => loadOrStartTextGameSession(game.gameId, locale),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
@@ -210,13 +210,13 @@ export function TextGamePlayer({
     setDraft("");
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
-      playerTextGameKeys.session(game.gameId),
+      playerTextGameKeys.session(game.gameId, locale),
       (current) => (current ? { ...current, messages: [...current.messages, optimistic] } : current)
     );
     try {
-      const response = await sendTextGameAction(session.sessionId, value);
+      const response = await sendTextGameAction(session.sessionId, value, locale);
       queryClient.setQueryData<TextGamePlaySession>(
-        playerTextGameKeys.session(game.gameId),
+        playerTextGameKeys.session(game.gameId, locale),
         (current) =>
           current
             ? {
@@ -231,7 +231,7 @@ export function TextGamePlayer({
       );
     } catch (error) {
       queryClient.setQueryData<TextGamePlaySession>(
-        playerTextGameKeys.session(game.gameId),
+        playerTextGameKeys.session(game.gameId, locale),
         (current) =>
           current
             ? {
@@ -255,8 +255,8 @@ export function TextGamePlayer({
     setRestarting(true);
     const toastId = toast.loading(t("restartingStory"));
     try {
-      const next = await startTextGameSession(game.gameId);
-      queryClient.setQueryData(playerTextGameKeys.session(game.gameId), next);
+      const next = await startTextGameSession(game.gameId, locale);
+      queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), next);
       setDraft("");
       setStillIndex(0);
       toast.success(t("restartComplete"), { id: toastId });

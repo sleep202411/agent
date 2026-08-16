@@ -4,14 +4,17 @@ import {
   TextGameIdSchema,
   TextGamePlaySessionSchema,
   TextGameSessionIdSchema,
+  TextGameStartInputSchema,
   type TextGameChatResponse,
+  type TextGameLocale,
   type TextGamePlaySession,
 } from "@repo/shared/text-game";
 import { api } from "@/src/lib/api";
 
 export const playerTextGameKeys = {
   all: ["player-text-game"] as const,
-  session: (gameId: string) => [...playerTextGameKeys.all, "session", gameId] as const,
+  session: (gameId: string, locale: TextGameLocale) =>
+    [...playerTextGameKeys.all, "session", gameId, locale] as const,
 };
 
 export async function getPlayingTextGameSession(
@@ -31,10 +34,15 @@ export async function getPlayingTextGameSession(
   return session;
 }
 
-export async function startTextGameSession(gameId: string): Promise<TextGamePlaySession> {
+export async function startTextGameSession(
+  gameId: string,
+  locale: TextGameLocale
+): Promise<TextGamePlaySession> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
+  const input = TextGameStartInputSchema.parse({ locale });
   const session = TextGamePlaySessionSchema.parse(
     await api.post<unknown>(`/api/player/text-game/${encodeURIComponent(requestedGameId)}/start`, {
+      data: input,
       timeout: 2 * 60_000,
     })
   );
@@ -45,16 +53,20 @@ export async function startTextGameSession(gameId: string): Promise<TextGamePlay
   return session;
 }
 
-export async function loadOrStartTextGameSession(gameId: string): Promise<TextGamePlaySession> {
-  return (await getPlayingTextGameSession(gameId)) ?? startTextGameSession(gameId);
+export async function loadOrStartTextGameSession(
+  gameId: string,
+  locale: TextGameLocale
+): Promise<TextGamePlaySession> {
+  return (await getPlayingTextGameSession(gameId)) ?? startTextGameSession(gameId, locale);
 }
 
 export async function sendTextGameAction(
   sessionId: string,
-  message: string
+  message: string,
+  locale: TextGameLocale
 ): Promise<TextGameChatResponse> {
   const requestedSessionId = TextGameSessionIdSchema.parse(sessionId);
-  const input = TextGameChatInputSchema.parse({ message });
+  const input = TextGameChatInputSchema.parse({ message, locale });
   const response = TextGameChatResponseSchema.parse(
     await api.post<unknown>(
       `/api/player/text-game/sessions/${encodeURIComponent(requestedSessionId)}/chat`,

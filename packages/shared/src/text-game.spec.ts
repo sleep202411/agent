@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   TextGameAdminActionSchema,
   TextGameAdminListSchema,
+  TextGameChatInputSchema,
   TextGameChatResponseSchema,
   TextGameDetailSchema,
   TextGameIdSchema,
   TextGamePlaySessionSchema,
   TextGameSessionIdSchema,
+  TextGameStartInputSchema,
   TextGameSummaryListSchema,
   isTextGameAdminActionAllowed,
   isTextGameCreatorActionAllowed,
@@ -264,5 +266,16 @@ describe("text-game wire contracts", () => {
     expect(textGameStatusAfterAdminAction("approve")).toBe("published");
     expect(textGameStatusAfterAdminAction("reject")).toBe("draft");
     expect(textGameStatusAfterAdminAction("force_offline")).toBe("offline");
+  });
+
+  it("requires a platform locale on start and chat input", () => {
+    expect(TextGameStartInputSchema.parse({ locale: "en-US" })).toEqual({ locale: "en-US" });
+    expect(TextGameChatInputSchema.parse({ message: "  Look around  ", locale: "zh-CN" })).toEqual({
+      message: "Look around",
+      locale: "zh-CN",
+    });
+    expect(TextGameStartInputSchema.safeParse({}).success).toBe(false);
+    expect(TextGameChatInputSchema.safeParse({ message: "Look around" }).success).toBe(false);
+    expect(TextGameStartInputSchema.safeParse({ locale: "en" }).success).toBe(false);
   });
 });

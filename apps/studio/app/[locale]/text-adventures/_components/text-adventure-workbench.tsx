@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import {
   isTextGameCreatorActionAllowed,
   isTextGameEditableByCreator,
+  TextGameLocaleSchema,
   type TextGameCreatorAction,
   type TextGameDetail,
   type TextGameMessage,
@@ -804,6 +805,7 @@ function TextAdventureConversation({
   hasUnpublishedDraft: boolean;
 }) {
   const t = useTranslations("textAdventures");
+  const locale = TextGameLocaleSchema.parse(useLocale());
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -815,8 +817,8 @@ function TextAdventureConversation({
   const canPlay = game.publishedVersionId !== null;
 
   const sessionQuery = useQuery({
-    queryKey: textAdventureSessionKeys.detail(game.gameId),
-    queryFn: () => loadOrStartTextAdventureSession(game.gameId),
+    queryKey: textAdventureSessionKeys.detail(game.gameId, locale),
+    queryFn: () => loadOrStartTextAdventureSession(game.gameId, locale),
     enabled: canPlay,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
@@ -849,14 +851,14 @@ function TextAdventureConversation({
     setDraft("");
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
-      textAdventureSessionKeys.detail(game.gameId),
+      textAdventureSessionKeys.detail(game.gameId, locale),
       (current) => (current ? { ...current, messages: [...current.messages, optimistic] } : current)
     );
 
     try {
-      const response = await sendTextAdventureAction(session.sessionId, value);
+      const response = await sendTextAdventureAction(session.sessionId, value, locale);
       queryClient.setQueryData<TextGamePlaySession>(
-        textAdventureSessionKeys.detail(game.gameId),
+        textAdventureSessionKeys.detail(game.gameId, locale),
         (current) =>
           current
             ? {
@@ -871,7 +873,7 @@ function TextAdventureConversation({
       );
     } catch (error) {
       queryClient.setQueryData<TextGamePlaySession>(
-        textAdventureSessionKeys.detail(game.gameId),
+        textAdventureSessionKeys.detail(game.gameId, locale),
         (current) =>
           current
             ? {
@@ -895,8 +897,8 @@ function TextAdventureConversation({
     setRestarting(true);
     const toastId = toast.loading(t("playtest.restarting"));
     try {
-      const next = await startTextAdventureSession(game.gameId);
-      queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId), next);
+      const next = await startTextAdventureSession(game.gameId, locale);
+      queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), next);
       setDraft("");
       toast.success(t("playtest.restartComplete"), { id: toastId });
     } catch (error) {

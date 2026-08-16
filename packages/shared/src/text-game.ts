@@ -154,8 +154,22 @@ export const TextGameChatResponseSchema = z.object({
 });
 export type TextGameChatResponse = z.infer<typeof TextGameChatResponseSchema>;
 
+/**
+ * Player UI locale forwarded to Java `/start` and `/chat` so generated
+ * copy matches the page the player is actually on. Keep this union aligned
+ * with the web / studio locale set (`en-US` | `zh-CN` | `zh-HK`).
+ */
+export const TextGameLocaleSchema = z.enum(["en-US", "zh-CN", "zh-HK"]);
+export type TextGameLocale = z.infer<typeof TextGameLocaleSchema>;
+
+export const TextGameStartInputSchema = z.object({
+  locale: TextGameLocaleSchema,
+});
+export type TextGameStartInput = z.infer<typeof TextGameStartInputSchema>;
+
 export const TextGameChatInputSchema = z.object({
   message: z.string().trim().min(1),
+  locale: TextGameLocaleSchema,
 });
 export type TextGameChatInput = z.infer<typeof TextGameChatInputSchema>;
 

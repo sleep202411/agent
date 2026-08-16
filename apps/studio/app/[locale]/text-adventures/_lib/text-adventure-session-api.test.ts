@@ -31,14 +31,20 @@ describe("creator text-adventure playtest session", () => {
     vi.mocked(api.get).mockResolvedValue(null);
     vi.mocked(api.post).mockResolvedValue(session);
 
-    await expect(loadOrStartTextAdventureSession(session.gameId)).resolves.toEqual(session);
+    await expect(loadOrStartTextAdventureSession(session.gameId, "en-US")).resolves.toEqual(
+      session
+    );
     expect(api.post).toHaveBeenCalledOnce();
+    expect(api.post).toHaveBeenCalledWith(`/api/player/text-game/${session.gameId}/start`, {
+      data: { locale: "en-US" },
+      timeout: 120_000,
+    });
   });
 
   it("resumes an existing session without starting another", async () => {
     vi.mocked(api.get).mockResolvedValue({ ...session, resumed: true });
 
-    await expect(loadOrStartTextAdventureSession(session.gameId)).resolves.toMatchObject({
+    await expect(loadOrStartTextAdventureSession(session.gameId, "en-US")).resolves.toMatchObject({
       resumed: true,
     });
     expect(api.post).not.toHaveBeenCalled();
@@ -49,7 +55,9 @@ describe("creator text-adventure playtest session", () => {
     await expect(getPlayingTextAdventureSession(session.gameId)).rejects.toThrow("resumed=false");
 
     vi.mocked(api.post).mockResolvedValue({ ...session, resumed: true });
-    await expect(startTextAdventureSession(session.gameId)).rejects.toThrow("resumed=true");
+    await expect(startTextAdventureSession(session.gameId, "en-US")).rejects.toThrow(
+      "resumed=true"
+    );
   });
 
   it("trims actions and validates the returned session", async () => {
@@ -70,18 +78,20 @@ describe("creator text-adventure playtest session", () => {
     };
     vi.mocked(api.post).mockResolvedValue(response);
 
-    await expect(sendTextAdventureAction(session.sessionId, "  Open the door  ")).resolves.toEqual(
-      response
-    );
+    await expect(
+      sendTextAdventureAction(session.sessionId, "  Open the door  ", "zh-HK")
+    ).resolves.toEqual(response);
     expect(api.post).toHaveBeenCalledWith(
       `/api/player/text-game/sessions/${session.sessionId}/chat`,
-      { data: { message: "Open the door" }, timeout: 120_000 }
+      { data: { message: "Open the door", locale: "zh-HK" }, timeout: 120_000 }
     );
 
     vi.mocked(api.post).mockResolvedValue({
       ...response,
       sessionId: "ts_fedcba9876543210",
     });
-    await expect(sendTextAdventureAction(session.sessionId, "Again")).rejects.toThrow("while");
+    await expect(sendTextAdventureAction(session.sessionId, "Again", "zh-HK")).rejects.toThrow(
+      "while"
+    );
   });
 });
