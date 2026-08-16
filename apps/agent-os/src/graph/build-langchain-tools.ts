@@ -237,6 +237,41 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     name: z.string().max(120).optional(),
     description: z.string().max(4_000).optional(),
   });
+  const storyInteractionAction = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("continue") }),
+    z.object({ kind: z.literal("seek"), timeMs: z.number().int().min(0) }),
+    z.object({ kind: z.literal("goto"), nodeId: storyStableId }),
+  ]);
+  const storyInteractionTrigger = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("tap") }),
+    z.object({
+      kind: z.literal("swipe"),
+      direction: z.enum(["up", "down", "left", "right"]),
+    }),
+    z.object({
+      kind: z.literal("press-hold"),
+      durationMs: z.number().int().min(300).max(10_000),
+    }),
+  ]);
+  const storyHotspotInteraction = z.object({
+    kind: z.literal("hotspot"),
+    interactionId: storyStableId,
+    label: storyLocalizedText,
+    trigger: storyInteractionTrigger,
+    rect: z.object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      width: z.number().min(0.001).max(1),
+      height: z.number().min(0.001).max(1),
+    }),
+    startMs: z.number().int().min(0),
+    endMs: z.number().int().min(1),
+    outcomes: z.object({
+      success: storyInteractionAction,
+      failure: storyInteractionAction.optional(),
+      timeout: storyInteractionAction.optional(),
+    }),
+  });
   const storyBase = { baseDraftRevision: z.number().int().nonnegative() };
   const bindStoryTool = (toolId: string, schema: z.ZodTypeAny) =>
     tool(
@@ -294,6 +329,22 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       nodeId: storyStableId,
       name: z.string().max(120).optional(),
       description: z.string().max(4_000).optional(),
+    })
+  );
+  const storyPutInteraction = bindStoryTool(
+    "story.putInteraction",
+    z.object({
+      ...storyBase,
+      nodeId: storyStableId,
+      interaction: storyHotspotInteraction,
+    })
+  );
+  const storyRemoveInteraction = bindStoryTool(
+    "story.removeInteraction",
+    z.object({
+      ...storyBase,
+      nodeId: storyStableId,
+      interactionId: storyStableId,
     })
   );
   const storyRemoveSubtree = bindStoryTool(
@@ -375,6 +426,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.addScene": storyAddScene,
     "story.addBranch": storyAddBranch,
     "story.editNode": storyEditNode,
+    "story.putInteraction": storyPutInteraction,
+    "story.removeInteraction": storyRemoveInteraction,
     "story.removeSubtree": storyRemoveSubtree,
     "story.setEntry": storySetEntry,
     "story.reorder": storyReorder,

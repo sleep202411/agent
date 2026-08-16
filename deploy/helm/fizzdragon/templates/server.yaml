@@ -1,6 +1,20 @@
 {{- if .Values.server.enabled -}}
 {{- $component := "server" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
+{{- $googleVertex := .Values.server.googleVertex -}}
+{{- $vertexProject := "" -}}
+{{- $vertexImageLocation := "" -}}
+{{- $vertexVideoLocation := "" -}}
+{{- $vertexServiceAccount := "" -}}
+{{- if $googleVertex.enabled -}}
+{{- if not .Values.azure.enabled -}}
+{{- fail "server.googleVertex.enabled requires the AKS workload-identity deployment path; disable it in non-Azure cells" -}}
+{{- end -}}
+{{- $vertexProject = required "server.googleVertex.project is required" $googleVertex.project -}}
+{{- $vertexImageLocation = required "server.googleVertex.imageLocation is required" $googleVertex.imageLocation -}}
+{{- $vertexVideoLocation = required "server.googleVertex.videoLocation is required" $googleVertex.videoLocation -}}
+{{- $vertexServiceAccount = required "server.googleVertex.workloadIdentityFederation.serviceAccountEmail is required" $googleVertex.workloadIdentityFederation.serviceAccountEmail -}}
+{{- end -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -64,6 +78,18 @@ spec:
           env:
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+            {{- if $googleVertex.enabled }}
+            - name: GOOGLE_VERTEX_ENABLED
+              value: "true"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: {{ $vertexProject | quote }}
+            - name: GOOGLE_VERTEX_IMAGE_LOCATION
+              value: {{ $vertexImageLocation | quote }}
+            - name: GOOGLE_VERTEX_VIDEO_LOCATION
+              value: {{ $vertexVideoLocation | quote }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/gcp/credential.json
+            {{- end }}
             - name: AGENT_OS_ENABLED
               value: {{ .Values.agentOs.enabled | quote }}
             {{- if .Values.agentOs.enabled }}
@@ -106,6 +132,14 @@ spec:
             {{- if .Values.serverSecrets.mapping }}
             - name: server-kv-secrets
               mountPath: /mnt/server-secrets
+              readOnly: true
+            {{- end }}
+            {{- if $googleVertex.enabled }}
+            - name: google-vertex-identity
+              mountPath: /var/run/google-vertex-identity
+              readOnly: true
+            - name: google-vertex-credential
+              mountPath: /etc/gcp
               readOnly: true
             {{- end }}
           {{- end }}
@@ -158,6 +192,18 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
         {{- end }}
+        {{- if $googleVertex.enabled }}
+        - name: google-vertex-identity
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "fizzdragon.serverGoogleVertexAudience" . | quote }}
+                  expirationSeconds: 3600
+                  path: token
+        - name: google-vertex-credential
+          configMap:
+            name: {{ include "fizzdragon.componentName" (merge (dict "component" "server-google-vertex-credential") .) }}
+        {{- end }}
       {{- end }}
       {{- with .Values.server.nodeSelector }}
       nodeSelector:
@@ -198,4 +244,30 @@ spec:
   selector:
     matchLabels:
       {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+{{- if $googleVertex.enabled }}
+---
+# ADC external-account configuration only. It contains no secret or private
+# key; the projected, audience-bound K8s token is rotated by kubelet and
+# exchanged for short-lived Google credentials at request time.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fizzdragon.componentName" (merge (dict "component" "server-google-vertex-credential") .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "server-google-vertex-credential") .) | nindent 4 }}
+data:
+  credential.json: |
+    {
+      "type": "external_account",
+      "audience": "//iam.googleapis.com/{{ include "fizzdragon.serverGoogleVertexProviderPath" . }}",
+      "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+      "token_url": "https://sts.googleapis.com/v1/token",
+      "credential_source": {
+        "file": "/var/run/google-vertex-identity/token",
+        "format": { "type": "text" }
+      },
+      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{{ $vertexServiceAccount }}:generateAccessToken"
+    }
+{{- end }}
 {{- end }}

@@ -313,6 +313,8 @@ export interface RestrictObjectResult {
 }
 
 export abstract class OutputStorageService {
+  /** Stable provider identity for diagnostics and provider-aware orchestration. */
+  abstract readonly providerId: StorageProviderId;
   abstract upload(input: OutputStorageUpload): Promise<OutputStorageResult>;
   /**
    * Upload from a disk spool file. Azure/OSS override with their staged
