@@ -131,6 +131,8 @@ export function useVideoGeneration() {
       duration: typeof duration === "string" ? duration : undefined,
       durationSeconds: typeof duration === "number" ? duration : undefined,
       resolution: typeof settings.resolution === "string" ? settings.resolution : undefined,
+      generateAudio:
+        typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
       numOutputs: 1,
       referenceImageCount: readyUploads.filter((item) => item.kind === "image").length || undefined,
       referenceVideoSeconds:

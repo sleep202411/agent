@@ -491,6 +491,33 @@ describe('StoryWorkingPreviewService', () => {
     );
   });
 
+  it('keeps Preview playable when a stored selection identity is partial', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const selections = currentPreviewSelections(draft);
+    const partial = selections[0];
+    if (!partial) throw new Error('Fixture selection missing.');
+    Object.assign(partial, { currentVariantId: null });
+    const { service } = scopedService(draft, selections);
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.runtime).not.toBeNull();
+    expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(preview.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
+          entityId: partial.graphNodeId,
+        }),
+      ]),
+    );
+  });
+
   it('reports an unavailable exact variant URL instead of throwing', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, assetUrls } = scopedService(draft);
@@ -504,10 +531,11 @@ describe('StoryWorkingPreviewService', () => {
       PROJECT_ID,
     );
 
-    expect(preview.runtime).toBeNull();
+    expect(preview.runtime).not.toBeNull();
     expect(preview.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
+        severity: 'warning',
       }),
     );
   });

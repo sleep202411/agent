@@ -289,22 +289,24 @@ function removeGraphNode(
   if (draft.graph.entryNodeId === nodeId) draft.graph.entryNodeId = null;
 
   draft.graph.nodes = draft.graph.nodes.map((node) => {
+    if (node.kind === 'world') {
+      if (node.exit.nextNodeId !== nodeId) return node;
+      affectedNodeIds.add(node.nodeId);
+      return { ...node, exit: { kind: 'auto' as const, nextNodeId: null } };
+    }
     if (node.exit.kind === 'auto') {
       if (node.exit.nextNodeId !== nodeId) return node;
       affectedNodeIds.add(node.nodeId);
       return { ...node, exit: { kind: 'auto', nextNodeId: null } };
     }
-    if (node.exit.kind === 'choice') {
-      if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
-        return node;
-      }
-      const choices = node.exit.choices.filter(
-        (choice) => choice.nextNodeId !== nodeId,
-      );
-      affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { ...node.exit, choices } };
+    if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
+      return node;
     }
-    return node;
+    const choices = node.exit.choices.filter(
+      (choice) => choice.nextNodeId !== nodeId,
+    );
+    affectedNodeIds.add(node.nodeId);
+    return { ...node, exit: { ...node.exit, choices } };
   });
 }
 
@@ -317,7 +319,9 @@ function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
   // Enforced for its throw-on-duplicate side effect; clip keys are no longer
   // referenced elsewhere now that choices carry no reaction clip.
   uniqueIdentitySet(
-    draft.graph.nodes.map((node) => node.clipKey),
+    draft.graph.nodes.flatMap((node) =>
+      node.kind === 'clip' ? [node.clipKey] : [],
+    ),
     'STORY_PATCH_DUPLICATE_CLIP_KEY',
     'Clip keys must be unique.',
   );

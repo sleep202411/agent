@@ -58,6 +58,7 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildCoverInput,
   type StoryBuildVideoInput,
+  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
@@ -191,6 +192,7 @@ interface ValidatedBuildSnapshot {
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
   videos: StoryBuildVideoInput[];
+  worlds: StoryBuildWorldInput[];
   /** Plain public cover reference; `asset: null` warns instead of failing. */
   cover: StoryBuildCoverInput;
 }
@@ -287,6 +289,7 @@ export class StoryBuildService {
               },
               draft: snapshot.draft.content,
               videos: snapshot.videos,
+              worlds: snapshot.worlds,
               cover: snapshot.cover,
             });
             if (
@@ -827,7 +830,17 @@ async function loadValidatedBuildSnapshot(
       })),
     });
   }
-  const clipNodes = lockable.data.graph.nodes;
+  const clipNodes = lockable.data.graph.nodes.filter(
+    (node) => node.kind === 'clip',
+  );
+  const worldNodes = lockable.data.graph.nodes.filter(
+    (
+      node,
+    ): node is Extract<
+      (typeof lockable.data.graph.nodes)[number],
+      { kind: 'world' }
+    > => node.kind === 'world' && node.worldId !== null,
+  );
   const selections =
     clipNodes.length === 0
       ? []
@@ -865,6 +878,26 @@ async function loadValidatedBuildSnapshot(
       selectionByNodeId.get(node.nodeId) ?? null,
     ),
   );
+  const worldRows =
+    worldNodes.length === 0
+      ? []
+      : await tx.worldModelWorld.findMany({
+          where: {
+            storyProjectId: projectId,
+            workspaceId,
+            id: { in: worldNodes.map((node) => node.worldId as string) },
+          },
+          select: { id: true, status: true },
+        });
+  const worldStatusById = new Map(
+    worldRows.map((world) => [world.id, world.status]),
+  );
+  const worlds: StoryBuildWorldInput[] = worldNodes.flatMap((node) => {
+    const status = worldStatusById.get(node.worldId as string);
+    return status
+      ? [{ graphNodeId: node.nodeId, worldId: node.worldId as string, status }]
+      : [];
+  });
   return {
     project: {
       ...project,
@@ -878,6 +911,7 @@ async function loadValidatedBuildSnapshot(
     videoSnapshotHash,
     entries,
     videos,
+    worlds,
     cover: await resolveStoryCover(
       tx,
       project.workspaceId,

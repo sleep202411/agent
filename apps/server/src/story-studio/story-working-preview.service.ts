@@ -26,6 +26,7 @@ import {
   compileStoryBuild,
   type FrozenStoryVideoAsset,
   type StoryBuildVideoInput,
+  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
@@ -53,7 +54,7 @@ type WorkingPreviewSelection = Prisma.StoryVideoSelectionGetPayload<{
 interface PreparedWorkingPreviewVideo {
   video: StoryBuildVideoInput;
   source: StoryWorkingPreviewDto['sources'][number] | null;
-  snapshotEntry: StoryVideoSnapshotEntry | null;
+  snapshotEntry: StoryVideoSnapshotEntry;
 }
 
 @Injectable()
@@ -146,8 +147,10 @@ export class StoryWorkingPreviewService {
     if (!playableDraft.success) {
       const emptySnapshotHash = draftShape.success
         ? storyVideoSnapshotHash(
-            draftShape.data.graph.nodes.map((node) =>
-              emptyVideoSnapshotEntry(node.nodeId, 0),
+            draftShape.data.graph.nodes.flatMap((node) =>
+              node.kind === 'clip'
+                ? [emptyVideoSnapshotEntry(node.nodeId, 0)]
+                : [],
             ),
           )
         : null;
@@ -169,7 +172,17 @@ export class StoryWorkingPreviewService {
       };
     }
 
-    const clipNodes = playableDraft.data.graph.nodes;
+    const clipNodes = playableDraft.data.graph.nodes.filter(
+      (node) => node.kind === 'clip',
+    );
+    const worldNodes = playableDraft.data.graph.nodes.filter(
+      (
+        node,
+      ): node is Extract<
+        (typeof playableDraft.data.graph.nodes)[number],
+        { kind: 'world' }
+      > => node.kind === 'world' && node.worldId !== null,
+    );
     const selections =
       clipNodes.length === 0
         ? []
@@ -190,28 +203,34 @@ export class StoryWorkingPreviewService {
         this.assetUrls,
       ),
     );
+    const worldRows =
+      worldNodes.length === 0
+        ? []
+        : await tx.worldModelWorld.findMany({
+            where: {
+              storyProjectId: projectId,
+              workspaceId: project.workspaceId,
+              id: { in: worldNodes.map((node) => node.worldId as string) },
+            },
+            select: { id: true, status: true },
+          });
+    const worldStatusById = new Map(
+      worldRows.map((world) => [world.id, world.status]),
+    );
+    const worlds: StoryBuildWorldInput[] = worldNodes.flatMap((node) => {
+      const status = worldStatusById.get(node.worldId as string);
+      return status
+        ? [
+            {
+              graphNodeId: node.nodeId,
+              worldId: node.worldId as string,
+              status,
+            },
+          ]
+        : [];
+    });
 
     const snapshotEntries = prepared.map((item) => item.snapshotEntry);
-    if (
-      !snapshotEntries.every(
-        (entry): entry is StoryVideoSnapshotEntry => entry !== null,
-      )
-    ) {
-      return {
-        ...emptyWorkingPreview(draft.revision, draft.contentHash, null),
-        diagnostics: prepared
-          .flatMap((item) => item.video.eligibilityDiagnostics)
-          .concat(
-            previewDiagnostic(
-              'error',
-              'STORY_WORKING_PREVIEW_VIDEO_SNAPSHOT_INVALID',
-              'At least one current video selection is partial or corrupt and cannot form an exact Preview identity.',
-              'revision',
-              projectId,
-            ),
-          ),
-      };
-    }
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
     // A chapter owns its own entry scene; the story-level entry belongs to the
     // first chapter only. An unknown or entry-less chapter falls back to the
@@ -250,6 +269,7 @@ export class StoryWorkingPreviewService {
       },
       draft: playableDraft.data,
       videos: prepared.map((item) => item.video),
+      worlds,
       // Preview validates and paints the selected cover through ExperiencePlayer.
       cover: await resolveStoryCover(
         tx,
@@ -301,9 +321,9 @@ function prepareWorkingPreviewVideo(
   ) {
     diagnostics.push(
       previewDiagnostic(
-        'error',
+        'warning',
         'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-        `Graph clip ${graphNodeId} current selection is missing its video identity.`,
+        `Clip ${graphNodeId} has a partial video selection; Preview is using an empty shot placeholder.`,
         'clip',
         graphNodeId,
       ),
@@ -311,9 +331,9 @@ function prepareWorkingPreviewVideo(
   } else if (!selection.currentAsset || !selection.currentVariant) {
     diagnostics.push(
       previewDiagnostic(
-        'error',
+        'warning',
         'STORY_WORKING_PREVIEW_OUTPUT_MISSING',
-        `Graph clip ${graphNodeId} current video no longer has its exact asset and variant.`,
+        `Clip ${graphNodeId} current video is unavailable; Preview is using an empty shot placeholder.`,
         'clip',
         graphNodeId,
       ),
@@ -344,9 +364,9 @@ function prepareWorkingPreviewVideo(
     if (ineligible) {
       diagnostics.push(
         previewDiagnostic(
-          'error',
+          'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-          `Graph clip ${graphNodeId} current video ${ineligible}.`,
+          `Clip ${graphNodeId} current video ${ineligible}; Preview is using an empty shot placeholder.`,
           'asset',
           source.id,
         ),
@@ -354,9 +374,9 @@ function prepareWorkingPreviewVideo(
     } else if (!variant.contentType.toLowerCase().startsWith('video/')) {
       diagnostics.push(
         previewDiagnostic(
-          'error',
+          'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_CONTENT_TYPE_INVALID',
-          `Graph clip ${graphNodeId} current variant is not video media.`,
+          `Clip ${graphNodeId} current variant is not video media; Preview is using an empty shot placeholder.`,
           'asset',
           source.id,
         ),
@@ -406,9 +426,9 @@ function prepareWorkingPreviewVideo(
       if (!url) {
         diagnostics.push(
           previewDiagnostic(
-            'error',
+            'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
-            `Graph clip ${graphNodeId} current video variant has no resolvable playback URL.`,
+            `Clip ${graphNodeId} current video has no resolvable playback URL; Preview is using an empty shot placeholder.`,
             'asset',
             source.id,
           ),
@@ -465,7 +485,7 @@ function prepareWorkingPreviewVideo(
 function workingPreviewSnapshotEntry(
   graphNodeId: string,
   selection: WorkingPreviewSelection | null,
-): StoryVideoSnapshotEntry | null {
+): StoryVideoSnapshotEntry {
   if (!selection) return emptyVideoSnapshotEntry(graphNodeId, 0);
   if (selection.currentAssetId === null) {
     return emptyVideoSnapshotEntry(graphNodeId, selection.version);
@@ -482,7 +502,12 @@ function workingPreviewSnapshotEntry(
     height: selection.currentHeight,
     browserSafeMp4: selection.currentBrowserSafeMp4,
   });
-  return parsed.success ? parsed.data : null;
+  // A partial selection still needs a deterministic Preview identity. Its
+  // selection version changes whenever the creator edits it, while the empty
+  // media fields accurately describe what this Preview can currently play.
+  return parsed.success
+    ? parsed.data
+    : emptyVideoSnapshotEntry(graphNodeId, selection.version);
 }
 
 function emptyVideoSnapshotEntry(

@@ -9,12 +9,14 @@ export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
 export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
+export const EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID = "core.world-model" as const;
 
 export const EXPERIENCE_CORE_RENDERER_IDS = [
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
 ] as const;
 
 export type ExperienceCoreRendererId = (typeof EXPERIENCE_CORE_RENDERER_IDS)[number];
@@ -156,12 +158,27 @@ export const ExperienceCoreChargeFeedbackRendererConfigSchema = z
   })
   .strict();
 
+export const ExperienceCoreWorldModelRendererConfigSchema = z
+  .object({
+    projectId: ExperienceStableIdSchema,
+    worldId: ExperienceStableIdSchema,
+    entryInstruction: z.string().trim().min(1).max(4_000).optional(),
+    maxExperienceSeconds: z.union([z.literal(60), z.literal(90), z.literal(120)]),
+    autoplay: z.boolean(),
+  })
+  .strict();
+
 export const ExperienceCoreRendererOpenCommandPayloadSchema = z.object({}).strict();
+export const ExperienceCoreVideoPlaybackCommandPayloadSchema = z.object({}).strict();
+export const ExperienceCoreVideoSeekCommandPayloadSchema = z
+  .object({ timeMs: z.number().min(0) })
+  .strict();
 export const ExperienceCoreMediaEndedOutcomePayloadSchema = z.object({}).strict();
 export const ExperienceCoreTextCompletedOutcomePayloadSchema = z.object({}).strict();
 export const ExperienceCoreChoiceSelectedOutcomePayloadSchema = z
   .object({ choiceId: ExperienceStableIdSchema })
   .strict();
+export const ExperienceCoreWorldCompletedOutcomePayloadSchema = z.object({}).strict();
 
 export type ExperienceCoreVideoRendererConfig = z.infer<
   typeof ExperienceCoreVideoRendererConfigSchema
@@ -174,4 +191,7 @@ export type ExperienceCoreChoiceRendererConfig = z.infer<
 >;
 export type ExperienceCoreChargeFeedbackRendererConfig = z.infer<
   typeof ExperienceCoreChargeFeedbackRendererConfigSchema
+>;
+export type ExperienceCoreWorldModelRendererConfig = z.infer<
+  typeof ExperienceCoreWorldModelRendererConfigSchema
 >;
