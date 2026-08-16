@@ -8,18 +8,22 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   EXPERIENCE_RENDERER_MAX_LAYER,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
+  ExperienceCoreWorldModelRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
   type ExperienceCoreVideoRendererConfig,
+  type ExperienceCoreWorldModelRendererConfig,
   type ExperienceGraphNode,
   type ExperienceImageAsset,
   type ExperienceLocalizedText,
@@ -28,6 +32,7 @@ import {
   type ExperienceRendererInstance,
   type ExperienceRuntimeAsset,
   type ExperienceRuntimeManifest,
+  type ExperienceScene,
   type ExperienceThemeConfig,
   type ExperienceVideoAsset,
 } from "@repo/shared/experience-runtime";
@@ -67,6 +72,13 @@ import { useExperienceAudioHost } from "./use-experience-audio-host";
 
 export type ExperiencePlayerFrameProfile = "auto" | ExperienceOrientation;
 
+export interface ExperienceWorldModelRendererProps {
+  config: ExperienceCoreWorldModelRendererConfig;
+  active: boolean;
+  onCompleted: () => void;
+  onError: (error: unknown) => void;
+}
+
 export interface ExperiencePlayerProps {
   runtime: unknown;
   locale: string;
@@ -74,6 +86,7 @@ export interface ExperiencePlayerProps {
   randomSeed?: string;
   frameProfile?: ExperiencePlayerFrameProfile;
   loadTheme?: ExperienceThemeLoader;
+  renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
 }
 
 const PRIMARY_BUTTON =
@@ -88,6 +101,7 @@ export function ExperiencePlayer({
   copy,
   frameProfile = "auto",
   loadTheme = defaultLoadExperienceTheme,
+  renderWorldModel,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -149,6 +163,7 @@ export function ExperiencePlayer({
       copy={copy}
       frameProfile={frameProfile}
       loadTheme={loadTheme}
+      renderWorldModel={renderWorldModel}
       onRestart={() => {
         setRandomSeed(globalThis.crypto.randomUUID());
         setRestartEpoch((value) => value + 1);
@@ -164,6 +179,7 @@ function ActiveExperienceRuntimePlayer({
   copy,
   frameProfile,
   loadTheme,
+  renderWorldModel,
   onRestart,
 }: {
   manifest: ExperienceRuntimeManifest;
@@ -172,6 +188,7 @@ function ActiveExperienceRuntimePlayer({
   copy: ExperiencePlayerCopy;
   frameProfile: ExperiencePlayerFrameProfile;
   loadTheme: ExperienceThemeLoader;
+  renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   onRestart: () => void;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
@@ -190,10 +207,21 @@ function ActiveExperienceRuntimePlayer({
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
+  // Gesture outcomes parked until the scene clock reaches their safe branch
+  // frame. Branch routing must not cut mid-pose: the interaction resolves the
+  // instant the input lands, but the cut waits for `branchAtMs` so the outgoing
+  // clip plays its resolve beat first. Cleared when the scene changes — parked
+  // events belong to the scene that emitted them.
+  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
   const playbackEnabledRef = useRef(false);
+  // True while a timeline-control press-hold window is open, unresolved, and
+  // not held — the host must keep the scene media paused so playback position
+  // equals charge progress. Lifted from the spatial layer, which owns press
+  // state.
+  const [timelineHoldGate, setTimelineHoldGate] = useState(false);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
-  const preload = useExperiencePreload(manifest, orientation);
+  useNextScenePreload(manifest, runtimeState.currentSceneId, orientation);
   // The cover is the only art that exists before any clip has played, so it is
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
@@ -212,15 +240,36 @@ function ActiveExperienceRuntimePlayer({
     (result: ExperienceEventQueueResult) => {
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
-      let sceneChangeCount = 0;
+      result.effects.forEach((effect) => {
+        if (effect.kind !== "renderer.command") return;
+        const handle = playbackHandlesRef.current.get(effect.instanceId);
+        if (!handle) return;
+        if (effect.commandType === "play") {
+          void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+          return;
+        }
+        if (effect.commandType === "pause") {
+          handle.pause();
+          return;
+        }
+        if (effect.commandType === "seek") {
+          const timeMs = effect.payload.timeMs;
+          if (typeof timeMs === "number") handle.seek(timeMs / 1_000);
+        }
+      });
       let latestSceneId: string | null = null;
+      const sceneChangeEffects = result.effects.filter(
+        (effect): effect is Extract<typeof effect, { kind: "scene.changed" }> => {
+          if (effect.kind !== "scene.changed") return false;
+          latestSceneId = effect.toSceneId;
+          return true;
+        }
+      );
       setOpenRendererIds((current) => {
         let next = new Set(current);
         result.effects.forEach((effect) => {
           if (effect.kind === "scene.changed") {
             next = new Set();
-            sceneChangeCount += 1;
-            latestSceneId = effect.toSceneId;
           }
           if (effect.kind === "renderer.command" && effect.commandType === "open") {
             next.add(effect.instanceId);
@@ -228,12 +277,20 @@ function ActiveExperienceRuntimePlayer({
         });
         return next;
       });
-      if (sceneChangeCount > 0) {
-        setSceneEpoch((value) => value + sceneChangeCount);
+      // Scene resets must NOT depend on state-updater side effects: React 18
+      // defers `setState(updater)` evaluation to render time when the batch
+      // already holds an update, so counters bumped inside the updater read
+      // as zero here. A missed reset left the incoming scene holding the
+      // outgoing scene's final clock, resolving interaction windows that
+      // never opened (the charge scene skipping straight to its fail branch).
+      if (sceneChangeEffects.length > 0) {
+        setSceneEpoch((value) => value + sceneChangeEffects.length);
         setSceneTimeMs(0);
+        parkedGestureEventsRef.current = [];
         timelineCursorRef.current = createExperienceTimelineCursor(
           latestSceneId ?? result.state.currentSceneId
         );
+        debugTrace(`scene -> ${latestSceneId ?? result.state.currentSceneId}`);
       }
     },
     [applyAudioEffects]
@@ -309,21 +366,72 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const advanceTimeline = useCallback(
-    (positionMs: number) => {
-      setSceneTimeMs(positionMs);
+    (rendererInstanceId: string | null, positionMs: number) => {
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
       if (!activeNode || activeNode.kind !== "scene") return;
+      // Media time reports are attributed to the renderer that produced them.
+      // A video element that is mid-unmount after a scene change still fires
+      // one last timeupdate with the OUTGOING scene's final position; accepting
+      // it would teleport the incoming scene's clock past its interaction
+      // windows and resolve gestures that never opened (the charge scene
+      // skipping straight to its fail branch). Host-owned reports (the fixed
+      // rAF clock) pass null and are always accepted.
+      if (!timelineReportDrivesScene(activeNode.clock, rendererInstanceId)) {
+        debugTrace(
+          `reject report ${rendererInstanceId ?? "host"} @${Math.round(positionMs)} in ${activeNode.sceneId}`
+        );
+        return;
+      }
+      debugTrace(
+        `clock ${activeNode.sceneId} @${Math.round(positionMs)} from ${rendererInstanceId ?? "host"}`
+      );
+      setSceneTimeMs(positionMs);
       const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
       timelineCursorRef.current = advanced.cursor;
       if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      flushParkedGestureEvents(positionMs);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [controller, manifest, run]
+  );
+
+  /**
+   * Releases parked gesture outcomes whose safe branch frame has arrived.
+   * Returns the events that should dispatch now; callers that only inspect
+   * (tests) can call it read-only via `peekParkedGestureEvents`.
+   */
+  const flushParkedGestureEvents = useCallback(
+    (positionMs: number) => {
+      if (parkedGestureEventsRef.current.length === 0) return;
+      const due = parkedGestureEventsRef.current.filter(
+        (event) => positionMs >= parkedEventBranchAtMs(manifest, event)
+      );
+      if (due.length === 0) return;
+      parkedGestureEventsRef.current = parkedGestureEventsRef.current.filter(
+        (event) => !due.includes(event)
+      );
+      run(() => controller.dispatch(due));
     },
     [controller, manifest, run]
   );
 
   const emitRuntimeEvents = useCallback(
-    (events: readonly ExperienceRuntimeEvent[]) => run(() => controller.dispatch(events)),
-    [controller, run]
+    (events: readonly ExperienceRuntimeEvent[]) => {
+      const parked = events.filter(
+        (event) =>
+          event.type.startsWith("gesture.") &&
+          timelineCursorRef.current.positionMs < parkedEventBranchAtMs(manifest, event) - 1e-6
+      );
+      if (parked.length === 0) {
+        run(() => controller.dispatch(events));
+        return;
+      }
+      const immediate = events.filter((event) => !parked.includes(event));
+      parkedGestureEventsRef.current.push(...parked);
+      if (immediate.length > 0) run(() => controller.dispatch(immediate));
+    },
+    [controller, manifest, run]
   );
 
   // A `fixed` scene clock is the only clock the experience itself owns. A
@@ -344,7 +452,7 @@ function ActiveExperienceRuntimePlayer({
     const startedAt = performance.now();
     const tick = () => {
       const elapsed = Math.min(performance.now() - startedAt, clockDurationMs);
-      advanceTimeline(elapsed);
+      advanceTimeline(null, elapsed);
       if (elapsed < clockDurationMs) {
         frame = window.requestAnimationFrame(tick);
         return;
@@ -368,6 +476,24 @@ function ActiveExperienceRuntimePlayer({
     playbackHandlesRef.current.forEach((handle) => handle.setMuted(false));
     setSoundBlocked(false);
   }, []);
+
+  // Timeline-control charge gating: while a press-hold window is open,
+  // unresolved, and not held, the media must not advance — playback position
+  // is the charge progress. The moment the gate lifts (press, resolution, or
+  // idle timeout), playback resumes so the clip can run its resolve beat to
+  // the safe branch frame. Film scenes carry exactly one clock-driving video,
+  // so gating every registered handle is equivalent to gating the clock.
+  useEffect(() => {
+    if (!started) return;
+    if (timelineHoldGate) {
+      playbackHandlesRef.current.forEach((handle) => handle.pause());
+      return;
+    }
+    if (!playbackEnabledRef.current) return;
+    playbackHandlesRef.current.forEach((handle) => {
+      void handle.play().catch(() => undefined);
+    });
+  }, [started, timelineHoldGate]);
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
@@ -449,11 +575,12 @@ function ActiveExperienceRuntimePlayer({
             orientation={orientation}
             copy={copy}
             muted={soundBlocked}
-            onTimelineTimeMs={advanceTimeline}
+            onTimelineTimeMs={(timeMs) => advanceTimeline(renderer.instanceId, timeMs)}
             onOutcome={emitOutcome}
             onRuntimeError={setRuntimeError}
             onPlaybackHandle={registerPlaybackHandle}
             onSoundBlocked={handleSoundBlocked}
+            renderWorldModel={renderWorldModel}
           />
         ))
       ) : (
@@ -486,6 +613,7 @@ function ActiveExperienceRuntimePlayer({
           orientation={orientation}
           onEvents={emitRuntimeEvents}
           onRuntimeError={setRuntimeError}
+          onTimelineHoldGateChange={setTimelineHoldGate}
         />
       ) : null}
 
@@ -528,39 +656,10 @@ function ActiveExperienceRuntimePlayer({
                 )}
               </p>
             ) : null}
-            {preload.total > 0 && !preload.done
-              ? // Percent, not "5/55": the clip count is production trivia, and a
-                // big number reads as a long wait before the viewer knows whether
-                // it is. Floor it so 100% is never shown while a clip is still
-                // loading.
-                (() => {
-                  const percent = Math.floor((preload.loaded / preload.total) * 100);
-                  return (
-                    <div
-                      className="mt-6 w-full"
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={percent}
-                      aria-label={copy.loadingMedia}
-                    >
-                      <div className="h-1 overflow-hidden rounded-full bg-white/12">
-                        <div
-                          className="h-full rounded-full bg-white/70 transition-[width] duration-300"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-white/45">
-                        {copy.loadingMedia} {percent}%
-                      </p>
-                    </div>
-                  );
-                })()
-              : null}
             <button
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
-              disabled={!theme || starting || !preload.done}
+              disabled={!theme || starting}
               onClick={() => void begin()}
             >
               <IconPlayerPlay className="size-4 fill-current" />
@@ -634,6 +733,7 @@ function CoreRenderer({
   onRuntimeError,
   onPlaybackHandle,
   onSoundBlocked,
+  renderWorldModel,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -653,6 +753,7 @@ function CoreRenderer({
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   onSoundBlocked: () => void;
+  renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
 }) {
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
     // A video scene with nothing to play is a preview Build of a work whose
@@ -708,8 +809,64 @@ function CoreRenderer({
       />
     );
   }
+  if (renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID) {
+    return (
+      <CoreWorldModelRenderer
+        renderer={renderer}
+        active={active}
+        renderWorldModel={renderWorldModel}
+        onCompleted={() => onOutcome(renderer.instanceId, "world-completed", {})}
+        onRuntimeError={onRuntimeError}
+      />
+    );
+  }
   if (renderer.rendererId === EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID) return null;
   return null;
+}
+
+function CoreWorldModelRenderer({
+  renderer,
+  active,
+  renderWorldModel,
+  onCompleted,
+  onRuntimeError,
+}: {
+  renderer: ExperienceRendererInstance;
+  active: boolean;
+  renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
+  onCompleted: () => void;
+  onRuntimeError: (message: string) => void;
+}) {
+  const reportedErrorRef = useRef<string | null>(null);
+  const parsed = ExperienceCoreWorldModelRendererConfigSchema.safeParse(renderer.config);
+  const errorMessage = !parsed.success
+    ? parsed.error.issues.map((issue) => issue.message).join("; ")
+    : !renderWorldModel
+      ? "World model runtime host is unavailable."
+      : null;
+
+  useEffect(() => {
+    if (!errorMessage || reportedErrorRef.current === errorMessage) return;
+    reportedErrorRef.current = errorMessage;
+    onRuntimeError(errorMessage);
+  }, [errorMessage, onRuntimeError]);
+
+  if (!parsed.success || !renderWorldModel) return null;
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden bg-black"
+      style={{ zIndex: renderer.layer }}
+      data-experience-renderer="core.world-model"
+    >
+      {renderWorldModel({
+        config: parsed.data,
+        active,
+        onCompleted,
+        onError: (error) => onRuntimeError(runtimeErrorMessage(error)),
+      })}
+    </div>
+  );
 }
 
 function CoreTextRenderer({
@@ -1258,6 +1415,69 @@ function findGraphNode(
   return manifest.graph.nodes.find((node) => node.sceneId === sceneId);
 }
 
+/**
+ * A media time report may only drive a scene whose clock that renderer owns.
+ * Renderer clocks name their video instance; host-owned reports (the fixed
+ * rAF clock) pass null and are always accepted. The guard exists for the
+ * dying-video race: after a scene change the outgoing element can still fire
+ * one last timeupdate carrying the old scene's final position.
+ */
+export function timelineReportDrivesScene(
+  clock: ExperienceScene["clock"],
+  rendererInstanceId: string | null
+): boolean {
+  if (clock.kind !== "renderer") return true;
+  return clock.rendererInstanceId === rendererInstanceId;
+}
+
+/**
+ * Opt-in playtest diagnostics. Enabled only with ?debug=trace; appends
+ * runtime milestones to a fixed overlay so automation (and humans) can read
+ * the exact event order behind scene/gesture bugs. The flag is resolved once
+ * per window because the trace sites sit on hot paths (media timeupdates).
+ */
+let debugTraceEnabled: boolean | null = null;
+
+export function debugTrace(line: string): void {
+  if (typeof window === "undefined") return;
+  if (debugTraceEnabled === null) {
+    debugTraceEnabled = new URLSearchParams(window.location.search).get("debug") === "trace";
+  }
+  if (!debugTraceEnabled) return;
+  const record = window as typeof window & { __fizzTrace?: string[] };
+  record.__fizzTrace = record.__fizzTrace ?? [];
+  record.__fizzTrace.push(`${Date.now() % 100000} ${line}`);
+  let host = document.getElementById("fizz-debug-trace");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "fizz-debug-trace";
+    host.setAttribute("aria-label", "runtime trace");
+    host.style.cssText =
+      "position:fixed;left:0;bottom:0;z-index:2147483647;max-height:40vh;overflow:auto;font:10px/1.35 monospace;background:rgba(0,0,0,.82);color:#9fe8b5;padding:6px 8px;white-space:pre;pointer-events:none;max-width:60vw";
+    document.body.appendChild(host);
+  }
+  host.textContent = record.__fizzTrace.slice(-30).join("\n");
+}
+
+/**
+ * Resolves when a gesture outcome event may actually route. The safe branch
+ * frame defaults to the interaction window end, so interactions authored
+ * before `branchAtMs` existed keep cutting exactly where they used to.
+ */
+function parkedEventBranchAtMs(
+  manifest: ExperienceRuntimeManifest,
+  event: ExperienceRuntimeEvent
+): number {
+  if (!event.sourceId) return 0;
+  const gesture = manifest.graph.nodes
+    .filter(
+      (node): node is Extract<ExperienceGraphNode, { kind: "scene" }> => node.kind === "scene"
+    )
+    .flatMap((node) => node.gestures)
+    .find((candidate) => candidate.gestureId === event.sourceId);
+  return gesture?.branchAtMs ?? gesture?.activeWindow?.endMs ?? 0;
+}
+
 function resolvePlaybackLocale(
   manifest: ExperienceRuntimeManifest,
   requestedLocale: string
@@ -1275,69 +1495,76 @@ function localize(value: ExperienceLocalizedText, locale: string, defaultLocale:
 }
 
 /**
- * Warms every clip the experience can reach before it starts.
+ * Warms the clips reachable from the current scene without delaying playback.
  *
- * An interactive film cuts on a choice, so a clip that has not been fetched
- * shows as a stall exactly at the dramatic beat — and unlike a linear video
- * there is no "next" to buffer ahead, because which clip comes next is not
- * known until the viewer acts. Fetching all of them up front trades a wait the
- * viewer understands (a bar, before anything begins) for stalls they cannot.
- *
- * Progress is per-clip rather than per-byte: `HTMLVideoElement` reports no total
- * size, and a count of clips is both honest and monotonic. A clip that fails to
- * load still counts — playback is not blocked on a warm cache, and the scene
- * that needs it will surface its own error.
+ * An interactive film has multiple possible "next" clips. Loading the entire
+ * story before Start creates a delay proportional to the size of the graph and
+ * downloads branches the viewer may never enter. One-hop preloading keeps the
+ * current decision's targets warm while the current clip is playing. A failed
+ * warm-up never blocks the experience; the real media element remains the
+ * authority and reports an error only if that scene is actually entered.
  */
-function useExperiencePreload(
+function useNextScenePreload(
   manifest: ExperienceRuntimeManifest,
+  sceneId: string,
   orientation: ExperienceOrientation
-): { total: number; loaded: number; done: boolean } {
-  const uris = useMemo(() => {
-    const wanted = new Set<string>();
-    manifest.graph.nodes.forEach((node) => {
-      if (node.kind !== "scene") return;
-      node.renderers.forEach((renderer) => {
-        if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
-        const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
-        if (!parsed.success) return;
-        parsed.data.sequence.forEach((clip) => {
-          const media = resolveVideoMedia(manifest.assets, clip.assetId, orientation);
-          if (media) wanted.add(media.variant.uri);
-        });
-      });
-    });
-    return [...wanted];
-  }, [manifest, orientation]);
-
-  const [loaded, setLoaded] = useState(0);
+): void {
+  const uris = useMemo(
+    () => resolveNextSceneVideoUris(manifest, sceneId, orientation),
+    [manifest, orientation, sceneId]
+  );
   useEffect(() => {
-    setLoaded(0);
     if (uris.length === 0) return;
-    let cancelled = false;
     const elements: HTMLVideoElement[] = [];
-    const settle = () => {
-      if (!cancelled) setLoaded((current) => current + 1);
-    };
     uris.forEach((uri) => {
       const element = document.createElement("video");
       element.preload = "auto";
       element.muted = true;
-      // `canplaythrough` is the honest signal that this clip will not stall.
-      element.addEventListener("canplaythrough", settle, { once: true });
-      element.addEventListener("error", settle, { once: true });
+      element.playsInline = true;
       element.src = uri;
+      element.load();
       elements.push(element);
     });
     return () => {
-      cancelled = true;
       elements.forEach((element) => {
         element.removeAttribute("src");
         element.load();
       });
     };
   }, [uris]);
+}
 
-  return { total: uris.length, loaded, done: loaded >= uris.length };
+export function resolveNextSceneVideoUris(
+  manifest: ExperienceRuntimeManifest,
+  sceneId: string,
+  orientation: ExperienceOrientation
+): string[] {
+  const current = findGraphNode(manifest, sceneId);
+  if (!current || current.kind !== "scene") return [];
+  const targetSceneIds = new Set(
+    current.eventBindings.flatMap((binding) =>
+      binding.routes.flatMap((route) =>
+        route.actions.flatMap((action) =>
+          action.kind === "scene.goto" && action.sceneId !== sceneId ? [action.sceneId] : []
+        )
+      )
+    )
+  );
+  const wanted = new Set<string>();
+  targetSceneIds.forEach((targetSceneId) => {
+    const target = findGraphNode(manifest, targetSceneId);
+    if (!target || target.kind !== "scene") return;
+    target.renderers.forEach((renderer) => {
+      if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
+      const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+      if (!parsed.success) return;
+      parsed.data.sequence.forEach((clip) => {
+        const media = resolveVideoMedia(manifest.assets, clip.assetId, orientation);
+        if (media) wanted.add(media.variant.uri);
+      });
+    });
+  });
+  return [...wanted];
 }
 
 function resolveVideoMedia(
