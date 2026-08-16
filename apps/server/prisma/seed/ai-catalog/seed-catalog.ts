@@ -378,10 +378,101 @@ export async function seedSingleVideoModel(
   providers: string[];
   createdCanonical: boolean;
 }> {
-  const model = VIDEO_MODELS.find((entry) => entry.slug === slug);
+  return seedSingleCanonicalModel(prisma, slug, VIDEO_MODELS, VIDEO_CONFIG);
+}
+
+/**
+ * Surgical upsert of a single audio canonical + its provider bindings.
+ * Same production-safety contract as {@link seedSingleVideoModel}.
+ */
+/** Serialisable plan for an in-cluster pg apply (laptop cannot reach prod PG). */
+export function planSingleModelSeed(slug: string): {
+  slug: string;
+  modality: AiJobType;
+  canonical: Prisma.AiCanonicalModelUncheckedCreateInput;
+  providers: Array<{
+    provider: string;
+    endpoint: Omit<
+      Prisma.AiProviderEndpointUncheckedCreateInput,
+      'providerAccountId'
+    >;
+    binding: Omit<
+      Prisma.AiProviderModelBindingUncheckedCreateInput,
+      'providerAccountId' | 'providerEndpointId' | 'canonicalModelId'
+    >;
+  }>;
+} {
+  const video = VIDEO_MODELS.find((entry) => entry.slug === slug);
+  const audio = AUDIO_MODELS.find((entry) => entry.slug === slug);
+  const model = video ?? audio;
+  const cfg = video ? VIDEO_CONFIG : audio ? AUDIO_CONFIG : null;
+  if (!model || !cfg) {
+    throw new Error(`Unknown catalog slug "${slug}".`);
+  }
+  const seededAt = new Date().toISOString();
+  const canonical = buildCanonicalPayload(model, seededAt, cfg);
+  return {
+    slug: model.slug,
+    modality: cfg.modality,
+    canonical,
+    providers: model.providers.map((entry) => ({
+      provider: entry.provider,
+      endpoint: buildEndpointPayload({
+        providerAccountId: 'pending',
+        provider: entry.provider,
+        entry,
+        displayName: model.displayName,
+        modes: entry.modes ?? model.modes,
+        modality: cfg.modality,
+      }),
+      binding: buildBindingPayload({
+        endpoint: {
+          id: 'pending',
+          providerAccountId: 'pending',
+          provider: entry.provider,
+          endpointId: entry.endpointId,
+          displayName: entry.displayName ?? model.displayName,
+          supportedModes: entry.modes ?? model.modes,
+          providerInputSchema: entry.providerInputSchema ?? {},
+          providerOutputSchema: entry.providerOutputSchema ?? {},
+          catalogSnapshot: entry.catalogSnapshot ?? {},
+        },
+        canonicalModelId: 'pending',
+        priority: entry.priority ?? 100,
+        weight: entry.weight ?? 100,
+        modality: cfg.modality,
+      }),
+    })),
+  };
+}
+
+export async function seedSingleAudioModel(
+  prisma: PrismaClient,
+  slug: string,
+): Promise<{
+  slug: string;
+  status: string;
+  providers: string[];
+  createdCanonical: boolean;
+}> {
+  return seedSingleCanonicalModel(prisma, slug, AUDIO_MODELS, AUDIO_CONFIG);
+}
+
+async function seedSingleCanonicalModel(
+  prisma: PrismaClient,
+  slug: string,
+  models: ImageModelSeed[],
+  cfg: ModalityConfig,
+): Promise<{
+  slug: string;
+  status: string;
+  providers: string[];
+  createdCanonical: boolean;
+}> {
+  const model = models.find((entry) => entry.slug === slug);
   if (!model) {
     throw new Error(
-      `Unknown video model slug "${slug}". Not present in VIDEO_MODELS.`,
+      `Unknown ${cfg.label} model slug "${slug}". Not present in the ${cfg.label} catalog.`,
     );
   }
 
@@ -391,7 +482,7 @@ export async function seedSingleVideoModel(
     select: { id: true },
   });
 
-  const canonicalPayload = buildCanonicalPayload(model, seededAt, VIDEO_CONFIG);
+  const canonicalPayload = buildCanonicalPayload(model, seededAt, cfg);
   const canonical = await prisma.aiCanonicalModel.upsert({
     where: { slug: model.slug },
     create: canonicalPayload,
@@ -417,7 +508,7 @@ export async function seedSingleVideoModel(
       canonicalModelId: canonical.id,
       account,
       entry,
-      modality: VIDEO_CONFIG.modality,
+      modality: cfg.modality,
     });
     providers.push(`${entry.provider}:${entry.endpointId}`);
   }

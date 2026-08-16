@@ -12,7 +12,10 @@
 import 'dotenv/config';
 
 import { buildPrisma } from '../../src/infra/db/db.module';
-import { seedSingleVideoModel } from './ai-catalog/seed-catalog';
+import {
+  seedSingleAudioModel,
+  seedSingleVideoModel,
+} from './ai-catalog/seed-catalog';
 
 type AccountSnap = {
   provider: string;
@@ -102,7 +105,18 @@ async function main(): Promise<void> {
       console.log('[seed-single] re-run with --apply to write');
       return;
     }
-    const result = await seedSingleVideoModel(prisma, slug);
+    let result: Awaited<ReturnType<typeof seedSingleVideoModel>>;
+    try {
+      result = await seedSingleVideoModel(prisma, slug);
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.includes(`Unknown video model slug "${slug}"`)
+      ) {
+        throw error;
+      }
+      result = await seedSingleAudioModel(prisma, slug);
+    }
     console.log('[seed-single] result', result);
     const after = await snapshotSafety(prisma, slug);
     if (JSON.stringify(before) !== JSON.stringify(after)) {
