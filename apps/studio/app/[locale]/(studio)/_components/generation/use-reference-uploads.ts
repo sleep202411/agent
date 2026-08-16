@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
 import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
 import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
@@ -44,6 +45,11 @@ const LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
  * labels (Image1/Video1/…) assigned per kind.
  */
 export function useReferenceUploads() {
+  // Uploads must carry the active workspace so the asset belongs to the team,
+  // not to the uploader's personal scope — a personal-private asset is
+  // invisible to every other member (and unusable as their generation
+  // reference).
+  const workspaceId = useActiveWorkspaceId();
   const [items, setItems] = useState<ReferenceUpload[]>([]);
   const aborts = useRef(new Map<string, AbortController>());
   const itemsRef = useRef(items);
@@ -61,77 +67,81 @@ export function useReferenceUploads() {
     []
   );
 
-  const addFiles = useCallback((field: string, kind: FizzAiReferenceKind, files: File[]) => {
-    for (const file of files) {
-      const id = crypto.randomUUID();
-      const controller = new AbortController();
-      aborts.current.set(id, controller);
-      setItems((prev) => {
-        const count = prev.filter((item) => item.kind === kind).length;
-        return [
-          ...prev,
-          {
-            id,
-            field,
-            kind,
-            name: file.name,
-            previewUrl: URL.createObjectURL(file),
-            uploading: true,
-            progress: 0,
-            label: `${LABEL_PREFIX[kind]}${count + 1}`,
-          },
-        ];
-      });
-      void Promise.all([
-        uploadFileViaSignedUrl(file, {
-          kind: UPLOAD_KIND_BY_REFERENCE[kind],
-          signal: controller.signal,
-          onProgress: (percent) =>
+  const addFiles = useCallback(
+    (field: string, kind: FizzAiReferenceKind, files: File[]) => {
+      for (const file of files) {
+        const id = crypto.randomUUID();
+        const controller = new AbortController();
+        aborts.current.set(id, controller);
+        setItems((prev) => {
+          const count = prev.filter((item) => item.kind === kind).length;
+          return [
+            ...prev,
+            {
+              id,
+              field,
+              kind,
+              name: file.name,
+              previewUrl: URL.createObjectURL(file),
+              uploading: true,
+              progress: 0,
+              label: `${LABEL_PREFIX[kind]}${count + 1}`,
+            },
+          ];
+        });
+        void Promise.all([
+          uploadFileViaSignedUrl(file, {
+            kind: UPLOAD_KIND_BY_REFERENCE[kind],
+            ...(workspaceId ? { workspaceId } : {}),
+            signal: controller.signal,
+            onProgress: (percent) =>
+              setItems((prev) =>
+                prev.map((item) => (item.id === id ? { ...item, progress: percent } : item))
+              ),
+          }),
+          kind === "video" || kind === "audio"
+            ? probeMediaDurationSeconds(file, kind)
+            : Promise.resolve(null as number | null),
+        ])
+          .then(([result, durationSeconds]) =>
             setItems((prev) =>
-              prev.map((item) => (item.id === id ? { ...item, progress: percent } : item))
-            ),
-        }),
-        kind === "video" || kind === "audio"
-          ? probeMediaDurationSeconds(file, kind)
-          : Promise.resolve(null as number | null),
-      ])
-        .then(([result, durationSeconds]) =>
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === id
-                ? {
-                    ...item,
-                    uploading: false,
-                    progress: 100,
-                    url: result.url,
-                    mediaAssetId: result.mediaAssetId,
-                    bytes: file.size,
-                    ...(durationSeconds != null ? { durationSeconds } : {}),
-                  }
-                : item
+              prev.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      uploading: false,
+                      progress: 100,
+                      url: result.url,
+                      mediaAssetId: result.mediaAssetId,
+                      bytes: file.size,
+                      ...(durationSeconds != null ? { durationSeconds } : {}),
+                    }
+                  : item
+              )
             )
           )
-        )
-        .catch((error: unknown) => {
-          if (isUploadAbort(error)) {
-            setItems((prev) => prev.filter((item) => item.id !== id));
-            return;
-          }
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === id
-                ? {
-                    ...item,
-                    uploading: false,
-                    error: error instanceof Error ? error.message : "Upload failed",
-                  }
-                : item
-            )
-          );
-        })
-        .finally(() => aborts.current.delete(id));
-    }
-  }, []);
+          .catch((error: unknown) => {
+            if (isUploadAbort(error)) {
+              setItems((prev) => prev.filter((item) => item.id !== id));
+              return;
+            }
+            setItems((prev) =>
+              prev.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      uploading: false,
+                      error: error instanceof Error ? error.message : "Upload failed",
+                    }
+                  : item
+              )
+            );
+          })
+          .finally(() => aborts.current.delete(id));
+      }
+    },
+    [workspaceId]
+  );
 
   const remove = useCallback((id: string) => {
     aborts.current.get(id)?.abort();

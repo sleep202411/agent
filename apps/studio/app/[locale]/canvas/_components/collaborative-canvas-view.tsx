@@ -84,6 +84,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
       <MediaAuthoringCanvas
         canEdit={canEdit}
         ready={documentStatus === "ready" && connectionStatus === "synced"}
+        documentId={documentId}
         scopeKey={documentId}
         uploadKinds={uploadKinds}
         addNodeActions={PROJECT_CANVAS_ADD_NODE_ACTIONS}

@@ -817,6 +817,118 @@ describe('MediaAccessService', () => {
   });
 });
 
+describe('MediaAccessService canvas-context grant', () => {
+  const ASSET_ID = '11111111-1111-7111-9111-111111111111';
+  const DOC_ID = '22222222-2222-7222-9222-222222222222';
+
+  function denyingBase() {
+    return {
+      prisma: {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(
+            // Someone else's personal-private asset: every direct grant fails.
+            readyAsset({ createdByUserId: 'uploader', workspaceId: null }),
+          ),
+        },
+        characterMedia: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+      storageAccess: {
+        createReadUrl: jest.fn().mockResolvedValue({
+          url: 'https://blob.example.com/a.png?sig=read',
+          expiresAt: null,
+        }),
+      },
+      permissions: {
+        requireWorkspaceRole: jest
+          .fn()
+          .mockRejectedValue(
+            new ForbiddenException({ code: 'WORKSPACE_ROLE_REQUIRED' }),
+          ),
+      },
+    };
+  }
+
+  function makeService(
+    base: ReturnType<typeof denyingBase>,
+    documentAccess: unknown,
+  ) {
+    return new MediaAccessService(
+      base.prisma as never,
+      base.storageAccess as never,
+      base.permissions as never,
+      allowCrewAssetAccess() as never,
+      documentAccess as never,
+    );
+  }
+
+  it('denies a teammate without canvas context (control)', async () => {
+    const service = makeService(denyingBase(), {
+      requireDocument: jest.fn(),
+    });
+    await expect(
+      service.issueBrowserAccessUrl('viewer', ASSET_ID, {
+        variantKey: 'original',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('grants when the viewer can read the document and the asset is on it', async () => {
+    const documentAccess = {
+      requireDocument: jest.fn().mockResolvedValue({
+        id: DOC_ID,
+        contentSnapshot: { nodes: [{ data: { mediaAssetId: ASSET_ID } }] },
+      }),
+    };
+    const service = makeService(denyingBase(), documentAccess);
+    await expect(
+      service.issueBrowserAccessUrl('viewer', ASSET_ID, {
+        variantKey: 'original',
+        documentId: DOC_ID,
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://blob.example.com/a.png?sig=read',
+    });
+    expect(documentAccess.requireDocument).toHaveBeenCalledWith(
+      'viewer',
+      DOC_ID,
+      'read',
+    );
+  });
+
+  it('still denies when the document does not reference the asset', async () => {
+    const documentAccess = {
+      requireDocument: jest.fn().mockResolvedValue({
+        id: DOC_ID,
+        contentSnapshot: { nodes: [] },
+      }),
+    };
+    const service = makeService(denyingBase(), documentAccess);
+    await expect(
+      service.issueBrowserAccessUrl('viewer', ASSET_ID, {
+        variantKey: 'original',
+        documentId: DOC_ID,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('still denies when the viewer cannot read the document', async () => {
+    const documentAccess = {
+      requireDocument: jest
+        .fn()
+        .mockRejectedValue(
+          new NotFoundException({ code: 'DOCUMENT_NOT_FOUND' }),
+        ),
+    };
+    const service = makeService(denyingBase(), documentAccess);
+    await expect(
+      service.issueBrowserAccessUrl('viewer', ASSET_ID, {
+        variantKey: 'original',
+        documentId: DOC_ID,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
 describe('MediaAccessService pre-broadcast moderation gate', () => {
   const KEY = 'MEDIA_REQUIRE_MODERATION_APPROVAL';
   const ASSET_ID = '11111111-1111-7111-9111-111111111111';

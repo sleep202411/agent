@@ -159,6 +159,9 @@ export type MediaAssetAccessParamsDto = z.infer<
 export const MediaAssetAccessQuerySchema = z.object({
   variantKey: z.string().trim().min(1).max(80).default('original'),
   placementId: z.string().uuid().optional(),
+  /** Canvas context: when the viewer can read this Studio document and the
+   *  asset is referenced on it, read access follows the document. */
+  documentId: z.string().uuid().optional(),
 });
 export type MediaAssetAccessQueryDto = z.infer<
   typeof MediaAssetAccessQuerySchema

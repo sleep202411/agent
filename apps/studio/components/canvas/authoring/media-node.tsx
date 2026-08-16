@@ -21,6 +21,7 @@ import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { PortPlus } from "./ports";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
+import { useCanvasDocumentId, withCanvasDocumentContext } from "./canvas-document-context";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
@@ -53,7 +54,8 @@ function MediaAssetNodeComponent({
   const [renaming, setRenaming] = useState(false);
   const upload = useUploadEntry(id);
   const retryUpload = useRetryUpload();
-  const src = upload?.objectUrl ?? data.src;
+  const documentId = useCanvasDocumentId();
+  const src = upload?.objectUrl ?? withCanvasDocumentContext(data.src, documentId);
   const uploading = upload?.status === "uploading";
   const failed = upload?.status === "failed";
   const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(src);

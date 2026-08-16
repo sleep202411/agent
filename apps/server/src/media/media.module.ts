@@ -7,6 +7,7 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { StoryAccessModule } from '../story-studio/story-access.module';
 import { CrewAssetAccessModule } from '../crews/assets/asset-access.module';
+import { DocumentsModule } from '../documents/documents.module';
 import { AdminMediaController } from './admin-media.controller';
 import { AdminMediaService } from './admin-media.service';
 import { CdnPurgeProvider } from './cdn-purge.provider';
@@ -49,6 +50,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
     StoryAccessModule,
     CrewAssetAccessModule,
     BytePlusAssetsModule,
+    DocumentsModule,
   ],
   controllers: [
     MediaUploadController,

@@ -296,6 +296,7 @@ export class AiGenerationService {
     await this.requireReferenceAccess(
       user.userId,
       promptCompilation.snapshot.references,
+      context.documentId,
     );
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
@@ -1328,6 +1329,7 @@ export class AiGenerationService {
   private async requireReferenceAccess(
     userId: string,
     references: AiPromptReferenceBinding[],
+    documentId?: string | null,
   ): Promise<void> {
     const assetIds = [
       ...new Set(
@@ -1338,7 +1340,9 @@ export class AiGenerationService {
     ];
     await Promise.all(
       assetIds.map((assetId) =>
-        this.mediaAccess.requireUseAccessById(userId, assetId),
+        this.mediaAccess.requireUseAccessById(userId, assetId, {
+          documentId,
+        }),
       ),
     );
   }
