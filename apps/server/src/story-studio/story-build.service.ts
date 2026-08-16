@@ -29,6 +29,7 @@ import {
 } from '@repo/shared/experience-runtime';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
+import { resolveMediaPublicVariantUrl } from '../infra/storage/media-asset-url-resolver.service';
 import {
   MediaStorageAccessService,
   type MediaStorageReadRef,
@@ -571,6 +572,25 @@ export class StoryBuildService {
         code: 'STORY_BUILD_ASSET_STORAGE_UNAVAILABLE',
         message: 'Build media storage is no longer available.',
       });
+    }
+    // Published anonymous play uses the same public CDN host as covers
+    // (media.fizzspace.cn / r2.fizzdragon.com). Signing that object against
+    // oss.fizzspace.cn put response-content-type on a CNAME that rejects it
+    // (400), and a 5-minute private URL is the wrong contract for a
+    // catalogue film. Revoking publication still stops NEW /aurora
+    // redirects; already-known CDN URLs stay reachable — same trade as
+    // cover/music. Preview / unpublished Builds keep a signed URL.
+    if (publiclyAuthorized) {
+      const publicUrl = resolveMediaPublicVariantUrl(
+        {
+          ...frozen.asset,
+          variants: [frozen.variant],
+        },
+        frozen.variant.variantKey,
+      );
+      if (publicUrl) {
+        return { url: publicUrl, expiresAt: null };
+      }
     }
     const signed = await this.storageAccess.createReadUrl(source, {
       cacheControl: 'private, no-store',

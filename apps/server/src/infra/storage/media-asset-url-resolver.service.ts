@@ -254,6 +254,24 @@ export function resolveMediaPublicUrl(asset: GatedMediaAsset): string | null {
 }
 
 /**
+ * Public URL for one named variant (the frozen Build clip), or null when the
+ * asset must not be served. Unlike {@link resolveMediaPlaybackUrl} this does
+ * not substitute an HLS rendition — the caller already picked the variant.
+ */
+export function resolveMediaPublicVariantUrl(
+  asset: GatedMediaAsset,
+  variantKey: string,
+): string | null {
+  if (resolveMediaPublicUrl(asset) == null) return null;
+  try {
+    sharedResolver ??= new MediaAssetUrlResolverService();
+    return sharedResolver.resolveVariant(asset, variantKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the PLAYABLE rendition URL for a media asset: prefer a ready ABR-HLS
  * `stream` variant (`hls`), else the original. Applies the same moderation gate
  * as {@link resolveMediaPublicUrl} (returns `url: null` when the asset must not
